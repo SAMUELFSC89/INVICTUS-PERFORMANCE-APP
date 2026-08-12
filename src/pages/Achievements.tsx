@@ -302,7 +302,7 @@ export function Achievements() {
           <div className="flex justify-between items-start">
             <div className="flex flex-col gap-1">
               <span className="font-label text-primary text-[10px] font-black tracking-[0.3em] uppercase">SISTEMA CIENTÍFICO</span>
-              <h1 className="font-headline italic font-black text-4xl uppercase tracking-tighter text-white">CONQUISTAS INVICTUS</h1>
+              <h1 className="font-headline italic font-black text-2xl sm:text-3xl uppercase tracking-tighter text-white">CONQUISTAS INVICTUS</h1>
             </div>
             
             {/* Audio Toggle button */}
