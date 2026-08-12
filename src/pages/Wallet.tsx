@@ -172,7 +172,7 @@ export function Wallet() {
                 <DollarSign size={14} /> DINHEIRO REAL & SAQUES PIX
               </span>
             </div>
-            <h1 className="font-headline italic font-black text-4xl sm:text-6xl uppercase tracking-tighter text-on-surface">
+            <h1 className="font-headline italic font-black text-2xl sm:text-3xl uppercase tracking-tighter text-on-surface">
               CARTEIRA <span className="text-primary">INVICTUS</span>
             </h1>
             <p className="text-on-surface-variant text-sm mt-1 max-w-xl">
@@ -260,7 +260,7 @@ export function Wallet() {
               <div>
                 <div className="flex items-baseline gap-3">
                   <span className="font-headline italic font-black text-2xl md:text-3xl text-emerald-400">R$</span>
-                  <span className="font-headline italic font-black text-6xl md:text-8xl text-primary tracking-tighter">
+                  <span className="font-headline italic font-black text-4xl sm:text-5xl md:text-6xl text-primary tracking-tighter">
                     {redeemableVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
