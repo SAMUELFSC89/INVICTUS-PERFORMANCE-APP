@@ -923,7 +923,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
                   onChange={e => setPreferredPlan(e.target.value as any)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
                 >
-                  <option value="open" className="bg-surface-container">Plano Open (R$ 9,99/mês)</option>
+                  <option value="open" className="bg-surface-container">Plano Open (Grátis)</option>
                   <option value="performance" className="bg-surface-container">Plano Performance (R$ 49,90/mês)</option>
                 </select>
               </div>
