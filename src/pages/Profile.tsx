@@ -555,15 +555,15 @@ export function Profile() {
               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-outline-variant/5">
                 <div>
                   <p className="text-[8px] font-black text-on-surface-variant uppercase">GPS RULING</p>
-                  <p className="text-[11px] font-black text-white uppercase italic">CONSISTENTE</p>
+                  <p className="text-[7px] font-black text-white uppercase italic truncate">CONSISTENTE</p>
                 </div>
                 <div>
                   <p className="text-[8px] font-black text-on-surface-variant uppercase">ACELERAÇÃO</p>
-                  <p className="text-[11px] font-black text-white uppercase italic">HUMANOIDE</p>
+                  <p className="text-[7px] font-black text-white uppercase italic truncate">HUMANOIDE</p>
                 </div>
                 <div>
                   <p className="text-[8px] font-black text-on-surface-variant uppercase">FINGERPRINT</p>
-                  <p className="text-[11px] font-black text-white uppercase italic">APROVADO</p>
+                  <p className="text-[7px] font-black text-white uppercase italic truncate">APROVADO</p>
                 </div>
               </div>
             </div>
