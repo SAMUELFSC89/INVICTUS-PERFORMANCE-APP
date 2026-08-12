@@ -83,7 +83,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const tokenOrTxId = `${planId}_${authUser.uid}_${Date.now()}`;
-  const orderId = `order_${platform}_${tokenOrTxId.substring(0, 40)}`;
+  // Pedidos do Plano Performance usam um orderId determinístico (um único pedido "vivo"
+  // por usuário) para que o webhook da RevenueCat consiga localizar e renovar o mesmo
+  // registro em cada ciclo de cobrança. O Plano Open, por ser gratuito e sem ciclo de
+  // renovação, mantém um orderId novo a cada ativação.
+  const orderId = planId === 'invictus_performance'
+    ? `order_performance_${authUser.uid}`
+    : `order_${platform}_${tokenOrTxId.substring(0, 40)}`;
 
   try {
     const now = new Date();
