@@ -300,7 +300,7 @@ export function Rankings() {
         </div>
 
         {/* Quick Navigation for Events & Competitions */}
-        <div className="px-4 md:px-6 pt-4 pb-1 flex justify-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
+        <div className="px-4 md:px-6 pt-4 pb-1 flex justify-start gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
           <button 
             onClick={() => navigate('/power')}
             className="px-3.5 py-1.5 bg-surface-container-high/60 hover:bg-surface-container-high text-on-surface rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 border border-white/10 transition-all active:scale-95 shadow-sm"
