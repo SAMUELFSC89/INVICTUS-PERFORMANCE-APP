@@ -10,6 +10,7 @@ import { auth, db } from '../firebase';
 import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { cn, compressImage } from '../lib/utils';
+import { purchasePerformanceSubscription } from '../lib/revenuecat';
 import { userService } from '../services/userService';
 import { stravaService, StravaStatus } from '../services/stravaService';
 import { motion, AnimatePresence } from 'motion/react';
@@ -384,8 +385,12 @@ export function Settings() {
         throw new Error('Sessão expirada. Faça login novamente.');
       }
 
-      const mockPurchaseToken = `token_${platform}_${Math.random().toString(36).substring(2, 11)}`;
-      const mockTransactionId = `tx_${platform}_${Math.random().toString(36).substring(2, 11)}`;
+      // Plano Performance: executa a compra real na loja (Google Play/App Store)
+      // antes de pedir ao backend para confirmar. O Plano Open é gratuito e nunca
+      // passa por nenhuma loja.
+      if (selectedPlan === 'invictus_performance') {
+        await purchasePerformanceSubscription();
+      }
 
       const response = await fetch('/api/payments/verify-purchase', {
         method: 'POST',
@@ -393,13 +398,7 @@ export function Settings() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          planId: selectedPlan,
-          platform,
-          purchaseToken: mockPurchaseToken,
-          transactionId: mockTransactionId,
-          scenario: 'approved'
-        })
+        body: JSON.stringify({ planId: selectedPlan, platform })
       });
 
       const data = await response.json();
@@ -409,7 +408,9 @@ export function Settings() {
 
       if (data.success && data.status === 'approved') {
         setPaymentStatusOverlay('success');
-        setPaymentStatusMessage('Assinatura ativada com sucesso pelas lojas oficiais! Seu acesso Invictus Pro está liberado.');
+        setPaymentStatusMessage(selectedPlan === 'invictus_open'
+          ? 'Plano Open ativado com sucesso! Seu acesso Invictus está liberado.'
+          : 'Assinatura ativada com sucesso pelas lojas oficiais! Seu acesso Invictus Pro está liberado.');
         if (refreshUser) {
           await refreshUser();
         }
