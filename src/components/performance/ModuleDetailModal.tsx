@@ -63,7 +63,7 @@ export function ModuleDetailModal({ isOpen, onClose, metricData }: ModuleDetailM
 
             <div className="flex items-baseline justify-between pt-1">
               <div>
-                <span className="font-headline italic font-black text-5xl text-white">
+                <span className="font-headline italic font-black text-3xl sm:text-4xl md:text-5xl text-white">
                   {metricData.currentValue}
                 </span>
                 <span className="text-zinc-400 font-bold ml-2 text-lg">{metricData.unit}</span>
