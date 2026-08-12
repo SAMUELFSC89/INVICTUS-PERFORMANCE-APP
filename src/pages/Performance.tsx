@@ -300,7 +300,7 @@ export function Performance() {
                     </div>
 
                     <div className="text-left sm:text-right">
-                      <span className="font-headline italic font-black text-5xl text-emerald-400">
+                      <span className="font-headline italic font-black text-3xl sm:text-4xl md:text-5xl text-emerald-400">
                         {perfState.readinessScore}
                       </span>
                       <span className="text-zinc-400 font-bold text-lg ml-1">/ 100</span>
