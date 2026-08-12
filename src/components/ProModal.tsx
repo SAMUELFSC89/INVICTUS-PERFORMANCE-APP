@@ -132,7 +132,7 @@ export function ProModal({ isOpen, onClose, reason }: ProModalProps) {
                 </button>
                 
                 <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest opacity-40">
-                  Planos a partir de apenas R$ 9,99/mês
+                  Plano Open Grátis. Performance a partir de R$ 49,90/mês
                 </p>
               </div>
             </div>
