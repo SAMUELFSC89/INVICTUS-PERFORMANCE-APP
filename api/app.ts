@@ -35,6 +35,7 @@ import walletRedeemHandler from './_handlers/wallet-redeem.js';
 import adminHandler from './_handlers/admin.js';
 import denounceHandler from './_handlers/denounce.js';
 import paymentsVerifyPurchaseHandler from './_handlers/payments-verify-purchase.js';
+import revenuecatWebhookHandler from './_handlers/revenuecat-webhook.js';
 import paymentsStatusHandler from './_handlers/payments-status.js';
 import paymentsConfigHandler from './_handlers/payments-config.js';
 import privateChallengesHandler from './_handlers/private-challenges.js';
@@ -129,6 +130,7 @@ assertHandler('whatsappHandler', whatsappHandler);
 assertHandler('auditFraudHandler', auditFraudHandler);
 assertHandler('envCheckHandler', envCheckHandler);
 assertHandler('paymentsVerifyPurchaseHandler', paymentsVerifyPurchaseHandler);
+assertHandler('revenuecatWebhookHandler', revenuecatWebhookHandler);
 assertHandler('paymentsConfigHandler', paymentsConfigHandler);
 assertHandler('paymentsStatusHandler', paymentsStatusHandler);
 assertHandler('walletRedeemHandler', walletRedeemHandler);
@@ -199,6 +201,9 @@ router.all('/env-check', wrap(envCheckHandler));
 
 console.log('[ROUTE] /payments/verify-purchase', typeof paymentsVerifyPurchaseHandler);
 router.all('/payments/verify-purchase', wrap(paymentsVerifyPurchaseHandler));
+
+console.log('[ROUTE] /payments/revenuecat-webhook', typeof revenuecatWebhookHandler);
+router.all('/payments/revenuecat-webhook', wrap(revenuecatWebhookHandler));
 
 console.log('[ROUTE] /payments/config', typeof paymentsConfigHandler);
 router.all('/payments/config', wrap(paymentsConfigHandler));
