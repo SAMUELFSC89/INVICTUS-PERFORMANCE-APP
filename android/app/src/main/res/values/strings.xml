@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">INVICTUS</string>
+    <string name="title_activity_main">INVICTUS</string>
+    <string name="package_name">com.desafiosemdesculpa.app</string>
+    <string name="custom_url_scheme">com.desafiosemdesculpa.app</string>
+</resources>

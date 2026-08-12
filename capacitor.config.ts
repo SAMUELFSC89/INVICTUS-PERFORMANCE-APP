@@ -1,0 +1,37 @@
+import { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.desafiosemdesculpa.app',
+  appName: 'INVICTUS',
+  webDir: 'dist',
+  server: {
+    androidScheme: 'https',
+    allowNavigation: [
+      'invictusperformance.app.br', 
+      'www.invictusperformance.app.br', 
+      '*.google.com', 
+      '*.googleapis.com', 
+      '*.firebaseapp.com', 
+      'accounts.google.com'
+    ]
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 2000,
+      launchAutoHide: true,
+      backgroundColor: "#000000",
+      androidSplashResourceName: "splash",
+      androidScaleType: "CENTER_CROP",
+      showSpinner: true,
+      androidSpinnerStyle: "large",
+      spinnerColor: "#00E676",
+      splashFullScreen: true,
+      splashImmersive: true,
+    },
+    PushNotifications: {
+      presentationOptions: ["badge", "sound", "alert"],
+    },
+  },
+};
+
+export default config;

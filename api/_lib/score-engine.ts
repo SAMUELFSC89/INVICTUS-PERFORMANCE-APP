@@ -1,0 +1,27 @@
+export { ScoreEngine, RULE_VERSION, ENGINE_VERSION } from './score-engine/index.js';
+export type { ScoreReport } from './score-engine/report.js';
+export type { ScoreEvent, EventLogRecord } from './score-engine/events.js';
+export { EventLogService } from './score-engine/events.js';
+export { SeasonRecalculator } from './score-engine/recalculator.js';
+export { ScoreValidator } from './score-engine/validator.js';
+export { BaseScoreCalculator } from './score-engine/base-score.js';
+export { BonusCalculator } from './score-engine/bonuses.js';
+export { MultiplierCalculator } from './score-engine/multipliers.js';
+export { PenaltyCalculator } from './score-engine/penalties.js';
+export { LimitCalculator } from './score-engine/limits.js';
+export { ScorePersistence } from './score-engine/persistence.js';
+export { QualityEngine } from './score-engine/quality-engine.js';
+export { CompetitiveEngine } from './score-engine/competitive-engine.js';
+export { ConfidenceEngine } from './score-engine/confidence-engine.js';
+export { EvolutionEngine } from './score-engine/evolution-engine.js';
+export { CoachExplanationEngine } from './score-engine/coach-explanation-engine.js';
+export { AthleteProfileEngine } from './score-engine/athlete-profile-engine.js';
+export { InsightsEngine } from './score-engine/insights-engine.js';
+export { evaluateConsistency } from './score-engine/calculators/consistency-calculator.js';
+export { evaluateIntensity } from './score-engine/calculators/intensity-calculator.js';
+export { evaluateEfficiency } from './score-engine/calculators/efficiency-calculator.js';
+export { evaluateTechnicalQuality } from './score-engine/calculators/technical-quality-calculator.js';
+export { evaluateDataIntegrity } from './score-engine/calculators/data-integrity-calculator.js';
+export { simulateMaxScore } from './score-engine/calculators/simulator.js';
+export * from './score-engine/types.js';
+

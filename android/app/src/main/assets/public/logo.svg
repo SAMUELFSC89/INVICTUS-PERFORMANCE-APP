@@ -1,0 +1,45 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Premium Metallic Gold/Amber Gradient -->
+    <linearGradient id="invictus-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFEFA6" />
+      <stop offset="15%" stop-color="#F5AB12" />
+      <stop offset="50%" stop-color="#D97706" />
+      <stop offset="85%" stop-color="#B45309" />
+      <stop offset="100%" stop-color="#7C2D12" />
+    </linearGradient>
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#D97706" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <g filter="url(#subtle-shadow)">
+    <!-- Left Half of Spartan Helmet containing the cutout -->
+    <g id="helmet-half">
+      <path 
+        d="M250,110 
+           L210,160 
+           L222,190 
+           L210,165 
+           L170,210 
+           L170,300 
+           L192,300 
+           L192,345 
+           L170,345 
+           L170,390 
+           L216,482 
+           L250,422 Z
+           
+           M184,264 
+           L234,264 
+           L224,304 
+           L184,304 Z" 
+        fill="url(#invictus-gold)" 
+        fill-rule="evenodd"
+      />
+    </g>
+    
+    <!-- Right Half of Spartan Helmet (Mirrored Symmetrically) -->
+    <use href="#helmet-half" transform="translate(512, 0) scale(-1, 1)" />
+  </g>
+</svg>

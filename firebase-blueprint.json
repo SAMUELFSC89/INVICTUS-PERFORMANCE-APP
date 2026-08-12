@@ -1,0 +1,877 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile data including classification and stats",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "gymId": { "type": "string" },
+        "gymName": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "country": { "type": "string" },
+        "score": { "type": "number" },
+        "streak": { "type": "number" },
+        "league": { "type": "string", "enum": ["Iniciante", "Intermediário", "Avançado", "Elite"] },
+        "height": { "type": "number" },
+        "weight": { "type": "number" },
+        "age": { "type": "number" },
+        "sex": { "type": "string", "enum": ["male", "female"] },
+        "weeklyFrequency": { "type": "string", "enum": ["0-2", "3-4", "5+"] },
+        "objective": { "type": "string", "enum": ["emagrecer", "ganhar_massa", "definir"] },
+        "bodySelfAssessment": { "type": "string", "enum": ["acima_do_peso", "normal", "definido", "maromba"] },
+        "imc": { "type": "number" },
+        "infractions": { "type": "number" },
+        "profileLikes": { "type": "array", "items": { "type": "string" } },
+        "cpf": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "Workout": {
+      "title": "Workout",
+      "description": "Workout submission data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["workout", "cardio", "diet", "recovery"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["valid", "invalid", "pending", "suspicious"] },
+        "points": { "type": "number" },
+        "duration": { "type": "number" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        }
+      },
+      "required": ["userId", "type", "timestamp", "status"]
+    },
+    "Gym": {
+      "title": "Gym",
+      "description": "Gym location and info",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "place_id": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "photo_url": { "type": "string" },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "latitude", "longitude", "createdAt"]
+    },
+    "GymCheckin": {
+      "title": "GymCheckin",
+      "description": "User in-person manual check-in record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "gymId": { "type": "string" },
+        "gymName": { "type": "string" },
+        "confirmedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "userLocation": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "gymLocation": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "distanceMeters": { "type": "number" },
+        "gpsAccuracy": { "type": "number" },
+        "status": { "type": "string", "enum": ["confirmed", "expired", "suspicious", "cancelled"] },
+        "deviceId": { "type": "string" },
+        "deviceFingerprint": { "type": "string" },
+        "mockLocationDetected": { "type": "boolean" },
+        "riskFlags": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "gymId", "confirmedAt", "expiresAt", "status", "createdAt"]
+    },
+    "Redemption": {
+      "title": "Redemption",
+      "description": "User redemption request for wallet balance",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "pixKey": { "type": "string" },
+        "pixKeyType": { "type": "string", "enum": ["cpf", "email", "phone", "random"] },
+        "status": { "type": "string", "enum": ["pending", "completed", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "pixKey", "pixKeyType", "status", "createdAt"]
+    },
+    "Ranking": {
+      "title": "Ranking",
+      "description": "Historical ranking record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "gymId": { "type": "string" },
+        "points": { "type": "number" },
+        "period": { "type": "string", "enum": ["weekly", "monthly", "all"] },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "points", "period", "date"]
+    },
+    "RunningStats": {
+      "title": "RunningStats",
+      "description": "User running performance stats",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "best_run_km_month": { "type": "number" },
+        "best_run_km_week": { "type": "number" },
+        "last_run_date": { "type": "string", "format": "date-time" },
+        "is_paid_running": { "type": "boolean" },
+        "total_pools": { "type": "number" }
+      },
+      "required": ["userId"]
+    },
+    "SocialNotification": {
+      "title": "SocialNotification",
+      "description": "User social notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientId", "senderId", "type", "createdAt"]
+    },
+    "Diet": {
+      "title": "Diet",
+      "description": "Diet submission and validation data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"] },
+        "photoUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "valid", "invalid"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "photoUrl", "status", "createdAt"]
+    },
+    "RunSession": {
+        "title": "RunSession",
+        "description": "Recorded run sessions",
+        "type": "object",
+        "properties": {
+            "id": { "type": "string" },
+            "userId": { "type": "string" },
+            "km": { "type": "number" },
+            "duration": { "type": "number" },
+            "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["userId", "km", "createdAt"]
+    },
+    "SystemStats": {
+      "title": "SystemStats",
+      "description": "Pre-calculated counts and pool values for performance",
+      "type": "object",
+      "properties": {
+        "totalUserCount": { "type": "number" },
+        "activeUserCount": { "type": "number" },
+        "poolValues": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AggregatedRanking": {
+      "title": "AggregatedRanking",
+      "description": "Snapshots of rankings for fast retrieval",
+      "type": "object",
+      "properties": {
+        "level": { "type": "string" },
+        "levelId": { "type": "string" },
+        "period": { "type": "string" },
+        "topUsers": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "StravaConnection": {
+      "title": "StravaConnection",
+      "description": "Strava API tokens and athlete info linked to user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "athleteId": { "type": "number" },
+        "accessToken": { "type": "string" },
+        "refreshToken": { "type": "string" },
+        "expiresAt": { "type": "number" },
+        "scope": { "type": "string" },
+        "lastSyncAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "athleteId", "accessToken", "refreshToken", "expiresAt"]
+    },
+    "StravaActivity": {
+      "title": "StravaActivity",
+      "description": "Raw data from Strava activity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "stravaActivityId": { "type": "number" },
+        "name": { "type": "string" },
+        "distance": { "type": "number" },
+        "movingTime": { "type": "number" },
+        "elapsedTime": { "type": "number" },
+        "totalElevationGain": { "type": "number" },
+        "type": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "averageSpeed": { "type": "number" },
+        "maxSpeed": { "type": "number" },
+        "hasGps": { "type": "boolean" },
+        "manual": { "type": "boolean" }
+      },
+      "required": ["userId", "stravaActivityId", "type"]
+    },
+    "UserNutritionProfile": {
+      "title": "UserNutritionProfile",
+      "description": "User profile specific to consistent nutrition habits",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "goal": { "type": "string" },
+        "goalUpdatedAt": { "type": "string", "format": "date-time" },
+        "currentStreak": { "type": "number" },
+        "bestStreak": { "type": "number" },
+        "weeklyConsistency": { "type": "number" },
+        "monthlyConsistency": { "type": "number" }
+      },
+      "required": ["userId", "goal"]
+    },
+    "MealLog": {
+      "title": "MealLog",
+      "description": "Daily food photo check-in and automated analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "detectedFoods": { "type": "array", "items": { "type": "string" } },
+        "portionEstimate": { "type": "string" },
+        "estimatedCalories": { "type": "number" },
+        "estimatedProteinGrams": { "type": "number" },
+        "estimatedCarbsGrams": { "type": "number" },
+        "estimatedFatGrams": { "type": "number" },
+        "confidenceLevel": { "type": "string" },
+        "detectedCategories": { "type": "array", "items": { "type": "string" } },
+        "adherenceScore": { "type": "number" },
+        "feedbackText": { "type": "string" },
+        "imageHash": { "type": "string" },
+        "isDuplicate": { "type": "boolean" },
+        "fraudFlags": { "type": "array", "items": { "type": "string" } },
+        "isEligibleForStreak": { "type": "boolean" }
+      },
+      "required": ["userId", "imageUrl", "createdAt"]
+    },
+    "DailyNutritionSummary": {
+      "title": "DailyNutritionSummary",
+      "description": "Aggregated nutrition data per day",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "validMealsCount": { "type": "number" },
+        "averageAdherence": { "type": "number" },
+        "streakMaintained": { "type": "boolean" },
+        "consistencyScore": { "type": "number" }
+      },
+      "required": ["userId", "date"]
+    },
+    "WalletTransaction": {
+      "title": "WalletTransaction",
+      "description": "Financial operation recorded for audit and security",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["redemption", "bonus", "payout", "refund"] },
+        "amount": { "type": "number" },
+        "previousBalance": { "type": "number" },
+        "newBalance": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "denied", "processing", "completed", "failed"] },
+        "requestId": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "fraudFlags": { "type": "array", "items": { "type": "string" } },
+        "validationSnapshot": { "type": "object" }
+      },
+      "required": ["userId", "type", "amount", "previousBalance", "newBalance", "createdAt", "status", "requestId"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment transactions for elite challenges",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "challengeId": { "type": "string" },
+        "seasonId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "processing", "rejected"] },
+        "preferenceId": { "type": "string" },
+        "external_reference": { "type": "string" },
+        "paymentId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "challengeId", "amount", "status", "preferenceId", "createdAt"]
+    },
+    "PaymentOrder": {
+      "title": "PaymentOrder",
+      "description": "Payment orders for plans and challenges subscriptions",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "planId": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "processing", "rejected", "cancelled", "refunded", "charged_back"] },
+        "provider": { "type": "string" },
+        "preferenceId": { "type": "string" },
+        "paymentId": { "type": "string" },
+        "externalReference": { "type": "string" },
+        "checkoutUrl": { "type": "string" },
+        "paidAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "rawStatus": { "type": "string" },
+        "riskFlags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["orderId", "userId", "planId", "amount", "currency", "status"]
+    },
+    "UserEntitlement": {
+      "title": "UserEntitlement",
+      "description": "Active subscriptions or plan benefits for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "planId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "suspended", "expired"] },
+        "sourceOrderId": { "type": "string" },
+        "startsAt": { "type": "string", "format": "date-time" },
+        "endsAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "planId", "status", "sourceOrderId"]
+    },
+    "WebhookEvent": {
+      "title": "WebhookEvent",
+      "description": "Inbound webhook notification log",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string" },
+        "provider": { "type": "string" },
+        "type": { "type": "string" },
+        "paymentId": { "type": "string" },
+        "receivedAt": { "type": "string", "format": "date-time" },
+        "processedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" },
+        "payloadHash": { "type": "string" }
+      },
+      "required": ["eventId", "provider", "type", "receivedAt", "status"]
+    },
+    "SeasonRegistration": {
+      "title": "SeasonRegistration",
+      "description": "Information about a user registration in a closed season",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "seasonId": { "type": "string" },
+        "seasonStart": { "type": "string", "format": "date-time" },
+        "seasonEnd": { "type": "string", "format": "date-time" },
+        "registrationDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["WAITING", "ACTIVE", "FINISHED", "CANCELLED"] }
+      },
+      "required": ["userId", "seasonId", "seasonStart", "seasonEnd", "registrationDate", "status"]
+    },
+    "SeasonSettings": {
+      "title": "SeasonSettings",
+      "description": "Seasons start day rules settings",
+      "type": "object",
+      "properties": {
+        "seasonAStartDay": { "type": "number" },
+        "seasonBStartDay": { "type": "number" }
+      },
+      "required": ["seasonAStartDay", "seasonBStartDay"]
+    },
+    "GymCheckin": {
+      "title": "GymCheckin",
+      "description": "Presential manual gym check-in including location and verification status",
+      "type": "object",
+      "properties": {
+        "checkInId": { "type": "string" },
+        "userId": { "type": "string" },
+        "gymId": { "type": "string" },
+        "confirmedAt": { "type": "string", "format": "date-time" },
+        "serverTimestamp": { "type": "string", "format": "date-time" },
+        "userLatitude": { "type": "number" },
+        "userLongitude": { "type": "number" },
+        "gymLatitude": { "type": "number" },
+        "gymLongitude": { "type": "number" },
+        "distanceMeters": { "type": "number" },
+        "gpsAccuracy": { "type": "number" },
+        "deviceId": { "type": "string" },
+        "deviceFingerprint": { "type": "string" },
+        "mockLocationDetected": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["not_started", "checking_location", "eligible", "blocked_out_of_range", "blocked_no_permission", "blocked_low_accuracy", "confirmed", "expired", "cancelled", "suspicious"] },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "linkedWorkoutSessionId": { "type": "string" },
+        "riskFlags": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["checkInId", "userId", "gymId", "confirmedAt", "status", "expiresAt"]
+    },
+    "BiometricMetrics": {
+      "title": "BiometricMetrics",
+      "description": "Historical biometric metrics validated by user workouts",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "workoutId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "type": { "type": "string" },
+        "heartRate": { "type": "number" },
+        "intensity": { "type": "number" },
+        "calories": { "type": "number" },
+        "duration": { "type": "number" },
+        "consistency": { "type": "number" },
+        "tempoScore": { "type": "number" },
+        "cardioScore": { "type": "number" },
+        "energyScore": { "type": "number" },
+        "consistencyScore": { "type": "number" },
+        "pontuacaoJusta": { "type": "number" },
+        "contributeToResearch": { "type": "boolean" }
+      },
+      "required": ["userId", "timestamp"]
+    },
+    "PowerRecord": {
+      "title": "PowerRecord",
+      "description": "User power personal records",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "gymId": { "type": "string" },
+        "gymName": { "type": "string" },
+        "city": { "type": "string" },
+        "exercise": { "type": "string", "enum": ["supino", "agachamento", "terra"] },
+        "weight": { "type": "number" },
+        "date": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "videoStatus": { "type": "string", "enum": ["approved", "manual_review", "rejected"] },
+        "reports": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "userName", "exercise", "weight", "videoStatus"]
+    },
+    "PowerDuel": {
+      "title": "PowerDuel",
+      "description": "Direct match of power records, challenging another athlete",
+      "type": "object",
+      "properties": {
+        "challengerId": { "type": "string" },
+        "challengerName": { "type": "string" },
+        "challengerPhoto": { "type": "string" },
+        "defenderId": { "type": "string" },
+        "defenderName": { "type": "string" },
+        "defenderPhoto": { "type": "string" },
+        "exercise": { "type": "string", "enum": ["supino", "agachamento", "terra"] },
+        "weight": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "completed", "cancelled"] },
+        "createdAt": { "type": "string" },
+        "expiresAt": { "type": "string" },
+        "result": { "type": "string", "enum": ["pending_submissions", "challenger_won", "defender_won", "draw", "cancelled"] },
+        "challengerStatus": { "type": "string", "enum": ["none", "completed", "failed"] },
+        "defenderStatus": { "type": "string", "enum": ["none", "completed", "failed"] }
+      },
+      "required": ["challengerId", "defenderId", "exercise", "weight", "status", "createdAt", "expiresAt"]
+    },
+    "PowerFeedEvent": {
+      "title": "PowerFeedEvent",
+      "description": "Feed of social notifications and sport events",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "eventType": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "exercise": { "type": "string" },
+        "weight": { "type": "number" }
+      },
+      "required": ["userId", "userName", "eventType", "message", "timestamp"]
+    },
+    "WearableConfig": {
+      "title": "WearableConfig",
+      "description": "User connection status, auto-sync configurations and status for wearable devices",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "healthConnectConnected": { "type": "boolean" },
+        "healthConnectPermissions": { "type": "array", "items": { "type": "string" } },
+        "appleHealthConnected": { "type": "boolean" },
+        "appleHealthPermissions": { "type": "array", "items": { "type": "string" } },
+        "stravaConnected": { "type": "boolean" },
+        "autoSync": { "type": "boolean" },
+        "lastSyncTime": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId"]
+    },
+    "WearableSyncLog": {
+      "title": "WearableSyncLog",
+      "description": "Historical audit logs of wearable data synchronizations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "provider": { "type": "string", "enum": ["health_connect", "apple_health", "strava", "garmin", "fitbit"] },
+        "status": { "type": "string", "enum": ["success", "error"] },
+        "syncedCount": { "type": "number" },
+        "duplicatesSkipped": { "type": "number" },
+        "errorMessage": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "provider", "status", "timestamp"]
+    },
+    "WearableActivity": {
+      "title": "WearableActivity",
+      "description": "Standardized wearable activity record captured from integrated providers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "source": { "type": "string", "enum": ["health_connect", "apple_health", "strava"] },
+        "sourceActivityId": { "type": "string" },
+        "activityType": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "durationSeconds": { "type": "number" },
+        "distanceMeters": { "type": "number" },
+        "calories": { "type": "number" },
+        "averageHeartRate": { "type": "number" },
+        "maxHeartRate": { "type": "number" },
+        "steps": { "type": "number" },
+        "averageSpeed": { "type": "number" },
+        "pace": { "type": "string" },
+        "biometricValidated": { "type": "boolean" },
+        "pointsEarned": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "source", "sourceActivityId", "activityType", "startTime"]
+    },
+    "PagarmePayment": {
+      "title": "PagarmePayment",
+      "description": "Payments processed through Pagar.me gateway",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "providerId": { "type": "string" },
+        "plano": { "type": "string" },
+        "planId": { "type": "string" },
+        "valor": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "failed", "refunded", "charged_back"] },
+        "metodoPagamento": { "type": "string", "enum": ["credit_card", "pix", "boleto"] },
+        "data": { "type": "string", "format": "date-time" },
+        "proximaCobranca": { "type": "string", "format": "date-time" },
+        "pixQrCode": { "type": "string" },
+        "pixQrCodeUrl": { "type": "string" },
+        "boletoUrl": { "type": "string" },
+        "boletoBarcode": { "type": "string" },
+        "installments": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "transactionId", "providerId", "plano", "valor", "status", "metodoPagamento", "data"]
+    },
+    "PagarmeSubscription": {
+      "title": "PagarmeSubscription",
+      "description": "Subscriptions created via Pagar.me",
+      "type": "object",
+      "properties": {
+        "subscriptionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "planId": { "type": "string" },
+        "plano": { "type": "string" },
+        "valor": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "pending", "overdue", "cancelled"] },
+        "paymentMethod": { "type": "string", "enum": ["credit_card", "pix", "boleto"] },
+        "startsAt": { "type": "string", "format": "date-time" },
+        "endsAt": { "type": "string", "format": "date-time" },
+        "proximaCobranca": { "type": "string", "format": "date-time" },
+        "providerId": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subscriptionId", "userId", "planId", "plano", "valor", "status", "paymentMethod"]
+    },
+    "PagarmeInvoice": {
+      "title": "PagarmeInvoice",
+      "description": "Invoices generated for subscription cycles",
+      "type": "object",
+      "properties": {
+        "invoiceId": { "type": "string" },
+        "userId": { "type": "string" },
+        "subscriptionId": { "type": "string" },
+        "amount": { "type": "number" },
+        "planId": { "type": "string" },
+        "plano": { "type": "string" },
+        "status": { "type": "string", "enum": ["paid", "pending", "overdue", "cancelled"] },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "providerId": { "type": "string" }
+      },
+      "required": ["invoiceId", "userId", "subscriptionId", "amount", "planId", "status", "dueDate"]
+    },
+    "PagarmePaymentLog": {
+      "title": "PagarmePaymentLog",
+      "description": "Audit trails for payment events",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "action": { "type": "string" },
+        "status": { "type": "string" },
+        "message": { "type": "string" },
+        "provider": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "transactionId", "action", "status", "message", "provider", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/wearable_configs/{userId}": {
+      "schema": "WearableConfig",
+      "description": "User connection status and settings for wearable integrations"
+    },
+    "/wearable_sync_logs/{logId}": {
+      "schema": "WearableSyncLog",
+      "description": "User sync operations audit history"
+    },
+    "/wearable_activities/{activityId}": {
+      "schema": "WearableActivity",
+      "description": "Unified wearable exercises synchronized from provider frameworks"
+    },
+    "/strava_connections/{userId}": {
+      "schema": "StravaConnection",
+      "description": "User Strava tokens"
+    },
+    "/strava_activities/{activityId}": {
+      "schema": "StravaActivity",
+      "description": "Imported Strava activities"
+    },
+    "/system_stats/{statId}": {
+      "schema": "SystemStats",
+      "description": "Global and partitioned statistics"
+    },
+    "/aggregated_rankings/{rankingId}": {
+      "schema": "AggregatedRanking",
+      "description": "Pre-calculated ranking snapshots"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents"
+    },
+    "/workouts/{workoutId}": {
+      "schema": "Workout",
+      "description": "Workout submission documents"
+    },
+    "/gyms/{gymId}": {
+      "schema": "Gym",
+      "description": "Gym documents"
+    },
+    "/redemptions/{redemptionId}": {
+      "schema": "Redemption",
+      "description": "User redemption requests"
+    },
+    "/walletTransactions/{id}": {
+      "schema": "WalletTransaction",
+      "description": "Financial wallet transactions recorded for audit"
+    },
+    "/rankings/{rankingId}": {
+      "schema": "Ranking",
+      "description": "Historical ranking documents"
+    },
+    "/running_stats/{userId}": {
+      "schema": "RunningStats",
+      "description": "Running performance documents per user"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "SocialNotification",
+      "description": "User notification documents"
+    },
+    "/diets/{dietId}": {
+      "schema": "Diet",
+      "description": "Diet logs"
+    },
+    "/user_nutrition_profiles/{userId}": {
+      "schema": "UserNutritionProfile",
+      "description": "User specific nutrition goals and consistency profile"
+    },
+    "/meal_logs/{id}": {
+      "schema": "MealLog",
+      "description": "Logs of user meals verified by AI"
+    },
+    "/daily_nutrition_summaries/{id}": {
+      "schema": "DailyNutritionSummary",
+      "description": "Daily nutrition habit compilation"
+    },
+    "/run_sessions/{sessionId}": {
+      "schema": "RunSession",
+      "description": "Running history sessions"
+    },
+    "/seasons/{seasonId}": {
+      "description": "Seasons for Elite Challenges",
+      "properties": {
+        "name": { "type": "string" },
+        "theme": { "type": "string" },
+        "medalIcon": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "totalPool": { "type": "number" },
+        "athletesCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "upcoming", "past"] }
+      }
+    },
+    "/elite_challenges/{challengeId}": {
+      "description": "Specific distance/time challenges",
+      "properties": {
+        "seasonId": { "type": "string" },
+        "name": { "type": "string" },
+        "km": { "type": "number" },
+        "days": { "type": "number" },
+        "difficulty": { "type": "string" },
+        "rarity": { "type": "string" },
+        "finishRate": { "type": "number" },
+        "entryFee": { "type": "number" },
+        "quotaMultiplier": { "type": "number" }
+      }
+    },
+    "/user_elite_challenges/{id}": {
+      "description": "User participation in an elite challenge",
+      "properties": {
+        "userId": { "type": "string" },
+        "challengeId": { "type": "string" },
+        "seasonId": { "type": "string" },
+        "currentKm": { "type": "number" },
+        "targetKm": { "type": "number" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "streak": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed", "failed"] },
+        "paid": { "type": "boolean" },
+        "estimatedPrize": { "type": "number" }
+      }
+    },
+    "/elite_feed/{id}": {
+      "description": "Social feed for elite activities",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "text": { "type": "string" },
+        "type": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payment transactions for elite challenges"
+    },
+    "/gym_checkins/{checkInId}": {
+      "schema": "GymCheckin",
+      "description": "Manual presential check-ins for workouts"
+    },
+    "/payment_orders/{orderId}": {
+      "schema": "PaymentOrder",
+      "description": "Payment orders for Mercado Pago subscriptions or item checkout"
+    },
+    "/user_entitlements/{entitlementId}": {
+      "schema": "UserEntitlement",
+      "description": "Active user subscription entitlements or plan statuses"
+    },
+    "/webhook_events/{eventId}": {
+      "schema": "WebhookEvent",
+      "description": "Audit trail logging of received webhook events"
+    },
+    "/season_registrations/{id}": {
+      "schema": "SeasonRegistration",
+      "description": "Season registrations for users"
+    },
+    "/season_settings/{id}": {
+      "schema": "SeasonSettings",
+      "description": "Seasons settings and parameters"
+    },
+    "/biometric_metrics/{metricId}": {
+      "schema": "BiometricMetrics",
+      "description": "User's individual biometric historical metrics"
+    },
+    "/power_records/{recordId}": {
+      "schema": "PowerRecord",
+      "description": "User's validated or raw power personal records"
+    },
+    "/power_duels/{duelId}": {
+      "schema": "PowerDuel",
+      "description": "Athlete power duels and disputes records"
+    },
+    "/power_feed_events/{eventId}": {
+      "schema": "PowerFeedEvent",
+      "description": "Social feed of power competitions and milestones"
+    },
+    "/users/{userId}/subscriptions/{subscriptionId}": {
+      "schema": "PagarmeSubscription",
+      "description": "User specific subscription record from Pagar.me"
+    },
+    "/users/{userId}/payments/{paymentId}": {
+      "schema": "PagarmePayment",
+      "description": "User specific payment record from Pagar.me"
+    },
+    "/payments/{paymentId}": {
+      "schema": "PagarmePayment",
+      "description": "Global payment transaction records from Pagar.me"
+    },
+    "/subscriptions/{subscriptionId}": {
+      "schema": "PagarmeSubscription",
+      "description": "Global subscription records from Pagar.me"
+    },
+    "/payment_logs/{logId}": {
+      "schema": "PagarmePaymentLog",
+      "description": "Global payment audit and action logs"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": "PagarmeInvoice",
+      "description": "Global invoice billing records"
+    }
+  }
+}

@@ -1,0 +1,472 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Simplified admin check for list rules to avoid exists()/get() in O(N) loops
+    function isHardcodedAdmin() {
+      return isSignedIn() && request.auth.token.email in ["samuelfsc89@gmail.com", "mucafsc89@gmail.com"];
+    }
+
+    function isAdmin() {
+      return isHardcodedAdmin() || 
+        (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // ===============================================================
+    // Validation Blueprints
+    // ===============================================================
+
+    function isValidUserProfile(data) {
+      return (data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 128) &&
+             (data.email is string && data.email.size() <= 256) &&
+             (data.uid == request.auth.uid) && // Identity Integrity
+             (data.get('role', 'user') == 'user' || (data.get('role', 'user') == 'admin' && data.email in ["samuelfsc89@gmail.com", "mucafsc89@gmail.com"])); // Prevent self-elevated roles except for bootstrapping admin
+    }
+
+    function isValidWorkout(data) {
+      return (data.userId is string && data.userId == request.auth.uid) &&
+             (data.type in ['workout', 'cardio', 'diet', 'recovery']) &&
+             (data.status in ['valid', 'invalid', 'pending', 'suspicious']) &&
+             (data.timestamp is string && data.timestamp.size() <= 64);
+    }
+
+    function isValidPost(data) {
+      return (data.userId is string && data.userId == request.auth.uid) &&
+             (data.imageUrl is string && data.imageUrl.size() <= 2048) &&
+             (data.caption is string && data.caption.size() <= 1024);
+    }
+
+    function isValidStory(data) {
+      return (data.userId is string && data.userId == request.auth.uid) &&
+             (data.imageUrl is string && data.imageUrl.size() <= 2048) &&
+             (data.expiresAt is string && data.expiresAt.size() <= 64);
+    }
+
+    function isValidDiet(data) {
+      return (data.userId is string && data.userId == request.auth.uid) &&
+             (data.createdAt is string && data.createdAt.size() <= 64);
+    }
+
+    // ===============================================================
+    // Collections
+    // ===============================================================
+
+    // Connection Test
+    match /_connection_test_/{docId} {
+      allow read: if isSignedIn();
+    }
+
+    // System Config Collection (For dynamic settings and parameters)
+    match /system_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // System Stats (Pre-calculated global metrics)
+    match /system_stats/{statId} {
+      allow read: if isSignedIn() && isValidId(statId);
+      allow write: if isAdmin();
+    }
+
+    // Aggregated Rankings (Snapshots)
+    match /aggregated_rankings/{rankingId} {
+      allow read: if isSignedIn() && isValidId(rankingId);
+      allow write: if isAdmin();
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get, list: if isSignedIn();
+      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      
+      allow update: if isAdmin() || (
+        isOwner(userId) && 
+        !incoming().diff(existing()).affectedKeys().hasAny([
+          'score', 'weeklyScore', 'monthlyScore', 'streak', 
+          'walletBalance', 'badges', 'achievements', 'positions', 'activeSeason', 
+          'seasonBoost', 'seasonEntryStatus', 'totalEarnings', 'totalWins', 'rankingPosition',
+          'premiumStatus', 'subscriptionStatus', 'boostMultiplier', 'challengeProgress',
+          'role', 'isBanned', 'isSubscribed', 'status', 'seasonStatus', 'nextSeasonStart',
+          'isPro', 'pro', 'plan', 'entitlement',
+          'plano', 'assinatura', 'statusPagamento', 'premium', 'performance', 'currentPlan', 'subscriptionTier'
+        ])
+      ) || (
+        isSignedIn() && 
+        incoming().diff(existing()).affectedKeys().hasOnly(['profileLikes'])
+      );
+      
+      allow delete: if isAdmin() || isOwner(userId);
+
+      match /weeklyStats/{weekId} {
+        allow get, list: if isSignedIn() && (userId == request.auth.uid || isAdmin());
+        allow write: if isAdmin();
+      }
+    }
+
+    // Gyms Collection
+    match /gyms/{gymId} {
+      allow read: if isSignedIn() && isValidId(gymId);
+      allow write: if isAdmin();
+    }
+
+    // Workouts Collection
+    match /workouts/{workoutId} {
+      allow get: if isSignedIn() && isValidId(workoutId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      
+      allow create: if isSignedIn() && isValidId(workoutId) && isValidWorkout(incoming());
+      allow update: if isAdmin() || (isOwner(existing().userId) && isValidWorkout(incoming()));
+      allow delete: if isAdmin();
+    }
+
+    // Diets Collection
+    match /diets/{dietId} {
+      allow get: if isSignedIn() && isValidId(dietId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      
+      allow create: if isSignedIn() && isValidId(dietId) && isValidDiet(incoming());
+      allow update: if isSignedIn() && isOwner(existing().userId) && isValidDiet(incoming());
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // User Nutrition Profiles Collection
+    match /user_nutrition_profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Meal Logs Collection
+    match /meal_logs/{id} {
+      allow get: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow create: if isSignedIn() && isValidId(id) && incoming().userId == request.auth.uid;
+      allow update: if isOwner(existing().userId) || isAdmin();
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // Daily Nutrition Summaries Collection
+    match /daily_nutrition_summaries/{id} {
+      allow get: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow create: if isSignedIn() && isValidId(id) && incoming().userId == request.auth.uid;
+      allow update: if isOwner(existing().userId) || isAdmin();
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // Posts Collection
+    match /posts/{postId} {
+      allow get: if isSignedIn() && isValidId(postId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(postId) && isValidPost(incoming());
+      allow update: if isSignedIn() && (
+        (incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'likedBy'])) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount'])) ||
+        (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['caption', 'imageUrl'])) ||
+        isAdmin()
+      );
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+
+      match /comments/{commentId} {
+        allow get: if isSignedIn() && isValidId(commentId);
+        allow list: if isSignedIn();
+        allow create: if isSignedIn() && isValidId(commentId) && incoming().userId == request.auth.uid;
+        allow delete: if isOwner(resource.data.userId) || isAdmin() || isOwner(get(/databases/$(database)/documents/posts/$(postId)).data.userId);
+      }
+    }
+
+    // Stories Collection
+    match /stories/{storyId} {
+      allow get: if isSignedIn() && isValidId(storyId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(storyId) && isValidStory(incoming());
+      allow update: if isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['viewedBy']);
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // Follows Collection
+    match /follows/{followId} {
+      allow get: if isSignedIn() && isValidId(followId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(followId) && incoming().followerId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.followerId == request.auth.uid;
+    }
+
+    // Rankings Collection
+    match /rankings/{rankingId} {
+      allow read: if isSignedIn() && isValidId(rankingId);
+      allow write: if isAdmin();
+    }
+
+    // Redemptions Collection
+    match /redemptions/{redemptionId} {
+      allow get: if isSignedIn() && isValidId(redemptionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Wallet Transactions Collection (System secured, read-only for clients)
+    match /walletTransactions/{transactionId} {
+      allow get: if isSignedIn() && isValidId(transactionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Payments Collection
+    match /payments/{paymentId} {
+      allow get: if isSignedIn() && isValidId(paymentId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Running Stats
+    match /running_stats/{userId} {
+      allow read: if isSignedIn() && isValidId(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+    }
+
+    // Run Sessions
+    match /run_sessions/{sessionId} {
+      allow read: if isSignedIn() && isValidId(sessionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(sessionId) && incoming().userId == request.auth.uid;
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // Active Activity Sessions
+    match /active_sessions/{sessionId} {
+      allow get, list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(sessionId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(sessionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Photo Fingerprints
+    match /photo_fingerprints/{fingerprint} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Referrals
+    match /referrals/{referralId} {
+      allow read: if isSignedIn() && isValidId(referralId) && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(referralId) && (incoming().referrerUid == request.auth.uid || incoming().refereeUid == request.auth.uid);
+      allow update: if isAdmin();
+    }
+
+    // Elite Seasons
+    match /seasons/{seasonId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Elite Challenges
+    match /elite_challenges/{challengeId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // User Elite Challenges
+    match /user_elite_challenges/{id} {
+      allow get: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow create: if isSignedIn() && isValidId(id) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Elite Social Feed
+    match /elite_feed/{id} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(id);
+      allow create: if isSignedIn() && isValidId(id) && incoming().userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // Activities (Strava/Manual/GPS)
+    match /activities/{activityId} {
+      allow get: if isSignedIn() && isValidId(activityId) && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.user_id == request.auth.uid || isHardcodedAdmin());
+      // Created and updated via server-side API only
+      allow write: if isAdmin();
+    }
+
+    // Wearable Configurations
+    match /wearable_configs/{userId} {
+      allow read: if isSignedIn() && isOwner(userId);
+      allow write: if isSignedIn() && isOwner(userId);
+    }
+
+    // Wearable Sync Logs
+    match /wearable_sync_logs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(logId) && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Wearable Unified Activities
+    match /wearable_activities/{activityId} {
+      allow get: if isSignedIn() && isValidId(activityId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow create: if isSignedIn() && isValidId(activityId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(activityId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Strava Activities
+    match /strava_activities/{activityId} {
+      allow get: if isSignedIn() && isValidId(activityId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Strava Athlete Mappings
+    match /strava_athletes/{athleteId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && (resource.data.recipientId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.recipientId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isValidId(notificationId); 
+      allow update: if isSignedIn() && (resource.data.recipientId == request.auth.uid || isAdmin()) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && (resource.data.recipientId == request.auth.uid || isAdmin());
+    }
+
+    // Gym Check-ins Collection
+    match /gym_checkins/{checkInId} {
+      allow get: if isSignedIn() && isValidId(checkInId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin() || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Payment Orders Collection
+    match /payment_orders/{orderId} {
+      allow get: if isSignedIn() && isValidId(orderId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Pagar.me Payments Collection
+    match /payments/{paymentId} {
+      allow get: if isSignedIn() && isValidId(paymentId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Pagar.me Subscriptions Collection
+    match /subscriptions/{subscriptionId} {
+      allow get: if isSignedIn() && isValidId(subscriptionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Pagar.me Invoices Collection
+    match /invoices/{invoiceId} {
+      allow get: if isSignedIn() && isValidId(invoiceId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Pagar.me Private Logs (Audits Only)
+    match /payment_logs/{logId} {
+      allow get, list: if isSignedIn() && isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Pagar.me Webhooks Collection
+    match /webhooks/{webhookId} {
+      allow get, list: if isSignedIn() && isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // User Entitlements Collection
+    match /user_entitlements/{entitlementId} {
+      allow get: if isSignedIn() && isValidId(entitlementId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Webhook Events Collection
+    match /webhook_events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId) && isAdmin();
+      allow list: if isSignedIn() && isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Biometric Metrics Collection
+    match /biometric_metrics/{metricId} {
+      allow get: if isSignedIn() && isValidId(metricId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow create: if isSignedIn() && isValidId(metricId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(metricId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Power Records (INVICTUS POWER RECORDS)
+    match /power_records/{recordId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(recordId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        isOwner(existing().userId) || 
+        incoming().diff(existing()).affectedKeys().hasOnly(['reports', 'videoStatus']) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Power Duels (INVICTUS POWER DUELS)
+    match /power_duels/{duelId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(duelId) && incoming().challengerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        existing().challengerId == request.auth.uid || 
+        existing().defenderId == request.auth.uid || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Power Feed Events (INVICTUS POWER SOCAL FEED)
+    match /power_feed_events/{eventId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(eventId) && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // Global Safety Net (Fallback)
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

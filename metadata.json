@@ -1,0 +1,6 @@
+{
+  "name": "INVICTUS",
+  "description": "Elite fitness app for premium endurance challenges, competitive gamification, and high-stakes athletic achievements.",
+  "requestFramePermissions": ["camera", "geolocation", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
