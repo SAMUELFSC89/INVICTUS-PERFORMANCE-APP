@@ -1159,7 +1159,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
             >
               <div className="flex justify-between items-center w-full">
                 <span className="text-sm font-bold uppercase tracking-wider text-white">Plano Básico</span>
-                <span className="text-lg font-headline italic font-black text-primary">R$ 9,90<span className="text-[10px] font-normal not-italic text-on-surface-variant">/mês</span></span>
+                <span className="text-lg font-headline italic font-black text-primary">Grátis</span>
               </div>
               <p className="text-[10px] text-on-surface-variant font-medium uppercase mt-1">
                 Acesso total aos treinos diários, periodizações e rankings.
@@ -1246,45 +1246,61 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
           {/* Call to Actions */}
           <div className="space-y-4">
             <div className="bg-surface-variant/10 border border-surface-variant rounded-2xl p-4 text-center space-y-2">
-              <span className="text-[10px] font-black uppercase text-primary tracking-widest">
-                Assinatura In-App Nativa (Google Play / App Store)
-              </span>
-              <p className="text-[9.5px] text-on-surface-variant leading-relaxed">
-                Nenhum gateway externo. Selecione o sistema operacional desejado para validar e simular a compra oficial do seu plano <strong>{selectedPlanId === 'invictus_open' ? 'Básico' : 'Performance'}</strong>:
-              </p>
-            </div>
+<span className="text-[10px] font-black uppercase text-primary tracking-widest">
+{selectedPlanId === 'invictus_open' ? 'Comece Agora, é Grátis!' : 'Assinatura In-App Nativa (Google Play / App Store)'}
+</span>
+<p className="text-[9.5px] text-on-surface-variant leading-relaxed">
+{selectedPlanId === 'invictus_open'
+? 'Sem custo e sem necessidade de cartão. Ative seu acesso ao Plano Básico agora mesmo.'
+: 'Nenhum gateway externo. Selecione o sistema operacional desejado para validar e simular a compra oficial do seu plano Performance:'}
+</p>
+</div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handleVerifyStorePurchase(selectedPlanId, 'android')}
-                disabled={paywallLoading}
-                className="h-14 bg-emerald-500 hover:bg-emerald-400 text-black font-headline italic font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
-              >
-                {paywallLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-black" />
-                ) : (
-                  <>
-                    <span>🤖 Play Store</span>
-                  </>
-                )}
-              </button>
+{selectedPlanId === 'invictus_open' ? (
+<button
+onClick={() => handleVerifyStorePurchase('invictus_open', 'android')}
+disabled={paywallLoading}
+className="w-full h-14 bg-primary hover:bg-primary-hover text-white font-headline italic font-black text-sm rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
+>
+{paywallLoading ? (
+<Loader2 className="h-4 w-4 animate-spin text-white" />
+) : (
+<span>Começar Grátis</span>
+)}
+</button>
+) : (
+<div className="grid grid-cols-2 gap-3">
+<button
+onClick={() => handleVerifyStorePurchase(selectedPlanId, 'android')}
+disabled={paywallLoading}
+className="h-14 bg-emerald-500 hover:bg-emerald-400 text-black font-headline italic font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
+>
+{paywallLoading ? (
+<Loader2 className="h-4 w-4 animate-spin text-black" />
+) : (
+<>
+<span>🤖 Play Store</span>
+</>
+)}
+</button>
 
-              <button
-                onClick={() => handleVerifyStorePurchase(selectedPlanId, 'ios')}
-                disabled={paywallLoading}
-                className="h-14 bg-white hover:bg-white/90 text-black font-headline italic font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
-              >
-                {paywallLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-black" />
-                ) : (
-                  <>
-                    <span> App Store</span>
-                  </>
-                )}
-              </button>
-            </div>
+<button
+onClick={() => handleVerifyStorePurchase(selectedPlanId, 'ios')}
+disabled={paywallLoading}
+className="h-14 bg-white hover:bg-white/90 text-black font-headline italic font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
+>
+{paywallLoading ? (
+<Loader2 className="h-4 w-4 animate-spin text-black" />
+) : (
+<>
+<span> App Store</span>
+</>
+)}
+</button>
+</div>
+)}
 
-            {/* Logout button */}
+{/* Logout button */}
             <button
               onClick={() => auth.signOut()}
               className="w-full h-11 border border-surface-variant hover:border-white text-on-surface-variant hover:text-white font-headline italic font-black rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all mt-4"
