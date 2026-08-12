@@ -798,7 +798,7 @@ export function Settings() {
                         <span className="font-headline italic font-black text-sm uppercase text-on-surface block">INVICTUS OPEN</span>
                         <span className="text-[9px] text-on-surface-variant font-bold uppercase block">SEM SMARTWATCH OBRIGATÓRIO</span>
                       </div>
-                      <p className="text-sm text-primary font-black uppercase pt-2">R$ 9,90 / MÊS</p>
+                      <p className="text-sm text-primary font-black uppercase pt-2">GRÁTIS</p>
                     </button>
 
                     <button
@@ -849,23 +849,33 @@ export function Settings() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button
-                      onClick={() => handleVerifyStorePurchase('android')}
-                      disabled={paymentLoading || (selectedPlan === 'invictus_performance' && (!smartwatchConnected || !smartwatchAgreement))}
-                      className="bg-emerald-500 text-black font-headline italic font-black text-xs uppercase h-12 rounded-xl transition-all flex items-center justify-center gap-1 shadow-md cursor-pointer disabled:opacity-40"
-                    >
-                      {paymentLoading ? <RefreshCw className="animate-spin text-black" size={14} /> : <span>🤖 Google Play</span>}
-                    </button>
+                  {selectedPlan === 'invictus_open' ? (
+              <button
+                onClick={() => handleVerifyStorePurchase('android')}
+                disabled={paymentLoading}
+                className="w-full bg-primary text-white font-headline italic font-black text-xs uppercase h-12 rounded-xl transition-all flex items-center justify-center gap-1 shadow-md cursor-pointer disabled:opacity-40"
+              >
+                {paymentLoading ? <RefreshCw className="animate-spin text-white" size={14} /> : <span>Começar Grátis</span>}
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                onClick={() => handleVerifyStorePurchase('android')}
+                disabled={paymentLoading || (selectedPlan === 'invictus_performance' && (!smartwatchConnected || !smartwatchAgreement))}
+                className="bg-emerald-500 text-black font-headline italic font-black text-xs uppercase h-12 rounded-xl transition-all flex items-center justify-center gap-1 shadow-md cursor-pointer disabled:opacity-40"
+              >
+                {paymentLoading ? <RefreshCw className="animate-spin text-black" size={14} /> : <span>🤖 Google Play</span>}
+              </button>
 
-                    <button
-                      onClick={() => handleVerifyStorePurchase('ios')}
-                      disabled={paymentLoading || (selectedPlan === 'invictus_performance' && (!smartwatchConnected || !smartwatchAgreement))}
-                      className="bg-white text-black font-headline italic font-black text-xs uppercase h-12 rounded-xl transition-all flex items-center justify-center gap-1 shadow-md cursor-pointer disabled:opacity-40"
-                    >
-                      {paymentLoading ? <RefreshCw className="animate-spin text-black" size={14} /> : <span> App Store</span>}
-                    </button>
-                  </div>
+              <button
+                onClick={() => handleVerifyStorePurchase('ios')}
+                disabled={paymentLoading || (selectedPlan === 'invictus_performance' && (!smartwatchConnected || !smartwatchAgreement))}
+                className="bg-white text-black font-headline italic font-black text-xs uppercase h-12 rounded-xl transition-all flex items-center justify-center gap-1 shadow-md cursor-pointer disabled:opacity-40"
+              >
+                {paymentLoading ? <RefreshCw className="animate-spin text-black" size={14} /> : <span> App Store</span>}
+              </button>
+            </div>
+            )}
                 </div>
               )}
             </div>
