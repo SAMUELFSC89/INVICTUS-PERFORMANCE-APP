@@ -69,7 +69,7 @@ export function IGAAuditModal({ isOpen, onClose, auditData, userName }: IGAAudit
 
                 <div className="flex items-baseline justify-between">
                   <div>
-                    <span className="font-headline italic font-black text-5xl text-white">
+                    <span className="font-headline italic font-black text-3xl sm:text-4xl md:text-5xl text-white">
                       {data.igaRanking}
                     </span>
                     <span className="text-zinc-400 font-bold ml-2">PTS</span>
