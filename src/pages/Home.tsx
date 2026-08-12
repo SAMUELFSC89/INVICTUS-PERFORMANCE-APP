@@ -337,12 +337,12 @@ export function Home() {
           </div>
           <div 
             onClick={() => navigate('/wallet')}
-            className="flex items-center gap-1.5 bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-2xl text-primary cursor-pointer active:scale-95 transition-all"
+            className="flex items-center gap-1 bg-primary/10 border border-primary/20 px-2 py-1.5 rounded-2xl text-primary cursor-pointer active:scale-95 transition-all shrink-0"
             title="Carteira Invictus"
           >
-            <DollarSign size={14} className="text-primary font-bold" />
-            <span className="font-headline italic font-black text-xs">
-              R$ {(user.walletBalance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <DollarSign size={14} className="text-primary font-bold shrink-0" />
+            <span className="font-headline italic font-black text-xs whitespace-nowrap">
+              {(user.walletBalance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
