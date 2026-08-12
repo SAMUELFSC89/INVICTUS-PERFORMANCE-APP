@@ -545,7 +545,7 @@ export function Profile() {
               </div>
               
               <div className="space-y-1">
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-baseline gap-2 flex-wrap">
                   <h3 className="font-headline italic font-black text-3xl text-on-surface">98 / 100</h3>
                   <span className="text-[10px] px-2 py-0.5 bg-green-500/10 text-green-500 font-bold border border-green-500/20 rounded-full">CONFIRMADO IA</span>
                 </div>
