@@ -2,6 +2,59 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth } from '../_lib/common.js';
 import { grantProAccessAfterApprovedPayment, revokeProAccess, logPaymentAudit } from '../_lib/payments-service.js';
 
+// URL base da API REST da RevenueCat (usada para checar assinaturas reais do Plano Performance).
+const REVENUECAT_API_URL = 'https://api.revenuecat.com/v1';
+
+interface RevenueCatEntitlement {
+  expires_date: string | null;
+  product_identifier: string;
+  purchase_date: string;
+}
+
+interface RevenueCatSubscriberResponse {
+  subscriber?: {
+    entitlements?: Record<string, RevenueCatEntitlement>;
+  };
+}
+
+/**
+ * Verifica no backend da RevenueCat (fonte da verdade, nunca no cliente) se o usuário
+ * possui a entitlement "performance" ativa. Isso substitui a validação simulada anterior,
+ * que confiava cegamente em um campo "scenario" enviado pelo próprio app.
+ */
+async function checkPerformanceEntitlementActive(firebaseUid: string): Promise<{ active: boolean; raw: RevenueCatSubscriberResponse | null; error?: string }> {
+  const secretKey = process.env.REVENUECAT_SECRET_API_KEY;
+  if (!secretKey) {
+    return { active: false, raw: null, error: 'REVENUECAT_SECRET_API_KEY não configurada no servidor.' };
+  }
+
+  const response = await fetch(`${REVENUECAT_API_URL}/subscribers/${encodeURIComponent(firebaseUid)}`, {
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      // Usuário ainda não tem nenhum registro na RevenueCat (nunca comprou).
+      return { active: false, raw: null };
+    }
+    const text = await response.text().catch(() => '');
+    return { active: false, raw: null, error: `RevenueCat respondeu ${response.status}: ${text}` };
+  }
+
+  const data = (await response.json()) as RevenueCatSubscriberResponse;
+  const entitlement = data.subscriber?.entitlements?.performance;
+
+  if (!entitlement) {
+    return { active: false, raw: data };
+  }
+
+  const isActive = !entitlement.expires_date || new Date(entitlement.expires_date).getTime() > Date.now();
+  return { active: isActive, raw: data };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
@@ -15,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Sessão expirada ou inválida. Conecte-se novamente.' });
   }
 
-  const { planId, platform, purchaseToken, transactionId, scenario = 'approved' } = req.body;
+  const { planId, platform } = req.body;
 
   if (!planId || !platform) {
     return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes: planId e platform são necessários.' });
@@ -29,8 +82,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Plataforma inválida especificada.' });
   }
 
-  const tokenOrTxId = purchaseToken || transactionId || `sim_${Date.now()}`;
-  const orderId = `order_${platform}_${tokenOrTxId.substring(0, 15)}`;
+  const tokenOrTxId = `${planId}_${authUser.uid}_${Date.now()}`;
+  const orderId = `order_${platform}_${tokenOrTxId.substring(0, 40)}`;
 
   try {
     const now = new Date();
@@ -50,7 +103,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       platform,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
-      rawStatus: scenario,
     };
 
     await db.collection('payment_orders').doc(orderId).set(orderDoc);
@@ -63,111 +115,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       newStatus: 'pending',
       eventSource: `store_${platform}`,
       action: 'checkout_created',
-      reason: `Compra de assinatura iniciada na loja oficial ${platform === 'android' ? 'Google Play' : 'App Store'}.`
+      reason: planId === 'invictus_open'
+        ? 'Ativação do Plano Open gratuito solicitada.'
+        : `Verificação de assinatura do Plano Performance solicitada (${platform === 'android' ? 'Google Play' : 'App Store'}).`
     });
 
-    // 2. SERVER-SIDE VALIDATION & ACTION FLOW
-    if (scenario === 'approved' || scenario === 'upgrade' || scenario === 'downgrade' || scenario === 'restored') {
-      console.log(`[Store Verification] Validating purchase with store ${platform} for user ${authUser.uid}`);
-      
-      // Grant Pro access using the authorized backend service
+    // 2. PLANO OPEN: gratuito, liberação imediata, sem loja envolvida.
+    if (planId === 'invictus_open') {
       const result = await grantProAccessAfterApprovedPayment(orderId, tokenOrTxId, `store_${platform}`);
-      
+
       return res.status(200).json({
         success: true,
         status: 'approved',
         orderId,
-        message: 'Compra validada e assinatura ativada com sucesso pelas lojas oficiais!',
+        message: 'Plano Open ativado com sucesso!',
         details: result
       });
-    } 
-    
-    else if (scenario === 'pending') {
-      console.log(`[Store Verification] Purchase is pending validation for user ${authUser.uid}`);
-      
-      await logPaymentAudit({
-        userId: authUser.uid,
-        orderId,
-        paymentId: tokenOrTxId,
-        previousStatus: 'pending',
-        newStatus: 'pending',
-        eventSource: `store_${platform}`,
-        action: 'payment_pending',
-        reason: 'Assinatura aguardando confirmação de fundos da loja.'
-      });
+    }
 
-      return res.status(200).json({
-        success: true,
-        status: 'pending',
-        orderId,
-        message: 'Compra pendente de confirmação pela loja. O acesso será liberado assim que compensado.'
-      });
-    } 
-    
-    else if (scenario === 'cancelled') {
-      console.log(`[Store Verification] User cancelled purchase on ${platform}`);
-      
-      await db.collection('payment_orders').doc(orderId).update({
-        status: 'cancelled',
-        updatedAt: now.toISOString()
-      });
+    // 3. PLANO PERFORMANCE: validação real e obrigatória contra a RevenueCat.
+    // Nunca confiamos em nenhum dado enviado pelo cliente aqui — a fonte da verdade
+    // é a assinatura ativa reportada pela RevenueCat para este usuário.
+    const verification = await checkPerformanceEntitlementActive(authUser.uid);
+
+    if (verification.error) {
+      console.error('[Store Verification] Erro ao consultar RevenueCat:', verification.error);
+      await db.collection('payment_orders').doc(orderId).update({ status: 'error', updatedAt: new Date().toISOString() });
+      return res.status(502).json({ error: 'Não foi possível confirmar a assinatura com a loja no momento. Tente novamente em instantes.' });
+    }
+
+    if (!verification.active) {
+      await db.collection('payment_orders').doc(orderId).update({ status: 'rejected', updatedAt: new Date().toISOString() });
 
       await logPaymentAudit({
         userId: authUser.uid,
         orderId,
         paymentId: tokenOrTxId,
         previousStatus: 'pending',
-        newStatus: 'cancelled',
+        newStatus: 'rejected',
         eventSource: `store_${platform}`,
         action: 'payment_rejected',
-        reason: 'O usuário cancelou a transação na interface de faturamento nativa.'
+        reason: 'Nenhuma assinatura ativa do Plano Performance foi encontrada na RevenueCat para este usuário.'
       });
 
-      return res.status(200).json({
-        success: true,
-        status: 'cancelled',
-        orderId,
-        message: 'A compra foi cancelada pelo usuário ou recusada pela loja.'
+      return res.status(402).json({
+        error: 'Nenhuma assinatura ativa do Plano Performance foi encontrada. Finalize a compra na loja antes de tentar novamente.'
       });
-    } 
-    
-    else if (scenario === 'refunded') {
-      console.warn(`[Store Verification] Simulating refund / chargeback for user ${authUser.uid}`);
-      
-      // Revoke the pro access instantly
-      await revokeProAccess(orderId, tokenOrTxId, 'refunded', `store_${platform}`, 'Compra estornada ou reembolsada na loja.');
-      
-      return res.status(200).json({
-        success: true,
-        status: 'refunded',
-        orderId,
-        message: 'A assinatura foi reembolsada e o acesso Pro foi bloqueado imediatamente.'
-      });
-    } 
-    
-    else if (scenario === 'expired') {
-      console.warn(`[Store Verification] Simulating subscription expiration for user ${authUser.uid}`);
-      
-      // Revoke pro access due to expiration
-      await revokeProAccess(orderId, tokenOrTxId, 'expired', `store_${platform}`, 'Assinatura expirada na loja.');
-      
-      return res.status(200).json({
-        success: true,
-        status: 'expired',
-        orderId,
-        message: 'A assinatura expirou e o acesso Pro foi bloqueado com sucesso.'
-      });
-    } 
-    
-    else {
-      return res.status(400).json({ error: 'Cenário de simulação de compra inválido ou desconhecido.' });
     }
+
+    console.log(`[Store Verification] Assinatura Performance confirmada via RevenueCat para ${authUser.uid}`);
+    const result = await grantProAccessAfterApprovedPayment(orderId, tokenOrTxId, `store_${platform}`);
+
+    return res.status(200).json({
+      success: true,
+      status: 'approved',
+      orderId,
+      message: 'Assinatura do Plano Performance confirmada e ativada com sucesso!',
+      details: result
+    });
 
   } catch (error: any) {
     console.error('[Store Verification Error]', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       error: 'Erro interno ao validar compra nas lojas oficiais de aplicativos.',
-      details: error.message 
+      details: error.message
     });
   }
 }
