@@ -15,6 +15,12 @@ const config: CapacitorConfig = {
       'accounts.google.com'
     ]
   },
+  ios: {
+    contentInset: 'automatic',
+    scrollEnabled: true,
+    allowsLinkPreview: false,
+    limitsNavigationsToAppBoundDomains: false,
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 2000,
