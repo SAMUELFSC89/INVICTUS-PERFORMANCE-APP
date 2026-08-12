@@ -1085,7 +1085,7 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
              </div>
           )}
         </div>
-        <div className="flex flex-col gap-0.5 md:gap-1 overflow-hidden">
+        <div className="flex flex-col gap-0.5 md:gap-1 overflow-hidden min-w-[70px]">
           <div className="flex items-center flex-wrap gap-1 md:gap-2">
             <span className={cn(
               "font-headline italic font-black text-[12px] md:text-sm uppercase tracking-tight truncate max-w-[100px] md:max-w-[140px]",
