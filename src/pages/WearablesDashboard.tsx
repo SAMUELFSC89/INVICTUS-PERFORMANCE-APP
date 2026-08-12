@@ -1122,7 +1122,7 @@ export function WearablesDashboard() {
         <section className="bg-surface-container rounded-2xl p-6 border border-white/5 space-y-4">
           <div className="flex items-center gap-2">
             <Settings className="text-emerald-400" size={18} />
-            <h2 className="text-sm font-black tracking-wider uppercase text-on-surface-variant">ROADMAP: INTEGRAÇÕES DIRETAS DIRETAS</h2>
+            <h2 className="text-sm font-black tracking-wider uppercase text-on-surface-variant">ROADMAP: INTEGRAÇÕES DIRETAS</h2>
           </div>
           <p className="text-xs text-on-surface-variant leading-relaxed">
             Estamos expandindo nossa arquitetura modular para ler dados nativos sem intermediários das seguintes marcas de Smartwatch. Já em fase beta de testes:
