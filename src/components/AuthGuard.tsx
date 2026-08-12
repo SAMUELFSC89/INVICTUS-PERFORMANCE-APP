@@ -756,236 +756,73 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
               </div>
             ) : (
               <div className="space-y-6 bg-surface-container/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 shadow-2xl relative">
-                {/* Progress Bar */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-white/5 rounded-t-3xl overflow-hidden">
-                  <div 
-                    className="h-full bg-primary transition-all duration-500" 
-                    style={{ width: `${(registrationStep / totalSteps) * 100}%` }}
-                  />
-                </div>
+                {/* Header */}
+<div className="flex items-center justify-between mb-4">
+<div className="flex items-center gap-2">
+<button onClick={() => setIsRegistering(false)} className="text-on-surface-variant hover:text-white">
+<ArrowLeft size={20} />
+</button>
+<h2 className="font-headline italic font-black text-xl uppercase tracking-tighter">CRIAR CONTA</h2>
+</div>
+</div>
 
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => registrationStep > 1 ? setRegistrationStep(s => s - 1) : setIsRegistering(false)} className="text-on-surface-variant hover:text-white">
-                      <ArrowLeft size={20} />
-                    </button>
-                    <h2 className="font-headline italic font-black text-xl uppercase tracking-tighter">
-                      {registrationStep === 1 && 'DADOS BÁSICOS'}
-                      {registrationStep === 2 && 'PERFIL FÍSICO'}
-                      {registrationStep === 3 && 'LOCALIZAÇÃO'}
-                      {registrationStep === 4 && 'TERMOS'}
-                    </h2>
-                  </div>
-                  <span className="font-label text-[10px] font-black text-primary uppercase tracking-widest">PASSO {registrationStep}/{totalSteps}</span>
-                </div>
+<form onSubmit={handleRegister} className="space-y-4">
+<div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+<InputGroup icon={<User size={18} />} label="Nome Completo" value={fullName} onChange={setFullName} placeholder="João Silva" />
+<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<InputGroup icon={<Fingerprint size={18} />} label="CPF" value={cpf} onChange={setCpf} placeholder="000.000.000-00" maxLength={14} />
+<InputGroup icon={<Calendar size={18} />} label="Nascimento" value={birthDate} onChange={setBirthDate} type="date" />
+</div>
+<InputGroup icon={<Mail size={18} />} label="Email" value={email} onChange={setEmail} type="email" placeholder="seu@email.com" />
+<InputGroup icon={<Lock size={18} />} label="Senha" value={password} onChange={setPassword} type="password" placeholder="••••••••" />
+<InputGroup icon={<Phone size={18} />} label="WhatsApp" value={whatsapp} onChange={setWhatsapp} placeholder="(11) 99999-9999" />
+<InputGroup icon={<Share2 size={18} />} label="Código de Indicação (Opcional)" value={referralCodeInput} onChange={setReferralCodeInput} placeholder="CÓDIGO-AMIGO" />
 
-                <form onSubmit={handleRegister} className="space-y-6">
-                  {registrationStep === 1 && (
-                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                      <InputGroup icon={<User size={18} />} label="Nome Completo" value={fullName} onChange={setFullName} placeholder="João Silva" />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <InputGroup icon={<Fingerprint size={18} />} label="CPF" value={cpf} onChange={setCpf} placeholder="000.000.000-00" maxLength={14} />
-                        <InputGroup icon={<Calendar size={18} />} label="Nascimento" value={birthDate} onChange={setBirthDate} type="date" />
-                      </div>
-                      <InputGroup icon={<Mail size={18} />} label="Email" value={email} onChange={setEmail} type="email" placeholder="seu@email.com" />
-                      <InputGroup icon={<Lock size={18} />} label="Senha" value={password} onChange={setPassword} type="password" placeholder="••••••••" />
-                      <InputGroup icon={<Phone size={18} />} label="WhatsApp" value={whatsapp} onChange={setWhatsapp} placeholder="(11) 99999-9999" />
-                      <button 
-                        type="button"
-                        onClick={() => setRegistrationStep(2)}
-                        disabled={!fullName || !email || !password || !whatsapp || !cpf || !birthDate}
-                        className="w-full h-14 bg-primary text-white font-headline italic font-black text-lg rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
-                      >
-                        PRÓXIMO
-                      </button>
-                    </div>
-                  )}
+{new Date().getDate() > 1 && new Date().getDate() <= 10 && (
+<div className="bg-primary/10 border border-primary/20 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
+<Zap size={20} className="text-primary fill-primary" />
+<div className="flex-1">
+<p className="text-primary font-black text-[10px] uppercase tracking-wider">Boost de Equilíbrio Ativado!</p>
+<p className="text-white/60 font-medium text-[9px] uppercase leading-tight">Como você entrou no dia {new Date().getDate()}, você ganhará <span className="text-primary font-black">+{Math.round((new Date().getDate() - 1) * 15)}%</span> de pontos em todas as atividades para alcançar o topo!</p>
+</div>
+</div>
+)}
 
-                  {registrationStep === 2 && (
-                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                      <div className="grid grid-cols-2 gap-4">
-                        <InputGroup icon={<User size={18} />} label="Altura (cm)" value={height} onChange={setHeight} type="number" placeholder="175" />
-                        <InputGroup icon={<User size={18} />} label="Peso (kg)" value={weight} onChange={setWeight} type="number" placeholder="75" />
-                      </div>
+<label className="flex items-start gap-3 cursor-pointer group bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
+<input
+type="checkbox"
+checked={termsAccepted}
+onChange={e => setTermsAccepted(e.target.checked)}
+className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
+/>
+<span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed group-hover:text-white transition-colors">
+Li e aceito os <span className="text-primary underline">Termos de Uso</span> e Regras do Desafio.
+</span>
+</label>
 
-                      <div className="space-y-2">
-                        <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Frequência Semanal</label>
-                        <select 
-                          value={weeklyFrequency}
-                          onChange={e => setWeeklyFrequency(e.target.value as any)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
-                        >
-                          <option value="0-2" className="bg-surface-container">0-2 dias</option>
-                          <option value="3-4" className="bg-surface-container">3-4 dias</option>
-                          <option value="5+" className="bg-surface-container">5+ dias</option>
-                        </select>
-                      </div>
+<label className="flex items-start gap-3 cursor-pointer group bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
+<input
+type="checkbox"
+checked={whatsappOptIn}
+onChange={e => setWhatsappOptIn(e.target.checked)}
+className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
+/>
+<span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed group-hover:text-white transition-colors">
+Aceito receber notificações diárias no WhatsApp para lembretes de treino e incentivos de performance.
+</span>
+</label>
 
-                      <div className="space-y-2">
-                        <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Como você se avalia?</label>
-                        <select 
-                          value={physicalSelfAssessment}
-                          onChange={e => setPhysicalSelfAssessment(e.target.value as any)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
-                        >
-                          <option value="acima_do_peso" className="bg-surface-container">Acima do peso</option>
-                          <option value="normal" className="bg-surface-container">Normal</option>
-                          <option value="definido" className="bg-surface-container">Definido</option>
-                          <option value="maromba" className="bg-surface-container">Maromba</option>
-                        </select>
-                      </div>
+{error && <p className="text-error-red text-xs font-bold text-center">{error}</p>}
 
-                      <div className="space-y-2">
-                        <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Qual seu objetivo?</label>
-                        <select 
-                          value={objective}
-                          onChange={e => setObjective(e.target.value as any)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
-                        >
-                          <option value="emagrecer" className="bg-surface-container">Emagrecer</option>
-                          <option value="ganhar_massa" className="bg-surface-container">Ganhar massa</option>
-                          <option value="definir" className="bg-surface-container">Definir</option>
-                        </select>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Sexo Biológico</label>
-                          <select 
-                            value={sex}
-                            onChange={e => setSex(e.target.value as any)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
-                          >
-                            <option value="male" className="bg-surface-container">Masculino</option>
-                            <option value="female" className="bg-surface-container">Feminino</option>
-                          </select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Plano Desejado</label>
-                          <select 
-                            value={preferredPlan}
-                            onChange={e => setPreferredPlan(e.target.value as any)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
-                          >
-                            <option value="open" className="bg-surface-container">Plano Open (R$ 9,99/mês)</option>
-                            <option value="performance" className="bg-surface-container">Plano Performance (R$ 49,90/mês)</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <button 
-                        type="button"
-                        onClick={() => setRegistrationStep(3)}
-                        disabled={!height || !weight}
-                        className="w-full h-14 bg-primary text-white font-headline italic font-black text-lg rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
-                      >
-                        PRÓXIMO
-                      </button>
-                    </div>
-                  )}
-
-                  {registrationStep === 3 && (
-                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                      {error && (
-                        <div className="bg-error-red/10 border border-error-red/20 p-4 rounded-xl">
-                          <p className="text-error-red text-[10px] font-bold uppercase text-center mb-1">{error}</p>
-                          {error.includes('Permissão') && (
-                            <div className="flex flex-col gap-1 items-center mt-2 border-t border-error-red/10 pt-2">
-                              <p className="text-[8px] text-white/60 font-medium uppercase text-center leading-tight">
-                                Toque no cadeado (🔒) ou em (i) na barra de endereços do seu navegador para permitir a localização e tente novamente.
-                              </p>
-                              <button 
-                                onClick={() => window.location.reload()}
-                                className="text-[8px] text-primary font-black underline uppercase"
-                              >
-                                Recarregar Página
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={detectLocation}
-                        disabled={isDetectingLocation}
-                        className="w-full py-6 bg-primary/10 border border-primary/30 rounded-xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/20 transition-all disabled:opacity-50 shadow-lg shadow-primary/5"
-                      >
-                        {isDetectingLocation ? (
-                          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <MapPin size={20} />
-                        )}
-                        {isDetectingLocation ? 'DETECTANDO...' : 'DETECTAR LOCALIZAÇÃO'}
-                      </button>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <InputGroup icon={<MapPin size={18} />} label="Cidade" value={city} onChange={setCity} placeholder="São Paulo" />
-                        <InputGroup icon={<MapPin size={18} />} label="Estado" value={state} onChange={setState} placeholder="SP" maxLength={20} />
-                      </div>
-
-                      <InputGroup icon={<Share2 size={18} />} label="Código de Indicação (Opcional)" value={referralCodeInput} onChange={setReferralCodeInput} placeholder="CÓDIGO-AMIGO" />
-
-                      <button 
-                        type="button"
-                        onClick={() => setRegistrationStep(4)}
-                        disabled={!city || !state}
-                        className="w-full h-14 bg-primary text-white font-headline italic font-black text-lg rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
-                      >
-                        PRÓXIMO
-                      </button>
-                    </div>
-                  )}
-
-                  {registrationStep === 4 && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                      <div className="space-y-4">
-                        {new Date().getDate() > 1 && new Date().getDate() <= 10 && (
-                          <div className="bg-primary/10 border border-primary/20 p-4 rounded-2xl flex items-center gap-3 mb-2 animate-pulse">
-                            <Zap size={20} className="text-primary fill-primary" />
-                            <div className="flex-1">
-                              <p className="text-primary font-black text-[10px] uppercase tracking-wider">Boost de Equilíbrio Ativado!</p>
-                              <p className="text-white/60 font-medium text-[9px] uppercase leading-tight">Como você entrou no dia {new Date().getDate()}, você ganhará <span className="text-primary font-black">+{Math.round((new Date().getDate() - 1) * 15)}%</span> de pontos em todas as atividades para alcançar o topo!</p>
-                            </div>
-                          </div>
-                        )}
-                        <label className="flex items-start gap-3 cursor-pointer group bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
-                          <input 
-                            type="checkbox" 
-                            checked={termsAccepted}
-                            onChange={e => setTermsAccepted(e.target.checked)}
-                            className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
-                          />
-                          <span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed group-hover:text-white transition-colors">
-                            Li e aceito os <span className="text-primary underline">Termos de Uso</span> e Regras do Desafio.
-                          </span>
-                        </label>
-
-                        <label className="flex items-start gap-3 cursor-pointer group bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
-                          <input 
-                            type="checkbox" 
-                            checked={whatsappOptIn}
-                            onChange={e => setWhatsappOptIn(e.target.checked)}
-                            className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
-                          />
-                          <span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed group-hover:text-white transition-colors">
-                            Aceito receber notificações diárias no WhatsApp para lembretes de treino e incentivos de performance.
-                          </span>
-                        </label>
-                      </div>
-
-                      {error && <p className="text-error-red text-xs font-bold text-center">{error}</p>}
-
-                      <button 
-                        type="submit"
-                        disabled={!termsAccepted || loading}
-                        className="w-full h-16 bg-primary text-white font-headline italic font-black text-xl rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
-                      >
-                        {loading ? 'CRIANDO CONTA...' : 'FINALIZAR CADASTRO'}
-                      </button>
-                    </div>
-                  )}
-                </form>
+<button
+type="submit"
+disabled={!fullName || !email || !password || !whatsapp || !cpf || !birthDate || !termsAccepted || loading}
+className="w-full h-16 bg-primary text-white font-headline italic font-black text-xl rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
+>
+{loading ? 'CRIANDO CONTA...' : 'CRIAR CONTA'}
+</button>
+</div>
+</form>
               </div>
             )}
         </div>
