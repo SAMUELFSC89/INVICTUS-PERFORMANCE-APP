@@ -652,7 +652,7 @@ export function Achievements() {
                       {ach.description}
                     </p>
                     <div className="mt-2.5 flex items-center gap-1.5">
-                      <span className="text-[8px] font-mono font-black text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded uppercase">+{ach.points} XP</span>
+                      <span className="text-[8px] font-mono font-black text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded uppercase shrink-0 whitespace-nowrap">+{ach.points} XP</span>
                       {isUnlocked ? (
                         <span className="text-[8px] font-black text-green-400 uppercase tracking-widest flex items-center gap-0.5 font-mono">
                           <Check size={8} strokeWidth={4} /> OBTIDO
