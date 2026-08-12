@@ -18,6 +18,7 @@ import {
 } from '../firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, onSnapshot } from 'firebase/firestore';
 import { getCurrentLocation } from '../lib/locationUtils';
+import { purchasePerformanceSubscription } from '../lib/revenuecat';
 import { UserProfile } from '../types';
 import { fitnessService } from '../services/fitnessService';
 import { Mail, Lock, User, Phone, MapPin, CheckCircle, ArrowLeft, Share2, ExternalLink, Zap, Calendar, Fingerprint, CreditCard, AlertTriangle, Loader2, LogOut, RefreshCw, Sparkles } from 'lucide-react';
@@ -1079,53 +1080,53 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
 
   if (!isPaid) {
     const handleVerifyStorePurchase = async (planId: string, platform: 'android' | 'ios') => {
-      setPaywallLoading(true);
-      setPaywallError('');
-      setPaymentCheckMsg('');
-      try {
-        const token = await auth.currentUser?.getIdToken();
-        if (!token) {
-          throw new Error('Sessão inválida. Por favor, saia e faça login novamente.');
-        }
-        
-        const mockPurchaseToken = `token_${platform}_${Math.random().toString(36).substring(2, 11)}`;
-        const mockTransactionId = `tx_${platform}_${Math.random().toString(36).substring(2, 11)}`;
-        
-        const response = await fetch('/api/payments/verify-purchase', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            planId,
-            platform,
-            purchaseToken: mockPurchaseToken,
-            transactionId: mockTransactionId,
-            scenario: 'approved'
-          })
-        });
-        
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Erro ao validar a assinatura.');
-        }
-        
-        if (data.success && data.status === 'approved') {
-          setPaymentCheckMsg('Assinatura ativada com sucesso pelas lojas oficiais! Liberando acesso...');
-          if (refreshUser) {
-            await refreshUser();
-          }
-        } else {
-          throw new Error('Falha na validação do recibo de compra.');
-        }
-      } catch (err: any) {
-        console.error('[Store Purchase Error]', err);
-        setPaywallError(err.message || 'Falha ao processar assinatura.');
-      } finally {
-        setPaywallLoading(false);
+    setPaywallLoading(true);
+    setPaywallError('');
+    setPaymentCheckMsg('');
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        throw new Error('Sessão inválida. Por favor, saia e faça login novamente.');
       }
-    };
+
+      // Plano Performance: executa a compra real na loja (Google Play/App Store)
+      // antes de pedir ao backend para confirmar. O Plano Open é gratuito e nunca
+      // passa por nenhuma loja.
+      if (planId === 'invictus_performance') {
+        await purchasePerformanceSubscription();
+      }
+
+      const response = await fetch('/api/payments/verify-purchase', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ planId, platform })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao validar a assinatura.');
+      }
+
+      if (data.success && data.status === 'approved') {
+        setPaymentCheckMsg(planId === 'invictus_open'
+          ? 'Plano Open ativado com sucesso! Liberando acesso...'
+          : 'Assinatura ativada com sucesso pelas lojas oficiais! Liberando acesso...');
+        if (refreshUser) {
+          await refreshUser();
+        }
+      } else {
+        throw new Error('Falha na validação do recibo de compra.');
+      }
+    } catch (err: any) {
+      console.error('[Store Purchase Error]', err);
+      setPaywallError(err.message || 'Falha ao processar assinatura.');
+    } finally {
+      setPaywallLoading(false);
+    }
+  };
 
     return (
       <div className="min-h-screen bg-background text-on-background flex flex-col items-center justify-center p-4 md:p-6 select-none font-sans">
