@@ -137,7 +137,7 @@ export function PublicProfile() {
             <div className="flex-grow text-center md:text-left space-y-6">
               <div className="space-y-4">
                 <div className="flex flex-col md:flex-row md:items-center gap-4 justify-center md:justify-start">
-                  <h2 className="font-headline italic font-black text-4xl md:text-6xl uppercase tracking-tighter text-on-surface">
+                  <h2 className="font-headline italic font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tighter text-on-surface">
                     {user.displayName}
                   </h2>
                   {!isMe && (
@@ -282,7 +282,7 @@ export function PublicProfile() {
                 </div>
               </div>
               <div className="text-right">
-                <span className="block font-headline italic font-black text-5xl text-primary leading-none">#{user.positions.national || '?'}</span>
+                <span className="block font-headline italic font-black text-3xl sm:text-4xl md:text-5xl text-primary leading-none">#{user.positions.national || '?'}</span>
                 <span className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">RANK NACIONAL</span>
               </div>
             </div>
