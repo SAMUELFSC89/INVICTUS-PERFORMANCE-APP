@@ -944,7 +944,7 @@ export function PowerModule() {
               <span className="w-2.5 h-2.5 rounded-full bg-primary animate-ping shrink-0" />
               <p className="text-[9px] font-black text-primary uppercase tracking-widest leading-none">INVICTUS POWER SYSTEM</p>
             </div>
-            <h1 className="font-headline italic font-black text-3xl md:text-4xl text-white uppercase mt-1 leading-none tracking-tight">
+            <h1 className="font-headline italic font-black text-2xl md:text-4xl text-white uppercase mt-1 leading-none tracking-tight">
               POWER RECORDS & DUELS
             </h1>
             <p className="text-[10px] text-on-surface-variant font-semibold uppercase mt-1">
