@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const now = new Date();
-    const amount = planId === 'invictus_performance' ? 49.90 : 9.90;
+    const amount = planId === 'invictus_performance' ? 49.90 : 0;
 
     // Create the payment order record
     const orderDoc = {
