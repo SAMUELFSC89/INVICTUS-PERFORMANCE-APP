@@ -1,4 +1,5 @@
 import { BaseRepository } from './base-repository.js';
+import { FieldValue } from '../_lib/common.js';
 
 export interface UserProfile {
   id?: string;
@@ -24,12 +25,16 @@ export class UserRepository extends BaseRepository<UserProfile> {
   }
 
   async addXP(userId: string, xpAmount: number): Promise<{ newXP: number; newLevel: number }> {
-    const user = await this.findById(userId);
-    const currentXP = user?.xp || 0;
-    const newXP = currentXP + xpAmount;
+    // Incremento atomico via FieldValue.increment em vez de findById + update
+    // (read-then-write). O padrao anterior causava lost updates em chamadas
+    // concorrentes (duas requisicoes lendo o mesmo xp antes de qualquer uma
+    // escrever), permitindo XP duplicado/perdido. Ver auditoria de integridade.
+    const userRef = this.collection.doc(userId);
+    await userRef.set({ xp: FieldValue.increment(xpAmount) }, { merge: true });
+    const updatedSnap = await userRef.get();
+    const newXP = updatedSnap.data()?.xp || 0;
     const newLevel = Math.floor(newXP / 1000) + 1;
-
-    await this.update(userId, { xp: newXP, level: newLevel });
+    await this.update(userId, { level: newLevel });
     return { newXP, newLevel };
   }
 }
