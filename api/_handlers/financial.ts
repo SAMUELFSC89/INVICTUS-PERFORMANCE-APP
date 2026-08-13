@@ -1,7 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from '../_lib/common.js';
 import { WalletEngine } from '../_lib/wallet-engine.js';
-import { ConversionEngine } from '../_lib/conversion-engine.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -18,19 +17,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 1. GET Wallet Summary
     if (req.method === 'GET' && (!action || action === 'summary')) {
       const wallet = await WalletEngine.getWallet(auth.uid);
-      const config = await ConversionEngine.getConfig();
-      const brlEquivalent = ConversionEngine.coinsToBrl(wallet.redeemableBalance, config.coinsPerBrl);
+      const config = await WithdrawalEngine.getConfig();
 
       return res.status(200).json({
         success: true,
         wallet,
         config: {
-          coinsPerBrl: config.coinsPerBrl,
-          minWithdrawalCoins: config.minWithdrawalCoins,
-          maxDailyWithdrawalCoins: config.maxDailyWithdrawalCoins,
+          minWithdrawalAmount: config.minWithdrawalAmount,
+          maxDailyWithdrawalAmount: config.maxDailyWithdrawalAmount,
           enabled: config.enabled
-        },
-        brlEquivalent
+        }
       });
     }
 
@@ -41,25 +37,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, transactions });
     }
 
-    // 3. GET/POST Convert Preview
-    if (action === 'convert') {
-      const coinsAmount = Number(req.query.coins || req.body.coins || 0);
-      const config = await ConversionEngine.getConfig();
-      const brl = ConversionEngine.coinsToBrl(coinsAmount, config.coinsPerBrl);
-      return res.status(200).json({
-        success: true,
-        coinsAmount,
-        brlAmount: brl,
-        rate: config.coinsPerBrl
-      });
-    }
-
-    // 4. POST Request PIX Withdrawal
+    // 3. POST Request PIX Withdrawal (amount is in R$ / Reais directly)
     if (req.method === 'POST' && (action === 'withdraw' || req.url.includes('/withdraw'))) {
-      const { coinsAmount, pixKey, pixKeyType, deviceId } = req.body;
+      const { amount, pixKey, pixKeyType, deviceId } = req.body;
       const withdrawal = await WithdrawalEngine.requestWithdrawal({
         userId: auth.uid,
-        coinsAmount: Number(coinsAmount),
+        amount: Number(amount),
         pixKey: String(pixKey),
         pixKeyType: pixKeyType || 'cpf',
         deviceId
@@ -67,12 +50,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({
         success: true,
-        message: 'Solicitação de saque via PIX enviada com sucesso! O valor de IV Coins foi retido em segurança durante a análise.',
+        message: 'Solicitação de saque via PIX enviada com sucesso! O valor foi retido em segurança durante a análise.',
         withdrawal
       });
     }
 
-    // 5. GET User Withdrawals List
+    // 4. GET User Withdrawals List
     if (req.method === 'GET' && action === 'withdrawals') {
       const withdrawals = await WithdrawalEngine.getUserWithdrawals(auth.uid);
       return res.status(200).json({ success: true, withdrawals });
