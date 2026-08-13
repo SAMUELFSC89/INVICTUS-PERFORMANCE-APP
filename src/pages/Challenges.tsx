@@ -20,6 +20,7 @@ import { getCurrentLocation } from '../lib/locationUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection } from '../components/ActivityHistorySection';
+import { HabitTrackerSection } from '../components/HabitTrackerSection';
 import { PowerModule } from './PowerModule';
 
 export type ChallengeCategory = 
@@ -801,6 +802,11 @@ export function Challenges() {
           )}
         </div>
       )}
+
+      {/* CRIAR HÁBITO — vinculado exclusivamente à área de Cardio/Desafios */}
+      <div className="mb-4">
+        <HabitTrackerSection />
+      </div>
 
       {/* HISTÓRICO DE ATIVIDADES NO FIM DA ABA DESAFIOS */}
       <ActivityHistorySection />
