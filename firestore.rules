@@ -462,6 +462,19 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Habit Goals ("Criar Habito") — todo o acesso passa exclusivamente pelo
+    // backend (Admin SDK) via /api/habits, que aplica a regra de "surpresa"
+    // (esconde metas futuras/bloqueadas antes de responder ao cliente).
+    // Acesso direto via SDK do cliente e sempre negado nesta colecao e em suas
+    // subcolecoes, mesmo para o dono do documento.
+    match /habit_goals/{goalId} {
+      allow read, write: if false;
+
+      match /{subcollection=**} {
+        allow read, write: if false;
+      }
+    }
+
     // ===============================================================
     // Global Safety Net (Fallback)
     // ===============================================================
