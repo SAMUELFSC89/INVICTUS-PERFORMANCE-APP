@@ -119,7 +119,26 @@ export class AdminService {
     return { success: true, message: `Saque ${withdrawalId} atualizado para ${status}.`, withdrawal: updated };
   }
 
-  async upsertEntity(type: 'mission' | 'sponsor_challenge' | 'store_item', id: string | undefined, data: Record<string, any>) {
+  async processWithdrawalPayment(reviewerId: string, withdrawalId: string) {
+    if (!withdrawalId) {
+      throw new AppError('withdrawalId é obrigatório.', 400);
+    }
+
+    const updated: any = await WithdrawalEngine.processPayment(withdrawalId, reviewerId);
+
+    await logEvent({
+      severity: 'INFO',
+      category: 'payment_logs',
+      message: 'Saque PIX ' + withdrawalId + ' processado via Asaas (transferId: ' + updated.providerTransferId + ') por Admin (' + reviewerId + ')',
+      userId: updated.userId,
+      route: '/api/admin',
+      details: { withdrawalId, amount: updated.amount, providerTransferId: updated.providerTransferId, providerStatus: updated.providerStatus }
+    });
+
+    return { success: true, message: 'Pagamento PIX de R$ ' + updated.amount.toFixed(2) + ' enviado via Asaas.', withdrawal: updated };
+  }
+
+    async upsertEntity(type: 'mission' | 'sponsor_challenge' | 'store_item', id: string | undefined, data: Record<string, any>) {
     const collectionMap: Record<string, string> = {
       mission: 'missions',
       sponsor_challenge: 'sponsor_challenges',
