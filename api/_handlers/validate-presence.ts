@@ -8,6 +8,7 @@ import {
 import { logEvent } from '../_lib/observability.js';
 import { GoogleGenAI } from "@google/genai";
 import { calculateWeeklyIGA, IGASession } from '../../src/core/iga/index.js';
+import { readActiveHabitGoal, applyHabitProgressWithGoal } from '../_lib/habit-integration.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -619,6 +620,11 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       }
     }
 
+    // Habit integrity: read (not write) the active habit goal, if any, BEFORE
+    // any write is issued in this transaction — Firestore requires all
+    // transaction.get() calls to happen before any set()/update().
+    const habitGoalDoc = await readActiveHabitGoal(transaction, userId);
+
     if (xpAwarded > 0) {
       weeklyStatsData.totalPoints = (weeklyStatsData.totalPoints || 0) + xpAwarded;
       weeklyStatsData.updatedAt = FieldValue.serverTimestamp();
@@ -646,5 +652,24 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       },
       createdAt: FieldValue.serverTimestamp()
     });
+
+    // Habit integrity hook: apply progress toward an active "Criar Hábito" goal
+    // in the SAME transaction/commit as the score, using the workout's own id
+    // as the idempotency key (habit-integration.ts dedupes on appliedActivityIds).
+    // Only real, scoring-eligible, approved activities can advance a habit —
+    // pending/duplicate-capped/rejected activities never do.
+    if (finalDecision === 'approved' && isScoringEligible) {
+      try {
+        applyHabitProgressWithGoal(transaction, habitGoalDoc, {
+          activityId: workoutDocRef.id,
+          distanceKm: currentKm,
+          durationSec: timeSeconds || 0,
+          timestamp: nowIso,
+        });
+      } catch (habitErr) {
+        // Never let habit-progress logic break the core score commit.
+        console.error('[habit-integration] failed to apply progress', habitErr);
+      }
+    }
   });
 }
