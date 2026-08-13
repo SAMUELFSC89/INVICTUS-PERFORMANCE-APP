@@ -22,6 +22,27 @@ export class ScoreRepository {
   }
 
   /**
+   * Verificar se uma atividade (por eventId) ja foi processada e pontuada.
+   * Usado para garantir idempotencia: reprocessar o mesmo evento (retry,
+   * webhook duplicado, re-sync do Strava) nao deve incrementar o placar
+   * do usuario de novo. Ver ScoreEngine.process().
+   */
+  static async getActivityScore(eventId: string): Promise<ActivityScore | null> {
+    try {
+      if (db && typeof db.collection === 'function') {
+        const snap = await db.collection('activity_scores').doc(eventId).get();
+        if (snap.exists) {
+          return snap.data() as ActivityScore;
+        }
+      }
+      return null;
+    } catch (error) {
+      scoreLogger.error({ error, eventId }, 'Failed to check existing activity score');
+      return null;
+    }
+  }
+
+  /**
    * Atualizar stats do usuário
    */
   static async updateUserStats(userId: string, scoreEarned: number): Promise<void> {
