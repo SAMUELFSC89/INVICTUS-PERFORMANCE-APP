@@ -55,6 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  let pendingCheckRef: any;
   try {
     if (!db) {
       return res.status(500).json({
@@ -64,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 1. Fetch the pending check record
-    const pendingCheckRef = db.collection('pending_presence_checks').doc(presenceCheckId);
+    pendingCheckRef = db.collection('pending_presence_checks').doc(presenceCheckId);
     const pendingCheckSnap = await pendingCheckRef.get();
 
     if (!pendingCheckSnap.exists) {
@@ -99,6 +100,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         success: false,
         userMessage: "Tempo limite de 15 minutos expirado. Realize uma nova atividade para registrar seus pontos."
       });
+    }
+
+    // Reivindicar atomicamente este registro ANTES de qualquer trabalho lento
+    // (a verificacao de vivacidade/identidade via IA abaixo pode levar varios
+    // segundos). Sem isso, duas requisicoes quase simultaneas para o mesmo
+    // presenceCheckId podiam passar pela checagem de status acima (uma leitura
+    // simples, nao atomica) e as duas seguirem para pontuar a mesma atividade
+    // duas vezes (XP duplicado). A transacao abaixo relê o status de forma
+    // atomica e so permite que o primeiro chamador reivindique o registro.
+    try {
+      await db.runTransaction(async (transaction: any) => {
+        const freshSnap = await transaction.get(pendingCheckRef);
+        const freshData = freshSnap.data() || {};
+        if (!freshSnap.exists || freshData.status !== 'pending') {
+          throw new Error('ALREADY_CLAIMED');
+        }
+        transaction.update(pendingCheckRef, { status: 'processing', claimedAt: FieldValue.serverTimestamp() });
+      });
+    } catch (claimErr: any) {
+      if (claimErr?.message === 'ALREADY_CLAIMED') {
+        return res.status(409).json({
+          success: false,
+          userMessage: "Esta verificacao de presenca ja esta sendo processada ou ja foi concluida."
+        });
+      }
+      throw claimErr;
     }
 
     const userId = auth.uid;
@@ -303,6 +330,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error: any) {
     console.error('[Presence Checker Endpoint Error]:', error);
+    // Se reivindicamos este registro (status='processing') mas falhamos antes
+    // de gravar uma decisao final, devolvemos para 'pending' para permitir
+    // uma nova tentativa. Se a decisao final ja foi gravada, NAO mexemos no
+    // status (evita reabrir uma verificacao ja pontuada e causar XP duplicado).
+    try {
+      if (pendingCheckRef) {
+        const recheckSnap = await pendingCheckRef.get();
+        if (recheckSnap.exists && recheckSnap.data()?.status === 'processing') {
+          await pendingCheckRef.update({ status: 'pending' });
+        }
+      }
+    } catch (_) {}
+
     return res.status(500).json({
       success: false,
       userMessage: error.message || "Erro inesperado ao validar sua foto de presença."
