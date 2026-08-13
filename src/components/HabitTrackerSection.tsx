@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Target, Lock, CheckCircle2, TrendingUp, X, Loader2, Flame,
-  ChevronRight, Sparkles, AlertCircle
+  ChevronRight, Sparkles, AlertCircle, Trophy, Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -9,9 +9,11 @@ import {
   getActiveHabit,
   createHabit,
   cancelHabit,
+  revealNextMilestone,
   HabitGoal,
   HabitGoalType,
 } from '../services/habitService';
+import { HabitShareCard } from './HabitShareCard';
 
 const GOAL_TYPE_OPTIONS: { value: HabitGoalType; label: string }[] = [
   { value: 'start_running', label: 'Começar a correr' },
@@ -37,6 +39,9 @@ export function HabitTrackerSection() {
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+const [revealing, setRevealing] = useState(false);
+const [celebrationText, setCelebrationText] = useState<string | null>(null);
+const [showShareCard, setShowShareCard] = useState(false);
 
   const [goalType, setGoalType] = useState<HabitGoalType>('start_running');
   const [targetDistanceKm, setTargetDistanceKm] = useState('5');
@@ -91,6 +96,21 @@ export function HabitTrackerSection() {
       setError(e?.message || 'Não foi possível cancelar o hábito.');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleReveal = async () => {
+    if (!habit) return;
+    setRevealing(true);
+    setError(null);
+    try {
+      const result = await revealNextMilestone(habit.id);
+      setHabit(result.habit);
+      setCelebrationText(result.celebrationText);
+    } catch (e: any) {
+      setError(e?.message || 'Não foi possível revelar o próximo desafio.');
+    } finally {
+      setRevealing(false);
     }
   };
 
@@ -193,6 +213,43 @@ export function HabitTrackerSection() {
           </div>
         )}
 
+        {habit.pendingReveal && !celebrationText && (
+          <div className="bg-gradient-to-br from-primary/20 to-black/20 border border-primary/30 rounded-xl p-4 space-y-3 text-center">
+            <Trophy size={28} className="mx-auto text-yellow-400" />
+            <p className="text-sm font-bold text-white">🎉 Meta concluída! Você acaba de desbloquear uma nova etapa da sua evolução.</p>
+            <button
+              onClick={handleReveal}
+              disabled={revealing}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-sm transition-colors disabled:opacity-60"
+            >
+              {revealing ? <Loader2 size={14} className="animate-spin" /> : '[ REVELAR PRÓXIMA META ]'}
+            </button>
+          </div>
+        )}
+
+        {celebrationText && (
+          <div className="bg-black/20 border border-primary/20 rounded-xl p-4 space-y-2 text-center">
+            <Sparkles size={24} className="mx-auto text-primary" />
+            <p className="text-[11px] font-bold text-primary uppercase tracking-wide">Novo desafio</p>
+            <p className="text-sm text-white">{celebrationText}</p>
+            <button
+              onClick={() => setCelebrationText(null)}
+              className="text-xs text-text-secondary hover:text-white underline"
+            >
+              Continuar
+            </button>
+          </div>
+        )}
+
+        {(habit.status === 'active' || habit.status === 'completed') && (
+          <button
+            onClick={() => setShowShareCard(true)}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-white/10 text-text-secondary hover:text-white hover:bg-white/5 text-xs font-semibold transition-colors"
+          >
+            <Share2 size={14} /> COMPARTILHAR EVOLUÇÃO
+          </button>
+        )}
+
         {habit.status === 'completed' && (
           <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-3 flex items-center gap-2 text-emerald-400 text-xs font-semibold">
             <CheckCircle2 size={14} />
@@ -205,6 +262,9 @@ export function HabitTrackerSection() {
             <AlertCircle size={12} /> {error}
           </div>
         )}
+      {showShareCard && (
+        <HabitShareCard habit={habit} onClose={() => setShowShareCard(false)} />
+      )}
       </div>
     );
   }
