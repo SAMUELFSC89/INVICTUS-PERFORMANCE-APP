@@ -1,6 +1,7 @@
 import { db, FieldValue } from './common.js';
 import { WalletEngine } from './wallet-engine.js';
 import { PIXWithdrawal, WithdrawalStatus, WithdrawalConfig } from '../../src/types.js';
+import { AsaasClient } from './asaas-client.js';
 
 export const DEFAULT_WITHDRAWAL_CONFIG: WithdrawalConfig = {
   minWithdrawalAmount: 20, // R$ 20,00
@@ -236,5 +237,88 @@ export class WithdrawalEngine {
 
     await docRef.set(updated, { merge: true });
     return { ...withdrawal, ...updated };
+  }
+
+  static async processPayment(withdrawalId: string, reviewerId: string): Promise<PIXWithdrawal> {
+    if (!db) throw new Error('Database not initialized');
+    const docRef = db.collection('withdrawals').doc(withdrawalId);
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) throw new Error('Solicitação de saque não encontrada.');
+    const withdrawal = docSnap.data() as PIXWithdrawal;
+
+    if (withdrawal.status !== 'pending' && withdrawal.status !== 'under_review' && withdrawal.status !== 'approved') {
+      throw new Error("Não é possível processar pagamento: saque está com status '" + withdrawal.status + "'.");
+    }
+
+    // 1. Dispara a transferência PIX real via Asaas ANTES de mexer no saldo.
+    //    Se isso falhar, nada foi debitado e o admin pode tentar novamente.
+    const transfer = await AsaasClient.transferPix({
+      value: withdrawal.amount,
+      pixKey: withdrawal.pixKey,
+      pixKeyType: withdrawal.pixKeyType,
+      description: 'Saque Invictus Performance - ' + withdrawal.userDisplayName
+    });
+
+    // 2. Só depois do Asaas aceitar a transferência, finaliza o bloqueio
+    //    (remove definitivamente do blockedBalance).
+    await WalletEngine.resolveWithdrawalHold(withdrawal.userId, withdrawal.amount, withdrawalId, 'pay');
+
+    const updated: any = {
+      status: 'paid',
+      updatedAt: new Date().toISOString(),
+      processedAt: new Date().toISOString(),
+      reviewerId,
+      paymentProvider: 'asaas',
+      providerTransferId: transfer.id,
+      providerStatus: transfer.status
+    };
+
+    await docRef.set(updated, { merge: true });
+    return { ...withdrawal, ...updated };
+  }
+
+  static async handleAsaasTransferWebhook(
+    transferId: string,
+    event: string,
+    providerStatus: string,
+    failureReason?: string
+  ): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
+    const snap = await db.collection('withdrawals').where('providerTransferId', '==', transferId).limit(1).get();
+
+    if (snap.empty) {
+      console.warn('[WithdrawalEngine] Webhook do Asaas recebido para transferId desconhecido:', transferId);
+      return;
+    }
+
+    const doc = snap.docs[0];
+    const withdrawal = doc.data() as PIXWithdrawal;
+    const failed = event === 'TRANSFER_FAILED' || providerStatus === 'FAILED' || providerStatus === 'CANCELLED';
+
+    if (failed) {
+      // A transferência não foi concluída de fato: estorna o valor para o saldo
+      // disponível do atleta, já que ele nunca recebeu o dinheiro.
+      await WalletEngine.creditCoins({
+        userId: withdrawal.userId,
+        amount: withdrawal.amount,
+        category: 'redeemable',
+        origin: 'withdrawal_refund',
+        description: 'Estorno automático: falha na transferência PIX via Asaas (' + (failureReason || 'motivo não informado') + ')',
+        destination: 'Carteira (Estorno)'
+      });
+
+      await doc.ref.set({
+        status: 'rejected',
+        providerStatus: providerStatus || 'FAILED',
+        adminNote: 'Transferência falhou no Asaas: ' + (failureReason || 'sem detalhes'),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } else {
+      await doc.ref.set({
+        providerStatus: providerStatus || event,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
   }
 }
