@@ -6,7 +6,7 @@ import { ScoreRepository } from './repositories/score-repository.js';
 import { ScoreReporter } from './reporters/score-reporter.js';
 import { scoreLogger } from '../logger.js';
 import { SCORE_CONFIG, TrainingGoal } from '../score-config.js';
-import { RULE_VERSION, ENGINE_VERSION } from './events.js';
+import { RULE_VERSION, ENGINE_VERSION, EventLogService } from './events.js';
 
 export class ScoreEngine {
   /**
@@ -21,7 +21,30 @@ export class ScoreEngine {
     try {
       scoreLogger.info({ eventId: event.id, source: event.source }, 'Score processing started');
 
-      // 1. Validar atividade
+      // 0. Guarda de idempotencia: se este evento (por userId+source+activityId) ja
+// foi processado com sucesso antes, nao pontuar de novo. Isso evita XP/score
+// duplicado em retries do cliente, webhooks reentregues (Strava) e cliques
+// repetidos em "Sincronizar".
+const idempotencyKey = EventLogService.generateIdempotencyKey(userId, event.id, event.source);
+const alreadyProcessed = await ScoreRepository.getActivityScore(event.id);
+if (alreadyProcessed) {
+  scoreLogger.info({ eventId: event.id, userId, idempotencyKey }, 'Score processing skipped: event already processed (idempotent)');
+  await EventLogService.markEventProcessed(idempotencyKey, 'ALREADY_PROCESSED', Date.now() - startTime).catch(() => {});
+  return {
+    earned: alreadyProcessed.totalScore,
+    report: ScoreReporter.generateReport(
+      event.id,
+      alreadyProcessed.baseScore,
+      alreadyProcessed.bonusScore,
+      alreadyProcessed.totalScore,
+      alreadyProcessed.multipliers,
+      Date.now() - startTime
+    )
+  };
+}
+await EventLogService.logEventReceived(event, idempotencyKey).catch(() => {});
+
+// 1. Validar atividade
       const validationResult = ActivityValidator.validateForScoring(event.payload);
       if (!validationResult.valid) {
         throw new Error(`Validation failed: ${validationResult.errors.join(', ')}`);
@@ -143,6 +166,7 @@ export class ScoreEngine {
         processingTimeMs
       }, 'Score processing completed');
 
+      await EventLogService.markEventProcessed(idempotencyKey, 'SUCCESS', processingTimeMs).catch(() => {});
       return {
         earned: totalScore,
         report
@@ -155,6 +179,9 @@ export class ScoreEngine {
         error: error instanceof Error ? error.message : 'Unknown error'
       }, 'Score processing failed');
 
+      if (typeof idempotencyKey !== 'undefined') {
+        await EventLogService.markEventProcessed(idempotencyKey, 'FAILED', Date.now() - startTime, error instanceof Error ? error.message : 'Unknown error').catch(() => {});
+      }
       throw error;
     }
   }
