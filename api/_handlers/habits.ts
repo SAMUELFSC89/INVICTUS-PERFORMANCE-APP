@@ -5,6 +5,35 @@ import { authMiddleware } from '../_middleware/auth.js';
 import { errorHandler, AppError } from '../_middleware/error.js';
 import { db } from '../_lib/common.js';
 import { generateMilestonePlan, HabitGoalInput, HabitProfile, HabitGoalType } from '../_lib/habit-engine.js';
+import { applyHabitProgressInTransaction } from '../_lib/habit-integration.js';
+import { GoogleGenAI } from '@google/genai';
+
+// Optional AI text layer (decorative only, never used for numbers/decisions):
+// generates the short congratulatory + next-challenge line shown after a reveal.
+// The deterministic fallback in habit-engine.ts (fallbackMessage) is always used
+// if the AI call is unavailable or fails, so this can never block the flow.
+const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+const habitAi = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
+
+async function generateRevealMessage(params: { milestoneTitle: string; order: number; totalMilestones: number; goalCompleted: boolean }): Promise<string> {
+  const fallback = params.goalCompleted
+    ? 'Voce concluiu toda a jornada do seu habito! Objetivo final alcancado.'
+    : `Novo desafio desbloqueado: ${params.milestoneTitle}. Vamos ver ate onde voce consegue chegar!`;
+  if (!habitAi) return fallback;
+  try {
+    const prompt = `Voce e o treinador Invictus. Em portugues, escreva 1 frase curta (max 25 palavras), tom motivacional direto, no maximo 1 emoji, anunciando o desafio "${params.milestoneTitle}" (etapa ${params.order} de ${params.totalMilestones}) que o atleta acabou de desbloquear. Responda apenas a frase, sem aspas.`;
+    const response = await habitAi.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: prompt,
+      config: { temperature: 0.8, maxOutputTokens: 80 },
+    });
+    const text = (response.text || '').trim();
+    return text || fallback;
+  } catch (e: any) {
+    console.warn('[habits] AI reveal message failed, using deterministic fallback:', e?.message);
+    return fallback;
+  }
+}
 
 const VALID_GOAL_TYPES: HabitGoalType[] = [
   'start_running',
@@ -228,7 +257,101 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
         return res.status(200).json({ habit: toPublicGoal({ id: updated.id, ...updated.data() }) });
       }
 
-      default:
+      case 'reveal-next': {
+  const goalId = (req.body?.goalId as string) || '';
+  if (!goalId) throw new AppError('goalId obrigatorio.', 400);
+  const ref = db.collection('habit_goals').doc(goalId);
+
+  const txResult = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new AppError('Habito nao encontrado.', 404);
+    const goal = snap.data() as any;
+    if (goal.userId !== userId) throw new AppError('Habito nao pertence ao usuario.', 403);
+    if (goal.status !== 'active') throw new AppError('Habito nao esta ativo.', 400);
+    if (!goal.pendingReveal) throw new AppError('Nao ha nova meta para revelar no momento.', 400);
+
+    const milestones = (goal.milestones || []).map((m: any) => ({ ...m }));
+    const currentIdx = goal.currentMilestoneIndex;
+    const current = milestones[currentIdx];
+    // Server re-validates completion here; never trusts a client-side flag alone.
+    if (!current || current.status !== 'completed') {
+      throw new AppError('A meta atual ainda nao foi concluida.', 400);
+    }
+
+    let nextIndex = currentIdx + 1;
+    if (goal.pendingSkipAhead && milestones[currentIdx + 1] && milestones[currentIdx + 2]) {
+      milestones[currentIdx + 1].status = 'completed';
+      milestones[currentIdx + 1].completedAt = new Date().toISOString();
+      nextIndex = currentIdx + 2;
+    }
+    const nextMilestone = milestones[nextIndex];
+    if (!nextMilestone) throw new AppError('Nao ha proxima etapa para revelar.', 400);
+
+    const nowIso = new Date().toISOString();
+    nextMilestone.status = 'active';
+    nextMilestone.unlockedAt = nowIso;
+
+    tx.update(ref, {
+      milestones,
+      currentMilestoneIndex: nextIndex,
+      pendingReveal: false,
+      pendingSkipAhead: false,
+      updatedAt: nowIso,
+    });
+
+    return { nextIndex, milestoneTitle: `${nextMilestone.targetDistanceKm} KM`, totalMilestones: milestones.length };
+  });
+
+  const updatedSnap = await ref.get();
+  const celebrationText = await generateRevealMessage({
+    milestoneTitle: txResult.milestoneTitle,
+    order: txResult.nextIndex + 1,
+    totalMilestones: txResult.totalMilestones,
+    goalCompleted: false,
+  });
+  return res.status(200).json({
+    habit: toPublicGoal({ id: updatedSnap.id, ...updatedSnap.data() }),
+    celebrationText,
+  });
+}
+
+case 'apply-progress': {
+  const workoutId = (req.body?.workoutId as string) || '';
+  if (!workoutId) throw new AppError('workoutId obrigatorio.', 400);
+
+  const workoutSnap = await db.collection('workouts').doc(workoutId).get();
+  if (!workoutSnap.exists) {
+    return res.status(200).json({ applied: false, reason: 'workout_not_found' });
+  }
+  const workout = workoutSnap.data() as any;
+  if (workout.userId !== userId) {
+    throw new AppError('Atividade nao pertence ao usuario.', 403);
+  }
+  // Only real, validated cardio activities can move a habit forward. This mirrors
+  // the same eligibility gate used inline in validate-presence.ts's score transaction
+  // (finalDecision === 'approved' / status valid), applied here for the manual-log and
+  // wearable-sync paths, which do not go through that transaction.
+  if (workout.type !== 'cardio' || workout.status !== 'valid') {
+    return res.status(200).json({ applied: false, reason: 'not_eligible_cardio' });
+  }
+
+  // Idempotent by workoutId: applyHabitProgressInTransaction dedupes on
+  // appliedActivityIds inside a Firestore transaction, so calling this endpoint
+  // more than once for the same workoutId (retries, duplicate requests, offline
+  // resync) is always a safe no-op after the first successful application.
+  const result = await db.runTransaction((tx) =>
+    applyHabitProgressInTransaction(tx, userId, {
+      activityId: workoutId,
+      distanceKm: Number(workout.distance) || 0,
+      durationSec: Math.round((Number(workout.duration) || 0) * 60),
+      timestamp: workout.timestamp,
+    })
+  );
+
+  return res.status(200).json(result);
+}
+
+default:
         throw new AppError(`Acao de habito '${action}' nao reconhecida.`, 400);
     }
   } catch (error: any) {
