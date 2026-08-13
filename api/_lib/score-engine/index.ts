@@ -50,6 +50,22 @@ await EventLogService.logEventReceived(event, idempotencyKey).catch(() => {});
         throw new Error(`Validation failed: ${validationResult.errors.join(', ')}`);
       }
 
+      // 1.5. Antifraude especifico do Strava: rejeitar entradas manuais (sem
+      // GPS real) e velocidades fisicamente impossiveis. Isso implementa (com os
+      // nomes de campo reais da API do Strava) a intencao da classe ScoreValidator,
+      // que nunca foi conectada ao pipeline real e checava um campo (avgSpeed) que
+      // nao existe nos payloads do Strava (o campo correto e average_speed). Ver
+      // auditoria de integridade.
+      if (event.source === 'strava') {
+        if (event.payload?.manual === true) {
+          throw new Error('Validation failed: Strava manual entries are not eligible for scoring');
+        }
+        const avgSpeedMs = typeof event.payload?.average_speed === 'number' ? event.payload.average_speed : undefined;
+        if (avgSpeedMs !== undefined && avgSpeedMs > SCORE_CONFIG.SPEED_LIMIT_MS) {
+          throw new Error('Validation failed: Implausible average speed for Strava activity');
+        }
+      }
+
       // 2. Obter ou criar stats do usuário
       let userStats = await ScoreRepository.getUserStats(userId);
       if (!userStats) {
