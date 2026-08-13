@@ -4,6 +4,7 @@ import { getOverallMetricsForDashboard, logEvent, memoryCache, getPipelineTrace 
 import { runProductionReadinessAudit } from '../../_lib/production-audit-engine.js';
 import { ReviewActivityRequest, ReviewActivityResponse } from '../../_dto/admin-dto.js';
 import { db } from '../../_lib/common.js';
+import { WithdrawalEngine } from '../../_lib/withdrawal-engine.js';
 
 export class AdminService {
   constructor(private adminRepository: AdminRepository) {}
@@ -99,8 +100,23 @@ export class AdminService {
     if (!withdrawalId || !status) {
       throw new AppError('withdrawalId e status são obrigatórios.', 400);
     }
-    await this.adminRepository.updateWithdrawalStatus(withdrawalId, status, reviewerId, reason);
-    return { success: true, message: `Saque ${withdrawalId} atualizado para ${status}.` };
+    const validStatuses = ['pending', 'under_review', 'approved', 'paid', 'cancelled', 'rejected'];
+    if (!validStatuses.includes(status)) {
+      throw new AppError('Status de saque inválido.', 400);
+    }
+
+    const updated = await WithdrawalEngine.updateWithdrawalStatus(withdrawalId, status as any, reviewerId, reason);
+
+    await logEvent({
+      severity: 'INFO',
+      category: 'payment_logs',
+      message: `Saque PIX ${withdrawalId} atualizado para '${status}' por Admin (${reviewerId})`,
+      userId: updated.userId,
+      route: '/api/admin',
+      details: { withdrawalId, status, amount: updated.amount, reason }
+    });
+
+    return { success: true, message: `Saque ${withdrawalId} atualizado para ${status}.`, withdrawal: updated };
   }
 
   async upsertEntity(type: 'mission' | 'sponsor_challenge' | 'store_item', id: string | undefined, data: Record<string, any>) {
