@@ -23,6 +23,7 @@ import gymsJoinHandler from './_handlers/gyms_join.js';
 import gymsCheckinHandler from './_handlers/gyms_checkin.js';
 import gymsPhotoHandler from './_handlers/gyms_photo.js';
 import runningHandler, { handleRunActivity } from './_handlers/running.js';
+import habitsHandler from './_handlers/habits.js';
 import validateActivityHandler from './_handlers/validate-activity.js';
 import validatePresenceHandler from './_handlers/validate-presence.js';
 import eliteHandler from './_handlers/elite.js';
@@ -175,6 +176,9 @@ router.all('/running', wrap(runningHandler));
 
 console.log('[ROUTE] /activities/running', typeof handleRunActivity);
 router.post('/activities/running', activityLimiter, wrap(handleRunActivity));
+
+console.log('[ROUTE] /habits', typeof habitsHandler);
+router.all('/habits', wrap(habitsHandler));
 
 console.log('[ROUTE] /validate-activity', typeof validateActivityHandler);
 router.all('/validate-activity', wrap(validateActivityHandler));
