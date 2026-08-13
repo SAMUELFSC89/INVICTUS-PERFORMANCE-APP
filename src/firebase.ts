@@ -33,7 +33,12 @@ const getAuthDomain = () => {
   if (isClient) {
     const hostname = window.location.hostname;
     if (hostname.includes('invictusperformance.app.br')) {
-      return 'invictusperformance.app.br';
+      // Usa o hostname atual (com ou sem www) para que o authDomain sempre
+      // coincida com a origem real da pagina. Um mismatch aqui (ex: pagina em
+      // www.invictusperformance.app.br mas authDomain fixo em invictusperformance.app.br)
+      // quebra a comunicacao popup<->opener do Firebase Auth e causa
+      // 'auth/popup-closed-by-user' silenciosamente no login com Google.
+      return hostname;
     }
     if (hostname.includes('localhost') || hostname.includes('127.0.0.1') || hostname.includes('run.app')) {
       return firebaseConfig.authDomain || `${firebaseConfig.projectId.trim()}.firebaseapp.com`;
