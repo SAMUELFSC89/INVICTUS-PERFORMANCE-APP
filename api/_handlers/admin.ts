@@ -64,7 +64,13 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         return res.status(200).json(result);
       }
 
-      case 'upsert-mission':
+    case 'process-withdrawal-payment': {
+      const { withdrawalId } = req.body;
+      const result = await adminService.processWithdrawalPayment(req.userId!, withdrawalId);
+      return res.status(200).json(result);
+    }
+
+          case 'upsert-mission':
       case 'upsert-sponsor-challenge':
       case 'upsert-store-item': {
         const typeMap: Record<string, 'mission' | 'sponsor_challenge' | 'store_item'> = {
