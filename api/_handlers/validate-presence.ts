@@ -9,6 +9,7 @@ import { logEvent } from '../_lib/observability.js';
 import { GoogleGenAI } from "@google/genai";
 import { calculateWeeklyIGA, IGASession } from '../../src/core/iga/index.js';
 import { readActiveHabitGoal, applyHabitProgressWithGoal } from '../_lib/habit-integration.js';
+import { SCORE_CONFIG } from '../_lib/score-config.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -571,8 +572,14 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
     const userData = userSnap.data() || {};
 
     let xpAwarded = 0;
+    const avgSpeedMs = timeSeconds > 0 ? (currentKm * 1000) / timeSeconds : 0;
+    const isSpeedImplausible = avgSpeedMs > SCORE_CONFIG.SPEED_LIMIT_MS;
     if (finalDecision === 'approved' && userData) {
-      xpAwarded = 20 + Math.floor(currentKm * 5);
+      if (isSpeedImplausible) {
+        console.warn(`[commitRunningSession] Velocidade implausivel detectada: ${avgSpeedMs.toFixed(2)}m/s (limite ${SCORE_CONFIG.SPEED_LIMIT_MS}m/s). Pontuacao zerada para userId=${userId}.`);
+      } else {
+        xpAwarded = 20 + Math.floor(currentKm * 5);
+      }
     }
 
     const weeklyStatsSnap = await transaction.get(weeklyStatsRef);
@@ -604,6 +611,25 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       }
     } else {
       isScoringEligible = true;
+    }
+
+    // Teto diario de pontuacao (mesma regra usada em commitWorkoutSession).
+    // Sem isso, corridas repetidas no mesmo dia (dentro do limite semanal de
+    // DIAS, mas sem limite de QUANTIDADE por dia) inflavam o score sem controle.
+    if (xpAwarded > 0) {
+      const subTier = userData.subscriptionTier || 'open';
+      const dailyCap = subTier === 'performance' ? 100 : 60;
+      const todaySnap = await transaction.get(
+        db.collection('workouts').where('userId', '==', userId).where('timestamp', '>=', todayISO)
+      );
+      let todayPoints = 0;
+      todaySnap.forEach((d: any) => {
+        const w = d.data();
+        if (w.status !== 'invalid') todayPoints += w.points || 0;
+      });
+      if (todayPoints + xpAwarded > dailyCap) {
+        xpAwarded = Math.max(0, dailyCap - todayPoints);
+      }
     }
 
     const userUpdates: any = {
