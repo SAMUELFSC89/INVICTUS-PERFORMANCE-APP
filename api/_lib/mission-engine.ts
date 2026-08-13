@@ -156,6 +156,7 @@ export class MissionEngine {
   static async claimMissionReward(userId: string, missionId: string): Promise<{
     mission: Mission;
     rewardCoins: number;
+    rewardAmount: number;
     rewardXP: number;
   }> {
     if (!db) throw new Error('Database not initialized');
@@ -182,8 +183,8 @@ export class MissionEngine {
     if (!prog.completed) throw new Error('Missão ainda não foi concluída.');
     if (prog.claimed) throw new Error('Recompensa desta missão já foi resgatada.');
 
-    // Grant IV Coins
-    await RewardsEngine.rewardMission(userId, mission.title, mission.rewardCoins, mission.rewardCategory);
+    // Grant real R$ funds to the wallet (converted from the legacy rewardCoins value)
+    const rewardAmount = await RewardsEngine.rewardMission(userId, mission.title, mission.rewardCoins, mission.rewardCategory);
 
     // Update user XP & Level (Does NOT affect Ranking Score)
     if (mission.rewardXP > 0) {
@@ -202,6 +203,7 @@ export class MissionEngine {
     return {
       mission,
       rewardCoins: mission.rewardCoins,
+      rewardAmount,
       rewardXP: mission.rewardXP
     };
   }
