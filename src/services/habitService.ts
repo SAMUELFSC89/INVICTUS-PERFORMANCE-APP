@@ -32,6 +32,9 @@ export interface HabitGoal {
   milestones: HabitMilestonePublic[];
   createdAt: string;
   updatedAt: string;
+  // True right after a milestone completes and a next one is pending an
+  // explicit user reveal action (see revealNextMilestone below).
+  pendingReveal: boolean;
 }
 
 async function authedFetch(action: string, body?: any) {
@@ -90,4 +93,45 @@ export async function updateHabitGoal(
 ): Promise<HabitGoal> {
   const data = await authedFetch('update-goal', { goalId, ...updates });
   return data.habit;
+}
+
+export interface RevealNextMilestoneResult {
+  habit: HabitGoal;
+  celebrationText: string;
+}
+
+/**
+ * Called from the "[ REVELAR PRÓXIMA META ]" button after the current milestone
+ * is completed (habit.pendingReveal === true). The server re-validates completion
+ * and only then unlocks/returns the next milestone - this is the only way the
+ * client ever learns the next target, implementing the "surprise" rule end to end.
+ */
+export async function revealNextMilestone(goalId: string): Promise<RevealNextMilestoneResult> {
+  const data = await authedFetch('reveal-next', { goalId });
+  return { habit: data.habit, celebrationText: data.celebrationText };
+}
+
+export interface ApplyProgressResult {
+  applied: boolean;
+  reason: string;
+  milestoneCompleted?: boolean;
+  nextMilestoneUnlocked?: boolean;
+}
+
+/**
+ * Applies a cardio workout's progress to the user's active habit, if any.
+ * Idempotent server-side (keyed by workoutId) - safe to call more than once for
+ * the same workout (retries, offline resync, duplicate events from wearables).
+ * Used by workoutService.submitWorkout and WearableManager.syncAll, which do not
+ * go through the validate-presence transaction that already applies progress for
+ * GPS-verified cardio sessions. Never throws in a way that should interrupt the
+ * caller's own flow - callers should treat this as fire-and-forget.
+ */
+export async function applyWorkoutProgress(workoutId: string): Promise<ApplyProgressResult | null> {
+  try {
+    return await authedFetch('apply-progress', { workoutId });
+  } catch (e) {
+    console.warn('[habitService] applyWorkoutProgress failed (ignored):', e);
+    return null;
+  }
 }
