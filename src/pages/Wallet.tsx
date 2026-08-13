@@ -20,7 +20,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../firebase';
 import { useUser } from '../UserContext';
-import { UserWallet, IVCoinTransaction, PIXWithdrawal, ConversionConfig } from '../types';
+import { UserWallet, IVCoinTransaction, PIXWithdrawal, WithdrawalConfig } from '../types';
 import { cn } from '../lib/utils';
 
 
@@ -29,7 +29,7 @@ export function Wallet() {
   const { user } = useUser();
 
   const [wallet, setWallet] = useState<UserWallet | null>(null);
-  const [config, setConfig] = useState<ConversionConfig | null>(null);
+  const [config, setConfig] = useState<WithdrawalConfig | null>(null);
   const [transactions, setTransactions] = useState<IVCoinTransaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<PIXWithdrawal[]>([]);
   
@@ -105,7 +105,7 @@ export function Wallet() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          coinsAmount: Number(withdrawAmount),
+          amount: Number(withdrawAmount),
           pixKey,
           pixKeyType: pixType
         })
@@ -158,7 +158,7 @@ export function Wallet() {
   };
 
   const redeemableVal = wallet?.redeemableBalance || 0;
-  const minWithdrawalVal = config?.minWithdrawalCoins || 5;
+  const minWithdrawalVal = config?.minWithdrawalAmount || 20;
 
   return (
     <div className="min-h-screen bg-background pb-32 pt-8 px-4 sm:px-6">
@@ -493,7 +493,7 @@ export function Wallet() {
                         </div>
                         <div className="text-right">
                           <span className="font-headline italic font-black text-xl text-emerald-400">
-                            R$ {(w.brlAmount || w.coinsAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            R$ {(w.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>
