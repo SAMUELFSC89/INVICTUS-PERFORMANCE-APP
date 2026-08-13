@@ -197,7 +197,10 @@ export function Profile() {
 
   const handleLogout = async () => {
     await auth.signOut();
-    navigate('/login');
+    // Forca reload completo (em vez de navigate SPA) para descartar estado/listeners
+    // residuais das telas que estavam montadas antes do logout. Mesma correcao aplicada
+    // em Settings.tsx: evita tela preta ao relogar com o app ja em uma tela aberta.
+    window.location.href = '/';
   };
 
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
