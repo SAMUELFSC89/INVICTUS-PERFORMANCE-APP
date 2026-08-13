@@ -2,6 +2,7 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, serverTimestamp, limit, orderBy, increment } from 'firebase/firestore';
 import { Workout, UserProfile } from '../types';
 import { calculatePoints } from '../lib/seasonUtils';
+import { applyWorkoutProgress } from './habitService';
 
 export function simpleHash(str: string) {
   let hash = 0;
@@ -182,11 +183,22 @@ export const workoutService = {
       photoUrl: data.photoUrl
     };
 
+    let workoutDocRef: { id: string } | undefined;
     try {
-      await addDoc(collection(db, 'workouts'), workout);
+      workoutDocRef = await addDoc(collection(db, 'workouts'), workout);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'workouts');
       throw error;
+    }
+
+    // Hábito ("Criar Hábito"): aplica progresso ao hábito ativo do usuário, se houver.
+    // Idempotente no backend (por workoutDocRef.id) e não-bloqueante — nunca deve
+    // impedir o fluxo normal de registro de cardio caso falhe.
+    if (data.type === 'cardio' && workoutDocRef) {
+      applyWorkoutProgress(workoutDocRef.id).catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('invictus:cardio-logged', { detail: { workoutId: workoutDocRef.id } }));
+      }
     }
     
     const updateData: any = {
