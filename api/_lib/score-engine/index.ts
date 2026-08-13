@@ -17,6 +17,7 @@ export class ScoreEngine {
   static async process(event: ScoreEvent): Promise<ScoreCalculationResult> {
     const startTime = Date.now();
     const userId = event.userId;
+    let idempotencyKey: string | undefined;
 
     try {
       scoreLogger.info({ eventId: event.id, source: event.source }, 'Score processing started');
@@ -25,7 +26,7 @@ export class ScoreEngine {
 // foi processado com sucesso antes, nao pontuar de novo. Isso evita XP/score
 // duplicado em retries do cliente, webhooks reentregues (Strava) e cliques
 // repetidos em "Sincronizar".
-const idempotencyKey = EventLogService.generateIdempotencyKey(userId, event.id, event.source);
+idempotencyKey = EventLogService.generateIdempotencyKey(userId, event.id, event.source as any);
 const alreadyProcessed = await ScoreRepository.getActivityScore(event.id);
 if (alreadyProcessed) {
   scoreLogger.info({ eventId: event.id, userId, idempotencyKey }, 'Score processing skipped: event already processed (idempotent)');
@@ -42,7 +43,7 @@ if (alreadyProcessed) {
     )
   };
 }
-await EventLogService.logEventReceived(event, idempotencyKey).catch(() => {});
+await EventLogService.logEventReceived(event as any, idempotencyKey).catch(() => {});
 
 // 1. Validar atividade
       const validationResult = ActivityValidator.validateForScoring(event.payload);
