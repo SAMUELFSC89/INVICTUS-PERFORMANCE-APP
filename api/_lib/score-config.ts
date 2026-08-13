@@ -92,6 +92,11 @@ export const SCORE_CONFIG = {
   
   SPEED_LIMIT_MS: 8.5, // ~30.6 km/h max threshold for running
 
+  // Antifraude: limites de plausibilidade de atividade (ver auditoria de integridade)
+  MAX_ACTIVITY_DURATION_SECS: 21600, // 6 horas - acima disso e implausivel/provavel erro de dados
+  MAX_TIMESTAMP_FUTURE_MINUTES: 15, // tolerancia de relogio para atividades "no futuro"
+  MAX_TIMESTAMP_PAST_DAYS: 90, // atividades mais antigas que isso sao rejeitadas (dados forjados/corrompidos)
+
   // 5 Quality Criteria Weights (summing to 1.0)
   WEIGHTS: {
     CONSISTENCY: 0.25,        // 25% - Weekly frequency vs target
