@@ -5,6 +5,7 @@ import { HealthConnectProvider } from './HealthConnectProvider';
 import { AppleHealthProvider } from './AppleHealthProvider';
 import { StravaProvider } from './StravaProvider';
 import { stravaService } from '../stravaService';
+import { applyWorkoutProgress } from '../habitService';
 import { Capacitor } from '@capacitor/core';
 
 class FirestoreBatchChunker {
@@ -437,6 +438,7 @@ export class WearableManager {
                                           for (const provider of connectedProviders) {
       let syncedCount = 0;
       let duplicatesSkipped = 0;
+      const cardioActivityIdsForHabit: string[] = [];
 
       try {
         console.log(`[WearableManager] Sincronizando ${provider.name} desde ${lastSyncThreshold.toISOString()}...`);
@@ -516,6 +518,10 @@ export class WearableManager {
             createdAt: new Date().toISOString()
           });
 
+          if (act.activityType === 'Corrida' || act.activityType === 'Cardio' || act.activityType === 'Bike') {
+            cardioActivityIdsForHabit.push(act.id);
+          }
+
           // Save Biometric Metrics
           const biometricRef = doc(collection(db, 'biometric_metrics'));
           batch.set(biometricRef, {
@@ -555,6 +561,18 @@ export class WearableManager {
             score: increment(pointsEarnedInThisProvider),
             lastCheckIn: new Date().toISOString()
           }, { merge: true }).catch(err => console.warn('Failed to increment user score', err));
+        }
+
+        // Hábito ("Criar Hábito"): aplica progresso ao hábito ativo do usuário para cada
+        // atividade cardio recém-sincronizada, de forma idempotente (por activityId no
+        // backend) e não-bloqueante — nunca interrompe a sincronização do wearable.
+        if (cardioActivityIdsForHabit.length > 0) {
+          for (const habitWorkoutId of cardioActivityIdsForHabit) {
+            applyWorkoutProgress(habitWorkoutId).catch(() => {});
+          }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('invictus:cardio-logged', { detail: { source: provider.id } }));
+          }
         }
 
         const log = await this.logSyncOperation(provider.id, 'success', syncedCount, duplicatesSkipped, undefined);
