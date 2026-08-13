@@ -140,7 +140,14 @@ export function Layout() {
           <motion.div
             key={location.pathname}
             initial={{ opacity: 0, scale: 0.98, filter: 'blur(10px)' }}
-            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+            // NOTE: 'transitionEnd' clears the filter to 'none' once the page-enter
+            // animation settles. Leaving 'filter: blur(0px)' as a lingering inline
+            // style (Framer Motion's default behavior) creates a new CSS containing
+            // block for every position:fixed descendant on the page - including every
+            // modal - silently pinning them to this div's box instead of the real
+            // viewport. That's the root cause behind modals opening off-screen /
+            // needing a scroll to reach (e.g. the 'Qual seu treino de hoje?' modal).
+            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', transitionEnd: { filter: 'none' } }}
             exit={{ opacity: 0, scale: 1.02, filter: 'blur(10px)' }}
             transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
           >
