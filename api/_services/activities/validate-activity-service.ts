@@ -87,6 +87,24 @@ export class ValidateActivityService {
       throw new AppError(`Atividade rejeitada por inconsistência nos dados: ${fraudCheck.reason}`, 422);
     }
 
+    // 3.5. Idempotencia basica: recusar reenvio da mesma atividade (mesmo type
+    // + duration) nos ultimos 10 segundos. Este endpoint legado nao possui uma
+    // chave de idempotencia formal do cliente; isso cobre o caso mais comum de
+    // duplicidade (duplo clique, retry de rede). Reaproveita
+    // ActivityRepository.findRecentByUser, que ja existia mas nunca era chamado.
+    const recentActivities = await this.activityRepository.findRecentByUser(request.userId, 0.1);
+    const tenSecondsAgo = Date.now() - 10000;
+    const isDuplicateSubmission = recentActivities.some(a => {
+      const createdAtMs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      return createdAtMs >= tenSecondsAgo &&
+        a.type === request.activityData.type &&
+        (a.duration || 0) === (request.activityData.duration || 30);
+    });
+    if (isDuplicateSubmission) {
+      console.warn(`[ValidateActivityService] [${traceId}] Envio duplicado detectado e bloqueado (mesma atividade nos ultimos 10s)`);
+      throw new AppError('Esta atividade ja foi registrada. Aguarde alguns segundos antes de tentar novamente.', 409);
+    }
+
     // 4. Calcular score
     const scoreAwarded = this.calculateScore(request.activityData);
     console.log(`[ValidateActivityService] [${traceId}] Pontuação calculada: +${scoreAwarded} XP`);
