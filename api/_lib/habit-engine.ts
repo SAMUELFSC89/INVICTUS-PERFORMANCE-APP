@@ -101,6 +101,17 @@ export interface ProgressDecision {
   nextMilestoneUnlocked: boolean;
   regressed: boolean;
   reason: string;
+  /** Milestone just completed and a next one exists, but it stays LOCKED until the
+   * user explicitly reveals it via the reveal-next action. This is the server-side
+   * gate that implements the "surprise" rule - no future target is unlocked here. */
+  pendingReveal?: boolean;
+  /** Computed at completion time (how easily the milestone was cleared), consumed
+   * later by the reveal-next step to decide whether to skip an extra milestone
+   * ahead. Never applied automatically - purely a stored boolean flag. */
+  pendingSkipAhead?: boolean;
+  /** True only when the completed milestone was the last one in the plan (no
+   * next milestone exists at all) - the whole habit goal is finished. */
+  goalCompleted?: boolean;
 }
 
 export function evaluateProgress(
@@ -141,27 +152,31 @@ export function evaluateProgress(
       current.status = 'completed';
       current.completedAt = activity.timestamp;
       milestoneCompleted = true;
+      list[currentMilestoneIndex] = current;
 
       const next = list[currentMilestoneIndex + 1];
       if (next) {
+        // SURPRISE RULE: the next milestone is NOT unlocked here. It stays 'locked'
+        // (its target is never written/exposed) until the user explicitly taps
+        // "Revelar Proxima Meta", which triggers the reveal-next action. We only
+        // pre-compute whether that later step should skip an extra milestone ahead
+        // because this one was cleared easily - nothing about the next target is
+        // decided or stored here, it is purely a boolean flag for later use.
         const clearedEasily = activity.distanceKm >= current.targetDistanceKm * 1.3;
-        let unlockIndex = currentMilestoneIndex + 1;
-        if (clearedEasily && !longGap && list[currentMilestoneIndex + 2]) {
-          unlockIndex = currentMilestoneIndex + 2;
-          list[currentMilestoneIndex + 1].status = 'completed';
-          list[currentMilestoneIndex + 1].completedAt = activity.timestamp;
-        }
-        list[unlockIndex].status = 'active';
-        list[unlockIndex].unlockedAt = activity.timestamp;
-        nextMilestoneUnlocked = true;
-        list[currentMilestoneIndex] = current;
+        const pendingSkipAhead = !!(clearedEasily && !longGap && list[currentMilestoneIndex + 2]);
         return {
           milestones: list,
-          currentMilestoneIndex: unlockIndex,
-          decision: { sessionCounted, milestoneCompleted, nextMilestoneUnlocked, regressed, reason: reason + (unlockIndex !== currentMilestoneIndex + 1 ? '_skip_ahead' : '') },
+          currentMilestoneIndex,
+          decision: { sessionCounted, milestoneCompleted, nextMilestoneUnlocked: false, regressed, reason, pendingReveal: true, pendingSkipAhead, goalCompleted: false },
         };
       }
+
       reason = 'final_goal_completed';
+      return {
+        milestones: list,
+        currentMilestoneIndex,
+        decision: { sessionCounted, milestoneCompleted, nextMilestoneUnlocked: false, regressed, reason, pendingReveal: false, pendingSkipAhead: false, goalCompleted: true },
+      };
     }
   } else {
     reason = 'session_below_target';
