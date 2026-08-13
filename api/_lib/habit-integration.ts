@@ -57,11 +57,18 @@ export function applyHabitProgressWithGoal(
     appliedActivityIds: [...appliedIds, activity.activityId].slice(-200),
     totalSessionsCompleted: (goal.totalSessionsCompleted || 0) + (result.decision.sessionCounted ? 1 : 0),
     updatedAt: new Date().toISOString(),
+    // Surprise-rule gate: true right after a milestone completes with a next one
+    // pending. The client must call the reveal-next action before the next
+    // milestone's target is ever unlocked/returned to it.
+    pendingReveal: !!result.decision.pendingReveal,
+    pendingSkipAhead: !!result.decision.pendingSkipAhead,
   };
 
-  const noMoreActiveMilestones = !result.milestones.some((m: any) => m.status === 'active');
-  const lastMilestone = result.milestones[result.milestones.length - 1];
-  if (lastMilestone && lastMilestone.status === 'completed' && noMoreActiveMilestones) {
+  // The goal is only actually finished when the engine explicitly says so
+  // (completed milestone had no `next` at all). This must NOT be inferred from
+  // "no active milestone right now", because a milestone sitting in the
+  // pending-reveal state also has zero active milestones by design.
+  if (result.decision.goalCompleted) {
     update.status = 'completed';
     update.completedAt = activity.timestamp;
   }
