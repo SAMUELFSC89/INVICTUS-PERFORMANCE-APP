@@ -427,7 +427,12 @@ export function Settings() {
 
   const handleLogout = async () => {
     await auth.signOut();
-    navigate('/');
+    // Forca reload completo (em vez de navigate SPA) para descartar qualquer
+    // listener/estado residual das telas que estavam montadas antes do logout.
+    // Sem isso, paginas que fazem 'if (!user) return null' (Home, Profile, etc)
+    // podem renderizar em branco/preto durante a janela de re-autenticacao,
+    // pois o app nunca reinicia do zero ao trocar de usuario na mesma sessao.
+    window.location.href = '/';
   };
 
   if (!user) return null;
