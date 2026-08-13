@@ -506,17 +506,16 @@ export interface IVCoinTransaction {
 export interface UserWallet {
   userId: string;
   totalBalance: number; // redeemableBalance + ecosystemBalance + promotionalBalance
-  redeemableBalance: number; // IV Coins Resgatáveis (can be converted to BRL via PIX)
-  ecosystemBalance: number; // IV Coins de Ecossistema (store, AI, benefits)
-  promotionalBalance: number; // IV Coins Promocionais (campaign bonuses)
-  blockedBalance: number; // Coins locked during withdrawal evaluation
+  redeemableBalance: number; // Saldo em R$ disponível para saque via PIX
+  ecosystemBalance: number; // Saldo em R$ de prêmios (loja, benefícios) - não sacável
+  promotionalBalance: number; // Saldo em R$ de bônus promocionais
+  blockedBalance: number; // Saldo em R$ retido durante análise de saque
   updatedAt: string;
 }
 
-export interface ConversionConfig {
-  coinsPerBrl: number; // Default: 100 IV Coins = R$ 1,00
-  minWithdrawalCoins: number; // Default: 500 IV Coins = R$ 5,00
-  maxDailyWithdrawalCoins: number; // Default: 50000 IV Coins
+export interface WithdrawalConfig {
+  minWithdrawalAmount: number; // Valor mínimo de saque em R$ (Reais). Default: 20
+  maxDailyWithdrawalAmount: number; // Valor máximo de saque por dia em R$ (Reais). Default: 1000
   enabled: boolean;
   updatedAt: string;
 }
@@ -528,8 +527,7 @@ export interface PIXWithdrawal {
   userId: string;
   userDisplayName: string;
   userEmail: string;
-  coinsAmount: number;
-  brlAmount: number;
+  amount: number; // Valor do saque em R$ (Reais)
   pixKey: string;
   pixKeyType: 'cpf' | 'email' | 'phone' | 'random';
   status: WithdrawalStatus;
