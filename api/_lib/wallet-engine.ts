@@ -16,9 +16,9 @@ export class WalletEngine {
       let initialRedeemable = 0;
       if (userSnap.exists) {
         const userData = userSnap.data() || {};
-        // If user had legacy walletBalance in BRL, convert to IV Coins at 100 coins per R$ 1
+        // Migrate legacy walletBalance (already in R$) directly into the redeemable balance
         if (userData.walletBalance && userData.walletBalance > 0) {
-          initialRedeemable = Math.round(userData.walletBalance * 100);
+          initialRedeemable = Number(userData.walletBalance);
         }
       }
 
@@ -55,7 +55,7 @@ export class WalletEngine {
   }
 
   /**
-   * Credits IV Coins to user wallet and writes to transaction ledger.
+   * Credits funds to user wallet (in R$) and writes to transaction ledger.
    */
   static async creditCoins(params: {
     userId: string;
@@ -68,7 +68,7 @@ export class WalletEngine {
     if (!db) throw new Error('Database not initialized');
     const { userId, amount, category, origin, description, destination = 'Wallet Invictus' } = params;
 
-    if (amount <= 0) throw new Error('Quantidade de IV Coins a creditar deve ser maior que zero');
+    if (amount <= 0) throw new Error('Valor a creditar deve ser maior que zero');
 
     const walletRef = db.collection('wallets').doc(userId);
 
@@ -126,7 +126,7 @@ export class WalletEngine {
   }
 
   /**
-   * Debits IV Coins from user wallet.
+   * Debits funds from user wallet (in R$).
    */
   static async debitCoins(params: {
     userId: string;
@@ -139,7 +139,7 @@ export class WalletEngine {
     if (!db) throw new Error('Database not initialized');
     const { userId, amount, category, origin, description, destination = 'Loja Invictus' } = params;
 
-    if (amount <= 0) throw new Error('Quantidade de IV Coins deve ser maior que zero');
+    if (amount <= 0) throw new Error('Valor a debitar deve ser maior que zero');
 
     const walletRef = db.collection('wallets').doc(userId);
     const txId = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -170,13 +170,13 @@ export class WalletEngine {
       let blocked = Number(d.blockedBalance) || 0;
 
       if (category === 'redeemable') {
-        if (redeemable < amount) throw new Error(`Saldo de IV Coins Resgatáveis insuficiente (${redeemable} disponíveis)`);
+        if (redeemable < amount) throw new Error(`Saldo disponível insuficiente (R$ ${redeemable.toFixed(2)} disponíveis)`);
         redeemable -= amount;
       } else if (category === 'ecosystem') {
-        if (ecosystem < amount) throw new Error(`Saldo de IV Coins de Ecossistema insuficiente (${ecosystem} disponíveis)`);
+        if (ecosystem < amount) throw new Error(`Saldo de prêmios insuficiente (R$ ${ecosystem.toFixed(2)} disponíveis)`);
         ecosystem -= amount;
       } else if (category === 'promotional') {
-        if (promotional < amount) throw new Error(`Saldo de IV Coins Promocionais insuficiente (${promotional} disponíveis)`);
+        if (promotional < amount) throw new Error(`Saldo promocional insuficiente (R$ ${promotional.toFixed(2)} disponíveis)`);
         promotional -= amount;
       } else {
         // category === 'any': use promotional first, then ecosystem, then redeemable
@@ -200,7 +200,7 @@ export class WalletEngine {
               usedCategory = 'redeemable';
               remainingToDebit = 0;
             } else {
-              throw new Error(`Saldo total insuficiente de IV Coins. Necessário ${amount}`);
+              throw new Error(`Saldo total insuficiente. Necessário R$ ${amount.toFixed(2)}`);
             }
           }
         }
@@ -227,7 +227,7 @@ export class WalletEngine {
   }
 
   /**
-   * Holds redeemable IV Coins in blockedBalance during withdrawal review.
+   * Holds redeemable funds (R$) in blockedBalance during withdrawal review.
    */
   static async holdForWithdrawal(userId: string, coinsAmount: number, withdrawalId: string): Promise<UserWallet> {
     if (!db) throw new Error('Database not initialized');
@@ -242,7 +242,7 @@ export class WalletEngine {
       let blocked = Number(d.blockedBalance) || 0;
 
       if (redeemable < coinsAmount) {
-        throw new Error(`Saldo de IV Coins Resgatáveis insuficiente para saque. Disponível: ${redeemable}`);
+        throw new Error(`Saldo disponível insuficiente para saque. Disponível: R$ ${redeemable.toFixed(2)}`);
       }
 
       redeemable -= coinsAmount;
@@ -266,7 +266,7 @@ export class WalletEngine {
         type: 'debit',
         origin: 'withdrawal_hold',
         destination: `Saque PIX (${withdrawalId})`,
-        description: `Bloqueio de IV Coins para análise de saque PIX`,
+        description: `Bloqueio de saldo para análise de saque PIX`,
         createdAt: new Date().toISOString()
       });
     });
