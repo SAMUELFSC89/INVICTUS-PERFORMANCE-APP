@@ -66,6 +66,9 @@ function toPublicGoal(goal: any) {
     status: goal.status,
     currentMilestoneIndex: goal.currentMilestoneIndex,
     totalSessionsCompleted: goal.totalSessionsCompleted || 0,
+    // Client gate for the celebration/reveal UI: true right after a milestone
+    // completes and a next one is pending an explicit user reveal action.
+    pendingReveal: !!goal.pendingReveal,
     milestones,
     createdAt: goal.createdAt,
     updatedAt: goal.updatedAt,
