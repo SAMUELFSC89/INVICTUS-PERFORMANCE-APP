@@ -1,4 +1,18 @@
-import { REWARD_RULES, REWARD_TIERS, TOP_10_PERCENTAGES, RewardTier } from '../constants';
+import { REWARD_RULES, TOP_10_PERCENTAGES, RewardTier } from '../constants';
+
+// NOTA: o pote real da temporada agora e calculado a partir da receita
+// arrecadada (ver api/_lib/season-prize-engine.ts), nao apenas da contagem
+// de participantes. Esta tabela local e usada SOMENTE para a estimativa
+// visual de 'proxima faixa' na tela de Ranking (Rankings.tsx) e NAO reflete
+// o valor exato que sera pago -- o pagamento real usa a receita de verdade.
+const LEGACY_DISPLAY_TIERS: RewardTier[] = [
+  { participants: 50, prizePool: 500 },
+  { participants: 100, prizePool: 1000 },
+  { participants: 150, prizePool: 1900 },
+  { participants: 200, prizePool: 2500 },
+  { participants: 250, prizePool: 3150 },
+];
+const REWARD_TIERS = LEGACY_DISPLAY_TIERS;
 import { UserProfile } from '../types';
 
 export function getPoolStatus(count: number) {
