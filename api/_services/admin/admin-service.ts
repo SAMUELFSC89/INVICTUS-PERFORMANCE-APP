@@ -5,6 +5,7 @@ import { runProductionReadinessAudit } from '../../_lib/production-audit-engine.
 import { ReviewActivityRequest, ReviewActivityResponse } from '../../_dto/admin-dto.js';
 import { db } from '../../_lib/common.js';
 import { WithdrawalEngine } from '../../_lib/withdrawal-engine.js';
+import { WalletEngine } from '../../_lib/wallet-engine.js';
 
 export class AdminService {
   constructor(private adminRepository: AdminRepository) {}
@@ -138,7 +139,34 @@ export class AdminService {
     return { success: true, message: 'Pagamento PIX de R$ ' + updated.amount.toFixed(2) + ' enviado via Asaas.', withdrawal: updated };
   }
 
-    async upsertEntity(type: 'mission' | 'sponsor_challenge' | 'store_item', id: string | undefined, data: Record<string, any>) {
+  async creditTestBalance(reviewerId: string, userId: string, amount: number, description?: string) {
+    if (!userId || !amount || amount <= 0) {
+      throw new AppError('userId e amount (maior que zero) são obrigatórios.', 400);
+    }
+
+    const finalDescription = description || 'Crédito de teste aplicado por Admin (' + reviewerId + ')';
+
+    const result = await WalletEngine.creditCoins({
+      userId,
+      amount,
+      category: 'redeemable',
+      origin: 'admin_adjustment',
+      description: finalDescription
+    });
+
+    await logEvent({
+      severity: 'INFO',
+      category: 'payment_logs',
+      message: 'Crédito de TESTE de R$ ' + amount.toFixed(2) + ' aplicado na carteira de ' + userId + ' por Admin (' + reviewerId + ')',
+      userId,
+      route: '/api/admin',
+      details: { amount, reviewerId, description: finalDescription }
+    });
+
+    return { success: true, message: 'R$ ' + amount.toFixed(2) + ' de saldo de teste creditado com sucesso.', wallet: result.wallet };
+  }
+
+  async upsertEntity(type: 'mission' | 'sponsor_challenge' | 'store_item', id: string | undefined, data: Record<string, any>) {
     const collectionMap: Record<string, string> = {
       mission: 'missions',
       sponsor_challenge: 'sponsor_challenges',
