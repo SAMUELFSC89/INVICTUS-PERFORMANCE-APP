@@ -70,7 +70,12 @@ export default async function handler(req: VercelRequest & { userId?: string; us
       return res.status(200).json(result);
     }
 
-          case 'upsert-mission':
+          case 'credit-test-balance': {
+const { userId, amount, description } = req.body;
+const result = await adminService.creditTestBalance(req.userId!, userId || req.userId!, Number(amount), description);
+return res.status(200).json(result);
+}
+case 'upsert-mission':
       case 'upsert-sponsor-challenge':
       case 'upsert-store-item': {
         const typeMap: Record<string, 'mission' | 'sponsor_challenge' | 'store_item'> = {
