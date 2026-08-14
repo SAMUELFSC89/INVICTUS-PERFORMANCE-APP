@@ -18,6 +18,7 @@
     }
   ],
     "crons": [
-        { "path": "/api/audit-fraud", "schedule": "0 6 * * *" }
+        { "path": "/api/audit-fraud", "schedule": "0 6 * * *" },
+        { "path": "/api/season-payout-cron", "schedule": "30 6 * * *" }
           ]
 }
