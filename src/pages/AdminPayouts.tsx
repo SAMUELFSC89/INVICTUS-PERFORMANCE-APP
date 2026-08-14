@@ -24,6 +24,7 @@ export function AdminPayouts() {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>('pending_review');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [creditingTest, setCreditingTest] = useState(false);
 
   const fetchWithdrawals = useCallback(async () => {
     setLoading(true);
@@ -134,7 +135,38 @@ export function AdminPayouts() {
     }
   };
 
-    const tabs: { key: FilterTab; label: string }[] = [
+    
+  const handleCreditTestBalance = async () => {
+    if (!window.confirm('Creditar R$ 1,00 de saldo de TESTE (ledger interno, sem dinheiro real) na sua propria carteira para validar o saque automatizado via Asaas?')) return;
+    setCreditingTest(true);
+    setFeedback(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('Sessao de administrador expirada.');
+      const idToken = await currentUser.getIdToken();
+
+      const res = await fetch('/api/admin?action=credit-test-balance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ userId: currentUser.uid, amount: 1, description: 'Credito de teste - validacao fluxo Asaas' })
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || 'Falha ao creditar saldo de teste.');
+
+      setFeedback({ type: 'success', text: data.message || 'Saldo de teste creditado.' });
+    } catch (err: any) {
+      console.error('[AdminPayouts] Error crediting test balance:', err);
+      setFeedback({ type: 'error', text: err.message || 'Erro ao creditar saldo de teste.' });
+    } finally {
+      setCreditingTest(false);
+      setTimeout(() => setFeedback(null), 6000);
+    }
+  };
+
+  const tabs: { key: FilterTab; label: string }[] = [
     { key: 'pending_review', label: 'Pendentes' },
     { key: 'approved', label: 'Aprovados' },
     { key: 'paid', label: 'Pagos' },
@@ -161,6 +193,13 @@ export function AdminPayouts() {
             className="bg-primary/10 text-primary px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-primary/20 transition-all"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> ATUALIZAR
+          </button>
+          <button
+            onClick={handleCreditTestBalance}
+            disabled={creditingTest}
+            className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+          >
+            <DollarSign size={14} /> CREDITAR R$1 TESTE
           </button>
         </div>
         <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest text-shadow-sm">
