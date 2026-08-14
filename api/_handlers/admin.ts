@@ -75,6 +75,11 @@ const { userId, amount, description } = req.body;
 const result = await adminService.creditTestBalance(req.userId!, userId || req.userId!, Number(amount), description);
 return res.status(200).json(result);
 }
+case 'update-withdrawal-min-amount': {
+const { minWithdrawalAmount } = req.body;
+const result = await adminService.updateWithdrawalMinAmount(req.userId!, Number(minWithdrawalAmount));
+return res.status(200).json(result);
+}
 case 'upsert-mission':
       case 'upsert-sponsor-challenge':
       case 'upsert-store-item': {
