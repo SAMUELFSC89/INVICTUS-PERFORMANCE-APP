@@ -130,10 +130,17 @@ export function Performance() {
     { id: 'timeline', label: 'Linha do Tempo' }
   ];
 
-  if (!user) {
+  if (!user || user.subscriptionTier !== 'performance') {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-        <p className="text-zinc-400 font-mono text-xs">Aguardando autenticação...</p>
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 gap-4 text-center">
+        {!user ? (
+          <p className="text-zinc-400 font-mono text-xs">Aguardando autenticação...</p>
+        ) : (
+          <>
+            <p className="text-zinc-300 text-sm font-bold max-w-xs">Este espaço é exclusivo do Plano Performance.</p>
+            <button onClick={() => navigate('/profile')} className="bg-emerald-500 text-black font-black text-xs px-5 py-2.5 rounded-2xl">Ver Planos</button>
+          </>
+        )}
       </div>
     );
   }
