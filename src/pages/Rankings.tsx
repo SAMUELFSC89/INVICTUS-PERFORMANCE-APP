@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { Trophy, ChevronUp, ChevronDown, Zap, Filter, Lock, Clock, Info, CheckCircle, AlertCircle, MapPin, Building2, Globe, Dumbbell, TrendingUp, Star, Crown, Target, Sparkles, Timer, ArrowRight, Share2, Heart, Flag, ShieldAlert, Swords } from 'lucide-react';
@@ -12,7 +12,7 @@ import { RankingShareCard } from '../components/RankingShareCard';
 import { IGAAuditModal } from '../components/IGAAuditModal';
 import { calculateWeeklyIGA } from '../core/iga';
 import { auth, db } from '../firebase';
-import { doc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { usePro } from '../ProContext';
 import { QuotaExhaustedError } from '../services/errors';
 
@@ -43,12 +43,41 @@ export function Rankings() {
   const [activeParticipants, setActiveParticipants] = useState(0);
   const [countdown, setCountdown] = useState('');
   const [seasonDaysRemaining, setSeasonDaysRemaining] = useState(() => getNextSeasonCountdown().time.days);
+  const realSeasonEndDateRef = useRef<Date | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setSeasonDaysRemaining(getNextSeasonCountdown().time.days);
+      if (realSeasonEndDateRef.current) {
+        const diffDays = Math.max(0, Math.ceil((realSeasonEndDateRef.current.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+        setSeasonDaysRemaining(diffDays);
+      } else {
+        setSeasonDaysRemaining(getNextSeasonCountdown().time.days);
+      }
     }, 10000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'system_config', 'season_tracker'));
+        if (!cancelled && snap.exists()) {
+          const data = snap.data();
+          if (data && data.endDate) {
+            const realEnd = new Date(data.endDate);
+            if (!isNaN(realEnd.getTime())) {
+              realSeasonEndDateRef.current = realEnd;
+              const diffDays = Math.max(0, Math.ceil((realEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+              setSeasonDaysRemaining(diffDays);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch real season anchor from system_config/season_tracker, using local estimate', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const [showShareCard, setShowShareCard] = useState(false);
