@@ -4,6 +4,8 @@ import { AppError } from '../../_middleware/error.js';
 import { isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 import NodeCache from 'node-cache';
 import { GPSValidator } from '../../_lib/fraud-detection/gps-validator.js';
+import { SecurityPipeline } from '../../_lib/security-pipeline.js';
+import { db } from '../../_lib/common.js';
 
 const cache = new NodeCache({ stdTTL: 300 });
 
@@ -108,6 +110,68 @@ export class RunningService {
           canRetry: false
         };
       }
+    }
+
+    // Enterprise Security Pipeline (validacao + integridade + comportamento +
+    // fingerprint de dispositivo + rede + fraude[gps/sensor/saude] + reputacao +
+    // confianca + risco). Antes desconectado da pontuacao real -- ver auditoria
+    // antifraude 2026-08. Falha ao buscar o perfil do usuario NAO bloqueia o
+    // fluxo (fail-open no lookup, fail-closed na decisao do pipeline em si).
+    let securityUserProfile: any = {};
+    try {
+      if (db) {
+        const userSnap = await db.collection('users').doc(userId).get();
+        if (userSnap.exists) securityUserProfile = userSnap.data() || {};
+      }
+    } catch (secFetchErr) {
+      console.warn('[RunningService] Falha ao buscar perfil do usuario para o SecurityPipeline:', secFetchErr);
+    }
+
+    try {
+      const securityResult = await SecurityPipeline.runPipeline(
+        {
+          activityType: 'RUNNING',
+          type: 'RUNNING',
+          durationMins: (timeSeconds || 0) / 60,
+          distanceKm: currentKm,
+          checkpoints: trajectory,
+          timestamp: date || nowIso,
+          source: 'MANUAL_VERIFIED',
+          avgHeartRate: payload.avgHeartRate,
+          steps: payload.steps,
+          sensorTelemetry: payload.sensorTelemetry,
+          isMockLocation: payload.isMockLocation,
+          isEmulator: payload.isEmulator,
+          isRooted: payload.isRooted,
+          isDeveloperMode: payload.isDeveloperMode
+        },
+        userId,
+        securityUserProfile,
+        []
+      );
+
+      if (!securityResult.shouldScore) {
+        const secMsg = "\uD83D\uDEA8 ATIVIDADE RECUSADA PELA AUDITORIA ANTIFRAUDE: " + (securityResult.report.explanation?.summaryText || 'Padrao de risco elevado detectado nesta atividade.');
+        return {
+          userId,
+          last_run_stats: lastRunStats,
+          isScoringEligible: false,
+          nonScoringReason: 'SECURITY_PIPELINE_' + securityResult.decision,
+          pointsEarned: 0,
+          pointsAwarded: 0,
+          success: false,
+          status: 'not_validated',
+          reasonCode: 'SECURITY_PIPELINE_' + securityResult.decision,
+          userMessage: secMsg,
+          message: secMsg,
+          canRetry: securityResult.decision !== 'BLOCKED'
+        };
+      }
+    } catch (secErr) {
+      // Fail-open: se o pipeline em si falhar (bug, engine ausente), nao bloqueia
+      // a pontuacao -- apenas registra, para nao derrubar o fluxo principal de
+      // corrida por causa de uma falha no motor de seguranca.
+      console.error('[RunningService] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:', secErr);
     }
 
     // Load existing stats
