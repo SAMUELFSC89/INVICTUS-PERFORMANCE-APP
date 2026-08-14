@@ -41,6 +41,8 @@ export interface UserStats {
   scoredDays?: string[];
   age?: number;
   weight?: number;
+isBanned?: boolean;
+isBlocked?: boolean;
 }
 
 export interface ScoreCalculationResult {
