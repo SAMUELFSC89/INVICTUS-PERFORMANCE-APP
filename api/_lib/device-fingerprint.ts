@@ -30,8 +30,10 @@ export class DeviceFingerprintEngine {
     const threats: string[] = [];
     let deviceRiskScore = 0;
 
-    const brand = (deviceInfo.brand || payload.brand || 'GENERIC').toString().toLowerCase().trim();
-    const model = (deviceInfo.model || payload.model || 'UNKNOWN').toString().toLowerCase().trim();
+    const rawBrand = deviceInfo.brand || payload.brand;
+    const rawModel = deviceInfo.model || payload.model;
+    const brand = (rawBrand || 'GENERIC').toString().toLowerCase().trim();
+    const model = (rawModel || 'UNKNOWN').toString().toLowerCase().trim();
     const osVersion = (deviceInfo.osVersion || deviceInfo.systemVersion || payload.osVersion || '1.0').toString().trim();
     const architecture = (deviceInfo.architecture || deviceInfo.cpuAbi || payload.arch || 'arm64-v8a').toString().toLowerCase().trim();
     const screenRes = (deviceInfo.screenResolution || deviceInfo.resolution || '1080x2400').toString().trim();
@@ -71,8 +73,11 @@ export class DeviceFingerprintEngine {
       threats.push('VIRTUAL_SPACE_OR_APP_CLONING_DETECTED');
     }
 
-    // Emulator hardware indicators
-    if (brand.includes('generic') || model.includes('emulator') || model.includes('sdk') || brand.includes('google_sdk')) {
+    // Emulator hardware indicators -- so avalia quando o device de fato informou
+    // brand/model. Sem isso, o default 'GENERIC' sempre batia em brand.includes('generic')
+    // e marcava todo envio sem deviceInfo (praticamente 100% do trafego real hoje) como
+    // emulador (ver auditoria antifraude 2026-08).
+    if ((rawBrand || rawModel) && (brand.includes('generic') || model.includes('emulator') || model.includes('sdk') || brand.includes('google_sdk'))) {
       deviceRiskScore += 80;
       threats.push('EMULATOR_HARDWARE_FINGERPRINT');
     }
