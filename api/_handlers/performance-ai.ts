@@ -317,44 +317,58 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
 
     const aiText = response.text || 'Não foi possível processar a resposta no momento.';
 
-    // Generate TTS Audio using gemini-2.5-flash-preview-tts with voice 'Sulafat'
+    // Generate TTS Audio using gemini-2.5-flash-preview-tts com voz 'Sulafat'.
+    // A API de TTS do Gemini ocasionalmente retorna 500 INTERNAL em vez de audio
+    // (bug documentado pelo proprio Google, nao especifico do nosso codigo -- ver
+    // https://ai.google.dev/gemini-api/docs/speech-generation#limitations).
+    // Por isso tentamos algumas vezes antes de desistir; se todas falharem, a
+    // resposta segue sem audio e o texto do relatorio/chat continua normal.
     let audioBase64: string | null = null;
     let audioMimeType: string = 'audio/mp3';
 
-    try {
-      const cleanTtsText = aiText
-        .replace(/[\*\_~`#]/g, '')
-        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
-        .trim();
+    const cleanTtsText = aiText
+      .replace(/[\*\_~`#]/g, '')
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+      .trim();
 
-      const ttsResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-tts',
-        contents: cleanTtsText || aiText,
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Sulafat'
+    const MAX_TTS_ATTEMPTS = 3;
+    for (let ttsAttempt = 1; ttsAttempt <= MAX_TTS_ATTEMPTS; ttsAttempt++) {
+      try {
+        const ttsResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents: cleanTtsText || aiText,
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: 'Sulafat'
+                }
               }
-            }
-          },
-          systemInstruction: 'Você é um personal trainer altamente capacitado do Invictus IA. Fale com um tom natural, caloroso, enérgico, motivador e focado na evolução do atleta.'
-        }
-      });
+            },
+            systemInstruction: 'Você é um personal trainer altamente capacitado do Invictus IA. Fale com um tom natural, caloroso, enérgico, motivador e focado na evolução do atleta.'
+          }
+        });
 
-      const parts = ttsResponse.candidates?.[0]?.content?.parts;
-      if (parts && parts.length > 0) {
-        for (const part of parts) {
-          if (part.inlineData?.data) {
-            audioBase64 = part.inlineData.data;
-            audioMimeType = part.inlineData.mimeType || 'audio/mp3';
-            break;
+        const parts = ttsResponse.candidates?.[0]?.content?.parts;
+        if (parts && parts.length > 0) {
+          for (const part of parts) {
+            if (part.inlineData?.data) {
+              audioBase64 = part.inlineData.data;
+              audioMimeType = part.inlineData.mimeType || 'audio/mp3';
+              break;
+            }
           }
         }
+
+        if (audioBase64) break;
+      } catch (ttsErr: any) {
+        console.warn(`[PerformanceAI] TTS generation attempt ${ttsAttempt}/${MAX_TTS_ATTEMPTS} failed:`, ttsErr?.message || ttsErr);
       }
-    } catch (ttsErr: any) {
-      console.warn('[PerformanceAI] TTS generation failed:', ttsErr?.message || ttsErr);
+
+      if (!audioBase64 && ttsAttempt < MAX_TTS_ATTEMPTS) {
+        await new Promise(resolve => setTimeout(resolve, 400 * ttsAttempt));
+      }
     }
 
     // Silently extract and save persistent memories in the background
