@@ -3,6 +3,7 @@ import { AddRunRequest, AddRunResponse, GetRankingResponse } from '../../_dto/ru
 import { AppError } from '../../_middleware/error.js';
 import { isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 import NodeCache from 'node-cache';
+import { GPSValidator } from '../../_lib/fraud-detection/gps-validator.js';
 
 const cache = new NodeCache({ stdTTL: 300 });
 
@@ -85,6 +86,28 @@ export class RunningService {
         message: zeroMovementMsg,
         canRetry: false
       };
+    }
+
+    // GPS trajectory anti-fraud validation (velocidade impossivel, teleporte, estacionario, precisao anomala, distancia incompativel)
+    if (trajectory && Array.isArray(trajectory) && trajectory.length >= 2) {
+      const gpsCheck = GPSValidator.validateActivity(userId, trajectory, currentKm, timeSeconds || 0);
+      if (!gpsCheck.isValid) {
+        const gpsFraudMsg = "\uD83D\uDEA8 ATIVIDADE RECUSADA PELA AUDITORIA ANTIFRAUDE: Padr\u00e3o de GPS incompat\u00edvel com uma corrida real (" + gpsCheck.flags.join(', ') + ").";
+        return {
+          userId,
+          last_run_stats: lastRunStats,
+          isScoringEligible: false,
+          nonScoringReason: "GPS_FRAUD_DETECTED",
+          pointsEarned: 0,
+          pointsAwarded: 0,
+          success: false,
+          status: "not_validated",
+          reasonCode: "GPS_FRAUD_DETECTED",
+          userMessage: gpsFraudMsg,
+          message: gpsFraudMsg,
+          canRetry: false
+        };
+      }
     }
 
     // Load existing stats
