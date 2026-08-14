@@ -82,7 +82,9 @@ export class ScoreRepository {
             currentStreak: data?.currentStreak || 1,
             bestStreak: data?.bestStreak || 1,
             lastActivityDate: data?.lastActivityDate ? new Date(data.lastActivityDate) : new Date(),
-            joinDate: data?.joinDate ? new Date(data.joinDate) : new Date(Date.now() - 30 * 24 * 3600 * 1000)
+            joinDate: data?.joinDate ? new Date(data.joinDate) : new Date(Date.now() - 30 * 24 * 3600 * 1000),
+isBanned: data?.isBanned || false,
+isBlocked: data?.isBlocked || false
           };
         }
       }
