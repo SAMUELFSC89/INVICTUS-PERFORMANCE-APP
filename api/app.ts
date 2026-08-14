@@ -38,6 +38,7 @@ import denounceHandler from './_handlers/denounce.js';
 import paymentsVerifyPurchaseHandler from './_handlers/payments-verify-purchase.js';
 import revenuecatWebhookHandler from './_handlers/revenuecat-webhook.js';
 import asaasWebhookHandler from './_handlers/asaas-webhook.js';
+import asaasAuthorizeWithdrawalHandler from './_handlers/asaas-withdrawal-authorization.js';
 import paymentsStatusHandler from './_handlers/payments-status.js';
 import paymentsConfigHandler from './_handlers/payments-config.js';
 import privateChallengesHandler from './_handlers/private-challenges.js';
@@ -212,6 +213,8 @@ router.all('/payments/revenuecat-webhook', wrap(revenuecatWebhookHandler));
 
 console.log('[ROUTE] /payments/asaas-webhook', typeof asaasWebhookHandler);
 router.all('/payments/asaas-webhook', wrap(asaasWebhookHandler));
+console.log('[ROUTE] /payments/asaas-authorize-withdrawal', typeof asaasAuthorizeWithdrawalHandler);
+router.all('/payments/asaas-authorize-withdrawal', wrap(asaasAuthorizeWithdrawalHandler));
 
 console.log('[ROUTE] /payments/config', typeof paymentsConfigHandler);
 router.all('/payments/config', wrap(paymentsConfigHandler));
