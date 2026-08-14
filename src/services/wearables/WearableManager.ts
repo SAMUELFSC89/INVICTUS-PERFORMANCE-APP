@@ -285,6 +285,11 @@ export class WearableManager {
         is_paid_running: true // unlock points
       }, { merge: true }).catch(err => console.warn('Failed to update user profile with smartwatch status', err));
 
+      // Also unlock the OFFICIAL running ranking eligibility. RunningRepository.getRanking()
+      // queries is_paid_running on the running_stats collection (not users), so it must be
+      // mirrored here or the official Corrida ranking never matches connected users.
+      const runningStatsRef = doc(db, 'running_stats', auth.currentUser!.uid);
+      await setDoc(runningStatsRef, { is_paid_running: true }, { merge: true }).catch(err => console.warn('Failed to update running_stats with is_paid_running flag', err));
       return true;
     }
     return false;
@@ -321,6 +326,8 @@ export class WearableManager {
         hasSmartwatchConnected: false,
         smartwatchProvider: null
       }, { merge: true }).catch(() => {});
+      const runningStatsRef2 = doc(db, 'running_stats', auth.currentUser!.uid);
+      await setDoc(runningStatsRef2, { is_paid_running: false }, { merge: true }).catch(() => {});
     }
   }
 
