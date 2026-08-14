@@ -82,7 +82,7 @@ await EventLogService.logEventReceived(event as any, idempotencyKey).catch(() =>
 
       // 3. Validar usuário
       const accountAge = new Date().getTime() - new Date(userStats.joinDate || Date.now()).getTime();
-      const userValidation = ActivityValidator.validateUser(userId, { accountAge });
+      const userValidation = ActivityValidator.validateUser(userId, { accountAge, isBanned: userStats.isBanned || userStats.isBlocked });
       if (!userValidation.valid) {
         throw new Error(userValidation.reason || 'User validation failed');
       }
