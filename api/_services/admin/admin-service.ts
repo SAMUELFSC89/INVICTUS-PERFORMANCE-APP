@@ -6,6 +6,7 @@ import { ReviewActivityRequest, ReviewActivityResponse } from '../../_dto/admin-
 import { db } from '../../_lib/common.js';
 import { WithdrawalEngine } from '../../_lib/withdrawal-engine.js';
 import { WalletEngine } from '../../_lib/wallet-engine.js';
+import { WithdrawalEngine as WithdrawalEngineConfig } from '../../_lib/withdrawal-engine.js';
 
 export class AdminService {
   constructor(private adminRepository: AdminRepository) {}
@@ -164,6 +165,22 @@ export class AdminService {
     });
 
     return { success: true, message: 'R$ ' + amount.toFixed(2) + ' de saldo de teste creditado com sucesso.', wallet: result.wallet };
+  }
+
+    async updateWithdrawalMinAmount(reviewerId: string, minWithdrawalAmount: number) {
+    if (!minWithdrawalAmount || minWithdrawalAmount <= 0) {
+      throw new AppError('minWithdrawalAmount deve ser maior que zero.', 400);
+    }
+    const updated = await WithdrawalEngineConfig.updateConfig({ minWithdrawalAmount });
+    await logEvent({
+      severity: 'INFO',
+      category: 'payment_logs',
+      message: 'Config de saque atualizada: minWithdrawalAmount = R$ ' + minWithdrawalAmount.toFixed(2) + ' por Admin (' + reviewerId + ')',
+      userId: reviewerId,
+      route: '/api/admin',
+      details: { minWithdrawalAmount, reviewerId }
+    });
+    return { success: true, message: 'Saque minimo atualizado para R$ ' + minWithdrawalAmount.toFixed(2) + '.', config: updated };
   }
 
   async upsertEntity(type: 'mission' | 'sponsor_challenge' | 'store_item', id: string | undefined, data: Record<string, any>) {
