@@ -109,9 +109,10 @@ export class ValidationEngine {
       activity.hasWearableData ||
       ['GARMIN', 'POLAR', 'COROS', 'APPLE_HEALTH', 'HEALTH_CONNECT'].includes(source)
     );
-    if (!smartwatchConnected) {
-      missingData.push('SMARTWATCH_TELEMETRY');
-    }
+    // Nota: smartwatchConnected e apenas informativo. O app suporta GPS
+    // (corrida/caminhada) e check-in manual de academia como fontes primarias
+    // validas sem exigir wearable conectado -- por isso isso NAO entra em
+    // missingData nem bloqueia 'valid' (ver auditoria antifraude 2026-08).
 
     // 10. Usuário Elegível
     const isBanned = userData?.status === 'BANNED' || userData?.isSuspended || userData?.isBlocked;
