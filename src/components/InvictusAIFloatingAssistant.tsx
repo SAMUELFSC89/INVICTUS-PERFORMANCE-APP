@@ -67,7 +67,7 @@ export interface AIVoiceConfig {
 }
 
 const DEFAULT_VOICE_CONFIG: AIVoiceConfig = {
-  speechEnabled: true,
+  speechEnabled: false,
   wakeWordEnabled: true,
   speechRate: 1.0,
   pitch: 1.0,
@@ -926,6 +926,7 @@ Estou acompanhando você na tela de **${screenCtx.name}**. Como posso ajudar na 
   };
 
   const speakResponseText = (text: string, force: boolean = false) => {
+    return; // Voz TTS desativada a pedido do usuario - somente chat de texto
     if ((!voiceConfig.speechEnabled && !force) || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     
     if (force && !voiceConfig.speechEnabled) {
