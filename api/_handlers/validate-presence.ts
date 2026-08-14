@@ -11,6 +11,7 @@ import { calculateWeeklyIGA, IGASession } from '../../src/core/iga/index.js';
 import { readActiveHabitGoal, applyHabitProgressWithGoal } from '../_lib/habit-integration.js';
 import { SCORE_CONFIG } from '../_lib/score-config.js';
 import { GPSValidator } from '../_lib/fraud-detection/gps-validator.js';
+import { SecurityPipeline } from '../_lib/security-pipeline.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -372,6 +373,54 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
   const weekId = `${nowLocalDate.getFullYear()}-W${getWeekNo(nowLocalDate)}`;
   const weeklyStatsRef = userRef.collection('weeklyStats').doc(weekId);
 
+  // Enterprise Security Pipeline (ver auditoria antifraude 2026-08). Roda ANTES da
+  // transacao de pontuacao pois o pipeline faz suas proprias leituras/escritas no
+  // Firestore, que nao podem acontecer dentro de uma transaction alheia. Este e o
+  // PRIMEIRO cross-check antifraude de comportamento/dispositivo/sensor para
+  // treinos de academia -- antes so havia a checagem de presenca via selfie (IA).
+  let workoutSecurityBlocked = false;
+  let workoutSecurityReason: string | null = null;
+  try {
+    let secUserProfile: any = {};
+    try {
+      const secUserSnap = await userRef.get();
+      if (secUserSnap.exists) secUserProfile = secUserSnap.data() || {};
+    } catch (secFetchErr) {
+      console.warn('[commitWorkoutSession] Falha ao buscar perfil do usuario para o SecurityPipeline:', secFetchErr);
+    }
+
+    const securityResult = await SecurityPipeline.runPipeline(
+      {
+        activityType: (type || 'WORKOUT').toString().toUpperCase(),
+        type: (type || 'WORKOUT').toString().toUpperCase(),
+        durationMins: Number(durationMins) || 0,
+        distanceKm: Number(distanceKm) || 0,
+        checkpoints,
+        timestamp: nowLocalDate.toISOString(),
+        source: 'PRESENCE_VERIFIED',
+        avgHeartRate: payload.avgHeartRate,
+        steps: payload.steps,
+        sensorTelemetry: payload.sensorTelemetry,
+        isMockLocation: payload.isMockLocation,
+        isEmulator: payload.isEmulator,
+        isRooted: payload.isRooted,
+        isDeveloperMode: payload.isDeveloperMode
+      },
+      userId,
+      secUserProfile,
+      []
+    );
+
+    if (!securityResult.shouldScore) {
+      workoutSecurityBlocked = true;
+      workoutSecurityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
+      console.warn(`[commitWorkoutSession] SecurityPipeline recusou pontuacao para userId=${userId}: ${workoutSecurityReason}`);
+    }
+  } catch (secErr) {
+    // Fail-open: falha no motor de seguranca nao derruba o commit da atividade.
+    console.error('[commitWorkoutSession] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:', secErr);
+  }
+
   await db.runTransaction(async (transaction: any) => {
     const userSnap = await transaction.get(userRef);
     if (!userSnap.exists) return;
@@ -398,6 +447,9 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
     if (finalDecision === 'pending') {
       pointsEarned = 0;
       computedStatus = 'pending_review';
+    } else if (workoutSecurityBlocked) {
+      pointsEarned = 0;
+      computedStatus = 'suspicious';
     } else {
       // Calculate points dynamically based on activity parameters (standard base points is 50/35 for performance, 30/20 for open)
       const basePoints = type === 'workout' 
@@ -525,6 +577,7 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       status: computedStatus,
       points: pointsEarned,
       isScoringEligible,
+      ...(workoutSecurityBlocked ? { securityBlocked: true, securityBlockReason: workoutSecurityReason } : {}),
       ...(isScoringEligible ? { scoringWeekId: weekId, scoringDate: todayISO } : { nonScoringReason }),
       validation: {
         status: computedStatus,
@@ -607,6 +660,52 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
 
   await db.collection('running_stats').doc(userId).set(rStats, { merge: true });
 
+  // Enterprise Security Pipeline (ver auditoria antifraude 2026-08 / mesmo padrao
+  // usado em RunningService.addRun). Roda ANTES da transacao de pontuacao pois o
+  // pipeline faz suas proprias leituras/escritas no Firestore.
+  let runSecurityBlocked = false;
+  let runSecurityReason: string | null = null;
+  try {
+    let secUserProfile: any = {};
+    try {
+      const secUserSnap = await userRef.get();
+      if (secUserSnap.exists) secUserProfile = secUserSnap.data() || {};
+    } catch (secFetchErr) {
+      console.warn('[commitRunningSession] Falha ao buscar perfil do usuario para o SecurityPipeline:', secFetchErr);
+    }
+
+    const securityResult = await SecurityPipeline.runPipeline(
+      {
+        activityType: 'RUNNING',
+        type: 'RUNNING',
+        durationMins: (timeSeconds || 0) / 60,
+        distanceKm: currentKm,
+        checkpoints: trajectory,
+        timestamp: date || nowIso,
+        source: 'PRESENCE_VERIFIED',
+        avgHeartRate: payload.avgHeartRate,
+        steps,
+        sensorTelemetry: payload.sensorTelemetry,
+        isMockLocation: payload.isMockLocation,
+        isEmulator: payload.isEmulator,
+        isRooted: payload.isRooted,
+        isDeveloperMode: payload.isDeveloperMode
+      },
+      userId,
+      secUserProfile,
+      []
+    );
+
+    if (!securityResult.shouldScore) {
+      runSecurityBlocked = true;
+      runSecurityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
+      console.warn(`[commitRunningSession] SecurityPipeline recusou pontuacao para userId=${userId}: ${runSecurityReason}`);
+    }
+  } catch (secErr) {
+    // Fail-open: falha no motor de seguranca nao derruba o commit da atividade.
+    console.error('[commitRunningSession] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:', secErr);
+  }
+
   await db.runTransaction(async (transaction: any) => {
     const userSnap = await transaction.get(userRef);
     if (!userSnap.exists) return;
@@ -620,8 +719,8 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       : null;
     const isGpsFraud = !!(gpsCheck && !gpsCheck.isValid);
     if (finalDecision === 'approved' && userData) {
-      if (isSpeedImplausible || isGpsFraud) {
-        console.warn(`[commitRunningSession] Atividade suspeita bloqueada para userId=${userId}. speedImplausible=${isSpeedImplausible} (${avgSpeedMs.toFixed(2)}m/s, limite ${SCORE_CONFIG.SPEED_LIMIT_MS}m/s) gpsFraud=${isGpsFraud}${gpsCheck ? ' flags=' + gpsCheck.flags.join(',') : ''}. Pontuacao zerada.`);
+      if (isSpeedImplausible || isGpsFraud || runSecurityBlocked) {
+        console.warn(`[commitRunningSession] Atividade suspeita bloqueada para userId=${userId}. speedImplausible=${isSpeedImplausible} (${avgSpeedMs.toFixed(2)}m/s, limite ${SCORE_CONFIG.SPEED_LIMIT_MS}m/s) gpsFraud=${isGpsFraud}${gpsCheck ? ' flags=' + gpsCheck.flags.join(',') : ''} securityPipeline=${runSecurityBlocked ? runSecurityReason : 'ok'}. Pontuacao zerada.`);
       } else {
         xpAwarded = 20 + Math.floor(currentKm * 5);
       }
@@ -713,9 +812,10 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       timestamp: nowIso,
       duration: Math.ceil((timeSeconds || 0) / 60),
       distance: currentKm,
-      status: finalDecision === 'approved' ? 'valid' : 'pending_review',
+      status: (finalDecision === 'approved' && !runSecurityBlocked) ? 'valid' : (runSecurityBlocked ? 'suspicious' : 'pending_review'),
       points: xpAwarded,
       isScoringEligible,
+      ...(runSecurityBlocked ? { securityBlocked: true, securityBlockReason: runSecurityReason } : {}),
       validation: {
         status: finalDecision === 'approved' ? 'valid' : 'pending_review',
         reason: 'Presença em corrida de rua verificada biometricamente.',
