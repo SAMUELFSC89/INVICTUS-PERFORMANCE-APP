@@ -25,6 +25,7 @@ export function AdminPayouts() {
   const [filter, setFilter] = useState<FilterTab>('pending_review');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [creditingTest, setCreditingTest] = useState(false);
+  const [updatingMin, setUpdatingMin] = useState(false);
 
   const fetchWithdrawals = useCallback(async () => {
     setLoading(true);
@@ -166,7 +167,33 @@ export function AdminPayouts() {
     }
   };
 
-  const tabs: { key: FilterTab; label: string }[] = [
+  
+  const handleSetWithdrawalMin = async (amount: number) => {
+    if (!window.confirm('Alterar o saque minimo para R$ ' + amount.toFixed(2) + '?')) return;
+    setUpdatingMin(true);
+    setFeedback(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('Sessao de administrador expirada.');
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch('/api/admin?action=update-withdrawal-min-amount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ minWithdrawalAmount: amount })
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || 'Falha ao atualizar saque minimo.');
+      setFeedback({ type: 'success', text: data.message || 'Saque minimo atualizado.' });
+    } catch (err: any) {
+      console.error('[AdminPayouts] Error updating withdrawal min:', err);
+      setFeedback({ type: 'error', text: err.message || 'Erro ao atualizar saque minimo.' });
+    } finally {
+      setUpdatingMin(false);
+      setTimeout(() => setFeedback(null), 6000);
+    }
+  };
+
+const tabs: { key: FilterTab; label: string }[] = [
     { key: 'pending_review', label: 'Pendentes' },
     { key: 'approved', label: 'Aprovados' },
     { key: 'paid', label: 'Pagos' },
@@ -201,6 +228,20 @@ export function AdminPayouts() {
           >
             <DollarSign size={14} /> CREDITAR R$1 TESTE
           </button>
+      <button
+        onClick={() => handleSetWithdrawalMin(1)}
+        disabled={updatingMin}
+        className="bg-sky-500/10 text-sky-400 border border-sky-500/20 px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-sky-500/20 transition-all disabled:opacity-50"
+      >
+        MIN R$1 (TESTE)
+      </button>
+      <button
+        onClick={() => handleSetWithdrawalMin(20)}
+        disabled={updatingMin}
+        className="bg-slate-500/10 text-slate-400 border border-slate-500/20 px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-500/20 transition-all disabled:opacity-50"
+      >
+        MIN R$20 (PADRAO)
+      </button>
         </div>
         <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest text-shadow-sm">
           Libere ou recuse solicitações reais de saque via PIX. O dinheiro é retido (bloqueado) na carteira do atleta até você marcar como pago.
