@@ -100,7 +100,41 @@ export function AdminPayouts() {
     }
   };
 
-  const tabs: { key: FilterTab; label: string }[] = [
+  const handleProcessPayment = async (withdrawal: PIXWithdrawal) => {
+    const confirmMsg = `Confirma o envio AUTOMÁTICO do PIX de R$ ${withdrawal.amount.toFixed(2)} para ${withdrawal.userDisplayName} (chave ${withdrawal.pixKey})? O valor será transferido de verdade agora mesmo via Asaas e o saldo retido será liberado definitivamente.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setActionLoadingId(withdrawal.id);
+    setFeedback(null);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('Sessão de administrador expirada.');
+      const idToken = await currentUser.getIdToken();
+
+      const res = await fetch('/api/admin?action=process-withdrawal-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ withdrawalId: withdrawal.id })
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || 'Falha ao processar o pagamento PIX.');
+
+      setFeedback({ type: 'success', text: data.message || `PIX de R$ ${withdrawal.amount.toFixed(2)} enviado com sucesso via Asaas.` });
+      await fetchWithdrawals();
+    } catch (err: any) {
+      console.error('[AdminPayouts] Error processing payment:', err);
+      setFeedback({ type: 'error', text: err.message || 'Erro ao processar pagamento PIX via Asaas.' });
+    } finally {
+      setActionLoadingId(null);
+      setTimeout(() => setFeedback(null), 6000);
+    }
+  };
+
+    const tabs: { key: FilterTab; label: string }[] = [
     { key: 'pending_review', label: 'Pendentes' },
     { key: 'approved', label: 'Aprovados' },
     { key: 'paid', label: 'Pagos' },
@@ -232,7 +266,7 @@ export function AdminPayouts() {
                         </button>
                         <button
                           disabled={isActing}
-                          onClick={() => handleUpdateStatus(w, 'paid')}
+                          onClick={() => handleProcessPayment(w)}
                           className="bg-prize-gold text-white px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-50"
                         >
                           {isActing ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />} MARCAR PAGO
