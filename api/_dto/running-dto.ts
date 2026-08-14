@@ -15,6 +15,8 @@ export interface AddRunRequest {
   isDeveloperMode?: boolean;
   hasSensorOscillation?: boolean;
   sensorStatus?: string;
+  avgHeartRate?: number;
+  sensorTelemetry?: { accelVariance?: number; gyroVariance?: number };
 }
 
 export interface AddRunResponse {
