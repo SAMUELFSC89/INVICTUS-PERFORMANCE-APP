@@ -10,6 +10,7 @@ import { GoogleGenAI } from "@google/genai";
 import { calculateWeeklyIGA, IGASession } from '../../src/core/iga/index.js';
 import { readActiveHabitGoal, applyHabitProgressWithGoal } from '../_lib/habit-integration.js';
 import { SCORE_CONFIG } from '../_lib/score-config.js';
+import { GPSValidator } from '../_lib/fraud-detection/gps-validator.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -614,9 +615,13 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
     let xpAwarded = 0;
     const avgSpeedMs = timeSeconds > 0 ? (currentKm * 1000) / timeSeconds : 0;
     const isSpeedImplausible = avgSpeedMs > SCORE_CONFIG.SPEED_LIMIT_MS;
+    const gpsCheck = (trajectory && Array.isArray(trajectory) && trajectory.length >= 2)
+      ? GPSValidator.validateActivity(userId, trajectory, currentKm, timeSeconds || 0)
+      : null;
+    const isGpsFraud = !!(gpsCheck && !gpsCheck.isValid);
     if (finalDecision === 'approved' && userData) {
-      if (isSpeedImplausible) {
-        console.warn(`[commitRunningSession] Velocidade implausivel detectada: ${avgSpeedMs.toFixed(2)}m/s (limite ${SCORE_CONFIG.SPEED_LIMIT_MS}m/s). Pontuacao zerada para userId=${userId}.`);
+      if (isSpeedImplausible || isGpsFraud) {
+        console.warn(`[commitRunningSession] Atividade suspeita bloqueada para userId=${userId}. speedImplausible=${isSpeedImplausible} (${avgSpeedMs.toFixed(2)}m/s, limite ${SCORE_CONFIG.SPEED_LIMIT_MS}m/s) gpsFraud=${isGpsFraud}${gpsCheck ? ' flags=' + gpsCheck.flags.join(',') : ''}. Pontuacao zerada.`);
       } else {
         xpAwarded = 20 + Math.floor(currentKm * 5);
       }
