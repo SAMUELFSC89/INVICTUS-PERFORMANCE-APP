@@ -1,16 +1,14 @@
 import { db, FieldValue } from './common.js';
-import { getLevelFromXP } from './xpConfig.js';
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns';
 import { ScoreEngine } from './score-engine.js';
 
 export class SyncService {
   static async processStravaActivity(userId: string, stravaActivity: any) {
     console.log(`[SyncService] Processing activity ${stravaActivity?.id} for user ${userId}`);
 
+    let earnedPoints = 0;
     try {
-      const earnedPoints = await ScoreEngine.processStrava(userId, stravaActivity);
+      earnedPoints = await ScoreEngine.processStrava(userId, stravaActivity);
       console.log(`[SyncService] Activity ${stravaActivity?.id} processed by ScoreEngine. Points earned: ${earnedPoints}`);
-      return earnedPoints > 0;
     } catch (error: any) {
       console.warn(`[SyncService] Activity ${stravaActivity?.id} skipped during sync: ${error?.message}`);
       if (stravaActivity?.id) {
@@ -22,6 +20,51 @@ export class SyncService {
       }
       return false;
     }
+
+    // Alem de pontuar via ScoreEngine (XP/score gerais), atividades de CORRIDA
+    // sincronizadas do Strava tambem precisam alimentar running_stats,
+    // run_sessions e o progresso de desafios Elite -- senao o usuario ganha
+    // XP mas nunca aparece no ranking de corrida, no historico de corridas
+    // nem progride desafios Elite. Isso era feito por
+    // updateUserPerformance/updateEliteChallenges neste arquivo, mas essas
+    // funcoes ficaram orfas (nunca chamadas) apos a consolidacao do
+    // ScoreEngine (ver auditoria de anti-fraude/score, tasks #106-116).
+    // Reativamos aqui SOMENTE a parte de stats/sessions/elite -- NAO
+    // re-concedemos XP aqui, pois isso ja foi feito acima pelo ScoreEngine,
+    // para nao causar dupla pontuacao.
+    if (earnedPoints > 0) {
+      const activityType = (stravaActivity?.type || stravaActivity?.sport_type || '').toString().toLowerCase();
+      const isRunType = activityType.includes('run');
+
+      if (isRunType) {
+        try {
+          const rawDistance = stravaActivity?.distance || 0;
+          const km = rawDistance > 100 ? rawDistance / 1000 : rawDistance;
+          const rawDurationSeconds = stravaActivity?.moving_time || stravaActivity?.elapsed_time || 0;
+          const timeSeconds = rawDurationSeconds > 0 ? rawDurationSeconds : 0;
+          const elevationGain = stravaActivity?.total_elevation_gain || 0;
+          const rawDate = stravaActivity?.start_date || stravaActivity?.start_date_local || stravaActivity?.created_at;
+          const activityDate = rawDate ? new Date(rawDate).toISOString() : new Date().toISOString();
+
+          if (km > 0) {
+            await this.updateRunningStatsAndSession(userId, {
+              km,
+              timeSeconds,
+              elevationGain,
+              date: activityDate,
+              stravaActivityId: stravaActivity?.id?.toString()
+            });
+            await this.updateEliteChallenges(userId, km, activityDate);
+          }
+        } catch (statsErr: any) {
+          // Nao derruba o sync inteiro -- o XP ja foi concedido pelo
+          // ScoreEngine acima, entao so registramos o erro para investigar.
+          console.error(`[SyncService] Failed to update running_stats/elite challenges for Strava activity ${stravaActivity?.id}:`, statsErr);
+        }
+      }
+    }
+
+    return earnedPoints > 0;
   }
 
   private static async logStravaActivity(userId: string, stravaActivity: any, status: string, reason: string) {
@@ -40,115 +83,56 @@ export class SyncService {
     console.log("Firestore Success");
   }
 
-  private static async updateUserPerformance(userId: string, activity: { km: number, timeSeconds: number, elevationGain: number, date: string, stravaActivityId: string }) {
-    try {
-      const km = activity.km;
-      const normalizedActivityDate = new Date(activity.date).toISOString();
-      const statsRef = db.collection('running_stats').doc(userId);
-      const userRef = db.collection('users').doc(userId);
+  // Atualiza running_stats (melhor km da semana/mes, ultima corrida) e cria um
+  // registro em run_sessions para uma corrida sincronizada do Strava. Espelha
+  // o que RunningService.addRun() faz para corridas nativas, para que
+  // corridas do Strava tambem contem para o ranking de corrida
+  // (running-repository.ts getRanking) e para o historico (getRunHistory).
+  private static async updateRunningStatsAndSession(userId: string, activity: { km: number, timeSeconds: number, elevationGain: number, date: string, stravaActivityId?: string }) {
+    const km = activity.km;
+    const normalizedActivityDate = activity.date;
+    const statsRef = db.collection('running_stats').doc(userId);
 
-      console.log("[USER] Loading user & running_stats...");
-      console.log("Firestore Operation:", { collection: "running_stats", document: userId, operation: "get" });
-      console.log("Firestore Operation:", { collection: "users", document: userId, operation: "get" });
+    console.log("Firestore Operation:", { collection: "running_stats", document: userId, operation: "get" });
+    const statsSnap = await statsRef.get();
+    console.log("Firestore Success");
 
-      const [statsSnap, userSnap] = await Promise.all([statsRef.get(), userRef.get()]);
-      console.log("Firestore Success");
+    const statsData = statsSnap.exists ? statsSnap.data() : {
+      userId, best_run_km_month: 0, best_run_km_week: 0, last_run_date: normalizedActivityDate
+    };
 
-      console.log("[USER CHECK]", {
-        userExists: userSnap.exists,
-        statsExists: statsSnap.exists
-      });
-
-      const statsData = statsSnap.exists ? statsSnap.data() : { 
-        userId, best_run_km_month: 0, best_run_km_week: 0, last_run_date: normalizedActivityDate 
-      };
-      const userData = userSnap.data() || {};
-
-      console.log("USER DATA", JSON.stringify(userData, null, 2));
-      console.log("RUNNING STATS", JSON.stringify(statsData, null, 2));
-
-      const now = new Date();
-      const isPerformance = userData.subscriptionTier === 'performance';
-      const xpAwarded = !isPerformance ? (20 + Math.floor(km * 5)) : 0;
-
-      if (userData && xpAwarded > 0) {
-        const newXP = (userData.xp || userData.totalXp || 0) + xpAwarded;
-        const newLevel = getLevelFromXP(newXP);
-        const userUpdates: any = {
-          xp: newXP,
-          totalXp: newXP,
-          level: newLevel,
-          updatedAt: FieldValue.serverTimestamp()
-        };
-
-        const lastCheckIn = userData.lastCheckIn ? new Date(userData.lastCheckIn) : new Date(0);
-        const isNewMonth = now.getMonth() !== lastCheckIn.getMonth() || now.getFullYear() !== lastCheckIn.getFullYear();
-
-        if (isNewMonth) {
-          userUpdates.monthlyScore = xpAwarded;
-        } else {
-          userUpdates.monthlyScore = (userData.monthlyScore || 0) + xpAwarded;
-        }
-
-        userUpdates.lastCheckIn = normalizedActivityDate;
-
-        console.log("[USER] Validating user document existence before update...");
-        const userCheck = await userRef.get();
-        console.log({ userExists: userCheck.exists });
-
-        console.log("Firestore Operation:", { collection: "users", document: userId, operation: "update" });
-        await userRef.update(userUpdates);
-        console.log("Firestore Success");
-        console.log("[USER OK]");
-      }
-
-      const updates: any = {
-        last_run_date: normalizedActivityDate,
-        last_run_stats: {
-          km,
-          timeSeconds: activity.timeSeconds,
-          elevationGain: activity.elevationGain,
-          date: normalizedActivityDate,
-          source: 'strava',
-          stravaActivityId: activity.stravaActivityId
-        },
-        updatedAt: FieldValue.serverTimestamp()
-      };
-
-      if (km > (statsData?.best_run_km_month || 0)) updates.best_run_km_month = km;
-      if (km > (statsData?.best_run_km_week || 0)) updates.best_run_km_week = km;
-
-      console.log("[USER] Validating running_stats document existence before set...");
-      const statsCheck = await statsRef.get();
-      console.log({ statsExists: statsCheck.exists });
-
-      console.log("Firestore Operation:", { collection: "running_stats", document: userId, operation: "set" });
-      await statsRef.set(updates, { merge: true });
-      console.log("Firestore Success");
-
-      console.log("Firestore Operation:", { collection: "run_sessions", document: "auto-generated", operation: "add" });
-      await db.collection('run_sessions').add({
-        userId,
+    const updates: any = {
+      userId,
+      last_run_date: normalizedActivityDate,
+      last_run_stats: {
         km,
-        duration: activity.timeSeconds,
+        timeSeconds: activity.timeSeconds,
+        elevationGain: activity.elevationGain,
+        date: normalizedActivityDate,
         source: 'strava',
-        stravaActivityId: activity.stravaActivityId,
-        createdAt: FieldValue.serverTimestamp(),
-        date: normalizedActivityDate
-      });
-      console.log("Firestore Success");
-    } catch (error: any) {
-      console.error("================================");
-      console.error("UPDATE USER PERFORMANCE ERROR");
-      console.error("Collection: users / running_stats / run_sessions");
-      console.error("Document:", userId);
-      console.error("Message:", error?.message);
-      console.error("Stack:", error?.stack);
-      console.error("Cause:", error?.cause);
-      console.error(error);
-      console.error("================================");
-      throw error;
-    }
+        stravaActivityId: activity.stravaActivityId
+      },
+      updatedAt: FieldValue.serverTimestamp()
+    };
+
+    if (km > (statsData?.best_run_km_month || 0)) updates.best_run_km_month = km;
+    if (km > (statsData?.best_run_km_week || 0)) updates.best_run_km_week = km;
+
+    console.log("Firestore Operation:", { collection: "running_stats", document: userId, operation: "set" });
+    await statsRef.set(updates, { merge: true });
+    console.log("Firestore Success");
+
+    console.log("Firestore Operation:", { collection: "run_sessions", document: "auto-generated", operation: "add" });
+    await db.collection('run_sessions').add({
+      userId,
+      km,
+      duration: activity.timeSeconds,
+      source: 'strava',
+      stravaActivityId: activity.stravaActivityId,
+      createdAt: FieldValue.serverTimestamp(),
+      date: normalizedActivityDate
+    });
+    console.log("Firestore Success");
   }
 
   private static async updateEliteChallenges(userId: string, km: number, dateStr: string) {
@@ -232,4 +216,3 @@ export class SyncService {
     }
   }
 }
-
