@@ -15,22 +15,18 @@ export const STATES = [
   'SP', 'RJ', 'MG', 'PR', 'RS', 'DF', 'BA', 'CE', 'AM', 'PE',
 ];
 
+// Premiacao da Liga Invictus: pote da temporada calculado como % da receita
+// bruta arrecadada no periodo (assinaturas Plano Performance aprovadas),
+// em vez de um valor fixo por participante. Ver api/_lib/season-prize-engine.ts.
+export const SEASON_PRIZE_POOL_PERCENT = 0.20; // 20% da receita bruta vai pro pote distribuido aos vencedores
+export const SEASON_FUTURE_RESERVE_PERCENT = 0.05; // 5% da receita bruta fica reservado (pagamentos semanais/outras ideias futuras, ainda nao distribuido)
+export const SEASON_MIN_PARTICIPANTS_FOR_PRIZE = 50; // abaixo disso, nenhuma premiacao e distribuida na temporada
+export const SEASON_TOP5_PARTICIPANTS_THRESHOLD = 150; // >= 150 participantes: top 5 vencedores; 50-149: top 3 vencedores
+
 export interface RewardTier {
   participants: number;
   prizePool: number;
 }
-
-export const REWARD_TIERS: RewardTier[] = [
-  { participants: 50, prizePool: 2500 },
-  { participants: 75, prizePool: 3750 },
-  { participants: 100, prizePool: 5000 },
-  { participants: 125, prizePool: 6250 },
-  { participants: 150, prizePool: 7500 },
-  { participants: 175, prizePool: 8750 },
-  { participants: 200, prizePool: 10000 },
-  { participants: 225, prizePool: 11250 },
-  { participants: 250, prizePool: 12500 },
-];
 
 export const TOP_10_PERCENTAGES = [
   0.2286, // 1st: 22.86%
