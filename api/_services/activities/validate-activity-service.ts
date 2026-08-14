@@ -4,6 +4,7 @@ import { UserRepository } from '../../_repositories/user-repository.js';
 import { AuditRepository } from '../../_repositories/audit-repository.js';
 import { NotificationService } from '../notification-service.js';
 import { AppError } from '../../_middleware/error.js';
+import { SecurityPipeline } from '../../_lib/security-pipeline.js';
 
 export class ValidateActivityService {
   constructor(
@@ -103,6 +104,61 @@ export class ValidateActivityService {
     if (isDuplicateSubmission) {
       console.warn(`[ValidateActivityService] [${traceId}] Envio duplicado detectado e bloqueado (mesma atividade nos ultimos 10s)`);
       throw new AppError('Esta atividade ja foi registrada. Aguarde alguns segundos antes de tentar novamente.', 409);
+    }
+
+    // 3.6. Enterprise Security Pipeline (ver auditoria antifraude 2026-08). O checador
+    // de fraude legado acima (detectFraud) so cobre duracao>6h e passos/min>300, usando
+    // campos (data.duration, data.evidence.steps) que na pratica NAO batem com o que o
+    // frontend realmente envia para este endpoint legado hoje (durationMins,
+    // pedometerSteps no nivel raiz de activityData) -- ou seja, a checagem legada
+    // praticamente nunca disparava de verdade. O SecurityPipeline le os campos reais
+    // enviados por activityService.ts (isMockLocation, isEmulator, isRooted,
+    // isDeveloperMode, sensorTelemetry, avgHeartRate, checkpoints, distanceKm)
+    // diretamente do payload recebido, com fallback seguro quando ausentes.
+    const rawActivity: any = request.activityData || {};
+    let securityBlocked = false;
+    let securityReason: string | null = null;
+    try {
+      const securityResult = await SecurityPipeline.runPipeline(
+        {
+          activityType: (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
+          type: (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
+          durationMins: Number(rawActivity.durationMins ?? rawActivity.duration) || 0,
+          distanceKm: Number(rawActivity.distanceKm) || 0,
+          checkpoints: rawActivity.checkpoints,
+          timestamp: rawActivity.startTime || new Date().toISOString(),
+          source: 'LEGACY_VALIDATE_ACTIVITY',
+          avgHeartRate: rawActivity.avgHeartRate,
+          steps: rawActivity.pedometerSteps ?? rawActivity.evidence?.steps,
+          sensorTelemetry: rawActivity.sensorTelemetry,
+          isMockLocation: rawActivity.isMockLocation,
+          isEmulator: rawActivity.isEmulator,
+          isRooted: rawActivity.isRooted,
+          isDeveloperMode: rawActivity.isDeveloperMode
+        },
+        request.userId,
+        user || {},
+        []
+      );
+      if (!securityResult.shouldScore) {
+        securityBlocked = true;
+        securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
+      }
+    } catch (secErr) {
+      // Fail-open: falha no motor de seguranca nao derruba o registro da atividade.
+      console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:`, secErr);
+    }
+
+    if (securityBlocked) {
+      console.warn(`[ValidateActivityService] [${traceId}] SecurityPipeline recusou pontuacao: ${securityReason}`);
+      await this.auditRepository.log({
+        traceId,
+        userId: request.userId,
+        action: 'VALIDATE_ACTIVITY_SECURITY_PIPELINE_BLOCKED',
+        details: { activityData: request.activityData, reason: securityReason },
+        result: 'FLAGGED'
+      });
+      throw new AppError(`Atividade recusada pela auditoria antifraude (${securityReason}).`, 422);
     }
 
     // 4. Calcular score
