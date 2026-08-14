@@ -24,7 +24,7 @@ export function getTestSeasonDates(from: Date = new Date()) {
   startDate.setHours(0, 0, 0, 0);
 
   const endDate = new Date(startDate);
-  endDate.setDate(startDate.getDate() + 7);
+  endDate.setDate(startDate.getDate() + 30); // Temporada Oficial Invictus: 30 dias
   endDate.setHours(23, 59, 59, 999);
 
   return { startDate, endDate };
