@@ -10,6 +10,19 @@ import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_M
 
 const SESSION_KEY = 'current_activity_session';
 
+// Acumulador de amostras reais de acelerometro/giroscopio (DeviceMotionEvent) durante a
+// sessao ativa, usado para calcular sensorTelemetry.accelVariance/gyroVariance reais e
+// alimentar o SensorEngine do SecurityPipeline no backend (antes so enviavamos um boolean
+// derivado -- ver auditoria antifraude 2026-08).
+let sensorSamples: { accel: number[]; gyro: number[] } = { accel: [], gyro: [] };
+let activeMotionHandler: ((event: DeviceMotionEvent) => void) | null = null;
+
+function computeVariance(samples: number[]): number | undefined {
+  if (!samples || samples.length < 3) return undefined;
+  const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+  return samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length;
+}
+
 function createStructuredError(title: string, message: string): Error {
   const fullMsg = `${title}\n\n${message}`;
   const err = new Error(fullMsg);
@@ -235,6 +248,7 @@ export const activityService = {
     if (typeof window !== 'undefined') {
       localStorage.setItem('has_sensor_oscillation', 'false');
       localStorage.setItem('has_sensor_events', 'false');
+      sensorSamples = { accel: [], gyro: [] };
       
       const isSupported = 'DeviceMotionEvent' in window;
       if (!isSupported) {
@@ -254,17 +268,30 @@ export const activityService = {
             if (localStorage.getItem('sensor_status') === 'unavailable') {
               localStorage.setItem('sensor_status', 'granted');
             }
+            clearTimeout(timer);
             const acc = event.accelerationIncludingGravity;
             if (acc) {
               const force = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
+              sensorSamples.accel.push(force);
+              if (sensorSamples.accel.length > 600) sensorSamples.accel.shift();
               if (force > 11.5) { // Force exceeds standard state
                 localStorage.setItem('has_sensor_oscillation', 'true');
-                window.removeEventListener('devicemotion', handleMotion);
-                clearTimeout(timer);
+                // Nao removemos mais o listener na primeira oscilacao -- continuamos
+                // coletando amostras reais de acelerometro/giroscopio ate o fim da sessao,
+                // para calcular accelVariance/gyroVariance reais (sensorTelemetry) para o
+                // SecurityPipeline no backend em vez de so um boolean derivado (ver
+                // auditoria antifraude 2026-08).
               }
+            }
+            const rot = (event as any).rotationRate;
+            if (rot) {
+              const gyroMag = Math.sqrt((rot.alpha || 0) ** 2 + (rot.beta || 0) ** 2 + (rot.gamma || 0) ** 2);
+              sensorSamples.gyro.push(gyroMag);
+              if (sensorSamples.gyro.length > 600) sensorSamples.gyro.shift();
             }
           };
           window.addEventListener('devicemotion', handleMotion);
+          activeMotionHandler = handleMotion;
         };
 
         if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
@@ -488,6 +515,17 @@ export const activityService = {
     const sensorStatus = typeof window !== 'undefined' ? (localStorage.getItem('sensor_status') || 'unavailable') : 'unavailable';
     const pedometerSteps = Math.round(distanceKm * 1350); // standard runners steps counter biomechanics
 
+    // Sensor telemetry real (accelVariance/gyroVariance) coletada durante a sessao via
+    // DeviceMotionEvent, para o SensorEngine do SecurityPipeline no backend cruzar com
+    // FC/distancia/tempo -- antes o backend so recebia o boolean hasSensorOscillation
+    // (ver auditoria antifraude 2026-08).
+    const accelVariance = computeVariance(sensorSamples.accel);
+    const gyroVariance = computeVariance(sensorSamples.gyro);
+    const sensorTelemetry = (accelVariance !== undefined || gyroVariance !== undefined)
+      ? { accelVariance, gyroVariance }
+      : undefined;
+    const avgHeartRate = (session.smartwatchData && (session.smartwatchData.avgHeartRate || session.smartwatchData.heartRate)) || undefined;
+
     const response = await fetch('/api/validate-activity', {
       method: 'POST',
       headers: {
@@ -515,7 +553,9 @@ export const activityService = {
         isDeveloperMode: isDev,
         hasSensorOscillation: hasOscillation,
         sensorStatus,
-        pedometerSteps
+        pedometerSteps,
+        sensorTelemetry,
+        avgHeartRate
       })
     });
 
@@ -625,6 +665,12 @@ export const activityService = {
           updatedAt: new Date().toISOString()
         }).catch(() => {});
       } catch (e) {}
+    }
+    // Remove o listener de devicemotion registrado no startSession, evitando acumular
+    // listeners "orfaos" entre sessoes numa SPA sem reload de pagina.
+    if (typeof window !== 'undefined' && activeMotionHandler) {
+      window.removeEventListener('devicemotion', activeMotionHandler);
+      activeMotionHandler = null;
     }
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem('kmfatal_active_run');
