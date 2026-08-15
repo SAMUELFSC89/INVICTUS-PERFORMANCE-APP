@@ -4,6 +4,7 @@ export interface GpsEngineReport {
   isFrozenGps: boolean;
   hasTeleportation: boolean;
   hasExcessiveSpeed: boolean;
+  hasInsufficientSamples: boolean;
   avgAccuracyMeters: number;
   maxSpeedKmH: number;
   gymGeofenceVerified: boolean;
@@ -19,6 +20,7 @@ export class GpsEngine {
     const checkpoints = activity.checkpoints || activity.gpsTrack || [];
     const accuracy = Number(activity.gpsAccuracy || activity.accuracy || 10);
     const activityType = (activity.activityType || activity.type || 'GYM').toString().toUpperCase();
+    const cardioType = (activity.cardioType || '').toString().toUpperCase();
 
     // 1. Mock Location Check
     const isMockLocation = Boolean(
@@ -35,7 +37,7 @@ export class GpsEngine {
     if (checkpoints.length >= 5) {
       const firstLat = checkpoints[0].latitude;
       const firstLng = checkpoints[0].longitude;
-      const allIdentical = checkpoints.every((c: any) => 
+      const allIdentical = checkpoints.every((c: any) =>
         Math.abs(c.latitude - firstLat) < 0.000001 && Math.abs(c.longitude - firstLng) < 0.000001
       );
       if (allIdentical) {
@@ -56,7 +58,7 @@ export class GpsEngine {
         if (p1.latitude && p1.longitude && p2.latitude && p2.longitude && p1.timestamp && p2.timestamp) {
           const distMeters = GpsEngine.haversineMeters(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
           const timeSec = Math.abs((new Date(p2.timestamp).getTime() - new Date(p1.timestamp).getTime()) / 1000);
-          
+
           if (timeSec > 0) {
             const speedKmH = (distMeters / timeSec) * 3.6;
             if (speedKmH > maxSpeedKmH) maxSpeedKmH = speedKmH;
@@ -94,7 +96,27 @@ export class GpsEngine {
       }
     }
 
-    const isValid = !isMockLocation && !isFrozenGps && !hasTeleportation;
+    // 5. Insufficient GPS Samples (fail-closed).
+    // Antes, uma atividade de cardio ao ar livre com apenas 2 checkpoints (inicio + fim,
+    // sem nenhum ponto intermediario real) passava batido no antifraude -- a "rota"
+    // virava uma linha reta e so um unico calculo de velocidade media era possivel,
+    // insuficiente pra detectar padroes de transporte motorizado com paradas (ex: onibus
+    // parado no transito, o que mantem a velocidade media baixa mesmo em um trajeto de
+    // varios km). Agora, atividades que dependem de distancia por GPS (corrida, caminhada,
+    // ciclismo ao ar livre) exigem uma amostragem minima real de trajeto para serem
+    // consideradas validas -- caso contrario a evidencia e tratada como insuficiente
+    // (fail-closed) em vez de assumida como valida por padrao. Ver auditoria antifraude
+    // 2026-08 (teste do onibus homologado sem dados).
+    const requiresGpsDistance = activity.requiresGpsDistance === true ||
+      ['RUNNING', 'WALKING', 'CYCLING'].includes(activityType) ||
+      ['RUNNING', 'WALKING', 'BIKE'].includes(cardioType);
+    let hasInsufficientSamples = false;
+    if (requiresGpsDistance && checkpoints.length < 3) {
+      hasInsufficientSamples = true;
+      threats.push('INSUFFICIENT_GPS_CHECKPOINTS');
+    }
+
+    const isValid = !isMockLocation && !isFrozenGps && !hasTeleportation && !hasInsufficientSamples;
 
     return {
       isValid,
@@ -102,6 +124,7 @@ export class GpsEngine {
       isFrozenGps,
       hasTeleportation,
       hasExcessiveSpeed,
+      hasInsufficientSamples,
       avgAccuracyMeters: accuracy,
       maxSpeedKmH,
       gymGeofenceVerified,
@@ -117,8 +140,8 @@ export class GpsEngine {
     const Δλ = (lon2 - lon1) * Math.PI / 180;
 
     const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;

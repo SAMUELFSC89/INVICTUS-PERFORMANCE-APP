@@ -126,16 +126,28 @@ export class FraudEngine {
         weightPenalty: 40
       });
     }
+    if (gpsReport.hasInsufficientSamples) {
+      evidences.push({
+        code: 'INSUFFICIENT_GPS_CHECKPOINTS',
+        category: 'GPS',
+        severity: 'MEDIUM',
+        description: 'Atividade de cardio ao ar livre sem amostras de GPS suficientes para validar o trajeto percorrido (rota real não pôde ser confirmada).',
+        weightPenalty: 30
+      });
+    }
 
     // 3. Sensor Analysis
     const sensorReport = SensorEngine.evaluate(activity);
     sensorReport.threats.forEach(threat => {
+      const isMissingTelemetry = threat === 'MISSING_SENSOR_TELEMETRY';
       evidences.push({
         code: threat,
         category: 'SENSOR',
-        severity: 'MEDIUM',
-        description: `Anomalia de sensores: ${threat}`,
-        weightPenalty: 20
+        severity: isMissingTelemetry ? 'MEDIUM' : 'MEDIUM',
+        description: isMissingTelemetry
+          ? 'Nenhum dado de acelerômetro/giroscópio foi coletado durante uma atividade que depende de movimento real.'
+          : `Anomalia de sensores: ${threat}`,
+        weightPenalty: isMissingTelemetry ? 25 : 20
       });
     });
 

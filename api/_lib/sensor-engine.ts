@@ -3,6 +3,7 @@ export interface SensorEngineReport {
   hasMotionVariance: boolean;
   stepToDistanceRatioValid: boolean;
   hrToMotionCorrelated: boolean;
+  hasSensorTelemetry: boolean;
   threats: string[];
 }
 
@@ -13,13 +14,41 @@ export class SensorEngine {
   static evaluate(activity: any): SensorEngineReport {
     const threats: string[] = [];
 
-    // 1. Motion Variance (Accelerometer / Gyroscope)
-    const accelVariance = Number(activity.sensorTelemetry?.accelVariance ?? 1.2);
-    const gyroVariance = Number(activity.sensorTelemetry?.gyroVariance ?? 0.8);
+    const activityType = (activity.activityType || activity.type || '').toString().toUpperCase();
+    const cardioType = (activity.cardioType || '').toString().toUpperCase();
+    const requiresMotionEvidence = activity.requiresGpsDistance === true ||
+      ['RUNNING', 'WALKING', 'CYCLING'].includes(activityType) ||
+      ['RUNNING', 'WALKING', 'BIKE'].includes(cardioType);
 
-    const hasMotionVariance = accelVariance > 0.05 && gyroVariance > 0.02;
-    if (!hasMotionVariance && activity.sensorTelemetry) {
-      threats.push('NO_SENSOR_MOTION_VARIANCE');
+    // 1. Motion Variance (Accelerometer / Gyroscope).
+    // Antes, quando activity.sensorTelemetry vinha completamente ausente (ex.: o app nunca
+    // pediu ou nunca recebeu permissao de DeviceMotionEvent no iOS), o codigo aplicava
+    // valores padrao "plausiveis" (accelVariance=1.2, gyroVariance=0.8) e a checagem so
+    // gerava uma ameaca quando sensorTelemetry EXISTIA mas mostrava variancia baixa --
+    // ou seja, a AUSENCIA total de dados de sensor era tratada como "motion valida por
+    // padrao" (fail-open). Foi exatamente essa brecha que permitiu uma atividade de
+    // cardio feita de onibus ser homologada sem nenhum dado real de acelerometro/giroscopio.
+    // Agora a ausencia de telemetria para atividades que dependem de movimento real
+    // (corrida, caminhada, ciclismo ao ar livre) e tratada como evidencia insuficiente
+    // (fail-closed), gerando uma ameaca MISSING_SENSOR_TELEMETRY em vez de passar batido.
+    // Ver auditoria antifraude 2026-08.
+    const hasSensorTelemetry = !!activity.sensorTelemetry && (
+      activity.sensorTelemetry.accelVariance !== undefined || activity.sensorTelemetry.gyroVariance !== undefined
+    );
+
+    let hasMotionVariance: boolean;
+    if (hasSensorTelemetry) {
+      const accelVariance = Number(activity.sensorTelemetry.accelVariance ?? 0);
+      const gyroVariance = Number(activity.sensorTelemetry.gyroVariance ?? 0);
+      hasMotionVariance = accelVariance > 0.05 && gyroVariance > 0.02;
+      if (!hasMotionVariance) {
+        threats.push('NO_SENSOR_MOTION_VARIANCE');
+      }
+    } else {
+      hasMotionVariance = !requiresMotionEvidence;
+      if (requiresMotionEvidence) {
+        threats.push('MISSING_SENSOR_TELEMETRY');
+      }
     }
 
     // 2. Step to Distance Ratio
@@ -53,6 +82,7 @@ export class SensorEngine {
       hasMotionVariance,
       stepToDistanceRatioValid,
       hrToMotionCorrelated,
+      hasSensorTelemetry,
       threats
     };
   }
