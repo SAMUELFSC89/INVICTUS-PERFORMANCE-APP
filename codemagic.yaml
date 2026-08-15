@@ -7,7 +7,7 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          npm ci
+          npm install --no-audit --no-fund
       - name: Build web app (Vite)
         script: |
           npx vite build
