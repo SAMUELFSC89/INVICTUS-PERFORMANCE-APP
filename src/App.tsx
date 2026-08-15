@@ -18,6 +18,7 @@ import { AdminEliteChallenges } from './pages/AdminEliteChallenges';
 import { AdminGymAudit } from './pages/AdminGymAudit';
 import { AdminRankingSimulator } from './pages/AdminRankingSimulator';
 import { AdminSecurityAudit } from './pages/AdminSecurityAudit';
+import { AdminIGATesteOriginal } from './pages/AdminIGATesteOriginal';
 import { AdminGuard } from './components/AdminGuard';
 import { AuthGuard } from './components/AuthGuard';
 import { Performance } from './pages/Performance';
@@ -79,6 +80,7 @@ export default function App() {
                 <Route path="/admin/payouts" element={<AdminGuard><AdminPayouts /></AdminGuard>} />
                 <Route path="/admin/gym-audit" element={<AdminGuard><AdminGymAudit /></AdminGuard>} />
                 <Route path="/admin/ranking-simulator" element={<AdminGuard><AdminRankingSimulator /></AdminGuard>} />
+<Route path="/admin/iga-teste-original" element={<AdminGuard><AdminIGATesteOriginal /></AdminGuard>} />
                 <Route path="/admin/security" element={<AdminGuard><AdminSecurityAudit /></AdminGuard>} />
                 <Route path="/admin/wearables" element={<AdminGuard><WearablesDashboard /></AdminGuard>} />
                 <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
