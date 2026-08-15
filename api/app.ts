@@ -28,6 +28,7 @@ import validateActivityHandler from './_handlers/validate-activity.js';
 import validatePresenceHandler from './_handlers/validate-presence.js';
 import eliteHandler from './_handlers/elite.js';
 import whatsappHandler from './_handlers/whatsapp.js';
+import notificationsHandler from './_handlers/notifications.js';
 import auditFraudHandler from './_handlers/audit-fraud.js';
 import stravaHandler from './_handlers/strava.js';
 import migrateResetHandler from './_handlers/migrate-reset.js';
@@ -199,6 +200,9 @@ router.use('/strava', stravaHandler);
 
 console.log('[ROUTE] /whatsapp/send', typeof whatsappHandler);
 router.all('/whatsapp/send', wrap(whatsappHandler));
+
+console.log('[ROUTE] /notifications', typeof notificationsHandler);
+router.all('/notifications', wrap(notificationsHandler));
 
 console.log('[ROUTE] /audit-fraud', typeof auditFraudHandler);
 router.all('/audit-fraud', wrap(auditFraudHandler));
