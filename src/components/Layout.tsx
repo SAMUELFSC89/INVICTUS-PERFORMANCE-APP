@@ -20,9 +20,10 @@ import { getXPProgress, getLevelFromXP } from '../lib/levelUtils';
 import { BarbellLifter } from './BarbellLifter';
 import { MiniBarbellProgress } from './MiniBarbellProgress';
 import { InvictusLogo } from './InvictusLogo';
+import { initPushNotifications } from '../services/pushNotificationService';
 
 export function Layout() {
-  const { user } = useUser();
+  const { user, refreshUser } = useUser();
   const progress = getXPProgress(user?.xp || 0);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -56,6 +57,28 @@ export function Layout() {
       }
     }
   }, [user]);
+
+  // Push notifications: register this device's FCM token once we have an
+  // authenticated user (real registration, not just a permission check).
+  useEffect(() => {
+    if (user?.uid) {
+      initPushNotifications(user.uid, (url) => navigate(url));
+    }
+  }, [user?.uid, navigate]);
+
+  // UserContext fetches the profile once on login (no live Firestore
+  // listener), so without this the Bell badge would only refresh after a
+  // full app reload. Cheap periodic + on-focus refresh keeps it real.
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => { refreshUser(); }, 60000);
+    const onFocus = () => refreshUser();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [user, refreshUser]);
 
   const handleMarkNotifRead = async (id: string) => {
     if (!user) return;
