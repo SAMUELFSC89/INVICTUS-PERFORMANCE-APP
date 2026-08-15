@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, X, Trophy, CreditCard, ShieldAlert, CheckCircle, ArrowRight } from 'lucide-react';
+import { Bell, X, Trophy, CreditCard, ShieldAlert, CheckCircle, ArrowRight, Heart } from 'lucide-react';
 import { UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -28,6 +28,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       case 'ranking': return <Trophy className="text-prize-gold" size={20} />;
       case 'payment': return <CreditCard className="text-primary" size={20} />;
       case 'achievement': return <CheckCircle className="text-secondary" size={20} />;
+case 'social': return <Heart className="text-red-400" size={20} />;
       default: return <ShieldAlert className="text-on-surface-variant" size={20} />;
     }
   };
