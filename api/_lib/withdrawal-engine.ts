@@ -2,6 +2,7 @@ import { db, FieldValue } from './common.js';
 import { WalletEngine } from './wallet-engine.js';
 import { PIXWithdrawal, WithdrawalStatus, WithdrawalConfig } from '../../src/types.js';
 import { AsaasClient } from './asaas-client.js';
+import { notificationService } from '../_services/notification-service.js';
 
 export const DEFAULT_WITHDRAWAL_CONFIG: WithdrawalConfig = {
   minWithdrawalAmount: 20, // R$ 20,00
@@ -236,6 +237,24 @@ export class WithdrawalEngine {
     };
 
     await docRef.set(updated, { merge: true });
+    if (newStatus === 'paid') {
+      notificationService.notify({
+        userId: withdrawal.userId,
+        type: 'payment',
+        title: 'Saque pago! 💰',
+        message: 'Seu saque de R$ ' + withdrawal.amount.toFixed(2) + ' foi enviado via PIX.',
+        actionUrl: '/wallet',
+      }).catch((e) => console.error('[WithdrawalEngine] Falha ao notificar saque pago:', e));
+    } else if (newStatus === 'rejected' || newStatus === 'cancelled') {
+      notificationService.notify({
+        userId: withdrawal.userId,
+        type: 'payment',
+        title: 'Saque não aprovado',
+        message: adminNote || ('Seu saque de R$ ' + withdrawal.amount.toFixed(2) + ' foi ' + (newStatus === 'rejected' ? 'rejeitado' : 'cancelado') + '. O valor foi devolvido ao seu saldo.'),
+        actionUrl: '/wallet',
+      }).catch((e) => console.error('[WithdrawalEngine] Falha ao notificar saque rejeitado:', e));
+    }
+
     return { ...withdrawal, ...updated };
   }
 
@@ -297,6 +316,14 @@ export class WithdrawalEngine {
       };
 
       await docRef.set(updated, { merge: true });
+      notificationService.notify({
+        userId: withdrawal.userId,
+        type: 'payment',
+        title: 'Saque pago! 💰',
+        message: 'Seu saque de R$ ' + withdrawal.amount.toFixed(2) + ' foi enviado via PIX.',
+        actionUrl: '/wallet',
+      }).catch((e) => console.error('[WithdrawalEngine] Falha ao notificar saque pago:', e));
+
       return { ...withdrawal, ...updated };
     } catch (err) {
       // 4. O Asaas recusou ou falhou: devolve o saque para o status anterior
@@ -343,6 +370,14 @@ export class WithdrawalEngine {
         adminNote: 'Transferência falhou no Asaas: ' + (failureReason || 'sem detalhes'),
         updatedAt: new Date().toISOString()
       }, { merge: true });
+
+      notificationService.notify({
+        userId: withdrawal.userId,
+        type: 'payment',
+        title: 'Saque não concluído',
+        message: 'Houve uma falha na transferência PIX de R$ ' + withdrawal.amount.toFixed(2) + '. O valor foi devolvido ao seu saldo.',
+        actionUrl: '/wallet',
+      }).catch((e) => console.error('[WithdrawalEngine] Falha ao notificar estorno de saque:', e));
     } else {
       await doc.ref.set({
         providerStatus: providerStatus || event,
