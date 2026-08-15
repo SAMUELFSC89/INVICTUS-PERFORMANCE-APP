@@ -199,7 +199,7 @@ export interface UserProfile {
     id: string;
     title: string;
     message: string;
-    type: 'ranking' | 'payment' | 'system' | 'achievement';
+    type: 'ranking' | 'payment' | 'system' | 'achievement' | 'social';
     read: boolean;
     createdAt: string;
     actionUrl?: string;
