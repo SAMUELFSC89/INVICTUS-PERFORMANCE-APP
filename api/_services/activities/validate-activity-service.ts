@@ -20,17 +20,17 @@ export class ValidateActivityService {
 
   private validateInput(data: ValidateActivityRequest['activityData']): void {
     if (!data) {
-      throw new AppError('Dados da atividade são obrigatórios', 400);
+      throw new AppError('Dados da atividade sao obrigatorios', 400);
     }
     if (!data.type || typeof data.type !== 'string') {
-      throw new AppError('Tipo da atividade é obrigatório', 400);
+      throw new AppError('Tipo da atividade e obrigatorio', 400);
     }
     if (data.duration !== undefined && (typeof data.duration !== 'number' || data.duration < 0)) {
-      throw new AppError('Duração da atividade deve ser um número válido de minutos', 400);
+      throw new AppError('Duracao da atividade deve ser um numero valido de minutos', 400);
     }
     const validIntensities = ['low', 'moderate', 'high'];
     if (data.intensity && !validIntensities.includes(data.intensity)) {
-      throw new AppError('Intensidade inválida. Opções aceitas: low, moderate, high', 400);
+      throw new AppError('Intensidade invalida. Opcoes aceitas: low, moderate, high', 400);
     }
   }
 
@@ -38,7 +38,7 @@ export class ValidateActivityService {
     const duration = data.duration || 30;
     const basePointsPerMinute = data.type === 'power_video' ? 10 : 2;
     const intensityMultiplier = data.intensity === 'high' ? 1.5 : data.intensity === 'moderate' ? 1.2 : 1.0;
-    
+
     let totalScore = Math.round(duration * basePointsPerMinute * intensityMultiplier);
     if (data.type === 'power_video') {
       totalScore = Math.min(totalScore, 100);
@@ -48,33 +48,46 @@ export class ValidateActivityService {
 
   private detectFraud(data: ValidateActivityRequest['activityData']): { isFraud: boolean; reason?: string } {
     if (data.duration && data.duration > 360) {
-      return { isFraud: true, reason: 'Duração excessiva e não crível (> 6 horas contínuas)' };
+      return { isFraud: true, reason: 'Duracao excessiva e nao crivel (> 6 horas continuas)' };
     }
     if (data.evidence?.steps && data.duration && data.duration > 0) {
       const stepsPerMinute = data.evidence.steps / data.duration;
       if (stepsPerMinute > 300) {
-        return { isFraud: true, reason: 'Cadência de passos por minuto sobre-humana (> 300 spm)' };
+        return { isFraud: true, reason: 'Cadencia de passos por minuto sobre-humana (> 300 spm)' };
       }
     }
     return { isFraud: false };
   }
 
+  private buildSecurityUserMessage(decision: string, explanationSummary?: string, primaryRiskDriver?: string): string {
+    const decisionLabel = decision === 'BLOCKED'
+      ? 'nao foi homologada'
+      : decision === 'UNDER_REVIEW'
+      ? 'ficou pendente de analise manual'
+      : 'foi sinalizada como parcialmente aprovada';
+
+    if (explanationSummary) {
+      return `Sua atividade ${decisionLabel} pela auditoria antifraude. Motivo: ${explanationSummary}`;
+    }
+    if (primaryRiskDriver) {
+      return `Sua atividade ${decisionLabel} pela auditoria antifraude. Principal fator de risco: ${primaryRiskDriver}.`;
+    }
+    return `Sua atividade ${decisionLabel} pela auditoria antifraude. Nossos sistemas detectaram inconsistencias entre o GPS, os sensores do aparelho e o tipo de atividade declarado.`;
+  }
+
   async execute(request: ValidateActivityRequest): Promise<ValidateActivityResponse> {
     const traceId = this.generateTraceId();
-    console.log(`[ValidateActivityService] [${traceId}] Iniciando validação para usuário ${request.userId}`);
+    console.log(`[ValidateActivityService] [${traceId}] Iniciando validacao para usuario ${request.userId}`);
 
-    // 1. Validar entrada
     this.validateInput(request.activityData);
     console.log(`[ValidateActivityService] [${traceId}] Entrada de dados validada com sucesso`);
 
-    // 2. Buscar usuário
     const user = await this.userRepository.findById(request.userId);
     if (!user) {
-      console.warn(`[ValidateActivityService] [${traceId}] Usuário ${request.userId} não encontrado no Firestore`);
-      throw new AppError('Usuário não encontrado no sistema', 404);
+      console.warn(`[ValidateActivityService] [${traceId}] Usuario ${request.userId} nao encontrado no Firestore`);
+      throw new AppError('Usuario nao encontrado no sistema', 404);
     }
 
-    // 3. Detectar fraude
     const fraudCheck = this.detectFraud(request.activityData);
     if (fraudCheck.isFraud) {
       console.warn(`[ValidateActivityService] [${traceId}] Suspeita de fraude: ${fraudCheck.reason}`);
@@ -85,14 +98,9 @@ export class ValidateActivityService {
         details: { activityData: request.activityData, reason: fraudCheck.reason },
         result: 'FLAGGED'
       });
-      throw new AppError(`Atividade rejeitada por inconsistência nos dados: ${fraudCheck.reason}`, 422);
+      throw new AppError(`Atividade recusada: ${fraudCheck.reason}.`, 422);
     }
 
-    // 3.5. Idempotencia basica: recusar reenvio da mesma atividade (mesmo type
-    // + duration) nos ultimos 10 segundos. Este endpoint legado nao possui uma
-    // chave de idempotencia formal do cliente; isso cobre o caso mais comum de
-    // duplicidade (duplo clique, retry de rede). Reaproveita
-    // ActivityRepository.findRecentByUser, que ja existia mas nunca era chamado.
     const recentActivities = await this.activityRepository.findRecentByUser(request.userId, 0.1);
     const tenSecondsAgo = Date.now() - 10000;
     const isDuplicateSubmission = recentActivities.some(a => {
@@ -106,18 +114,11 @@ export class ValidateActivityService {
       throw new AppError('Esta atividade ja foi registrada. Aguarde alguns segundos antes de tentar novamente.', 409);
     }
 
-    // 3.6. Enterprise Security Pipeline (ver auditoria antifraude 2026-08). O checador
-    // de fraude legado acima (detectFraud) so cobre duracao>6h e passos/min>300, usando
-    // campos (data.duration, data.evidence.steps) que na pratica NAO batem com o que o
-    // frontend realmente envia para este endpoint legado hoje (durationMins,
-    // pedometerSteps no nivel raiz de activityData) -- ou seja, a checagem legada
-    // praticamente nunca disparava de verdade. O SecurityPipeline le os campos reais
-    // enviados por activityService.ts (isMockLocation, isEmulator, isRooted,
-    // isDeveloperMode, sensorTelemetry, avgHeartRate, checkpoints, distanceKm)
-    // diretamente do payload recebido, com fallback seguro quando ausentes.
     const rawActivity: any = request.activityData || {};
     let securityBlocked = false;
     let securityReason: string | null = null;
+    let securityUserMessage: string | null = null;
+    let securityCanRetry = true;
     try {
       const securityResult = await SecurityPipeline.runPipeline(
         {
@@ -143,14 +144,45 @@ export class ValidateActivityService {
       if (!securityResult.shouldScore) {
         securityBlocked = true;
         securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
+        securityCanRetry = securityResult.decision !== 'BLOCKED';
+        securityUserMessage = this.buildSecurityUserMessage(
+          securityResult.decision,
+          securityResult.report?.explanation?.summaryText,
+          securityResult.report?.explanation?.primaryRiskDriver
+        );
       }
     } catch (secErr) {
-      // Fail-open: falha no motor de seguranca nao derruba o registro da atividade.
       console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:`, secErr);
     }
 
     if (securityBlocked) {
       console.warn(`[ValidateActivityService] [${traceId}] SecurityPipeline recusou pontuacao: ${securityReason}`);
+
+      try {
+        await this.activityRepository.create({
+          userId: request.userId,
+          type: request.activityData.type,
+          cardioType: rawActivity.cardioType,
+          cardioTypeLabel: rawActivity.cardioTypeLabel,
+          duration: request.activityData.duration || rawActivity.durationMins || 30,
+          distance: Number(rawActivity.distanceKm) || 0,
+          intensity: request.activityData.intensity || 'moderate',
+          startTime: request.activityData.startTime || new Date().toISOString(),
+          endTime: request.activityData.endTime || new Date().toISOString(),
+          pointsEarned: 0,
+          scoreAwarded: 0,
+          status: 'rejected',
+          validationStatus: 'invalid',
+          nonScoringReason: securityReason,
+          rejectionReason: securityUserMessage,
+          userMessage: securityUserMessage,
+          evidence: request.activityData.evidence || {},
+          traceId
+        });
+      } catch (persistErr) {
+        console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade rejeitada no historico:`, persistErr);
+      }
+
       await this.auditRepository.log({
         traceId,
         userId: request.userId,
@@ -158,18 +190,24 @@ export class ValidateActivityService {
         details: { activityData: request.activityData, reason: securityReason },
         result: 'FLAGGED'
       });
-      throw new AppError(`Atividade recusada pela auditoria antifraude (${securityReason}).`, 422);
+      throw new AppError(securityUserMessage || `Atividade recusada pela auditoria antifraude (${securityReason}).`, 422, {
+        reasonCode: securityReason,
+        canRetry: securityCanRetry
+      } as any);
     }
 
-    // 4. Calcular score
     const scoreAwarded = this.calculateScore(request.activityData);
-    console.log(`[ValidateActivityService] [${traceId}] Pontuação calculada: +${scoreAwarded} XP`);
+    console.log(`[ValidateActivityService] [${traceId}] Pontuacao calculada: +${scoreAwarded} XP`);
 
-    // 5. Salvar atividade no repositório
     const savedActivity = await this.activityRepository.create({
       userId: request.userId,
       type: request.activityData.type,
-      duration: request.activityData.duration || 30,
+      cardioType: rawActivity.cardioType,
+      cardioTypeLabel: rawActivity.cardioTypeLabel,
+      duration: request.activityData.duration || rawActivity.durationMins || 30,
+      distance: Number(rawActivity.distanceKm) || 0,
+      trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
+      photoUrl: rawActivity.photoBase64 || undefined,
       intensity: request.activityData.intensity || 'moderate',
       startTime: request.activityData.startTime || new Date().toISOString(),
       endTime: request.activityData.endTime || new Date().toISOString(),
@@ -180,13 +218,11 @@ export class ValidateActivityService {
       evidence: request.activityData.evidence || {},
       traceId
     });
-    console.log(`[ValidateActivityService] [${traceId}] Atividade registrada no repositório (ID: ${savedActivity.id})`);
+    console.log(`[ValidateActivityService] [${traceId}] Atividade registrada no repositorio (ID: ${savedActivity.id})`);
 
-    // 6. Atualizar XP do usuário
     const { newXP, newLevel } = await this.userRepository.addXP(request.userId, scoreAwarded);
-    console.log(`[ValidateActivityService] [${traceId}] XP do usuário atualizado para ${newXP} (Nível ${newLevel})`);
+    console.log(`[ValidateActivityService] [${traceId}] XP do usuario atualizado para ${newXP} (Nivel ${newLevel})`);
 
-    // 7. Registrar auditoria
     await this.auditRepository.log({
       traceId,
       userId: request.userId,
@@ -195,11 +231,12 @@ export class ValidateActivityService {
       result: 'SUCCESS'
     });
 
-    // 8. Notificar usuário
+    const successUserMessage = `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP.`;
+
     await this.notificationService.send({
       userId: request.userId,
-      title: 'Atividade Validada! 🔥',
-      body: `Sua atividade de ${request.activityData.type} foi concluída com sucesso. Você ganhou +${scoreAwarded} XP!`,
+      title: 'Atividade Validada!',
+      body: `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${scoreAwarded} XP!`,
       type: 'activity_validated',
       data: { activityId: savedActivity.id, scoreAwarded, traceId }
     });
@@ -209,8 +246,26 @@ export class ValidateActivityService {
       activityId: savedActivity.id || '',
       scoreAwarded,
       level: newLevel,
-      message: 'Atividade validada e registrada com sucesso!',
-      traceId
-    };
+      message: successUserMessage,
+      userMessage: successUserMessage,
+      traceId,
+      workout: {
+        id: savedActivity.id,
+        points: scoreAwarded,
+        level: newLevel,
+        status: 'valid',
+        type: request.activityData.type,
+        distance: Number(rawActivity.distanceKm) || 0,
+        duration: request.activityData.duration || rawActivity.durationMins || 30
+      },
+      validation: {
+        success: true,
+        status: 'approved',
+        score: 100,
+        reasonCode: null
+      },
+      isScoringEligible: true,
+      nonScoringReason: null
+    } as any;
   }
 }
