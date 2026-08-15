@@ -44,8 +44,8 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
       const exName = exercise || exerciseName || 'Power Lift';
       const declaredWeight = weight || weightKg || 0;
 
-      const frames: string[] = Array.isArray(framesBase64) && framesBase64.length > 0 
-        ? framesBase64 
+      const frames: string[] = Array.isArray(framesBase64) && framesBase64.length > 0
+        ? framesBase64
         : photoBase64 ? [photoBase64] : [];
 
       if (ai && frames.length > 0) {
@@ -74,15 +74,15 @@ DADOS DECLARADOS:
 REGRAS OBRIGATÓRIAS DE VALIDAÇÃO (POWER LIFT)
 --------------------------------------------------
 1. EXIBIÇÃO DA PRIMEIRA ANILHA NO INÍCIO DO VÍDEO:
-   O vídeo DEVE obrigatoriamente abrir/iniciar mostrando claramente o peso gravado/impresso na primeira anilha (ex: "20kg", "15kg", "25kg", "45lb").
+O vídeo DEVE obrigatoriamente abrir/iniciar mostrando claramente o peso gravado/impresso na primeira anilha (ex: "20kg", "15kg", "25kg", "45lb").
 2. MÚLTIPLAS ANILHAS:
-   Se houver mais de uma anilha de cada lado da barra, exige-se apenas a exibição nítida da marcação da primeira anilha no início. No entanto, o atleta DEVE informar (falado no áudio do vídeo ou por texto sobreposto na tela) o valor total combinado das demais anilhas.
+Se houver mais de uma anilha de cada lado da barra, exige-se apenas a exibição nítida da marcação da primeira anilha no início. No entanto, o atleta DEVE informar (falado no áudio do vídeo ou por texto sobreposto na tela) o valor total combinado das demais anilhas.
 3. CONTINUIDADE SEM CORTES OU EDIÇÕES:
-   O vídeo deve ser 100% contínuo desde a exibição inicial do peso na primeira anilha até a conclusão total do levantamento (lockout), sem cortes, edições, acelerações, pausas ou transições de câmera.
+O vídeo deve ser 100% contínuo desde a exibição inicial do peso na primeira anilha até a conclusão total do levantamento (lockout), sem cortes, edições, acelerações, pausas ou transições de câmera.
 4. AMBIENTE E BIOMECÂNICA:
-   Ambiente de academia real. Exercício correto (${exName}) com amplitude técnica completa (Supino: barra toca peito + lockout; Agachamento: quadril abaixo do joelho + lockout; Terra: extensão completa de joelhos e quadril no topo).
+Ambiente de academia real. Exercício correto (${exName}) com amplitude técnica completa (Supino: barra toca peito + lockout; Agachamento: quadril abaixo do joelho + lockout; Terra: extensão completa de joelhos e quadril no topo).
 5. ANTIFRAUDE:
-   Qualquer suspeita de vídeo editado, gravação de tela, deepfake ou ausência da exibição inicial do peso da anilha deve resultar em REPROVADO ou AUDITORIA_MANUAL.
+Qualquer suspeita de vídeo editado, gravação de tela, deepfake ou ausência da exibição inicial do peso da anilha deve resultar em REPROVADO ou AUDITORIA_MANUAL.
 
 Retorne estritamente o JSON com a avaliação.`;
 
@@ -141,11 +141,14 @@ Retorne estritamente o JSON com a avaliação.`;
       activityData
     });
 
-    // 4. Retornar resposta HTTP 200 de sucesso
-    return res.status(200).json({
-      success: true,
-      data: result
-    });
+    // 4. Retornar resposta HTTP 200 de sucesso. O objeto `result` ja vem no formato
+    // plano (workout/validation/message/userMessage na raiz) que o frontend
+    // (activityService.ts / Challenges.tsx) espera -- ver validate-activity-service.ts.
+    // Antes isso era envolvido em { success: true, data: result }, fazendo o frontend
+    // nunca enxergar respData.workout / respData.validation / respData.userMessage
+    // (sempre undefined), entao a tela de resumo do cardio nunca mostrava pontos reais,
+    // pace, distancia ou a mensagem de homologacao/rejeicao.
+    return res.status(200).json(result);
   } catch (error: any) {
     return errorHandler(error, res);
   }
