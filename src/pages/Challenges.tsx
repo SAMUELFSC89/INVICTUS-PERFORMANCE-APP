@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
+import {
   Dumbbell, TrendingUp, MapPin, RefreshCw, CheckCircle, XCircle,
-  Clock, Lock, Play, ShieldCheck, Flame, Trophy, Users, Camera, X, 
+  Clock, Lock, Play, ShieldCheck, Flame, Trophy, Users, Camera, X,
   Zap, Award, AlertCircle, ArrowRight, Sparkles, Watch, Calendar,
   Medal, Star, Building2, ChevronRight, Gift
 } from 'lucide-react';
@@ -17,13 +17,16 @@ import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firesto
 import { ActivitySession } from '../types';
 import { cn } from '../lib/utils';
 import { getCurrentLocation } from '../lib/locationUtils';
+import { calculatePace } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection } from '../components/ActivityHistorySection';
 import { HabitTrackerSection } from '../components/HabitTrackerSection';
 import { PowerModule } from './PowerModule';
+import { RunShareCard } from '../components/RunShareCard';
+import { AdvancedRunStats } from '../services/runningService';
 
-export type ChallengeCategory = 
+export type ChallengeCategory =
   | 'all'
   | 'em_andamento'
   | 'diarios'
@@ -120,6 +123,14 @@ export function Challenges() {
   const [activeSession, setActiveSession] = useState<ActivitySession | null>(activityService.getCurrentSession());
   const [elapsedTime, setElapsedTime] = useState(0);
 
+  // Live GPS tracking state (distância/pace em tempo real durante cardio ao ar livre)
+  const [liveDistanceKm, setLiveDistanceKm] = useState(0);
+  const gpsWatchIdRef = useRef<number | null>(null);
+  const lastCheckpointTimeRef = useRef<number>(0);
+
+  // Card premium de compartilhamento pós-cardio (estilo Strava)
+  const [shareCardData, setShareCardData] = useState<AdvancedRunStats | null>(null);
+
   // Today's completed submissions
   const [submissions, setSubmissions] = useState<Record<string, any>>({});
 
@@ -201,6 +212,53 @@ export function Challenges() {
     const interval = setInterval(syncSession, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // GPS checkpoint tracking em tempo real para cardio ao ar livre (corrida/caminhada/bike).
+  // Antes addCheckpoint() nunca era chamado durante a sessão, entao a "rota" virava so
+  // uma linha reta entre inicio e fim, dando pouquissimo dado real pro antifraude
+  // (GpsEngine) e nenhuma info de distancia/pace ao vivo pro usuario -- ver auditoria
+  // antifraude 2026-08 (teste do onibus homologado sem dados).
+  useEffect(() => {
+    if (!activeSession || !activeSession.requiresGpsDistance || typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLiveDistanceKm(0);
+      return;
+    }
+
+    setLiveDistanceKm(activityService.calculateSessionDistance(activeSession));
+    lastCheckpointTimeRef.current = 0;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const now = Date.now();
+        // Limita a no maximo 1 checkpoint a cada ~10s para nao sobrecarregar
+        // Firestore/localStorage durante a sessao.
+        if (now - lastCheckpointTimeRef.current < 10000) return;
+        lastCheckpointTimeRef.current = now;
+
+        activityService.addCheckpoint({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+
+        const current = activityService.getCurrentSession();
+        if (current) {
+          setLiveDistanceKm(activityService.calculateSessionDistance(current));
+        }
+      },
+      (err) => {
+        console.warn('[Challenges] GPS watchPosition error during cardio session:', err);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+    gpsWatchIdRef.current = watchId;
+
+    return () => {
+      if (gpsWatchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+        gpsWatchIdRef.current = null;
+      }
+    };
+  }, [activeSession?.id, activeSession?.requiresGpsDistance]);
 
   // Checkin countdown timer
   useEffect(() => {
@@ -342,7 +400,7 @@ export function Challenges() {
       setCheckinExpiresAt(resJson.expiresAt);
       setGymCheckinStatus('confirmed');
       setCheckinSuccessMessage(`Check-in verificado com sucesso na academia "${profile?.gymName || 'Academia'}"! Presença confirmada (+20 XP).`);
-      
+
       triggerXPToast(20, 'Check-in Presencial Confirmado! 📍');
       await refreshUser();
     } catch (err: any) {
@@ -357,6 +415,7 @@ export function Challenges() {
   const handleOpenChallenge = (challenge: CoreChallenge) => {
     setPendingChallenge(challenge);
     setStartActivityError(null);
+    setError(null);
     if (challenge.id === 'checkin' || challenge.id === 'workout') {
       evaluateGymProximityCheck();
     }
@@ -365,6 +424,15 @@ export function Challenges() {
   // Start Session (Workout / Cardio)
   const handleStartActivity = async (type: 'workout' | 'cardio') => {
     setStartActivityError(null);
+    setError(null);
+    // IMPORTANTE: solicitar permissao de sensores (acelerometro/giroscopio) como a
+    // PRIMEIRA acao, de forma sincrona em relacao ao clique do usuario. No iOS Safari,
+    // DeviceMotionEvent.requestPermission() so exibe o prompt real se chamado dentro da
+    // mesma pilha de execucao do gesto do usuario -- se colocado depois de qualquer await
+    // (ex.: startSession fazendo consultas no Firestore), o Safari ja descartou a "user
+    // activation" e o prompt nunca aparece (bug reportado: so pedia microfone/localização).
+    // Ver auditoria antifraude 2026-08.
+    await activityService.requestMotionPermission();
     try {
       const session = await activityService.startSession(
         type,
@@ -416,16 +484,50 @@ export function Challenges() {
     setLoading(true);
     setError(null);
 
+    const sessionType = activeSession.type;
+    // Captura o snapshot mais recente da sessao (com todos os checkpoints de GPS
+    // coletados ate agora) ANTES de endSession() limpar/encerrar a sessao localmente,
+    // para poder montar a rota real do card premium de compartilhamento depois.
+    const sessionBeforeEnd = activityService.getCurrentSession() || activeSession;
+
     try {
       const res = await activityService.endSession();
-      const points = res.workout?.points || (activeSession.type === 'workout' ? 40 : 30);
+      const points = res.workout?.points || (sessionType === 'workout' ? 40 : 30);
       setActiveSession(null);
-      
+
       if (res.message && res.validation?.success === false) {
         triggerXPToast(0, 'Sessão encerrada.');
         setError(res.message);
       } else {
-        triggerXPToast(points, `${activeSession.type === 'workout' ? 'Treino de Musculação' : 'Queima de Gordura'} Concluído! 🔥`);
+        triggerXPToast(points, `${sessionType === 'workout' ? 'Treino de Musculação' : 'Queima de Gordura'} Concluído! 🔥`);
+
+        // Card premium de compartilhamento (estilo Strava), somente para cardio
+        // homologado com sucesso -- reaproveita o RunShareCard ja usado no Criar
+        // Habito, alimentado com os dados reais desta sessao (distancia/tempo/rota).
+        if (sessionType === 'cardio' && res.validation?.success !== false) {
+          const distanceKm = (res.workout?.distance ?? activityService.calculateSessionDistance(sessionBeforeEnd)) || 0;
+          const durationMinsRaw = res.workout?.duration;
+          const timeSeconds = durationMinsRaw ? durationMinsRaw * 60 : elapsedTime;
+          const trajectory = (sessionBeforeEnd.checkpoints || [])
+            .filter((cp: any) => cp.location)
+            .map((cp: any) => ({
+              lat: cp.location.lat,
+              lng: cp.location.lng,
+              timestamp: new Date(cp.timestamp).getTime()
+            }));
+
+          setShareCardData({
+            id: res.workout?.id || `local_${Date.now()}`,
+            km: distanceKm,
+            timeSeconds,
+            pace: calculatePace(distanceKm * 1000, timeSeconds),
+            calories: Math.round(distanceKm * 62),
+            elevationGain: 0,
+            steps: Math.round(distanceKm * 1350),
+            trajectory,
+            date: new Date().toISOString()
+          });
+        }
       }
       await refreshUser();
       await loadSubmissions();
@@ -461,11 +563,11 @@ export function Challenges() {
 
   return (
     <div className="min-h-screen bg-surface-dark pb-28 text-on-surface pt-4 px-4 max-w-5xl mx-auto space-y-6">
-      
+
       {/* HEADER BANNER */}
       <div className="bg-gradient-to-br from-surface-card via-surface-card to-surface-card/60 p-6 rounded-[28px] border border-white/10 shadow-xl relative overflow-hidden">
         <div className="absolute -right-10 -top-10 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-        
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -547,6 +649,14 @@ export function Challenges() {
               <p className="text-xs text-on-surface-variant flex items-center gap-1">
                 <Clock size={13} className="text-primary" /> Tempo decorrido: <strong className="text-white font-mono text-sm">{formatTime(elapsedTime)}</strong>
               </p>
+              {activeSession.requiresGpsDistance && (
+                <p className="text-xs text-on-surface-variant flex items-center gap-1 flex-wrap">
+                  <MapPin size={13} className="text-primary" /> Distância: <strong className="text-white font-mono text-sm">{liveDistanceKm.toFixed(2)} km</strong>
+                  {liveDistanceKm > 0.01 && elapsedTime > 0 && (
+                    <span className="ml-1">• Pace: <strong className="text-white font-mono text-sm">{calculatePace(liveDistanceKm * 1000, elapsedTime)}</strong></span>
+                  )}
+                </p>
+              )}
             </div>
           </div>
 
@@ -570,6 +680,24 @@ export function Challenges() {
               <span>Descartar</span>
             </button>
           </div>
+        </motion.div>
+      )}
+
+      {/* MENSAGEM REAL DE APROVAÇÃO/REJEIÇÃO DA ÚLTIMA ATIVIDADE ENCERRADA */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-2xl text-xs shadow-sm flex items-start gap-3"
+        >
+          <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-1">
+            <p className="font-bold uppercase tracking-wider text-[11px] text-rose-400">Atividade Não Homologada</p>
+            <p className="whitespace-pre-line leading-relaxed text-[12px] text-rose-200">{error}</p>
+          </div>
+          <button onClick={() => setError(null)} className="text-rose-400/60 hover:text-rose-300 p-1 shrink-0 cursor-pointer">
+            <X size={16} />
+          </button>
         </motion.div>
       )}
 
@@ -671,7 +799,7 @@ export function Challenges() {
       ) : (
         /* 5. DEFAULT CHALLENGES CATALOGUE VIEW */
         <div className="space-y-6">
-          
+
           {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
             <div className="bg-gradient-to-r from-amber-500/20 via-surface-container-high to-primary/20 border border-amber-500/40 p-6 rounded-[28px] relative overflow-hidden shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -963,8 +1091,6 @@ export function Challenges() {
         )}
       </AnimatePresence>
 
-
-
       {/* Anti-cheat presence modal if required */}
       {presenceCheckRequired && presenceCheckData && (
         <VerifiedPresenceModal
@@ -977,6 +1103,11 @@ export function Challenges() {
           }}
           onClose={() => setPresenceCheckRequired(false)}
         />
+      )}
+
+      {/* Card premium de compartilhamento pós-cardio (estilo Strava) */}
+      {shareCardData && (
+        <RunShareCard session={shareCardData} onClose={() => setShareCardData(null)} />
       )}
     </div>
   );
