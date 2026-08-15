@@ -1,0 +1,28 @@
+workflows:
+  android-debug:
+    name: Android Debug APK
+    max_build_duration: 60
+    instance_type: linux_x2
+    environment:
+      node: 22
+      groups: []
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Build web app (Vite)
+        script: |
+          npx vite build
+      - name: Sync Capacitor Android project
+        script: |
+          npx cap sync android
+      - name: Build Android debug APK
+        script: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+    artifacts:
+      - android/app/build/outputs/apk/debug/*.apk
+    publishing:
+      email:
+        recipients: []
