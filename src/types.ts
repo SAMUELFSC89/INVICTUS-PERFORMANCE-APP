@@ -166,6 +166,7 @@ export interface UserProfile {
   };
   referralMilestones: string[];
   deviceFingerprint?: string;
+  fcmTokens?: string[]; // Push notification device tokens (FCM)
   
   // Strava integration
   strava_connected?: boolean;
