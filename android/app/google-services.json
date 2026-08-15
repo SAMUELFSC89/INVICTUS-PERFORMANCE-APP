@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "477394623748",
+    "firebase_url": "https://gen-lang-client-0890994677-default-rtdb.firebaseio.com",
+    "project_id": "gen-lang-client-0890994677",
+    "storage_bucket": "gen-lang-client-0890994677.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:477394623748:android:1b3d8a9ad33dfade0d4451",
+        "android_client_info": {
+          "package_name": "com.desafiosemdesculpa.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "477394623748-ctub58ff4451qj6e0huovihls4n15pgh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqmep0LHgEvcZnahx_LhMJHEh8xTrRpes"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "477394623748-ctub58ff4451qj6e0huovihls4n15pgh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
