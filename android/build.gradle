@@ -22,6 +22,11 @@ allprojects {
         google()
         mavenCentral()
     }
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.health.connect:connect-client:1.2.0-alpha01'
+        }
+    }
 }
 
 task clean(type: Delete) {
