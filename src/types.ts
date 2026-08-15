@@ -520,7 +520,7 @@ export interface WithdrawalConfig {
   updatedAt: string;
 }
 
-export type WithdrawalStatus = 'pending' | 'under_review' | 'approved' | 'paid' | 'cancelled' | 'rejected';
+export type WithdrawalStatus = 'pending' | 'under_review' | 'approved' | 'processing' | 'paid' | 'cancelled' | 'rejected';
 
 export interface PIXWithdrawal {
   id: string;
