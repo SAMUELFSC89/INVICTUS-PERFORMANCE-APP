@@ -6,7 +6,7 @@ import type { WearableProvider, WearableActivity } from './types';
 // uma API única para Apple HealthKit (iOS) e Google Health Connect (Android).
 // Documentação: https://github.com/mley/capacitor-health
 
-const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE'] as const;
+const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_ACTIVE_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE'] as const;
 
 function mapWorkoutType(hcType: string): string {
   if (!hcType) return 'Cardio';
