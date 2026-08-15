@@ -242,40 +242,69 @@ export class WithdrawalEngine {
   static async processPayment(withdrawalId: string, reviewerId: string): Promise<PIXWithdrawal> {
     if (!db) throw new Error('Database not initialized');
     const docRef = db.collection('withdrawals').doc(withdrawalId);
-    const docSnap = await docRef.get();
 
-    if (!docSnap.exists) throw new Error('Solicitação de saque não encontrada.');
-    const withdrawal = docSnap.data() as PIXWithdrawal;
+    // 1. Trava atomica contra duplo clique / requisicoes concorrentes: le o
+    // saque e ja marca como 'processing' dentro de UMA transacao do Firestore.
+    // Se um segundo clique chegar enquanto o primeiro ainda esta em andamento,
+    // ele ve o status 'processing' e falha aqui mesmo, ANTES de chamar o
+    // Asaas de novo (o que antes gerava erro de transferencia duplicada
+    // direto na API do Asaas, com uma mensagem confusa pro admin).
+    const originalStatus = await db.runTransaction(async (tx: any) => {
+      const snap = await tx.get(docRef);
+      if (!snap.exists) throw new Error('Solicitação de saque não encontrada.');
+      const data = snap.data() as PIXWithdrawal;
 
-    if (withdrawal.status !== 'pending' && withdrawal.status !== 'under_review' && withdrawal.status !== 'approved') {
-      throw new Error("Não é possível processar pagamento: saque está com status '" + withdrawal.status + "'.");
-    }
+      if (data.status === 'processing') {
+        throw new Error('Este saque já está sendo processado agora (provável duplo clique). Aguarde alguns segundos, atualize a lista e confira o status antes de tentar de novo.');
+      }
+      if (data.status === 'paid') {
+        throw new Error('Este saque já foi pago anteriormente. Nenhuma nova transferência foi enviada ao Asaas.');
+      }
+      if (data.status !== 'pending' && data.status !== 'under_review' && data.status !== 'approved') {
+        throw new Error("Não é possível processar pagamento: saque está com status '" + data.status + "'.");
+      }
 
-    // 1. Dispara a transferência PIX real via Asaas ANTES de mexer no saldo.
-    //    Se isso falhar, nada foi debitado e o admin pode tentar novamente.
-    const transfer = await AsaasClient.transferPix({
-      value: withdrawal.amount,
-      pixKey: withdrawal.pixKey,
-      pixKeyType: withdrawal.pixKeyType,
-      description: 'Saque Invictus Performance - ' + withdrawal.userDisplayName
+      tx.set(docRef, { status: 'processing', updatedAt: new Date().toISOString() }, { merge: true });
+      return data.status;
     });
 
-    // 2. Só depois do Asaas aceitar a transferência, finaliza o bloqueio
-    //    (remove definitivamente do blockedBalance).
-    await WalletEngine.resolveWithdrawalHold(withdrawal.userId, withdrawal.amount, withdrawalId, 'pay');
+    const docSnap = await docRef.get();
+    const withdrawal = docSnap.data() as PIXWithdrawal;
 
-    const updated: any = {
-      status: 'paid',
-      updatedAt: new Date().toISOString(),
-      processedAt: new Date().toISOString(),
-      reviewerId,
-      paymentProvider: 'asaas',
-      providerTransferId: transfer.id,
-      providerStatus: transfer.status
-    };
+    try {
+      // 2. Dispara a transferência PIX real via Asaas ANTES de mexer no saldo.
+      // Se isso falhar, nada foi debitado e o admin pode tentar novamente
+      // (o status volta para o valor original no catch abaixo).
+      const transfer = await AsaasClient.transferPix({
+        value: withdrawal.amount,
+        pixKey: withdrawal.pixKey,
+        pixKeyType: withdrawal.pixKeyType,
+        description: 'Saque Invictus Performance - ' + withdrawal.userDisplayName
+      });
 
-    await docRef.set(updated, { merge: true });
-    return { ...withdrawal, ...updated };
+      // 3. Só depois do Asaas aceitar a transferência, finaliza o bloqueio
+      // (remove definitivamente do blockedBalance).
+      await WalletEngine.resolveWithdrawalHold(withdrawal.userId, withdrawal.amount, withdrawalId, 'pay');
+
+      const updated: any = {
+        status: 'paid',
+        updatedAt: new Date().toISOString(),
+        processedAt: new Date().toISOString(),
+        reviewerId,
+        paymentProvider: 'asaas',
+        providerTransferId: transfer.id,
+        providerStatus: transfer.status
+      };
+
+      await docRef.set(updated, { merge: true });
+      return { ...withdrawal, ...updated };
+    } catch (err) {
+      // 4. O Asaas recusou ou falhou: devolve o saque para o status anterior
+      // (nunca deixa preso em 'processing') para o admin poder tentar de novo
+      // com segurança, sabendo que nada foi transferido nesta tentativa.
+      await docRef.set({ status: originalStatus, updatedAt: new Date().toISOString() }, { merge: true });
+      throw err;
+    }
   }
 
   static async handleAsaasTransferWebhook(
