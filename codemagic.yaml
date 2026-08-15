@@ -4,6 +4,7 @@ workflows:
     max_build_duration: 60
     environment:
       node: 22
+      java: 21
     scripts:
       - name: Install npm dependencies
         script: |
