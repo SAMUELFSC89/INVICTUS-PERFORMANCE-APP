@@ -533,44 +533,9 @@ export function Profile() {
 
       {/* Trust Score & Streak Freeze Advanced Retention Grid */}
       <section className="px-4 md:px-6 mb-8">
-        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="max-w-4xl mx-auto grid grid-cols-1 gap-4">
           
-          {/* Trust Score & Anti-Cheat Validation */}
-          <div className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant/10 shadow-xl flex flex-col justify-between relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-              <Shield size={120} className="text-primary" strokeWidth={1} />
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Shield size={18} className="text-primary" />
-                <span className="font-label text-[10px] font-black tracking-widest text-primary uppercase animate-pulse">MOTOR BIO-COMPORTAMENTAL</span>
-              </div>
-              
-              <div className="space-y-1">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <h3 className="font-headline italic font-black text-3xl text-on-surface">98 / 100</h3>
-                  <span className="text-[10px] px-2 py-0.5 bg-green-500/10 text-green-500 font-bold border border-green-500/20 rounded-full">CONFIRMADO IA</span>
-                </div>
-                <p className="text-[11px] font-semibold text-on-surface-variant uppercase">ÍNDICE DE CONFIABILIDADE ANTI-FRAUDE</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-outline-variant/5">
-                <div>
-                  <p className="text-[8px] font-black text-on-surface-variant uppercase">GPS RULING</p>
-                  <p className="text-[7px] font-black text-white uppercase italic truncate">CONSISTENTE</p>
-                </div>
-                <div>
-                  <p className="text-[8px] font-black text-on-surface-variant uppercase">ACELERAÇÃO</p>
-                  <p className="text-[7px] font-black text-white uppercase italic truncate">HUMANOIDE</p>
-                </div>
-                <div>
-                  <p className="text-[8px] font-black text-on-surface-variant uppercase">FINGERPRINT</p>
-                  <p className="text-[7px] font-black text-white uppercase italic truncate">APROVADO</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          
 
           {/* Streak Freeze Hardcore Gamification Retention */}
           <div className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant/10 shadow-xl flex flex-col justify-between relative overflow-hidden group">
