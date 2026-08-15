@@ -32,18 +32,33 @@ function createStructuredError(title: string, message: string): Error {
 }
 
 export const activityService = {
-  /**
-   * Starts a new activity session
-   */
+  async requestMotionPermission(): Promise<'granted' | 'denied' | 'unavailable' | 'not_supported' | 'error'> {
+    if (typeof window === 'undefined' || !('DeviceMotionEvent' in window)) {
+      if (typeof window !== 'undefined') localStorage.setItem('sensor_status', 'not_supported');
+      return 'not_supported';
+    }
+    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+      try {
+        const permissionState = await (DeviceMotionEvent as any).requestPermission();
+        localStorage.setItem('sensor_status', permissionState === 'granted' ? 'granted' : 'denied');
+        return permissionState === 'granted' ? 'granted' : 'denied';
+      } catch (e) {
+        console.warn('[activityService] requestMotionPermission error:', e);
+        localStorage.setItem('sensor_status', 'error');
+        return 'error';
+      }
+    }
+    localStorage.setItem('sensor_status', 'granted');
+    return 'granted';
+  },
+
   async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string): Promise<ActivitySession> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
 
-    // Check for existing session locally
     const existing = this.getCurrentSession();
     if (existing) throw new Error('Já existe uma atividade em andamento.');
 
-    // 1. Check for active/orphaned sessions on the backend via Firestore
     try {
       const activeSessionsQuery = query(
         collection(db, 'active_sessions'),
@@ -51,13 +66,12 @@ export const activityService = {
         where('status', '==', 'active')
       );
       const activeSessionsSnap = await getDocs(activeSessionsQuery);
-      
+
       for (const docSnap of activeSessionsSnap.docs) {
         const sessData = docSnap.data();
         const startTimeMs = new Date(sessData.startTime).getTime();
         const diffMs = Date.now() - startTimeMs;
-        
-        // Auto-expire sessions older than 4 hours (orphaned/abandoned)
+
         if (diffMs > 4 * 60 * 60 * 1000) {
           await updateDoc(docSnap.ref, {
             status: 'abandoned',
@@ -66,9 +80,6 @@ export const activityService = {
             updatedAt: new Date().toISOString()
           }).catch(e => console.warn('[ActivityService] Could not update abandoned session:', e));
         } else {
-          // Active unexpired session exists!
-          // Restore/recover it to localStorage so user doesn't lose progress across devices, 
-          // and prevent multiple concurrent sessions!
           const restoredSession: ActivitySession = {
             id: sessData.id,
             userId: sessData.userId,
@@ -95,18 +106,16 @@ export const activityService = {
       console.warn('[ActivityService] Server check for active sessions failed, proceeding locally:', checkErr);
     }
 
-    // Fetch user data for gym validation
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
     if (!userSnap.exists()) throw new Error('Perfil de usuário não encontrado');
     const userData = userSnap.data() as UserProfile;
 
     let startLocation = providedLocation;
-    
+
     if (!startLocation) {
       try {
-        // High accuracy for gym validation
-        startLocation = await getCurrentLocation(type === 'workout'); 
+        startLocation = await getCurrentLocation(type === 'workout');
       } catch (error: any) {
         console.warn('Location capture failed for startSession', error);
         if (error.message.includes('Permissão')) {
@@ -127,7 +136,6 @@ export const activityService = {
       other: { label: 'Outros', isIndoor: true, requiresGps: false }
     };
 
-    // Gym Proximity Check for Workout with Anti-Fraud 50m Rad (Only if checkInId not provided)
     if (type === 'workout' && !checkInId) {
       if (!userData.gymId) {
         throw createStructuredError(
@@ -138,8 +146,7 @@ export const activityService = {
 
       if (startLocation) {
         const accuracy = startLocation.accuracy || 15;
-        
-        // Block start if GPS is too imprecise (allow up to 200m accuracy for indoor gym / web environment)
+
         if (accuracy > 200) {
           throw createStructuredError(
             "📍 Aguardando Sinal de Localização",
@@ -148,18 +155,16 @@ export const activityService = {
         }
 
         let gymLoc = userData.gymLocation;
-        
-        // Check if gymLoc is present and valid
-        let isGymLocationValid = gymLoc && 
-                                  gymLoc.lat !== undefined && 
-                                  gymLoc.lng !== undefined && 
-                                  !isNaN(Number(gymLoc.lat)) && 
-                                  !isNaN(Number(gymLoc.lng)) && 
-                                  Number(gymLoc.lat) >= -90 && Number(gymLoc.lat) <= 90 && 
-                                  Number(gymLoc.lng) >= -180 && Number(gymLoc.lng) <= 180 &&
-                                  (Number(gymLoc.lat) !== 0 || Number(gymLoc.lng) !== 0);
 
-        // Try fetching canonical gym doc from gyms collection if user.gymLocation is invalid
+        let isGymLocationValid = gymLoc &&
+          gymLoc.lat !== undefined &&
+          gymLoc.lng !== undefined &&
+          !isNaN(Number(gymLoc.lat)) &&
+          !isNaN(Number(gymLoc.lng)) &&
+          Number(gymLoc.lat) >= -90 && Number(gymLoc.lat) <= 90 &&
+          Number(gymLoc.lng) >= -180 && Number(gymLoc.lng) <= 180 &&
+          (Number(gymLoc.lat) !== 0 || Number(gymLoc.lng) !== 0);
+
         if (!isGymLocationValid && userData.gymId) {
           try {
             const gymDocRef = doc(db, 'gyms', userData.gymId);
@@ -171,7 +176,6 @@ export const activityService = {
               if (gLat !== undefined && gLng !== undefined && !isNaN(Number(gLat)) && !isNaN(Number(gLng))) {
                 gymLoc = { lat: Number(gLat), lng: Number(gLng) };
                 isGymLocationValid = true;
-                // Sync user profile
                 try {
                   const userRef = doc(db, 'users', user.uid);
                   await updateDoc(userRef, { gymLocation: gymLoc });
@@ -244,18 +248,15 @@ export const activityService = {
       checkpoints: startLocation ? [{ timestamp: new Date().toISOString(), location: startLocation }] : []
     };
 
-    // Low-overhead standard device sensors monitoring to challenge automated scripts
     if (typeof window !== 'undefined') {
       localStorage.setItem('has_sensor_oscillation', 'false');
       localStorage.setItem('has_sensor_events', 'false');
       sensorSamples = { accel: [], gyro: [] };
-      
+
       const isSupported = 'DeviceMotionEvent' in window;
       if (!isSupported) {
         localStorage.setItem('sensor_status', 'not_supported');
       } else {
-        localStorage.setItem('sensor_status', 'unavailable');
-
         const registerListener = () => {
           let timer = setTimeout(() => {
             if (localStorage.getItem('sensor_status') === 'granted' && localStorage.getItem('has_sensor_events') !== 'true') {
@@ -274,13 +275,8 @@ export const activityService = {
               const force = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
               sensorSamples.accel.push(force);
               if (sensorSamples.accel.length > 600) sensorSamples.accel.shift();
-              if (force > 11.5) { // Force exceeds standard state
+              if (force > 11.5) {
                 localStorage.setItem('has_sensor_oscillation', 'true');
-                // Nao removemos mais o listener na primeira oscilacao -- continuamos
-                // coletando amostras reais de acelerometro/giroscopio ate o fim da sessao,
-                // para calcular accelVariance/gyroVariance reais (sensorTelemetry) para o
-                // SecurityPipeline no backend em vez de so um boolean derivado (ver
-                // auditoria antifraude 2026-08).
               }
             }
             const rot = (event as any).rotationRate;
@@ -294,7 +290,11 @@ export const activityService = {
           activeMotionHandler = handleMotion;
         };
 
-        if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+        const existingSensorStatus = localStorage.getItem('sensor_status');
+        if (existingSensorStatus === 'granted') {
+          registerListener();
+        } else if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+          localStorage.setItem('sensor_status', 'unavailable');
           (DeviceMotionEvent as any).requestPermission()
             .then((permissionState: string) => {
               if (permissionState === 'granted') {
@@ -316,7 +316,6 @@ export const activityService = {
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
-    // Save to Firestore active_sessions for global cross-device synchronization and orphaning protection
     setDoc(doc(db, 'active_sessions', session.id), {
       id: session.id,
       userId: session.userId,
@@ -338,9 +337,6 @@ export const activityService = {
     return session;
   },
 
-  /**
-   * Gets the current active session from localStorage
-   */
   getCurrentSession(): ActivitySession | null {
     const data = localStorage.getItem(SESSION_KEY);
     if (!data) return null;
@@ -348,7 +344,6 @@ export const activityService = {
       const session = JSON.parse(data) as ActivitySession;
       if (session.status !== 'active') return null;
 
-      // Auto-expire sessions older than 90 minutes
       const startTime = new Date(session.startTime).getTime();
       const now = new Date().getTime();
       const diffMins = (now - startTime) / (1000 * 60);
@@ -366,9 +361,6 @@ export const activityService = {
     }
   },
 
-  /**
-   * Adds a checkpoint to the current session
-   */
   addCheckpoint(location: { lat: number; lng: number }) {
     const session = this.getCurrentSession();
     if (!session) return;
@@ -380,7 +372,6 @@ export const activityService = {
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
-    // Async sync with Firestore to prevent losing offline path progress if app restarts
     const docRef = doc(db, 'active_sessions', session.id);
     updateDoc(docRef, {
       checkpoints: session.checkpoints,
@@ -405,9 +396,6 @@ export const activityService = {
     return distanceKm;
   },
 
-  /**
-   * Ends and validates the current activity
-   */
   async endSession(photoBase64?: string): Promise<{ workout: Workout; validation: any; message?: string; isScoringEligible?: boolean; nonScoringReason?: string | null }> {
     const session = this.getCurrentSession();
     if (!session) throw new Error('Nenhuma atividade em andamento.');
@@ -417,8 +405,7 @@ export const activityService = {
 
     let endLocation: { lat: number; lng: number } | undefined;
     try {
-      // Use high accuracy with fast 4s timeout for end location check
-      endLocation = await getCurrentLocation(session.type === 'workout', 4000); 
+      endLocation = await getCurrentLocation(session.type === 'workout', 4000);
     } catch (error) {
       console.warn('Could not get end location', error);
     }
@@ -438,13 +425,11 @@ export const activityService = {
     const distanceKm = this.calculateSessionDistance(session);
 
     const userRef = doc(db, 'users', user.uid);
-    
-    // 1. Get fresh user data BEFORE transaction for validation
+
     const userSnap = await getDoc(userRef);
     if (!userSnap.exists()) throw new Error("Usuário não encontrado.");
     const userData = userSnap.data() as UserProfile;
 
-    // 2. Compress Image on Frontend
     let finalPhoto = photoBase64;
     if (photoBase64) {
       try {
@@ -455,10 +440,8 @@ export const activityService = {
       }
     }
 
-    // 3. Activity Submission via Secure API
     const idToken = await user.getIdToken();
-    
-    // Capture user trust indicators from window environments dynamically
+
     let isDev = false;
     if (typeof window !== 'undefined') {
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -481,7 +464,6 @@ export const activityService = {
           }
         }
       } catch (e) {
-        // Safe catch
       }
     }
 
@@ -513,12 +495,8 @@ export const activityService = {
 
     const hasOscillation = typeof window !== 'undefined' ? localStorage.getItem('has_sensor_oscillation') !== 'false' : true;
     const sensorStatus = typeof window !== 'undefined' ? (localStorage.getItem('sensor_status') || 'unavailable') : 'unavailable';
-    const pedometerSteps = Math.round(distanceKm * 1350); // standard runners steps counter biomechanics
+    const pedometerSteps = Math.round(distanceKm * 1350);
 
-    // Sensor telemetry real (accelVariance/gyroVariance) coletada durante a sessao via
-    // DeviceMotionEvent, para o SensorEngine do SecurityPipeline no backend cruzar com
-    // FC/distancia/tempo -- antes o backend so recebia o boolean hasSensorOscillation
-    // (ver auditoria antifraude 2026-08).
     const accelVariance = computeVariance(sensorSamples.accel);
     const gyroVariance = computeVariance(sensorSamples.gyro);
     const sensorTelemetry = (accelVariance !== undefined || gyroVariance !== undefined)
@@ -567,7 +545,7 @@ export const activityService = {
 
     try {
       const respData = await response.json();
-      
+
       if (respData.presenceCheckRequired) {
         return {
           presenceCheckRequired: true,
@@ -578,11 +556,9 @@ export const activityService = {
       }
 
       const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry } = respData;
-      
-      // Clear session completely
+
       this.cancelSession();
 
-      // Update Firestore active_session entry to completed
       updateDoc(doc(db, 'active_sessions', session.id), {
         status: 'completed',
         endTime: new Date().toISOString(),
@@ -600,7 +576,7 @@ export const activityService = {
         canRetry: canRetry !== undefined ? canRetry : false
       };
 
-      return { 
+      return {
         workout,
         validation: enrichedValidation,
         message: finalUserMessage,
@@ -608,7 +584,6 @@ export const activityService = {
         nonScoringReason
       };
     } catch (e) {
-      // If we can't parse JSON, the session stays so the user can try again
       throw new Error('Falha ao processar resposta do servidor. Sua atividade ainda está salva localmente.');
     }
   },
@@ -617,7 +592,6 @@ export const activityService = {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
 
-    // 1. Compress Image on Frontend
     let finalPhoto = photoBase64;
     try {
       console.log('[activityService] Compressing raw diet image representation...');
@@ -626,7 +600,6 @@ export const activityService = {
       console.warn('[activityService] Failed to compress diet image. Proceeding with original.', err);
     }
 
-    // 2. Submit to secure backend API
     const idToken = await user.getIdToken();
     const response = await fetch('/api/validate-activity', {
       method: 'POST',
@@ -648,7 +621,7 @@ export const activityService = {
 
     const { workout } = await response.json();
 
-    return { 
+    return {
       workout,
       validation: workout.validation
     };
@@ -666,8 +639,6 @@ export const activityService = {
         }).catch(() => {});
       } catch (e) {}
     }
-    // Remove o listener de devicemotion registrado no startSession, evitando acumular
-    // listeners "orfaos" entre sessoes numa SPA sem reload de pagina.
     if (typeof window !== 'undefined' && activeMotionHandler) {
       window.removeEventListener('devicemotion', activeMotionHandler);
       activeMotionHandler = null;
