@@ -88,6 +88,16 @@ export class StoreEngine {
     inventoryItem: UserInventoryItem;
   }> {
     if (!db) throw new Error('Database not initialized');
+
+    // TODO(loja-invictus): sistema ainda nao foi lancado aos usuarios (nenhuma
+    // rota do frontend chama este endpoint hoje). Os valores em 'priceCoins' nos
+    // itens de DEFAULT_STORE_ITEMS sao um resquicio do antigo sistema de moedas
+    // (IV Coins), anterior a migracao do WalletEngine para saldo real em R$
+    // (ver tasks #119/#120). Bloqueado de proposito ate os precos serem
+    // revisados em R$ reais - do contrario, debitCoins() cobraria R$300-R$1000
+    // reais de verdade por um item cosmetico. Remover este guard somente depois
+    // de revisar priceCoins/priceCategory para valores reais e religar a rota.
+    throw new Error('Loja Invictus ainda nao esta disponivel para compra (precos pendentes de revisao em R$ real).');
     const items = await this.getStoreItems();
     const item = items.find(i => i.id === itemId);
     if (!item) throw new Error('Item de loja não encontrado.');
