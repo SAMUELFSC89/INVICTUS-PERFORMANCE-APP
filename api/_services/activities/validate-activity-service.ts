@@ -169,6 +169,7 @@ export class ValidateActivityService {
           intensity: request.activityData.intensity || 'moderate',
           startTime: request.activityData.startTime || new Date().toISOString(),
           endTime: request.activityData.endTime || new Date().toISOString(),
+          points: 0,
           pointsEarned: 0,
           scoreAwarded: 0,
           status: 'rejected',
@@ -199,6 +200,11 @@ export class ValidateActivityService {
     const scoreAwarded = this.calculateScore(request.activityData);
     console.log(`[ValidateActivityService] [${traceId}] Pontuacao calculada: +${scoreAwarded} XP`);
 
+    // NOTA: alem de pointsEarned/scoreAwarded (campos "oficiais" de XP usados pelo
+    // restante do backend), tambem gravamos "points" aqui -- e o nome de campo que
+    // ActivityHistorySection.tsx (frontend) le para exibir o XP ganho no historico de
+    // atividades. Sem isso, uma atividade homologada por este endpoint aparecia
+    // corretamente como "HOMOLOGADA" no historico mas sempre mostrando "0 XP".
     const savedActivity = await this.activityRepository.create({
       userId: request.userId,
       type: request.activityData.type,
@@ -211,6 +217,7 @@ export class ValidateActivityService {
       intensity: request.activityData.intensity || 'moderate',
       startTime: request.activityData.startTime || new Date().toISOString(),
       endTime: request.activityData.endTime || new Date().toISOString(),
+      points: scoreAwarded,
       pointsEarned: scoreAwarded,
       scoreAwarded,
       status: 'completed',
