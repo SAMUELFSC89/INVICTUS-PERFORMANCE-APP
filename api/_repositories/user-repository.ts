@@ -37,4 +37,25 @@ export class UserRepository extends BaseRepository<UserProfile> {
     await this.update(userId, { level: newLevel });
     return { newXP, newLevel };
   }
+
+  // Incremento atomico do campo "score" -- este e o campo REAL usado pelo
+  // ranking/leaderboard visivel ao usuario (ver api/_handlers/ranking.ts,
+  // orderBy(scoreField) onde scoreField='score' para period='all', e tambem
+  // usado pelo AdminDashboard). Distinto de "xp" (nivelamento) e de "totalScore"
+  // (campo do ScoreEngine/Strava, nao lido pelo ranking visivel). Adicionado
+  // para que o fluxo real de cardio/treino (/api/validate-activity) realmente
+  // credite pontos de ranking, nao so XP. Ver auditoria 2026-08 (pedido do
+  // usuario: "XP nao e o mais importante e sim os pontos ganhos para a
+  // competicao").
+  async addRankingScore(userId: string, amount: number): Promise<{ newScore: number }> {
+    const userRef = this.collection.doc(userId);
+    if (amount === 0) {
+      const snap = await userRef.get();
+      return { newScore: snap.data()?.score || 0 };
+    }
+    await userRef.set({ score: FieldValue.increment(amount) }, { merge: true });
+    const updatedSnap = await userRef.get();
+    const newScore = updatedSnap.data()?.score || 0;
+    return { newScore };
+  }
 }
