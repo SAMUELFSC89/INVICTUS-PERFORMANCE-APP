@@ -1,7 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { 
+import {
   db,
-  cors, 
+  cors,
   verifyAuth,
   FieldValue
 } from '../_lib/common.js';
@@ -12,6 +12,7 @@ import { readActiveHabitGoal, applyHabitProgressWithGoal } from '../_lib/habit-i
 import { SCORE_CONFIG } from '../_lib/score-config.js';
 import { GPSValidator } from '../_lib/fraud-detection/gps-validator.js';
 import { SecurityPipeline } from '../_lib/security-pipeline.js';
+import { estimateCalories, formatPace } from '../_lib/activity-metrics.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -34,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ 
+    return res.status(405).json({
       success: false,
       userMessage: "Método não permitido."
     });
@@ -139,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const userRef = db.collection('users').doc(userId);
     const userSnap = await userRef.get();
     const userData = userSnap.data() || {};
-    
+
     if (userData.photoURL && userData.photoURL.startsWith('data:image')) {
       referencePhotoBase64 = userData.photoURL.split(',')[1] || userData.photoURL;
       referenceSource = 'profile_url';
@@ -168,7 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 3. Invoke server-side Gemini API with multimodal prompt
     const cleanSelfieBase64 = photoBase64.startsWith('data:image') ? photoBase64.split(',')[1] : photoBase64;
-    
+
     const parts: any[] = [
       {
         inlineData: {
@@ -187,11 +188,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const systemInstruction = 
+    const systemInstruction =
       "Você é um engenheiro sênior e de inteligência artificial de biometria antifraude focado em fisiculturismo e aplicativos fitness.\n" +
       "Seu objetivo é analisar as imagens fornecidas para validar a presença física (prova de vida) e a correspondência de identidade do usuário logado.";
 
-    const promptText = 
+    const promptText =
       `Instruções técnicas para análise de selfie biométrica:\n` +
       `IMAGEM 1: A selfie tirada ao vivo pelo usuário para a confirmação de presença.\n` +
       `${referencePhotoBase64 ? 'IMAGEM 2: A foto de referência anterior do usuário armazenada no banco de dados.\n' : 'Nenhuma imagem de referência armazenada anterior. Faça uma análise focada em prova de vida (liveness).\n'}\n` +
@@ -262,7 +263,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       friendlyResultMessage = "Não conseguimos confirmar sua presença automaticamente. Sua atividade foi enviada para análise.";
     }
 
-    // Save metrics on checking collection 
+    // Save metrics on checking collection
     await pendingCheckRef.update({
       status: finalDecision,
       presenceConfidence,
@@ -279,7 +280,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 4. APPROVED PATH: Let's execute standard workout or running points commit
     if (finalDecision === 'approved' || finalDecision === 'pending') {
       const isRunning = checkData.workoutPayload?.km !== undefined || (checkData.type === 'running');
-      
+
       if (isRunning) {
         // Submit run tracking session to db
         await commitRunningSession(userId, workoutPayload, finalDecision);
@@ -454,8 +455,8 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       computedStatus = 'suspicious';
     } else {
       // Calculate points dynamically based on activity parameters (standard base points is 50/35 for performance, 30/20 for open)
-      const basePoints = type === 'workout' 
-        ? (subTier === 'performance' ? 50 : 30) 
+      const basePoints = type === 'workout'
+        ? (subTier === 'performance' ? 50 : 30)
         : (subTier === 'performance' ? 35 : 20);
       pointsEarned = basePoints;
     }
@@ -534,7 +535,7 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
 
       updates.weeklyScore = igaResult.igaRanking;
       updates.igaAudit = igaResult;
-      
+
       if (finalDecision === 'approved') {
         const lastCheckIn = userData.lastCheckIn ? new Date(userData.lastCheckIn) : null;
         let newStreak = userData.streak || 0;
@@ -569,6 +570,18 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       transaction.set(weeklyStatsRef, weeklyStatsData);
     }
 
+    // #204: estimamos calorias/ritmo quando o cliente nao envia esses valores
+    // prontos (a maioria dos treinos de academia so envia duracao/distancia),
+    // e preservamos avgHeartRate/steps/checkpoints -- ate 2026-08 esses campos
+    // eram usados so na analise antifraude acima e nunca chegavam a ser
+    // gravados no documento que ActivityHistorySection.tsx le.
+    const estimatedCalories = estimateCalories({
+      type,
+      durationMins: durationMins || 45,
+      weightKg: userData.weight || userData.weightKg
+    });
+    const estimatedPace = formatPace(distanceKm, durationMins);
+
     const workoutObj = {
       id: workoutRef.id,
       userId,
@@ -576,6 +589,11 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       timestamp: nowLocalDate.toISOString(),
       duration: durationMins || 45,
       distance: distanceKm || 0,
+      trajectory: Array.isArray(checkpoints) ? checkpoints : undefined,
+      avgHeartRate: payload.avgHeartRate ?? undefined,
+      steps: payload.steps ?? undefined,
+      calories: estimatedCalories,
+      pace: estimatedPace ?? undefined,
       status: computedStatus,
       points: pointsEarned,
       isScoringEligible,
@@ -808,6 +826,10 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
     transaction.update(userRef, userUpdates);
 
     // Save running session in 'workouts' to count for user feed
+    // #204: agora tambem gravamos pace/calorias/elevationGain/steps/avgHeartRate/
+    // trajectory -- ate 2026-08 esses valores ja chegavam prontos do cliente
+    // (destructured do payload acima) mas nunca eram escritos neste documento,
+    // entao o historico de corridas nunca mostrava nada alem de duracao/distancia.
     const workoutDocRef = db.collection('workouts').doc();
     await transaction.set(workoutDocRef, {
       id: workoutDocRef.id,
@@ -816,6 +838,12 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       timestamp: nowIso,
       duration: Math.ceil((timeSeconds || 0) / 60),
       distance: currentKm,
+      pace: pace || undefined,
+      calories: calories || undefined,
+      elevationGain: elevationGain || undefined,
+      steps: steps || undefined,
+      avgHeartRate: payload.avgHeartRate ?? undefined,
+      trajectory: Array.isArray(trajectory) ? trajectory : undefined,
       status: (finalDecision === 'approved' && !runSecurityBlocked) ? 'valid' : (runSecurityBlocked ? 'suspicious' : 'pending_review'),
       points: xpAwarded,
       isScoringEligible,
