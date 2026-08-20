@@ -6,6 +6,7 @@ import { NotificationService } from '../notification-service.js';
 import { AppError } from '../../_middleware/error.js';
 import { SecurityPipeline } from '../../_lib/security-pipeline.js';
 import { calculateRankingPoints } from '../../_lib/ranking-points.js';
+import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 
 export class ValidateActivityService {
   constructor(
@@ -74,8 +75,8 @@ export class ValidateActivityService {
     const decisionLabel = decision === 'BLOCKED'
       ? 'nao foi homologada'
       : decision === 'UNDER_REVIEW'
-      ? 'ficou pendente de analise manual'
-      : 'foi sinalizada como parcialmente aprovada';
+        ? 'ficou pendente de analise manual'
+        : 'foi sinalizada como parcialmente aprovada';
 
     if (explanationSummary) {
       return `Sua atividade ${decisionLabel} pela auditoria antifraude. Motivo: ${explanationSummary}`;
@@ -126,6 +127,18 @@ export class ValidateActivityService {
     }
 
     const rawActivity: any = request.activityData || {};
+    const durationForMetrics = request.activityData.duration || rawActivity.durationMins || 30;
+    const userWeightKg = (user as any).weight || (user as any).weightKg;
+    // #204: calorias/ritmo nao sao enviados pelo cliente nesta rota legada -- estimamos
+    // server-side (MET x peso x tempo) para que o historico sempre tenha algo util,
+    // em vez de deixar o card de atividade vazio quando o dispositivo nao informa isso.
+    const estimatedCalories = estimateCalories({
+      type: request.activityData.type,
+      cardioType: rawActivity.cardioType,
+      durationMins: durationForMetrics,
+      weightKg: userWeightKg
+    });
+    const estimatedPace = formatPace(rawActivity.distanceKm, durationForMetrics);
     let securityBlocked = false;
     let securityReason: string | null = null;
     let securityUserMessage: string | null = null;
@@ -180,8 +193,13 @@ export class ValidateActivityService {
           type: request.activityData.type,
           cardioType: rawActivity.cardioType,
           cardioTypeLabel: rawActivity.cardioTypeLabel,
-          duration: request.activityData.duration || rawActivity.durationMins || 30,
+          duration: durationForMetrics,
           distance: Number(rawActivity.distanceKm) || 0,
+          trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
+          avgHeartRate: rawActivity.avgHeartRate ?? undefined,
+          steps: rawActivity.pedometerSteps ?? rawActivity.evidence?.steps ?? undefined,
+          calories: estimatedCalories,
+          pace: estimatedPace ?? undefined,
           intensity: request.activityData.intensity || 'moderate',
           startTime: request.activityData.startTime || new Date().toISOString(),
           endTime: request.activityData.endTime || new Date().toISOString(),
@@ -267,14 +285,21 @@ export class ValidateActivityService {
     // ActivityHistorySection.tsx (frontend) le para exibir o XP ganho no historico de
     // atividades. Sem isso, uma atividade homologada por este endpoint aparecia
     // corretamente como "HOMOLOGADA" no historico mas sempre mostrando "0 XP".
+    // #204: tambem gravamos avgHeartRate/steps/calories/pace -- ate 2026-08 esses
+    // dados eram usados so para analise antifraude e descartados antes de chegar
+    // no documento salvo, entao o historico nunca tinha nada alem de duracao/distancia.
     const savedActivity = await this.activityRepository.create({
       userId: request.userId,
       type: request.activityData.type,
       cardioType: rawActivity.cardioType,
       cardioTypeLabel: rawActivity.cardioTypeLabel,
-      duration: request.activityData.duration || rawActivity.durationMins || 30,
+      duration: durationForMetrics,
       distance: Number(rawActivity.distanceKm) || 0,
       trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
+      avgHeartRate: rawActivity.avgHeartRate ?? undefined,
+      steps: rawActivity.pedometerSteps ?? rawActivity.evidence?.steps ?? undefined,
+      calories: estimatedCalories,
+      pace: estimatedPace ?? undefined,
       photoUrl: rawActivity.photoBase64 || undefined,
       intensity: request.activityData.intensity || 'moderate',
       startTime: request.activityData.startTime || new Date().toISOString(),
