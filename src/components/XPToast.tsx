@@ -5,11 +5,13 @@ import { TrendingUp, Trophy, Star } from 'lucide-react';
 interface XPToastProps {
   points: number;
   message?: string;
+  rankingPoints?: number;
   isVisible: boolean;
   onComplete: () => void;
 }
 
-export const XPToast: React.FC<XPToastProps> = ({ points, message, isVisible, onComplete }) => {
+export const XPToast: React.FC<XPToastProps> = ({ points, message, rankingPoints, isVisible, onComplete }) => {
+  const hasRankingPoints = rankingPoints !== undefined && rankingPoints !== null;
   return (
     <AnimatePresence>
       {isVisible && (
@@ -25,11 +27,23 @@ export const XPToast: React.FC<XPToastProps> = ({ points, message, isVisible, on
           <div className="bg-primary text-on-primary px-6 py-4 rounded-3xl shadow-2xl flex flex-col items-center gap-1 border-4 border-white/20">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-                <Star size={24} className="fill-white" />
+                {hasRankingPoints ? <Trophy size={22} className="fill-white" /> : <Star size={24} className="fill-white" />}
               </div>
               <div className="flex flex-col">
-                <span className="font-headline italic font-black text-2xl leading-none">+{points} XP</span>
-                <span className="font-label text-[10px] font-black uppercase tracking-widest opacity-80">PONTOS GANHOS!</span>
+                {hasRankingPoints ? (
+                  <>
+                    <span className="font-headline italic font-black text-2xl leading-none">+{rankingPoints} PTS</span>
+                    <span className="font-label text-[10px] font-black uppercase tracking-widest opacity-80">PONTOS DE RANKING GANHOS!</span>
+                    {points > 0 && (
+                      <span className="font-label text-[9px] font-bold uppercase tracking-wider opacity-70 mt-0.5">+{points} XP</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="font-headline italic font-black text-2xl leading-none">+{points} XP</span>
+                    <span className="font-label text-[10px] font-black uppercase tracking-widest opacity-80">PONTOS GANHOS!</span>
+                  </>
+                )}
               </div>
             </div>
             {message && (
