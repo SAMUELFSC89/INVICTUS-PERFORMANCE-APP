@@ -4,7 +4,7 @@ import { cors, verifyAuth } from './_lib/common.js';
 // #202/#204: endpoint server-side que gera a imagem do mapa da rota (Google Static
 // Maps) para a tela de detalhe do cardio e para o card de compartilhamento. A
 // chave GOOGLE_MAPS_API_KEY NUNCA e exposta ao cliente -- o frontend so recebe a
-// imagem ja pronta (base64) e o rotulo de localizacao (cidade/UF).
+// imagem ja pronta (base64), o rotulo de localizacao (cidade/UF) e o clima atual.
 
 // Codificacao de polyline no formato do Google (Encoded Polyline Algorithm Format)
 // -- necessaria para o parametro "path" da Static Maps API sem estourar o limite
@@ -37,8 +37,19 @@ function encodeNumber(num) {
   return encoded;
 }
 
-// Reduz o numero de pontos enviados ao Static Maps (limite pratico de URL) mantendo
-// o formato geral da rota -- pega 1 a cada N pontos, sempre preservando o primeiro e o ultimo.
+// #216: pontos de GPS podem vir em dois formatos usados no app: plano
+// {lat,lng,timestamp} (AdvancedRunStats.trajectory, fluxo "Corrida Invictus") ou
+// aninhado {timestamp, location:{lat,lng,accuracy}} (checkpoints do cardio geral,
+// src/types.ts). O mapa ficava vazio porque so liamos o formato plano. Agora
+// aceitamos os dois.
+function extractLatLng(p) {
+  if (!p) return null;
+  const lat = Number(p.lat ?? p.latitude ?? p.location?.lat ?? p.location?.latitude);
+  const lng = Number(p.lng ?? p.longitude ?? p.location?.lng ?? p.location?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
 function decimatePoints(points, maxPoints) {
   if (points.length <= maxPoints) return points;
   const step = Math.ceil(points.length / maxPoints);
@@ -49,20 +60,56 @@ function decimatePoints(points, maxPoints) {
 }
 
 // Estilo escuro (aproximado do padrao usado por apps fitness estilo Strava) para o
-// Google Static Maps -- fundo quase preto, ruas em cinza escuro, agua em azul
-// petroleo, parques em verde escuro, para o tracado laranja da rota se destacar.
+// Google Static Maps. Mantemos os rotulos de bairro/localidade e de parques
+// visiveis (apenas escondemos ruido de POI comercial) para o mapa parecer o mais
+// proximo possivel da referencia (nomes de bairro, "Parque do Povo", etc).
 const DARK_STYLE_RULES = [
   'element:geometry|color:0x1a1a1a',
-  'element:labels.text.fill|color:0x8a8a8a',
-  'element:labels.text.stroke|color:0x1a1a1a',
+  'element:labels.text.fill|color:0xb0b0b0',
+  'element:labels.text.stroke|color:0x0d0d0d',
   'feature:road|element:geometry|color:0x2c2c2c',
   'feature:road|element:geometry.stroke|color:0x1a1a1a',
+  'feature:road|element:labels|visibility:simplified',
   'feature:water|element:geometry|color:0x0d2b3e',
-  'feature:poi.park|element:geometry|color:0x1f2e1a',
+  'feature:water|element:labels.text.fill|color:0x4a90c2',
+  'feature:poi.park|element:geometry|color:0x1f3a1a',
+  'feature:poi.park|element:labels.text.fill|color:0x8fce6a',
+  'feature:poi.business|element:labels|visibility:off',
+  'feature:poi.medical|element:labels|visibility:off',
+  'feature:poi.school|element:labels|visibility:off',
+  'feature:poi.attraction|element:labels|visibility:off',
+  'feature:poi.government|element:labels|visibility:off',
+  'feature:administrative.neighborhood|element:labels.text.fill|color:0xd8d8d8',
+  'feature:administrative.locality|element:labels.text.fill|color:0xd8d8d8',
   'feature:administrative|element:geometry|color:0x3a3a3a',
-  'feature:poi|element:labels.icon|visibility:off',
   'feature:transit|visibility:off'
 ];
+
+// Clima atual (sem chave de API -- Open-Meteo). Aproximacao honesta: mostra o
+// clima ATUAL na localizacao inicial da rota, nao o clima no momento exato da
+// atividade (nao temos historico de clima integrado).
+async function fetchWeather(lat, lng) {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code&timezone=auto`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const tempC = json?.current?.temperature_2m;
+    const code = json?.current?.weather_code;
+    if (tempC === undefined) return null;
+    // Mapeamento simplificado do WMO weather code para um emoji de icone
+    let icon = '☀️';
+    if (code >= 1 && code <= 3) icon = '⛅';
+    else if (code >= 45 && code <= 48) icon = '🌫️';
+    else if (code >= 51 && code <= 67) icon = '🌧️';
+    else if (code >= 71 && code <= 86) icon = '🌨️';
+    else if (code >= 95) icon = '⛈️';
+    return { tempC: Math.round(tempC), icon };
+  } catch (err) {
+    console.warn('[activity-map] fetchWeather falhou (nao critico):', err);
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
   if (cors(req, res)) return;
@@ -88,9 +135,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, userMessage: 'Rota GPS insuficiente para gerar o mapa desta atividade.' });
     }
 
-    let points = trajectory
-      .map((p) => ({ lat: Number(p.lat ?? p.latitude), lng: Number(p.lng ?? p.longitude) }))
-      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    let points = trajectory.map(extractLatLng).filter(Boolean);
 
     if (points.length < 2) {
       return res.status(400).json({ success: false, userMessage: 'Rota GPS invalida para esta atividade.' });
@@ -114,7 +159,11 @@ export default async function handler(req, res) {
       `&markers=color:0x111111|size:mid|${end.lat},${end.lng}` +
       `&key=${apiKey}`;
 
-    const mapRes = await fetch(mapUrl);
+    const [mapRes, weather] = await Promise.all([
+      fetch(mapUrl),
+      fetchWeather(start.lat, start.lng)
+    ]);
+
     if (!mapRes.ok) {
       const errText = await mapRes.text().catch(() => '');
       console.error('[activity-map] Google Static Maps error:', mapRes.status, errText);
@@ -147,7 +196,7 @@ export default async function handler(req, res) {
       console.warn('[activity-map] Reverse geocoding falhou (nao critico):', geoErr);
     }
 
-    return res.json({ success: true, imageDataUrl, location });
+    return res.json({ success: true, imageDataUrl, location, weather: weather || null });
   } catch (err) {
     console.error('[activity-map] Erro inesperado:', err);
     return res.status(500).json({ success: false, userMessage: 'Erro ao gerar o mapa da atividade.' });
