@@ -34,10 +34,9 @@ workflows:
   # maquina macOS do Codemagic. Isso permite publicar no TestFlight sem precisar
   # de um Mac local.
   #
-  # Consequencia importante: como a pasta e recriada a cada build, qualquer
-  # customizacao nativa (permissoes do Info.plist, entitlements) PRECISA ser
-  # injetada por script aqui -- editar o Info.plist manualmente nao adianta,
-  # porque ele e sobrescrito. Por isso os passos com PlistBuddy abaixo.
+  # Como a pasta e recriada a cada build, qualquer customizacao nativa
+  # (permissoes do Info.plist, entitlements) PRECISA ser injetada por script
+  # aqui -- editar manualmente nao adianta, porque e sobrescrito.
   #
   # Xcode 26 e obrigatorio: desde 28/04/2026 a Apple rejeita uploads feitos com
   # SDK anterior ao iOS 26 (erro ITMS-90725).
@@ -51,10 +50,8 @@ workflows:
     environment:
       node: 22
       xcode: 26
-      cocoapods: default
       vars:
         BUNDLE_ID: "com.desafiosemdesculpa.app"
-        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
     scripts:
       - name: Instalar dependencias npm
@@ -67,6 +64,7 @@ workflows:
 
       - name: Criar projeto iOS nativo (se ainda nao existir)
         script: |
+          set -e
           if [ ! -d "ios" ]; then
             echo "Pasta ios/ nao encontrada -- gerando projeto nativo com Capacitor..."
             npx cap add ios
@@ -76,6 +74,7 @@ workflows:
 
       - name: Sincronizar web assets e plugins no projeto iOS
         script: |
+          set -e
           npx cap sync ios
 
       - name: Injetar permissoes de privacidade no Info.plist
@@ -89,11 +88,11 @@ workflows:
             /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"
           }
 
-          # GPS -- usado no cardio ao ar livre, check-in presencial e antifraude.
+          # GPS -- cardio ao ar livre, check-in presencial e antifraude.
           set_string "NSLocationWhenInUseUsageDescription" "O INVICTUS usa sua localizacao para registrar a rota das atividades de cardio e confirmar seu check-in presencial na academia."
           set_string "NSLocationAlwaysAndWhenInUseUsageDescription" "O INVICTUS usa sua localizacao durante a atividade para medir distancia e ritmo com precisao, mesmo com a tela desligada."
 
-          # Sensores de movimento -- o pipeline antifraude exige acelerometro/giroscopio.
+          # Sensores de movimento -- o antifraude exige acelerometro/giroscopio.
           set_string "NSMotionUsageDescription" "O INVICTUS le os sensores de movimento do aparelho para validar que a atividade foi realmente executada por voce."
 
           # HealthKit (plugin capacitor-health).
@@ -106,15 +105,14 @@ workflows:
           set_string "NSPhotoLibraryUsageDescription" "O INVICTUS acessa suas fotos para anexar comprovantes de atividade."
           set_string "NSPhotoLibraryAddUsageDescription" "O INVICTUS salva na sua galeria o card de compartilhamento das atividades."
 
-          # Background: rastreio de rota durante o cardio + notificacoes push.
+          # Background: rastreio de rota durante o cardio + push.
           /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:1 string remote-notification" "$PLIST"
 
-          # Declaracao de criptografia. O app usa apenas HTTPS/TLS padrao, que se
-          # enquadra na isencao. Sem esta chave, todo build sobe para o TestFlight
-          # mas fica travado em "Missing Compliance" esperando resposta manual.
+          # Declaracao de criptografia (app usa apenas HTTPS/TLS padrao). Sem
+          # isso o build sobe mas trava em "Missing Compliance".
           /usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST"
 
@@ -125,9 +123,8 @@ workflows:
         script: |
           set -e
           ENT="ios/App/App/App.entitlements"
-          # Criado via PlistBuddy (e nao heredoc) de proposito: o delimitador de
-          # um heredoc precisa ficar na coluna zero, o que e incompativel com a
-          # indentacao exigida por um bloco de script YAML.
+          # Via PlistBuddy e nao heredoc: o delimitador de heredoc precisa ficar
+          # na coluna zero, incompativel com a indentacao de um bloco YAML.
           rm -f "$ENT"
           /usr/libexec/PlistBuddy -c "Save" "$ENT"
           /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit bool true" "$ENT"
@@ -136,17 +133,24 @@ workflows:
           echo "--- App.entitlements ---"
           /usr/libexec/PlistBuddy -c "Print" "$ENT"
 
-      - name: Instalar CocoaPods
+      - name: Instalar dependencias nativas (CocoaPods so se houver Podfile)
         script: |
-          cd ios/App
-          pod install --repo-update
+          set -e
+          # O Capacitor 8 usa Swift Package Manager quando todos os plugins tem
+          # Package.swift -- nesse caso o projeto NAO tem Podfile, e rodar
+          # "pod install" derruba o build com "No Podfile found" (foi exatamente
+          # o que quebrou o primeiro build). So roda CocoaPods se houver Podfile.
+          if [ -f "ios/App/Podfile" ]; then
+            echo "Podfile encontrado -- instalando CocoaPods."
+            cd ios/App
+            pod install --repo-update
+          else
+            echo "Sem Podfile: projeto usa Swift Package Manager. Pulando CocoaPods."
+          fi
 
       - name: Buscar certificados e perfis da conta Apple
         script: |
           set -e
-          # Cria/baixa automaticamente o certificado de distribuicao e o
-          # provisioning profile do bundle id, usando a API key configurada na
-          # integracao app_store_connect do Codemagic.
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain initialize
           keychain add-certificates
@@ -154,12 +158,22 @@ workflows:
 
       - name: Definir numero do build
         script: |
+          set -e
           cd ios/App
           agvtool new-version -all "$BUILD_NUMBER"
 
       - name: Compilar e gerar o .ipa
         script: |
-          xcode-project build-ipa --workspace "$XCODE_WORKSPACE" --scheme "$XCODE_SCHEME"
+          set -e
+          # Com CocoaPods existe App.xcworkspace; com Swift Package Manager o
+          # Capacitor gera apenas App.xcodeproj. Detecta qual usar.
+          if [ -d "ios/App/App.xcworkspace" ]; then
+            echo "Compilando via workspace (CocoaPods)."
+            xcode-project build-ipa --workspace "ios/App/App.xcworkspace" --scheme "$XCODE_SCHEME"
+          else
+            echo "Compilando via project (Swift Package Manager)."
+            xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "$XCODE_SCHEME"
+          fi
 
     artifacts:
       - build/ios/ipa/*.ipa
@@ -169,8 +183,7 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        # Nao submete para revisao da App Store -- apenas disponibiliza no
-        # TestFlight para teste interno.
+        # Nao submete para revisao da App Store -- so TestFlight interno.
         submit_to_app_store: false
       email:
         recipients:
