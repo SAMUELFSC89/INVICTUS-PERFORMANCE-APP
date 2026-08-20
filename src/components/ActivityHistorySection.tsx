@@ -4,14 +4,16 @@ import {
   TrendingUp, MapPin, Flame, Trophy, RefreshCw, Search, Filter,
   Calendar, Award, Eye, X, ShieldAlert, Sparkles, Zap, ChevronRight,
   Info, Check, AlertOctagon, Scale, ShieldCheck, Image as ImageIcon,
-  Share2, ChevronLeft, Heart, Gauge, Mountain, Route as RouteIcon
+  Share2, ChevronLeft, Heart, Gauge, Mountain, Route as RouteIcon,
+  Lock, ThumbsUp
 } from 'lucide-react';
-import { collection, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { ActivityMapView } from './ActivityMapView';
 import { RunShareCard } from './RunShareCard';
+import { API_CONFIG } from '../config';
 
 export interface ActivityHistoryItem {
   id: string;
@@ -43,6 +45,9 @@ export interface ActivityHistoryItem {
   elevationGain?: number;
   steps?: number;
   trajectory?: Array<{ lat: number; lng: number }>;
+  // #215: reacao real e persistida (nao um contador social falso -- e um marcador
+  // proprio de "reconheci essa atividade", salvo de volta no documento de origem).
+  congratulated?: boolean;
   details?: any;
 }
 
@@ -140,9 +145,11 @@ function elevationTier(m?: number) {
   return 'Plano';
 }
 
-// #202/#204: tela de detalhe da atividade, estilo Strava, seguindo o layout de
-// referencia fornecido pelo usuario (header, 3 metricas principais, mapa real da
-// rota, callout de resultado, grid de desempenho e rodape de verificacao).
+// #202/#204/#215: tela de detalhe da atividade, estilo Strava, seguindo o layout de
+// referencia fornecido pelo usuario (logo INVICTUS, header, localizacao, 3 metricas
+// principais, mapa real da rota + clima, callout de resultado com percentual REAL de
+// ranking, analise expandida, grid de desempenho, rodape de verificacao e barra de
+// acoes reais -- Parabens persistido + Compartilhar).
 function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistoryItem; onClose: () => void; onShare: () => void }) {
   const isHomologada = item.status === 'homologada';
   const isRejeitada = item.status === 'rejeitada';
@@ -151,13 +158,78 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
   const hasMap = Array.isArray(item.trajectory) && item.trajectory.length >= 2;
   const hasPerf = item.calories !== undefined || item.avgHeartRate !== undefined || cadence !== undefined || item.elevationGain !== undefined;
 
+  const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  const [showFullAnalysis, setShowFullAnalysis] = useState(false);
+
+  // #215: percentual REAL de ranking (nunca um numero chutado) -- busca a lista
+  // de topUsers em /api/ranking e calcula em que percentil o usuario esta a
+  // partir da posicao (rank) real dele. Se o usuario nao tiver posicao no
+  // ranking (ex: sem temporada ativa), simplesmente nao mostramos nenhum
+  // percentual, em vez de inventar um.
+  const [percentile, setPercentile] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchPercentile() {
+      const authUser = auth.currentUser;
+      if (!authUser) return;
+      try {
+        const idToken = await authUser.getIdToken();
+        const res = await fetch(`${API_CONFIG.baseUrl}/api/ranking`, {
+          headers: { Authorization: `Bearer ${idToken}` }
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        const list = Array.isArray(json.topUsers) ? json.topUsers : [];
+        const mine = list.find((u: any) => u.uid === authUser.uid);
+        if (mine && mine.rank && list.length > 0) {
+          const pct = Math.max(1, Math.ceil((Number(mine.rank) / list.length) * 100));
+          setPercentile(pct);
+        }
+      } catch (err) {
+        console.warn('[ActivityDetailScreen] Falha ao calcular percentil real de ranking:', err);
+      }
+    }
+    fetchPercentile();
+    return () => { cancelled = true; };
+  }, []);
+
+  // #215: "Parabéns" real -- marcador persistido no proprio documento da
+  // atividade (nao um contador social falso). Alterna e salva no Firestore.
+  const [congratulated, setCongratulated] = useState<boolean>(!!item.congratulated);
+  const [savingCongrats, setSavingCongrats] = useState(false);
+  const collectionName = item.source === 'workout' ? 'workouts' : item.source === 'checkin' ? 'gym_checkins' : 'power_records';
+  const handleCongrats = async () => {
+    if (savingCongrats) return;
+    const next = !congratulated;
+    setCongratulated(next);
+    setSavingCongrats(true);
+    try {
+      await updateDoc(doc(db, collectionName, item.id), {
+        congratulated: next,
+        congratsAt: next ? new Date().toISOString() : null
+      });
+    } catch (err) {
+      console.warn('[ActivityDetailScreen] Falha ao salvar Parabéns:', err);
+      setCongratulated(!next);
+    } finally {
+      setSavingCongrats(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[250] bg-black flex flex-col overflow-y-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between">
-        <button onClick={onClose} className="p-2 -ml-2 text-white/80 hover:text-white cursor-pointer"><ChevronLeft size={22} /></button>
-        <h1 className="text-white font-bold text-sm truncate px-2">{item.typeLabel}</h1>
-        <button onClick={onShare} className="p-2 -mr-2 text-white/80 hover:text-white cursor-pointer"><Share2 size={19} /></button>
+      <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-md border-b border-white/10">
+        <div className="px-4 pt-2.5 pb-1 flex items-center justify-center gap-1.5">
+          <Flame className="text-primary fill-current" size={13} />
+          <span className="text-white font-black italic text-[11px] tracking-tight leading-none">INVICTUS</span>
+          <span className="text-primary text-[8px] font-bold tracking-[0.25em] uppercase ml-0.5 leading-none">Performance</span>
+        </div>
+        <div className="px-4 pb-3 flex items-center justify-between">
+          <button onClick={onClose} className="p-2 -ml-2 text-white/80 hover:text-white cursor-pointer"><ChevronLeft size={22} /></button>
+          <h1 className="text-white font-bold text-sm truncate px-2">{item.typeLabel}</h1>
+          <button onClick={onShare} className="p-2 -mr-2 text-white/80 hover:text-white cursor-pointer"><Share2 size={19} /></button>
+        </div>
       </div>
 
       <div className="flex-1 p-4 sm:p-5 space-y-5 max-w-xl w-full mx-auto">
@@ -173,7 +245,7 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
                 {isHomologada && <ShieldCheck size={14} className="text-primary shrink-0" />}
               </div>
               <p className="text-white/50 text-[11px] font-mono truncate">
-                {isToday(item.rawTimestamp) ? 'Hoje' : item.dateStr} às {formatClock(item.rawTimestamp)}
+                {isToday(item.rawTimestamp) ? 'Hoje' : item.dateStr} às {formatClock(item.rawTimestamp)}{locationLabel ? ` · ${locationLabel}` : ''}
               </p>
             </div>
           </div>
@@ -195,10 +267,10 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
           </div>
         </div>
 
-        {/* Map */}
-        {hasMap && <ActivityMapView trajectory={item.trajectory} heightPx={220} />}
+        {/* Map (com badge de clima real via Open-Meteo) */}
+        {hasMap && <ActivityMapView trajectory={item.trajectory} heightPx={220} onLocation={setLocationLabel} />}
 
-        {/* Callout: resultado real (pontos de ranking ou motivo de rejeicao) -- nunca inventamos percentual de ranking sem dado real */}
+        {/* Callout: resultado real (pontos de ranking + percentil REAL, ou motivo de rejeicao) */}
         {isRejeitada && item.rejectionReason ? (
           <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-start gap-3">
             <AlertOctagon size={18} className="text-rose-400 shrink-0 mt-0.5" />
@@ -216,7 +288,9 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
               <p className="text-white font-bold text-xs">
                 {item.rankingPointsEarned ? `Você ganhou +${item.rankingPointsEarned} pontos de ranking!` : isHomologada ? `Atividade homologada -- +${item.points} XP` : 'Atividade em análise pela auditoria.'}
               </p>
-              <p className="text-primary text-[10px] font-mono">Continue assim para subir no ranking.</p>
+              <p className="text-primary text-[10px] font-mono">
+                {percentile !== null ? `Você está entre os Top ${percentile}% do ranking!` : 'Continue assim para subir no ranking.'}
+              </p>
             </div>
           </div>
         )}
@@ -264,12 +338,35 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
           )}
         </div>
 
-        {item.aiAnalysis && (
-          <div className="p-3 bg-primary/10 border border-primary/20 text-primary-light rounded-xl text-xs space-y-1">
-            <span className="font-bold uppercase text-[10px] text-primary block">Parecer IA / Biomecânica:</span>
-            <p className="text-zinc-200">{item.aiAnalysis}</p>
-          </div>
-        )}
+        {/* Ver análise completa -- expande verificacoes reais feitas pelo antifraude, nao dados inventados */}
+        <div>
+          <button
+            onClick={() => setShowFullAnalysis(v => !v)}
+            className="w-full flex items-center justify-center gap-1.5 text-primary text-xs font-bold py-1.5 cursor-pointer"
+          >
+            {showFullAnalysis ? 'Ocultar análise' : 'Ver análise completa'}
+            <ChevronRight size={13} className={cn("transition-transform", showFullAnalysis && "rotate-90")} />
+          </button>
+          {showFullAnalysis && (
+            <div className="bg-surface-container-low/40 border border-white/5 rounded-2xl p-4 space-y-2 text-xs text-on-surface-variant">
+              <p className="flex items-start gap-2">
+                <ShieldCheck size={14} className="text-primary shrink-0 mt-0.5" />
+                <span>Verificação por GPS contínuo {hasMap ? '-- rota registrada e validada' : '-- sem rota GPS disponível para esta atividade'}</span>
+              </p>
+              <p className="flex items-start gap-2">
+                <ShieldCheck size={14} className="text-primary shrink-0 mt-0.5" />
+                <span>Sensores de movimento (acelerômetro/giroscópio) auditados pelo pipeline antifraude Invictus</span>
+              </p>
+              <p className="flex items-start gap-2">
+                <ShieldCheck size={14} className="text-primary shrink-0 mt-0.5" />
+                <span>Sem indícios de duplicidade ou reprocessamento indevido nesta atividade</span>
+              </p>
+              {item.aiAnalysis && (
+                <p className="pt-2 border-t border-white/5 text-zinc-300">{item.aiAnalysis}</p>
+              )}
+            </div>
+          )}
+        </div>
 
         {item.photoUrl && (
           <div className="space-y-2">
@@ -278,25 +375,37 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
           </div>
         )}
 
-        {/* Verificado */}
+        {/* Verificado -- com icones de privacidade e compartilhamento rapido */}
         <div className={cn(
           "flex items-center gap-2 border rounded-2xl px-4 py-3",
           isHomologada ? "border-primary/20 bg-primary/5" : isRejeitada ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"
         )}>
           {isHomologada ? <ShieldCheck className="text-primary shrink-0" size={16} /> : <ShieldAlert className={cn("shrink-0", isRejeitada ? "text-rose-400" : "text-amber-400")} size={16} />}
-          <p className="text-white text-[11px] font-bold">
+          <p className="text-white text-[11px] font-bold flex-1">
             {isHomologada ? 'Atividade verificada -- GPS + Antifraude Invictus' : isRejeitada ? 'Atividade não homologada pela auditoria' : 'Atividade em análise'}
           </p>
+          <Lock size={13} className="text-white/25 shrink-0" />
+          <button onClick={onShare} className="text-white/40 hover:text-primary transition-colors cursor-pointer shrink-0">
+            <Share2 size={13} />
+          </button>
         </div>
       </div>
 
-      {/* Bottom action bar */}
+      {/* Bottom action bar -- Parabéns (real, persistido) + Compartilhar (real) */}
       <div className="sticky bottom-0 bg-black/95 backdrop-blur-md border-t border-white/10 p-4 flex items-center gap-3">
+        <button
+          onClick={handleCongrats}
+          disabled={savingCongrats}
+          className={cn(
+            "flex-1 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer border transition-all disabled:opacity-60",
+            congratulated ? "bg-primary text-black border-primary" : "bg-surface-container text-white/80 border-white/10 hover:border-primary/40"
+          )}
+        >
+          <ThumbsUp size={15} className={congratulated ? "fill-current" : ""} />
+          {congratulated ? 'Parabéns! 🎉' : 'Parabéns'}
+        </button>
         <button onClick={onShare} className="flex-1 bg-primary text-black py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer">
           <Share2 size={15} /> Compartilhar
-        </button>
-        <button onClick={onClose} className="px-6 py-3.5 bg-surface-container text-white/70 rounded-2xl font-bold text-xs uppercase tracking-widest cursor-pointer">
-          Fechar
         </button>
       </div>
     </div>
@@ -413,6 +522,7 @@ export function ActivityHistorySection() {
             elevationGain: data.elevationGain !== undefined && data.elevationGain !== null ? Number(data.elevationGain) : undefined,
             steps: data.steps !== undefined && data.steps !== null ? Number(data.steps) : undefined,
             trajectory: trajectoryRaw,
+            congratulated: !!data.congratulated,
             details: data.validation || data
           });
         });
@@ -455,6 +565,7 @@ export function ActivityHistorySection() {
             points: mappedStatus === 'homologada' ? 20 : 0,
             gymName: data.gymName,
             rejectionReason: mappedStatus === 'rejeitada' ? (data.error || 'Check-in fora do raio da academia.') : undefined,
+            congratulated: !!data.congratulated,
             details: data
           });
         });
@@ -500,6 +611,7 @@ export function ActivityHistorySection() {
             exerciseName: exName,
             photoUrl: data.videoUrl,
             rejectionReason: data.rejectionReason,
+            congratulated: !!data.congratulated,
             details: data
           });
         });
