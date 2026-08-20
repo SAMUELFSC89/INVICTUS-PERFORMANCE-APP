@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  History, CheckCircle2, XCircle, AlertCircle, Clock, Dumbbell, 
-  TrendingUp, MapPin, Flame, Trophy, RefreshCw, Search, Filter, 
+import {
+  History, CheckCircle2, XCircle, AlertCircle, Clock, Dumbbell,
+  TrendingUp, MapPin, Flame, Trophy, RefreshCw, Search, Filter,
   Calendar, Award, Eye, X, ShieldAlert, Sparkles, Zap, ChevronRight,
-  Info, Check, AlertOctagon, Scale, ShieldCheck, Image as ImageIcon
+  Info, Check, AlertOctagon, Scale, ShieldCheck, Image as ImageIcon,
+  Share2, ChevronLeft, Heart, Gauge, Mountain, Route as RouteIcon
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { ActivityMapView } from './ActivityMapView';
+import { RunShareCard } from './RunShareCard';
 
 export interface ActivityHistoryItem {
   id: string;
@@ -23,6 +26,7 @@ export interface ActivityHistoryItem {
   status: 'homologada' | 'rejeitada' | 'pendente';
   statusRaw: string;
   points: number;
+  rankingPointsEarned?: number;
   durationMins?: number;
   distanceKm?: number;
   weightKg?: number;
@@ -31,6 +35,14 @@ export interface ActivityHistoryItem {
   rejectionReason?: string;
   aiAnalysis?: string;
   gymName?: string;
+  // #204: campos que o historico hoje nao exibia (calorias/ritmo/rota/sensores),
+  // mesmo quando ja estavam disponiveis no documento salvo no Firestore.
+  avgHeartRate?: number;
+  calories?: number;
+  pace?: string;
+  elevationGain?: number;
+  steps?: number;
+  trajectory?: Array<{ lat: number; lng: number }>;
   details?: any;
 }
 
@@ -68,20 +80,242 @@ function parseTimestamp(ts: any): { dateStr: string; timeStr: string; rawMs: num
   return { dateStr, timeStr, rawMs: dateObj.getTime() };
 }
 
+function isToday(rawMs: number): boolean {
+  const d = new Date(rawMs);
+  const now = new Date();
+  return d.toDateString() === now.toDateString();
+}
+
+function formatClock(rawMs: number): string {
+  const d = new Date(rawMs);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatDurationLabel(mins?: number): string {
+  const m = Math.round(Number(mins) || 0);
+  if (m >= 60) {
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    return `${h}:${String(rem).padStart(2, '0')}:00`;
+  }
+  return `${m}:00`;
+}
+
+function computePace(distanceKm?: number, durationMins?: number): string | null {
+  const km = Number(distanceKm) || 0;
+  const mins = Number(durationMins) || 0;
+  if (km <= 0 || mins <= 0) return null;
+  const paceMinPerKm = mins / km;
+  const whole = Math.floor(paceMinPerKm);
+  const secs = Math.round((paceMinPerKm - whole) * 60);
+  return `${whole}'${String(secs).padStart(2, '0')}"`;
+}
+
+function caloriesTier(kcal?: number) {
+  if (kcal === undefined) return '';
+  if (kcal >= 500) return 'Muito bom';
+  if (kcal >= 250) return 'Bom';
+  return 'Leve';
+}
+function hrZoneTier(hr?: number, age?: number) {
+  if (hr === undefined) return '';
+  const maxHr = 220 - (age || 30);
+  const pct = hr / maxHr;
+  if (pct >= 0.9) return 'Zona 5';
+  if (pct >= 0.8) return 'Zona 4';
+  if (pct >= 0.7) return 'Zona 3';
+  if (pct >= 0.6) return 'Zona 2';
+  return 'Zona 1';
+}
+function cadenceTier(spm?: number) {
+  if (spm === undefined) return '';
+  if (spm >= 170) return 'Ótima';
+  if (spm >= 150) return 'Boa';
+  return 'Regular';
+}
+function elevationTier(m?: number) {
+  if (m === undefined) return '';
+  if (m > 0) return 'Ganho positivo';
+  if (m < 0) return 'Descida';
+  return 'Plano';
+}
+
+// #202/#204: tela de detalhe da atividade, estilo Strava, seguindo o layout de
+// referencia fornecido pelo usuario (header, 3 metricas principais, mapa real da
+// rota, callout de resultado, grid de desempenho e rodape de verificacao).
+function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistoryItem; onClose: () => void; onShare: () => void }) {
+  const isHomologada = item.status === 'homologada';
+  const isRejeitada = item.status === 'rejeitada';
+  const cadence = (item.steps && item.durationMins) ? Math.round(item.steps / item.durationMins) : undefined;
+  const pace = item.pace || computePace(item.distanceKm, item.durationMins);
+  const hasMap = Array.isArray(item.trajectory) && item.trajectory.length >= 2;
+  const hasPerf = item.calories !== undefined || item.avgHeartRate !== undefined || cadence !== undefined || item.elevationGain !== undefined;
+
+  return (
+    <div className="fixed inset-0 z-[250] bg-black flex flex-col overflow-y-auto">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-md border-b border-white/10 px-4 py-3 flex items-center justify-between">
+        <button onClick={onClose} className="p-2 -ml-2 text-white/80 hover:text-white cursor-pointer"><ChevronLeft size={22} /></button>
+        <h1 className="text-white font-bold text-sm truncate px-2">{item.typeLabel}</h1>
+        <button onClick={onShare} className="p-2 -mr-2 text-white/80 hover:text-white cursor-pointer"><Share2 size={19} /></button>
+      </div>
+
+      <div className="flex-1 p-4 sm:p-5 space-y-5 max-w-xl w-full mx-auto">
+        {/* Activity row */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shrink-0">
+              {item.type === 'cardio' ? <TrendingUp className="text-black" size={20} /> : item.type === 'checkin' ? <MapPin className="text-black" size={20} /> : item.type === 'power' ? <Trophy className="text-black" size={20} /> : <Dumbbell className="text-black" size={20} />}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-white font-bold text-sm truncate">{item.title}</p>
+                {isHomologada && <ShieldCheck size={14} className="text-primary shrink-0" />}
+              </div>
+              <p className="text-white/50 text-[11px] font-mono truncate">
+                {isToday(item.rawTimestamp) ? 'Hoje' : item.dateStr} às {formatClock(item.rawTimestamp)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 3 stats */}
+        <div className="grid grid-cols-3 gap-2 border-y border-white/10 py-4">
+          <div>
+            <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-1">Distância</p>
+            <p className="text-white font-black text-2xl">{(item.distanceKm || 0).toFixed(2)}<span className="text-xs ml-1 text-white/40">km</span></p>
+          </div>
+          <div>
+            <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-1">Tempo</p>
+            <p className="text-white font-black text-2xl">{formatDurationLabel(item.durationMins)}</p>
+          </div>
+          <div>
+            <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-1">Ritmo médio</p>
+            <p className="text-white font-black text-2xl">{pace || '--'}<span className="text-xs ml-1 text-white/40">/km</span></p>
+          </div>
+        </div>
+
+        {/* Map */}
+        {hasMap && <ActivityMapView trajectory={item.trajectory} heightPx={220} />}
+
+        {/* Callout: resultado real (pontos de ranking ou motivo de rejeicao) -- nunca inventamos percentual de ranking sem dado real */}
+        {isRejeitada && item.rejectionReason ? (
+          <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-start gap-3">
+            <AlertOctagon size={18} className="text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-rose-400 font-bold text-[10px] uppercase tracking-wider mb-1">Parecer da auditoria antifraude</p>
+              <p className="text-rose-200/90 text-xs leading-relaxed">{item.rejectionReason}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="border border-primary/30 bg-primary/5 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+              <Gauge className="text-primary" size={17} />
+            </div>
+            <div>
+              <p className="text-white font-bold text-xs">
+                {item.rankingPointsEarned ? `Você ganhou +${item.rankingPointsEarned} pontos de ranking!` : isHomologada ? `Atividade homologada -- +${item.points} XP` : 'Atividade em análise pela auditoria.'}
+              </p>
+              <p className="text-primary text-[10px] font-mono">Continue assim para subir no ranking.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Desempenho */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-white font-bold text-sm flex items-center gap-1.5"><Info size={13} className="text-white/40" /> Desempenho</h3>
+          </div>
+          {hasPerf ? (
+            <div className="grid grid-cols-2 gap-3">
+              {item.calories !== undefined && (
+                <div className="bg-surface-container-low/60 border border-white/10 rounded-2xl p-3.5">
+                  <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wide mb-1"><Flame size={12} /> Gasto energético</div>
+                  <p className="text-white font-black text-xl">{Math.round(item.calories)}<span className="text-xs ml-1 text-white/40">kcal</span></p>
+                  <p className="text-primary text-[10px] font-mono mt-0.5">{caloriesTier(item.calories)}</p>
+                </div>
+              )}
+              {item.avgHeartRate !== undefined && (
+                <div className="bg-surface-container-low/60 border border-white/10 rounded-2xl p-3.5">
+                  <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wide mb-1"><Heart size={12} /> FC média</div>
+                  <p className="text-white font-black text-xl">{Math.round(item.avgHeartRate)}<span className="text-xs ml-1 text-white/40">bpm</span></p>
+                  <p className="text-primary text-[10px] font-mono mt-0.5">{hrZoneTier(item.avgHeartRate)}</p>
+                </div>
+              )}
+              {cadence !== undefined && (
+                <div className="bg-surface-container-low/60 border border-white/10 rounded-2xl p-3.5">
+                  <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wide mb-1"><Gauge size={12} /> Cadência média</div>
+                  <p className="text-white font-black text-xl">{cadence}<span className="text-xs ml-1 text-white/40">spm</span></p>
+                  <p className="text-primary text-[10px] font-mono mt-0.5">{cadenceTier(cadence)}</p>
+                </div>
+              )}
+              {item.elevationGain !== undefined && (
+                <div className="bg-surface-container-low/60 border border-white/10 rounded-2xl p-3.5">
+                  <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wide mb-1"><Mountain size={12} /> Elevação</div>
+                  <p className="text-white font-black text-xl">{Math.round(item.elevationGain)}<span className="text-xs ml-1 text-white/40">m</span></p>
+                  <p className="text-primary text-[10px] font-mono mt-0.5">{elevationTier(item.elevationGain)}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-surface-container-low/40 border border-white/5 rounded-2xl p-4 text-center text-on-surface-variant text-xs">
+              Sem dados adicionais de sensores para esta atividade.
+            </div>
+          )}
+        </div>
+
+        {item.aiAnalysis && (
+          <div className="p-3 bg-primary/10 border border-primary/20 text-primary-light rounded-xl text-xs space-y-1">
+            <span className="font-bold uppercase text-[10px] text-primary block">Parecer IA / Biomecânica:</span>
+            <p className="text-zinc-200">{item.aiAnalysis}</p>
+          </div>
+        )}
+
+        {item.photoUrl && (
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-white uppercase block">Comprovante:</span>
+            <img src={item.photoUrl} alt="Comprovante" className="w-full max-h-64 object-cover rounded-2xl border border-white/10" />
+          </div>
+        )}
+
+        {/* Verificado */}
+        <div className={cn(
+          "flex items-center gap-2 border rounded-2xl px-4 py-3",
+          isHomologada ? "border-primary/20 bg-primary/5" : isRejeitada ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"
+        )}>
+          {isHomologada ? <ShieldCheck className="text-primary shrink-0" size={16} /> : <ShieldAlert className={cn("shrink-0", isRejeitada ? "text-rose-400" : "text-amber-400")} size={16} />}
+          <p className="text-white text-[11px] font-bold">
+            {isHomologada ? 'Atividade verificada -- GPS + Antifraude Invictus' : isRejeitada ? 'Atividade não homologada pela auditoria' : 'Atividade em análise'}
+          </p>
+        </div>
+      </div>
+
+      {/* Bottom action bar */}
+      <div className="sticky bottom-0 bg-black/95 backdrop-blur-md border-t border-white/10 p-4 flex items-center gap-3">
+        <button onClick={onShare} className="flex-1 bg-primary text-black py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer">
+          <Share2 size={15} /> Compartilhar
+        </button>
+        <button onClick={onClose} className="px-6 py-3.5 bg-surface-container text-white/70 rounded-2xl font-bold text-xs uppercase tracking-widest cursor-pointer">
+          Fechar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ActivityHistorySection() {
   const [activities, setActivities] = useState<ActivityHistoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters state
   const [statusFilter, setStatusFilter] = useState<'all' | 'homologada' | 'rejeitada' | 'pendente'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'workout' | 'cardio' | 'checkin' | 'power' | 'other'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [visibleCount, setVisibleCount] = useState<number>(10);
 
-  // Selected item modal for details
-  const [selectedItem, setSelectedItem] = useState<ActivityHistoryItem | null>(null);
+  const [detailItem, setDetailItem] = useState<ActivityHistoryItem | null>(null);
+  const [shareItem, setShareItem] = useState<ActivityHistoryItem | null>(null);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
 
   const fetchHistory = async () => {
@@ -96,29 +330,22 @@ export function ActivityHistorySection() {
       setError(null);
       const items: ActivityHistoryItem[] = [];
 
-      // 1. Fetch from 'workouts' collection
       try {
         const wQuery = query(
           collection(db, 'workouts'),
           where('userId', '==', user.uid)
         );
-    const wSnap = await getDocs(wQuery);
+        const wSnap = await getDocs(wQuery);
 
-    // One-time cleanup: remove legacy fake/simulated wearable-sync docs left over from
-    // early integration testing. A real synced doc's id is always `${source}_${sourceActivityId}`
-    // written by an actually-connected provider (source is exactly 'strava' or 'health_connect').
-    // 'strava_sim_' is provably fake (StravaProvider never emits a 'sim' source). Bare
-    // 'health_connect_' docs here are also leftover test data: this environment is a desktop
-    // browser preview where the native Health Connect plugin (Android-only) can never sync.
-    const FAKE_WORKOUT_PREFIXES = ['strava_sim_', 'health_connect_'];
-    const fakeWorkoutDocs = wSnap.docs.filter(wd => FAKE_WORKOUT_PREFIXES.some(p => wd.id.startsWith(p)));
-    const cleanWorkoutDocs = wSnap.docs.filter(wd => !FAKE_WORKOUT_PREFIXES.some(p => wd.id.startsWith(p)));
-    if (fakeWorkoutDocs.length > 0) {
-      for (const fwd of fakeWorkoutDocs) {
-        try { await deleteDoc(doc(db, 'workouts', fwd.id)); } catch (e) { console.warn('[ActivityHistorySection] cleanup delete failed', fwd.id, e); }
-      }
-    }
-    cleanWorkoutDocs.forEach(d => {
+        const FAKE_WORKOUT_PREFIXES = ['strava_sim_', 'health_connect_'];
+        const fakeWorkoutDocs = wSnap.docs.filter(wd => FAKE_WORKOUT_PREFIXES.some(p => wd.id.startsWith(p)));
+        const cleanWorkoutDocs = wSnap.docs.filter(wd => !FAKE_WORKOUT_PREFIXES.some(p => wd.id.startsWith(p)));
+        if (fakeWorkoutDocs.length > 0) {
+          for (const fwd of fakeWorkoutDocs) {
+            try { await deleteDoc(doc(db, 'workouts', fwd.id)); } catch (e) { console.warn('[ActivityHistorySection] cleanup delete failed', fwd.id, e); }
+          }
+        }
+        cleanWorkoutDocs.forEach(d => {
           const data = d.data();
           const { dateStr, timeStr, rawMs } = parseTimestamp(data.timestamp || data.createdAt);
 
@@ -129,7 +356,7 @@ export function ActivityHistorySection() {
             mappedStatus = 'homologada';
           } else if (['invalid', 'rejected', 'not_validated', 'not_eligible', 'suspicious'].includes(rawSt)) {
             mappedStatus = 'rejeitada';
-          } else if (['pending', 'under_review', 'manual_review', 'biometria_incompleta', 'partially_validated'].includes(rawSt)) {
+          } else if (['pending', 'under_review', 'manual_review', 'biometria_incompleta', 'partially_validated', 'pending_review'].includes(rawSt)) {
             mappedStatus = 'pendente';
           } else if (data.isScoringEligible === false || data.nonScoringReason) {
             mappedStatus = 'rejeitada';
@@ -138,8 +365,8 @@ export function ActivityHistorySection() {
           let typeLabel = 'Treino';
           let title = 'Treino de Musculação';
           if (data.type === 'cardio') {
-            typeLabel = 'Cardio';
-            title = data.cardioTypeLabel ? `Cardio (${data.cardioTypeLabel})` : 'Cardio & Aeróbico';
+            typeLabel = 'Cardio ao ar livre';
+            title = data.cardioTypeLabel ? `${data.cardioTypeLabel}` : 'Corrida ao ar livre';
           } else if (data.type === 'diet') {
             typeLabel = 'Dieta';
             title = 'Refeição Auditada por IA';
@@ -151,7 +378,6 @@ export function ActivityHistorySection() {
             title = 'Power Lift Homologado';
           }
 
-          // Extract reason
           let reason = data.userMessage || data.message || data.nonScoringReason || data.rejectionReason;
           if (!reason && data.validation) {
             reason = data.validation.userMessage || data.validation.reason || data.validation.details?.aiAnalysis;
@@ -159,6 +385,8 @@ export function ActivityHistorySection() {
           if (reason === 'NO_MOVEMENT_DETECTED' || data.nonScoringReason === 'NO_MOVEMENT_DETECTED') {
             reason = '🚨 Nenhum deslocamento foi detectado no GPS durante a sessão de cardio (0.00 km). Atividades estáticas não são homologadas.';
           }
+
+          const trajectoryRaw = Array.isArray(data.trajectory) ? data.trajectory : (Array.isArray(data.checkpoints) ? data.checkpoints : undefined);
 
           items.push({
             id: d.id,
@@ -173,11 +401,18 @@ export function ActivityHistorySection() {
             status: mappedStatus,
             statusRaw: rawSt || mappedStatus,
             points: Number(data.points || 0),
+            rankingPointsEarned: data.rankingPointsEarned ? Number(data.rankingPointsEarned) : undefined,
             durationMins: data.duration ? Number(data.duration) : undefined,
             distanceKm: data.distance ? Number(data.distance) : undefined,
             photoUrl: data.photoUrl || data.verificationPhotoUrl,
             rejectionReason: reason,
             aiAnalysis: data.validation?.details?.aiAnalysis || data.validation?.reason,
+            avgHeartRate: data.avgHeartRate !== undefined && data.avgHeartRate !== null ? Number(data.avgHeartRate) : undefined,
+            calories: data.calories !== undefined && data.calories !== null ? Number(data.calories) : undefined,
+            pace: data.pace || undefined,
+            elevationGain: data.elevationGain !== undefined && data.elevationGain !== null ? Number(data.elevationGain) : undefined,
+            steps: data.steps !== undefined && data.steps !== null ? Number(data.steps) : undefined,
+            trajectory: trajectoryRaw,
             details: data.validation || data
           });
         });
@@ -185,7 +420,6 @@ export function ActivityHistorySection() {
         console.warn('[ActivityHistory] Error fetching workouts:', err);
       }
 
-      // 2. Fetch from 'gym_checkins' collection
       try {
         const cQuery = query(
           collection(db, 'gym_checkins'),
@@ -228,7 +462,6 @@ export function ActivityHistorySection() {
         console.warn('[ActivityHistory] Error fetching gym_checkins:', err);
       }
 
-      // 3. Fetch from 'power_records' collection
       try {
         const pQuery = query(
           collection(db, 'power_records'),
@@ -274,7 +507,6 @@ export function ActivityHistorySection() {
         console.warn('[ActivityHistory] Error fetching power_records:', err);
       }
 
-      // Sort all items descending by rawTimestamp
       items.sort((a, b) => b.rawTimestamp - a.rawTimestamp);
       setActivities(items);
     } catch (err: any) {
@@ -295,15 +527,12 @@ export function ActivityHistorySection() {
     await fetchHistory();
   };
 
-  // Filtered Items
   const filteredActivities = useMemo(() => {
     return activities.filter(act => {
-      // Status Filter
       if (statusFilter !== 'all' && act.status !== statusFilter) {
         return false;
       }
 
-      // Type Filter
       if (typeFilter !== 'all') {
         if (typeFilter === 'workout' && act.type !== 'workout') return false;
         if (typeFilter === 'cardio' && act.type !== 'cardio') return false;
@@ -312,7 +541,6 @@ export function ActivityHistorySection() {
         if (typeFilter === 'other' && !['diet', 'recovery'].includes(act.type)) return false;
       }
 
-      // Search Query
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase();
         const matchTitle = act.title.toLowerCase().includes(q);
@@ -330,7 +558,6 @@ export function ActivityHistorySection() {
     });
   }, [activities, statusFilter, typeFilter, searchQuery]);
 
-  // Statistics
   const stats = useMemo(() => {
     const total = activities.length;
     const homologadas = activities.filter(a => a.status === 'homologada').length;
@@ -346,10 +573,8 @@ export function ActivityHistorySection() {
 
   return (
     <div id="activity-history-section" className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-6 shadow-2xl relative overflow-hidden">
-      {/* Background glow effect */}
       <div className="absolute top-0 right-0 w-80 h-80 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* HEADER BAR */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-primary/10 border border-primary/20 rounded-2xl text-primary shrink-0">
@@ -358,7 +583,7 @@ export function ActivityHistorySection() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-mono font-black text-primary uppercase tracking-widest block">
-                AUDITORIA & HISTÓRICO DE SUBMISSÕES
+                HISTÓRICO DE ATIVIDADES
               </span>
               <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -366,10 +591,10 @@ export function ActivityHistorySection() {
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-headline italic font-black text-white uppercase tracking-tight">
-              Histórico Completo de Atividades
+              Suas Atividades
             </h2>
             <p className="text-xs text-on-surface-variant">
-              Status, data, hora e parecer de validação antifraude para cada atividade registrada.
+              Data, duração, distância, calorias, ritmo e rota de cada atividade registrada.
             </p>
           </div>
         </div>
@@ -384,7 +609,6 @@ export function ActivityHistorySection() {
         </button>
       </div>
 
-      {/* STATS OVERVIEW CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-surface-container-low/60 border border-white/5 p-3.5 rounded-2xl flex flex-col justify-between">
           <span className="text-[10px] font-mono uppercase text-on-surface-variant font-bold">Total Registrado</span>
@@ -428,10 +652,8 @@ export function ActivityHistorySection() {
         </div>
       </div>
 
-      {/* FILTERS & SEARCH TOOLBAR */}
       <div className="space-y-3 bg-black/30 p-4 rounded-2xl border border-white/5">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          {/* SEARCH INPUT */}
           <div className="relative flex-1">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant" />
             <input
@@ -451,7 +673,6 @@ export function ActivityHistorySection() {
             )}
           </div>
 
-          {/* STATUS FILTER PILLS */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
             {[
               { id: 'all', label: 'Todas' },
@@ -475,7 +696,6 @@ export function ActivityHistorySection() {
           </div>
         </div>
 
-        {/* TYPE FILTER PILLS */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-white/5">
           <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
             <Filter size={12} /> Modalidade:
@@ -504,7 +724,6 @@ export function ActivityHistorySection() {
         </div>
       </div>
 
-      {/* HISTORY LIST CONTENT */}
       {loading ? (
         <div className="py-12 flex flex-col items-center justify-center space-y-3 text-on-surface-variant">
           <RefreshCw className="animate-spin text-primary" size={28} />
@@ -545,6 +764,7 @@ export function ActivityHistorySection() {
             const isHomologada = act.status === 'homologada';
             const isRejeitada = act.status === 'rejeitada';
             const isPendente = act.status === 'pendente';
+            const pace = act.pace || computePace(act.distanceKm, act.durationMins);
 
             return (
               <div
@@ -554,14 +774,11 @@ export function ActivityHistorySection() {
                   isHomologada
                     ? "bg-surface-container-low/60 border-emerald-500/20 hover:border-emerald-500/40"
                     : isRejeitada
-                    ? "bg-rose-950/10 border-rose-500/30 hover:border-rose-500/50"
-                    : "bg-amber-950/10 border-amber-500/30 hover:border-amber-500/50"
+                      ? "bg-rose-950/10 border-rose-500/30 hover:border-rose-500/50"
+                      : "bg-amber-950/10 border-amber-500/30 hover:border-amber-500/50"
                 )}
               >
-                {/* CARD HEADER */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  
-                  {/* LEFT: ICON + TITLE + BADGES */}
                   <div className="flex items-start gap-3">
                     <div className={cn(
                       "p-2.5 rounded-xl border shrink-0 mt-0.5",
@@ -580,12 +797,9 @@ export function ActivityHistorySection() {
 
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        {/* TYPE BADGE */}
                         <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-on-surface-variant">
                           {act.typeLabel}
                         </span>
-
-                        {/* STATUS BADGE */}
                         <span className={cn(
                           "text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md border flex items-center gap-1",
                           isHomologada && "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
@@ -595,9 +809,7 @@ export function ActivityHistorySection() {
                           {isHomologada && <CheckCircle2 size={12} />}
                           {isRejeitada && <XCircle size={12} />}
                           {isPendente && <Clock size={12} />}
-                          <span>
-                            {isHomologada ? 'HOMOLOGADA' : isRejeitada ? 'REJEITADA' : 'EM AUDITORIA'}
-                          </span>
+                          <span>{isHomologada ? 'HOMOLOGADA' : isRejeitada ? 'REJEITADA' : 'EM AUDITORIA'}</span>
                         </span>
                       </div>
 
@@ -605,15 +817,14 @@ export function ActivityHistorySection() {
                         {act.title}
                       </h4>
 
-                      {/* DATE & TIME DETAILS */}
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant font-mono">
                         <span className="flex items-center gap-1 text-zinc-300">
                           <Calendar size={13} className="text-primary" />
-                          <strong>Data:</strong> {act.dateStr}
+                          {act.dateStr}
                         </span>
                         <span className="flex items-center gap-1 text-zinc-300">
                           <Clock size={13} className="text-primary" />
-                          <strong>Hora:</strong> {act.timeStr}
+                          {act.timeStr}
                         </span>
                         {act.gymName && (
                           <span className="flex items-center gap-1 text-zinc-400">
@@ -622,10 +833,33 @@ export function ActivityHistorySection() {
                           </span>
                         )}
                       </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        {act.durationMins !== undefined && (
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">⏱️ {act.durationMins} min</span>
+                        )}
+                        {act.distanceKm !== undefined && act.distanceKm > 0 && (
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">🏃 {act.distanceKm.toFixed(2)} km</span>
+                        )}
+                        {pace && (
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">⚡ {pace}/km</span>
+                        )}
+                        {act.calories !== undefined && (
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">🔥 {Math.round(act.calories)} kcal</span>
+                        )}
+                        {act.avgHeartRate !== undefined && (
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">❤️ {Math.round(act.avgHeartRate)} bpm</span>
+                        )}
+                        {act.trajectory && act.trajectory.length >= 2 && (
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300 flex items-center gap-1"><RouteIcon size={10} /> rota GPS</span>
+                        )}
+                        {act.weightKg !== undefined && (
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">🏋️ {act.weightKg} kg</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* RIGHT: METRICS & POINTS */}
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0 shrink-0 gap-1.5">
                     <div className={cn(
                       "px-3 py-1 rounded-xl font-headline italic font-black text-xs sm:text-sm flex items-center gap-1 border",
@@ -636,22 +870,9 @@ export function ActivityHistorySection() {
                       <Award size={14} />
                       <span>{isHomologada ? `+${act.points} XP` : '0 XP'}</span>
                     </div>
-
-                    <div className="flex items-center gap-2 text-[11px] font-mono text-on-surface-variant">
-                      {act.durationMins !== undefined && (
-                        <span>⏱️ {act.durationMins} min</span>
-                      )}
-                      {act.distanceKm !== undefined && act.distanceKm > 0 && (
-                        <span>🏃 {act.distanceKm.toFixed(2)} km</span>
-                      )}
-                      {act.weightKg !== undefined && (
-                        <span>🏋️ {act.weightKg} kg</span>
-                      )}
-                    </div>
                   </div>
                 </div>
 
-                {/* REJEITADA CALLOUT REASON BOX */}
                 {isRejeitada && act.rejectionReason && (
                   <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-xl flex items-start gap-2.5 text-xs text-rose-300 font-sans">
                     <AlertOctagon size={16} className="text-rose-400 shrink-0 mt-0.5" />
@@ -666,7 +887,6 @@ export function ActivityHistorySection() {
                   </div>
                 )}
 
-                {/* PHOTO THUMBNAIL IF AVAILABLE */}
                 {act.photoUrl && (
                   <div className="pt-2 flex items-center gap-3">
                     <button
@@ -691,17 +911,20 @@ export function ActivityHistorySection() {
                   </div>
                 )}
 
-                {/* FOOTER ACTIONS / DETAILS TOGGLE */}
                 <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-on-surface-variant">
-                  <span className="font-mono text-[10px]">
-                    ID: {act.id.substring(0, 12)}...
-                  </span>
+                  <button
+                    onClick={() => setShareItem(act)}
+                    className="text-xs font-bold text-white/60 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Share2 size={14} />
+                    <span>Compartilhar</span>
+                  </button>
 
                   <button
-                    onClick={() => setSelectedItem(act)}
+                    onClick={() => setDetailItem(act)}
                     className="text-xs font-bold text-primary hover:text-primary-hover flex items-center gap-1 cursor-pointer transition-colors"
                   >
-                    <span>Ver Detalhes Técnicos</span>
+                    <span>Ver Detalhes</span>
                     <ChevronRight size={14} />
                   </button>
                 </div>
@@ -711,7 +934,6 @@ export function ActivityHistorySection() {
         </div>
       )}
 
-      {/* LOAD MORE BUTTON */}
       {filteredActivities.length > visibleCount && (
         <div className="text-center pt-2">
           <button
@@ -723,118 +945,37 @@ export function ActivityHistorySection() {
         </div>
       )}
 
-      {/* MODAL: ITEM TECHNICAL DETAILS */}
       <AnimatePresence>
-        {selectedItem && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-surface-card border border-white/10 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto"
-            >
-              <button
-                onClick={() => setSelectedItem(null)}
-                className="absolute top-4 right-4 text-on-surface-variant hover:text-white p-1 rounded-lg bg-white/5 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl text-primary">
-                  <ShieldCheck size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white uppercase italic">
-                    Relatório de Auditoria IA
-                  </h3>
-                  <p className="text-xs text-on-surface-variant font-mono">
-                    ID: {selectedItem.id}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3 text-xs bg-black/40 p-4 rounded-xl border border-white/5 font-mono">
-                <div className="flex justify-between py-1 border-b border-white/5">
-                  <span className="text-on-surface-variant">Tipo de Atividade:</span>
-                  <span className="text-white font-bold">{selectedItem.title}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
-                  <span className="text-on-surface-variant">Data do Registro:</span>
-                  <span className="text-white">{selectedItem.dateStr}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
-                  <span className="text-on-surface-variant">Hora Exata:</span>
-                  <span className="text-white">{selectedItem.timeStr}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
-                  <span className="text-on-surface-variant">Status da Homologação:</span>
-                  <span className={cn(
-                    "font-bold uppercase",
-                    selectedItem.status === 'homologada' && "text-emerald-400",
-                    selectedItem.status === 'rejeitada' && "text-rose-400",
-                    selectedItem.status === 'pendente' && "text-amber-400"
-                  )}>
-                    {selectedItem.status.toUpperCase()}
-                  </span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
-                  <span className="text-on-surface-variant">XP Atribuído:</span>
-                  <span className="text-primary font-bold">+{selectedItem.points} XP</span>
-                </div>
-
-                {selectedItem.durationMins !== undefined && (
-                  <div className="flex justify-between py-1 border-b border-white/5">
-                    <span className="text-on-surface-variant">Duração Auditada:</span>
-                    <span className="text-white">{selectedItem.durationMins} minutos</span>
-                  </div>
-                )}
-
-                {selectedItem.distanceKm !== undefined && (
-                  <div className="flex justify-between py-1 border-b border-white/5">
-                    <span className="text-on-surface-variant">Distância Percorrida:</span>
-                    <span className="text-white">{selectedItem.distanceKm.toFixed(2)} km</span>
-                  </div>
-                )}
-              </div>
-
-              {selectedItem.rejectionReason && (
-                <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl text-xs space-y-1">
-                  <span className="font-bold uppercase text-[10px] text-rose-400 block">Motivo do Indeferimento:</span>
-                  <p>{selectedItem.rejectionReason}</p>
-                </div>
-              )}
-
-              {selectedItem.aiAnalysis && (
-                <div className="p-3 bg-primary/10 border border-primary/20 text-primary-light rounded-xl text-xs space-y-1">
-                  <span className="font-bold uppercase text-[10px] text-primary block">Parecer IA / Biomecânica:</span>
-                  <p className="text-zinc-200">{selectedItem.aiAnalysis}</p>
-                </div>
-              )}
-
-              {selectedItem.photoUrl && (
-                <div className="space-y-2">
-                  <span className="text-xs font-bold text-white uppercase block">Comprovante de Imagem:</span>
-                  <img
-                    src={selectedItem.photoUrl}
-                    alt="Anexo"
-                    className="w-full max-h-56 object-cover rounded-xl border border-white/10"
-                  />
-                </div>
-              )}
-
-              <button
-                onClick={() => setSelectedItem(null)}
-                className="w-full py-2.5 bg-surface-container hover:bg-surface-container-high text-white font-bold text-xs uppercase rounded-xl cursor-pointer"
-              >
-                Fechar Detalhes
-              </button>
-            </motion.div>
-          </div>
+        {detailItem && (
+          <ActivityDetailScreen
+            item={detailItem}
+            onClose={() => setDetailItem(null)}
+            onShare={() => { setShareItem(detailItem); }}
+          />
         )}
       </AnimatePresence>
 
-      {/* MODAL: FULL PHOTO PREVIEW */}
+      {shareItem && (
+        <RunShareCard
+          session={{
+            id: shareItem.id,
+            title: shareItem.title,
+            distanceKm: shareItem.distanceKm,
+            durationMins: shareItem.durationMins,
+            pace: shareItem.pace,
+            calories: shareItem.calories,
+            avgHeartRate: shareItem.avgHeartRate,
+            elevationGain: shareItem.elevationGain,
+            steps: shareItem.steps,
+            trajectory: shareItem.trajectory,
+            timestamp: new Date(shareItem.rawTimestamp).toISOString(),
+            rankingPointsEarned: shareItem.rankingPointsEarned,
+            points: shareItem.points,
+          } as any}
+          onClose={() => setShareItem(null)}
+        />
+      )}
+
       <AnimatePresence>
         {previewPhotoUrl && (
           <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex items-center justify-center p-4">
