@@ -13,6 +13,7 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { ActivityMapView } from './ActivityMapView';
 import { RunShareCard } from './RunShareCard';
+import { InvictusLogo } from './InvictusLogo';
 import { API_CONFIG } from '../config';
 
 export interface ActivityHistoryItem {
@@ -145,12 +146,13 @@ function elevationTier(m?: number) {
   return 'Plano';
 }
 
-// #202/#204/#215: tela de detalhe da atividade, estilo Strava, seguindo o layout de
-// referencia fornecido pelo usuario (logo INVICTUS, header, localizacao, 3 metricas
+// #202/#204/#215/#217: tela de detalhe da atividade, estilo Strava, seguindo o layout de
+// referencia fornecido pelo usuario (logo INVICTUS real, header, localizacao, 3 metricas
 // principais, mapa real da rota + clima, callout de resultado com percentual REAL de
 // ranking, analise expandida, grid de desempenho, rodape de verificacao e barra de
-// acoes reais -- Parabens persistido + Compartilhar).
-function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistoryItem; onClose: () => void; onShare: () => void }) {
+// acoes reais -- Parabens persistido + Compartilhar). EXPORTADA para poder ser reaproveitada
+// tambem logo apos finalizar uma atividade em Challenges.tsx (nao so no historico).
+export function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistoryItem; onClose: () => void; onShare: () => void }) {
   const isHomologada = item.status === 'homologada';
   const isRejeitada = item.status === 'rejeitada';
   const cadence = (item.steps && item.durationMins) ? Math.round(item.steps / item.durationMins) : undefined;
@@ -195,13 +197,17 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
 
   // #215: "Parabéns" real -- marcador persistido no proprio documento da
   // atividade (nao um contador social falso). Alterna e salva no Firestore.
+  // Atividades ainda nao sincronizadas (id local_*, ex: logo apos finalizar)
+  // nao tentam persistir -- so uma reacao visual local ate a proxima sincronizacao.
   const [congratulated, setCongratulated] = useState<boolean>(!!item.congratulated);
   const [savingCongrats, setSavingCongrats] = useState(false);
   const collectionName = item.source === 'workout' ? 'workouts' : item.source === 'checkin' ? 'gym_checkins' : 'power_records';
+  const isPersistable = !item.id.startsWith('local_');
   const handleCongrats = async () => {
     if (savingCongrats) return;
     const next = !congratulated;
     setCongratulated(next);
+    if (!isPersistable) return;
     setSavingCongrats(true);
     try {
       await updateDoc(doc(db, collectionName, item.id), {
@@ -221,7 +227,7 @@ function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistor
       {/* Header */}
       <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-md border-b border-white/10">
         <div className="px-4 pt-2.5 pb-1 flex items-center justify-center gap-1.5">
-          <Flame className="text-primary fill-current" size={13} />
+          <InvictusLogo size={16} />
           <span className="text-white font-black italic text-[11px] tracking-tight leading-none">INVICTUS</span>
           <span className="text-primary text-[8px] font-bold tracking-[0.25em] uppercase ml-0.5 leading-none">Performance</span>
         </div>
