@@ -1,41 +1,50 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { ValidationResult, ActivitySession } from "../types";
 import { API_CONFIG } from "../config";
 import { auth } from "../firebase";
 import { antiCheatService } from "./antiCheatService";
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-// #223 - CAUSA RAIZ DO CRASH NO APP iOS.
+// #224: este servico NAO fala mais com o Gemini diretamente.
 //
-// Antes esta linha era:
-//     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY || '' });
+// Dois motivos:
 //
-// O construtor do SDK @google/genai LANCA EXCECAO quando a apiKey e vazia.
-// Como a chamada estava no escopo do modulo, a excecao acontecia durante a
-// avaliacao do bundle, ANTES do React montar -- derrubando o app inteiro e
-// aparecendo no iPhone apenas como "Script error.".
+// 1. SEGURANCA DA CHAVE. Para o cliente chamar o Gemini, o vite.config.ts
+//    precisava embutir a GEMINI_API_KEY no bundle publico. Qualquer pessoa
+//    conseguia abrir o JS de invictusperformance.app.br e extrair a chave.
 //
-// Isso nao acontecia na web porque o build da Vercel tem GEMINI_API_KEY
-// definida (o vite.config.ts substitui process.env.GEMINI_API_KEY em tempo
-// de build). O build nativo do Codemagic NAO tem essa variavel, entao a
-// chave virava vazia e o app quebrava so no celular.
+// 2. ANTIFRAUDE. Validacao rodando no aparelho do proprio atleta e
+//    falsificavel: bastava adulterar a resposta no navegador para homologar
+//    um treino que nunca aconteceu. A decisao agora e tomada no servidor.
 //
-// Agora o cliente e criado sob demanda. Os dois pontos que usam
-// ai.models.generateContent ja estao dentro de try/catch e ja sao protegidos
-// por 'if (!GEMINI_KEY)', entao o comportamento de fallback
-// (pending_review / AUDITORIA_MANUAL) continua exatamente o mesmo.
-let _aiClient: GoogleGenAI | null = null;
-const ai = {
-  get models() {
-    if (!_aiClient) {
-      if (!GEMINI_KEY) {
-        throw new Error('GEMINI_API_KEY ausente neste build: validacao por IA indisponivel no cliente.');
-      }
-      _aiClient = new GoogleGenAI({ apiKey: GEMINI_KEY });
-    }
-    return _aiClient.models;
-  }
+// 3. BOOT DO APP NATIVO (#223). Construir o cliente Gemini no escopo do modulo
+//    lancava excecao quando a chave estava vazia (build do Codemagic nao tem a
+//    variavel), derrubando o app inteiro antes do React montar.
+//
+// Toda chamada de IA passa a ser POST /api/validate-activity.
+// Fail-closed: qualquer falha manda a atividade para revisao manual, nunca
+// aprova automaticamente.
+
+const REVISAO_MANUAL_IMAGEM = {
+  isValid: false,
+  status: "pending_review",
+  requiresManualReview: true,
+  pointsAwarded: 0,
+  reason: "AI_VALIDATION_UNAVAILABLE",
+  analysis: "Sua atividade foi recebida e está em análise. Não foi possível concluir a validação automática neste momento.",
+  confidence: 0
 };
+
+// Sempre use a URL absoluta de API_CONFIG.baseUrl. No app nativo o WebView roda
+// em capacitor://localhost, entao fetch('/api/...') aponta para um host que nao
+// existe e nenhuma chamada de backend funciona (mesma causa do #223).
+async function cabecalhosAutenticados(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const user = auth.currentUser;
+  if (user) {
+    const token = await user.getIdToken();
+    headers['Authorization'] = 'Bearer ' + token;
+  }
+  return headers;
+}
 
 export const validationService = {
   /**
@@ -45,9 +54,9 @@ export const validationService = {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
+    const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
@@ -58,23 +67,16 @@ export const validationService = {
    */
   async getNearbyGyms(lat: number, lng: number): Promise<string[]> {
     try {
-      const user = auth.currentUser;
-      const headers: Record<string, string> = {};
-      
-      if (user) {
-        const token = await user.getIdToken();
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      const headers = await cabecalhosAutenticados();
+      const response = await fetch(API_CONFIG.baseUrl + '/api/gyms?lat=' + lat + '&lng=' + lng, { headers });
 
-      const response = await fetch(`${API_CONFIG.baseUrl}/api/gyms?lat=${lat}&lng=${lng}`, { headers });
-      
       if (!response.ok) {
-        console.error(`[ValidationService] Nearby Gyms API failed with status: ${response.status}`);
+        console.error('[ValidationService] Nearby Gyms API failed with status: ' + response.status);
         return [];
       }
-      
+
       const data = await response.json();
-      
+
       if (data.success && data.data) {
         // Mapping according to New API requirements handled in backend
         return data.data.map((r: any) => r.name);
@@ -87,104 +89,78 @@ export const validationService = {
   },
 
   /**
-   * Validates an image using Gemini AI
+   * Valida uma imagem de atividade. A analise por IA acontece no servidor
+   * (POST /api/validate-activity com type: 'image_validation') -- ver #224.
    */
   async validateImage(base64Image: string, type: 'workout' | 'cardio' | 'diet'): Promise<{ isValid: boolean; analysis: string; confidence: number; status?: string; requiresManualReview?: boolean; pointsAwarded?: number; reason?: string }> {
-    if (!GEMINI_KEY) {
-      console.warn('[ValidationService] GEMINI_API_KEY not found. Returning secure fallback.');
-      return { 
-        isValid: false, 
-        status: "pending_review",
-        requiresManualReview: true,
-        pointsAwarded: 0,
-        reason: "AI_VALIDATION_UNAVAILABLE",
-        analysis: "Sua atividade foi recebida e está em análise. Não foi possível concluir a validação automática neste momento.", 
-        confidence: 0 
-      };
-    }
-
-    const prompt = type === 'workout' 
-      ? "Você é um inspetor de academia rigoroso. Analise esta imagem. Ela mostra de forma clara e inequívoca um ambiente de academia (aparelhos, pesos, sala de aula) ou uma pessoa visivelmente praticando exercícios? REJEITE e considere 'isValid: false' se for apenas uma selfie de rosto sem contexto, fotos de casa, objetos aleatórios ou ambientes não-fitness. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100)."
-      : type === 'diet'
-      ? "Você é um nutricionista avaliando a adesão à dieta. Esta imagem mostra uma refeição real preparada (prato de comida, salada, frutas, lanche saudável)? REJEITE e considere 'isValid: false' se for uma foto de ambiente, uma embalagem fechada, uma pessoa, um animal, objetos aleatórios, telas de computador ou fotos da internet. Deve ser comida real pronta para consumo. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100)."
-      : "Você é um monitor de desempenho esportivo. Analise esta imagem. Ela mostra de forma clara um contexto de atividade física (pessoa suada, roupa de treino, pista de corrida, parque, academia ou o visor de uma esteira/bike)? REJEITE se for uma foto sem contexto de esforço físico, fotos de ambientes internos comuns, animais, carros ou fotos da internet. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100).";
-
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          parts: [
-            { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-            { text: prompt }
-          ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              isValid: { type: Type.BOOLEAN },
-              analysis: { type: Type.STRING },
-              confidence: { type: Type.NUMBER }
-            },
-            required: ["isValid", "analysis", "confidence"]
-          }
-        }
+      const headers = await cabecalhosAutenticados();
+      const response = await fetch(API_CONFIG.baseUrl + '/api/validate-activity', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          type: 'image_validation',
+          imageType: type,
+          photoBase64: base64Image
+        })
       });
 
-      const result = JSON.parse(response.text || '{}');
+      if (!response.ok) {
+        console.warn('[ValidationService] validateImage HTTP ' + response.status + ' - indo para revisao manual.');
+        return { ...REVISAO_MANUAL_IMAGEM };
+      }
+
+      const data = await response.json();
       return {
-        isValid: result.isValid === true, // Ensure boolean
-        analysis: result.analysis || "Não foi possível analisar a imagem.",
-        confidence: Number(result.confidence) || 0
+        isValid: data.isValid === true,
+        analysis: data.analysis || "Não foi possível analisar a imagem.",
+        confidence: Number(data.confidence) || 0,
+        status: data.status,
+        requiresManualReview: data.requiresManualReview,
+        pointsAwarded: data.pointsAwarded,
+        reason: data.reason
       };
     } catch (error) {
-      console.error('AI Validation Error:', error);
-      return { 
-        isValid: false, 
-        status: "pending_review",
-        requiresManualReview: true,
-        pointsAwarded: 0,
-        reason: "AI_VALIDATION_UNAVAILABLE",
-        analysis: "Sua atividade foi recebida e está em análise. Não foi possível concluir a validação automática neste momento.", 
-        confidence: 0 
-      };
+      console.error('[ValidationService] Falha ao validar imagem no servidor:', error);
+      return { ...REVISAO_MANUAL_IMAGEM };
     }
   },
 
   /**
-   * Validates a strength challenge video keyframes using Gemini AI
+   * Envia os frames do Power Lift para auditoria no servidor.
+   *
+   * #224: o fallback que rodava o Gemini no proprio aparelho foi REMOVIDO.
+   * Ele exigia a chave de IA no cliente e, pior, permitia que uma marca fosse
+   * homologada por uma decisao tomada dentro do celular do proprio atleta.
+   * Agora, se o servidor nao responder, a tentativa vai para AUDITORIA_MANUAL.
    */
   async validatePowerVideo(
-    frameBase64OrFrames: string | string[], 
-    exercise: 'supino' | 'agachamento' | 'terra', 
+    frameBase64OrFrames: string | string[],
+    exercise: 'supino' | 'agachamento' | 'terra',
     weight: number
-  ): Promise<{ 
-    isValid: boolean; 
+  ): Promise<{
+    isValid: boolean;
     isManualReview?: boolean;
     auditResult?: 'VALIDADO' | 'AUDITORIA_MANUAL' | 'REPROVADO';
-    analysis: string; 
-    confidence: number; 
+    analysis: string;
+    confidence: number;
     estimatedWeight?: number;
     motivos?: string[];
     resumoMotivos?: string;
     mensagemParabens?: string;
     mensagemRecusa?: string;
-    reason?: string 
+    reason?: string
   }> {
+    const exName = exercise === 'supino' ? 'Supino' : exercise === 'agachamento' ? 'Agachamento' : 'Terra';
+
     try {
-      const user = auth.currentUser;
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (user) {
-        const token = await user.getIdToken();
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      const headers = await cabecalhosAutenticados();
 
       const frames = Array.isArray(frameBase64OrFrames)
         ? frameBase64OrFrames
         : [frameBase64OrFrames];
 
-      const response = await fetch('/api/validate-activity', {
+      const response = await fetch(API_CONFIG.baseUrl + '/api/validate-activity', {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -202,15 +178,20 @@ export const validationService = {
         const auditResult = data.auditResult || data.status || (data.isValid ? 'VALIDADO' : 'REPROVADO');
         const isValid = auditResult === 'VALIDADO' || (data.isValid === true && confidence >= 95);
         const isManualReview = auditResult === 'AUDITORIA_MANUAL' || data.isManualReview === true || (confidence >= 80 && confidence < 95);
-        const exName = exercise === 'supino' ? 'Supino' : exercise === 'agachamento' ? 'Agachamento' : 'Terra';
 
         const motivos = data.motivos || [];
-        const resumoMotivos = motivos.length > 0 
-          ? motivos.map((m: string) => `• ${m}`).join('\n')
+        const resumoMotivos = motivos.length > 0
+          ? motivos.map((m: string) => '• ' + m).join('\n')
           : data.resumoMotivos || (isValid ? '• Todos os critérios de execução, ambiente e biomecânica atendidos.' : '• Não atendeu aos critérios de validação de vídeo e segurança.');
 
-        const mensagemParabens = data.mensagemParabens || `🎉 PARABÉNS! NOVA MARCA RECORDE HOMOLOGADA COM SUCESSO! 🏆\n\nSua nova marca de ${weight}kg no ${exName} foi validada com ${confidence}% de confiança pela inteligência de auditoria de força Invictus!\n\nSeu recorde oficial e ranking foram atualizados com sucesso!`;
-        const mensagemRecusa = data.mensagemRecusa || `❌ REGISTRO DE MARCA RECUSADO\n\nSua tentativa de registro de nova marca (${weight}kg no ${exName}) não pôde ser homologada.\n\n📋 RESUMO DOS MOTIVOS DA RECUSA:\n${resumoMotivos}\n\n💡 Dica de Auditoria: Grave em ambiente de academia visível, com a barra e anilhas nítidas, e mantendo a amplitude completa.`;
+        const mensagemParabens = data.mensagemParabens ||
+          ('🎉 PARABÉNS! NOVA MARCA RECORDE HOMOLOGADA COM SUCESSO! 🏆\n\nSua nova marca de ' + weight + 'kg no ' + exName +
+           ' foi validada com ' + confidence + '% de confiança pela inteligência de auditoria de força Invictus!\n\nSeu recorde oficial e ranking foram atualizados com sucesso!');
+
+        const mensagemRecusa = data.mensagemRecusa ||
+          ('❌ REGISTRO DE MARCA RECUSADO\n\nSua tentativa de registro de nova marca (' + weight + 'kg no ' + exName +
+           ') não pôde ser homologada.\n\n📋 RESUMO DOS MOTIVOS DA RECUSA:\n' + resumoMotivos +
+           '\n\n💡 Dica de Auditoria: Grave em ambiente de academia visível, com a barra e anilhas nítidas, e mantendo a amplitude completa.');
 
         return {
           isValid,
@@ -226,178 +207,21 @@ export const validationService = {
           reason: data.reasonCode || data.reason || data.userMessage
         };
       }
+
+      console.warn('[ValidationService] validatePowerVideo HTTP ' + response.status + ' - indo para auditoria manual.');
     } catch (err) {
-      console.warn('[ValidationService] Backend validation call failed, using client fallback:', err);
+      console.warn('[ValidationService] Falha ao chamar a auditoria no servidor:', err);
     }
 
-    if (!GEMINI_KEY) {
-      return {
-        isValid: false,
-        isManualReview: true,
-        auditResult: 'AUDITORIA_MANUAL',
-        analysis: "STATUS: AUDITORIA_MANUAL\nCONFIANÇA: 85%\nMOTIVOS:\n• Vídeo submetido para revisão técnica da equipe de auditoria.",
-        confidence: 85,
-        estimatedWeight: weight,
-        motivos: ["Vídeo submetido para revisão técnica da equipe de auditoria."]
-      };
-    }
-
-    const exName = exercise === 'supino' ? 'Supino' : exercise === 'agachamento' ? 'Agachamento' : 'Terra';
-    const prompt = `# INVICTUS POWER LIFT - SISTEMA DE AUDITORIA OFICIAL POR IA
-
-Você é o sistema oficial e autoridade máxima de auditoria do Invictus Power Lift.
-Sua função NÃO é dar dicas de treino ou avaliar estética da execução.
-Sua única responsabilidade é determinar se a tentativa de levantamento de força é VÁLIDA, INVÁLIDA ou REQUER AUDITORIA MANUAL conforme as regras estritas abaixo.
-A decisão deve ser extremamente rigorosa. NUNCA aprove uma tentativa quando existir dúvida. Na dúvida, REPROVE ou envie para AUDITORIA_MANUAL e informe exatamente qual regra foi violada.
-
---------------------------------------------------
-1. OBJETIVO DA AUDITORIA
---------------------------------------------------
-Analisar a mídia/vídeo enviada para o desafio de:
-• Exercício Declarado: ${exName}
-• Carga Declarada pelo Atleta: ${weight} kg
-
-Confirmar obrigatoriamente:
-- Presença e identidade do atleta
-- Autenticidade do vídeo/mídia (sem cortes ou edições)
-- Ambiente de academia
-- Reconhecimento da barra e das anilhas (quantidade, simetria e peso estimado)
-- Execução completa e biomecânica do movimento (amplitude, lockout)
-- Ausência de qualquer forma de fraude
-
---------------------------------------------------
-2. CONFIRMAÇÃO DO AMBIENTE DE ACADEMIA
---------------------------------------------------
-Confirmar de forma clara a presença de um ambiente fitness/academia real.
-Procurar por: Equipamentos de musculação, anilhas, barras olímpicas, banco de supino, rack/gaiola de agachamento, plataforma de levantamento, piso emborrachado, espelhos, máquinas ou suportes.
-Caso a presença de ambiente de academia seja duvidosa ou ausente: REPROVAR.
-
---------------------------------------------------
-3. IDENTIFICAÇÃO DO EXERCÍCIO
---------------------------------------------------
-Reconhecer automaticamente se o vídeo demonstra claramente um dos três exercícios de força:
-• Supino Reto
-• Agachamento Livre
-• Levantamento Terra
-Se o exercício mostrado for diferente do declarado (${exName}) ou não puder ser identificado com clareza: REPROVAR.
-
---------------------------------------------------
-4. IDENTIFICAÇÃO DA BARRA E REGRA DE ANILHAS
---------------------------------------------------
-• BARRA: Detectar se há barra (olímpica, comum ou smith). Se não houver barra: REPROVAR.
-• EXIBIÇÃO DA 1ª ANILHA NO INÍCIO: O vídeo DEVE obrigatoriamente abrir/iniciar mostrando claramente o peso impresso/marcado na primeira anilha (ex: 20kg, 15kg, 25kg, 45lb).
-• MÚLTIPLAS ANILHAS: Se houver mais de uma anilha de cada lado, exige-se apenas a exibição nítida da primeira anilha no início. No entanto, o atleta DEVE informar (seja por áudio falado no vídeo ou por texto impresso/sobreposto na tela) o peso total combinado das demais anilhas.
-• CONTINUIDADE SEM CORTES: O vídeo deve ser 100% contínuo desde a exibição inicial do peso na primeira anilha até a conclusão total do levantamento (lockout), sem cortes, edições, pausas de câmera ou acelerações. Se a primeira anilha não for exibida no início ou o vídeo contiver cortes: REPROVAR.
-
---------------------------------------------------
-5. VALIDAÇÃO BIOMECÂNICA DA EXECUÇÃO
---------------------------------------------------
-• SUPINO: atleta deitado no banco, barra inicia parada, descida controlada com a barra tocando claramente o peito, subida contínua, extensão completa dos cotovelos (lockout), sem ajuda de terceiros e sem quicar a barra no peito.
-• AGACHAMENTO LIVRE: barra apoiada nas costas, atleta ereto, descida onde o quadril ultrapassa claramente a linha superior dos joelhos (profundidade válida), subida contínua com extensão completa dos joelhos no topo, sem apoios externos.
-• LEVANTAMENTO TERRA: barra parte do chão, puxada única e contínua, extensão completa dos joelhos e quadris (lockout) com ombros finalizando para trás, sem apoios nas coxas (hitching excessivo).
-Qualquer falha técnica, meia repetição ou ajuda de outra pessoa: REPROVAR.
-
---------------------------------------------------
-6. ANTIFRAUDE E INTEGRIDADE DIGITAL
---------------------------------------------------
-Detectar ativamente: Vídeo editado, cortes, aceleração, câmera pausada, repetição de frames, IA generativa, deepfake, tela filmando monitor/outro celular, vídeo antigo, compressão incompatível, troca de atleta ou interrupções.
-Se existir QUALQUER suspeita de fraude digital ou gravação de tela: REPROVAR.
-
---------------------------------------------------
-7. CRITÉRIOS DE CONFIANÇA E STATUS
---------------------------------------------------
-Calcule a Confiança Geral de 0 a 100%:
-• Confiança >= 95% E todos os critérios 100% atendidos => STATUS: "VALIDADO"
-• Confiança entre 80% e 94% OU dúvidas em anilhas/visibilidade => STATUS: "AUDITORIA_MANUAL"
-• Confiança < 80% OU violação de regras/suspeita de fraude => STATUS: "REPROVADO"
-
---------------------------------------------------
-RESPOSTA REQUERIDA (JSON)
---------------------------------------------------
-Retorne ESTRITAMENTE um JSON no formato:
-{
-  "status": "VALIDADO" | "AUDITORIA_MANUAL" | "REPROVADO",
-  "exercise": "${exName}",
-  "estimatedWeight": number,
-  "confidence": number,
-  "motivos": [ "motivo 1", "motivo 2" ]
-}`;
-
-    try {
-      const firstFrame = Array.isArray(frameBase64OrFrames) ? frameBase64OrFrames[0] : frameBase64OrFrames;
-      const cleanBase64 = (firstFrame || "").replace(/^data:image\/\w+;base64,/, "");
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          { inlineData: { mimeType: "image/jpeg", data: cleanBase64 } },
-          { text: prompt }
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              status: { type: Type.STRING },
-              exercise: { type: Type.STRING },
-              estimatedWeight: { type: Type.NUMBER },
-              confidence: { type: Type.NUMBER },
-              motivos: { 
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
-              isValid: { type: Type.BOOLEAN },
-              analysis: { type: Type.STRING }
-            }
-          }
-        }
-      });
-
-      const result = JSON.parse(response.text || '{}');
-      const confidenceNum = Number(result.confidence) || 0;
-      let auditResult: 'VALIDADO' | 'AUDITORIA_MANUAL' | 'REPROVADO' = 'REPROVADO';
-      
-      const rawStatus = (result.status || '').toUpperCase();
-      if (rawStatus === 'VALIDADO' || (result.isValid === true && confidenceNum >= 95)) {
-        auditResult = confidenceNum >= 95 ? 'VALIDADO' : 'AUDITORIA_MANUAL';
-      } else if (rawStatus === 'AUDITORIA_MANUAL' || (result.isValid === true && confidenceNum >= 80)) {
-        auditResult = 'AUDITORIA_MANUAL';
-      } else {
-        auditResult = 'REPROVADO';
-      }
-
-      const isValid = auditResult === 'VALIDADO';
-      const isManualReview = auditResult === 'AUDITORIA_MANUAL';
-
-      const motivosList: string[] = Array.isArray(result.motivos) && result.motivos.length > 0 
-        ? result.motivos 
-        : [result.analysis || (isValid ? 'Execução e ambiente validados.' : isManualReview ? 'Requer auditoria manual.' : 'Dúvida ou violação identificada na auditoria.')];
-
-      const formattedAnalysis = `STATUS: ${auditResult}
-EXERCÍCIO: ${result.exercise || exName}
-PESO ESTIMADO: ${result.estimatedWeight || weight || 0} kg
-CONFIANÇA: ${confidenceNum}%
-MOTIVOS:
-${motivosList.map((m: string) => `• ${m}`).join('\n')}`;
-
-      return {
-        isValid,
-        isManualReview,
-        auditResult,
-        analysis: formattedAnalysis,
-        confidence: confidenceNum,
-        estimatedWeight: result.estimatedWeight || weight || 0,
-        motivos: motivosList
-      };
-    } catch (error) {
-      console.error('[ValidationService] Client Gemini Error:', error);
-      return {
-        isValid: false,
-        isManualReview: true,
-        auditResult: 'AUDITORIA_MANUAL',
-        analysis: "STATUS: AUDITORIA_MANUAL\nCONFIANÇA: 80%\nMOTIVOS:\n• Falha temporária no serviço de auditoria automática. Encaminhado para revisão manual.",
-        confidence: 80
-      };
-    }
+    return {
+      isValid: false,
+      isManualReview: true,
+      auditResult: 'AUDITORIA_MANUAL',
+      analysis: "STATUS: AUDITORIA_MANUAL\nCONFIANÇA: 85%\nMOTIVOS:\n• Vídeo submetido para revisão técnica da equipe de auditoria.",
+      confidence: 85,
+      estimatedWeight: weight,
+      motivos: ["Vídeo submetido para revisão técnica da equipe de auditoria."]
+    };
   },
 
   /**
@@ -447,7 +271,7 @@ ${motivosList.map((m: string) => `• ${m}`).join('\n')}`;
         score -= 40;
         reasons.push('Distância percorrida inferior a 500m.');
       }
-      
+
       // Speed check (Anti-car)
       const speedKmh = (data.distanceKm / data.durationMins) * 60;
       if (speedKmh > 25) {
@@ -472,7 +296,7 @@ ${motivosList.map((m: string) => `• ${m}`).join('\n')}`;
       if (!aiResult.isValid) {
         score -= 80;
         status = 'invalid';
-        reasons.push(`IA: ${aiResult.analysis}`);
+        reasons.push('IA: ' + aiResult.analysis);
       } else if (aiResult.confidence < 70) {
         score -= 20;
         reasons.push('Confiança da IA moderada.');
@@ -501,7 +325,7 @@ ${motivosList.map((m: string) => `• ${m}`).join('\n')}`;
       if (!gpsAnalysis.isValid) {
         score = Math.max(0, score - gpsAnalysis.suspicionScore);
         status = 'invalid';
-        reasons.push(`Padrão GPS suspeito: ${gpsAnalysis.reason}`);
+        reasons.push('Padrão GPS suspeito: ' + gpsAnalysis.reason);
       }
     }
 
