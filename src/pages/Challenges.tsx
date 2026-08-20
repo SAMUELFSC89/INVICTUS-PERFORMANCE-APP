@@ -20,11 +20,10 @@ import { getCurrentLocation } from '../lib/locationUtils';
 import { calculatePace } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
-import { ActivityHistorySection } from '../components/ActivityHistorySection';
+import { ActivityHistorySection, ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
 import { HabitTrackerSection } from '../components/HabitTrackerSection';
 import { PowerModule } from './PowerModule';
 import { RunShareCard } from '../components/RunShareCard';
-import { AdvancedRunStats } from '../services/runningService';
 
 export type ChallengeCategory =
   | 'all'
@@ -128,8 +127,16 @@ export function Challenges() {
   const gpsWatchIdRef = useRef<number | null>(null);
   const lastCheckpointTimeRef = useRef<number>(0);
 
-  // Card premium de compartilhamento pós-cardio (estilo Strava)
-  const [shareCardData, setShareCardData] = useState<AdvancedRunStats | null>(null);
+  // #217: tela de detalhe estilo Strava mostrada IMEDIATAMENTE ao finalizar uma
+  // atividade (cardio ou treino) -- antes so aparecia depois, no Historico >
+  // Ver Detalhes. Reaproveita o mesmo componente exportado de
+  // ActivityHistorySection.tsx, alimentado com os dados reais da sessao que
+  // acabou de ser encerrada.
+  const [finishedActivityItem, setFinishedActivityItem] = useState<ActivityHistoryItem | null>(null);
+
+  // Card premium de compartilhamento pós-atividade (estilo Strava), aberto a
+  // partir do botao "Compartilhar" da tela de detalhe acima.
+  const [shareCardData, setShareCardData] = useState<any>(null);
 
   // Today's completed submissions
   const [submissions, setSubmissions] = useState<Record<string, any>>({});
@@ -214,7 +221,7 @@ export function Challenges() {
   }, []);
 
   // GPS checkpoint tracking em tempo real para cardio ao ar livre (corrida/caminhada/bike).
-  // Antes addCheckpoint() nunca era chamado durante a sessão, entao a "rota" virava so
+  // Antes addCheckpoint() nunca era chamado durante a sessao, entao a "rota" virava so
   // uma linha reta entre inicio e fim, dando pouquissimo dado real pro antifraude
   // (GpsEngine) e nenhuma info de distancia/pace ao vivo pro usuario -- ver auditoria
   // antifraude 2026-08 (teste do onibus homologado sem dados).
@@ -454,7 +461,9 @@ export function Challenges() {
       if (rawMsg.startsWith('{') && rawMsg.endsWith('}')) {
         try {
           const parsed = JSON.parse(rawMsg);
-          rawMsg = parsed.title ? `${parsed.title}\n\n${parsed.message}` : (parsed.message || rawMsg);
+          rawMsg = parsed.title ? `${parsed.title}
+
+${parsed.message}` : (parsed.message || rawMsg);
         } catch (e) {
           // keep rawMsg
         }
@@ -478,6 +487,24 @@ export function Challenges() {
     }
   };
 
+  // Converte o item exibido na tela de detalhe pos-atividade para o formato
+  // aceito pelo RunShareCard (ShareableSession) -- mesmo mapeamento ja usado
+  // pelo botao "Compartilhar" do historico em ActivityHistorySection.tsx.
+  const buildShareableFromItem = (item: ActivityHistoryItem) => ({
+    id: item.id,
+    title: item.title,
+    distanceKm: item.distanceKm,
+    durationMins: item.durationMins,
+    pace: item.pace,
+    calories: item.calories,
+    elevationGain: item.elevationGain,
+    steps: item.steps,
+    trajectory: item.trajectory,
+    timestamp: new Date(item.rawTimestamp).toISOString(),
+    rankingPointsEarned: item.rankingPointsEarned,
+    points: item.points,
+  });
+
   // End Workout/Cardio Session
   const handleEndActivity = async () => {
     if (!activeSession) return;
@@ -487,7 +514,7 @@ export function Challenges() {
     const sessionType = activeSession.type;
     // Captura o snapshot mais recente da sessao (com todos os checkpoints de GPS
     // coletados ate agora) ANTES de endSession() limpar/encerrar a sessao localmente,
-    // para poder montar a rota real do card premium de compartilhamento depois.
+    // para poder montar a rota real da tela de detalhe/card premium depois.
     const sessionBeforeEnd = activityService.getCurrentSession() || activeSession;
 
     try {
@@ -502,33 +529,58 @@ export function Challenges() {
       } else {
         triggerXPToast(points, `${sessionType === 'workout' ? 'Treino de Musculação' : 'Queima de Gordura'} Concluído! 🔥`, rankingPoints);
 
-        // Card premium de compartilhamento (estilo Strava), somente para cardio
-        // homologado com sucesso -- reaproveita o RunShareCard ja usado no Criar
-        // Habito, alimentado com os dados reais desta sessao (distancia/tempo/rota).
-        if (sessionType === 'cardio' && res.validation?.success !== false) {
-          const distanceKm = (res.workout?.distance ?? activityService.calculateSessionDistance(sessionBeforeEnd)) || 0;
+        // #217: mostra a tela de detalhe estilo Strava JA na hora de finalizar,
+        // com os dados reais desta sessao -- nao inventados. O mapa so aparece
+        // se realmente houver checkpoints de GPS coletados durante a sessao.
+        const now = new Date();
+        const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        const cardioTypeLabels: Record<string, string> = { running: 'Corrida ao ar livre', walking: 'Caminhada', cycling: 'Ciclismo' };
+
+        let trajectory: Array<{ lat: number; lng: number }> | undefined;
+        let distanceKm: number | undefined;
+        let durationMins: number | undefined;
+        let calories: number | undefined;
+        let pace: string | undefined;
+        let steps: number | undefined;
+
+        if (sessionType === 'cardio') {
+          distanceKm = (res.workout?.distance ?? activityService.calculateSessionDistance(sessionBeforeEnd)) || 0;
           const durationMinsRaw = res.workout?.duration;
           const timeSeconds = durationMinsRaw ? durationMinsRaw * 60 : elapsedTime;
-          const trajectory = (sessionBeforeEnd.checkpoints || [])
+          durationMins = Math.round(timeSeconds / 60);
+          pace = calculatePace(distanceKm * 1000, timeSeconds);
+          calories = Math.round(distanceKm * 62);
+          steps = Math.round(distanceKm * 1350);
+          const rawTrajectory = (sessionBeforeEnd.checkpoints || [])
             .filter((cp: any) => cp.location)
-            .map((cp: any) => ({
-              lat: cp.location.lat,
-              lng: cp.location.lng,
-              timestamp: new Date(cp.timestamp).getTime()
-            }));
-
-          setShareCardData({
-            id: res.workout?.id || `local_${Date.now()}`,
-            km: distanceKm,
-            timeSeconds,
-            pace: calculatePace(distanceKm * 1000, timeSeconds),
-            calories: Math.round(distanceKm * 62),
-            elevationGain: 0,
-            steps: Math.round(distanceKm * 1350),
-            trajectory,
-            date: new Date().toISOString()
-          });
+            .map((cp: any) => ({ lat: cp.location.lat, lng: cp.location.lng }));
+          trajectory = rawTrajectory.length >= 2 ? rawTrajectory : undefined;
+        } else {
+          durationMins = res.workout?.duration ? Number(res.workout.duration) : Math.round(elapsedTime / 60);
         }
+
+        setFinishedActivityItem({
+          id: res.workout?.id || `local_${Date.now()}`,
+          source: 'workout',
+          type: sessionType === 'cardio' ? 'cardio' : 'workout',
+          typeLabel: sessionType === 'cardio' ? 'Cardio ao ar livre' : 'Treino',
+          title: sessionType === 'cardio' ? (cardioTypeLabels[selectedCardioType] || 'Corrida ao ar livre') : 'Treino de Musculação',
+          dateStr,
+          timeStr,
+          rawTimestamp: now.getTime(),
+          status: 'homologada',
+          statusRaw: 'valid',
+          points,
+          rankingPointsEarned: rankingPoints || undefined,
+          durationMins,
+          distanceKm,
+          calories,
+          pace,
+          steps,
+          elevationGain: sessionType === 'cardio' ? 0 : undefined,
+          trajectory,
+        });
       }
       await refreshUser();
       await loadSubmissions();
@@ -856,8 +908,8 @@ export function Challenges() {
                         isCompletedToday
                           ? "border-emerald-500/30 bg-emerald-950/10"
                           : isRunning
-                          ? "border-primary/50 bg-primary/5"
-                          : "border-white/10"
+                            ? "border-primary/50 bg-primary/5"
+                            : "border-white/10"
                       )}
                     >
                       <div>
@@ -918,8 +970,8 @@ export function Challenges() {
                           {ch.id === 'checkin'
                             ? (verifiedCheckInId ? 'Check-in Ativo' : 'Fazer Check-in')
                             : ch.id === 'workout'
-                            ? (isRunning ? 'Ver Treino' : 'Iniciar Treino')
-                            : (isRunning ? 'Ver Cardio' : 'Iniciar Cardio')}
+                              ? (isRunning ? 'Ver Treino' : 'Iniciar Treino')
+                              : (isRunning ? 'Ver Cardio' : 'Iniciar Cardio')}
                           <ArrowRight size={14} />
                         </button>
                       </div>
@@ -1106,7 +1158,16 @@ export function Challenges() {
         />
       )}
 
-      {/* Card premium de compartilhamento pós-cardio (estilo Strava) */}
+      {/* #217: tela de detalhe estilo Strava mostrada JA na hora de finalizar a atividade */}
+      {finishedActivityItem && (
+        <ActivityDetailScreen
+          item={finishedActivityItem}
+          onClose={() => setFinishedActivityItem(null)}
+          onShare={() => setShareCardData(buildShareableFromItem(finishedActivityItem))}
+        />
+      )}
+
+      {/* Card premium de compartilhamento pós-atividade (estilo Strava) */}
       {shareCardData && (
         <RunShareCard session={shareCardData} onClose={() => setShareCardData(null)} />
       )}
