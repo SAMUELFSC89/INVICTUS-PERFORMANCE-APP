@@ -135,6 +135,76 @@ Retorne estritamente o JSON com a avaliação.`;
       }
     }
 
+    // #224 - VALIDACAO DE FOTO POR IA MIGRADA PARA O SERVIDOR.
+    //
+    // Antes o frontend (src/services/validationService.ts) chamava o Gemini
+    // direto do navegador. Isso obrigava o vite.config.ts a embutir a
+    // GEMINI_API_KEY no bundle publico -- qualquer pessoa conseguia abrir o JS
+    // do site e extrair a chave. Alem disso, validacao de atividade rodando no
+    // cliente e falsificavel: bastava adulterar a resposta no proprio aparelho
+    // para homologar um treino que nunca aconteceu.
+    //
+    // Comportamento fail-closed preservado: sem IA disponivel, sem imagem ou em
+    // caso de erro, a atividade vai para revisao manual e NAO recebe pontos.
+    if (type === 'image_validation') {
+      const imageType = payload.imageType === 'diet' || payload.imageType === 'cardio' ? payload.imageType : 'workout';
+      const base64 = String(payload.photoBase64 || '').replace(/^data:image\/\w+;base64,/, '');
+
+      const revisaoManual = {
+        isValid: false,
+        status: 'pending_review',
+        requiresManualReview: true,
+        pointsAwarded: 0,
+        reason: 'AI_VALIDATION_UNAVAILABLE',
+        analysis: 'Sua atividade foi recebida e está em análise. Não foi possível concluir a validação automática neste momento.',
+        confidence: 0
+      };
+
+      if (!ai || !base64) {
+        return res.status(200).json(revisaoManual);
+      }
+
+      const promptImagem = imageType === 'workout'
+        ? "Você é um inspetor de academia rigoroso. Analise esta imagem. Ela mostra de forma clara e inequívoca um ambiente de academia (aparelhos, pesos, sala de aula) ou uma pessoa visivelmente praticando exercícios? REJEITE e considere 'isValid: false' se for apenas uma selfie de rosto sem contexto, fotos de casa, objetos aleatórios ou ambientes não-fitness. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100)."
+        : imageType === 'diet'
+          ? "Você é um nutricionista avaliando a adesão à dieta. Esta imagem mostra uma refeição real preparada (prato de comida, salada, frutas, lanche saudável)? REJEITE e considere 'isValid: false' se for uma foto de ambiente, uma embalagem fechada, uma pessoa, um animal, objetos aleatórios, telas de computador ou fotos da internet. Deve ser comida real pronta para consumo. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100)."
+          : "Você é um monitor de desempenho esportivo. Analise esta imagem. Ela mostra de forma clara um contexto de atividade física (pessoa suada, roupa de treino, pista de corrida, parque, academia ou o visor de uma esteira/bike)? REJEITE se for uma foto sem contexto de esforço físico, fotos de ambientes internos comuns, animais, carros ou fotos da internet. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100).";
+
+      try {
+        const respostaIA = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: {
+            parts: [
+              { inlineData: { mimeType: "image/jpeg", data: base64 } },
+              { text: promptImagem }
+            ]
+          },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                isValid: { type: Type.BOOLEAN },
+                analysis: { type: Type.STRING },
+                confidence: { type: Type.NUMBER }
+              },
+              required: ["isValid", "analysis", "confidence"]
+            }
+          }
+        });
+
+        const resultado = JSON.parse(respostaIA.text || '{}');
+        return res.status(200).json({
+          isValid: resultado.isValid === true,
+          analysis: resultado.analysis || "Não foi possível analisar a imagem.",
+          confidence: Number(resultado.confidence) || 0
+        });
+      } catch (imgErr: any) {
+        console.warn('[validate-activity] image_validation Gemini error:', imgErr?.message);
+        return res.status(200).json(revisaoManual);
+      }
+    }
+
     // 3. Executar lógica de negócio no Service de Domínio para atividades padrão
     const result = await validateActivityService.execute({
       userId: req.userId!,
