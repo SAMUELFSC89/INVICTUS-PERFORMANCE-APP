@@ -1,18 +1,38 @@
+import { Capacitor } from '@capacitor/core';
+
+// Dominio de producao do backend. Usado quando o app roda como app NATIVO
+// (iOS/Android), onde nao existe "mesma origem" para cair de volta.
+const PRODUCTION_API_URL = 'https://www.invictusperformance.app.br';
+
 const getBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
-  
-  // Force relative paths if we are in the AI Studio preview environment (run.app)
-  // to avoid CORS issues with production domain VITE_API_URL settings.
+  const envUrlValido = envUrl && envUrl !== 'undefined' && envUrl !== 'null' && envUrl.length > 4;
+
+  // #223: BUG CRITICO NO APP NATIVO.
+  //
+  // Dentro do Capacitor o WebView serve o app a partir de "capacitor://localhost"
+  // (iOS) ou "http://localhost" (Android). Um caminho relativo como "/api/x"
+  // resolve entao para "capacitor://localhost/api/x", que NAO EXISTE -- nao ha
+  // servidor embutido no app. Resultado: no navegador tudo funciona (mesma
+  // origem que o backend), mas no app instalado NENHUMA chamada de API funciona.
+  //
+  // Por isso, em plataforma nativa sempre usamos URL ABSOLUTA.
+  if (Capacitor.isNativePlatform()) {
+    return envUrlValido ? envUrl.replace(/\/$/, '') : PRODUCTION_API_URL;
+  }
+
+  // Preview do AI Studio (run.app): forca caminho relativo para evitar CORS
+  // contra o dominio de producao.
   if (typeof window !== 'undefined' && window.location.origin.includes('run.app')) {
     return '';
   }
 
-  if (envUrl && envUrl !== 'undefined' && envUrl !== 'null' && envUrl.length > 4) {
+  if (envUrlValido) {
     return envUrl.replace(/\/$/, '');
   }
-  
-  // Use relative paths by default in development/preview to avoid CORS and SSL origin issues.
-  // Relative paths (empty string baseUrl) are usually most reliable for same-origin proxying.
+
+  // Na web, caminho relativo e o mais confiavel: front e backend na mesma
+  // origem, sem CORS nem problema de SSL.
   return '';
 };
 
@@ -20,9 +40,8 @@ export const API_CONFIG = {
   baseUrl: getBaseUrl(),
 };
 
-console.log('[API_CONFIG] Initialized with baseUrl:', API_CONFIG.baseUrl || '(relative)');
+console.log('[API_CONFIG] baseUrl:', API_CONFIG.baseUrl || '(relativo)');
 if (typeof window !== 'undefined') {
-  console.log('[API_CONFIG] window.location.origin:', window.location.origin);
-  console.log('[API_CONFIG] env VITE_API_URL:', import.meta.env.VITE_API_URL);
-  console.log('[API_CONFIG] is run.app?', window.location.origin.includes('run.app'));
+  console.log('[API_CONFIG] origin:', window.location.origin);
+  console.log('[API_CONFIG] nativo?', Capacitor.isNativePlatform(), '| plataforma:', Capacitor.getPlatform());
 }
