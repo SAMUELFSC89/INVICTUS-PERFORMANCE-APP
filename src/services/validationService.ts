@@ -5,7 +5,37 @@ import { auth } from "../firebase";
 import { antiCheatService } from "./antiCheatService";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({ apiKey: GEMINI_KEY || '' });
+// #223 - CAUSA RAIZ DO CRASH NO APP iOS.
+//
+// Antes esta linha era:
+//     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY || '' });
+//
+// O construtor do SDK @google/genai LANCA EXCECAO quando a apiKey e vazia.
+// Como a chamada estava no escopo do modulo, a excecao acontecia durante a
+// avaliacao do bundle, ANTES do React montar -- derrubando o app inteiro e
+// aparecendo no iPhone apenas como "Script error.".
+//
+// Isso nao acontecia na web porque o build da Vercel tem GEMINI_API_KEY
+// definida (o vite.config.ts substitui process.env.GEMINI_API_KEY em tempo
+// de build). O build nativo do Codemagic NAO tem essa variavel, entao a
+// chave virava vazia e o app quebrava so no celular.
+//
+// Agora o cliente e criado sob demanda. Os dois pontos que usam
+// ai.models.generateContent ja estao dentro de try/catch e ja sao protegidos
+// por 'if (!GEMINI_KEY)', entao o comportamento de fallback
+// (pending_review / AUDITORIA_MANUAL) continua exatamente o mesmo.
+let _aiClient: GoogleGenAI | null = null;
+const ai = {
+  get models() {
+    if (!_aiClient) {
+      if (!GEMINI_KEY) {
+        throw new Error('GEMINI_API_KEY ausente neste build: validacao por IA indisponivel no cliente.');
+      }
+      _aiClient = new GoogleGenAI({ apiKey: GEMINI_KEY });
+    }
+    return _aiClient.models;
+  }
+};
 
 export const validationService = {
   /**
