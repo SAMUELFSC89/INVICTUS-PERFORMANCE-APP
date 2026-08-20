@@ -25,3 +25,160 @@ workflows:
           ./gradlew assembleDebug --stacktrace
     artifacts:
       - android/app/build/outputs/apk/debug/*.apk
+
+  # ---------------------------------------------------------------------------
+  # #219: build iOS -> TestFlight.
+  #
+  # A pasta ios/ NAO esta commitada no repositorio (diferente de android/), entao
+  # este workflow a gera do zero a cada build com "npx cap add ios", rodando na
+  # maquina macOS do Codemagic. Isso permite publicar no TestFlight sem precisar
+  # de um Mac local.
+  #
+  # Consequencia importante: como a pasta e recriada a cada build, qualquer
+  # customizacao nativa (permissoes do Info.plist, entitlements) PRECISA ser
+  # injetada por script aqui -- editar o Info.plist manualmente nao adianta,
+  # porque ele e sobrescrito. Por isso os passos de PlistBuddy abaixo.
+  #
+  # Xcode 26 e obrigatorio: desde 28/04/2026 a Apple rejeita uploads feitos com
+  # SDK anterior ao iOS 26 (erro ITMS-90725).
+  # ---------------------------------------------------------------------------
+  ios-testflight:
+    name: iOS TestFlight (INVICTUS)
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: INVICTUS_ASC_KEY
+    environment:
+      node: 22
+      xcode: 26
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "com.desafiosemdesculpa.app"
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+    scripts:
+      - name: Instalar dependencias npm
+        script: |
+          npm install --no-audit --no-fund
+
+      - name: Build do app web (Vite)
+        script: |
+          npx vite build
+
+      - name: Criar projeto iOS nativo (se ainda nao existir)
+        script: |
+          if [ ! -d "ios" ]; then
+            echo "Pasta ios/ nao encontrada -- gerando projeto nativo com Capacitor..."
+            npx cap add ios
+          else
+            echo "Pasta ios/ ja existe no repositorio -- apenas sincronizando."
+          fi
+
+      - name: Sincronizar web assets e plugins no projeto iOS
+        script: |
+          npx cap sync ios
+
+      - name: Injetar permissoes de privacidade no Info.plist
+        script: |
+          PLIST="ios/App/App/Info.plist"
+          echo "Injetando descricoes de permissao em $PLIST"
+
+          set_string () {
+            KEY="$1"
+            VALUE="$2"
+            /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :$KEY string $VALUE" "$PLIST"
+          }
+
+          # GPS -- usado no cardio ao ar livre, check-in presencial e antifraude.
+          set_string "NSLocationWhenInUseUsageDescription" "O INVICTUS usa sua localizacao para registrar a rota das atividades de cardio e confirmar seu check-in presencial na academia."
+          set_string "NSLocationAlwaysAndWhenInUseUsageDescription" "O INVICTUS usa sua localizacao durante a atividade para medir distancia e ritmo com precisao, mesmo com a tela desligada."
+
+          # Sensores de movimento -- o pipeline antifraude exige acelerometro/giroscopio.
+          set_string "NSMotionUsageDescription" "O INVICTUS le os sensores de movimento do aparelho para validar que a atividade foi realmente executada por voce."
+
+          # HealthKit (plugin capacitor-health).
+          set_string "NSHealthShareUsageDescription" "O INVICTUS le dados de saude como frequencia cardiaca, passos e calorias para calcular sua pontuacao com mais precisao."
+          set_string "NSHealthUpdateUsageDescription" "O INVICTUS registra suas atividades concluidas no app Saude do iPhone."
+
+          # Camera / fotos -- comprovantes de treino e video do Power Lift.
+          set_string "NSCameraUsageDescription" "O INVICTUS usa a camera para registrar comprovantes de treino e os videos de homologacao do Power Lift."
+          set_string "NSMicrophoneUsageDescription" "O INVICTUS grava audio junto com o video de homologacao do Power Lift."
+          set_string "NSPhotoLibraryUsageDescription" "O INVICTUS acessa suas fotos para anexar comprovantes de atividade."
+          set_string "NSPhotoLibraryAddUsageDescription" "O INVICTUS salva na sua galeria o card de compartilhamento das atividades."
+
+          # Background: rastreio de rota durante o cardio + notificacoes push.
+          /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:1 string remote-notification" "$PLIST"
+
+          echo "--- Info.plist final ---"
+          /usr/libexec/PlistBuddy -c "Print" "$PLIST" | head -60
+
+      - name: Configurar entitlements (HealthKit + Push)
+        script: |
+          ENT="ios/App/App/App.entitlements"
+          cat > "$ENT" <<'PLIST_EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.developer.healthkit</key>
+            <true/>
+            <key>com.apple.developer.healthkit.access</key>
+            <array/>
+            <key>aps-environment</key>
+            <string>production</string>
+          </dict>
+          </plist>
+          PLIST_EOF
+          echo "Entitlements gravados em $ENT"
+          cat "$ENT"
+
+      - name: Instalar CocoaPods
+        script: |
+          cd ios/App
+          pod install --repo-update
+
+      - name: Buscar perfis de assinatura da conta Apple
+        script: |
+          # Cria/baixa automaticamente o certificado de distribuicao e o
+          # provisioning profile do bundle id, usando a API key configurada na
+          # integracao app_store_connect do Codemagic.
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain initialize
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Definir numero do build
+        script: |
+          cd ios/App
+          agvtool new-version -all "$BUILD_NUMBER"
+
+      - name: Compilar e gerar o .ipa
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - ios/App/build/**/*.dSYM
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # Nao submete para revisao da App Store -- apenas disponibiliza no
+        # TestFlight para teste interno.
+        submit_to_app_store: false
+      email:
+        recipients:
+          - samuelfsc89@gmail.com
+        notify:
+          success: true
+          failure: true
