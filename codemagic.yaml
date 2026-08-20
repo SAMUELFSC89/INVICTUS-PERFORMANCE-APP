@@ -29,17 +29,13 @@ workflows:
   # ---------------------------------------------------------------------------
   # #219: build iOS -> TestFlight.
   #
-  # A pasta ios/ NAO esta commitada no repositorio (diferente de android/), entao
-  # este workflow a gera do zero a cada build com "npx cap add ios", rodando na
-  # maquina macOS do Codemagic. Isso permite publicar no TestFlight sem precisar
-  # de um Mac local.
+  # A pasta ios/ NAO esta commitada (diferente de android/), entao este workflow
+  # a gera do zero a cada build com "npx cap add ios" na maquina macOS do
+  # Codemagic -- permitindo publicar sem um Mac local. Como e recriada a cada
+  # build, toda customizacao nativa precisa ser injetada por script aqui.
   #
-  # Como a pasta e recriada a cada build, qualquer customizacao nativa
-  # (permissoes do Info.plist, entitlements) PRECISA ser injetada por script
-  # aqui -- editar manualmente nao adianta, porque e sobrescrito.
-  #
-  # Xcode 26 e obrigatorio: desde 28/04/2026 a Apple rejeita uploads feitos com
-  # SDK anterior ao iOS 26 (erro ITMS-90725).
+  # Xcode 26 e obrigatorio: desde 28/04/2026 a Apple rejeita uploads com SDK
+  # anterior ao iOS 26 (ITMS-90725).
   # ---------------------------------------------------------------------------
   ios-testflight:
     name: iOS TestFlight (INVICTUS)
@@ -77,6 +73,20 @@ workflows:
           set -e
           npx cap sync ios
 
+      - name: Diagnostico do projeto iOS gerado
+        script: |
+          # Passo puramente informativo (nunca derruba o build): serve para
+          # descobrir a estrutura real que o Capacitor 8 + SPM produz, ja que o
+          # build anterior falhou com "Failed to show build settings".
+          echo "=== conteudo de ios/App ==="
+          ls -la ios/App/ || true
+          echo "=== existe workspace? ==="
+          ls -la ios/App/App.xcworkspace 2>/dev/null || echo "SEM App.xcworkspace"
+          echo "=== schemes e targets do projeto ==="
+          xcodebuild -list -project ios/App/App.xcodeproj 2>&1 | head -40 || true
+          echo "=== erro detalhado do showBuildSettings ==="
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | head -40 || true
+
       - name: Injetar permissoes de privacidade no Info.plist
         script: |
           set -e
@@ -110,54 +120,43 @@ workflows:
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:1 string remote-notification" "$PLIST"
 
-          # Declaracao de criptografia (app usa apenas HTTPS/TLS padrao). Sem
-          # isso o build sobe mas trava em "Missing Compliance".
+          # Declaracao de criptografia (so HTTPS/TLS padrao). Sem isso o build
+          # sobe mas trava em "Missing Compliance".
           /usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST"
-
-          echo "--- Info.plist final ---"
-          /usr/libexec/PlistBuddy -c "Print" "$PLIST"
 
       - name: Configurar entitlements (HealthKit + Push)
         script: |
           set -e
           ENT="ios/App/App/App.entitlements"
-          # Via PlistBuddy e nao heredoc: o delimitador de heredoc precisa ficar
-          # na coluna zero, incompativel com a indentacao de um bloco YAML.
           rm -f "$ENT"
           /usr/libexec/PlistBuddy -c "Save" "$ENT"
           /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit bool true" "$ENT"
           /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit.access array" "$ENT"
           /usr/libexec/PlistBuddy -c "Add :aps-environment string production" "$ENT"
-          echo "--- App.entitlements ---"
-          /usr/libexec/PlistBuddy -c "Print" "$ENT"
 
       - name: Instalar dependencias nativas (CocoaPods so se houver Podfile)
         script: |
           set -e
-          # O Capacitor 8 usa Swift Package Manager quando todos os plugins tem
-          # Package.swift -- nesse caso nao existe Podfile e "pod install"
-          # derrubaria o build com "No Podfile found".
+          # Capacitor 8 usa Swift Package Manager quando todos os plugins tem
+          # Package.swift -- nesse caso nao ha Podfile e "pod install" quebraria.
           if [ -f "ios/App/Podfile" ]; then
-            echo "Podfile encontrado -- instalando CocoaPods."
-            cd ios/App
-            pod install --repo-update
+            cd ios/App && pod install --repo-update
           else
-            echo "Sem Podfile: projeto usa Swift Package Manager. Pulando CocoaPods."
+            echo "Sem Podfile: projeto usa Swift Package Manager."
           fi
 
       - name: Buscar certificados e perfis da conta Apple
         script: |
           set -e
-          # Para CRIAR um certificado de distribuicao a Apple exige um CSR, que
-          # por sua vez exige uma chave privada. Sem ela o comando falha com
-          # "Cannot save Signing Certificates without certificate private key".
+          # Criar um certificado de distribuicao exige um CSR, que exige uma
+          # chave privada -- sem ela o comando falha com "Cannot save Signing
+          # Certificates without certificate private key".
           #
-          # Preferimos uma chave persistida na variavel CERTIFICATE_PRIVATE_KEY
-          # (configurada no Codemagic) porque assim TODOS os builds reusam o
-          # MESMO certificado. Gerar uma chave nova a cada build criaria um
-          # certificado novo toda vez, e a Apple limita a poucos certificados de
-          # distribuicao por conta -- em poucos builds a conta travaria.
+          # Preferimos a chave persistida em CERTIFICATE_PRIVATE_KEY para que
+          # todos os builds reusem o MESMO certificado. Gerar chave nova a cada
+          # build criaria um certificado novo toda vez, e a Apple limita a
+          # poucos certificados de distribuicao por conta.
           if [ -n "$CERTIFICATE_PRIVATE_KEY" ]; then
             echo "Usando chave privada persistida (CERTIFICATE_PRIVATE_KEY)."
             app-store-connect fetch-signing-files "$BUNDLE_ID" \
@@ -165,13 +164,8 @@ workflows:
               --certificate-key="@env:CERTIFICATE_PRIVATE_KEY" \
               --create
           else
-            echo "=============================================================="
-            echo "AVISO: variavel CERTIFICATE_PRIVATE_KEY nao configurada."
-            echo "Gerando uma chave temporaria para destravar este build."
-            echo "Isso CRIA UM CERTIFICADO NOVO na conta Apple a cada execucao."
-            echo "Configure CERTIFICATE_PRIVATE_KEY no Codemagic para reusar o"
-            echo "mesmo certificado e nao estourar o limite da Apple."
-            echo "=============================================================="
+            echo "AVISO: CERTIFICATE_PRIVATE_KEY nao configurada -- gerando chave"
+            echo "temporaria. Isso cria um certificado NOVO a cada build."
             ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/signing_key -q -N ""
             app-store-connect fetch-signing-files "$BUNDLE_ID" \
               --type IOS_APP_STORE \
@@ -188,13 +182,22 @@ workflows:
           cd ios/App
           agvtool new-version -all "$BUILD_NUMBER"
 
+      - name: Resolver dependencias do Swift Package Manager
+        script: |
+          # Com SPM o xcodebuild precisa baixar/resolver os pacotes antes de
+          # conseguir ler as build settings -- sem isso o build falha com
+          # "Failed to show build settings".
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/App.xcodeproj \
+            -scheme "$XCODE_SCHEME" 2>&1 | tail -30 || true
+
       - name: Compilar e gerar o .ipa
         script: |
           set -e
           # Com CocoaPods existe App.xcworkspace; com Swift Package Manager o
-          # Capacitor gera apenas App.xcodeproj. Detecta qual usar.
+          # Capacitor pode gerar apenas App.xcodeproj. Detecta qual usar.
           if [ -d "ios/App/App.xcworkspace" ]; then
-            echo "Compilando via workspace (CocoaPods)."
+            echo "Compilando via workspace."
             xcode-project build-ipa --workspace "ios/App/App.xcworkspace" --scheme "$XCODE_SCHEME"
           else
             echo "Compilando via project (Swift Package Manager)."
@@ -209,7 +212,6 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        # Nao submete para revisao da App Store -- so TestFlight interno.
         submit_to_app_store: false
       email:
         recipients:
