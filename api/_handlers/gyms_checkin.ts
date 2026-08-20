@@ -161,6 +161,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString(); // valid for 15 minutes
     const checkinStatus = isSuspicious ? 'suspicious' : 'confirmed';
+    const checkinMessage = isSuspicious
+      ? `Check-in aceito mas marcado para revisão: ${riskFlags.join(', ')} (distância: ${distanceMeters.toFixed(1)}m, precisão GPS: ${accuracy}m)`
+      : `Check-in confirmado a ${distanceMeters.toFixed(1)}m da academia (precisão GPS: ${accuracy}m)`;
 
     const checkinDoc = {
       id: checkInId,
@@ -174,6 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       distanceMeters: Number(distanceMeters.toFixed(1)),
       gpsAccuracy: accuracy,
       status: checkinStatus,
+      userMessage: checkinMessage,
       deviceId: deviceId || '',
       deviceFingerprint: deviceFingerprint || '',
       mockLocationDetected: false,
