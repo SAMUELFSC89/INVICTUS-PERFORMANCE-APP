@@ -27,6 +27,7 @@ interface PowerRecord {
   date: string;
   videoUrl: string;
   videoStatus: 'approved' | 'manual_review' | 'rejected';
+  userMessage?: string;
   reports: string[]; // List of userIds that reported
 }
 
@@ -590,6 +591,7 @@ export function PowerModule() {
         date: new Date().toISOString().split('T')[0],
         videoUrl: finalVideoUrl,
         videoStatus: finalStatus,
+        userMessage: aiRes.analysis,
         reports: []
       };
 
