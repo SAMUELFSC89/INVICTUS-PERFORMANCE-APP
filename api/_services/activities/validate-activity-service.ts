@@ -5,6 +5,7 @@ import { AuditRepository } from '../../_repositories/audit-repository.js';
 import { NotificationService } from '../notification-service.js';
 import { AppError } from '../../_middleware/error.js';
 import { SecurityPipeline } from '../../_lib/security-pipeline.js';
+import { calculateRankingPoints } from '../../_lib/ranking-points.js';
 
 export class ValidateActivityService {
   constructor(
@@ -44,6 +45,16 @@ export class ValidateActivityService {
       totalScore = Math.min(totalScore, 100);
     }
     return Math.max(totalScore, 10);
+  }
+
+  // Normaliza o "type" livre desta rota legada (workout, cardio, power_video,
+  // recovery, diet, etc.) para as 3 categorias que a formula de pontos de
+  // ranking (calculateRankingPoints, espelhada de seasonUtils.ts) entende.
+  private normalizeRankingType(rawType: string): 'workout' | 'cardio' | 'diet' {
+    const t = (rawType || '').toLowerCase();
+    if (t.includes('diet')) return 'diet';
+    if (t.includes('cardio') || t.includes('run') || t.includes('corrida') || t.includes('caminhada')) return 'cardio';
+    return 'workout';
   }
 
   private detectFraud(data: ValidateActivityRequest['activityData']): { isFraud: boolean; reason?: string } {
@@ -172,6 +183,7 @@ export class ValidateActivityService {
           points: 0,
           pointsEarned: 0,
           scoreAwarded: 0,
+          rankingPointsEarned: 0,
           status: 'rejected',
           validationStatus: 'invalid',
           nonScoringReason: securityReason,
@@ -200,6 +212,51 @@ export class ValidateActivityService {
     const scoreAwarded = this.calculateScore(request.activityData);
     console.log(`[ValidateActivityService] [${traceId}] Pontuacao calculada: +${scoreAwarded} XP`);
 
+    // PONTOS DE RANKING (competicao) -- distinto do XP acima. Ate 2026-08 este
+    // endpoint so concedia XP e nunca tocava no campo "score" que alimenta o
+    // ranking/leaderboard real (api/_handlers/ranking.ts). Calculamos aqui com a
+    // mesma formula do frontend (seasonUtils.calculatePoints, espelhada em
+    // api/_lib/ranking-points.ts) e aplicamos o teto diario de 100 pontos
+    // (janela movel de 24h, mesmo padrao ja usado por findRecentByUser em
+    // outros pontos deste arquivo).
+    let rankingPointsEarned = 0;
+    let newRankingScore: number | undefined;
+    try {
+      const rankingType = this.normalizeRankingType(request.activityData.type);
+      const todaysActivities = await this.activityRepository.findRecentByUser(request.userId, 24);
+      const todaysRankingPoints = todaysActivities
+        .filter(a => a.status === 'completed')
+        .reduce((sum, a) => sum + (Number((a as any).rankingPointsEarned) || 0), 0);
+      const isFirstActionToday = todaysRankingPoints === 0;
+
+      const rankingResult = calculateRankingPoints(
+        rankingType,
+        Number((user as any).streak) || 0,
+        isFirstActionToday,
+        {
+          duration: Number(rawActivity.durationMins ?? request.activityData.duration) || 0,
+          hasPhoto: !!rawActivity.photoBase64,
+          subscriptionTier: (user as any).subscriptionTier === 'performance' ? 'performance' : 'open',
+          weight: (user as any).weight,
+          age: (user as any).age,
+          smartwatchData: rawActivity.smartwatchData
+        }
+      );
+
+      rankingPointsEarned = rankingResult.earned;
+      if (todaysRankingPoints + rankingPointsEarned > 100) {
+        rankingPointsEarned = Math.max(0, 100 - todaysRankingPoints);
+      }
+
+      if (rankingPointsEarned > 0) {
+        const rankingUpdate = await this.userRepository.addRankingScore(request.userId, rankingPointsEarned);
+        newRankingScore = rankingUpdate.newScore;
+      }
+      console.log(`[ValidateActivityService] [${traceId}] Pontos de ranking calculados: +${rankingPointsEarned} (score total: ${newRankingScore ?? 'n/a'})`);
+    } catch (rankingErr) {
+      console.error(`[ValidateActivityService] [${traceId}] Falha ao calcular/creditar pontos de ranking, prosseguindo apenas com XP:`, rankingErr);
+    }
+
     // NOTA: alem de pointsEarned/scoreAwarded (campos "oficiais" de XP usados pelo
     // restante do backend), tambem gravamos "points" aqui -- e o nome de campo que
     // ActivityHistorySection.tsx (frontend) le para exibir o XP ganho no historico de
@@ -220,6 +277,7 @@ export class ValidateActivityService {
       points: scoreAwarded,
       pointsEarned: scoreAwarded,
       scoreAwarded,
+      rankingPointsEarned,
       status: 'completed',
       validationStatus: 'validated',
       evidence: request.activityData.evidence || {},
@@ -234,24 +292,30 @@ export class ValidateActivityService {
       traceId,
       userId: request.userId,
       action: 'VALIDATE_ACTIVITY_SUCCESS',
-      details: { activityId: savedActivity.id, scoreAwarded, newXP, newLevel },
+      details: { activityId: savedActivity.id, scoreAwarded, rankingPointsEarned, newXP, newLevel },
       result: 'SUCCESS'
     });
 
-    const successUserMessage = `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP.`;
+    const successUserMessage = rankingPointsEarned > 0
+      ? `Atividade homologada com sucesso! Voce ganhou +${rankingPointsEarned} pontos de ranking (+${scoreAwarded} XP).`
+      : `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP. (Limite diario de pontos de ranking atingido)`;
 
     await this.notificationService.send({
       userId: request.userId,
       title: 'Atividade Validada!',
-      body: `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${scoreAwarded} XP!`,
+      body: rankingPointsEarned > 0
+        ? `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${rankingPointsEarned} pontos de ranking e +${scoreAwarded} XP!`
+        : `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${scoreAwarded} XP!`,
       type: 'activity_validated',
-      data: { activityId: savedActivity.id, scoreAwarded, traceId }
+      data: { activityId: savedActivity.id, scoreAwarded, rankingPointsEarned, traceId }
     });
 
     return {
       success: true,
       activityId: savedActivity.id || '',
       scoreAwarded,
+      rankingPointsEarned,
+      newRankingScore,
       level: newLevel,
       message: successUserMessage,
       userMessage: successUserMessage,
@@ -259,6 +323,7 @@ export class ValidateActivityService {
       workout: {
         id: savedActivity.id,
         points: scoreAwarded,
+        rankingPointsEarned,
         level: newLevel,
         status: 'valid',
         type: request.activityData.type,
