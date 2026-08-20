@@ -143,7 +143,7 @@ export class FraudEngine {
       evidences.push({
         code: threat,
         category: 'SENSOR',
-        severity: isMissingTelemetry ? 'MEDIUM' : 'MEDIUM',
+        severity: isMissingTelemetry ? 'MEDIUM' : 'HIGH', // #200: variancia de sensor incoerente com corrida/caminhada agora forca UNDER_REVIEW
         description: isMissingTelemetry
           ? 'Nenhum dado de acelerômetro/giroscópio foi coletado durante uma atividade que depende de movimento real.'
           : `Anomalia de sensores: ${threat}`,
