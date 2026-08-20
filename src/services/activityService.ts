@@ -396,7 +396,7 @@ export const activityService = {
     return distanceKm;
   },
 
-  async endSession(photoBase64?: string): Promise<{ workout: Workout; validation: any; message?: string; isScoringEligible?: boolean; nonScoringReason?: string | null }> {
+  async endSession(photoBase64?: string): Promise<{ workout: Workout; validation: any; message?: string; isScoringEligible?: boolean; nonScoringReason?: string | null; rankingPointsEarned?: number }> {
     const session = this.getCurrentSession();
     if (!session) throw new Error('Nenhuma atividade em andamento.');
 
@@ -555,7 +555,7 @@ export const activityService = {
         } as any;
       }
 
-      const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry } = respData;
+      const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned } = respData;
 
       this.cancelSession();
 
@@ -581,7 +581,8 @@ export const activityService = {
         validation: enrichedValidation,
         message: finalUserMessage,
         isScoringEligible,
-        nonScoringReason
+        nonScoringReason,
+        rankingPointsEarned
       };
     } catch (e) {
       throw new Error('Falha ao processar resposta do servidor. Sua atividade ainda está salva localmente.');
