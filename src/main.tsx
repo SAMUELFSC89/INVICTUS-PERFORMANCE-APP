@@ -75,11 +75,29 @@ function mostrarTelaDeErro(texto: string) {
 
 // Rede de seguranca. No iOS estes handlers quase sempre recebem "Script error."
 // sem stack -- quem realmente entrega o erro util e o catch do import abaixo.
+// Falha ao CARREGAR um arquivo (script/css) e um caso separado: o evento vem
+// com ev.target apontando para o elemento, e a URL NAO e sanitizada. Esse era
+// o unico dado util disponivel quando o app quebrava no iPhone -- o handler
+// antigo jogava tudo no mesmo balde e so mostrava "Script error.".
+//
+// Precisa de capture=true: evento de erro de recurso nao sobe na fase de bubbling.
 window.addEventListener('error', (ev) => {
+  const alvo = ev.target as any;
+  if (alvo && alvo !== window && (alvo.tagName === 'SCRIPT' || alvo.tagName === 'LINK')) {
+    const url = alvo.src || alvo.href || '(sem url)';
+    const texto =
+      '[falha ao carregar arquivo]\n' + alvo.tagName + ': ' + url +
+      '\n\nO WebView nao conseguiu baixar este arquivo. Verifique o caminho gerado' +
+      ' pelo build e o atributo crossorigin no esquema capacitor://.';
+    console.error(texto);
+    if (!appMontou) mostrarTelaDeErro(texto);
+    return;
+  }
+
   const texto = descreverErro('erro', ev.error ?? ev.message, ev.filename, ev.lineno, ev.colno);
   console.error(texto);
   if (!appMontou) mostrarTelaDeErro(texto);
-});
+}, true);
 
 window.addEventListener('unhandledrejection', (ev) => {
   const texto = descreverErro('promise rejeitada', ev.reason);
