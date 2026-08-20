@@ -6,7 +6,37 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        // #223 - ESTE PLUGIN E O QUE FAZ O APP iOS ABRIR.
+        //
+        // Por padrao o Vite emite <script type="module" crossorigin ...> e
+        // links de modulepreload tambem com crossorigin. No navegador isso e
+        // inofensivo (mesma origem https). No app nativo NAO:
+        //
+        // o WebView do iOS serve os arquivos pelo esquema capacitor://localhost,
+        // que o WebKit trata como origem opaca. Com o atributo crossorigin o
+        // WebView faz uma requisicao CORS que esse esquema nao consegue
+        // satisfazer -- o script falha ao carregar e o evento de erro chega
+        // sanitizado como "Script error." sem arquivo, sem linha e sem stack.
+        // Era exatamente essa a tela de erro que aparecia no iPhone.
+        //
+        // Sem o atributo, vira uma requisicao normal de mesma origem.
+        name: "remover-crossorigin-para-capacitor",
+        enforce: "post",
+        transformIndexHtml(html: string) {
+          return html.replace(/\s+crossorigin(=["'][^"']*["'])?/g, "");
+        }
+      }
+    ],
+    build: {
+      // Desliga o modulepreload: os <link rel="modulepreload"> gerados pelo
+      // Vite tambem carregam com crossorigin em runtime (via __vitePreload) e
+      // sofrem do mesmo problema acima no esquema capacitor://.
+      modulePreload: false,
+    },
     define: {
       // #224: a GEMINI_API_KEY foi REMOVIDA do bundle do cliente.
       //
