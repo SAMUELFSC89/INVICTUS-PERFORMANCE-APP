@@ -28,7 +28,7 @@ export function Layout() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [showBarbellModal, setShowBarbellModal] = useState(false);
-  const [xpToast, setXpToast] = useState<{ visible: boolean; points: number; message?: string }>({ 
+  const [xpToast, setXpToast] = useState<{ visible: boolean; points: number; message?: string; rankingPoints?: number }>({ 
     visible: false, points: 0 
   });
 
@@ -107,6 +107,7 @@ export function Layout() {
         isVisible={xpToast.visible} 
         points={xpToast.points} 
         message={xpToast.message}
+        rankingPoints={xpToast.rankingPoints}
         onComplete={() => setXpToast(prev => ({ ...prev, visible: false }))} 
       />
 
@@ -174,7 +175,7 @@ export function Layout() {
             exit={{ opacity: 0, scale: 1.02, filter: 'blur(10px)' }}
             transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
           >
-            <Outlet context={{ triggerXPToast: (p: number, m?: string) => setXpToast({ visible: true, points: p, message: m }) }} />
+            <Outlet context={{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => setXpToast({ visible: true, points: p, message: m, rankingPoints }) }} />
           </motion.div>
         </AnimatePresence>
       </main>
