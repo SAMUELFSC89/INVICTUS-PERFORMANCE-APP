@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 import { useUser } from '../UserContext';
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
+import { InvictusLogo } from './InvictusLogo';
 
 // #202: forma "solta" o suficiente para aceitar tanto RunSession/AdvancedRunStats
 // (fluxo da Corrida Invictus oficial) quanto ActivityHistoryItem (historico geral
@@ -252,13 +253,13 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           ref={cardRef}
           className="w-full max-w-[380px] bg-black rounded-[28px] border border-primary/20 overflow-hidden p-6 flex flex-col gap-5"
         >
-          {/* Header: wordmark + logo */}
+          {/* Header: wordmark + logo real */}
           <div className="flex items-center justify-between">
             <div>
               <p className="text-white font-black italic text-lg leading-none tracking-tight">INVICTUS</p>
               <p className="text-primary text-[9px] font-bold tracking-[0.3em] uppercase">Performance</p>
             </div>
-            <Flame className="text-primary fill-current" size={28} />
+            <InvictusLogo size={32} />
           </div>
 
           {/* Activity row */}
