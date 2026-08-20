@@ -40,7 +40,7 @@ export class SensorEngine {
     if (hasSensorTelemetry) {
       const accelVariance = Number(activity.sensorTelemetry.accelVariance ?? 0);
       const gyroVariance = Number(activity.sensorTelemetry.gyroVariance ?? 0);
-      hasMotionVariance = accelVariance > 0.05 && gyroVariance > 0.02;
+      hasMotionVariance = accelVariance > 0.35 && gyroVariance > 0.12; // #200: limiar elevado para exigir variancia coerente com corrida/caminhada real (vibracao de veiculo em movimento passava facilmente no limiar antigo de 0.05/0.02)
       if (!hasMotionVariance) {
         threats.push('NO_SENSOR_MOTION_VARIANCE');
       }
