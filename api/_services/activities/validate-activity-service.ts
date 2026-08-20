@@ -163,7 +163,12 @@ export class ValidateActivityService {
         );
       }
     } catch (secErr) {
-      console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:`, secErr);
+      // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, a atividade NAO e aprovada.
+      securityBlocked = true;
+      securityReason = 'SECURITY_PIPELINE_ERROR';
+      securityCanRetry = true;
+      securityUserMessage = 'Nao foi possivel validar esta atividade agora (falha tecnica no motor antifraude). Tente novamente em instantes.';
+      console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):`, secErr);
     }
 
     if (securityBlocked) {
