@@ -168,10 +168,24 @@ export class RunningService {
         };
       }
     } catch (secErr) {
-      // Fail-open: se o pipeline em si falhar (bug, engine ausente), nao bloqueia
-      // a pontuacao -- apenas registra, para nao derrubar o fluxo principal de
-      // corrida por causa de uma falha no motor de seguranca.
-      console.error('[RunningService] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:', secErr);
+      // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, a atividade
+      // NAO e aprovada. Falha do antifraude nao pode significar aprovacao automatica.
+      console.error('[RunningService] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):', secErr);
+      const secFailMsg = 'Nao foi possivel validar esta atividade agora (falha tecnica no motor antifraude). Tente novamente em instantes.';
+      return {
+        userId,
+        last_run_stats: lastRunStats,
+        isScoringEligible: false,
+        nonScoringReason: 'SECURITY_PIPELINE_ERROR',
+        pointsEarned: 0,
+        pointsAwarded: 0,
+        success: false,
+        status: 'not_validated',
+        reasonCode: 'SECURITY_PIPELINE_ERROR',
+        userMessage: secFailMsg,
+        message: secFailMsg,
+        canRetry: true
+      };
     }
 
     // Load existing stats
