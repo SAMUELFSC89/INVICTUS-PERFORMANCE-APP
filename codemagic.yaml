@@ -37,7 +37,7 @@ workflows:
   # Consequencia importante: como a pasta e recriada a cada build, qualquer
   # customizacao nativa (permissoes do Info.plist, entitlements) PRECISA ser
   # injetada por script aqui -- editar o Info.plist manualmente nao adianta,
-  # porque ele e sobrescrito. Por isso os passos de PlistBuddy abaixo.
+  # porque ele e sobrescrito. Por isso os passos com PlistBuddy abaixo.
   #
   # Xcode 26 e obrigatorio: desde 28/04/2026 a Apple rejeita uploads feitos com
   # SDK anterior ao iOS 26 (erro ITMS-90725).
@@ -80,14 +80,13 @@ workflows:
 
       - name: Injetar permissoes de privacidade no Info.plist
         script: |
+          set -e
           PLIST="ios/App/App/Info.plist"
           echo "Injetando descricoes de permissao em $PLIST"
 
           set_string () {
-            KEY="$1"
-            VALUE="$2"
-            /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
-            /usr/libexec/PlistBuddy -c "Add :$KEY string $VALUE" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Delete :$1" "$PLIST" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"
           }
 
           # GPS -- usado no cardio ao ar livre, check-in presencial e antifraude.
@@ -114,41 +113,35 @@ workflows:
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:1 string remote-notification" "$PLIST"
 
           echo "--- Info.plist final ---"
-          /usr/libexec/PlistBuddy -c "Print" "$PLIST" | head -60
+          /usr/libexec/PlistBuddy -c "Print" "$PLIST"
 
       - name: Configurar entitlements (HealthKit + Push)
         script: |
+          set -e
           ENT="ios/App/App/App.entitlements"
-          cat > "$ENT" <<'PLIST_EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>com.apple.developer.healthkit</key>
-            <true/>
-            <key>com.apple.developer.healthkit.access</key>
-            <array/>
-            <key>aps-environment</key>
-            <string>production</string>
-          </dict>
-          </plist>
-          PLIST_EOF
-          echo "Entitlements gravados em $ENT"
-          cat "$ENT"
+          # Criado via PlistBuddy (e nao heredoc) de proposito: o delimitador de
+          # um heredoc precisa ficar na coluna zero, o que e incompativel com a
+          # indentacao exigida por um bloco de script YAML.
+          rm -f "$ENT"
+          /usr/libexec/PlistBuddy -c "Save" "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit bool true" "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit.access array" "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :aps-environment string production" "$ENT"
+          echo "--- App.entitlements ---"
+          /usr/libexec/PlistBuddy -c "Print" "$ENT"
 
       - name: Instalar CocoaPods
         script: |
           cd ios/App
           pod install --repo-update
 
-      - name: Buscar perfis de assinatura da conta Apple
+      - name: Buscar certificados e perfis da conta Apple
         script: |
+          set -e
           # Cria/baixa automaticamente o certificado de distribuicao e o
           # provisioning profile do bundle id, usando a API key configurada na
           # integracao app_store_connect do Codemagic.
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain initialize
           keychain add-certificates
           xcode-project use-profiles
@@ -160,14 +153,11 @@ workflows:
 
       - name: Compilar e gerar o .ipa
         script: |
-          xcode-project build-ipa \
-            --workspace "$XCODE_WORKSPACE" \
-            --scheme "$XCODE_SCHEME"
+          xcode-project build-ipa --workspace "$XCODE_WORKSPACE" --scheme "$XCODE_SCHEME"
 
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-      - ios/App/build/**/*.dSYM
 
     publishing:
       app_store_connect:
