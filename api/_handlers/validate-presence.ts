@@ -417,8 +417,10 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       console.warn(`[commitWorkoutSession] SecurityPipeline recusou pontuacao para userId=${userId}: ${workoutSecurityReason}`);
     }
   } catch (secErr) {
-    // Fail-open: falha no motor de seguranca nao derruba o commit da atividade.
-    console.error('[commitWorkoutSession] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:', secErr);
+    // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, o commit NAO e aprovado.
+    workoutSecurityBlocked = true;
+    workoutSecurityReason = 'SECURITY_PIPELINE_ERROR';
+    console.error('[commitWorkoutSession] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):', secErr);
   }
 
   await db.runTransaction(async (transaction: any) => {
@@ -702,8 +704,10 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       console.warn(`[commitRunningSession] SecurityPipeline recusou pontuacao para userId=${userId}: ${runSecurityReason}`);
     }
   } catch (secErr) {
-    // Fail-open: falha no motor de seguranca nao derruba o commit da atividade.
-    console.error('[commitRunningSession] SecurityPipeline.runPipeline falhou, prosseguindo sem bloqueio:', secErr);
+    // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, o commit NAO e aprovado.
+    runSecurityBlocked = true;
+    runSecurityReason = 'SECURITY_PIPELINE_ERROR';
+    console.error('[commitRunningSession] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):', secErr);
   }
 
   await db.runTransaction(async (transaction: any) => {
