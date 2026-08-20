@@ -81,7 +81,6 @@ workflows:
         script: |
           set -e
           PLIST="ios/App/App/Info.plist"
-          echo "Injetando descricoes de permissao em $PLIST"
 
           set_string () {
             /usr/libexec/PlistBuddy -c "Delete :$1" "$PLIST" 2>/dev/null || true
@@ -137,9 +136,8 @@ workflows:
         script: |
           set -e
           # O Capacitor 8 usa Swift Package Manager quando todos os plugins tem
-          # Package.swift -- nesse caso o projeto NAO tem Podfile, e rodar
-          # "pod install" derruba o build com "No Podfile found" (foi exatamente
-          # o que quebrou o primeiro build). So roda CocoaPods se houver Podfile.
+          # Package.swift -- nesse caso nao existe Podfile e "pod install"
+          # derrubaria o build com "No Podfile found".
           if [ -f "ios/App/Podfile" ]; then
             echo "Podfile encontrado -- instalando CocoaPods."
             cd ios/App
@@ -151,7 +149,35 @@ workflows:
       - name: Buscar certificados e perfis da conta Apple
         script: |
           set -e
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          # Para CRIAR um certificado de distribuicao a Apple exige um CSR, que
+          # por sua vez exige uma chave privada. Sem ela o comando falha com
+          # "Cannot save Signing Certificates without certificate private key".
+          #
+          # Preferimos uma chave persistida na variavel CERTIFICATE_PRIVATE_KEY
+          # (configurada no Codemagic) porque assim TODOS os builds reusam o
+          # MESMO certificado. Gerar uma chave nova a cada build criaria um
+          # certificado novo toda vez, e a Apple limita a poucos certificados de
+          # distribuicao por conta -- em poucos builds a conta travaria.
+          if [ -n "$CERTIFICATE_PRIVATE_KEY" ]; then
+            echo "Usando chave privada persistida (CERTIFICATE_PRIVATE_KEY)."
+            app-store-connect fetch-signing-files "$BUNDLE_ID" \
+              --type IOS_APP_STORE \
+              --certificate-key="@env:CERTIFICATE_PRIVATE_KEY" \
+              --create
+          else
+            echo "=============================================================="
+            echo "AVISO: variavel CERTIFICATE_PRIVATE_KEY nao configurada."
+            echo "Gerando uma chave temporaria para destravar este build."
+            echo "Isso CRIA UM CERTIFICADO NOVO na conta Apple a cada execucao."
+            echo "Configure CERTIFICATE_PRIVATE_KEY no Codemagic para reusar o"
+            echo "mesmo certificado e nao estourar o limite da Apple."
+            echo "=============================================================="
+            ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/signing_key -q -N ""
+            app-store-connect fetch-signing-files "$BUNDLE_ID" \
+              --type IOS_APP_STORE \
+              --certificate-key=@file:/tmp/signing_key \
+              --create
+          fi
           keychain initialize
           keychain add-certificates
           xcode-project use-profiles
