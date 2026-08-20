@@ -117,7 +117,7 @@ export function Challenges() {
   const initialCategory = (searchParams.get('category') as ChallengeCategory) || 'all';
   const [selectedCategory, setSelectedCategory] = useState<ChallengeCategory>(initialCategory);
 
-  const { triggerXPToast } = useOutletContext<{ triggerXPToast: (p: number, m?: string) => void }>();
+  const { triggerXPToast } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void }>();
 
   // Active activity session state
   const [activeSession, setActiveSession] = useState<ActivitySession | null>(activityService.getCurrentSession());
@@ -493,13 +493,14 @@ export function Challenges() {
     try {
       const res = await activityService.endSession();
       const points = res.workout?.points || (sessionType === 'workout' ? 40 : 30);
+      const rankingPoints = (res).rankingPointsEarned ?? res.workout?.rankingPointsEarned;
       setActiveSession(null);
 
       if (res.message && res.validation?.success === false) {
         triggerXPToast(0, 'Sessão encerrada.');
         setError(res.message);
       } else {
-        triggerXPToast(points, `${sessionType === 'workout' ? 'Treino de Musculação' : 'Queima de Gordura'} Concluído! 🔥`);
+        triggerXPToast(points, `${sessionType === 'workout' ? 'Treino de Musculação' : 'Queima de Gordura'} Concluído! 🔥`, rankingPoints);
 
         // Card premium de compartilhamento (estilo Strava), somente para cardio
         // homologado com sucesso -- reaproveita o RunShareCard ja usado no Criar
