@@ -49,6 +49,17 @@ workflows:
       vars:
         BUNDLE_ID: "com.desafiosemdesculpa.app"
         XCODE_SCHEME: "App"
+      groups:
+        # #222: grupo de variaveis do Codemagic. Precisa conter
+        # CERTIFICATE_PRIVATE_KEY (chave RSA privada, marcada como Secure).
+        #
+        # Sem ela, o passo de assinatura gera uma chave nova a cada build e
+        # pede um certificado de distribuicao novo para a Apple. A conta so
+        # aceita um numero limitado deles, entao depois de 2 ou 3 builds a
+        # Apple responde HTTP 409 ("You already have a current Distribution
+        # certificate") e o build morre. Com a chave fixa, todo build
+        # reaproveita SEMPRE o mesmo certificado.
+        - ios_signing
     scripts:
       - name: Instalar dependencias npm
         script: |
