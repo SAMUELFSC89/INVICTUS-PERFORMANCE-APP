@@ -29,18 +29,26 @@ export interface ShareableSession {
   avgHeartRate?: number;
   elevationGain?: number;
   steps?: number;
-  trajectory?: Array<{ lat: number; lng: number }>;
-  checkpoints?: Array<{ lat: number; lng: number }>;
+  trajectory?: Array<any>;
+  checkpoints?: Array<any>;
   date?: string;
   timestamp?: string;
   locationLabel?: string;
   points?: number;
+  rankingPointsEarned?: number;
   photoProof?: string;
 }
 
 interface RunShareCardProps {
   session: RunSession | AdvancedRunStats | ShareableSession;
   onClose: () => void;
+}
+
+function hasValidLatLng(p: any): boolean {
+  if (!p) return false;
+  const lat = Number(p.lat ?? p.latitude ?? p.location?.lat ?? p.location?.latitude);
+  const lng = Number(p.lng ?? p.longitude ?? p.location?.lng ?? p.location?.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng);
 }
 
 function caloriesLabel(kcal?: number) {
@@ -78,6 +86,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSharingLink, setIsSharingLink] = useState(false);
   const [mapImageDataUrl, setMapImageDataUrl] = useState<string | null>(null);
+  const [weather, setWeather] = useState<{ tempC: number; icon: string } | null>(null);
 
   const session: any = rawSession;
 
@@ -102,11 +111,15 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const avgHeartRate = session.avgHeartRate ? Math.round(Number(session.avgHeartRate)) : undefined;
   const elevationGain = (session.elevationGain !== undefined && session.elevationGain !== null) ? Math.round(Number(session.elevationGain)) : undefined;
   const cadence = (session.steps && durationMins > 0) ? Math.round(Number(session.steps) / durationMins) : undefined;
-  const trajectory: Array<{ lat: number; lng: number }> = Array.isArray(session.trajectory)
+  const trajectory: Array<any> = Array.isArray(session.trajectory)
     ? session.trajectory
     : (Array.isArray(session.checkpoints) ? session.checkpoints : []);
   const title = session.title || session.cardioTypeLabel || 'Corrida ao ar livre';
-  const rankingPoints = Number(session.rankingPointsEarned || 0) || Number(session.points || 0) || 0;
+  // #214: XP e pontos de ranking sao coisas DIFERENTES -- nunca rotular XP como
+  // "pontos de ranking" (bug anterior: cardio sem rankingPointsEarned caia no
+  // fallback de session.points, que e XP, e exibia como se fosse ranking).
+  const rankingPointsEarned = Number(session.rankingPointsEarned || 0);
+  const xpPoints = Number(session.points || 0);
 
   const activityDate = useMemo(() => {
     const raw = session.date || session.startTime || session.timestamp;
@@ -131,7 +144,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   useEffect(() => {
     let cancelled = false;
     async function fetchMap() {
-      const points = (trajectory || []).filter((p: any) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      const points = (trajectory || []).filter(hasValidLatLng);
       if (points.length < 2) return;
       const authUser = auth.currentUser;
       if (!authUser) return;
@@ -146,6 +159,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         if (cancelled) return;
         if (json.success) {
           setMapImageDataUrl(json.imageDataUrl);
+          setWeather(json.weather || null);
           if (!locationLabel) setLocationLabel(json.location?.label || null);
         }
       } catch (err) {
@@ -292,6 +306,11 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
               <div className="absolute top-2 left-2 bg-black/70 rounded-full px-2 py-0.5 text-[8px] font-mono text-white flex items-center gap-1">
                 <EyeOff size={9} /> Início e fim ocultos
               </div>
+              {weather && (
+                <div className="absolute top-2 right-2 bg-black/70 rounded-full px-2 py-0.5 text-[8px] font-mono text-white flex items-center gap-1">
+                  <span>{weather.tempC}°C</span><span>{weather.icon}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -302,7 +321,11 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
             </div>
             <div className="min-w-0">
               <p className="text-white font-bold text-xs leading-tight">
-                {rankingPoints > 0 ? `Você ganhou +${rankingPoints} pontos de ranking!` : 'Ótimo trabalho nessa atividade!'}
+                {rankingPointsEarned > 0
+                  ? `Você ganhou +${rankingPointsEarned} pontos de ranking!`
+                  : xpPoints > 0
+                    ? `Atividade homologada -- +${xpPoints} XP`
+                    : 'Ótimo trabalho nessa atividade!'}
               </p>
               <p className="text-primary text-[10px] font-mono">Continue assim para subir no ranking.</p>
             </div>
