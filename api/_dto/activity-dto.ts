@@ -25,6 +25,8 @@ export interface ValidateActivityResponse {
   success: boolean;
   activityId: string;
   scoreAwarded: number;
+  rankingPointsEarned?: number;
+  newRankingScore?: number;
   level: number;
   message: string;
   traceId: string;
