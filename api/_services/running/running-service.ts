@@ -9,6 +9,62 @@ import { db } from '../../_lib/common.js';
 
 const cache = new NodeCache({ stdTTL: 300 });
 
+// #204: grava (best-effort) cada tentativa de corrida da "Corrida Invictus oficial"
+// tambem na colecao 'workouts', que e a fonte real do historico unificado de
+// atividades (ActivityHistorySection.tsx). Ate 2026-08 este fluxo so escrevia em
+// running_stats.last_run_stats (um unico registro por usuario, sobrescrito a cada
+// corrida) e nunca aparecia no historico -- nem quando aprovada, nem quando
+// rejeitada pelo antifraude. Falha aqui nunca deve derrubar o fluxo principal.
+async function persistCardioToHistory(userId: string, params: {
+  timestamp: string;
+  durationMins: number;
+  distanceKm: number;
+  pace?: string | null;
+  calories?: number | null;
+  elevationGain?: number | null;
+  steps?: number | null;
+  avgHeartRate?: number | null;
+  trajectory?: any[];
+  status: 'valid' | 'suspicious' | 'pending_review';
+  points: number;
+  isScoringEligible: boolean;
+  validationReason: string;
+  nonScoringReason?: string | null;
+  rejectionReason?: string | null;
+}) {
+  if (!db) return;
+  try {
+    const workoutRef = db.collection('workouts').doc();
+    await workoutRef.set({
+      id: workoutRef.id,
+      userId,
+      type: 'cardio',
+      timestamp: params.timestamp,
+      duration: params.durationMins,
+      distance: params.distanceKm,
+      pace: params.pace || undefined,
+      calories: params.calories || undefined,
+      elevationGain: params.elevationGain || undefined,
+      steps: params.steps || undefined,
+      avgHeartRate: params.avgHeartRate ?? undefined,
+      trajectory: Array.isArray(params.trajectory) ? params.trajectory : undefined,
+      status: params.status,
+      points: params.points || 0,
+      isScoringEligible: params.isScoringEligible,
+      ...(params.nonScoringReason ? { nonScoringReason: params.nonScoringReason } : {}),
+      ...(params.rejectionReason ? { rejectionReason: params.rejectionReason, userMessage: params.rejectionReason } : {}),
+      validation: {
+        status: params.status,
+        reason: params.validationReason,
+        score: params.status === 'valid' ? 100 : 0
+      },
+      createdAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[RunningService] Falha ao persistir corrida em workouts (historico):', err);
+  }
+}
+
 export class RunningService {
   constructor(private runningRepository: RunningRepository) {}
 
@@ -74,6 +130,20 @@ export class RunningService {
     // Zero-movement / Stationary anti-cheat check
     if (currentKm < 0.1) {
       const zeroMovementMsg = "🚨 ATIVIDADE RECUSADA PELA AUDITORIA ANTIFRAUDE: Nenhum deslocamento ou movimento válido foi detectado no GPS (0.00 km).";
+      await persistCardioToHistory(userId, {
+        timestamp: date || nowIso,
+        durationMins: Math.ceil((timeSeconds || 0) / 60),
+        distanceKm: currentKm,
+        pace, calories, elevationGain, steps,
+        avgHeartRate: payload.avgHeartRate,
+        trajectory,
+        status: 'suspicious',
+        points: 0,
+        isScoringEligible: false,
+        validationReason: zeroMovementMsg,
+        nonScoringReason: 'NO_MOVEMENT_DETECTED',
+        rejectionReason: zeroMovementMsg
+      });
       return {
         userId,
         last_run_stats: lastRunStats,
@@ -95,6 +165,20 @@ export class RunningService {
       const gpsCheck = GPSValidator.validateActivity(userId, trajectory, currentKm, timeSeconds || 0);
       if (!gpsCheck.isValid) {
         const gpsFraudMsg = "\uD83D\uDEA8 ATIVIDADE RECUSADA PELA AUDITORIA ANTIFRAUDE: Padr\u00e3o de GPS incompat\u00edvel com uma corrida real (" + gpsCheck.flags.join(', ') + ").";
+        await persistCardioToHistory(userId, {
+          timestamp: date || nowIso,
+          durationMins: Math.ceil((timeSeconds || 0) / 60),
+          distanceKm: currentKm,
+          pace, calories, elevationGain, steps,
+          avgHeartRate: payload.avgHeartRate,
+          trajectory,
+          status: 'suspicious',
+          points: 0,
+          isScoringEligible: false,
+          validationReason: gpsFraudMsg,
+          nonScoringReason: 'GPS_FRAUD_DETECTED',
+          rejectionReason: gpsFraudMsg
+        });
         return {
           userId,
           last_run_stats: lastRunStats,
@@ -152,6 +236,20 @@ export class RunningService {
 
       if (!securityResult.shouldScore) {
         const secMsg = "\uD83D\uDEA8 ATIVIDADE RECUSADA PELA AUDITORIA ANTIFRAUDE: " + (securityResult.report.explanation?.summaryText || 'Padrao de risco elevado detectado nesta atividade.');
+        await persistCardioToHistory(userId, {
+          timestamp: date || nowIso,
+          durationMins: Math.ceil((timeSeconds || 0) / 60),
+          distanceKm: currentKm,
+          pace, calories, elevationGain, steps,
+          avgHeartRate: payload.avgHeartRate,
+          trajectory,
+          status: 'suspicious',
+          points: 0,
+          isScoringEligible: false,
+          validationReason: secMsg,
+          nonScoringReason: 'SECURITY_PIPELINE_' + securityResult.decision,
+          rejectionReason: secMsg
+        });
         return {
           userId,
           last_run_stats: lastRunStats,
@@ -172,6 +270,20 @@ export class RunningService {
       // NAO e aprovada. Falha do antifraude nao pode significar aprovacao automatica.
       console.error('[RunningService] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):', secErr);
       const secFailMsg = 'Nao foi possivel validar esta atividade agora (falha tecnica no motor antifraude). Tente novamente em instantes.';
+      await persistCardioToHistory(userId, {
+        timestamp: date || nowIso,
+        durationMins: Math.ceil((timeSeconds || 0) / 60),
+        distanceKm: currentKm,
+        pace, calories, elevationGain, steps,
+        avgHeartRate: payload.avgHeartRate,
+        trajectory,
+        status: 'pending_review',
+        points: 0,
+        isScoringEligible: false,
+        validationReason: secFailMsg,
+        nonScoringReason: 'SECURITY_PIPELINE_ERROR',
+        rejectionReason: secFailMsg
+      });
       return {
         userId,
         last_run_stats: lastRunStats,
@@ -288,6 +400,23 @@ export class RunningService {
     const userMsg = isWeeklyLimit
       ? "Treino registrado com sucesso, mas você já atingiu seus 5 dias pontuáveis da semana."
       : "Corrida validada com sucesso! Seus pontos foram adicionados.";
+
+    // #204: grava tambem no historico unificado ('workouts'), aprovada ou nao --
+    // mesmo quando o limite semanal de dias pontuaveis foi atingido, a corrida
+    // aconteceu de verdade e o usuario deve poder ve-la/compartilha-la.
+    await persistCardioToHistory(userId, {
+      timestamp: date || nowIso,
+      durationMins: Math.ceil((timeSeconds || 0) / 60),
+      distanceKm: currentKm,
+      pace, calories, elevationGain, steps,
+      avgHeartRate: payload.avgHeartRate,
+      trajectory,
+      status: 'valid',
+      points: txResult.finalXpAwarded,
+      isScoringEligible: txResult.isScoringEligible,
+      validationReason: userMsg,
+      nonScoringReason: txResult.nonScoringReason || undefined
+    });
 
     return {
       ...updatedData,
