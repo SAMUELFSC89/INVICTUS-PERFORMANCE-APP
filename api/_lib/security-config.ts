@@ -1,3 +1,4 @@
+// #231: regra de deslocamento minimo -- ver validation.minDistanceKmPer10Min.
 export interface SecurityConfig {
   engineVersion: string;
   ruleVersion: string;
