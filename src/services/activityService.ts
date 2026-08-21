@@ -681,5 +681,4 @@ export const activityService = {
     localStorage.removeItem('kmfatal_total_distance');
     localStorage.removeItem('kmfatal_run_points');
   }
-  }
 };
