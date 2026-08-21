@@ -1,0 +1,7 @@
+/* Home-specific styles - consumes invictus.css */
+.home-trophy-glow {
+  color: var(--dourado-claro);
+  filter: drop-shadow(0 0 14px rgba(255, 214, 90, 0.5));
+}
+
+

@@ -31,6 +31,7 @@ import { API_CONFIG } from './config';
 import { Gym } from './pages/Gym';
 import { PowerModule } from './pages/PowerModule';
 import { WearablesDashboard } from './pages/WearablesDashboard';
+import './styles/invictus.css';
 
 export default function App() {
   useEffect(() => {

@@ -360,10 +360,10 @@ export function Rankings() {
               key={period}
               onClick={() => setActivePeriod(period)}
               className={cn(
-                "px-4 md:px-6 py-2 rounded-xl text-[8px] md:text-[9px] font-black uppercase tracking-[0.2em] transition-all border shrink-0",
+                "px-4 md:px-6 py-2.5 rounded-xl text-[8px] md:text-[9px] font-black uppercase tracking-[0.2em] transition-all border shrink-0 cursor-pointer",
                 activePeriod === period
-                  ? "bg-primary text-black border-primary shadow-[0_0_20px_rgba(255,204,0,0.3)]"
-                  : "bg-surface-container-high/20 text-on-surface-variant border-white/[0.03] hover:bg-white/[0.05]"
+                  ? "bg-primary text-black border-primary shadow-[0_0_20px_rgba(245,166,35,0.35)]"
+                  : "bg-surface-container/80 text-white/90 border-white/10 hover:border-primary/40 hover:bg-surface-container-high"
               )}
             >
               {period === 'all' ? 'TEMPORADA' : period === 'weekly' ? 'SEMANAL' : 'MENSAL'}
@@ -373,7 +373,7 @@ export function Rankings() {
 
         {/* Plan Switcher (Performance vs Open) */}
         <div className="px-4 md:px-6 pb-6 flex justify-center">
-          <div className="bg-surface-container-high/25 p-1 rounded-2xl border border-white/[0.04] flex flex-wrap sm:flex-nowrap justify-center gap-1 max-w-full">
+          <div className="bg-surface-container/90 p-1.5 rounded-2xl border border-[#F5A623]/25 flex flex-wrap sm:flex-nowrap justify-center gap-1.5 max-w-full shadow-lg backdrop-blur-md">
             <button
               onClick={() => {
                 if (user?.subscriptionTier === 'performance') {
@@ -382,18 +382,18 @@ export function Rankings() {
               }}
               disabled={user?.subscriptionTier !== 'performance'}
               className={cn(
-                "px-3 sm:px-5 py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.05em] sm:tracking-[0.1em] transition-all flex items-center gap-1.5 shrink-0 max-w-full text-ellipsis overflow-hidden whitespace-nowrap",
+                "px-3.5 sm:px-5 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.05em] sm:tracking-[0.1em] transition-all flex items-center gap-1.5 shrink-0 max-w-full text-ellipsis overflow-hidden whitespace-nowrap",
                 activeTier === 'performance'
-                  ? "bg-primary text-[#121212] font-black shadow-[0_0_15px_rgba(255,204,0,0.3)]"
-                  : "text-on-surface-variant hover:text-white opacity-40 cursor-not-allowed"
+                  ? "bg-primary text-black font-black shadow-[0_0_15px_rgba(245,166,35,0.35)]"
+                  : "text-white/70 hover:text-white opacity-60 cursor-not-allowed"
               )}
             >
               <Zap size={12} className={activeTier === 'performance' ? "fill-current shrink-0" : "shrink-0"} />
               <span className="truncate">Plano Performance</span>
               {user?.subscriptionTier === 'performance' ? (
-                <span className="text-[8px] bg-black/20 px-1.5 py-0.5 rounded ml-0.5 shrink-0">Seu Plano</span>
+                <span className="text-[8px] bg-black/30 px-1.5 py-0.5 rounded ml-0.5 shrink-0 text-black font-bold">Seu Plano</span>
               ) : (
-                <Lock size={10} className="ml-0.5 shrink-0" />
+                <Lock size={10} className="ml-0.5 shrink-0 text-white/50" />
               )}
             </button>
 
@@ -405,18 +405,18 @@ export function Rankings() {
               }}
               disabled={user?.subscriptionTier === 'performance'}
               className={cn(
-                "px-3 sm:px-5 py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.05em] sm:tracking-[0.1em] transition-all flex items-center gap-1.5 shrink-0 max-w-full text-ellipsis overflow-hidden whitespace-nowrap",
+                "px-3.5 sm:px-5 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.05em] sm:tracking-[0.1em] transition-all flex items-center gap-1.5 shrink-0 max-w-full text-ellipsis overflow-hidden whitespace-nowrap",
                 activeTier === 'open'
-                  ? "bg-primary text-[#121212] font-black shadow-[0_0_15px_rgba(255,204,0,0.3)]"
-                  : "text-on-surface-variant hover:text-white opacity-40 cursor-not-allowed"
+                  ? "bg-primary text-black font-black shadow-[0_0_15px_rgba(245,166,35,0.35)]"
+                  : "text-white/70 hover:text-white opacity-60 cursor-not-allowed"
               )}
             >
               <Dumbbell size={12} className="shrink-0" />
               <span className="truncate">Plano Open</span>
               {user?.subscriptionTier !== 'performance' ? (
-                <span className="text-[8px] bg-black/20 px-1.5 py-0.5 rounded ml-0.5 shrink-0">Seu Plano</span>
+                <span className="text-[8px] bg-black/30 px-1.5 py-0.5 rounded ml-0.5 shrink-0 text-black font-bold">Seu Plano</span>
               ) : (
-                <Lock size={10} className="ml-0.5 shrink-0" />
+                <Lock size={10} className="ml-0.5 shrink-0 text-white/50" />
               )}
             </button>
           </div>
@@ -1029,12 +1029,12 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
 
   return (
     <div className={cn(
-      "flex items-center justify-between p-4 md:p-5 bg-surface-container-low/40 rounded-[24px] md:rounded-[28px] hover:bg-white/[0.02] transition-all border border-white/[0.03] group relative overflow-hidden gap-3",
-      isMe && "border-primary/40 bg-primary/5 shadow-[0_0_40px_rgba(255,204,0,0.05)] ring-1 ring-primary/20",
-      rank <= 3 && "bg-surface-container/60"
+      "flex items-center justify-between p-4 md:p-5 bg-surface-container/90 backdrop-blur-md rounded-[24px] md:rounded-[28px] hover:bg-surface-container-high/90 transition-all border border-[#F5A623]/25 group relative overflow-hidden gap-3 shadow-lg",
+      isMe && "border-primary bg-primary/10 shadow-[0_0_30px_rgba(245,166,35,0.15)] ring-1 ring-primary/40",
+      rank <= 3 && "bg-surface-container-high/95 border-[#F5A623]/40"
     )}>
       {showDenounceConfirm && (
-        <div className="absolute inset-0 bg-background/95 backdrop-blur-md flex items-center justify-between px-6 z-30 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute inset-0 bg-[#0A0806]/98 backdrop-blur-md flex items-center justify-between px-6 z-30 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-center gap-2">
             <ShieldAlert size={16} className="text-[#FC4C02]" />
             <span className="font-label text-[9px] font-black text-white uppercase tracking-widest leading-none">Denunciar atleta por treino suspeito?</span>
@@ -1091,12 +1091,12 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
           rank === 1 ? 'text-prize-gold' : 
           rank === 2 ? 'text-prize-silver' : 
           rank === 3 ? 'text-prize-bronze' : 
-          'text-on-surface-variant/30'
+          'text-white/60 font-bold'
         )}>
           {rank}
         </div>
         <div className="relative group/avatar shrink-0">
-          <div className="w-10 h-10 md:w-14 md:h-14 rounded-[16px] md:rounded-[20px] overflow-hidden bg-background border border-white/10 group-hover/avatar:rotate-3 transition-transform">
+          <div className="w-10 h-10 md:w-14 md:h-14 rounded-[16px] md:rounded-[20px] overflow-hidden bg-background border border-white/20 group-hover/avatar:rotate-3 transition-transform shadow-md">
             <img 
               src={entry.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.displayName}`} 
               alt={entry.displayName} 
@@ -1109,7 +1109,7 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
             />
           </div>
           {entry.isSubscribed && (
-             <div className="absolute -bottom-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-secondary rounded-lg border-2 border-background flex items-center justify-center">
+             <div className="absolute -bottom-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-secondary rounded-lg border-2 border-background flex items-center justify-center shadow-md">
                 <Crown size={10} className="text-black" fill="currentColor" />
              </div>
           )}
@@ -1118,7 +1118,7 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
           <div className="flex items-center flex-wrap gap-1 md:gap-2">
             <span className={cn(
               "font-headline italic font-black text-[12px] md:text-sm uppercase tracking-tight truncate max-w-[100px] md:max-w-[140px]",
-              isMe ? "text-primary" : "text-white"
+              isMe ? "text-primary" : "text-white font-bold"
             )}>
               {entry.displayName?.split(' ')[0]}
             </span>
@@ -1129,7 +1129,7 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
                   setShowDenounceConfirm(true);
                 }}
                 title="Denunciar atividade suspeita"
-                className="opacity-0 group-hover:opacity-100 focus:opacity-100 ml-1.5 p-1 rounded-md text-on-surface-variant/40 hover:text-error hover:scale-110 active:scale-95 cursor-pointer transition-all shrink-0"
+                className="opacity-0 group-hover:opacity-100 focus:opacity-100 ml-1.5 p-1 rounded-md text-white/50 hover:text-red-400 hover:scale-110 active:scale-95 cursor-pointer transition-all shrink-0"
               >
                 <Flag size={11} className="stroke-[2.5]" />
               </button>
@@ -1141,9 +1141,9 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
             )}
           </div>
           <div className="flex items-center gap-1.5">
-             <span className="font-headline italic font-black text-[10px] md:text-xs text-on-surface-variant opacity-40 uppercase tracking-widest">{entry.score.toLocaleString()}</span>
+             <span className="font-headline italic font-black text-[10px] md:text-xs text-white/70 uppercase tracking-widest">{entry.score.toLocaleString()} PTS</span>
              {pointsToNext > 0 && (
-               <div className="flex items-center gap-1 text-[7px] md:text-[8px] font-black text-primary/40 uppercase whitespace-nowrap">
+               <div className="flex items-center gap-1 text-[7px] md:text-[8px] font-black text-primary/80 uppercase whitespace-nowrap">
                   <TrendingUp className="w-[8px] h-[8px] md:w-[10px] md:h-[10px]" />
                   <span>+{pointsToNext}</span>
                </div>

@@ -1,0 +1,259 @@
+@import '@fontsource/anton/index.css';
+@import '@fontsource/barlow/400.css';
+@import '@fontsource/barlow/600.css';
+@import '@fontsource/barlow/700.css';
+
+:root {
+  --fundo-base: #0A0806;
+  --brasa: #FF7A18;
+  --dourado-claro: #FFD65A;
+  --dourado: #F5A623;
+  --dourado-escuro: #C8791A;
+  --texto: #FFFFFF;
+  --texto-suave: #A89F96;
+  --texto-apagado: #6B645C;
+  --card-fundo: rgba(18, 14, 11, 0.72);
+  --card-borda: rgba(245, 166, 35, 0.35);
+  --card-borda-forte: rgba(245, 166, 35, 0.55);
+  --trilha: #332C26;
+  --liga-roxo: #2A0A3F;
+  --liga-meio: #6B1470;
+  --liga-magenta: #B31FA8;
+  --liga-borda: #A855F7;
+}
+
+/* 1) Camada de arte de fundo */
+.iv-fundo {
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+  background-color: transparent !important;
+  min-height: 100dvh;
+}
+
+.iv-fundo::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('/fundo-home.webp');
+  background-size: cover;
+  background-position: top center;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.iv-fundo::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(10,8,6,0.45) 0%,
+    rgba(10,8,6,0.30) 25%,
+    rgba(10,8,6,0.55) 45%,
+    rgba(10,8,6,0.80) 65%,
+    rgba(10,8,6,0.92) 100%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* 2) Wrapper do conteudo */
+.iv-conteudo {
+  position: relative;
+  z-index: 2;
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 3) Cards */
+.iv-card {
+  background: var(--card-fundo);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--card-borda);
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.iv-card--destaque {
+  background: var(--card-fundo);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--card-borda-forte);
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.iv-card--liga {
+  background: linear-gradient(135deg, var(--liga-roxo) 0%, var(--liga-meio) 55%, var(--liga-magenta) 100%);
+  border: 1px solid var(--liga-borda);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 8px 32px rgba(168, 85, 247, 0.25);
+}
+
+/* 4) Tipografia */
+.iv-titulo {
+  font-family: 'Anton', sans-serif;
+  color: var(--texto);
+  text-transform: uppercase;
+  line-height: 1.05;
+  font-style: normal;
+}
+
+.iv-titulo--ouro {
+  font-family: 'Anton', sans-serif;
+  text-transform: uppercase;
+  line-height: 1.05;
+  font-style: normal;
+  background: linear-gradient(180deg, #FFFFFF 35%, var(--dourado) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.iv-rotulo {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--texto-suave);
+}
+
+.iv-texto {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--texto-suave);
+  line-height: 1.4;
+}
+
+/* 5) Componentes Visuais */
+.iv-icone-circulo {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--dourado);
+  background: rgba(245, 166, 35, 0.10);
+  flex-shrink: 0;
+}
+
+.iv-icone-circulo svg,
+.iv-icone-circulo > svg {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+  color: var(--dourado);
+  filter: drop-shadow(0 0 6px rgba(245, 166, 35, 0.55));
+}
+
+.iv-chip {
+  border-radius: 999px;
+  padding: 4px 12px;
+  border: 1px solid var(--dourado);
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--dourado-claro);
+  background: transparent;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iv-chip--ativo {
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: linear-gradient(90deg, var(--dourado-escuro), var(--dourado));
+  color: #2A1703;
+  border: none;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iv-chip--inativo {
+  border-radius: 999px;
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--texto-apagado);
+  background: transparent;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iv-barra {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--trilha);
+  overflow: hidden;
+}
+
+.iv-barra > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dourado-escuro) 0%, var(--dourado) 50%, var(--dourado-claro) 100%);
+}
+
+.iv-linha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.iv-linha > :nth-child(2),
+.iv-linha > .iv-linha-centro {
+  flex: 1;
+  min-width: 0;
+}
+
+.iv-abas {
+  display: flex;
+  gap: 6px;
+}
+
+.iv-abas > * {
+  flex: 1;
+  text-align: center;
+  padding: 8px 0;
+  border-radius: 12px;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.iv-aba--ativa {
+  background: rgba(245, 166, 35, 0.12);
+  border: 1px solid var(--card-borda-forte);
+  color: var(--dourado-claro);
+}
+
+.iv-aba--inativa {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--texto-apagado);
+  background: transparent;
+}

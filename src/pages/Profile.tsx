@@ -1045,20 +1045,20 @@ function StatBox({ label, value, subtitle, icon, onClick, highlight }: any) {
     <div 
       onClick={onClick}
       className={cn(
-        "bg-surface-container-low rounded-[24px] md:rounded-[32px] p-4 md:p-6 border shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between min-h-[100px] md:min-h-0",
-        highlight ? "border-emerald-500/30 hover:border-emerald-500/60 bg-emerald-500/5" : "border-white/5 hover:border-primary/20",
+        "bg-surface-container/90 backdrop-blur-md rounded-[24px] md:rounded-[32px] p-4 md:p-6 border shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between min-h-[100px] md:min-h-0",
+        highlight ? "border-emerald-500/40 hover:border-emerald-500/70 bg-emerald-500/10" : "border-[#F5A623]/25 hover:border-primary/50",
         onClick && "cursor-pointer active:scale-95"
       )}
     >
-      <div className="absolute top-0 right-0 p-3 md:p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
+      <div className="absolute top-0 right-0 p-3 md:p-4 opacity-[0.08] group-hover:scale-110 transition-transform">
         {icon}
       </div>
       <div className="flex items-center justify-between mb-2 md:mb-6">
-        <span className="font-label text-[7px] md:text-[9px] font-black text-on-surface/40 uppercase tracking-[0.2em]">{label}</span>
+        <span className="font-label text-[7px] md:text-[9px] font-black text-white/80 uppercase tracking-[0.2em]">{label}</span>
       </div>
       <div className="space-y-0.5 md:space-y-1">
-        <span className="block font-headline italic font-black text-2xl md:text-4xl text-on-surface tracking-tighter leading-none">{value}</span>
-        <span className={cn("block font-label text-[7px] md:text-[8px] font-black uppercase tracking-widest truncate", highlight ? "text-emerald-400" : "text-primary/60")}>{subtitle}</span>
+        <span className="block font-headline italic font-black text-2xl md:text-4xl text-white tracking-tighter leading-none">{value}</span>
+        <span className={cn("block font-label text-[7px] md:text-[8px] font-black uppercase tracking-widest truncate", highlight ? "text-emerald-400 font-bold" : "text-[#F5A623]")}>{subtitle}</span>
       </div>
     </div>
   );

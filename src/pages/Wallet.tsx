@@ -23,7 +23,6 @@ import { useUser } from '../UserContext';
 import { UserWallet, IVCoinTransaction, PIXWithdrawal, WithdrawalConfig } from '../types';
 import { cn } from '../lib/utils';
 
-
 export function Wallet() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -158,7 +157,8 @@ export function Wallet() {
   };
 
   const redeemableVal = wallet?.redeemableBalance || 0;
-  const minWithdrawalVal = config?.minWithdrawalAmount || 20;
+  const minWithdrawalVal = config?.minWithdrawalAmount;
+  const isWithdrawalAvailable = Boolean(config?.enabled && minWithdrawalVal !== undefined && wallet);
 
   return (
     <div className="min-h-screen bg-background pb-32 pt-8 px-4 sm:px-6">
@@ -190,7 +190,8 @@ export function Wallet() {
             </button>
             <button
               onClick={() => setIsRedeeming(true)}
-              className="px-6 py-3.5 bg-primary text-black font-headline italic font-black text-lg uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+              disabled={!isWithdrawalAvailable || (minWithdrawalVal !== undefined && redeemableVal < minWithdrawalVal)}
+              className="px-6 py-3.5 bg-primary text-black font-headline italic font-black text-lg uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               <ArrowUpRight size={20} />
               SACAR VIA PIX
@@ -220,7 +221,7 @@ export function Wallet() {
               <div>
                 <span className="text-[10px] font-black uppercase text-on-surface-variant tracking-widest block">SAQUE MÍNIMO PERMITIDO</span>
                 <p className="font-headline italic font-black text-2xl text-on-surface">
-                  R$ {minWithdrawalVal.toFixed(2)}
+                  {minWithdrawalVal !== undefined ? `R$ ${minWithdrawalVal.toFixed(2)}` : (loading ? 'Carregando...' : 'Indisponível')}
                 </p>
               </div>
             </div>
@@ -303,7 +304,8 @@ export function Wallet() {
               </p>
               <button
                 onClick={() => setIsRedeeming(true)}
-                className="w-full sm:w-auto px-8 py-3.5 bg-primary text-black font-headline italic font-black text-base uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                disabled={!isWithdrawalAvailable || (minWithdrawalVal !== undefined && redeemableVal < minWithdrawalVal)}
+                className="w-full sm:w-auto px-8 py-3.5 bg-primary text-black font-headline italic font-black text-base uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ArrowUpRight size={18} /> RESGATAR VIA PIX
               </button>
@@ -475,7 +477,11 @@ export function Wallet() {
                 <div className="text-center py-16 text-on-surface-variant space-y-2">
                   <ShieldCheck className="mx-auto text-outline-variant" size={40} />
                   <p className="font-bold text-sm">Nenhum saque solicitado ainda.</p>
-                  <p className="text-xs">Quando tiver pelo menos R$ {minWithdrawalVal.toFixed(2)} disponíveis, solicite a transferência via PIX!</p>
+                  <p className="text-xs">
+                    {minWithdrawalVal !== undefined 
+                      ? `Quando tiver pelo menos R$ ${minWithdrawalVal.toFixed(2)} disponíveis, solicite a transferência via PIX!`
+                      : 'Quando atingir o valor mínimo configurado pelo servidor, solicite a transferência via PIX!'}
+                  </p>
                 </div>
               ) : (
                 withdrawals.map((w) => {
@@ -590,13 +596,14 @@ export function Wallet() {
                       <input
                         type="number"
                         step="0.01"
-                        min={minWithdrawalVal}
+                        min={minWithdrawalVal || 0}
                         max={redeemableVal}
                         value={withdrawAmount}
                         onChange={(e) => setWithdrawAmount(e.target.value)}
-                        placeholder={`Mínimo R$ ${minWithdrawalVal.toFixed(2)}`}
+                        placeholder={minWithdrawalVal !== undefined ? `Mínimo R$ ${minWithdrawalVal.toFixed(2)}` : 'Indisponível'}
                         required
-                        className="w-full h-14 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl pl-12 pr-4 font-headline italic font-black text-2xl text-on-surface focus:border-primary focus:outline-none"
+                        disabled={!isWithdrawalAvailable}
+                        className="w-full h-14 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl pl-12 pr-4 font-headline italic font-black text-2xl text-on-surface focus:border-primary focus:outline-none disabled:opacity-50"
                       />
                     </div>
                   </div>
@@ -635,7 +642,8 @@ export function Wallet() {
                         pixType === 'phone' ? '(00) 90000-0000' : 'Chave aleatória UUID'
                       }
                       required
-                      className="w-full h-12 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl px-4 font-mono text-sm text-on-surface focus:border-primary focus:outline-none"
+                      disabled={!isWithdrawalAvailable}
+                      className="w-full h-12 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl px-4 font-mono text-sm text-on-surface focus:border-primary focus:outline-none disabled:opacity-50"
                     />
                   </div>
 
@@ -648,7 +656,7 @@ export function Wallet() {
 
                   <button
                     type="submit"
-                    disabled={withdrawLoading || !withdrawAmount || !pixKey}
+                    disabled={withdrawLoading || !withdrawAmount || !pixKey || !isWithdrawalAvailable}
                     className="w-full h-14 bg-primary text-black font-headline italic font-black text-lg uppercase tracking-wider rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {withdrawLoading ? (

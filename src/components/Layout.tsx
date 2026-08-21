@@ -19,7 +19,6 @@ import { TermsAndConsent } from './TermsAndConsent';
 import { getXPProgress, getLevelFromXP } from '../lib/levelUtils';
 import { BarbellLifter } from './BarbellLifter';
 import { MiniBarbellProgress } from './MiniBarbellProgress';
-import { InvictusLogo } from './InvictusLogo';
 import { initPushNotifications } from '../services/pushNotificationService';
 
 export function Layout() {
@@ -94,7 +93,7 @@ export function Layout() {
   const unreadCount = user?.notifications?.filter(n => !n.read).length || 0;
 
   return (
-    <div className="min-h-screen bg-background text-on-surface font-body flex flex-col">
+    <div className="min-h-screen app-fundo text-on-surface font-body flex flex-col">
       {showOnboarding && user && location.pathname !== '/settings' && (
         <Onboarding user={user} onComplete={() => setShowOnboarding(false)} />
       )}
@@ -119,47 +118,24 @@ export function Layout() {
         onClearAll={handleClearAllNotifs}
       />
 
-      {/* Top Bar - Clean header with Invictus Performance branding centered */}
-      <header id="main-header" className="w-full top-0 z-50 sticky bg-background/90 backdrop-blur-xl border-b border-white/[0.03]">
-        <nav className="max-w-screen-xl mx-auto flex items-center justify-between px-4 md:px-6 py-3 md:py-4 w-full min-h-16 md:h-20 relative">
-          {/* Left spacer to balance layout */}
-          <div className="w-9 h-9 md:w-10 md:h-10 shrink-0" />
-
-          {/* Centered Logo & Brand Title */}
-          <button
-            onClick={() => navigate('/')}
-            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5 sm:gap-3 cursor-pointer group py-1 opacity-95 hover:opacity-100 transition-opacity active:scale-95"
-            title="Invictus Performance - Início"
-          >
-            <InvictusLogo size={32} className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 shrink-0 transition-transform group-hover:scale-105" />
-            <div className="flex flex-col text-left leading-none">
-              <span className="font-headline italic font-black text-sm sm:text-base md:text-lg text-primary tracking-tighter uppercase">
-                INVICTUS
-              </span>
-              <span className="font-sans font-black text-[8px] sm:text-[9px] md:text-[10px] text-white/80 tracking-[0.2em] uppercase mt-0.5">
-                PERFORMANCE
-              </span>
-            </div>
-          </button>
-          
-          {/* Right Action Controls */}
-          <div className="flex items-center gap-2 md:gap-3">
-            <button 
-              onClick={() => setIsNotifOpen(true)}
-              className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-2xl bg-surface-container border border-white/5 text-on-surface-variant hover:text-primary transition-colors relative"
-              title="Notificações"
-            >
-              <Bell size={18} />
-              {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full shadow-[0_0_10px_rgba(255,204,0,0.8)]" />
-              )}
-            </button>
-          </div>
-        </nav>
-      </header>
+      {/* Notification Bell Only */}
+      <div className="fixed top-3.5 right-4 z-50 pointer-events-auto">
+        <button 
+          id="notification-bell-btn"
+          onClick={() => setIsNotifOpen(true)}
+          className="w-10 h-10 flex items-center justify-center rounded-2xl bg-[#16120C]/85 backdrop-blur-xl border border-[#F5A623]/25 text-[#9E8E7E] hover:text-[#F5A623] transition-colors relative shadow-lg active:scale-95 cursor-pointer"
+          title="Notificações"
+          aria-label="Abrir notificações"
+        >
+          <Bell size={18} />
+          {unreadCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F5A623] rounded-full shadow-[0_0_10px_rgba(245,166,35,0.9)]" />
+          )}
+        </button>
+      </div>
 
       {/* Main Content */}
-      <main className="flex-grow pb-40 max-w-screen-xl mx-auto w-full px-4 md:px-6">
+      <main className="flex-grow pt-16 md:pt-20 pb-40 max-w-screen-xl mx-auto w-full px-4 md:px-6 relative z-[2]">
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}
@@ -183,7 +159,7 @@ export function Layout() {
       {/* Bottom Navigation - Thin style with labels */}
       <nav id="bottom-nav" className="fixed bottom-0 left-0 right-0 z-30 pb-safe-offset-4 pointer-events-none">
         <div className="max-w-lg mx-auto px-4 md:px-6 pb-4 md:pb-6">
-          <div className="pointer-events-auto flex justify-between items-center h-16 md:h-20 px-2 md:px-4 bg-surface/80 backdrop-blur-3xl border border-white/5 shadow-2xl rounded-[24px] md:rounded-[32px]">
+          <div className="pointer-events-auto flex justify-between items-center h-16 md:h-20 px-2 md:px-4 bg-[#16120C]/85 backdrop-blur-3xl border border-[#F5A623]/25 shadow-[0_8px_32px_rgba(0,0,0,0.7)] rounded-[24px] md:rounded-[32px]">
             <NavItem id="nav-home" to="/" icon={<Gauge size={20} className="md:w-[22px] md:h-[22px]" />} label="INÍCIO" />
             <NavItem id="nav-rankings" to="/rankings" icon={<Trophy size={20} className="md:w-[22px] md:h-[22px]" />} label="RANKING" />
             <NavItem id="nav-challenges" to="/challenges" icon={<Award size={20} className="md:w-[22px] md:h-[22px]" />} label="DESAFIOS" />
@@ -240,17 +216,17 @@ function NavItem({ to, icon, label, id }: { to: string; icon: React.ReactNode; l
       to={to}
       className={({ isActive }) =>
         cn(
-          "flex flex-col items-center justify-center transition-all duration-300 flex-1 h-full gap-1 outline-none",
+          "flex flex-col items-center justify-center transition-all duration-300 flex-1 h-full gap-1 outline-none py-1",
           isActive
-            ? "text-primary bg-primary/5 rounded-3xl"
-            : "text-on-surface-variant/50 hover:text-on-surface"
+            ? "text-[#F5A623] bg-[rgba(245,166,35,0.12)] rounded-2xl drop-shadow-[0_0_8px_rgba(245,166,35,0.4)]"
+            : "text-[#9E8E7E] hover:text-white"
         )
       }
     >
       <div className="relative">
         {icon}
       </div>
-      <span className="text-[8px] md:text-[10px] font-black tracking-widest uppercase transition-opacity">{label}</span>
+      <span className="text-[8px] md:text-[10px] font-barlow font-bold tracking-widest uppercase transition-opacity">{label}</span>
     </NavLink>
   );
 }

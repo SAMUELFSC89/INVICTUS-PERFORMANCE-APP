@@ -614,8 +614,8 @@ export function Achievements() {
                 className={cn(
                   "flex items-center gap-2 px-4 py-2.5 rounded-xl font-label text-[10px] font-black tracking-wider uppercase transition-all whitespace-nowrap border cursor-pointer",
                   activeCategory === cat.id
-                    ? "bg-primary text-black border-primary font-black"
-                    : "bg-surface-container text-on-surface-variant/70 border-white/5 hover:border-white/15"
+                    ? "bg-primary text-black border-primary font-black shadow-md shadow-primary/20"
+                    : "bg-surface-container/85 text-white/90 border-[#F5A623]/20 hover:border-primary/40 hover:bg-surface-container-high"
                 )}
               >
                 {cat.icon}
@@ -632,10 +632,10 @@ export function Achievements() {
                 <div 
                   key={ach.id}
                   className={cn(
-                    "p-5 rounded-3xl border transition-all flex items-start gap-4 shadow-md",
+                    "p-5 rounded-3xl border transition-all flex items-start gap-4 shadow-md backdrop-blur-md",
                     isUnlocked 
-                      ? "bg-surface-container-low border-primary/20" 
-                      : "bg-surface-container-low/40 border-white/5 opacity-50 grayscale"
+                      ? "bg-surface-container/90 border-[#F5A623]/30" 
+                      : "bg-surface-container/60 border-white/10 opacity-70"
                   )}
                 >
                   <div className={cn(

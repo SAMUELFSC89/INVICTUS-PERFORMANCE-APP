@@ -1,39 +1,62 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap');
+@import "@fontsource/anton";
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/600.css";
+@import "@fontsource/barlow/700.css";
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+:root {
+  --fundo-base: #0A0806;
+  --card-fundo: rgba(22, 18, 12, 0.88);
+  --card-borda: rgba(245, 166, 35, 0.25);
+  --dourado: #F5A623;
+  --dourado-claro: #FFD65A;
+  --dourado-escuro: #C8791A;
+  --ouro-base: #D4AF37;
+  --ouro-brilho: #FFF0A0;
+  --trilha-xp: rgba(245, 166, 35, 0.20);
+  --texto: #FFFFFF;
+  --texto-suave: #D1C7BD;
+  --brasa: #FF5A1F;
+  --liga-borda: rgba(168, 85, 247, 0.40);
+  --liga-texto: #E9D5FF;
+}
+
 @theme {
-  --font-headline: "Outfit", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-label: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Anton", "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Barlow", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-label: "Barlow", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-anton: "Anton", sans-serif;
+  --font-barlow: "Barlow", sans-serif;
 
-  /* Default (RunQuest Aesthetics) */
-  --color-primary: #FFCC00;
+  /* Default (Invictus Performance Aesthetics) */
+  --color-primary: #F5A623;
   --color-secondary: #FFFFFF;
-  --color-background: #0B0E11;
-  --color-surface: #1C1F26;
+  --color-background: transparent;
+  --color-surface: rgba(22, 18, 12, 0.88);
   --color-on-surface: #FFFFFF;
-  --color-on-surface-variant: #8E9299;
+  --color-on-surface-variant: #D1C7BD;
   --color-tertiary: #A855F7; /* Purple accent */
-  --color-alert-orange: #FF8F00;
+  --color-alert-orange: #FF5A1F;
   --color-alert-red: #EF4444;
-  --color-prize-gold: #FFCC00;
+  --color-prize-gold: #FFD65A;
   --color-prize-silver: #E2E8F0;
-  --color-prize-bronze: #B45309;
+  --color-prize-bronze: #D97706;
 
-  --color-surface-container-lowest: #050507;
-  --color-surface-container-low: #0F1216;
-  --color-surface-container: #15191E;
-  --color-surface-container-high: #1E2329;
-  --color-surface-container-highest: #2D343C;
+  --color-surface-container-lowest: #0A0806;
+  --color-surface-container-low: rgba(22, 18, 12, 0.82);
+  --color-surface-container: rgba(24, 19, 13, 0.88);
+  --color-surface-container-high: rgba(32, 25, 17, 0.92);
+  --color-surface-container-highest: rgba(42, 34, 23, 0.96);
   
-  --color-outline-variant: rgba(255, 255, 255, 0.03);
+  --color-outline-variant: rgba(245, 166, 35, 0.22);
 
-  --shadow-glow-primary: 0 0 25px rgba(255, 204, 0, 0.2);
-  --shadow-glow-purple: 0 0 25px rgba(168, 85, 247, 0.2);
-  --shadow-soft: 0 12px 48px rgba(0, 0, 0, 0.5);
-  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-glow-primary: 0 0 25px rgba(245, 166, 35, 0.30);
+  --shadow-glow-purple: 0 0 25px rgba(168, 85, 247, 0.25);
+  --shadow-soft: 0 12px 48px rgba(0, 0, 0, 0.7);
+  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 /* Light Mode Overrides */
@@ -181,7 +204,9 @@
 
 @layer base {
   body {
-    @apply bg-background text-on-surface font-body selection:bg-primary selection:text-white transition-colors duration-300;
+    background-color: #0A0806;
+    color: #FFFFFF;
+    font-family: 'Barlow', sans-serif;
     min-height: 100dvh;
     overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
@@ -193,18 +218,73 @@
   }
 }
 
+/* Global Fixed Background matching Home Screen */
+.app-fundo {
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+  min-height: 100dvh;
+}
+
+.app-fundo::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('/fundo-home.webp');
+  background-size: cover;
+  background-position: top center;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.app-fundo::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(10,8,6,0.60) 0%,
+    rgba(10,8,6,0.72) 18%,
+    rgba(10,8,6,0.82) 42%,
+    rgba(10,8,6,0.90) 70%,
+    rgba(10,8,6,0.96) 100%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+.text-gold-gradient {
+  background: linear-gradient(180deg, #FFF0A0 0%, #F5A623 50%, #C8791A 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
 @layer components {
   .glass-card {
-    @apply bg-surface-container/60 backdrop-blur-2xl border border-white/5 shadow-soft;
+    background: rgba(22, 18, 12, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(245, 166, 35, 0.25);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
   }
 
   .premium-card {
-    @apply bg-surface-container-low border border-white/5 rounded-[24px] transition-all duration-300 relative overflow-hidden;
+    background: rgba(22, 18, 12, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(245, 166, 35, 0.28);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
   }
 
   .premium-card::before {
     content: '';
-    @apply absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent opacity-0 transition-opacity duration-500;
+    @apply absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent opacity-0 transition-opacity duration-500;
   }
 
   .premium-card:hover::before {
@@ -212,32 +292,42 @@
   }
 
   .premium-card:hover {
-    @apply border-primary/30 shadow-[0_32px_64px_rgba(0,0,0,0.6),0_0_30px_rgba(255,204,0,0.1)];
-    transform: translateY(-4px);
+    border-color: rgba(245, 166, 35, 0.55);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(245, 166, 35, 0.2);
+    transform: translateY(-2px);
   }
 
   .money-card {
-    @apply bg-gradient-to-br from-surface-container-high to-surface-container border border-primary/20 rounded-[24px] shadow-xl;
+    background: linear-gradient(135deg, rgba(32, 25, 17, 0.94) 0%, rgba(22, 18, 12, 0.94) 100%);
+    border: 1px solid rgba(245, 166, 35, 0.35);
+    border-radius: 20px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
   }
 
   .primary-glow {
-    box-shadow: 0 0 25px rgba(255, 204, 0, 0.25);
+    box-shadow: 0 0 25px rgba(245, 166, 35, 0.3);
   }
 
   .purple-glow {
-    box-shadow: 0 0 25px rgba(168, 85, 247, 0.25);
+    box-shadow: 0 0 25px rgba(168, 85, 247, 0.3);
   }
 
   .text-glow-primary {
-    text-shadow: 0 0 10px rgba(255, 204, 0, 0.6);
+    text-shadow: 0 0 12px rgba(245, 166, 35, 0.7);
   }
 
   .text-glow-purple {
-    text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+    text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
   }
 
   .stat-card {
-    @apply p-4 bg-surface-container-low rounded-2xl border border-white/5 flex flex-col items-center justify-center gap-1;
+    background: rgba(22, 18, 12, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(245, 166, 35, 0.25);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+    @apply p-4 flex flex-col items-center justify-center gap-1;
   }
 }
 

@@ -658,7 +658,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                 "px-4 py-2.5 rounded-2xl text-xs font-headline font-black italic uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shrink-0 border",
                 selectedCategory === cat.id
                   ? "bg-primary text-black border-primary shadow-lg shadow-primary/20 scale-105"
-                  : "bg-surface-container/60 hover:bg-surface-container border-white/10 text-on-surface-variant hover:text-white"
+                  : "bg-surface-container/85 hover:bg-surface-container-high border-[#F5A623]/20 text-white/90 hover:text-white"
               )}
             >
               <span>{cat.label}</span>
