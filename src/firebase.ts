@@ -21,9 +21,11 @@ import {
   getDocFromServer,
   persistentLocalCache,
   persistentMultipleTabManager,
+  memoryLocalCache,
   setLogLevel
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { Capacitor } from '@capacitor/core';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -60,11 +62,25 @@ const app = getApps().length === 0 ? initializeApp(finalConfig) : getApp();
 const databaseId = finalConfig.firestoreDatabaseId || '(default)';
 console.log('[Firebase] Using Firestore Database ID:', databaseId);
 
+// #223: no app NATIVO nao use cache persistente do Firestore.
+//
+// persistentLocalCache depende de IndexedDB. No WKWebView servindo pelo
+// esquema capacitor://localhost o IndexedDB e inconsistente, e quando ele
+// falha o Firestore NAO lanca erro: as leituras simplesmente ficam
+// penduradas para sempre. Sintoma exato: o app abre, mostra o spinner do
+// perfil e nunca entra.
+//
+// Na web o cache persistente continua ligado normalmente (offline + multi-aba).
+const ehNativo = Capacitor.isNativePlatform();
+console.log('[Firebase] Plataforma nativa:', ehNativo, '| cache:', ehNativo ? 'memoria' : 'persistente');
+
 const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
+  localCache: ehNativo
+    ? memoryLocalCache()
+    : persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
 }, databaseId);
 
 // Suppress clock-skew/system time warnings from logging to the client console
