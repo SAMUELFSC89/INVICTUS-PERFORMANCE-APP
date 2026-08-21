@@ -1,19 +1,25 @@
 // #223: NAO importe modulos da aplicacao aqui de forma estatica.
 //
-// Historico do bug: o app instalava no iPhone e mostrava apenas
-// "Erro Critico de Inicializacao / Script error. :0:0".
-//
 // O WebView do iOS serve os arquivos pelo esquema capacitor://localhost, que o
-// WebKit trata como origem opaca. Consequencia: erros que chegam pelo
-// window.onerror vem sanitizados como "Script error." SEM objeto Error, SEM
-// arquivo e SEM linha. Nenhum handler global consegue recuperar o stack.
+// WebKit trata como origem opaca. Consequencia: TODO erro que chega pelo
+// window.onerror vem sanitizado como "Script error." -- sem objeto Error, sem
+// arquivo, sem linha, sem stack. Nao existe handler global capaz de recuperar
+// essa informacao.
 //
-// A unica forma confiavel de obter o erro real e captura-lo com try/catch
-// dentro do mesmo realm. Por isso o app inteiro agora entra por um import
-// DINAMICO (./boot), e qualquer falha na avaliacao da arvore de modulos vira
-// uma rejeicao de promise com o Error verdadeiro.
+// Por isso o app inteiro entra por um import DINAMICO (./boot): qualquer falha
+// na avaliacao da arvore de modulos vira uma rejeicao de promise com o Error
+// verdadeiro, capturada pelo catch la embaixo.
 
 let appMontou = false;
+let avisoNaTela = false;
+
+// O #root ter filhos e a prova de que o React realmente pintou alguma coisa.
+// Usamos isso, e nao um temporizador, para decidir se a tela de erro pode ou
+// nao tomar conta do app.
+function appJaRenderizou(): boolean {
+  const root = document.getElementById('root');
+  return !!root && root.childElementCount > 0;
+}
 
 function descreverErro(origem: string, bruto: unknown, arquivo?: string, linha?: number, coluna?: number) {
   const err = bruto as any;
@@ -54,12 +60,8 @@ function mostrarTelaDeErro(texto: string) {
   btn.onclick = () => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(texto).then(
-        () => {
-          btn.textContent = 'Copiado!';
-        },
-        () => {
-          btn.textContent = 'Selecione o texto acima para copiar';
-        },
+        () => { btn.textContent = 'Copiado!'; },
+        () => { btn.textContent = 'Selecione o texto acima para copiar'; },
       );
     } else {
       btn.textContent = 'Selecione o texto acima para copiar';
@@ -73,46 +75,86 @@ function mostrarTelaDeErro(texto: string) {
   root.appendChild(box);
 }
 
-// Rede de seguranca. No iOS estes handlers quase sempre recebem "Script error."
-// sem stack -- quem realmente entrega o erro util e o catch do import abaixo.
-// Falha ao CARREGAR um arquivo (script/css) e um caso separado: o evento vem
-// com ev.target apontando para o elemento, e a URL NAO e sanitizada. Esse era
-// o unico dado util disponivel quando o app quebrava no iPhone -- o handler
-// antigo jogava tudo no mesmo balde e so mostrava "Script error.".
+// Quando o app JA esta na tela, um erro global nao pode destruir a interface.
+// Mostramos so um aviso discreto embaixo, que da para dispensar.
+function mostrarAvisoDiscreto(texto: string) {
+  if (avisoNaTela) return;
+  avisoNaTela = true;
+
+  const barra = document.createElement('div');
+  barra.style.cssText =
+    'position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;background:#1c1c1c;border:1px solid #444;' +
+    'border-radius:10px;padding:10px 12px;color:#eee;font-family:-apple-system,sans-serif;font-size:12px;' +
+    'display:flex;gap:8px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+
+  const msg = document.createElement('div');
+  msg.textContent = 'Um erro foi registrado em segundo plano.';
+  msg.style.cssText = 'flex:1;line-height:1.35';
+
+  const copiar = document.createElement('button');
+  copiar.textContent = 'Copiar';
+  copiar.style.cssText = 'padding:6px 10px;font-size:12px;font-weight:700;border:0;border-radius:6px;background:#EAB308;color:#000';
+  copiar.onclick = () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(texto).then(() => { copiar.textContent = 'Copiado'; }, () => {});
+  };
+
+  const fechar = document.createElement('button');
+  fechar.textContent = 'Fechar';
+  fechar.style.cssText = 'padding:6px 10px;font-size:12px;border:0;border-radius:6px;background:#333;color:#eee';
+  fechar.onclick = () => { barra.remove(); avisoNaTela = false; };
+
+  barra.appendChild(msg);
+  barra.appendChild(copiar);
+  barra.appendChild(fechar);
+  document.body.appendChild(barra);
+}
+
+// #223 - AQUI ESTAVA O BUG QUE DERRUBAVA O APP.
 //
-// Precisa de capture=true: evento de erro de recurso nao sobe na fase de bubbling.
+// A versao anterior liberava a tela de erro por 3 segundos apos o boot. Nesse
+// intervalo QUALQUER erro global apagava o #root -- inclusive um erro
+// assincrono e inofensivo, como uma chamada de rede que falhou. E como no iOS
+// todo erro chega mascarado como "Script error.", era impossivel distinguir.
+// Resultado: o app abria normalmente e era coberto pela propria tela de erro.
+//
+// Agora o criterio nao e tempo, e fato: se o React ja pintou alguma coisa no
+// #root, a interface nunca e destruida.
+function tratarErroGlobal(texto: string) {
+  console.error(texto);
+  if (!appMontou && !appJaRenderizou()) {
+    mostrarTelaDeErro(texto);
+  } else {
+    mostrarAvisoDiscreto(texto);
+  }
+}
+
+// Falha ao CARREGAR um arquivo (script/css) e um caso separado: o evento traz
+// ev.target apontando para o elemento e a URL NAO e sanitizada. Precisa de
+// capture=true, porque erro de recurso nao sobe na fase de bubbling.
 window.addEventListener('error', (ev) => {
   const alvo = ev.target as any;
   if (alvo && alvo !== window && (alvo.tagName === 'SCRIPT' || alvo.tagName === 'LINK')) {
     const url = alvo.src || alvo.href || '(sem url)';
-    const texto =
+    tratarErroGlobal(
       '[falha ao carregar arquivo]\n' + alvo.tagName + ': ' + url +
-      '\n\nO WebView nao conseguiu baixar este arquivo. Verifique o caminho gerado' +
-      ' pelo build e o atributo crossorigin no esquema capacitor://.';
-    console.error(texto);
-    if (!appMontou) mostrarTelaDeErro(texto);
+      '\n\nO WebView nao conseguiu baixar este arquivo.'
+    );
     return;
   }
 
-  const texto = descreverErro('erro', ev.error ?? ev.message, ev.filename, ev.lineno, ev.colno);
-  console.error(texto);
-  if (!appMontou) mostrarTelaDeErro(texto);
+  tratarErroGlobal(descreverErro('erro', ev.error ?? ev.message, ev.filename, ev.lineno, ev.colno));
 }, true);
 
 window.addEventListener('unhandledrejection', (ev) => {
-  const texto = descreverErro('promise rejeitada', ev.reason);
-  console.error(texto);
-  if (!appMontou) mostrarTelaDeErro(texto);
+  tratarErroGlobal(descreverErro('promise rejeitada', ev.reason));
 });
 
 import('./boot')
   .then(({ iniciarApp }) => {
     iniciarApp();
-    // Render sincrono passou: o boot deu certo. A partir daqui erros pontuais
-    // nao devem mais derrubar a tela toda -- quem trata e o GlobalErrorBoundary.
-    setTimeout(() => {
-      appMontou = true;
-    }, 3000);
+    // O render do React ja retornou sem lancar: o boot deu certo. Marcamos na
+    // hora, sem temporizador -- era o temporizador que causava o bug acima.
+    appMontou = true;
   })
   .catch((e) => {
     mostrarTelaDeErro(descreverErro('falha ao carregar o app', e));
