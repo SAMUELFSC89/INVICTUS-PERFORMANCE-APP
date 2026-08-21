@@ -60,4 +60,15 @@ function instalarInterceptadorDeApi() {
   console.log('[API nativa] chamadas /api redirecionadas para ' + base);
 }
 
+// #232: marca o <html> com a classe app-nativo.
+//
+// E o gancho que permite ao CSS aplicar ajustes que so fazem sentido dentro do
+// app -- esconder a barra de rolagem, respeitar as areas seguras do iPhone e
+// desligar a selecao de texto -- sem alterar em nada o site.
+function marcarPlataformaNativa() {
+  if (!Capacitor.isNativePlatform()) return;
+  document.documentElement.classList.add('app-nativo');
+}
+
+marcarPlataformaNativa();
 instalarInterceptadorDeApi();

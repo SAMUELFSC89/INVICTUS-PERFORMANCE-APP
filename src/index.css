@@ -258,3 +258,55 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-primary/40;
 }
+
+/* ============================================================
+   #232 - AJUSTES EXCLUSIVOS DO APP NATIVO
+
+   A classe .app-nativo e adicionada ao <html> no boot quando
+   Capacitor.isNativePlatform(). Na web nada daqui se aplica, entao o
+   site continua exatamente como esta.
+   ============================================================ */
+
+/* 1. Barra de rolagem visivel.
+      No navegador uma barra fina e util. Dentro de um app ela denuncia
+      na hora que aquilo e uma pagina web -- foi o que apareceu no print. */
+html.app-nativo ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+html.app-nativo * {
+  scrollbar-width: none;
+}
+
+/* 2. Areas seguras (notch, relogio, bateria e a barra de gestos).
+      So funcionam porque o index.html passou a declarar viewport-fit=cover;
+      sem isso env(safe-area-inset-*) devolve sempre 0. */
+html.app-nativo #main-header {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+html.app-nativo #bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 3. Selecao de texto e menu de copiar ao segurar o dedo: comportamento de
+      site, nao de app. Mantemos onde realmente faz falta -- campos de
+      formulario e os paineis de erro/diagnostico. */
+html.app-nativo {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+html.app-nativo input,
+html.app-nativo textarea,
+html.app-nativo pre,
+html.app-nativo [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 4. Efeito elastico ao chegar no fim da rolagem. */
+html.app-nativo,
+html.app-nativo body {
+  overscroll-behavior: none;
+}
