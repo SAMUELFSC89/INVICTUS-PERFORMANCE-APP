@@ -9,6 +9,8 @@ export interface SecurityConfig {
     maxActivityAgeDays: number;
     maxFutureTimestampToleranceSec: number;
     maxDistanceKm: number;
+    minDistanceKmPer10Min: number;
+    movementCheckTypes: string[];
     requireGpsForTypes: string[];
     requireHeartRateForTypes: string[];
     allowedDataSources: string[];
@@ -48,6 +50,7 @@ export interface SecurityConfig {
     badGpsAccuracy: number;
     absentHeartRateWhenRequired: number;
     suspiciousDeviceEnvironment: number;
+    insufficientMovement: number;
   };
 
   // Risk Brackets
@@ -77,6 +80,12 @@ export const SECURITY_CONFIG: SecurityConfig = {
     maxActivityAgeDays: 30,
     maxFutureTimestampToleranceSec: 300, // 5 min clock skew allowance
     maxDistanceKm: 150, // max single session distance
+    // #231: deslocamento minimo exigido por faixa de 10 min de atividade.
+    // 0.5 km / 10 min equivale a 3 km/h. Vale SOMENTE para os tipos listados em
+    // movementCheckTypes (os mesmos que exigem GPS). Cardio indoor (esteira,
+    // ergometrica), quando existir, fica de fora de proposito.
+    minDistanceKmPer10Min: 0.5,
+    movementCheckTypes: ["RUNNING", "CYCLING", "WALKING", "OUTDOOR_HIKE"],
     requireGpsForTypes: ["RUNNING", "CYCLING", "WALKING", "OUTDOOR_HIKE"],
     requireHeartRateForTypes: ["HIIT", "INTENSE_CARDIO", "CROSSFIT"],
     allowedDataSources: [
@@ -123,7 +132,10 @@ export const SECURITY_CONFIG: SecurityConfig = {
     impossibleHeartRate: 30,
     badGpsAccuracy: 10,
     absentHeartRateWhenRequired: 15,
-    suspiciousDeviceEnvironment: 20
+    suspiciousDeviceEnvironment: 20,
+    // 75 ultrapassa underReviewMaxRiskScore (70): decisao vira BLOCKED e
+    // shouldScore fica false, ou seja, a atividade nao pontua.
+    insufficientMovement: 75
   },
 
   riskLevels: {
