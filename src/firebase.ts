@@ -1,6 +1,8 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getAuth, 
+  getAuth,
+  initializeAuth,
+  browserLocalPersistence, 
   onAuthStateChanged, 
   signInWithPopup, 
   signInWithRedirect, 
@@ -26,6 +28,17 @@ import {
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
+
+// #223 - INSTRUMENTACAO TEMPORARIA.
+// Nao ha console acessivel no iPhone sem um Mac. Registramos marcos do boot
+// com tempo para que o proprio app possa dizer onde travou.
+const marcos: string[] = [];
+(window as any).__invictusDiag = marcos;
+export function marcarDiag(m: string) {
+  const t = Math.round(performance.now());
+  marcos.push(t + 'ms  ' + m);
+  console.log('[DIAG] ' + t + 'ms ' + m);
+}
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -125,7 +138,24 @@ if (storedPid && storedPid !== currentPid) {
   localStorage.setItem('fb_project_id', currentPid);
 }
 
-const auth = getAuth(app);
+// #223: no app nativo NAO deixe o Firebase Auth escolher IndexedDB sozinho.
+//
+// O Auth persiste a sessao em IndexedDB por padrao. Sob o esquema
+// capacitor:// o IndexedDB e inconsistente no WKWebView, e quando ele trava
+// o onAuthStateChanged pode simplesmente NUNCA disparar -- o app fica preso
+// na tela de carregamento sem nenhum erro. browserLocalPersistence usa
+// localStorage, que funciona de forma confiavel nesse ambiente.
+const auth = ehNativo
+  ? initializeAuth(app, { persistence: browserLocalPersistence })
+  : getAuth(app);
+marcarDiag('auth inicializado (persistencia: ' + (ehNativo ? 'localStorage' : 'padrao') + ')');
+
+// Marca se e quando o estado de autenticacao resolve. Se este marco nunca
+// aparecer no diagnostico, o problema esta no Auth, nao na leitura de dados.
+onAuthStateChanged(auth, (u) => {
+  marcarDiag('onAuthStateChanged -> ' + (u ? 'com usuario' : 'sem usuario'));
+});
+marcarDiag('firestore pronto (cache: ' + (ehNativo ? 'memoria' : 'persistente') + ')');
 const storage = getStorage(app);
 
 export { 
