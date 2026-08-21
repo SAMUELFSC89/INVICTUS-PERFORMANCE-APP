@@ -240,7 +240,8 @@ setTimeout(() => {
   document.body.appendChild(barra);
 }, 20000);
 
-import('./boot')
+import('./apiNativa')
+  .then(() => import('./boot'))
   .then(({ iniciarApp }) => {
     iniciarApp();
     // O render do React ja retornou sem lancar: o boot deu certo. Marcamos na
