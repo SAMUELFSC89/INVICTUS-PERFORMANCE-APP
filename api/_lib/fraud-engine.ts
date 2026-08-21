@@ -3,6 +3,7 @@ import { GpsEngine, GpsEngineReport } from './gps-engine.js';
 import { SensorEngine, SensorEngineReport } from './sensor-engine.js';
 import { HealthEngine, HealthEngineReport } from './health-engine.js';
 import { PhotoEngine, PhotoEngineReport } from './photo-engine.js';
+import { SECURITY_CONFIG } from './security-config.js';
 
 export interface FraudEvidence {
   code: string;
@@ -224,6 +225,39 @@ export class FraudEngine {
         description: `Frequência cardíaca média de ${avgHr} BPM excede o limite fisiológico humano.`,
         weightPenalty: 30
       });
+    }
+
+    // #231: MOVIMENTO REAL EM ATIVIDADE COM GPS.
+    //
+    // Ate 2026-08 nenhum motor exigia deslocamento. O ValidationEngine aceitava
+    // distanceKm >= 0 (zero passava) e a formula de pontos (ranking-points.ts)
+    // recebe apenas duracao -- distancia nunca foi parametro. Resultado: ficar
+    // parado com o GPS ligado por N minutos pontuava igual a uma corrida real.
+    //
+    // A regra vale SOMENTE para os tipos de movementCheckTypes (os mesmos que
+    // exigem GPS). Cardio indoor (esteira, ergometrica), quando existir, fica
+    // de fora de proposito e precisara de um caminho de validacao proprio.
+    //
+    // A penalidade (75) ultrapassa underReviewMaxRiskScore (70), entao a decisao
+    // vira BLOCKED e shouldScore fica false: a atividade e reprovada e nao pontua.
+    const tipoAtividade = (activity.activityType || activity.type || activity.sportType || '')
+      .toString()
+      .toUpperCase();
+    const exigeMovimento = SECURITY_CONFIG.validation.movementCheckTypes.includes(tipoAtividade);
+    if (exigeMovimento && durationMins > 0) {
+      const distanciaKm = Number(
+        activity.distanceKm || (activity.distanceMeters ? activity.distanceMeters / 1000 : 0)
+      ) || 0;
+      const minimoKm = (durationMins / 10) * SECURITY_CONFIG.validation.minDistanceKmPer10Min;
+      if (distanciaKm < minimoKm) {
+        evidences.push({
+          code: 'INSUFFICIENT_MOVEMENT',
+          category: 'PHYSICAL_IMPOSSIBILITY',
+          severity: 'CRITICAL',
+          description: `Deslocamento de ${distanciaKm.toFixed(2)} km em ${durationMins} min esta abaixo do minimo exigido (${minimoKm.toFixed(2)} km) para atividades do tipo ${tipoAtividade}.`,
+          weightPenalty: SECURITY_CONFIG.riskPenalties.insufficientMovement
+        });
+      }
     }
 
     // 7. Duplicate Activity Replay
