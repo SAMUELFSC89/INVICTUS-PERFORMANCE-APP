@@ -557,13 +557,37 @@ export const activityService = {
 
       const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned } = respData;
 
-      this.cancelSession();
+      // #230: fechar a sessao no SERVIDOR antes de limpar o estado local, e
+        // esperar a confirmacao.
+        //
+        // Antes desta correcao: cancelSession() marcava o documento como
+        // 'cancelled' e, na linha seguinte, outro updateDoc tentava marcar
+        // 'completed'. Duas escritas concorrentes no MESMO documento, ambas
+        // disparadas sem await e com o erro engolido por .catch(() => {}).
+        //
+        // Se qualquer uma falhasse, ninguem ficava sabendo e o documento
+        // permanecia com status 'active'. Na abertura seguinte o startSession
+        // encontrava esse documento ativo com menos de 4 horas e restaurava a
+        // sessao -- era por isso que a corrida voltava como se nunca tivesse
+        // sido finalizada.
+        try {
+          await updateDoc(doc(db, 'active_sessions', session.id), {
+            status: 'completed',
+            endTime: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        } catch (erroFecho) {
+          console.error('[activityService] Falha ao marcar a sessao como concluida no servidor:', erroFecho);
+          // Marca local de ultimo recurso: impede que o startSession restaure
+          // uma sessao que o usuario ja encerrou, mesmo se a escrita falhar.
+          try {
+            localStorage.setItem('sessao_encerrada_' + session.id, new Date().toISOString());
+          } catch (e) {}
+        }
 
-      updateDoc(doc(db, 'active_sessions', session.id), {
-        status: 'completed',
-        endTime: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }).catch(() => {});
+        // Agora sim limpamos o estado local. Nao usamos cancelSession() aqui
+        // porque ele dispararia status 'cancelled' por cima do 'completed'.
+        this.limparEstadoLocal();
 
       const finalUserMessage = userMessage || message || 'Não conseguimos validar esta atividade no momento. Tente novamente seguindo as regras do desafio.';
 
@@ -637,9 +661,16 @@ export const activityService = {
           status: 'cancelled',
           endTime: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }).catch(() => {});
+        }).catch(err => console.warn('[activityService] Falha ao cancelar a sessao no servidor:', err));
       } catch (e) {}
     }
+    this.limparEstadoLocal();
+  },
+
+  // #230: limpeza puramente local. Separada do cancelSession para que o
+  // endSession possa encerrar a sessao como 'completed' sem que uma escrita
+  // de 'cancelled' passe por cima.
+  limparEstadoLocal() {
     if (typeof window !== 'undefined' && activeMotionHandler) {
       window.removeEventListener('devicemotion', activeMotionHandler);
       activeMotionHandler = null;
@@ -649,5 +680,6 @@ export const activityService = {
     localStorage.removeItem('kmfatal_start_time');
     localStorage.removeItem('kmfatal_total_distance');
     localStorage.removeItem('kmfatal_run_points');
+  }
   }
 };
