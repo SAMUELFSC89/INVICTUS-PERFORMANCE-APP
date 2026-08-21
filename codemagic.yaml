@@ -157,6 +157,32 @@ workflows:
             echo "Sem Podfile: projeto usa Swift Package Manager."
           fi
 
+      - name: Aplicar entitlements ao projeto Xcode
+        script: |
+          set -e
+          PBX="ios/App/App.xcodeproj/project.pbxproj"
+
+          # #228: o passo anterior CRIA o App.entitlements, mas ate agora nada
+          # apontava para ele. O Xcode so embute os entitlements no binario se a
+          # build setting CODE_SIGN_ENTITLEMENTS referenciar o arquivo. Sem isso
+          # o arquivo fica orfao: o app sai SEM HealthKit e SEM aps-environment,
+          # o iOS nao reconhece as capacidades e o Apple Health nunca conecta.
+          #
+          # Isso tambem explicava por que a build passava: entitlement ausente
+          # nao conflita com o perfil, entao a assinatura nao reclamava.
+          #
+          # O caminho e relativo ao SRCROOT (ios/App), por isso App/App.entitlements.
+          if grep -q "CODE_SIGN_ENTITLEMENTS" "$PBX"; then
+            echo "CODE_SIGN_ENTITLEMENTS ja presente -- nada a fazer."
+          else
+            perl -0pi -e 's/(\n(\s*)PRODUCT_BUNDLE_IDENTIFIER = )/\n$2CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;$1/g' "$PBX"
+            echo "CODE_SIGN_ENTITLEMENTS adicionado ao projeto."
+          fi
+
+          echo "Ocorrencias de CODE_SIGN_ENTITLEMENTS: $(grep -c CODE_SIGN_ENTITLEMENTS "$PBX")"
+          echo "--- conteudo do App.entitlements ---"
+          cat ios/App/App/App.entitlements
+
       - name: Buscar certificados e perfis da conta Apple
         script: |
           set -e
