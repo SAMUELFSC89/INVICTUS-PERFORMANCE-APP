@@ -305,10 +305,12 @@ function getScreenContext(pathname: string) {
 // Siri / ChatGPT style visual voice feedback wave & orb
 function SiriChatGPTVoiceVisualizer({
   mode,
-  onStop
+  onStop,
+  aiName
 }: {
   mode: 'listening' | 'thinking' | 'speaking';
   onStop?: () => void;
+  aiName?: string;
 }) {
   return (
     <motion.div
@@ -381,7 +383,7 @@ function SiriChatGPTVoiceVisualizer({
               {mode === 'listening'
                 ? 'Ouvindo sua voz...'
                 : mode === 'speaking'
-                ? 'Invictus IA Falando...'
+                ? `${aiName || 'Invictus IA'} Falando...`
                 : 'Analisando fisiologia e dados...'}
             </span>
           </div>
@@ -711,7 +713,7 @@ export function InvictusAIFloatingAssistant() {
         {
           id: 'init_msg',
           sender: 'ai',
-          text: `Olá, ${user.name || 'Atleta'}! Sou a **Invictus IA**, seu especialista em fisiologia, treinamento e inteligência do seu desempenho.
+          text: `Olá, ${user.name || 'Atleta'}! Sou a **${user?.aiName || 'IA Invictus'}**, seu especialista em fisiologia, treinamento e inteligência do seu desempenho.
 
 Estou acompanhando você na tela de **${screenCtx.name}**. Como posso ajudar na sua evolução agora?`,
           confidence: 'ALTA',
@@ -1259,7 +1261,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
 
                   <div className="min-w-0 flex-1">
                     <div className={`text-xs font-black uppercase tracking-wide truncate ${isListening ? 'text-rose-400' : 'text-emerald-300'}`}>
-                      {isListening ? 'Ouvindo sua voz...' : 'Invictus IA Falando...'}
+                      {isListening ? 'Ouvindo sua voz...' : `${user?.aiName || 'Invictus IA'} Falando...`}
                     </div>
                     {/* Frequency bars */}
                     <div className="flex items-center gap-1 mt-0.5 h-3">
@@ -1335,7 +1337,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
 
               {/* Smaller Label under orb */}
               <span className="text-[9px] font-black uppercase tracking-tight text-emerald-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] bg-zinc-950/90 px-2 py-0.5 rounded-full border border-emerald-500/40 whitespace-nowrap shadow-sm">
-                IA Invictus
+                {user?.aiName || 'IA Invictus'}
               </span>
             </button>
           </motion.div>
@@ -1364,7 +1366,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <h3 className="font-headline italic font-black text-base sm:text-xl text-white uppercase tracking-tight">
-                        INVICTUS IA
+                        {(user?.aiName || 'INVICTUS IA').toUpperCase()}
                       </h3>
                       <span className="text-[9px] font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
                         <Radio size={10} className="animate-pulse text-emerald-400" />
@@ -1411,7 +1413,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                         ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
                         : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
                     }`}
-                    title="Sobre a Invictus IA (Segurança e Termos)"
+                    title={`Sobre a ${user?.aiName || 'Invictus IA'} (Segurança e Termos)`}
                   >
                     <Info size={16} />
                   </button>
@@ -1428,7 +1430,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                         ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
                         : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
                     }`}
-                    title="Memórias do Invictus IA"
+                    title={`Memórias da ${user?.aiName || 'Invictus IA'}`}
                   >
                     <Brain size={16} />
                   </button>
@@ -1710,13 +1712,13 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
               {/* Dynamic Voice/Audio Siri/ChatGPT Visualizer Banner */}
               <AnimatePresence>
                 {isListening && (
-                  <SiriChatGPTVoiceVisualizer mode="listening" onStop={toggleVoiceInput} />
+                  <SiriChatGPTVoiceVisualizer mode="listening" onStop={toggleVoiceInput} aiName={user?.aiName} />
                 )}
                 {!isListening && loading && (
-                  <SiriChatGPTVoiceVisualizer mode="thinking" />
+                  <SiriChatGPTVoiceVisualizer mode="thinking" aiName={user?.aiName} />
                 )}
                 {!isListening && !loading && isSpeaking && (
-                  <SiriChatGPTVoiceVisualizer mode="speaking" onStop={stopSpeaking} />
+                  <SiriChatGPTVoiceVisualizer mode="speaking" onStop={stopSpeaking} aiName={user?.aiName} />
                 )}
               </AnimatePresence>
 
@@ -1837,7 +1839,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
               <div className="shrink-0 my-1 bg-zinc-900/90 border border-zinc-800/80 rounded-xl p-2 px-3 flex items-center gap-2 text-[10px] text-zinc-400">
                 <ShieldAlert size={14} className="text-emerald-400/80 shrink-0" />
                 <span className="leading-tight">
-                  A Invictus IA pode cometer erros. As respostas possuem finalidade educativa e informativa e não substituem orientação profissional.
+                  A {user?.aiName || 'Invictus IA'} pode cometer erros. As respostas possuem finalidade educativa e informativa e não substituem orientação profissional.
                 </span>
               </div>
 
@@ -1937,7 +1939,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                 </div>
                 <div>
                   <h2 className="font-headline italic font-black text-xl sm:text-2xl text-white tracking-tight uppercase">
-                    Bem-vindo à Invictus IA
+                    Bem-vindo à {user?.aiName || 'Invictus IA'}
                   </h2>
                   <p className="text-xs text-emerald-400 font-medium">
                     Inteligência Artificial & Fisiologia do Exercício
@@ -1947,7 +1949,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
 
               {/* Introduction */}
               <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
-                A <strong>Invictus IA</strong> utiliza inteligência artificial para analisar seus dados e responder perguntas sobre saúde, atividade física, desempenho e funcionamento do aplicativo.
+                A <strong>{user?.aiName || 'Invictus IA'}</strong> utiliza inteligência artificial para analisar seus dados e responder perguntas sobre saúde, atividade física, desempenho e funcionamento do aplicativo.
               </p>
 
               {/* Capabilities list */}
@@ -2001,7 +2003,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-amber-400 font-bold">•</span>
-                    <span>A Invictus IA <strong>não realiza diagnósticos médicos</strong>.</span>
+                    <span>A {user?.aiName || 'Invictus IA'} <strong>não realiza diagnósticos médicos</strong>.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-amber-400 font-bold">•</span>
@@ -2049,7 +2051,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                   </div>
                   <div>
                     <h2 className="font-headline italic font-black text-lg sm:text-xl text-white uppercase tracking-tight">
-                      Sobre a Invictus IA
+                      Sobre a {user?.aiName || 'Invictus IA'}
                     </h2>
                     <p className="text-xs text-zinc-400">
                       Funcionamento, Uso de Dados, Privacidade e Segurança
@@ -2073,7 +2075,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                     Como a IA Funciona
                   </h3>
                   <p>
-                    A Invictus IA combina modelos avançados de inteligência artificial com princípios consolidados de fisiologia do esporte. Ela interpreta o histórico de treinos registrados (frequência semanal, tempo, calorias METs, IGA e frequência cardíaca via smartwatch) para responder perguntas e apoiar sua rotina esportiva.
+                    A {user?.aiName || 'Invictus IA'} combina modelos avançados de inteligência artificial com princípios consolidados de fisiologia do esporte. Ela interpreta o histórico de treinos registrados (frequência semanal, tempo, calorias METs, IGA e frequência cardíaca via smartwatch) para responder perguntas e apoiar sua rotina esportiva.
                   </p>
                 </div>
 

@@ -78,6 +78,7 @@ export interface UserProfile {
   age: number;
   birthDate: string; // ISO date string
   cpf: string;
+  phone: string;
   sex: Sex;
   weeklyFrequency: WorkoutFrequency;
   objective: TrainingObjective;
@@ -86,6 +87,10 @@ export interface UserProfile {
   dietaryPreference?: string;
   imc: number;
   
+  // AI Assistant Customization
+  aiName?: string;
+  aiPersonality?: 'motivadora' | 'tecnica' | 'direta' | 'zen';
+
   // Diet generation fields
   dailyCalories?: number;
   macros?: {
@@ -314,6 +319,7 @@ export interface Workout {
   duration?: number; // in minutes
   distance?: number; // in km
   points?: number;
+  rankingPointsEarned?: number;
   gymId?: string;
   
   // Anti-fraud and Validation fields

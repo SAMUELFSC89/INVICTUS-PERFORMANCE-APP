@@ -1,515 +1,569 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, ChevronLeft, Check, Dumbbell, Target, User, Ruler, Calendar, Heart, Star, MapPin } from 'lucide-react';
-import { UserProfile, Sex, WorkoutFrequency, TrainingObjective, BodySelfAssessment } from '../types';
-import { fitnessService } from '../services/fitnessService';
+import React, { useState } from 'react';
+import { motion } from 'motion/react';
+import { 
+  User, 
+  Mail, 
+  Lock, 
+  Phone, 
+  Calendar, 
+  Fingerprint, 
+  Check, 
+  AlertCircle, 
+  Loader2, 
+  ShieldCheck,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { UserProfile } from '../types';
 import { userService } from '../services/userService';
-import { cn } from '../lib/utils';
+import { auth, createUserWithEmailAndPassword } from '../firebase';
+import { InvictusLogo } from './InvictusLogo';
 
 interface OnboardingProps {
-  user: UserProfile;
+  user?: UserProfile | null;
   onComplete: () => void;
 }
 
-type StepId = 'username' | 'sex_age' | 'body' | 'frequency' | 'objective' | 'assessment' | 'gym';
+// Format CPF to 000.000.000-00
+export function maskCPF(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  return digits
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
+}
+
+// Strict CPF validator with real verification digit calculation
+export function validateCPF(cpf: string): boolean {
+  const clean = cpf.replace(/\D/g, '');
+  if (clean.length !== 11) return false;
+
+  // Reject CPF where all digits are identical (e.g. 00000000000, 11111111111, etc.)
+  if (/^(\d)\1{10}$/.test(clean)) return false;
+
+  // Calculate first verification digit
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += parseInt(clean.charAt(i), 10) * (10 - i);
+  }
+  let remainder = 11 - (sum % 11);
+  let digit1 = remainder >= 10 ? 0 : remainder;
+  if (digit1 !== parseInt(clean.charAt(9), 10)) return false;
+
+  // Calculate second verification digit
+  sum = 0;
+  for (let i = 0; i < 10; i++) {
+    sum += parseInt(clean.charAt(i), 10) * (11 - i);
+  }
+  remainder = 11 - (sum % 11);
+  let digit2 = remainder >= 10 ? 0 : remainder;
+  if (digit2 !== parseInt(clean.charAt(10), 10)) return false;
+
+  return true;
+}
+
+// Format Phone to (00) 00000-0000
+export function maskPhone(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) {
+    return digits.length > 0 ? `(${digits}` : '';
+  }
+  if (digits.length <= 6) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  }
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+}
+
+// Valid Brazilian DDDs (2 digits)
+const VALID_DDDS = new Set([
+  '11', '12', '13', '14', '15', '16', '17', '18', '19',
+  '21', '22', '24', '27', '28',
+  '31', '32', '33', '34', '35', '37', '38',
+  '41', '42', '43', '44', '45', '46', '47', '48', '49',
+  '51', '53', '54', '55',
+  '61', '62', '63', '64', '65', '66', '67', '68', '69',
+  '71', '73', '74', '75', '77', '79',
+  '81', '82', '83', '84', '85', '86', '87', '88', '89',
+  '91', '92', '93', '94', '95', '96', '97', '98', '99'
+]);
+
+export function validatePhone(phone: string): { valid: boolean; error?: string } {
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) {
+    return { valid: false, error: 'Celular/WhatsApp é obrigatório.' };
+  }
+  if (digits.length < 2) {
+    return { valid: false, error: 'Informe o DDD obrigatório.' };
+  }
+  const ddd = digits.slice(0, 2);
+  if (!VALID_DDDS.has(ddd)) {
+    return { valid: false, error: 'DDD inválido. Informe um DDD válido.' };
+  }
+  if (digits.length < 11) {
+    return { valid: false, error: 'Informe o número completo com 9 dígitos e DDD.' };
+  }
+  return { valid: true };
+}
+
+// Birth date validator: no future dates, minimum 16 years old
+export function validateBirthDate(dateStr: string): { valid: boolean; age?: number; error?: string } {
+  if (!dateStr) {
+    return { valid: false, error: 'Data de nascimento é obrigatória.' };
+  }
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) {
+    return { valid: false, error: 'Data de nascimento inválida.' };
+  }
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  const birthDate = new Date(year, month, day);
+
+  if (
+    isNaN(birthDate.getTime()) || 
+    birthDate.getFullYear() !== year || 
+    birthDate.getMonth() !== month || 
+    birthDate.getDate() !== day
+  ) {
+    return { valid: false, error: 'Data de nascimento inválida.' };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (birthDate > today) {
+    return { valid: false, error: 'A data de nascimento não pode estar no futuro.' };
+  }
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+
+  if (age < 16) {
+    return { valid: false, age, error: 'É necessário ter pelo menos 16 anos para se cadastrar.' };
+  }
+  if (age > 120) {
+    return { valid: false, age, error: 'Data de nascimento inválida.' };
+  }
+
+  return { valid: true, age };
+}
 
 export function Onboarding({ user, onComplete }: OnboardingProps) {
-  const activeSteps = useMemo<StepId[]>(() => {
-    const steps: StepId[] = [];
+  // Form fields state
+  const [name, setName] = useState(user?.name || user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || auth.currentUser?.email || '');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [cpf, setCpf] = useState(user?.cpf ? maskCPF(user.cpf) : '');
+  const [phone, setPhone] = useState(user?.phone || user?.phoneNumber ? maskPhone(user.phone || user.phoneNumber || '') : '');
+  const [birthDate, setBirthDate] = useState(user?.birthDate || '');
+  const [termsAccepted, setTermsAccepted] = useState(user?.termsAccepted ?? false);
 
-    // 1. Username / Apelido
-    if (!user.username) {
-      steps.push('username');
-    }
-
-    // 2. Sexo e Idade
-    if (!user.sex || !user.age || user.age === 0) {
-      steps.push('sex_age');
-    }
-
-    // 3. Medidas (Peso e Altura)
-    if (!user.weight || !user.height || user.weight === 0 || user.height === 0) {
-      steps.push('body');
-    }
-
-    // 4. Frequência Semanal
-    if (!user.weeklyFrequency) {
-      steps.push('frequency');
-    }
-
-    // 5. Objetivo
-    if (!user.objective) {
-      steps.push('objective');
-    }
-
-    // 6. Autoavaliação
-    if (!user.bodySelfAssessment) {
-      steps.push('assessment');
-    }
-
-    // 7. Academia / Arena
-    if (!user.gymId) {
-      steps.push('gym');
-    }
-
-    return steps;
-  }, [user]);
-
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  // Status & Validation error states
   const [loading, setLoading] = useState(false);
+  const [generalError, setGeneralError] = useState('');
+  const [errors, setErrors] = useState<{
+    name?: string;
+    email?: string;
+    password?: string;
+    cpf?: string;
+    phone?: string;
+    birthDate?: string;
+    termsAccepted?: string;
+  }>({});
 
-  useEffect(() => {
-    if (activeSteps.length === 0) {
-      onComplete();
-    }
-  }, [activeSteps, onComplete]);
-
-  const currentStepId = activeSteps[currentStepIndex] || 'gym';
-  const totalSteps = activeSteps.length || 1;
-  const currentStepNumber = currentStepIndex + 1;
-  
-  const [formData, setFormData] = useState({
-    username: user.username || '',
-    gymId: user.gymId || '',
-    gymName: user.gymName || '',
-    gymLocation: user.gymLocation || null as { lat: number; lng: number } | null,
-    weight: user.weight || 70,
-    height: user.height || 170,
-    age: user.age || 25,
-    sex: user.sex || 'male' as Sex,
-    weeklyFrequency: user.weeklyFrequency || '3-4' as WorkoutFrequency,
-    objective: user.objective || 'emagrecer' as TrainingObjective,
-    bodySelfAssessment: user.bodySelfAssessment || 'normal' as BodySelfAssessment,
-    dietaryRestrictions: user.dietaryRestrictions || [],
-    dietaryPreference: user.dietaryPreference || 'simples'
-  });
-
-  const [nearbyGyms, setNearbyGyms] = useState<any[]>([]);
-  const [gymLoading, setGymLoading] = useState(false);
-  const [gymError, setGymError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (currentStepId === 'gym') {
-      loadNearbyGyms();
-    }
-  }, [currentStepId]);
-
-  const loadNearbyGyms = async () => {
-    setGymLoading(true);
-    setGymError(null);
-    try {
-      const { getCurrentLocation } = await import('../lib/locationUtils');
-      const loc = await getCurrentLocation(true);
-      
-      const { gymService } = await import('../services/gymService');
-      const gyms = await gymService.searchNearbyGyms(loc.lat, loc.lng);
-      setNearbyGyms(gyms);
-    } catch (error: any) {
-      console.error('Failed to load nearby gyms:', error);
-      setGymError(error.message || 'Erro ao localizar academias. Tente novamente.');
-    } finally {
-      setGymLoading(false);
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const masked = maskCPF(e.target.value);
+    setCpf(masked);
+    if (errors.cpf) {
+      setErrors(prev => ({ ...prev, cpf: undefined }));
     }
   };
 
-  const handleNext = () => {
-    if (currentStepId === 'username' && !formData.username) {
-      alert('Escolha um apelido!');
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const masked = maskPhone(e.target.value);
+    setPhone(masked);
+    if (errors.phone) {
+      setErrors(prev => ({ ...prev, phone: undefined }));
+    }
+  };
+
+  const handleBirthDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setBirthDate(e.target.value);
+    if (errors.birthDate) {
+      setErrors(prev => ({ ...prev, birthDate: undefined }));
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: typeof errors = {};
+
+    // 1. Nome
+    if (!name.trim()) {
+      newErrors.name = 'Nome completo é obrigatório.';
+    } else if (name.trim().split(' ').length < 2) {
+      newErrors.name = 'Por favor, informe seu nome e sobrenome.';
+    }
+
+    // 2. Email
+    if (!email.trim()) {
+      newErrors.email = 'E-mail é obrigatório.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      newErrors.email = 'Informe um endereço de e-mail válido.';
+    }
+
+    // 3. Senha (se usuário não estiver autenticado ou desejar alterar)
+    if (!auth.currentUser && !password) {
+      newErrors.password = 'A senha é obrigatória.';
+    } else if (password && password.length < 6) {
+      newErrors.password = 'A senha deve conter no mínimo 6 caracteres.';
+    }
+
+    // 4. CPF: máscara e validação real com dígitos verificadores
+    if (!cpf.trim()) {
+      newErrors.cpf = 'CPF é obrigatório.';
+    } else if (!validateCPF(cpf)) {
+      newErrors.cpf = 'CPF inválido. Verifique os dígitos digitados.';
+    }
+
+    // 5. Celular / WhatsApp: máscara e DDD obrigatório
+    const phoneValidation = validatePhone(phone);
+    if (!phoneValidation.valid) {
+      newErrors.phone = phoneValidation.error;
+    }
+
+    // 6. Data de nascimento: sem datas futuras e idade mínima de 16 anos
+    const birthValidation = validateBirthDate(birthDate);
+    if (!birthValidation.valid) {
+      newErrors.birthDate = birthValidation.error;
+    }
+
+    // 7. Termos de uso
+    if (!termsAccepted) {
+      newErrors.termsAccepted = 'Você deve aceitar os Termos de Uso e Regras do Desafio.';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGeneralError('');
+
+    if (!validateForm()) {
       return;
     }
-    if (currentStepId === 'gym' && !formData.gymId) {
-      alert('Selecione sua academia!');
-      return;
-    }
-    if (currentStepIndex < totalSteps - 1) {
-      setCurrentStepIndex(prev => prev + 1);
-    } else {
-      handleSubmit();
-    }
-  };
 
-  const handleBack = () => {
-    if (currentStepIndex > 0) {
-      setCurrentStepIndex(prev => prev - 1);
-    }
-  };
-
-  const handleSubmit = async () => {
     setLoading(true);
-    try {
-      const imc = fitnessService.calculateIMC(formData.weight, formData.height);
-      const league = fitnessService.classifyLeague(imc, formData.weeklyFrequency, formData.bodySelfAssessment);
-      const calories = fitnessService.calculateDailyCalories(
-        formData.weight, 
-        formData.height, 
-        formData.age, 
-        formData.sex, 
-        formData.weeklyFrequency, 
-        formData.objective
-      );
-      const macros = fitnessService.calculateMacros(calories, formData.objective, formData.weight);
 
+    try {
+      const cleanCpf = cpf.replace(/\D/g, '');
+      const cleanPhone = phone.replace(/\D/g, '');
+      const birthValidation = validateBirthDate(birthDate);
+      const calculatedAge = birthValidation.age || 0;
+
+      if (!auth.currentUser && email && password) {
+        // Criar usuário com email e senha no Firebase Auth
+        await createUserWithEmailAndPassword(auth, email.trim(), password);
+      }
+
+      // Atualizar perfil do usuário com os dados obrigatórios
       await userService.updateProfile({
-        ...formData,
-        displayNameLower: formData.username.toLowerCase(),
-        imc,
-        league,
-        dailyCalories: calories,
-        macros,
+        name: name.trim(),
+        displayName: name.trim(),
+        email: email.trim(),
+        cpf: cleanCpf,
+        phone: cleanPhone,
+        phoneNumber: cleanPhone,
+        birthDate: birthDate,
+        age: calculatedAge,
         termsAccepted: true,
         termsAcceptedAt: new Date().toISOString(),
-        seasonStartedAt: new Date().toISOString(),
-        lastSeasonResetAt: new Date().toISOString()
+        whatsappEnabled: true
       });
+
       onComplete();
-    } catch (error) {
-      console.error('Failed to save onboarding:', error);
+    } catch (err: any) {
+      console.error('Erro ao salvar cadastro:', err);
+      const code = err?.code || '';
+      const msg = err?.message || '';
+
+      if (code === 'auth/email-already-in-use' || msg.includes('email-already-in-use')) {
+        setErrors(prev => ({ ...prev, email: 'Este e-mail já está cadastrado em outra conta.' }));
+      } else if (code === 'auth/weak-password' || msg.includes('weak-password')) {
+        setErrors(prev => ({ ...prev, password: 'A senha escolhida é muito fraca.' }));
+      } else if (code === 'auth/invalid-email' || msg.includes('invalid-email')) {
+        setErrors(prev => ({ ...prev, email: 'O formato do e-mail é inválido.' }));
+      } else {
+        setGeneralError(msg || 'Erro ao processar cadastro. Por favor, tente novamente.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // Obter a data máxima para o seletor de nascimento (hoje)
+  const todayISO = new Date().toISOString().split('T')[0];
+
   return (
-    <div className="fixed inset-0 z-[200] bg-background flex flex-col">
-      {/* Progress Bar */}
-      <div className="w-full h-1 bg-surface-container-highest">
-        <motion.div 
-          className="h-full bg-primary"
-          initial={{ width: 0 }}
-          animate={{ width: `${(currentStepNumber / totalSteps) * 100}%` }}
-        />
-      </div>
-
-      <main className="flex-grow flex flex-col items-center justify-center px-6 py-12 max-w-md mx-auto w-full">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentStepId}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="w-full space-y-8"
-          >
-            {currentStepId === 'username' && (
-              <div className="space-y-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                  <Star size={32} />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="font-headline italic font-black text-4xl uppercase tracking-tighter">SUA IDENTIDADE</h2>
-                  <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest">Como quer ser chamado nas ligas?</p>
-                </div>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="font-label text-[10px] font-black text-on-surface-variant uppercase tracking-widest">APELIDO (ÚNICO)</label>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-primary font-headline italic font-black opacity-40">@</span>
-                      <input
-                        type="text"
-                        value={formData.username}
-                        onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) })}
-                        placeholder="atleta_fatal"
-                        className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl p-4 pl-10 font-headline italic text-2xl text-on-surface outline-none focus:border-primary uppercase"
-                      />
-                    </div>
-                    <p className="text-[9px] font-bold text-on-surface-variant/60 uppercase">Mínimo 3 caracteres, apenas letras e números.</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentStepId === 'sex_age' && (
-              <div className="space-y-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                  <User size={32} />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="font-headline italic font-black text-4xl uppercase tracking-tighter">VAMOS COMEÇAR</h2>
-                  <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest">Qual o seu sexo e idade?</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    onClick={() => setFormData({ ...formData, sex: 'male' })}
-                    className={cn(
-                      "p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-2",
-                      formData.sex === 'male' ? "bg-primary/10 border-primary text-primary" : "bg-surface-container-low border-outline-variant/10 text-on-surface-variant"
-                    )}
-                  >
-                    <span className="font-headline italic font-black text-xl">HOMEM</span>
-                  </button>
-                  <button
-                    onClick={() => setFormData({ ...formData, sex: 'female' })}
-                    className={cn(
-                      "p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-2",
-                      formData.sex === 'female' ? "bg-primary/10 border-primary text-primary" : "bg-surface-container-low border-outline-variant/10 text-on-surface-variant"
-                    )}
-                  >
-                    <span className="font-headline italic font-black text-xl">MULHER</span>
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  <label className="font-label text-[10px] font-black text-on-surface-variant uppercase tracking-widest">IDADE</label>
-                  <input
-                    type="number"
-                    value={isNaN(formData.age) ? '' : formData.age}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      setFormData({ ...formData, age: isNaN(val) ? '' as any : val });
-                    }}
-                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl p-4 font-headline italic text-2xl text-on-surface outline-none focus:border-primary"
-                  />
-                </div>
-              </div>
-            )}
-
-            {currentStepId === 'body' && (
-              <div className="space-y-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                  <Ruler size={32} />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="font-headline italic font-black text-4xl uppercase tracking-tighter">MEDIDAS</h2>
-                  <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest">Seu peso e altura atuais</p>
-                </div>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="font-label text-[10px] font-black text-on-surface-variant uppercase tracking-widest">PESO (KG)</label>
-                    <input
-                      type="number"
-                      value={isNaN(formData.weight) ? '' : formData.weight}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setFormData({ ...formData, weight: isNaN(val) ? '' as any : val });
-                      }}
-                      className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl p-4 font-headline italic text-2xl text-on-surface outline-none focus:border-primary"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="font-label text-[10px] font-black text-on-surface-variant uppercase tracking-widest">ALTURA (CM)</label>
-                    <input
-                      type="number"
-                      value={isNaN(formData.height) ? '' : formData.height}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setFormData({ ...formData, height: isNaN(val) ? '' as any : val });
-                      }}
-                      className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl p-4 font-headline italic text-2xl text-on-surface outline-none focus:border-primary"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentStepId === 'frequency' && (
-              <div className="space-y-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                  <Dumbbell size={32} />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="font-headline italic font-black text-4xl uppercase tracking-tighter">ROTINA</h2>
-                  <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest">Quantas vezes você treina por semana?</p>
-                  <div className="bg-primary/5 p-4 rounded-xl border border-primary/10">
-                    <p className="text-primary text-[10px] font-black uppercase tracking-widest leading-tight">
-                      "Você vai competir com pessoas do seu nível. Aqui a disputa é justa — todos têm chance real."
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {(['0-2', '3-4', '5+'] as WorkoutFrequency[]).map((freq) => (
-                    <button
-                      key={freq}
-                      onClick={() => setFormData({ ...formData, weeklyFrequency: freq })}
-                      className={cn(
-                        "w-full p-6 rounded-2xl border-2 transition-all flex justify-between items-center",
-                        formData.weeklyFrequency === freq ? "bg-primary/10 border-primary text-primary" : "bg-surface-container-low border-outline-variant/10 text-on-surface-variant"
-                      )}
-                    >
-                      <span className="font-headline italic font-black text-xl uppercase">{freq} DIAS</span>
-                      {formData.weeklyFrequency === freq && <Check size={20} />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentStepId === 'objective' && (
-              <div className="space-y-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                  <Target size={32} />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="font-headline italic font-black text-4xl uppercase tracking-tighter">OBJETIVO</h2>
-                  <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest">O que você busca alcançar?</p>
-                </div>
-                <div className="space-y-3">
-                  {[
-                    { id: 'emagrecer', label: 'EMAGRECER' },
-                    { id: 'ganhar_massa', label: 'GANHAR MASSA' },
-                    { id: 'definir', label: 'DEFINIR' }
-                  ].map((obj) => (
-                    <button
-                      key={obj.id}
-                      onClick={() => setFormData({ ...formData, objective: obj.id as TrainingObjective })}
-                      className={cn(
-                        "w-full p-6 rounded-2xl border-2 transition-all flex justify-between items-center",
-                        formData.objective === obj.id ? "bg-primary/10 border-primary text-primary" : "bg-surface-container-low border-outline-variant/10 text-on-surface-variant"
-                      )}
-                    >
-                      <span className="font-headline italic font-black text-xl uppercase">{obj.label}</span>
-                      {formData.objective === obj.id && <Check size={20} />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentStepId === 'assessment' && (
-              <div className="space-y-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                  <Heart size={32} />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="font-headline italic font-black text-4xl uppercase tracking-tighter">AUTOAVALIAÇÃO</h2>
-                  <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest">Como você vê seu corpo hoje?</p>
-                </div>
-                <div className="grid grid-cols-1 gap-3">
-                  {[
-                    { id: 'acima_do_peso', label: 'ACIMA DO PESO' },
-                    { id: 'normal', label: 'NORMAL' },
-                    { id: 'definido', label: 'DEFINIDO' },
-                    { id: 'maromba', label: 'MAROMBA' }
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => setFormData({ ...formData, bodySelfAssessment: item.id as BodySelfAssessment })}
-                      className={cn(
-                        "w-full p-5 rounded-2xl border-2 transition-all flex justify-between items-center",
-                        formData.bodySelfAssessment === item.id ? "bg-primary/10 border-primary text-primary" : "bg-surface-container-low border-outline-variant/10 text-on-surface-variant"
-                      )}
-                    >
-                      <span className="font-headline italic font-black text-lg uppercase">{item.label}</span>
-                      {formData.bodySelfAssessment === item.id && <Check size={20} />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentStepId === 'gym' && (
-              <div className="space-y-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                  <MapPin size={32} />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="font-headline italic font-black text-4xl uppercase tracking-tighter">SUA ARENA</h2>
-                  <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest">Em qual academia você treina?</p>
-                  <p className="text-[9px] font-bold text-primary/80 uppercase">Isso define o seu ranking local e seus incentivos de performance.</p>
-                </div>
-                
-                <div className="space-y-3 max-h-[350px] overflow-y-auto no-scrollbar pb-4">
-                  {gymLoading ? (
-                    <div className="flex flex-col items-center justify-center py-8 gap-3 opacity-40">
-                      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      <span className="font-label text-[10px] font-black uppercase tracking-widest">Localizando academias...</span>
-                    </div>
-                  ) : gymError ? (
-                    <div className="p-4 bg-error/10 border border-error/20 rounded-xl text-center space-y-3">
-                      <p className="text-error font-label text-[10px] font-black uppercase">{gymError}</p>
-                      <button 
-                         onClick={loadNearbyGyms}
-                         className="text-primary font-label text-[10px] font-black uppercase border border-primary/20 px-4 py-2 rounded-lg"
-                      >
-                         TENTAR NOVAMENTE
-                      </button>
-                    </div>
-                  ) : nearbyGyms.length > 0 ? (
-                    nearbyGyms.map((gym) => {
-                      const gymLat = gym.geometry?.location?.lat !== undefined 
-                        ? (typeof gym.geometry.location.lat === 'function' ? gym.geometry.location.lat() : gym.geometry.location.lat) 
-                        : (gym.lat || gym.latitude);
-                      const gymLng = gym.geometry?.location?.lng !== undefined 
-                        ? (typeof gym.geometry.location.lng === 'function' ? gym.geometry.location.lng() : gym.geometry.location.lng) 
-                        : (gym.lng || gym.longitude);
-
-                      return (
-                        <button
-                          key={gym.place_id || gym.id}
-                          onClick={() => setFormData({ 
-                            ...formData, 
-                            gymId: gym.place_id || gym.id, 
-                            gymName: gym.name,
-                            gymLocation: (gymLat !== undefined && gymLng !== undefined) ? { lat: Number(gymLat), lng: Number(gymLng) } : null
-                          })}
-                          className={cn(
-                            "w-full p-6 rounded-2xl border-2 transition-all flex flex-col items-start gap-1 text-left",
-                            formData.gymId === (gym.place_id || gym.id) ? "bg-primary/10 border-primary shadow-lg shadow-primary/5" : "bg-surface-container-low border-outline-variant/10"
-                          )}
-                        >
-                          <div className="flex justify-between items-center w-full">
-                            <span className={cn(
-                              "font-headline italic font-black text-xl uppercase tracking-tight",
-                              formData.gymId === (gym.place_id || gym.id) ? "text-primary" : "text-on-surface"
-                            )}>
-                              {gym.name}
-                            </span>
-                            {formData.gymId === (gym.place_id || gym.id) && <Check size={20} className="text-primary" />}
-                          </div>
-                          <span className="font-label text-[9px] font-bold text-on-surface-variant uppercase tracking-widest leading-none">
-                            {gym.vicinity || gym.address}
-                          </span>
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-8 opacity-40">
-                       <p className="font-label text-[10px] font-black uppercase">Nenhuma academia encontrada próxima.</p>
-                    </div>
-                  )}
-
-                  <button 
-                    onClick={() => {
-                        const name = prompt('Digite o nome da sua academia:');
-                        if (name) {
-                            alert('Atenção: Para poder realizar check-ins e validar treinos na academia, certifique-se de selecionar sua academia oficial no mapa no menu "Academia".');
-                            setFormData({ 
-                              ...formData, 
-                              gymId: `manual_${Date.now()}`, 
-                              gymName: name,
-                              gymLocation: null
-                            });
-                        }
-                    }}
-                    className="w-full p-4 border-2 border-dashed border-outline-variant/30 rounded-2xl text-on-surface-variant/40 hover:text-primary hover:border-primary/40 transition-all flex items-center justify-center gap-2"
-                  >
-                    <span className="font-label text-[10px] font-black uppercase tracking-widest">MINHA ACADEMIA NÃO ESTÁ AQUI</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </main>
-
-      {/* Footer Navigation */}
-      <footer className="p-6 bg-surface-container-low border-t border-outline-variant/10">
-        <div className="max-w-md mx-auto flex gap-4">
-          {currentStepIndex > 0 && (
-            <button
-              onClick={handleBack}
-              className="w-20 h-16 bg-surface-container-highest text-on-surface rounded-2xl flex items-center justify-center active:scale-95 transition-all"
-            >
-              <ChevronLeft size={24} />
-            </button>
-          )}
-          <button
-            onClick={handleNext}
-            disabled={loading}
-            className="flex-grow h-16 bg-primary text-on-primary rounded-2xl font-headline italic font-black text-xl uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
-          >
-            {loading ? "SALVANDO..." : currentStepIndex === totalSteps - 1 ? "FINALIZAR" : "PRÓXIMO"}
-            {!loading && <ChevronRight size={24} />}
-          </button>
+    <div className="fixed inset-0 z-[250] bg-background/95 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto font-sans">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 15 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-lg bg-surface border border-outline-variant/15 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 my-auto text-on-surface"
+      >
+        {/* Header Branding */}
+        <div className="text-center space-y-2">
+          <div className="flex justify-center mb-1">
+            <InvictusLogo size={36} className="w-9 h-9 text-primary" />
+          </div>
+          <h1 className="font-headline italic font-black text-2xl sm:text-3xl uppercase tracking-tight text-on-surface">
+            Cadastro de Atleta
+          </h1>
+          <p className="text-xs text-on-surface-variant font-medium max-w-sm mx-auto">
+            Preencha seus dados em etapa única para validar seu perfil oficial e desbloquear os treinos no Invictus.
+          </p>
         </div>
-      </footer>
+
+        {/* General Error Banner */}
+        {generalError && (
+          <div className="bg-error/10 border border-error/20 rounded-2xl p-3.5 flex items-center gap-3 text-error text-xs font-semibold">
+            <AlertCircle size={18} className="shrink-0" />
+            <span>{generalError}</span>
+          </div>
+        )}
+
+        {/* Single-Step Form (ETAPA ÚNICA) */}
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          {/* 1. Nome Completo */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1.5">
+              <User size={14} className="text-primary" />
+              Nome Completo *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (errors.name) setErrors(prev => ({ ...prev, name: undefined }));
+              }}
+              placeholder="Ex: Carlos Eduardo Silva"
+              className={`w-full bg-surface-container-high border ${
+                errors.name ? 'border-error focus:border-error' : 'border-outline-variant/30 focus:border-primary'
+              } rounded-xl px-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none transition-all`}
+            />
+            {errors.name && (
+              <p className="text-error text-xs font-medium pl-1 flex items-center gap-1">
+                <AlertCircle size={12} className="inline" />
+                {errors.name}
+              </p>
+            )}
+          </div>
+
+          {/* 2. E-mail e Senha */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* E-mail */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1.5">
+                <Mail size={14} className="text-primary" />
+                E-mail *
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
+                }}
+                placeholder="atleta@invictus.com"
+                className={`w-full bg-surface-container-high border ${
+                  errors.email ? 'border-error focus:border-error' : 'border-outline-variant/30 focus:border-primary'
+                } rounded-xl px-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none transition-all`}
+              />
+              {errors.email && (
+                <p className="text-error text-xs font-medium pl-1 flex items-center gap-1">
+                  <AlertCircle size={12} className="inline" />
+                  {errors.email}
+                </p>
+              )}
+            </div>
+
+            {/* Senha */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1.5">
+                <Lock size={14} className="text-primary" />
+                Senha {auth.currentUser ? '(Opcional)' : '*'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
+                  }}
+                  placeholder={auth.currentUser ? '•••••••• (manter atual)' : 'Mínimo 6 dígitos'}
+                  className={`w-full bg-surface-container-high border ${
+                    errors.password ? 'border-error focus:border-error' : 'border-outline-variant/30 focus:border-primary'
+                  } rounded-xl pl-4 pr-10 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none transition-all`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-on-surface transition-colors"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="text-error text-xs font-medium pl-1 flex items-center gap-1">
+                  <AlertCircle size={12} className="inline" />
+                  {errors.password}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* 3. CPF e Celular/WhatsApp */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* CPF */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1.5">
+                <Fingerprint size={14} className="text-primary" />
+                CPF *
+              </label>
+              <input
+                type="text"
+                value={cpf}
+                onChange={handleCpfChange}
+                maxLength={14}
+                placeholder="000.000.000-00"
+                className={`w-full bg-surface-container-high border ${
+                  errors.cpf ? 'border-error focus:border-error' : 'border-outline-variant/30 focus:border-primary'
+                } rounded-xl px-4 py-3.5 text-sm font-mono text-on-surface placeholder:text-on-surface-variant/40 outline-none transition-all`}
+              />
+              {errors.cpf && (
+                <p className="text-error text-xs font-medium pl-1 flex items-center gap-1">
+                  <AlertCircle size={12} className="inline" />
+                  {errors.cpf}
+                </p>
+              )}
+            </div>
+
+            {/* Celular / WhatsApp */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1.5">
+                <Phone size={14} className="text-primary" />
+                Celular/WhatsApp *
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={handlePhoneChange}
+                maxLength={15}
+                placeholder="(11) 99999-9999"
+                className={`w-full bg-surface-container-high border ${
+                  errors.phone ? 'border-error focus:border-error' : 'border-outline-variant/30 focus:border-primary'
+                } rounded-xl px-4 py-3.5 text-sm font-mono text-on-surface placeholder:text-on-surface-variant/40 outline-none transition-all`}
+              />
+              {errors.phone && (
+                <p className="text-error text-xs font-medium pl-1 flex items-center gap-1">
+                  <AlertCircle size={12} className="inline" />
+                  {errors.phone}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* 4. Data de Nascimento */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1.5">
+              <Calendar size={14} className="text-primary" />
+              Data de Nascimento * (Mínimo 16 anos)
+            </label>
+            <input
+              type="date"
+              value={birthDate}
+              max={todayISO}
+              onChange={handleBirthDateChange}
+              className={`w-full bg-surface-container-high border ${
+                errors.birthDate ? 'border-error focus:border-error' : 'border-outline-variant/30 focus:border-primary'
+              } rounded-xl px-4 py-3.5 text-sm text-on-surface outline-none transition-all`}
+            />
+            {errors.birthDate && (
+              <p className="text-error text-xs font-medium pl-1 flex items-center gap-1">
+                <AlertCircle size={12} className="inline" />
+                {errors.birthDate}
+              </p>
+            )}
+          </div>
+
+          {/* 5. Aceite dos Termos de Uso */}
+          <div className="space-y-1.5 pt-2">
+            <label className="flex items-start gap-3 cursor-pointer select-none group">
+              <div className="relative flex items-center justify-center mt-0.5">
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => {
+                    setTermsAccepted(e.target.checked);
+                    if (errors.termsAccepted) setErrors(prev => ({ ...prev, termsAccepted: undefined }));
+                  }}
+                  className="sr-only"
+                />
+                <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${
+                  termsAccepted
+                    ? 'bg-primary border-primary text-on-primary'
+                    : errors.termsAccepted 
+                      ? 'border-error bg-surface-container-high' 
+                      : 'border-outline-variant/50 bg-surface-container-high group-hover:border-primary'
+                }`}>
+                  {termsAccepted && <Check size={14} strokeWidth={3} />}
+                </div>
+              </div>
+              <span className="text-xs text-on-surface-variant leading-relaxed">
+                Li e concordo com os <span className="text-primary font-bold underline">Termos de Uso</span>, Regras Antifraude e Política de Privacidade do Invictus.
+              </span>
+            </label>
+            {errors.termsAccepted && (
+              <p className="text-error text-xs font-medium pl-8 flex items-center gap-1">
+                <AlertCircle size={12} className="inline" />
+                {errors.termsAccepted}
+              </p>
+            )}
+          </div>
+
+          {/* Submit Button */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 bg-primary hover:bg-primary/90 text-on-primary rounded-2xl font-headline italic font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.01] active:scale-98 transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>Salvando Cadastro...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={20} />
+                  <span>Concluir Cadastro</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </motion.div>
     </div>
   );
 }
