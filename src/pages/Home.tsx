@@ -172,11 +172,15 @@ export function Home() {
               onClick={() => navigate('/profile')}
               aria-label="Ver perfil"
               className="rounded-full overflow-hidden shrink-0 flex items-center justify-center relative cursor-pointer active:scale-95 transition-transform"
+              /* Medido na arte: foto de 66px, anel de 4px, diametro externo
+                 74px. Estava 78px de foto com anel de 3px -- avatar maior e
+                 anel mais fino que a referencia. O brilho e mais forte e em
+                 duas camadas, como o halo da arte. */
               style={{
-                width: '78px',
-                height: '78px',
+                width: '66px',
+                height: '66px',
                 borderRadius: '50%',
-                boxShadow: '0 0 0 3px var(--dourado), 0 0 20px rgba(241,190,34,0.4)'
+                boxShadow: '0 0 0 4px var(--dourado), 0 0 14px rgba(241,190,34,0.55), 0 0 30px rgba(241,190,34,0.30)'
               }}
             >
               {user?.photoURL ? (
