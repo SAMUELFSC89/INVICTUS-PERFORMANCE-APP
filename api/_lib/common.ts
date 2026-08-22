@@ -194,29 +194,20 @@ export async function verifyAuth(req: VercelRequest): Promise<{ uid: string; ema
     return null;
   }
 
-  const token = authHeader.split('Bearer ')[1];
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token) {
+    return null;
+  }
+
   try {
     const authInstance = getAuth(app);
     const decodedToken = await authInstance.verifyIdToken(token);
     console.log(`[AUTH] [VERIFY_TOKEN] [${decodedToken.uid}] [SUCCESS] Token de autenticação verificado`);
     return { uid: decodedToken.uid, email: decodedToken.email };
   } catch (error: any) {
-    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [NOTICE] Auth SDK verification failed (${error.message}). Attempting token payload decode...`);
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
-        const payload = JSON.parse(payloadJson);
-        const uid = payload.user_id || payload.sub;
-        const email = payload.email;
-        if (uid) {
-          console.log(`[AUTH] [VERIFY_TOKEN] [${uid}] [FALLBACK_SUCCESS] Token verificado por payload JWT`);
-          return { uid, email };
-        }
-      }
-    } catch (fallbackErr: any) {
-      console.error(`[AUTH] [VERIFY_TOKEN] [FALLBACK_FAILURE] JWT fallback failed: ${fallbackErr.message}`);
-    }
+    // Nunca aceite um token apenas por decodificar o payload: ele pode ter sido
+    // forjado. A assinatura e os claims só são validados pelo Firebase Admin.
+    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [NOTICE] Token rejeitado: ${error.message}`);
     return null;
   }
 }
@@ -229,13 +220,20 @@ export function auth() {
   return getAuth(app);
 }
 
+const allowedCorsOrigins = new Set(
+  [
+    'https://invictusperformance.app.br',
+    'https://www.invictusperformance.app.br',
+    ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map((origin) => origin.trim()),
+  ].filter(Boolean),
+);
+
 export function cors(req: VercelRequest, res: VercelResponse) {
   const origin = req.headers.origin;
-  if (origin && origin !== 'null') {
+  if (origin && allowedCorsOrigins.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Vary', 'Origin');
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -245,7 +243,12 @@ export function cors(req: VercelRequest, res: VercelResponse) {
   );
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
+    // Só origens explicitamente confiáveis recebem autorização CORS.
+    if (origin && !allowedCorsOrigins.has(origin)) {
+      res.status(403).end();
+    } else {
+      res.status(204).end();
+    }
     return true;
   }
   return false;
