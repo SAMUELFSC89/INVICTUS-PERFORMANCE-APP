@@ -6,15 +6,26 @@
 :root {
   --fundo-base: #0A0806;
   --brasa: #FF7A18;
-  --dourado-claro: #FFD65A;
-  --dourado: #F5A623;
-  --dourado-escuro: #C8791A;
+  /* Dourados amostrados de design/referencia-home.png. O tom anterior
+     (#F5A623) puxava para o ambar; o da arte e mais amarelo -- G em torno de
+     190 contra 166. Ver design/medidas-home.md. */
+  --dourado-claro: #FFD82E;
+  --dourado: #F7BE1E;
+  --dourado-escuro: #E39607;
   --texto: #FFFFFF;
   --texto-suave: #A89F96;
   --texto-apagado: #6B645C;
   --card-fundo: rgba(18, 14, 11, 0.72);
-  --card-borda: rgba(245, 166, 35, 0.35);
-  --card-borda-forte: rgba(245, 166, 35, 0.55);
+  /* Linha fina E forte. Antes era 0.35: baixar a opacidade nao deixa o traco
+     discreto, deixa sujo -- em 1px o antialiasing espalha o pouco de cor sobre
+     o fundo escuro e sobra um cinza indeciso. Quem suaviza e o brilho ao redor
+     (--card-brilho), nao a transparencia. Mesma logica do neon. */
+  --card-borda: rgba(241, 190, 34, 0.90);
+  --card-borda-forte: #F1BE22;
+  --card-brilho: 0 0 10px rgba(241, 190, 34, 0.22), 0 0 40px rgba(241, 190, 34, 0.14);
+  /* 0,5px = 1 pixel fisico em tela 2x. Medido na arte: a linha e um fio, e o
+     que a deixa suave e o brilho, nao a transparencia. */
+  --card-linha: 0.5px;
   --trilha: #332C26;
   --liga-roxo: #2A0A3F;
   --liga-meio: #6B1470;
@@ -69,23 +80,27 @@
 
 /* 3) Cards */
 .iv-card {
-  background: var(--card-fundo);
+  /* Fundo com gradiente em vez de cor chapada: mais quente e claro no topo,
+     fechando embaixo. E o que da volume ao card na arte de referencia. */
+  background: linear-gradient(160deg, rgba(32, 24, 17, 0.78) 0%, var(--card-fundo) 55%, rgba(12, 9, 7, 0.80) 100%);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--card-borda);
-  border-radius: 20px;
+  border-radius: 24px;
   padding: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  /* A sombra preta sozinha fazia o card parecer afundado num buraco. O halo
+     ambar e o que faz ele parecer aceso pelo fogo que esta atras. */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), var(--card-brilho);
 }
 
 .iv-card--destaque {
-  background: var(--card-fundo);
+  background: linear-gradient(160deg, rgba(38, 28, 19, 0.80) 0%, var(--card-fundo) 55%, rgba(12, 9, 7, 0.82) 100%);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--card-borda-forte);
-  border-radius: 20px;
+  border-radius: 24px;
   padding: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), var(--card-brilho);
 }
 
 .iv-card--liga {
@@ -94,6 +109,61 @@
   border-radius: 20px;
   padding: 18px;
   box-shadow: 0 8px 32px rgba(168, 85, 247, 0.25);
+}
+
+/* Card inclinado (paralelogramo de cantos arredondados).
+ *
+ * A moldura da arte NAO e retangulo: as duas laterais caem para a esquerda a
+ * 12,26 graus. Medido em design/referencia-home.png, cantos em
+ * design/medidas-home.md.
+ *
+ * Por que nao transform: skewX -- o conteudo da arte esta na horizontal.
+ * Inclinar o container inclinaria o texto junto.
+ *
+ * Por que duas camadas -- clip-path recorta a borda junto com a caixa, entao
+ * nao da para usar `border`. A de fora e dourada e a de dentro, recuada meio
+ * pixel, deixa so o fio aparecendo.
+ *
+ * Por que filter e nao box-shadow -- clip-path tambem corta box-shadow. O
+ * drop-shadow do filter e aplicado depois do recorte e acompanha o formato.
+ */
+.iv-card--inclinado {
+  --recorte: polygon(
+    6.93% 13.70%, 7.53% 8.77%, 8.46% 4.93%, 9.72% 2.19%, 11.30% 0.55%,
+    13.21% 0.00%, 92.21% 0.00%, 94.96% 0.83%, 96.96% 3.31%, 98.22% 7.45%,
+    98.74% 13.25%, 98.52% 20.70%, 93.85% 85.92%, 93.28% 90.99%, 92.36% 94.93%,
+    91.10% 97.75%, 89.50% 99.44%, 87.55% 100.00%, 7.97% 100.00%, 5.17% 99.16%,
+    3.14% 96.63%, 1.88% 92.41%, 1.40% 86.51%, 1.69% 78.91%
+  );
+  clip-path: var(--recorte);
+  background: var(--card-borda-forte);
+  padding: 1px;
+  filter: drop-shadow(0 0 10px rgba(241, 190, 34, 0.22))
+          drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
+}
+
+.iv-card__dentro {
+  clip-path: var(--recorte);
+  background: linear-gradient(160deg, rgba(32, 24, 17, 0.78) 0%, var(--card-fundo) 55%, rgba(12, 9, 7, 0.80) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* Padding maior a esquerda e a direita: as laterais sao inclinadas, e nos
+     cantos a area util recua. Sem isso o conteudo encosta no fio. */
+  padding: 16px 26px;
+  height: 100%;
+}
+
+@media (min-resolution: 2dppx) {
+  .iv-card--inclinado { padding: var(--card-linha); }
+}
+
+/* Fio de 0,5px so onde ele existe de verdade: em tela 1x, meio pixel some ou
+   vira cinza. Celular e sempre 2x ou 3x, que e onde a arte foi pensada. */
+@media (min-resolution: 2dppx) {
+  .iv-card,
+  .iv-card--destaque {
+    border-width: var(--card-linha);
+  }
 }
 
 /* 4) Tipografia */
@@ -145,7 +215,7 @@
   justify-content: center;
   border-radius: 999px;
   border: 1px solid var(--dourado);
-  background: rgba(245, 166, 35, 0.10);
+  background: rgba(241, 190, 34, 0.10);
   flex-shrink: 0;
 }
 
@@ -155,7 +225,7 @@
   width: 20px;
   height: 20px;
   color: var(--dourado);
-  filter: drop-shadow(0 0 6px rgba(245, 166, 35, 0.55));
+  filter: drop-shadow(0 0 6px rgba(241, 190, 34, 0.55));
 }
 
 .iv-chip {
@@ -204,7 +274,8 @@
 }
 
 .iv-barra {
-  height: 10px;
+  /* 16px na arte em 2x = 8px CSS. */
+  height: 8px;
   border-radius: 999px;
   background: var(--trilha);
   overflow: hidden;
@@ -214,7 +285,11 @@
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--dourado-escuro) 0%, var(--dourado) 50%, var(--dourado-claro) 100%);
+  /* Paradas amostradas diretamente da arte (design/medidas-home.md), nao
+     escolhidas no olho. O #C8791A anterior era dourado amarronzado e deixava
+     a barra com cara de metal apagado. */
+  background: linear-gradient(90deg, #E39607 0%, #F89602 20%, #FEC604 45%, #F4D101 100%);
+  box-shadow: 0 0 10px rgba(253, 198, 4, 0.45);
 }
 
 .iv-linha {
@@ -247,7 +322,7 @@
 }
 
 .iv-aba--ativa {
-  background: rgba(245, 166, 35, 0.12);
+  background: rgba(241, 190, 34, 0.12);
   border: 1px solid var(--card-borda-forte);
   color: var(--dourado-claro);
 }

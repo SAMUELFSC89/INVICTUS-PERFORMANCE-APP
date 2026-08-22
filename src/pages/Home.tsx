@@ -123,11 +123,15 @@ export function Home() {
         id="home-content-wrapper"
         className="iv-conteudo w-full max-w-md mx-auto flex flex-col gap-4 pt-1"
       >
-        {/* 1) CARD DE SAUDAÇÃO */}
+        {/* 1) CARD DE SAUDAÇÃO
+            Moldura inclinada em duas camadas -- ver .iv-card--inclinado em
+            invictus.css. O conteudo fica na camada de dentro e permanece na
+            horizontal, como na arte. */}
         <section
           id="home-greeting-card"
-          className="iv-card w-full flex items-center gap-4"
+          className="iv-card--inclinado w-full"
         >
+         <div className="iv-card__dentro flex items-center gap-4">
           {/* Avatar circular + Badges Empilhados */}
           <div className="flex flex-col items-center shrink-0 gap-2">
             <button
@@ -139,7 +143,7 @@ export function Home() {
                 width: '78px',
                 height: '78px',
                 borderRadius: '50%',
-                boxShadow: '0 0 0 3px var(--dourado), 0 0 20px rgba(245,166,35,0.4)'
+                boxShadow: '0 0 0 3px var(--dourado), 0 0 20px rgba(241,190,34,0.4)'
               }}
             >
               {user?.photoURL ? (
@@ -234,6 +238,7 @@ export function Home() {
               </span>
             </div>
           </div>
+         </div>
         </section>
 
         {/* 2) DUAS PÍLULAS (SEQUÊNCIA e XP HOJE) */}
@@ -427,7 +432,7 @@ export function Home() {
             </span>
             <FaArrowRight
               size={16}
-              className="text-[var(--dourado)] drop-shadow-[0_0_6px_rgba(245,166,35,0.55)] group-hover:translate-x-1 transition-transform"
+              className="text-[var(--dourado)] drop-shadow-[0_0_6px_rgba(241,190,34,0.55)] group-hover:translate-x-1 transition-transform"
             />
           </button>
         </section>

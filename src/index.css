@@ -18,7 +18,9 @@
   --trilha-xp: rgba(245, 166, 35, 0.20);
   --texto: #FFFFFF;
   --texto-suave: #D1C7BD;
-  --brasa: #FF5A1F;
+  /* Mesmo valor de invictus.css. Estavam divergentes (#FF5A1F aqui, #FF7A18 la)
+     e, como sao dois :root globais, qual valia dependia da ordem de import. */
+  --brasa: #FF7A18;
   --liga-borda: rgba(168, 85, 247, 0.40);
   --liga-texto: #E9D5FF;
 }
