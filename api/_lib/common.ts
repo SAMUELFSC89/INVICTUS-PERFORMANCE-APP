@@ -224,6 +224,12 @@ const allowedCorsOrigins = new Set(
   [
     'https://invictusperformance.app.br',
     'https://www.invictusperformance.app.br',
+    // Origens do WebView Capacitor em produção (iOS e Android).
+    'capacitor://localhost',
+    'http://localhost',
+    // Desenvolvimento local.
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
     ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map((origin) => origin.trim()),
   ].filter(Boolean),
 );
