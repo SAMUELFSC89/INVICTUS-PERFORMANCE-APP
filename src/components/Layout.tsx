@@ -33,6 +33,7 @@ export function Layout() {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const isHome = location.pathname === '/' || location.pathname === '/invite';
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -135,7 +136,13 @@ export function Layout() {
       </div>
 
       {/* Main Content */}
-      <main className="flex-grow pt-16 md:pt-20 pb-40 max-w-screen-xl mx-auto w-full px-4 md:px-6 relative z-[2]">
+      {/* A Home desenha o proprio cabecalho (capacete + assinatura) e controla
+          o respiro do topo, para o espartano do fundo aparecer como na arte.
+          Nas outras telas o padding padrao continua valendo. */}
+      <main className={cn(
+        "flex-grow pb-40 max-w-screen-xl mx-auto w-full px-4 md:px-6 relative z-[2]",
+        isHome ? "pt-0" : "pt-16 md:pt-20"
+      )}>
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}

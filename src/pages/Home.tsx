@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   FaFire,
   FaStar,
-  FaTrophy,
   FaDumbbell,
   FaPersonRunning,
   FaBullseye,
@@ -121,8 +120,42 @@ export function Home() {
     >
       <div
         id="home-content-wrapper"
-        className="iv-conteudo w-full max-w-md mx-auto flex flex-col gap-4 pt-1"
+        className="iv-conteudo w-full max-w-md mx-auto flex flex-col gap-4"
       >
+        {/* 0) CABEÇALHO — capacete e assinatura.
+            Na arte o capacete tem 52px de altura e o conteúdo só começa a
+            167px do topo. Esse vão é o que deixa o espartano do fundo
+            aparecer, mas 167px fixos empurrariam "DESAFIOS DE HOJE" para fora
+            da primeira dobra num celular pequeno. Por isso o respiro é
+            proporcional com teto e piso: acompanha a arte em tela grande e
+            protege a dobra em tela pequena. */}
+        <header
+          id="home-header"
+          className="w-full flex flex-col items-center shrink-0"
+          style={{
+            // A Home zera o padding do Layout, entao a area segura passa a ser
+            // responsabilidade daqui: sem isso o capacete entra embaixo do
+            // notch e da barra de status.
+            paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))',
+            marginBottom: 'clamp(12px, 7vh, 65px)'
+          }}
+        >
+          <img
+            src="/capacete.webp"
+            alt=""
+            width={30}
+            height={52}
+            className="h-[52px] w-auto select-none pointer-events-none"
+            style={{ filter: 'drop-shadow(0 0 18px rgba(241,190,34,0.35))' }}
+          />
+          <p
+            className="font-barlow font-bold text-[13px] text-white uppercase mt-2 leading-none"
+            style={{ letterSpacing: '0.16em' }}
+          >
+            Invictus Performance
+          </p>
+        </header>
+
         {/* 1) CARD DE SAUDAÇÃO
             Moldura inclinada em duas camadas -- ver .iv-card--inclinado em
             invictus.css. O conteudo fica na camada de dentro e permanece na
@@ -299,13 +332,18 @@ export function Home() {
           onClick={() => navigate('/rankings')}
           className="iv-card--liga w-full flex items-center gap-4 cursor-pointer active:scale-[0.98] transition-transform"
         >
-          {/* Coluna Esquerda: Largura fixa 90px, com troféu centralizado na horizontal e vertical */}
-          <div
-            className="w-[90px] min-w-[90px] max-w-[90px] shrink-0 self-stretch flex items-center justify-center"
-          >
-            <FaTrophy
-              size={52}
-              className="home-trophy-glow"
+          {/* Coluna Esquerda — troféu.
+              Medido na arte: ocupa 37,6% da largura do card e ~89% da altura,
+              o que dá 120x140. A 140px ele passa dos 121px internos e sangra
+              ~10px no padding, exatamente como na referência — por isso o
+              margin negativo. O card não precisa crescer. */}
+          <div className="w-[120px] min-w-[120px] max-w-[120px] shrink-0 flex items-center justify-center">
+            <img
+              src="/trofeu.webp"
+              alt=""
+              width={120}
+              height={140}
+              className="w-[120px] h-[140px] object-contain -my-[10px] select-none pointer-events-none"
             />
           </div>
 

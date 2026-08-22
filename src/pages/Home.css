@@ -1,7 +1,6 @@
 /* Home-specific styles - consumes invictus.css */
-.home-trophy-glow {
-  color: var(--dourado-claro);
-  filter: drop-shadow(0 0 14px rgba(255, 214, 90, 0.5));
-}
 
-
+/* A regra .home-trophy-glow foi removida: o trofeu deixou de ser icone
+   vetorial (FaTrophy) e virou imagem. Ela definia `color`, que nao tem efeito
+   em <img>, e um drop-shadow dourado que competia com a sombra ja embutida na
+   arte do trofeu. */
