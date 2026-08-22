@@ -1,4 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { QuerySnapshot } from 'firebase-admin/firestore';
 import {
   db,
   cors,
@@ -9,7 +10,7 @@ import {
 const BATCH_SIZE = 450;
 
 async function updateAllInBatches(
-  snapshot: FirebaseFirestore.QuerySnapshot,
+  snapshot: QuerySnapshot,
   data: Record<string, unknown>,
 ) {
   for (let index = 0; index < snapshot.docs.length; index += BATCH_SIZE) {
@@ -21,7 +22,7 @@ async function updateAllInBatches(
   }
 }
 
-async function deleteAllInBatches(snapshot: FirebaseFirestore.QuerySnapshot) {
+async function deleteAllInBatches(snapshot: QuerySnapshot) {
   for (let index = 0; index < snapshot.docs.length; index += BATCH_SIZE) {
     const batch = db.batch();
     for (const document of snapshot.docs.slice(index, index + BATCH_SIZE)) {
