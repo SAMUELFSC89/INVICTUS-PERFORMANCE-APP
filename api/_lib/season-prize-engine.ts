@@ -154,7 +154,65 @@ async function advanceToNextSeasonWindow(previous: SeasonWindow): Promise<Season
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  await promoverInscritosDaNovaTemporada(seasonId);
+
   return { seasonId, startDate, endDate };
+}
+
+/**
+ * Vira o seasonStatus dos perfis quando a temporada troca.
+ *
+ * Sem isto, quem pagou a inscricao durante a temporada anterior ficaria preso
+ * em WAITING_NEXT_SEASON mesmo depois de a temporada dele comecar, e quem
+ * competiu na temporada que acabou continuaria marcado como ACTIVE sem ter
+ * inscricao na nova.
+ */
+async function promoverInscritosDaNovaTemporada(novaSeasonId: string) {
+  // 1. Quem tem inscricao paga na temporada que esta comecando entra.
+  const inscritos = await db.collection('season_inscriptions')
+    .where('seasonId', '==', novaSeasonId)
+    .where('status', '==', 'paga')
+    .get();
+
+  const entrando = new Set<string>();
+  for (const doc of inscritos.docs) {
+    const userId = (doc.data() as any).userId;
+    if (userId) entrando.add(userId);
+  }
+
+  // 2. Quem estava marcado como participante e nao esta na lista acima sai.
+  const marcados = await db.collection('users')
+    .where('seasonStatus', 'in', ['ACTIVE', 'WAITING_NEXT_SEASON'])
+    .get();
+
+  let lote = db.batch();
+  let pendentes = 0;
+  const gravar = async (ref: FirebaseFirestore.DocumentReference, dados: any) => {
+    lote.set(ref, dados, { merge: true });
+    pendentes++;
+    if (pendentes >= 400) {
+      await lote.commit();
+      lote = db.batch();
+      pendentes = 0;
+    }
+  };
+
+  for (const doc of marcados.docs) {
+    if (entrando.has(doc.id)) continue;
+    await gravar(doc.ref, { seasonStatus: 'NOT_ENROLLED', nextSeasonStart: '' });
+  }
+
+  for (const userId of entrando) {
+    await gravar(db.collection('users').doc(userId), {
+      seasonStatus: 'ACTIVE',
+      seasonInscritaId: novaSeasonId,
+      nextSeasonStart: '',
+    });
+  }
+
+  if (pendentes > 0) await lote.commit();
+
+  console.log(`[Temporada] ${entrando.size} atletas ativos na temporada ${novaSeasonId}.`);
 }
 
 function getWinnerCount(participantsCount: number): number {

@@ -133,9 +133,6 @@ export async function grantProAccessAfterApprovedPayment(orderId: string, paymen
 
   // 4. Calculate elegant Season details
   const seasonDetails = await calculateSeasonDetails(now);
-  const startD = new Date(seasonDetails.seasonStart);
-  const nextSeasonStartStr = `${String(startD.getDate()).padStart(2, '0')}/${String(startD.getMonth() + 1).padStart(2, '0')}/${startD.getFullYear()}`;
-  
   const subscriptionTier = planId === 'invictus_performance' ? 'performance' : 'open';
 
   if (subscriptionTier === 'performance') {
@@ -187,10 +184,9 @@ export async function grantProAccessAfterApprovedPayment(orderId: string, paymen
     statusPagamento: 'aprovado',
     premium: subscriptionTier === 'performance',
     performance: subscriptionTier === 'performance',
-    seasonStatus: subscriptionTier === 'performance' 
-      ? (seasonDetails.status === 'ACTIVE' ? 'ACTIVE' : 'WAITING_NEXT_SEASON')
-      : 'NOT_ELIGIBLE',
-    nextSeasonStart: subscriptionTier === 'performance' ? nextSeasonStartStr : '',
+    // seasonStatus e nextSeasonStart NAO sao escritos aqui de proposito.
+    // Quem compete e quem pagou a INSCRICAO da temporada; a assinatura vende
+    // recursos. Ver sincronizarStatusDeTemporada em inscricao-service.ts.
     updatedAt: now.toISOString(),
     isPro: true,
     plan: 'pro',
@@ -263,7 +259,8 @@ export async function revokeProAccess(orderId: string, paymentId: string, newSta
     paymentStatus: newStatus,
     currentPlan: 'Nenhum',
     expiresAt: now.toISOString(),
-    seasonStatus: 'INACTIVE',
+    // Cancelar ou estornar a assinatura NAO tira o atleta da temporada que ele
+    // ja pagou. A inscricao e uma compra separada, por temporada.
     plano: 'Nenhum',
     assinatura: 'Inativa',
     statusPagamento: newStatus,

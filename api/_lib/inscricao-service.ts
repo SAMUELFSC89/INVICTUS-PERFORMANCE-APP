@@ -38,6 +38,37 @@ function idInscricao(userId: string, seasonId: string) {
   return `${userId}_${seasonId}`;
 }
 
+function dataBR(d: Date) {
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+/**
+ * Espelha no perfil do usuario o estado da inscricao paga.
+ *
+ * Este e o UNICO lugar que decide seasonStatus. O app le esse campo para saber
+ * se o atleta ja esta competindo ou se ainda espera a proxima temporada; quem
+ * escreve e a inscricao, e nao a assinatura.
+ */
+export async function sincronizarStatusDeTemporada(userId: string, seasonId: string) {
+  const atual = await getOrInitCurrentSeasonWindow();
+  const agora = new Date();
+  const competindoAgora =
+    atual.seasonId === seasonId && atual.startDate.getTime() <= agora.getTime();
+
+  const proxima = competindoAgora ? null : calcularProximaJanela(atual);
+
+  await db.collection('users').doc(userId).set({
+    seasonStatus: competindoAgora ? 'ACTIVE' : 'WAITING_NEXT_SEASON',
+    seasonInscritaId: seasonId,
+    nextSeasonStart: competindoAgora
+      ? ''
+      : dataBR(atual.seasonId === seasonId ? atual.startDate : (proxima as any).startDate),
+    updatedAt: agora.toISOString(),
+  }, { merge: true });
+
+  return competindoAgora ? 'ACTIVE' : 'WAITING_NEXT_SEASON';
+}
+
 /**
  * Cria a cobranca PIX da inscricao e devolve o QR code para o app exibir.
  * Idempotente: se ja existe inscricao pendente para a mesma temporada,
@@ -131,6 +162,10 @@ export async function confirmarInscricaoPorPagamento(asaasPaymentId: string, val
   const dados: any = doc.data();
 
   if (dados.status === 'paga') {
+    // Reprocessar o webhook nao deve mudar nada, mas ressincronizamos o perfil:
+    // se a primeira tentativa gravou a inscricao e falhou depois, o atleta
+    // ficaria pago e fora do ranking para sempre.
+    await sincronizarStatusDeTemporada(dados.userId, dados.seasonId);
     return { encontrada: true, jaEstavaPaga: true, userId: dados.userId, seasonId: dados.seasonId };
   }
 
@@ -139,6 +174,8 @@ export async function confirmarInscricaoPorPagamento(asaasPaymentId: string, val
     valorPago: typeof valorPago === 'number' ? valorPago : dados.valor,
     pagaEm: FieldValue.serverTimestamp(),
   });
+
+  await sincronizarStatusDeTemporada(dados.userId, dados.seasonId);
 
   console.log(`[Inscricao] confirmada: ${dados.userId} na temporada ${dados.seasonId} (academia ${dados.gymId})`);
   return { encontrada: true, jaEstavaPaga: false, userId: dados.userId, seasonId: dados.seasonId };

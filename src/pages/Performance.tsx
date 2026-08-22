@@ -137,7 +137,7 @@ export function Performance() {
           <p className="text-zinc-400 font-mono text-xs">Aguardando autenticação...</p>
         ) : (
           <>
-            <p className="text-zinc-300 text-sm font-bold max-w-xs">Este espaço é exclusivo do Plano Performance.</p>
+            <p className="text-zinc-300 text-sm font-bold max-w-xs">Este espaço é exclusivo do Plano Pro.</p>
             <button onClick={() => navigate('/profile')} className="bg-emerald-500 text-black font-black text-xs px-5 py-2.5 rounded-2xl">Ver Planos</button>
           </>
         )}

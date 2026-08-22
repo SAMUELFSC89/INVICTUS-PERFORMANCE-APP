@@ -8,7 +8,7 @@ import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
  * Configuração necessária (feita fora do código, nos dashboards):
  * 1. Criar conta gratuita em https://app.revenuecat.com
  * 2. Criar o produto de assinatura mensal no Google Play Console (e depois na App
- *    Store Connect, quando o iOS entrar), com o preço definido (ex: R$ 49,90/mês).
+ *    Store Connect, quando o iOS entrar), com o preço definido (ex: R$ 29,90/mês).
  * 3. Conectar o app Android/iOS ao projeto da RevenueCat e importar esse produto.
  * 4. Criar uma "Entitlement" chamada exatamente "performance" e vincular o produto.
  * 5. Criar uma "Offering" (ex: "default") com um "Package" que contenha esse produto.

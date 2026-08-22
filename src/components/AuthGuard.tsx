@@ -924,8 +924,8 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
                   onChange={e => setPreferredPlan(e.target.value as any)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
                 >
-                  <option value="open" className="bg-surface-container">Plano Open (Grátis)</option>
-                  <option value="performance" className="bg-surface-container">Plano Performance (R$ 49,90/mês)</option>
+                  <option value="open" className="bg-surface-container">Plano Free (Grátis)</option>
+                  <option value="performance" className="bg-surface-container">Plano Pro (R$ 29,90/mês)</option>
                 </select>
               </div>
             </div>
@@ -1089,8 +1089,8 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
         throw new Error('Sessão inválida. Por favor, saia e faça login novamente.');
       }
 
-      // Plano Performance: executa a compra real na loja (Google Play/App Store)
-      // antes de pedir ao backend para confirmar. O Plano Open é gratuito e nunca
+      // Plano Pro: executa a compra real na loja (Google Play/App Store)
+      // antes de pedir ao backend para confirmar. O Plano Free é gratuito e nunca
       // passa por nenhuma loja.
       if (planId === 'invictus_performance') {
         await purchasePerformanceSubscription();
@@ -1112,7 +1112,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
 
       if (data.success && data.status === 'approved') {
         setPaymentCheckMsg(planId === 'invictus_open'
-          ? 'Plano Open ativado com sucesso! Liberando acesso...'
+          ? 'Plano Free ativado com sucesso! Liberando acesso...'
           : 'Assinatura ativada com sucesso pelas lojas oficiais! Liberando acesso...');
         if (refreshUser) {
           await refreshUser();
@@ -1148,7 +1148,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
 
           {/* Dual Plan Selector */}
           <div className="space-y-4">
-            {/* Plano Básico */}
+            {/* Plano Free */}
             <button
               onClick={() => setSelectedPlanId('invictus_open')}
               disabled={!!pendingOrder}
@@ -1159,7 +1159,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
               }`}
             >
               <div className="flex justify-between items-center w-full">
-                <span className="text-sm font-bold uppercase tracking-wider text-white">Plano Básico</span>
+                <span className="text-sm font-bold uppercase tracking-wider text-white">Plano Free</span>
                 <span className="text-lg font-headline italic font-black text-primary">Grátis</span>
               </div>
               <p className="text-[10px] text-on-surface-variant font-medium uppercase mt-1">
@@ -1167,7 +1167,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
               </p>
             </button>
 
-            {/* Plano Performance */}
+            {/* Plano Pro */}
             <button
               onClick={() => setSelectedPlanId('invictus_performance')}
               disabled={!!pendingOrder}
@@ -1178,8 +1178,8 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
               }`}
             >
               <div className="flex justify-between items-center w-full">
-                <span className="text-sm font-bold uppercase tracking-wider text-white">Plano Performance</span>
-                <span className="text-lg font-headline italic font-black text-primary">R$ 49,90<span className="text-[10px] font-normal not-italic text-on-surface-variant">/mês</span></span>
+                <span className="text-sm font-bold uppercase tracking-wider text-white">Plano Pro</span>
+                <span className="text-lg font-headline italic font-black text-primary">R$ 29,90<span className="text-[10px] font-normal not-italic text-on-surface-variant">/mês</span></span>
               </div>
               <p className="text-[10px] text-on-surface-variant font-medium uppercase mt-1">
                 Acesso Elite, Gráficos Biométricos avançados, Integração com Smartwatch e IA.
@@ -1252,7 +1252,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
 </span>
 <p className="text-[9.5px] text-on-surface-variant leading-relaxed">
 {selectedPlanId === 'invictus_open'
-? 'Sem custo e sem necessidade de cartão. Ative seu acesso ao Plano Básico agora mesmo.'
+? 'Sem custo e sem necessidade de cartão. Ative seu acesso ao Plano Free agora mesmo.'
 : 'Nenhum gateway externo. Selecione o sistema operacional desejado para validar e simular a compra oficial do seu plano Performance:'}
 </p>
 </div>

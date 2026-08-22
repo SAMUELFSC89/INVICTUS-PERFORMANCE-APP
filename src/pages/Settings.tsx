@@ -368,12 +368,12 @@ export function Settings() {
 
     if (selectedPlan === 'invictus_performance') {
       if (!smartwatchConnected) {
-        setCheckoutError('Para participar do Plano Performance é necessário conectar um smartwatch compatível. Isso permite uma avaliação mais justa do seu desempenho utilizando dados biométricos reais.');
+        setCheckoutError('Para participar do Plano Pro é necessário conectar um smartwatch compatível. Isso permite uma avaliação mais justa do seu desempenho utilizando dados biométricos reais.');
         setPaymentLoading(false);
         return;
       }
       if (!smartwatchAgreement) {
-        setCheckoutError('Você deve marcar e aceitar o termo de obrigatoriedade de uso de smartwatch para ativar a assinatura do Plano Performance.');
+        setCheckoutError('Você deve marcar e aceitar o termo de obrigatoriedade de uso de smartwatch para ativar a assinatura do Plano Pro.');
         setPaymentLoading(false);
         return;
       }
@@ -385,8 +385,8 @@ export function Settings() {
         throw new Error('Sessão expirada. Faça login novamente.');
       }
 
-      // Plano Performance: executa a compra real na loja (Google Play/App Store)
-      // antes de pedir ao backend para confirmar. O Plano Open é gratuito e nunca
+      // Plano Pro: executa a compra real na loja (Google Play/App Store)
+      // antes de pedir ao backend para confirmar. O Plano Free é gratuito e nunca
       // passa por nenhuma loja.
       if (selectedPlan === 'invictus_performance') {
         await purchasePerformanceSubscription();
@@ -409,7 +409,7 @@ export function Settings() {
       if (data.success && data.status === 'approved') {
         setPaymentStatusOverlay('success');
         setPaymentStatusMessage(selectedPlan === 'invictus_open'
-          ? 'Plano Open ativado com sucesso! Seu acesso Invictus está liberado.'
+          ? 'Plano Free ativado com sucesso! Seu acesso Invictus está liberado.'
           : 'Assinatura ativada com sucesso pelas lojas oficiais! Seu acesso Invictus Pro está liberado.');
         if (refreshUser) {
           await refreshUser();
@@ -449,7 +449,7 @@ export function Settings() {
       case 'scientific_consent':
         return { title: 'CESSÃO CIENTÍFICA', subtitle: 'Programa de Pesquisa & LGPD' };
       case 'subscription':
-        return { title: 'ASSINATURA INVICTUS PRO', subtitle: 'Planos Open e Performance' };
+        return { title: 'ASSINATURA INVICTUS PRO', subtitle: 'Planos Free e Pro' };
       case 'performance_scoring':
         return { title: 'FÓRMULA PERFORMANCE', subtitle: 'Score de Desempenho Biológico' };
       case 'scoring':
@@ -801,7 +801,7 @@ export function Settings() {
                       )}
                     >
                       <div>
-                        <span className="font-headline italic font-black text-sm uppercase text-on-surface block">INVICTUS OPEN</span>
+                        <span className="font-headline italic font-black text-sm uppercase text-on-surface block">PLANO FREE</span>
                         <span className="text-[9px] text-on-surface-variant font-bold uppercase block">SEM SMARTWATCH OBRIGATÓRIO</span>
                       </div>
                       <p className="text-sm text-primary font-black uppercase pt-2">GRÁTIS</p>
@@ -820,10 +820,10 @@ export function Settings() {
                         BIOMETRIA 🏅
                       </div>
                       <div>
-                        <span className="font-headline italic font-black text-sm uppercase text-on-surface block">INVICTUS PERFORMANCE</span>
+                        <span className="font-headline italic font-black text-sm uppercase text-on-surface block">PLANO PRO</span>
                         <span className="text-[9px] text-on-surface-variant font-bold uppercase block">EXIGE SMARTWATCH COMPATÍVEL</span>
                       </div>
-                      <p className="text-sm text-primary font-black uppercase pt-2">R$ 49,90 / MÊS</p>
+                      <p className="text-sm text-primary font-black uppercase pt-2">R$ 29,90 / MÊS</p>
                     </button>
                   </div>
 
@@ -843,7 +843,7 @@ export function Settings() {
                           {smartwatchAgreement && <Check size={12} className="text-black stroke-[3px]" />}
                         </div>
                         <span className="text-[9.5px] text-on-surface-variant font-medium leading-relaxed font-sans">
-                          Concordo que o uso de smartwatch é <strong>OBRIGATÓRIO</strong> para a validação no Plano Performance.
+                          Concordo que o uso de smartwatch é <strong>OBRIGATÓRIO</strong> para a validação no Plano Pro.
                         </span>
                       </label>
                     </div>
@@ -894,8 +894,8 @@ export function Settings() {
                   <thead>
                     <tr className="border-b border-white/10 text-[8px] font-black text-on-surface-variant uppercase">
                       <th className="pb-1.5 text-left">RECURSO</th>
-                      <th className="pb-1.5 text-center">OPEN</th>
-                      <th className="pb-1.5 text-center text-primary">PERFORMANCE</th>
+                      <th className="pb-1.5 text-center">FREE</th>
+                      <th className="pb-1.5 text-center text-primary">PRO</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 font-sans">
@@ -1143,7 +1143,7 @@ export function Settings() {
                 <div>
                   <span className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block">ASSINATURA INVICTUS PRO</span>
                   <span className="text-[9px] text-on-surface-variant">
-                    {user.isSubscribed ? 'Plano Ativo' : 'Fazer Upgrade para Performance'}
+                    {user.isSubscribed ? 'Plano Ativo' : 'Fazer Upgrade para Pro'}
                   </span>
                 </div>
               </div>
@@ -1483,10 +1483,10 @@ export function Settings() {
                   </div>
 
                   <div className="space-y-2">
-                    <span className="text-[9px] font-black tracking-[0.2em] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-3 py-1 rounded-full uppercase leading-none font-mono">ASSINATURA PREMIUM ATIVA</span>
+                    <span className="text-[9px] font-black tracking-[0.2em] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-3 py-1 rounded-full uppercase leading-none font-mono">ASSINATURA PRO ATIVA</span>
                     <h3 className="font-headline italic font-black text-2xl uppercase tracking-tight text-white leading-none mt-2">
                       BEM-VINDO AO <br/>
-                      <span className="bg-gradient-to-r from-amber-400 via-primary to-orange-500 bg-clip-text text-transparent">INVICTUS PERFORMANCE</span>
+                      <span className="bg-gradient-to-r from-amber-400 via-primary to-orange-500 bg-clip-text text-transparent">PLANO PRO</span>
                     </h3>
                   </div>
 

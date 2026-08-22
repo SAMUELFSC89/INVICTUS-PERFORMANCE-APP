@@ -126,7 +126,7 @@ export function WearablesDashboard() {
       { id: 'healthkit', name: 'iOS HealthKit API Permissões e Leitura', status: 'pending', details: 'Aguardando início...' },
       { id: 'strava', name: 'Strava OAuth 2.0 & Token Auto-Refresh', status: 'pending', details: 'Aguardando início...' },
       { id: 'deduplication', name: 'Composite Key Anti-Duplicidade', status: 'pending', details: 'Aguardando início...' },
-      { id: 'ecosystem', name: 'Integração de Rankings, Desafios e Plano Performance', status: 'pending', details: 'Aguardando início...' }
+      { id: 'ecosystem', name: 'Integração de Rankings, Desafios e Plano Pro', status: 'pending', details: 'Aguardando início...' }
     ]
   });
 
@@ -182,7 +182,7 @@ export function WearablesDashboard() {
       // 7. Ecosystem Integration
       updateItem('ecosystem', 'running', 'Sincronizando pontuação, atualizando Ligas/Rankings e checando progresso de desafios...');
       await delay(600);
-      updateItem('ecosystem', 'success', 'Ecosistema atualizado: Pontos adicionados à Liga de Corrida, streak preservado, e Plano Performance validado como OK.');
+      updateItem('ecosystem', 'success', 'Ecosistema atualizado: Pontos adicionados à Liga de Corrida, streak preservado, e Plano Pro validado como OK.');
 
     } catch (err: any) {
       console.error('Falha ao rodar testes:', err);
@@ -755,7 +755,7 @@ export function WearablesDashboard() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
               <h2 className="text-lg font-black tracking-tight font-headline">CENTRAL DE SINCRONIZAÇÃO</h2>
-              <p className="text-xs text-on-surface-variant">Sincronize seus treinos para computar pontos no Plano Performance.</p>
+              <p className="text-xs text-on-surface-variant">Sincronize seus treinos para computar pontos no Plano Pro.</p>
             </div>
             
             <div className="flex items-center gap-3">
@@ -1160,7 +1160,7 @@ export function WearablesDashboard() {
           </div>
 
           <p className="text-xs text-on-surface-variant leading-normal">
-            Como os canais nativos de iOS e Android requerem o app mobile compilado, utilize esta ferramenta para injetar atividades sintéticas na memória física do seu relógio simulado. Ao finalizar a gravação, use o botão <strong>"Sincronizar Agora"</strong> acima para importá-los, computando pontos no perfil, nos rankings, nos desafios ativos e no Plano Performance.
+            Como os canais nativos de iOS e Android requerem o app mobile compilado, utilize esta ferramenta para injetar atividades sintéticas na memória física do seu relógio simulado. Ao finalizar a gravação, use o botão <strong>"Sincronizar Agora"</strong> acima para importá-los, computando pontos no perfil, nos rankings, nos desafios ativos e no Plano Pro.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-surface-container-high p-4 rounded-xl border border-white/5">

@@ -751,8 +751,9 @@ export function Rankings() {
         )}
 
 
-        {/* Pro Waiting Info banner above list */}
-        {user.isSubscribed && user.seasonStatus === 'WAITING_NEXT_SEASON' && (
+        {/* Quem ja pagou a inscricao mas entra so na proxima temporada.
+            Nao depende mais de assinatura: quem compete e quem se inscreveu. */}
+        {user.seasonStatus === 'WAITING_NEXT_SEASON' && (
           <div className="mx-6 p-4 md:p-5 bg-primary/5 border border-primary/20 rounded-3xl text-center space-y-1.5 max-w-xl md:mx-auto my-4">
             <Clock className="mx-auto text-primary animate-pulse" size={24} />
             <h4 className="font-headline font-black text-base text-primary uppercase tracking-tight">Sua participação oficial começa em:</h4>

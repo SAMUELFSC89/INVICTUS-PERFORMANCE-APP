@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Play, Square, MapPin, Zap, Timer, Ruler, 
+  Play, Pause, Square, MapPin, Zap, Timer, Ruler,
   AlertCircle, CheckCircle2, XCircle, Camera,
   RefreshCw, ChevronRight, Share2, Map as MapIcon,
   Navigation, User
@@ -63,6 +63,17 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
   }); // meters
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [rollingPace, setRollingPace] = useState<string>('--:--');
+  // Pausa: semaforo, cadarco, banheiro. Sem isto o atleta precisava encerrar a
+  // atividade de verdade, ou aceitar que o pace afundasse.
+  const [isPaused, setIsPaused] = useState(() => localStorage.getItem('kmfatal_paused') === 'true');
+  const isPausedRef = useRef(isPaused);
+  // Tempo total ja passado em pausa. Sai do cronometro e do pace.
+  const pausedMsRef = useRef<number>(Number(localStorage.getItem('kmfatal_paused_ms') || 0));
+  const pauseStartRef = useRef<number | null>(
+    localStorage.getItem('kmfatal_paused') === 'true' ? Number(localStorage.getItem('kmfatal_pause_start') || Date.now()) : null
+  );
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [watchId, setWatchId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
@@ -84,6 +95,18 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
   // Buffer for smoothing pace (last 10 seconds)
   const paceBufferRef = useRef<{ dist: number, time: number }[]>([]);
 
+  // Apaga o rascunho local da atividade. So deve ser chamado depois que o
+  // servidor confirmou o registro, ou quando o atleta descarta a atividade.
+  const limparPersistencia = () => {
+    localStorage.removeItem('kmfatal_active_run');
+    localStorage.removeItem('kmfatal_start_time');
+    localStorage.removeItem('kmfatal_total_distance');
+    localStorage.removeItem('kmfatal_run_points');
+    localStorage.removeItem('kmfatal_paused');
+    localStorage.removeItem('kmfatal_paused_ms');
+    localStorage.removeItem('kmfatal_pause_start');
+  };
+
   // Persistence effect
   useEffect(() => {
     if (isTracking) {
@@ -91,20 +114,31 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
       localStorage.setItem('kmfatal_start_time', startTime?.toString() || '');
       localStorage.setItem('kmfatal_total_distance', totalDistance.toString());
       localStorage.setItem('kmfatal_run_points', JSON.stringify(points));
+      localStorage.setItem('kmfatal_paused', isPaused ? 'true' : 'false');
+      localStorage.setItem('kmfatal_paused_ms', String(pausedMsRef.current));
+      if (pauseStartRef.current) localStorage.setItem('kmfatal_pause_start', String(pauseStartRef.current));
+      else localStorage.removeItem('kmfatal_pause_start');
     } else if (!isFinalizing) {
-      // Clear persistence when run is dismissed or stopped (but keep during finalizing until submitted)
-      localStorage.removeItem('kmfatal_active_run');
-      localStorage.removeItem('kmfatal_start_time');
-      localStorage.removeItem('kmfatal_total_distance');
-      localStorage.removeItem('kmfatal_run_points');
+      // So limpa quando a atividade foi descartada. Durante a finalizacao o
+      // rascunho PRECISA sobreviver: se o Android matar o app enquanto a foto
+      // sobe, e ele que devolve a corrida ao atleta.
+      limparPersistencia();
     }
-  }, [isTracking, startTime, totalDistance, points, isFinalizing]);
+  }, [isTracking, startTime, totalDistance, points, isFinalizing, isPaused]);
+
+  // Tempo real de atividade: relogio de parede menos tudo que foi pausado,
+  // inclusive a pausa que ainda esta correndo agora.
+  function calcularDecorrido(now: number) {
+    if (!startTimeRef.current) return 0;
+    const pausaCorrente = pauseStartRef.current ? now - pauseStartRef.current : 0;
+    return Math.max(0, Math.floor((now - startTimeRef.current - pausedMsRef.current - pausaCorrente) / 1000));
+  }
 
   // Handle Visibility change to ensure background continuity
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isTracking && startTimeRef.current) {
-        setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+        setElapsedTime(calcularDecorrido(Date.now()));
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -181,7 +215,7 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
             altitude: altitude || 0
           };
 
-          if (isTracking && lastPointRef.current && (Math.floor((Date.now() - startTimeRef.current!) / 1000) < 5400)) {
+          if (isTracking && !isPausedRef.current && lastPointRef.current && calcularDecorrido(Date.now()) < 5400) {
             const last = lastPointRef.current;
             const dist = calculateDistance(last.lat, last.lng, lat, lng);
             const timeDiff = (timestamp - last.timestamp) / 1000;
@@ -217,6 +251,10 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
           setCurrentSpeed(speed || 0);
 
           if (!isTracking) return [newPoint];
+          // Em pausa continuamos lendo o GPS (para saber onde o atleta esta ao
+          // retomar), mas o trajeto nao recebe esses pontos: senao a linha do
+          // mapa atravessaria o caminho andado durante a pausa.
+          if (isPausedRef.current) return prev;
           return [...prev, newPoint];
         });
       },
@@ -245,7 +283,7 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
       startTimeRef.current = startTime;
       timerRef.current = window.setInterval(() => {
         const now = Date.now();
-        const diff = Math.floor((now - startTimeRef.current!) / 1000);
+        const diff = calcularDecorrido(now);
         if (diff >= 5400) {
           setElapsedTime(5400);
           setLimitMessage("Limite máximo de tempo atingido! Seu treino foi congelado em 90 minutos para evitar leituras excessivas. A validação final foi iniciada.");
@@ -262,12 +300,32 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
     };
   }, [isTracking, startTime]);
 
-  const startTracking = async () => {
-    if (gpsSignal === 'SEARCHING' && (!gpsAccuracy || gpsAccuracy > 100)) {
-       alert('Aguarde um sinal de GPS estável antes de iniciar.');
-       return;
+  // O GPS esta bom o bastante para comecar. Enquanto isto e falso o botao fica
+  // desabilitado mostrando a precisao atual -- em vez de aceitar o toque e
+  // responder com um alerta que nao diz quanto falta esperar.
+  const gpsPronto = gpsAccuracy !== null && gpsAccuracy <= 50;
+
+  /** Toque no botao iniciar: da 3 segundos para guardar o celular. */
+  const pedirInicio = () => {
+    if (!gpsPronto || countdown !== null) return;
+    setCountdown(3);
+  };
+
+  const cancelarInicio = () => setCountdown(null);
+
+  // Contagem regressiva antes de gravar de fato.
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      setCountdown(null);
+      startTracking();
+      return;
     }
-    
+    const t = window.setTimeout(() => setCountdown(c => (c === null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
+
+  const startTracking = async () => {
     // Request Wake Lock
     if ('wakeLock' in navigator) {
       try {
@@ -282,7 +340,14 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
     setPoints([]);
     setRollingPace('--:--');
     paceBufferRef.current = [];
-    
+
+    // Zera a contabilidade de pausa da atividade anterior.
+    pausedMsRef.current = 0;
+    pauseStartRef.current = null;
+    isPausedRef.current = false;
+    setIsPaused(false);
+    setConfirmingStop(false);
+
     const now = Date.now();
     setStartTime(now);
     startTimeRef.current = now;
@@ -290,7 +355,37 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
     setError(null);
   };
 
+  const alternarPausa = () => {
+    const now = Date.now();
+    if (isPausedRef.current) {
+      // Retomando: fecha a pausa corrente e soma ao acumulado.
+      pausedMsRef.current += now - (pauseStartRef.current ?? now);
+      pauseStartRef.current = null;
+      isPausedRef.current = false;
+      setIsPaused(false);
+    } else {
+      pauseStartRef.current = now;
+      isPausedRef.current = true;
+      setIsPaused(true);
+      // Zera o pace instantaneo: o buffer e de 8 leituras, e sem isto o
+      // primeiro pace apos retomar sairia do trecho anterior a pausa.
+      paceBufferRef.current = [];
+      setRollingPace('--:--');
+    }
+  };
+
+  /** Toque no botao vermelho. Encerrar exige um segundo toque. */
+  const pedirParada = () => setConfirmingStop(true);
+
   function stopTracking() {
+    // Se estava em pausa, fecha a conta antes de montar a sessao.
+    if (pauseStartRef.current) {
+      pausedMsRef.current += Date.now() - pauseStartRef.current;
+      pauseStartRef.current = null;
+      isPausedRef.current = false;
+      setIsPaused(false);
+    }
+    setConfirmingStop(false);
     if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     if (timerRef.current !== null) clearInterval(timerRef.current);
     
@@ -308,18 +403,11 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
   function prepareFinalSession() {
     let sessionPoints = points;
     if (sessionPoints.length === 0) {
-      if (lastPointRef.current) {
-        sessionPoints = [lastPointRef.current];
-      } else {
-        sessionPoints = [{
-          lat: 0,
-          lng: 0,
-          timestamp: Date.now(),
-          speed: 0,
-          accuracy: 0,
-          altitude: 0
-        }];
-      }
+      // Sem trajeto gravado, o melhor que temos e a ultima posicao conhecida.
+      // Se nem isso existe, a sessao vai SEM pontos de proposito: inventar
+      // lat 0 / lng 0 aponta para o meio do Atlantico e entrava no antifraude
+      // como se fosse coordenada real.
+      sessionPoints = lastPointRef.current ? [lastPointRef.current] : [];
     }
 
     const maxSpeed = sessionPoints.length > 0 ? Math.max(...sessionPoints.map(p => p.speed)) : 0;
@@ -341,12 +429,8 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
 
     setFinalSession(session);
     setIsFinalizing(true);
-    
-    // Clear persistence since it's now in memory as session
-    localStorage.removeItem('kmfatal_active_run');
-    localStorage.removeItem('kmfatal_start_time');
-    localStorage.removeItem('kmfatal_total_distance');
-    localStorage.removeItem('kmfatal_run_points');
+    // O rascunho em localStorage NAO e apagado aqui. Ele so sai depois que o
+    // servidor aceitar a atividade, em submitSession.
   }
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -394,6 +478,8 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
           return;
         }
 
+        // Aceita pelo servidor: agora sim o rascunho local pode sair.
+        limparPersistencia();
         onFinished({
             ...finalSession,
             id: result.sessionId || finalSession.id,
@@ -432,7 +518,16 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
       <div className="fixed inset-0 z-[200] bg-background flex flex-col">
         <div className="p-6 border-b border-outline-variant/10 flex items-center justify-between">
            <h2 className="font-headline italic font-black text-2xl text-on-surface uppercase tracking-tight">RESUMO DA CORRIDA</h2>
-           <button onClick={() => { localStorage.removeItem('kmfatal_active_run'); onClose(); }} className="p-2 text-on-surface-variant"><XCircle /></button>
+           <button
+             onClick={() => {
+               // Descartar e uma escolha explicita, e a atividade some. Por isso
+               // pergunta antes -- este X fica a um toque do resumo.
+               if (!window.confirm('Descartar esta atividade? Ela não será registrada e não pode ser recuperada.')) return;
+               limparPersistencia();
+               onClose();
+             }}
+             className="p-2 text-on-surface-variant"
+           ><XCircle /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -636,45 +731,117 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
 
        {/* Footer Controls */}
        <div className="p-4 pb-24 md:pb-8 bg-surface-container-low border-t border-outline-variant/10 flex flex-col items-center gap-4 relative z-[210]">
-          {!isTracking && gpsSignal !== 'STRONG' && gpsAccuracy && (
-             <p className="text-[9px] font-black text-alert-orange uppercase tracking-[0.2em] flex items-center gap-2">
-               <AlertCircle size={12} /> Sinal instável ({gpsAccuracy.toFixed(0)}m).
+          {/* Estado do GPS antes de comecar: sempre visivel, com a precisao em
+              metros, para o atleta saber o que esta esperando. */}
+          {!isTracking && countdown === null && (
+             <p className={cn(
+               "text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-2",
+               gpsPronto ? "text-primary" : "text-alert-orange"
+             )}>
+               <AlertCircle size={12} />
+               {gpsAccuracy === null
+                 ? 'Procurando sinal de GPS...'
+                 : gpsPronto
+                   ? `GPS pronto (${gpsAccuracy.toFixed(0)}m)`
+                   : `Aguardando GPS estabilizar (${gpsAccuracy.toFixed(0)}m)`}
              </p>
           )}
 
-          {!isTracking ? (
-             <motion.button
-               whileHover={{ scale: 1.05 }}
-               whileTap={{ scale: 0.95 }}
-               onClick={(e) => {
-                  e.stopPropagation();
-                  startTracking();
-               }}
-               className={cn(
-                 "w-20 h-20 rounded-full flex items-center justify-center text-black shadow-xl relative group transition-all",
-                 gpsSignal === 'SEARCHING' ? "bg-white/10 opacity-50 cursor-not-allowed" : "bg-primary shadow-[0_0_30px_rgba(var(--primary-rgb),0.3)]"
-               )}
-             >
-                <Play size={32} className="fill-current" />
-                <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-primary text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                  {gpsSignal === 'SEARCHING' ? 'BUSCANDO SINAL' : 'INICIAR'}
-                </span>
-             </motion.button>
+          {isPaused && (
+             <p className="text-[9px] font-black text-alert-orange uppercase tracking-[0.2em] flex items-center gap-2">
+               <AlertCircle size={12} /> Em pausa — tempo e distância congelados
+             </p>
+          )}
+
+          {countdown !== null ? (
+             /* Contagem antes de gravar: da tempo de guardar o celular sem que
+                esses segundos entrem no pace. */
+             <div className="flex flex-col items-center gap-3">
+               <div className="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-black shadow-[0_0_30px_rgba(var(--primary-rgb),0.4)]">
+                 <span className="font-headline italic font-black text-4xl leading-none">{countdown}</span>
+               </div>
+               <button
+                 onClick={(e) => { e.stopPropagation(); cancelarInicio(); }}
+                 className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-4 py-2"
+               >
+                 Cancelar
+               </button>
+             </div>
+          ) : !isTracking ? (
+             <div className="flex flex-col items-center gap-2">
+               <motion.button
+                 whileTap={gpsPronto ? { scale: 0.95 } : undefined}
+                 onClick={(e) => { e.stopPropagation(); pedirInicio(); }}
+                 disabled={!gpsPronto}
+                 aria-label="Iniciar atividade"
+                 className={cn(
+                   "w-20 h-20 rounded-full flex items-center justify-center text-black shadow-xl transition-all",
+                   gpsPronto
+                     ? "bg-primary shadow-[0_0_30px_rgba(var(--primary-rgb),0.3)]"
+                     : "bg-white/10 opacity-50 cursor-not-allowed"
+                 )}
+               >
+                  <Play size={32} className="fill-current" />
+               </motion.button>
+               <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+                 {gpsPronto ? 'Iniciar' : 'Buscando sinal'}
+               </span>
+             </div>
+         ) : confirmingStop ? (
+            /* Encerrar exige confirmacao: um toque acidental no botao vermelho
+               nao pode acabar com a atividade. */
+            <div className="flex flex-col items-center gap-3 w-full max-w-sm">
+              <p className="text-[10px] font-black uppercase tracking-widest text-on-surface text-center">
+                Encerrar a atividade?
+              </p>
+              <div className="flex items-center gap-3 w-full">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmingStop(false); }}
+                  className="flex-1 py-4 rounded-2xl bg-surface-container border border-outline-variant/20 text-on-surface font-black text-xs uppercase tracking-widest"
+                >
+                  Continuar
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); stopTracking(); }}
+                  className="flex-1 py-4 rounded-2xl bg-red-600 text-white font-black text-xs uppercase tracking-widest"
+                >
+                  Encerrar
+                </button>
+              </div>
+            </div>
          ) : (
-            <motion.button
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={(e) => {
-                 e.stopPropagation();
-                 stopTracking();
-              }}
-              className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center text-white shadow-2xl shadow-red-600/30 relative group"
-            >
-               <Square size={28} className="fill-current" />
-               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">PARAR</span>
-            </motion.button>
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col items-center gap-2">
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => { e.stopPropagation(); alternarPausa(); }}
+                  aria-label={isPaused ? 'Retomar atividade' : 'Pausar atividade'}
+                  className={cn(
+                    "w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all",
+                    isPaused ? "bg-primary text-black" : "bg-surface-container border border-outline-variant/20 text-on-surface"
+                  )}
+                >
+                  {isPaused ? <Play size={24} className="fill-current" /> : <Pause size={24} className="fill-current" />}
+                </motion.button>
+                <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+                  {isPaused ? 'Retomar' : 'Pausar'}
+                </span>
+              </div>
+
+              <div className="flex flex-col items-center gap-2">
+                <motion.button
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => { e.stopPropagation(); pedirParada(); }}
+                  aria-label="Encerrar atividade"
+                  className="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center text-white shadow-2xl shadow-red-600/30"
+                >
+                   <Square size={28} className="fill-current" />
+                </motion.button>
+                <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Encerrar</span>
+              </div>
+            </div>
          )}
       </div>
     </div>

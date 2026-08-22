@@ -143,7 +143,11 @@ export interface UserProfile {
   nextBillingDate?: string;
   expiresAt?: string;
   researchConsent?: boolean;
-  seasonStatus?: 'ACTIVE' | 'WAITING_NEXT_SEASON';
+  // Vem da INSCRICAO da temporada (season_inscriptions), nunca da assinatura.
+  // Assinar o Pro nao coloca ninguem na disputa, e cancelar o Pro nao tira
+  // quem ja pagou a inscricao daquela temporada.
+  seasonStatus?: 'ACTIVE' | 'WAITING_NEXT_SEASON' | 'NOT_ENROLLED';
+  seasonInscritaId?: string;
   nextSeasonStart?: string;
   subscriptionExpiresAt?: string;
   walletBalance: number;
