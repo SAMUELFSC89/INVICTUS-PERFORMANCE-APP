@@ -9,6 +9,21 @@ import {
   FaArrowRight
 } from 'react-icons/fa6';
 import { useUser } from '../UserContext';
+
+/**
+ * Contorno do card de saudacao: paralelogramo de cantos arredondados, inclinado
+ * 12,26 graus. Os pontos vieram de medicao em design/referencia-home.png, nao
+ * de escolha no olho -- os quatro cantos e o metodo estao em
+ * design/medidas-home.md. Mesmos numeros usados no clip-path do vidro
+ * (--recorte, em invictus.css); se um mudar, o outro tem que mudar junto.
+ */
+const MOLDURA_INCLINADA = [
+  '6.93,13.70', '7.53,8.77', '8.46,4.93', '9.72,2.19', '11.30,0.55',
+  '13.21,0.00', '92.21,0.00', '94.96,0.83', '96.96,3.31', '98.22,7.45',
+  '98.74,13.25', '98.52,20.70', '93.85,85.92', '93.28,90.99', '92.36,94.93',
+  '91.10,97.75', '89.50,99.44', '87.55,100.00', '7.97,100.00', '5.17,99.16',
+  '3.14,96.63', '1.88,92.41', '1.40,86.51', '1.69,78.91',
+].join(' ');
 import { workoutService } from '../services/workoutService';
 import { getXPProgress } from '../lib/levelUtils';
 import { getNextSeasonCountdown } from '../lib/seasonUtils';
@@ -164,6 +179,17 @@ export function Home() {
           id="home-greeting-card"
           className="iv-card--inclinado w-full"
         >
+         {/* vidro (atras) -> moldura (contorno) -> conteudo */}
+         <div className="iv-card__vidro" />
+         <svg
+           className="iv-card__moldura"
+           viewBox="0 0 100 100"
+           preserveAspectRatio="none"
+           aria-hidden="true"
+           focusable="false"
+         >
+           <polygon points={MOLDURA_INCLINADA} />
+         </svg>
          <div className="iv-card__dentro flex items-center gap-4">
           {/* Avatar circular + Badges Empilhados */}
           <div className="flex flex-col items-center shrink-0 gap-2">
@@ -243,7 +269,7 @@ export function Home() {
             {/* Primeiro Nome */}
             <h1
               id="home-user-name"
-              className="iv-titulo--ouro truncate max-w-full my-1"
+              className="iv-titulo--branco truncate max-w-full my-1"
               style={{
                 fontSize: 'clamp(32px, 9vw, 44px)',
                 lineHeight: 0.95

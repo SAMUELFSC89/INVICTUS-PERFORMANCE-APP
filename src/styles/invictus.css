@@ -128,6 +128,16 @@
  * drop-shadow do filter e aplicado depois do recorte e acompanha o formato.
  */
 .iv-card--inclinado {
+  /* ARMADILHA que ja custou uma rodada: a moldura NAO pode ser uma forma
+     dourada cheia atras do card.
+     backdrop-filter amostra o que esta pintado atras do elemento. Com o pai
+     pintado de dourado (e ainda por cima com `filter`, que cria contexto), o
+     "atras" do vidro passa a ser o proprio dourado do pai em vez do fogo da
+     pagina -- o card desfocava ouro e ficava amarelo, por mais neutro que
+     fosse o gradiente.
+     Por isso a linha virou um <svg> POR CIMA, desenhando so o contorno. Atras
+     do vidro nao ha nada pintado, e o backdrop volta a ser a arte de fundo. */
+  position: relative;
   --recorte: polygon(
     6.93% 13.70%, 7.53% 8.77%, 8.46% 4.93%, 9.72% 2.19%, 11.30% 0.55%,
     13.21% 0.00%, 92.21% 0.00%, 94.96% 0.83%, 96.96% 3.31%, 98.22% 7.45%,
@@ -135,14 +145,13 @@
     91.10% 97.75%, 89.50% 99.44%, 87.55% 100.00%, 7.97% 100.00%, 5.17% 99.16%,
     3.14% 96.63%, 1.88% 92.41%, 1.40% 86.51%, 1.69% 78.91%
   );
-  clip-path: var(--recorte);
-  background: var(--card-borda-forte);
-  padding: 1px;
-  filter: drop-shadow(0 0 10px rgba(241, 190, 34, 0.22))
-          drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
 }
 
-.iv-card__dentro {
+/* Vidro: o corpo translucido. Nada pintado atras dele, para o backdrop-filter
+   pegar a arte de fundo. */
+.iv-card__vidro {
+  position: absolute;
+  inset: 0;
   clip-path: var(--recorte);
   /* Escurecimento NEUTRO, sem tingir.
      Medido: a matiz dentro do card e a mesma de fora (0.07 nos dois lados), so
@@ -158,14 +167,38 @@
      tingia metade do card de amarelo -- que e justamente o que a arte nao faz.
      4px mantem a sensacao de filamento aceso sem colorir o vidro. */
   box-shadow: inset 0 0 4px rgba(241, 190, 34, 0.20);
-  /* Padding maior a esquerda e a direita: as laterais sao inclinadas, e nos
-     cantos a area util recua. Sem isso o conteudo encosta no fio. */
-  padding: 16px 26px;
+}
+
+/* Moldura: so o contorno, desenhado por cima.
+   preserveAspectRatio="none" estica o viewBox para a caixa real, e
+   vector-effect mantem o fio em 0,5px independente desse esticamento. */
+.iv-card__moldura {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 0 5px rgba(241, 190, 34, 0.55))
+          drop-shadow(0 0 16px rgba(241, 190, 34, 0.25));
+}
+
+.iv-card__moldura polygon {
+  fill: none;
+  stroke: var(--card-borda-forte);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 @media (min-resolution: 2dppx) {
-  .iv-card--inclinado { padding: var(--card-linha); }
+  .iv-card__moldura polygon { stroke-width: var(--card-linha); }
+}
+
+/* Conteudo por cima das duas camadas. Padding lateral maior porque as bordas
+   sao inclinadas e a area util recua nos cantos. */
+.iv-card__dentro {
+  position: relative;
+  padding: 16px 26px;
 }
 
 /* Fio de 0,5px so onde ele existe de verdade: em tela 1x, meio pixel some ou
@@ -184,6 +217,25 @@
   text-transform: uppercase;
   line-height: 1.05;
   font-style: normal;
+}
+
+/* Nome do atleta: BRANCO, nao dourado.
+   Medido na arte, o "SAMUEL" tem saturacao entre 0,016 e 0,077 -- ou seja,
+   branco. O dourado da arte esta reservado para "LIGA INVICTUS". Aplicar o
+   mesmo gradiente ouro nos dois achatava a hierarquia, e era o degrade que
+   fazia o nome parecer precisar de fundo para destacar: branco puro sobre o
+   fogo ja destaca sozinho.
+   O leve calor no rodape das letras acompanha a subida de saturacao medida. */
+.iv-titulo--branco {
+  font-family: 'Anton', sans-serif;
+  text-transform: uppercase;
+  line-height: 1.05;
+  font-style: normal;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 72%, #FFF6E2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
 .iv-titulo--ouro {
