@@ -9,6 +9,7 @@ import {
 import { MapContainer, TileLayer, Polyline, useMap, Circle, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { RunPoint, RunSession, runningService } from '../services/runningService';
+import { getFriendlyMessage } from '../services/validationMessages';
 import { calculateDistance, formatDuration, calculatePace } from '../lib/runUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -473,7 +474,12 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
         }
 
         if ((result as any).status === 'not_validated' || (result as any).reasonCode === 'NO_MOVEMENT_DETECTED' || (result as any).success === false) {
-          const refusalMsg = (result as any).userMessage || (result as any).message || '🚨 ATIVIDADE RECUSADA: Nenhum deslocamento foi detectado. Atividades estáticas não são validadas.';
+          // Sem texto vindo do servidor, cai no catalogo de mensagens em vez de
+          // um texto cru embutido aqui -- era assim que a tela escapava do tom
+          // definido em validationMessages.
+          const refusalMsg = (result as any).userMessage
+            || (result as any).message
+            || getFriendlyMessage((result as any).reasonCode || 'NO_MOVEMENT_DETECTED');
           setSubmitError(refusalMsg);
           return;
         }
@@ -484,7 +490,9 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
             ...finalSession,
             id: result.sessionId || finalSession.id,
             validationStatus: result.validation?.status || 'VALID',
-            confidenceScore: result.validation?.score || 100
+            confidenceScore: result.validation?.score || 100,
+            pointsEarned: (result as any).pointsEarned ?? (result as any).pointsAwarded,
+            isScoringEligible: (result as any).isScoringEligible
         });
       }
     } catch (err: any) {
@@ -535,9 +543,9 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
              <div className="bg-rose-500/10 border border-rose-500/30 p-4 rounded-2xl flex items-start gap-3 text-rose-400 font-sans">
                <AlertCircle size={20} className="shrink-0 mt-0.5" />
                <div className="space-y-1">
-                 <p className="text-xs font-black uppercase tracking-wide">🚨 ATIVIDADE SEM DESLOCAMENTO (0.00 KM)</p>
+                 <p className="text-xs font-black uppercase tracking-wide">Sem deslocamento detectado</p>
                  <p className="text-[10px] text-rose-200/80 leading-relaxed">
-                   O sistema de auditoria antifraude detectou que você permaneceu estático. Esta atividade será indeferida e não concederá pontos, XP ou alteração no ranking.
+                   {getFriendlyMessage('NO_MOVEMENT_DETECTED')}
                  </p>
                </div>
              </div>
@@ -576,7 +584,7 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
                  )}
                  <button 
                    onClick={() => fileInputRef.current?.click()}
-                   className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                   className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl"
                  >
                    {photoProof ? 'TROCAR FOTO' : 'TIRAR FOTO'}
                  </button>
@@ -875,7 +883,9 @@ function StatItem({ label, value, icon }: { label: string; value: string; icon: 
 export function ValidationFeedback({ session, onShare, onClose }: { session: RunSession; onShare?: () => void; onClose: () => void }) {
   const isInvalid = session.validationStatus === 'INVALID';
   const isSuspicious = session.validationStatus === 'SUSPICIOUS';
-  
+  const pontos = session.pointsEarned ?? 0;
+  const quilometros = (session.totalDistance / 1000).toFixed(2);
+
   return (
     <div className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
        <motion.div 
@@ -905,15 +915,38 @@ export function ValidationFeedback({ session, onShare, onClose }: { session: Run
           </div>
 
           <h2 className="text-3xl font-black italic uppercase italic tracking-tighter mb-2">
-             {isInvalid ? 'CORRIDA INVÁLIDA' : isSuspicious ? 'CONFERIR ATIVIDADE' : 'CORRIDA VALIDADA'}
+             {isInvalid ? 'CORRIDA NÃO VALIDADA' : isSuspicious ? 'CONFERIR ATIVIDADE' : 'BOA! CORRIDA VALIDADA'}
           </h2>
-          <p className="text-on-surface-variant text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-8">
-             {isInvalid 
-               ? 'Detectamos comportamentos anômalos' 
-               : isSuspicious 
-               ? 'Score de confiança moderado' 
-               : 'Atividade confirmada com sucesso'}
+          <p className="text-on-surface-variant text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-4">
+             {isInvalid
+               ? 'Esta atividade não gerou pontos'
+               : isSuspicious
+               ? 'Score de confiança moderado'
+               : `${quilometros} km em ${session.avgPace} de ritmo`}
           </p>
+
+          {/* O ganho concreto, em destaque. Antes o app dizia apenas
+              "confirmada com sucesso" e engolia os pontos que o backend
+              ja devolvia em pointsEarned. */}
+          {!isInvalid && pontos > 0 && (
+             <motion.div
+               initial={{ scale: 0.8, opacity: 0 }}
+               animate={{ scale: 1, opacity: 1 }}
+               transition={{ delay: 0.15, type: 'spring', stiffness: 220 }}
+               className="mb-6 py-4 rounded-3xl bg-primary/10 border border-primary/30"
+             >
+                <p className="font-headline italic font-black text-4xl text-primary leading-none">+{pontos}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-primary/80 mt-1.5">
+                  pontos conquistados
+                </p>
+             </motion.div>
+          )}
+
+          {!isInvalid && session.isScoringEligible === false && (
+             <p className="text-[10px] font-bold text-alert-orange mb-6 leading-relaxed px-2">
+               Corrida registrada no seu histórico. Ela não entra na pontuação desta semana porque você já atingiu o limite de treinos elegíveis.
+             </p>
+          )}
 
           <div className="bg-black/20 rounded-3xl p-6 mb-8 text-left space-y-4">
              <div className="flex justify-between items-center text-xs">
@@ -934,10 +967,10 @@ export function ValidationFeedback({ session, onShare, onClose }: { session: Run
                 />
              </div>
              <p className="text-[10px] font-medium leading-relaxed italic opacity-60">
-                {isInvalid 
-                  ? 'Esta atividade não contará para o ranking oficial devido a falhas na validação de velocidade ou GPS.' 
-                  : isSuspicious 
-                  ? 'Atividade suspeita. Pode demorar mais para ser processada nos rankings oficiais.' 
+                {isInvalid
+                  ? 'Esta atividade não entra no ranking. A validação de velocidade ou de GPS não passou.'
+                  : isSuspicious
+                  ? 'Esta atividade vai passar por análise antes de entrar no ranking.'
                   : 'Sua marca foi registrada e seu ranking será atualizado em instantes!'}
              </p>
           </div>

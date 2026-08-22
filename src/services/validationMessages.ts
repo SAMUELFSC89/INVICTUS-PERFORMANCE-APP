@@ -1,28 +1,39 @@
+/**
+ * Mensagens mostradas ao atleta quando uma atividade nao pontua.
+ *
+ * FONTE UNICA: o backend importa deste arquivo (api/_lib/validationMessages.ts
+ * apenas reexporta). Duas copias divergiram no passado, e o app passou a dizer
+ * "GPS" numa tela e "localizacao" em outra para o mesmo caso.
+ *
+ * TOM: neutro e curto. O que aconteceu, e a consequencia. Sem "indeferida",
+ * sem "homologada", sem sirene -- a pessoa treinou, nao cometeu uma infracao.
+ */
 export const VALIDATION_MESSAGES: Record<string, string> = {
-  GPS_OUTSIDE_ALLOWED_AREA: "Sua localização foi detectada fora da área permitida para o treino. Verifique se a localização está ativa e tente novamente.",
-  GPS_TOO_FAR_FROM_GYM: "Não conseguimos validar este treino porque sua localização ficou fora da área da academia cadastrada. No próximo treino, inicie a atividade estando dentro ou próximo da academia correta.",
-  GYM_DISTANCE_TOO_CLOSE_TO_START: "O local de início e fim da atividade são muito próximos ou idênticos à academia para caracterizar um deslocamento cardio. Tente iniciar um pouco mais distante.",
-  INSUFFICIENT_TIME: "Este treino não atingiu o tempo mínimo necessário para pontuar. Continue treinando pelo tempo mínimo indicado para que a atividade seja validada.",
-  PHOTO_NOT_CLEAR: "A foto enviada não ficou nítida o suficiente para validar o treino. Tente enviar uma imagem mais clara, mostrando melhor o ambiente da atividade.",
-  PHOTO_NOT_FITNESS_CONTEXT: "Não conseguimos identificar um ambiente compatível com treino na imagem enviada. Para validar, envie uma foto que mostre claramente o local ou equipamento da atividade.",
-  PHOTO_AI_FAILED: "Não conseguimos processar a imagem do treino automaticamente por inconsistência visual. A atividade será revisada manualmente.",
-  LOCATION_PERMISSION_DENIED: "Não foi possível validar sua atividade porque a permissão de localização estava desativada. Ative a localização e tente novamente no próximo treino.",
-  GPS_SIGNAL_WEAK: "O sinal de localização estava muito instável ou fraco durante o período. Aproxime-se de áreas abertas no próximo treino para garantir a validação automática.",
-  PACE_TOO_FAST: "A velocidade registrada ficou acima do limite permitido para uma atividade humana. Por segurança, essa atividade não gerou pontos.",
-  SUSPICIOUS_ROUTE: "O trajeto apresentou sinais inconsistentes com uma atividade normal. Por segurança, essa atividade foi enviada para análise ou não gerou pontuação.",
-  IMPOSSIBLE_ACCELERATION: "Detectamos acelerações incompatíveis com corrida ou caminhada humana no trajeto. Por segurança, os pontos não foram concedidos.",
-  MISSING_EVIDENCE: "Faltam evidências obrigatórias para este treino (como foto de validação ou dados de trajeto). Complete todas as etapas no seu próximo treino.",
-  AUTH_REQUIRED: "Sessão expirada. Entre novamente na sua conta para registrar e validar suas atividades.",
-  USER_NOT_AUTHENTICATED: "Usuário não autenticado. Faça login para registrar suas atividades de forma segura.",
-  ACTIVITY_DUPLICATED: "Esta atividade ou imagem já foi enviada anteriormente. Registre um novo treino para continuar pontuando.",
-  DAILY_LIMIT_REACHED: "Você já atingiu o limite máximo de pontos diários permitidos pela liga para manter o equilíbrio da competição.",
-  WEEKLY_LIMIT_REACHED: "Você já atingiu o limite de treinos semanais elegíveis para premiação. Continue mantendo a consistência!",
-  VALIDATION_SERVICE_UNAVAILABLE: "Sua atividade foi recebida, mas não conseguimos concluir a validação automática neste momento. Ela ficará em análise e você será informado quando for revisada.",
-  PENDING_MANUAL_REVIEW: "Não conseguimos confirmar todos os sinais necessários para validar automaticamente esta atividade. Ela foi enviada para análise.",
-  UNKNOWN_VALIDATION_ERROR: "Não conseguimos validar esta atividade no momento. Tente novamente ou realize uma nova atividade seguindo as regras do desafio."
+  NO_MOVEMENT_DETECTED: "Sem deslocamento detectado. Esta atividade não gerou pontos.",
+  GPS_OUTSIDE_ALLOWED_AREA: "Sua localização ficou fora da área permitida. Esta atividade não gerou pontos.",
+  GPS_TOO_FAR_FROM_GYM: "Sua localização ficou fora da área da academia cadastrada. Esta atividade não gerou pontos.",
+  GYM_DISTANCE_TOO_CLOSE_TO_START: "Início e fim muito próximos da academia para caracterizar deslocamento. Esta atividade não gerou pontos.",
+  INSUFFICIENT_TIME: "Tempo abaixo do mínimo necessário. Esta atividade não gerou pontos.",
+  PHOTO_NOT_CLEAR: "A foto não ficou nítida o suficiente para validar a atividade.",
+  PHOTO_NOT_FITNESS_CONTEXT: "A imagem não mostra um ambiente de treino identificável.",
+  PHOTO_AI_FAILED: "Não foi possível processar a imagem. A atividade ficará em análise.",
+  LOCATION_PERMISSION_DENIED: "A permissão de localização estava desativada. Esta atividade não gerou pontos.",
+  GPS_SIGNAL_WEAK: "O sinal de localização ficou instável durante a atividade.",
+  PACE_TOO_FAST: "A velocidade registrada ficou acima do limite para uma atividade humana. Esta atividade não gerou pontos.",
+  SUSPICIOUS_ROUTE: "O trajeto apresentou inconsistências. Esta atividade não gerou pontos.",
+  IMPOSSIBLE_ACCELERATION: "As acelerações registradas são incompatíveis com corrida ou caminhada. Esta atividade não gerou pontos.",
+  MISSING_EVIDENCE: "Faltam dados obrigatórios desta atividade, como foto ou trajeto.",
+  AUTH_REQUIRED: "Sessão expirada. Entre novamente para registrar atividades.",
+  USER_NOT_AUTHENTICATED: "Você precisa estar logado para registrar atividades.",
+  ACTIVITY_DUPLICATED: "Esta atividade já foi enviada antes.",
+  DAILY_LIMIT_REACHED: "Você atingiu o limite de pontos do dia.",
+  WEEKLY_LIMIT_REACHED: "Você atingiu o limite de treinos da semana elegíveis para premiação.",
+  VALIDATION_SERVICE_UNAVAILABLE: "Atividade recebida. A validação automática não concluiu agora e ela ficará em análise.",
+  PENDING_MANUAL_REVIEW: "Esta atividade foi enviada para análise.",
+  UNKNOWN_VALIDATION_ERROR: "Não foi possível validar esta atividade."
 };
 
 export function getFriendlyMessage(reasonCode: string | null | undefined): string {
-  if (!reasonCode) return "Atividade processada, mas não foi possível confirmar todos os critérios necessários.";
+  if (!reasonCode) return "Não foi possível confirmar todos os critérios desta atividade.";
   return VALIDATION_MESSAGES[reasonCode] || VALIDATION_MESSAGES.UNKNOWN_VALIDATION_ERROR;
 }

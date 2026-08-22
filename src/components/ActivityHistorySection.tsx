@@ -15,6 +15,7 @@ import { ActivityMapView } from './ActivityMapView';
 import { RunShareCard } from './RunShareCard';
 import { InvictusLogo } from './InvictusLogo';
 import { API_CONFIG } from '../config';
+import { VALIDATION_MESSAGES } from '../services/validationMessages';
 
 export interface ActivityHistoryItem {
   id: string;
@@ -281,7 +282,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
           <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-start gap-3">
             <AlertOctagon size={18} className="text-rose-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-rose-400 font-bold text-[10px] uppercase tracking-wider mb-1">Parecer da auditoria antifraude</p>
+              <p className="text-rose-400 font-bold text-[10px] uppercase tracking-wider mb-1">Esta atividade não pontuou</p>
               <p className="text-rose-200/90 text-xs leading-relaxed">{item.rejectionReason}</p>
             </div>
           </div>
@@ -497,8 +498,11 @@ export function ActivityHistorySection() {
           if (!reason && data.validation) {
             reason = data.validation.userMessage || data.validation.reason || data.validation.details?.aiAnalysis;
           }
-          if (reason === 'NO_MOVEMENT_DETECTED' || data.nonScoringReason === 'NO_MOVEMENT_DETECTED') {
-            reason = '🚨 Nenhum deslocamento foi detectado no GPS durante a sessão de cardio (0.00 km). Atividades estáticas não são homologadas.';
+          // Codigos crus nunca chegam a tela: viram texto pelo catalogo unico.
+          if (reason && VALIDATION_MESSAGES[reason]) {
+            reason = VALIDATION_MESSAGES[reason];
+          } else if (data.nonScoringReason === 'NO_MOVEMENT_DETECTED') {
+            reason = VALIDATION_MESSAGES.NO_MOVEMENT_DETECTED;
           }
 
           const trajectoryRaw = Array.isArray(data.trajectory) ? data.trajectory : (Array.isArray(data.checkpoints) ? data.checkpoints : undefined);

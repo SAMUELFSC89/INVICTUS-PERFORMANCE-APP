@@ -35,6 +35,10 @@ export interface RunSession {
   validationStatus: 'VALID' | 'SUSPICIOUS' | 'INVALID';
   photoProof?: string;
   rank?: number | string;
+  // O backend ja devolve estes valores em addRun. Antes eram descartados, e a
+  // tela de sucesso so conseguia dizer "confirmada com sucesso".
+  pointsEarned?: number;
+  isScoringEligible?: boolean;
 }
 
 export interface AdvancedRunStats {
