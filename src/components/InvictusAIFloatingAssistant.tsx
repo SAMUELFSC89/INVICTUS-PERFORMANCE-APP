@@ -225,7 +225,7 @@ function getScreenContext(pathname: string) {
       ]
     };
   }
-  if (pathname.startsWith('/challenges') || pathname.startsWith('/elite')) {
+  if (pathname.startsWith('/challenges')) {
     return {
       name: 'Desafios & Temporada',
       badge: 'Desafios',

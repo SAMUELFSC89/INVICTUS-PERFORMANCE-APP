@@ -5,7 +5,6 @@ import { Home } from './pages/Home';
 import { Rankings } from './pages/Rankings';
 import { Achievements } from './pages/Achievements';
 import { Challenges } from './pages/Challenges';
-import { EliteChallenges } from './pages/EliteChallenges';
 import { PublicProfile } from './pages/PublicProfile';
 import { Profile } from './pages/Profile';
 import { Wallet } from './pages/Wallet';
@@ -14,7 +13,6 @@ import { PaymentSuccess } from './pages/PaymentSuccess';
 import { AdminWorkouts } from './pages/AdminWorkouts';
 import { AdminPayouts } from './pages/AdminPayouts';
 import { AdminDashboard } from './pages/AdminDashboard';
-import { AdminEliteChallenges } from './pages/AdminEliteChallenges';
 import { AdminGymAudit } from './pages/AdminGymAudit';
 import { AdminRankingSimulator } from './pages/AdminRankingSimulator';
 import { AdminSecurityAudit } from './pages/AdminSecurityAudit';
@@ -59,7 +57,6 @@ export default function App() {
                 <Route path="/rankings" element={<Rankings />} />
                 <Route path="/gym" element={<Gym />} />
                 <Route path="/challenges" element={<Challenges />} />
-                <Route path="/elite" element={<EliteChallenges />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/achievements" element={<Achievements />} />
@@ -77,7 +74,6 @@ export default function App() {
                 <Route path="/clinical" element={<Navigate to="/" replace />} />
                 <Route path="/health" element={<Navigate to="/" replace />} />
                 <Route path="/admin/workouts" element={<AdminGuard><AdminWorkouts /></AdminGuard>} />
-                <Route path="/admin/elite" element={<AdminGuard><AdminEliteChallenges /></AdminGuard>} />
                 <Route path="/admin/payouts" element={<AdminGuard><AdminPayouts /></AdminGuard>} />
                 <Route path="/admin/gym-audit" element={<AdminGuard><AdminGymAudit /></AdminGuard>} />
                 <Route path="/admin/ranking-simulator" element={<AdminGuard><AdminRankingSimulator /></AdminGuard>} />

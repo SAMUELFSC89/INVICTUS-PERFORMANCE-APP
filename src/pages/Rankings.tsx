@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, ChevronUp, ChevronDown, Zap, Filter, Lock, Clock, Info, CheckCircle, AlertCircle, MapPin, Building2, Globe, Dumbbell, TrendingUp, Star, Crown, Target, Sparkles, Timer, ArrowRight, Share2, Heart, Flag, ShieldAlert, Swords } from 'lucide-react';
+import { Trophy, ChevronUp, ChevronDown, Zap, Filter, Lock, Clock, Info, CheckCircle, AlertCircle, MapPin, Building2, Globe, Dumbbell, TrendingUp, Star, Crown, Target, Sparkles, Timer, ArrowRight, Share2, Heart, Flag, ShieldAlert } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { getNextSeasonCountdown } from '../lib/seasonUtils';
 import { rankingService } from '../services/rankingService';
@@ -17,9 +17,9 @@ import { usePro } from '../ProContext';
 import { QuotaExhaustedError } from '../services/errors';
 
 const TABS = [
-  { id: 'gym', label: '🏋️ Academia', icon: <Building2 size={16} /> },
-  { id: 'city', label: '🏙️ Cidade', icon: <MapPin size={16} /> },
-  { id: 'global', label: '🇧🇷 Nacional', icon: <Globe size={16} /> }
+  { id: 'gym', label: 'Academia', icon: <Building2 size={16} /> },
+  { id: 'city', label: 'Cidade', icon: <MapPin size={16} /> },
+  { id: 'global', label: 'Nacional', icon: <Globe size={16} /> }
 ];
 
 import { useUser } from '../UserContext';
@@ -94,8 +94,10 @@ export function Rankings() {
       ranking.topUsers.slice(0, 3).forEach((u, i) => {
         const storedLikes = localStorage.getItem(`podium_likes_${u.uid}`);
         const userAddedLikes = storedLikes ? parseInt(storedLikes, 10) : 0;
-        const baseLikes = i === 0 ? 324 : i === 1 ? 215 : 142;
-        freshLikes[u.uid] = baseLikes + userAddedLikes;
+        // Sem base ficticia: o contador reflete apenas apoios reais.
+        // Atencao: hoje esses apoios ficam so no localStorage do aparelho,
+        // entao nao sao compartilhados entre usuarios.
+        freshLikes[u.uid] = userAddedLikes;
       });
       setPodiumLikes(freshLikes);
     }
@@ -312,8 +314,8 @@ export function Rankings() {
                   )}>
                     {React.cloneElement(tab.icon as React.ReactElement<{ size?: number }>, { size: 16 })}
                   </div>
-                  <span className="font-headline italic font-black text-[8px] md:text-[9px] uppercase tracking-[0.2em]">
-                    {tab.label.split(' ')[1]}
+                  <span className="font-headline font-black text-[8px] md:text-[9px] uppercase tracking-[0.2em]">
+                    {tab.label}
                   </span>
                   {activeTab === tab.id && (
                     <motion.div 
@@ -328,30 +330,9 @@ export function Rankings() {
           </div>
         </div>
 
-        {/* Quick Navigation for Events & Competitions */}
-        <div className="px-4 md:px-6 pt-4 pb-1 flex justify-start gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
-          <button 
-            onClick={() => navigate('/power')}
-            className="px-3.5 py-1.5 bg-surface-container-high/60 hover:bg-surface-container-high text-on-surface rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 border border-white/10 transition-all active:scale-95 shadow-sm"
-          >
-            <Swords size={12} className="text-red-400" />
-            Combates & Duelos
-          </button>
-          <button 
-            onClick={() => navigate('/elite')}
-            className="px-3.5 py-1.5 bg-surface-container-high/60 hover:bg-surface-container-high text-on-surface rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 border border-white/10 transition-all active:scale-95 shadow-sm"
-          >
-            <Target size={12} className="text-amber-400" />
-            Desafios Elite
-          </button>
-          <button 
-            onClick={() => navigate('/challenges')}
-            className="px-3.5 py-1.5 bg-surface-container-high/60 hover:bg-surface-container-high text-on-surface rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 border border-white/10 transition-all active:scale-95 shadow-sm"
-          >
-            <Dumbbell size={12} className="text-primary" />
-            Central de Treinos
-          </button>
-        </div>
+        {/* Fila de atalhos removida: a tela de Ranking passa a mostrar apenas
+            classificacao. Combates & Duelos continua acessivel pela rota /power.
+            Central de Treinos era duplicata da aba Desafios da barra inferior. */}
 
         {/* Period Filter - Minimalist Pills */}
         <div className="px-4 md:px-6 py-4 md:py-4 flex justify-center gap-2 md:gap-3 overflow-x-auto no-scrollbar whitespace-nowrap">
@@ -371,63 +352,16 @@ export function Rankings() {
           ))}
         </div>
 
-        {/* Plan Switcher (Performance vs Open) */}
-        <div className="px-4 md:px-6 pb-6 flex justify-center">
-          <div className="bg-surface-container/90 p-1.5 rounded-2xl border border-[#F5A623]/25 flex flex-wrap sm:flex-nowrap justify-center gap-1.5 max-w-full shadow-lg backdrop-blur-md">
-            <button
-              onClick={() => {
-                if (user?.subscriptionTier === 'performance') {
-                  setActiveTier('performance');
-                }
-              }}
-              disabled={user?.subscriptionTier !== 'performance'}
-              className={cn(
-                "px-3.5 sm:px-5 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.05em] sm:tracking-[0.1em] transition-all flex items-center gap-1.5 shrink-0 max-w-full text-ellipsis overflow-hidden whitespace-nowrap",
-                activeTier === 'performance'
-                  ? "bg-primary text-black font-black shadow-[0_0_15px_rgba(245,166,35,0.35)]"
-                  : "text-white/70 hover:text-white opacity-60 cursor-not-allowed"
-              )}
-            >
-              <Zap size={12} className={activeTier === 'performance' ? "fill-current shrink-0" : "shrink-0"} />
-              <span className="truncate">Plano Performance</span>
-              {user?.subscriptionTier === 'performance' ? (
-                <span className="text-[8px] bg-black/30 px-1.5 py-0.5 rounded ml-0.5 shrink-0 text-black font-bold">Seu Plano</span>
-              ) : (
-                <Lock size={10} className="ml-0.5 shrink-0 text-white/50" />
-              )}
-            </button>
-
-            <button
-              onClick={() => {
-                if (user?.subscriptionTier !== 'performance') {
-                  setActiveTier('open');
-                }
-              }}
-              disabled={user?.subscriptionTier === 'performance'}
-              className={cn(
-                "px-3.5 sm:px-5 py-2.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.05em] sm:tracking-[0.1em] transition-all flex items-center gap-1.5 shrink-0 max-w-full text-ellipsis overflow-hidden whitespace-nowrap",
-                activeTier === 'open'
-                  ? "bg-primary text-black font-black shadow-[0_0_15px_rgba(245,166,35,0.35)]"
-                  : "text-white/70 hover:text-white opacity-60 cursor-not-allowed"
-              )}
-            >
-              <Dumbbell size={12} className="shrink-0" />
-              <span className="truncate">Plano Open</span>
-              {user?.subscriptionTier !== 'performance' ? (
-                <span className="text-[8px] bg-black/30 px-1.5 py-0.5 rounded ml-0.5 shrink-0 text-black font-bold">Seu Plano</span>
-              ) : (
-                <Lock size={10} className="ml-0.5 shrink-0 text-white/50" />
-              )}
-            </button>
-          </div>
-        </div>
+        {/* Seletor de plano removido da tela. O estado activeTier continua
+            sendo inicializado pelo plano do usuario e enviado a consulta do
+            ranking, que separa Performance de Open. */}
 
         {/* Interactive 3D Podium Section */}
         {!loading && ranking && ranking.topUsers.length >= 3 && (
           <section className="px-4 sm:px-6 pt-6 pb-12 max-w-3xl mx-auto w-full">
             <div className="text-center mb-6 space-y-1">
               <span className="font-label text-primary text-[9px] font-black tracking-[0.2em] uppercase">MURAL DOS CAMPEÕES</span>
-              <h2 className="font-headline italic font-black text-3xl uppercase tracking-tighter text-white">PÓDIO INTERATIVO DOS TOP 3</h2>
+              <h2 className="font-headline font-black text-3xl uppercase tracking-tighter text-white">PÓDIO INTERATIVO DOS TOP 3</h2>
               <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">Envie coraçõezinhos para apoiar os líderes da rodada!</p>
             </div>
 
@@ -459,7 +393,7 @@ export function Rankings() {
                     />
                   </div>
                   {/* Badge */}
-                  <div className="absolute -top-3 right-1/2 translate-x-1/2 bg-prize-silver text-white w-5 h-5 rounded-md flex items-center justify-center font-headline italic font-black text-[10px] shadow-lg">
+                  <div className="absolute -top-3 right-1/2 translate-x-1/2 bg-prize-silver text-white w-5 h-5 rounded-md flex items-center justify-center font-headline font-black text-[10px] shadow-lg">
                     2
                   </div>
                 </div>
@@ -467,11 +401,11 @@ export function Rankings() {
                 {/* Pedestal Block */}
                 <div className="w-full bg-gradient-to-t from-prize-silver/15 via-surface-container-low/80 to-surface-container rounded-t-[24px] border-t border-x border-prize-silver/30 shadow-2xl flex flex-col items-center pt-4 pb-6 min-h-[140px] sm:min-h-[180px] justify-between relative">
                   <div className="text-center px-1">
-                    <span className="font-headline italic font-black text-3xl sm:text-4xl text-prize-silver/60 block leading-none mb-1">2º</span>
+                    <span className="font-headline font-black text-3xl sm:text-4xl text-prize-silver/60 block leading-none mb-1">2º</span>
                     <p className="font-label text-[9px] sm:text-xs font-black text-white uppercase truncate max-w-[80px] sm:max-w-[120px] mb-0.5 leading-none">
                       {ranking.topUsers[1].displayName}
                     </p>
-                    <p className="font-headline italic font-black text-[10px] sm:text-sm text-prize-silver">
+                    <p className="font-headline font-black text-[10px] sm:text-sm text-prize-silver">
                       {ranking.topUsers[1].score.toLocaleString()}
                     </p>
                   </div>
@@ -485,7 +419,7 @@ export function Rankings() {
                           initial={{ opacity: 1, scale: 0.8, y: 0, x: h.x }}
                           animate={{ opacity: 0, scale: 1.5, y: -70, x: h.x + (Math.random() * 20 - 10) }}
                           exit={{ opacity: 0 }}
-                          className="absolute pointer-events-none text-rose-500 z-50"
+                          className="absolute pointer-events-none text-primary z-50"
                           style={{ left: '50%', top: '-24px', marginLeft: '-10px' }}
                         >
                           <Heart fill="currentColor" size={16} />
@@ -496,11 +430,11 @@ export function Rankings() {
                     <button
                       type="button"
                       onClick={(e) => handleLikePodium(ranking.topUsers[1].uid, e)}
-                      className="px-2.5 py-1.5 rounded-full bg-surface-container-high/60 hover:bg-rose-500/20 active:scale-90 transition-all border border-white/10 flex items-center justify-center gap-1 group/btn shadow-inner cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-full bg-surface-container-high/60 hover:bg-primary/20 active:scale-90 transition-all border border-white/10 flex items-center justify-center gap-1 group/btn shadow-inner cursor-pointer"
                     >
-                      <Heart size={12} className="text-rose-400 group-hover/btn:scale-125 transition-transform" fill={localStorage.getItem(`podium_likes_${ranking.topUsers[1].uid}`) ? "currentColor" : "none"} />
+                      <Heart size={12} className="text-primary group-hover/btn:scale-125 transition-transform" fill={localStorage.getItem(`podium_likes_${ranking.topUsers[1].uid}`) ? "currentColor" : "none"} />
                       <span className="text-[10px] font-black text-white font-mono leading-none">
-                        {podiumLikes[ranking.topUsers[1].uid] || 215}
+                        {podiumLikes[ranking.topUsers[1].uid] || 0}
                       </span>
                     </button>
                   </div>
@@ -552,13 +486,13 @@ export function Rankings() {
                 {/* Tall Gold Pedestal Block */}
                 <div className="w-full bg-gradient-to-t from-prize-gold/20 via-surface-container-low/90 to-surface-container rounded-t-[28px] border-t border-x border-prize-gold/40 shadow-2xl flex flex-col items-center pt-4 pb-7 min-h-[170px] sm:min-h-[220px] justify-between relative ring-1 ring-prize-gold/10">
                   <div className="text-center px-1">
-                    <span className="font-headline italic font-black text-4xl sm:text-5xl text-prize-gold/70 block leading-none mb-1">1º</span>
+                    <span className="font-headline font-black text-4xl sm:text-5xl text-prize-gold/70 block leading-none mb-1">1º</span>
                     <p className="font-label text-[10px] sm:text-sm font-black text-white uppercase truncate max-w-[80px] sm:max-w-[120px] mb-0.5 leading-none">
                       {ranking.topUsers[0].displayName}
                     </p>
                     <div className="flex items-center justify-center gap-0.5">
                       <Sparkles size={10} className="text-prize-gold animate-pulse" />
-                      <p className="font-headline italic font-black text-xs sm:text-base text-prize-gold leading-none money-glow">
+                      <p className="font-headline font-black text-xs sm:text-base text-prize-gold leading-none money-glow">
                         {ranking.topUsers[0].score.toLocaleString()}
                       </p>
                     </div>
@@ -573,7 +507,7 @@ export function Rankings() {
                           initial={{ opacity: 1, scale: 0.8, y: 0, x: h.x }}
                           animate={{ opacity: 0, scale: 1.5, y: -70, x: h.x + (Math.random() * 20 - 10) }}
                           exit={{ opacity: 0 }}
-                          className="absolute pointer-events-none text-rose-500 z-50"
+                          className="absolute pointer-events-none text-primary z-50"
                           style={{ left: '50%', top: '-24px', marginLeft: '-10px' }}
                         >
                           <Heart fill="currentColor" size={18} />
@@ -584,11 +518,11 @@ export function Rankings() {
                     <button
                       type="button"
                       onClick={(e) => handleLikePodium(ranking.topUsers[0].uid, e)}
-                      className="px-3 py-1.5 rounded-full bg-surface-container-highest/80 hover:bg-rose-500/20 active:scale-90 transition-all border border-prize-gold/20 flex items-center justify-center gap-1 group/btn shadow-[0_0_15px_rgba(255,215,0,0.1)] cursor-pointer"
+                      className="px-3 py-1.5 rounded-full bg-surface-container-highest/80 hover:bg-primary/20 active:scale-90 transition-all border border-prize-gold/20 flex items-center justify-center gap-1 group/btn shadow-[0_0_15px_rgba(255,215,0,0.1)] cursor-pointer"
                     >
-                      <Heart size={13} className="text-rose-500 group-hover/btn:scale-125 transition-transform" fill={localStorage.getItem(`podium_likes_${ranking.topUsers[0].uid}`) ? "currentColor" : "none"} />
+                      <Heart size={13} className="text-primary group-hover/btn:scale-125 transition-transform" fill={localStorage.getItem(`podium_likes_${ranking.topUsers[0].uid}`) ? "currentColor" : "none"} />
                       <span className="text-[10px] font-black text-white font-mono leading-none">
-                        {podiumLikes[ranking.topUsers[0].uid] || 324}
+                        {podiumLikes[ranking.topUsers[0].uid] || 0}
                       </span>
                     </button>
                   </div>
@@ -621,7 +555,7 @@ export function Rankings() {
                     />
                   </div>
                   {/* Badge */}
-                  <div className="absolute -top-3 right-1/2 translate-x-1/2 bg-prize-bronze text-white w-5 h-5 rounded-md flex items-center justify-center font-headline italic font-black text-[10px] shadow-lg">
+                  <div className="absolute -top-3 right-1/2 translate-x-1/2 bg-prize-bronze text-white w-5 h-5 rounded-md flex items-center justify-center font-headline font-black text-[10px] shadow-lg">
                     3
                   </div>
                 </div>
@@ -629,11 +563,11 @@ export function Rankings() {
                 {/* Pedestal Block */}
                 <div className="w-full bg-gradient-to-t from-prize-bronze/15 via-surface-container-low/80 to-surface-container rounded-t-[24px] border-t border-x border-prize-bronze/30 shadow-2xl flex flex-col items-center pt-4 pb-6 min-h-[125px] sm:min-h-[155px] justify-between relative">
                   <div className="text-center px-1">
-                    <span className="font-headline italic font-black text-2xl sm:text-3xl text-prize-bronze/60 block leading-none mb-1">3º</span>
+                    <span className="font-headline font-black text-2xl sm:text-3xl text-prize-bronze/60 block leading-none mb-1">3º</span>
                     <p className="font-label text-[9px] sm:text-xs font-black text-white uppercase truncate max-w-[80px] sm:max-w-[120px] mb-0.5 leading-none">
                       {ranking.topUsers[2].displayName}
                     </p>
-                    <p className="font-headline italic font-black text-[10px] sm:text-sm text-prize-bronze">
+                    <p className="font-headline font-black text-[10px] sm:text-sm text-prize-bronze">
                       {ranking.topUsers[2].score.toLocaleString()}
                     </p>
                   </div>
@@ -647,7 +581,7 @@ export function Rankings() {
                           initial={{ opacity: 1, scale: 0.8, y: 0, x: h.x }}
                           animate={{ opacity: 0, scale: 1.5, y: -70, x: h.x + (Math.random() * 20 - 10) }}
                           exit={{ opacity: 0 }}
-                          className="absolute pointer-events-none text-rose-500 z-50"
+                          className="absolute pointer-events-none text-primary z-50"
                           style={{ left: '50%', top: '-24px', marginLeft: '-10px' }}
                         >
                           <Heart fill="currentColor" size={16} />
@@ -658,11 +592,11 @@ export function Rankings() {
                     <button
                       type="button"
                       onClick={(e) => handleLikePodium(ranking.topUsers[2].uid, e)}
-                      className="px-2.5 py-1.5 rounded-full bg-surface-container-high/60 hover:bg-rose-500/20 active:scale-90 transition-all border border-white/10 flex items-center justify-center gap-1 group/btn shadow-inner cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-full bg-surface-container-high/60 hover:bg-primary/20 active:scale-90 transition-all border border-white/10 flex items-center justify-center gap-1 group/btn shadow-inner cursor-pointer"
                     >
-                      <Heart size={12} className="text-rose-400 group-hover/btn:scale-125 transition-transform" fill={localStorage.getItem(`podium_likes_${ranking.topUsers[2].uid}`) ? "currentColor" : "none"} />
+                      <Heart size={12} className="text-primary group-hover/btn:scale-125 transition-transform" fill={localStorage.getItem(`podium_likes_${ranking.topUsers[2].uid}`) ? "currentColor" : "none"} />
                       <span className="text-[10px] font-black text-white font-mono leading-none">
-                        {podiumLikes[ranking.topUsers[2].uid] || 142}
+                        {podiumLikes[ranking.topUsers[2].uid] || 0}
                       </span>
                     </button>
                   </div>
@@ -673,6 +607,68 @@ export function Rankings() {
           </section>
         )}
 
+
+        {/* User Progression Banner */}
+        {!loading && ranking && (
+           <UserProgressionBanner 
+            ranking={ranking}
+            user={user}
+            activeTab={activeTab}
+           />
+        )}
+
+
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <section className="px-6 space-y-3 max-w-3xl mx-auto w-full">
+            {ranking?.topUsers.length === 0 ? (
+               <div className="text-center py-20 bg-surface-container-low rounded-[40px] border border-outline-variant/10 shadow-inner">
+                <Dumbbell className="mx-auto text-on-surface-variant/20 mb-4" size={60} />
+                <p className="font-label text-xs font-black text-on-surface-variant uppercase tracking-widest leading-relaxed">Prepare seus equipamentos.<br/>Nenhum gladiador entrou na arena ainda.</p>
+              </div>
+            ) : (
+              <>
+                {(() => {
+                  const todos = ranking?.topUsers || [];
+                  // Quando o podio aparece (3 ou mais atletas), ele ja representa
+                  // o top 3. A lista comeca no 4o lugar para nao repetir.
+                  const temPodio = todos.length >= 3;
+                  const inicio = temPodio ? 3 : 0;
+                  const restante = todos.slice(inicio);
+
+                  if (temPodio && restante.length === 0) {
+                    return (
+                      <p className="text-center py-10 font-label text-[10px] font-black text-on-surface-variant/70 uppercase tracking-widest leading-relaxed">
+                        A classificação completa aparece a partir do 4º colocado.
+                      </p>
+                    );
+                  }
+
+                  return restante.map((u, i) => {
+                    const idx = inicio + i;
+                    return (
+                      <RankingItem
+                        key={u.uid}
+                        entry={u}
+                        isMe={u.uid === user.uid}
+                        rank={idx + 1}
+                        reward={getResolvedRewardForRank(u, idx + 1)}
+                        pointsToNext={idx > 0 ? todos[idx - 1].score - u.score : 0}
+                        tab={activeTab}
+                      />
+                    );
+                  });
+                })()}
+              </>
+            )}
+          </section>
+        )}
+
+        {/* Blocos secundarios: descem para baixo da classificacao para que
+            o ranking apareca antes. Nenhum conteudo foi removido. */}
         {/* Challenge of the Week (Banner style) */}
         {activePeriod === 'weekly' && !loading && (
            <section className="px-6 mb-8 max-w-3xl mx-auto w-full">
@@ -684,7 +680,7 @@ export function Rankings() {
                  <div className="flex items-center justify-between relative z-10">
                     <div className="space-y-1">
                        <span className="bg-primary/20 text-primary text-[8px] font-black px-2 py-0.5 rounded-full border border-primary/20 uppercase tracking-widest">MISSÃO TEMPORÁRIA</span>
-                       <h3 className="font-headline italic font-black text-2xl text-on-surface uppercase tracking-tighter">DESAFIO DA SEMANA</h3>
+                       <h3 className="font-headline font-black text-2xl text-on-surface uppercase tracking-tighter">DESAFIO DA SEMANA</h3>
                        <div className="flex items-center gap-2 text-on-surface-variant text-[10px] font-black uppercase tracking-widest">
                           <Timer size={14} className="text-primary" />
                           <span>EXPIRA EM: {countdown}</span>
@@ -701,8 +697,6 @@ export function Rankings() {
               </motion.div>
            </section>
         )}
-
-
 
         {/* Global Summary & Prize Pool Info */}
         <section className="px-4 md:px-6 py-4 md:py-6 max-w-3xl mx-auto w-full">
@@ -721,8 +715,8 @@ export function Rankings() {
                       INCENTIVO DA TEMPORADA
                     </span>
                   </div>
-                  <h3 className="font-headline italic font-black text-2xl text-white uppercase tracking-tight">
-                    {activeTab === 'gym' ? '🏆 INCENTIVO DE ACADEMIA' : activeTab === 'city' ? '🏙️ INCENTIVO DE CIDADE' : '🇧🇷 INCENTIVO NACIONAL'}
+                  <h3 className="font-headline font-black text-2xl text-white uppercase tracking-tight">
+                    {activeTab === 'gym' ? 'INCENTIVO DE ACADEMIA' : activeTab === 'city' ? 'INCENTIVO DE CIDADE' : 'INCENTIVO NACIONAL'}
                   </h3>
                 </div>
                 
@@ -732,9 +726,9 @@ export function Rankings() {
                     "font-label text-[8px] md:text-[9px] font-black uppercase tracking-[0.25em] px-3 py-1.5 rounded-xl border",
                     poolDetails?.active 
                       ? poolDetails.participantsCount >= 250
-                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                        ? "bg-primary/10 border-primary/20 text-primary"
                         : "bg-primary/10 border-primary/20 text-primary"
-                      : "bg-red-500/10 border-red-500/20 text-red-400"
+                      : "bg-white/5 border-white/10 text-on-surface-variant"
                   )}>
                     {poolDetails?.statusLabel || 'Aguardando ativação'}
                   </span>
@@ -752,7 +746,7 @@ export function Rankings() {
                         VALOR ATUAL DA PREMIAÇÃO
                       </span>
                       {poolDetails?.active ? (
-                        <h2 className="font-headline italic font-black text-4xl md:text-5xl text-on-surface uppercase tracking-tighter leading-none money-glow flex items-baseline gap-2">
+                        <h2 className="font-headline font-black text-4xl md:text-5xl text-on-surface uppercase tracking-tighter leading-none money-glow flex items-baseline gap-2">
                           R$ <motion.span
                             initial={{ scale: 1 }}
                             animate={{ scale: [1, 1.05, 1] }}
@@ -762,7 +756,7 @@ export function Rankings() {
                           </motion.span>
                         </h2>
                       ) : (
-                        <h2 className="font-headline italic font-black text-4xl md:text-5xl text-on-surface-variant/40 uppercase tracking-tighter leading-none flex items-baseline gap-2">
+                        <h2 className="font-headline font-black text-4xl md:text-5xl text-on-surface-variant/40 uppercase tracking-tighter leading-none flex items-baseline gap-2">
                           R$ 0
                         </h2>
                       )}
@@ -792,7 +786,7 @@ export function Rankings() {
                       <span className="font-label text-on-surface-variant text-[8px] md:text-[9px] font-black uppercase tracking-widest block leading-none">
                         PARTICIPANTES ATUAIS
                       </span>
-                      <span className="font-headline italic font-black text-xl text-white">
+                      <span className="font-headline font-black text-xl text-white">
                         {poolDetails?.participantsCount ?? 0} / 250
                       </span>
                     </div>
@@ -804,11 +798,11 @@ export function Rankings() {
                         style={{ width: `${Math.min(100, (((poolDetails?.participantsCount ?? 0)) / 250) * 100)}%` }}
                       />
                       {/* Mark at 50 participants */}
-                      <div className="absolute left-[20%] top-0 bottom-0 w-[1px] bg-red-500/50" title="Ativação (50)" />
+                      <div className="absolute left-[20%] top-0 bottom-0 w-[1px] bg-primary/60" title="Ativação (50)" />
                     </div>
 
                     <div className="flex justify-between text-[8px] font-bold text-on-surface-variant/60 uppercase">
-                      <span className="text-emerald-400 font-bold">LIGA OFICIAL INVICTUS • EM ANDAMENTO</span>
+                      <span className="text-primary font-bold">LIGA OFICIAL INVICTUS • EM ANDAMENTO</span>
                       <span>CAPACIDADE MÁXIMA: 250</span>
                     </div>
                   </div>
@@ -825,7 +819,7 @@ export function Rankings() {
                           <span className="font-label text-[10px] font-black text-primary uppercase">
                             PRÓXIMA META:
                           </span>
-                          <span className="font-headline italic font-black text-lg text-white">
+                          <span className="font-headline font-black text-lg text-white">
                             {poolDetails.nextTier.participants} participantes
                           </span>
                         </div>
@@ -833,14 +827,14 @@ export function Rankings() {
                           <span className="font-label text-[10px] font-black text-primary uppercase">
                             PRÓPRIA PREMIAÇÃO:
                           </span>
-                          <span className="font-headline italic font-black text-lg text-primary">
+                          <span className="font-headline font-black text-lg text-primary">
                             R$ {poolDetails.nextTier.prizePool.toLocaleString('pt-BR')}
                           </span>
                         </div>
                       </div>
                     ) : (
                       <div className="py-2">
-                        <span className="font-headline italic font-black text-xs text-emerald-400 uppercase tracking-wider block">
+                        <span className="font-headline font-black text-xs text-primary uppercase tracking-wider block">
                           🚀 POTE MÁXIMO ALCANCADO! R$ 3.500 COMPLETO
                         </span>
                         <span className="text-[8px] font-bold text-on-surface-variant/60 uppercase tracking-widest block mt-1">
@@ -862,55 +856,16 @@ export function Rankings() {
           </div>
         </section>
 
-        {/* User Progression Banner */}
-        {!loading && ranking && (
-           <UserProgressionBanner 
-            ranking={ranking}
-            user={user}
-            activeTab={activeTab}
-           />
-        )}
-
         {/* Pro Waiting Info banner above list */}
         {user.isSubscribed && user.seasonStatus === 'WAITING_NEXT_SEASON' && (
           <div className="mx-6 p-4 md:p-5 bg-primary/5 border border-primary/20 rounded-3xl text-center space-y-1.5 max-w-xl md:mx-auto my-4">
             <Clock className="mx-auto text-primary animate-pulse" size={24} />
-            <h4 className="font-headline italic font-black text-base text-primary uppercase tracking-tight">Sua participação oficial começa em:</h4>
+            <h4 className="font-headline font-black text-base text-primary uppercase tracking-tight">Sua participação oficial começa em:</h4>
             <p className="text-xl font-bold text-white font-mono">{seasonDaysRemaining} DIAS</p>
             <p className="text-[10px] text-on-surface-variant uppercase font-semibold leading-relaxed">
               Continue treinando forte! Seus treinos estão sendo contabilizados no perfil, mas sua inserção oficial no ranking inicia na próxima temporada.
             </p>
           </div>
-        )}
-
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
-          <section className="px-6 space-y-3 max-w-3xl mx-auto w-full">
-            {ranking?.topUsers.length === 0 ? (
-               <div className="text-center py-20 bg-surface-container-low rounded-[40px] border border-outline-variant/10 shadow-inner">
-                <Dumbbell className="mx-auto text-on-surface-variant/20 mb-4" size={60} />
-                <p className="font-label text-xs font-black text-on-surface-variant uppercase tracking-widest leading-relaxed">Prepare seus equipamentos.<br/>Nenhum gladiador entrou na arena ainda.</p>
-              </div>
-            ) : (
-              <>
-                {(ranking?.topUsers || [])
-                  .map((u, idx) => (
-                    <RankingItem 
-                      key={u.uid} 
-                      entry={u} 
-                      isMe={u.uid === user.uid} 
-                      rank={idx + 1}
-                      reward={getResolvedRewardForRank(u, idx + 1)}
-                      pointsToNext={idx > 0 ? ranking.topUsers[idx - 1].score - u.score : 0}
-                      tab={activeTab}
-                    />
-                  ))}
-              </>
-            )}
-          </section>
         )}
       </div>
 
@@ -922,7 +877,7 @@ export function Rankings() {
           >
             <div className="flex items-center gap-3">
               <Clock size={16} className="text-primary animate-pulse" />
-              <p className="font-headline italic text-xs md:text-sm font-black text-white uppercase tracking-tight text-left">
+              <p className="font-headline text-xs md:text-sm font-black text-white uppercase tracking-tight text-left">
                 Sua participação começa em {seasonDaysRemaining} dias.
               </p>
             </div>
@@ -940,7 +895,7 @@ export function Rankings() {
           >
             <div className="flex items-center gap-3 md:gap-4 font-bold">
               <div className="bg-white/20 text-white p-2 rounded-lg flex items-center justify-center min-w-[36px] md:min-w-[40px]">
-                <span className="font-headline italic text-xl md:text-2xl font-black leading-none">
+                <span className="font-headline text-xl md:text-2xl font-black leading-none">
                   {activeTab === 'gym' ? (user.positions.gym || '-') : 
                    activeTab === 'city' ? (user.positions.city || '-') : 
                    (user.positions.national || '-')}
@@ -957,7 +912,7 @@ export function Rankings() {
               </div>
             </div>
             <div className="text-right flex flex-col items-end gap-1">
-              <span className="font-headline italic text-lg md:text-xl font-black text-white tracking-tighter block leading-none">
+              <span className="font-headline text-lg md:text-xl font-black text-white tracking-tighter block leading-none">
                 {activePeriod === 'weekly' ? user.weeklyScore?.toLocaleString() : 
                  activePeriod === 'monthly' ? user.monthlyScore?.toLocaleString() : 
                  user.score.toLocaleString()} PTS
@@ -965,7 +920,7 @@ export function Rankings() {
               {activePeriod === 'weekly' && (
                 <button
                   onClick={() => setShowIGAModal(true)}
-                  className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/20 border border-emerald-500/40 px-2.5 py-0.5 rounded-full hover:bg-emerald-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                  className="text-[10px] font-black uppercase tracking-wider text-primary bg-primary/20 border border-primary/40 px-2.5 py-0.5 rounded-full hover:bg-primary/30 transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <Sparkles size={10} />
                   <span>Auditoria IGA</span>
@@ -1087,7 +1042,7 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
 
       <div className="flex items-center gap-3 md:gap-5 flex-1 overflow-hidden relative z-10">
         <div className={cn(
-          "min-w-[36px] md:min-w-[44px] h-9 md:h-11 rounded-xl md:rounded-2xl flex items-center justify-center font-headline italic font-black text-xl md:text-2xl transition-all group-hover:scale-110",
+          "min-w-[36px] md:min-w-[44px] h-9 md:h-11 rounded-xl md:rounded-2xl flex items-center justify-center font-headline font-black text-xl md:text-2xl transition-all group-hover:scale-110",
           rank === 1 ? 'text-prize-gold' : 
           rank === 2 ? 'text-prize-silver' : 
           rank === 3 ? 'text-prize-bronze' : 
@@ -1117,7 +1072,7 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
         <div className="flex flex-col gap-0.5 md:gap-1 overflow-hidden min-w-[70px]">
           <div className="flex items-center flex-wrap gap-1 md:gap-2">
             <span className={cn(
-              "font-headline italic font-black text-[12px] md:text-sm uppercase tracking-tight truncate max-w-[100px] md:max-w-[140px]",
+              "font-headline font-black text-[12px] md:text-sm uppercase tracking-tight truncate max-w-[100px] md:max-w-[140px]",
               isMe ? "text-primary" : "text-white font-bold"
             )}>
               {entry.displayName?.split(' ')[0]}
@@ -1141,7 +1096,7 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
             )}
           </div>
           <div className="flex items-center gap-1.5">
-             <span className="font-headline italic font-black text-[10px] md:text-xs text-white/70 uppercase tracking-widest">{entry.score.toLocaleString()} PTS</span>
+             <span className="font-headline font-black text-[10px] md:text-xs text-white/70 uppercase tracking-widest">{entry.score.toLocaleString()} PTS</span>
              {pointsToNext > 0 && (
                <div className="flex items-center gap-1 text-[7px] md:text-[8px] font-black text-primary/80 uppercase whitespace-nowrap">
                   <TrendingUp className="w-[8px] h-[8px] md:w-[10px] md:h-[10px]" />
@@ -1163,13 +1118,13 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
             ) : (
               <>
                 <span className="font-label text-[7px] md:text-[8px] font-black text-on-surface-variant uppercase tracking-widest block mb-1 opacity-40">PRIZE</span>
-                <span className="font-headline italic font-black text-base md:text-xl text-primary money-glow">R${reward}</span>
+                <span className="font-headline font-black text-base md:text-xl text-primary money-glow">R${reward}</span>
               </>
             )}
           </div>
         ) : (
           <div className="text-right opacity-20 group-hover:opacity-40 transition-opacity">
-            <span className="font-headline italic font-black text-[9px] md:text-[10px] uppercase">
+            <span className="font-headline font-black text-[9px] md:text-[10px] uppercase">
               {movement === 'up' ? 'SB' : movement === 'down' ? 'DS' : '--'}
             </span>
           </div>

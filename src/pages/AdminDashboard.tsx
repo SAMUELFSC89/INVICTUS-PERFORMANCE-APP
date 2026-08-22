@@ -733,7 +733,6 @@ export function AdminDashboard() {
           <ActionButton label="Sandbox Smartwatch" icon={<Watch size={18} />} onClick={() => navigate('/wearables')} />
           <ActionButton label="Simulador de Rankings" icon={<Sliders size={18} />} onClick={() => navigate('/admin/ranking-simulator')} />
 <ActionButton label="IGA Original (Teste)" icon={<FlaskConical size={18} />} onClick={() => navigate('/admin/iga-teste-original')} />
-          <ActionButton label="ELITE ADMIN" icon={<Trophy size={18} />} onClick={() => navigate('/admin/elite')} />
           <ActionButton label="Payouts" icon={<CreditCard size={18} />} onClick={() => navigate('/admin/payouts')} />
           <ActionButton label="Workouts" icon={<Activity size={18} />} onClick={() => navigate('/admin/workouts')} />
           <ActionButton label="Auditar Academias" icon={<MapPin size={18} />} onClick={() => navigate('/admin/gym-audit')} />

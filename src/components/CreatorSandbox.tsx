@@ -133,7 +133,6 @@ export function CreatorSandbox({
             { name: 'Módulo de Força ⚡', path: '/power' },
             { name: 'Academia & Mapa 🏋️', path: '/gym' },
             { name: 'Treinos normais', path: '/challenges' },
-            { name: 'Desafios Elite', path: '/elite' },
             { name: 'Performance Chart 📈', path: '/performance' },
             { name: 'Carteira (Wallet)', path: '/wallet' },
             { name: 'Perfil & Altar 👤', path: '/profile' },
@@ -141,7 +140,6 @@ export function CreatorSandbox({
             { name: 'Admin Geral 🛠️', path: '/admin' },
             { name: 'Admin Simulador 🎛️', path: '/admin/ranking-simulator' },
             { name: 'Admin Treinos', path: '/admin/workouts' },
-            { name: 'Admin Elite', path: '/admin/elite' },
             { name: 'Admin Payouts', path: '/admin/payouts' }
           ].map(layout => (
             <button

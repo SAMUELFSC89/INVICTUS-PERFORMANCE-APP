@@ -26,7 +26,6 @@ import runningHandler, { handleRunActivity } from './_handlers/running.js';
 import habitsHandler from './_handlers/habits.js';
 import validateActivityHandler from './_handlers/validate-activity.js';
 import validatePresenceHandler from './_handlers/validate-presence.js';
-import eliteHandler from './_handlers/elite.js';
 import whatsappHandler from './_handlers/whatsapp.js';
 import notificationsHandler from './_handlers/notifications.js';
 import auditFraudHandler from './_handlers/audit-fraud.js';
@@ -129,7 +128,6 @@ assertHandler('gymsPhotoHandler', gymsPhotoHandler);
 assertHandler('runningHandler', runningHandler);
 assertHandler('validateActivityHandler', validateActivityHandler);
 assertHandler('validatePresenceHandler', validatePresenceHandler);
-assertHandler('eliteHandler', eliteHandler);
 assertHandler('stravaHandler', stravaHandler);
 assertHandler('whatsappHandler', whatsappHandler);
 assertHandler('auditFraudHandler', auditFraudHandler);
@@ -190,8 +188,6 @@ router.all('/validate-activity', wrap(validateActivityHandler));
 console.log('[ROUTE] /validate-presence', typeof validatePresenceHandler);
 router.all('/validate-presence', wrap(validatePresenceHandler));
 
-console.log('[ROUTE] /elite', typeof eliteHandler);
-router.all('/elite', wrap(eliteHandler));
 
 console.log('[ROUTE] /strava/auth', typeof stravaHandler);
 console.log('[ROUTE] /strava/callback', typeof stravaHandler);
