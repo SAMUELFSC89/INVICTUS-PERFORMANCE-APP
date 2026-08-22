@@ -150,95 +150,10 @@ window.addEventListener('unhandledrejection', (ev) => {
 });
 
 
-// #223 - PAINEL DE DIAGNOSTICO (temporario, fase de TestFlight).
-//
-// Nao existe console acessivel no iPhone sem um Mac. Este painel mostra os
-// marcos do boot registrados em firebase.ts (window.__invictusDiag) para que o
-// app consiga dizer sozinho ONDE ele parou, em vez de nos ficarmos adivinhando.
-//
-// REMOVER antes de publicar na App Store.
-function textoDiagnostico(): string {
-  const marcos = ((window as any).__invictusDiag as string[]) || [];
-  const linhas = marcos.length ? marcos.join('\n') : '(nenhum marco registrado)';
-  return [
-    'DIAGNOSTICO INVICTUS',
-    'plataforma: ' + navigator.platform,
-    'origem: ' + location.origin,
-    'montou: ' + appMontou + ' | renderizou: ' + appJaRenderizou(),
-    '',
-    'MARCOS DO BOOT:',
-    linhas
-  ].join('\n');
-}
-
-function mostrarPainelDiagnostico() {
-  const anterior = document.getElementById('invictus-diag');
-  if (anterior) anterior.remove();
-
-  const texto = textoDiagnostico();
-
-  const fundo = document.createElement('div');
-  fundo.id = 'invictus-diag';
-  fundo.style.cssText =
-    'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.92);color:#fff;' +
-    'font-family:-apple-system,sans-serif;padding:20px;box-sizing:border-box;overflow:auto';
-
-  const h = document.createElement('h2');
-  h.textContent = 'Diagnostico do INVICTUS';
-  h.style.cssText = 'font-size:17px;margin:0 0 10px';
-
-  const pre = document.createElement('pre');
-  pre.textContent = texto;
-  pre.style.cssText =
-    'white-space:pre-wrap;word-break:break-word;font-size:12px;background:#000;border:1px solid #333;' +
-    'border-radius:8px;padding:12px;user-select:text;-webkit-user-select:text';
-
-  const copiar = document.createElement('button');
-  copiar.textContent = 'Copiar diagnostico';
-  copiar.style.cssText =
-    'margin-top:14px;padding:14px;font-size:15px;font-weight:700;border:0;border-radius:10px;background:#EAB308;color:#000;width:100%';
-  copiar.onclick = () => {
-    if (navigator.clipboard) navigator.clipboard.writeText(texto).then(() => { copiar.textContent = 'Copiado!'; }, () => {});
-  };
-
-  const fechar = document.createElement('button');
-  fechar.textContent = 'Fechar';
-  fechar.style.cssText =
-    'margin-top:8px;padding:12px;font-size:14px;border:0;border-radius:10px;background:#333;color:#eee;width:100%';
-  fechar.onclick = () => fundo.remove();
-
-  fundo.appendChild(h);
-  fundo.appendChild(pre);
-  fundo.appendChild(copiar);
-  fundo.appendChild(fechar);
-  document.body.appendChild(fundo);
-}
-
-(window as any).__invictusMostrarDiag = mostrarPainelDiagnostico;
-
-// Se depois de 20 segundos o app ainda nao chegou a um estado util, oferece o
-// diagnostico. Nao rouba a tela: e so uma barra que da para dispensar.
-setTimeout(() => {
-  if (document.getElementById('invictus-diag')) return;
-  const barra = document.createElement('div');
-  barra.style.cssText =
-    'position:fixed;left:8px;right:8px;bottom:8px;z-index:99998;background:#1c1c1c;border:1px solid #444;' +
-    'border-radius:10px;padding:10px 12px;color:#eee;font-family:-apple-system,sans-serif;font-size:12px;' +
-    'display:flex;gap:8px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-  const msg = document.createElement('div');
-  msg.textContent = 'Diagnostico do carregamento disponivel.';
-  msg.style.cssText = 'flex:1;line-height:1.35';
-  const ver = document.createElement('button');
-  ver.textContent = 'Ver';
-  ver.style.cssText = 'padding:6px 12px;font-size:12px;font-weight:700;border:0;border-radius:6px;background:#EAB308;color:#000';
-  ver.onclick = () => { barra.remove(); mostrarPainelDiagnostico(); };
-  const x = document.createElement('button');
-  x.textContent = 'Fechar';
-  x.style.cssText = 'padding:6px 10px;font-size:12px;border:0;border-radius:6px;background:#333;color:#eee';
-  x.onclick = () => barra.remove();
-  barra.appendChild(msg); barra.appendChild(ver); barra.appendChild(x);
-  document.body.appendChild(barra);
-}, 20000);
+// #227 - Painel de diagnostico removido: era temporario para a fase de
+// TestFlight (#223) e nao pode ir para a App Store. A captura de erros
+// acima (mostrarTelaDeErro / tratarErroGlobal) permanece: e ela que faz
+// o WebView do iOS revelar o erro real em vez de "Script error." sem stack.
 
 import('./apiNativa')
   .then(() => import('./boot'))

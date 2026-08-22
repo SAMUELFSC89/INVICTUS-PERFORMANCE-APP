@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors } from '../_lib/common.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
+import { confirmarInscricaoPorPagamento } from '../_lib/inscricao-service.js';
 
 /**
  * Webhook do Asaas: recebe eventos de transferência PIX (TRANSFER_DONE,
@@ -28,6 +29,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const event = req.body?.event as string;
+
+    // ------------------------------------------------------------------
+    // ENTRADA DE DINHEIRO: pagamento de inscrição na temporada.
+    // O Asaas envia eventos PAYMENT_* para cobranças e TRANSFER_* para
+    // transferências. Antes este webhook só entendia o segundo grupo.
+    // ------------------------------------------------------------------
+    const payment = req.body?.payment;
+    if (event && payment && payment.id) {
+      const confirmado = event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED';
+
+      console.log('[Asaas Webhook] Evento de cobrança: ' + event + ' para pagamento ' + payment.id + ' (status: ' + payment.status + ')');
+
+      if (confirmado) {
+        const resultado = await confirmarInscricaoPorPagamento(payment.id, payment.value);
+        return res.status(200).json({ received: true, inscricao: resultado });
+      }
+
+      // Outros eventos de cobrança (vencida, estornada) não mudam inscrição
+      // paga -- ficam registrados no log para investigação.
+      return res.status(200).json({ received: true, ignorado: event });
+    }
+
     const transfer = req.body?.transfer;
 
     if (!event || !transfer || !transfer.id) {

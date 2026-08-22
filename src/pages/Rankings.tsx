@@ -15,6 +15,7 @@ import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { usePro } from '../ProContext';
 import { QuotaExhaustedError } from '../services/errors';
+import { seasonPrizeService, PremiacaoTemporada } from '../services/seasonPrizeService';
 
 const TABS = [
   { id: 'gym', label: 'Academia', icon: <Building2 size={16} /> },
@@ -83,6 +84,20 @@ export function Rankings() {
   const [showShareCard, setShowShareCard] = useState(false);
   const [shareUserData, setShareUserData] = useState<UserProfile | null>(null);
   const [showIGAModal, setShowIGAModal] = useState(false);
+
+  // Premiacao real da temporada (20% da receita arrecadada). Fica null quando
+  // nao foi possivel obter -- e nesse caso a tela nao mostra valor nenhum,
+  // em vez de exibir zero ou um numero estimado.
+  const [premiacao, setPremiacao] = useState<PremiacaoTemporada | null>(null);
+  const [mostrarFaixas, setMostrarFaixas] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    seasonPrizeService.buscarPremiacao().then((dados) => {
+      if (!cancelado) setPremiacao(dados);
+    });
+    return () => { cancelado = true; };
+  }, [user?.uid]);
 
   // States & handlers for interactive podium liking / cheering
   const [podiumLikes, setPodiumLikes] = useState<Record<string, number>>({});
@@ -277,17 +292,12 @@ export function Rankings() {
 
   if (!user) return null;
 
-  const poolDetails = activeTab === 'gym' 
-    ? categoryPools?.gymDetails 
-    : activeTab === 'city' 
-      ? categoryPools?.cityDetails 
-      : categoryPools?.nationalDetails;
 
   return (
     <div className="pb-32 min-h-screen bg-background">
       <div className="relative z-10 max-w-screen-xl mx-auto">
         {/* Sub-Header / Tab Navigation - Sticky and Sleek */}
-        <div className="sticky top-16 md:top-20 z-40 bg-background/90 backdrop-blur-2xl border-b border-white/[0.03] px-4 md:px-6">
+        <div className="sticky top-16 md:top-20 z-40 bg-background backdrop-blur-2xl border-b border-white/[0.06] px-4 md:px-6">
           <div className="flex gap-4 md:gap-10 py-1 overflow-x-auto no-scrollbar justify-start md:justify-center whitespace-nowrap">
             {TABS.map((tab) => {
               const isLocked = (tab.id === 'city' && !categoryPools?.status?.isCityUnlocked) || 
@@ -350,6 +360,48 @@ export function Rankings() {
               {period === 'all' ? 'TEMPORADA' : period === 'weekly' ? 'SEMANAL' : 'MENSAL'}
             </button>
           ))}
+        </div>
+
+
+        {/* Premiacao da temporada, compacta. O valor real fica atras do toque. */}
+        <div className="px-4 md:px-6 pb-1">
+          <button
+            onClick={() => setMostrarFaixas(true)}
+            className="w-full flex items-center gap-3 bg-surface-container/80 border border-[#F5A623]/35 rounded-2xl p-3.5 text-left active:scale-[0.99] transition-transform"
+          >
+            <div className="w-10 h-10 rounded-full border border-primary/60 bg-primary/10 flex items-center justify-center shrink-0">
+              <Trophy size={18} className="text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="font-label text-[9px] font-black uppercase tracking-[0.15em] text-on-surface-variant block leading-none mb-1">
+                Premiação da temporada
+              </span>
+              {!premiacao ? (
+                <span className="font-headline font-black text-sm text-on-surface-variant uppercase block">
+                  Carregando
+                </span>
+              ) : premiacao.faixaAtual === 0 ? (
+                <>
+                  <span className="font-headline font-black text-base text-white uppercase block leading-tight">
+                    Ainda não ativada
+                  </span>
+                  <span className="text-[10px] text-on-surface-variant font-semibold">
+                    Faixa 1 abre com {premiacao.faixas[0]?.minimoAtletas ?? 50} atletas
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="font-headline font-black text-lg text-primary uppercase block leading-tight">
+                    Faixa {premiacao.faixaAtual}
+                  </span>
+                  <span className="text-[10px] text-on-surface-variant font-semibold">
+                    {premiacao.premiados} primeiros são premiados
+                  </span>
+                </>
+              )}
+            </div>
+            <ArrowRight size={18} className="text-primary shrink-0" />
+          </button>
         </div>
 
         {/* Seletor de plano removido da tela. O estado activeTier continua
@@ -698,163 +750,6 @@ export function Rankings() {
            </section>
         )}
 
-        {/* Global Summary & Prize Pool Info */}
-        <section className="px-4 md:px-6 py-4 md:py-6 max-w-3xl mx-auto w-full">
-          <div className="bg-surface-container-low border border-outline-variant/10 rounded-[28px] md:rounded-[32px] p-6 md:p-8 relative overflow-hidden shadow-2xl">
-            {/* Ambient gradients */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-transparent opacity-40 pointer-events-none" />
-            <div className="absolute -top-10 -right-10 w-40 h-40 bg-primary/10 rounded-full blur-3xl opacity-30 pointer-events-none" />
-            
-            <div className="relative space-y-6">
-              {/* Header section */}
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/[0.03] pb-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={14} className="text-tertiary" />
-                    <span className="font-label text-tertiary text-[10px] md:text-[11px] font-black uppercase tracking-[0.3em]">
-                      INCENTIVO DA TEMPORADA
-                    </span>
-                  </div>
-                  <h3 className="font-headline font-black text-2xl text-white uppercase tracking-tight">
-                    {activeTab === 'gym' ? 'INCENTIVO DE ACADEMIA' : activeTab === 'city' ? 'INCENTIVO DE CIDADE' : 'INCENTIVO NACIONAL'}
-                  </h3>
-                </div>
-                
-                {/* Status Badge */}
-                <div className="flex items-center gap-2">
-                  <span className={cn(
-                    "font-label text-[8px] md:text-[9px] font-black uppercase tracking-[0.25em] px-3 py-1.5 rounded-xl border",
-                    poolDetails?.active 
-                      ? poolDetails.participantsCount >= 250
-                        ? "bg-primary/10 border-primary/20 text-primary"
-                        : "bg-primary/10 border-primary/20 text-primary"
-                      : "bg-white/5 border-white/10 text-on-surface-variant"
-                  )}>
-                    {poolDetails?.statusLabel || 'Aguardando ativação'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Grid with statistics */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* Left Side: Current Prize Card */}
-                <div className="space-y-4">
-                  <div className="bg-background/40 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-xl flex flex-col justify-between h-full">
-                    <div>
-                      <span className="font-label text-on-surface-variant text-[8px] md:text-[9px] font-black uppercase tracking-widest block mb-2 leading-none">
-                        VALOR ATUAL DA PREMIAÇÃO
-                      </span>
-                      {poolDetails?.active ? (
-                        <h2 className="font-headline font-black text-4xl md:text-5xl text-on-surface uppercase tracking-tighter leading-none money-glow flex items-baseline gap-2">
-                          R$ <motion.span
-                            initial={{ scale: 1 }}
-                            animate={{ scale: [1, 1.05, 1] }}
-                            transition={{ duration: 3, repeat: Infinity }}
-                          >
-                            {(poolDetails?.prizePool || 0).toLocaleString('pt-BR')}
-                          </motion.span>
-                        </h2>
-                      ) : (
-                        <h2 className="font-headline font-black text-4xl md:text-5xl text-on-surface-variant/40 uppercase tracking-tighter leading-none flex items-baseline gap-2">
-                          R$ 0
-                        </h2>
-                      )}
-                      
-                      <p className="text-[9px] font-semibold text-on-surface-variant uppercase tracking-wider mt-4 leading-relaxed">
-                        {poolDetails?.active 
-                          ? "O incentivo está ATIVO! Continue subindo posições para garantir sua parte no pote."
-                          : "O incentivo da temporada ainda não está ativado. São necessários no mínimo 50 atletas válidos."
-                        }
-                      </p>
-                    </div>
-
-                    <div className="pt-4 border-t border-white/[0.03] mt-4 flex items-center gap-2">
-                      <Zap size={12} className="text-primary" fill="currentColor" />
-                      <span className="font-label text-[8px] text-primary uppercase font-black tracking-widest">
-                        Distribuição para o Top 10
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Side: Participant metrics and next tier */}
-                <div className="space-y-4">
-                  {/* Participant count */}
-                  <div className="bg-background/40 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-xl space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="font-label text-on-surface-variant text-[8px] md:text-[9px] font-black uppercase tracking-widest block leading-none">
-                        PARTICIPANTES ATUAIS
-                      </span>
-                      <span className="font-headline font-black text-xl text-white">
-                        {poolDetails?.participantsCount ?? 0} / 250
-                      </span>
-                    </div>
-                    
-                    {/* Progress Bar */}
-                    <div className="w-full bg-surface-container-highest h-2.5 rounded-full overflow-hidden relative border border-white/5">
-                      <div 
-                        className="bg-gradient-to-r from-amber-500 via-primary to-orange-600 h-full rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(255,204,0,0.5)]"
-                        style={{ width: `${Math.min(100, (((poolDetails?.participantsCount ?? 0)) / 250) * 100)}%` }}
-                      />
-                      {/* Mark at 50 participants */}
-                      <div className="absolute left-[20%] top-0 bottom-0 w-[1px] bg-primary/60" title="Ativação (50)" />
-                    </div>
-
-                    <div className="flex justify-between text-[8px] font-bold text-on-surface-variant/60 uppercase">
-                      <span className="text-primary font-bold">LIGA OFICIAL INVICTUS • EM ANDAMENTO</span>
-                      <span>CAPACIDADE MÁXIMA: 250</span>
-                    </div>
-                  </div>
-
-                  {/* Next Tier target info */}
-                  <div className="bg-background/40 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-xl space-y-2">
-                    <span className="font-label text-on-surface-variant text-[8px] md:text-[9px] font-black uppercase tracking-widest block leading-none">
-                      PRÓXIMO OBJETIVO DA COMUNIDADE
-                    </span>
-                    
-                    {poolDetails?.nextTier ? (
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-baseline">
-                          <span className="font-label text-[10px] font-black text-primary uppercase">
-                            PRÓXIMA META:
-                          </span>
-                          <span className="font-headline font-black text-lg text-white">
-                            {poolDetails.nextTier.participants} participantes
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-baseline">
-                          <span className="font-label text-[10px] font-black text-primary uppercase">
-                            PRÓPRIA PREMIAÇÃO:
-                          </span>
-                          <span className="font-headline font-black text-lg text-primary">
-                            R$ {poolDetails.nextTier.prizePool.toLocaleString('pt-BR')}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="py-2">
-                        <span className="font-headline font-black text-xs text-primary uppercase tracking-wider block">
-                          🚀 POTE MÁXIMO ALCANCADO! R$ 3.500 COMPLETO
-                        </span>
-                        <span className="text-[8px] font-bold text-on-surface-variant/60 uppercase tracking-widest block mt-1">
-                          Nenhum outro nível nesta temporada. Todos os prêmios do Top 10 estão maximizados de forma absoluta!
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-
-              </div>
-              
-              {/* Season info warning */}
-              <p className="text-on-surface-variant/75 text-[7px] md:text-[8px] font-bold uppercase tracking-wide leading-relaxed">
-                Os incentivos exibidos nesta temporada fazem parte de campanhas promocionais, ações de engajamento e programas de reconhecimento esportivo disponibilizados pela plataforma e parceiros participantes.
-              </p>
-            </div>
-          </div>
-        </section>
 
         {/* Pro Waiting Info banner above list */}
         {user.isSubscribed && user.seasonStatus === 'WAITING_NEXT_SEASON' && (
@@ -870,7 +765,9 @@ export function Rankings() {
       </div>
 
       {/* Sticky User Position Bar */}
-      <div id="user-position-bar" className="fixed bottom-20 md:bottom-24 left-0 right-0 z-40 px-4 pointer-events-none flex justify-center pb-safe">
+      {/* Reserva espaco a direita para o botao flutuante da IA, que fica na
+          mesma altura (bottom-20 right-4) e cobria a pontuacao do usuario. */}
+      <div id="user-position-bar" className="fixed bottom-20 md:bottom-24 left-0 right-0 z-40 pl-4 pr-[88px] md:px-4 pointer-events-none flex justify-center pb-safe">
         {user.seasonStatus === 'WAITING_NEXT_SEASON' ? (
           <div
             className="bg-surface-container shadow-2xl shadow-black/40 p-4 rounded-2xl md:rounded-3xl flex items-center justify-between border border-primary/20 pointer-events-auto w-full max-w-md"
@@ -948,6 +845,122 @@ export function Rankings() {
         auditData={(user as any)?.igaAudit || (user ? calculateWeeklyIGA([], { age: user.age, weightKg: user.weight, maxHeartRate: user.maxHeartRate }) : null)}
         userName={user?.name}
       />
+
+      {/* Folha de faixas de premiacao. Mostra os valores REAIS vindos de
+          /api/season-prize (20% da receita arrecadada), nunca estimativa. */}
+      <AnimatePresence>
+        {mostrarFaixas && (
+          <div
+            className="fixed inset-0 z-[130] flex items-end justify-center bg-black/85 backdrop-blur-md"
+            onClick={() => setMostrarFaixas(false)}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-surface-container-low border-t border-x border-[#F5A623]/35 rounded-t-[28px] p-5 pb-10 max-h-[85vh] overflow-y-auto"
+            >
+              <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+
+              <h3 className="font-headline font-black text-xl text-white uppercase tracking-tight">
+                Faixas de premiação
+              </h3>
+              <p className="text-[11px] text-on-surface-variant leading-relaxed mt-1 mb-4">
+                A premiação da Liga Invictus é nacional e única: uma parte da receita
+                de assinaturas da temporada é dividida entre os primeiros colocados
+                do ranking nacional.
+              </p>
+
+              {premiacao && premiacao.pote > 0 && (
+                <div className="bg-background/40 border border-white/5 rounded-2xl p-4 mb-4">
+                  <span className="font-label text-[9px] font-black uppercase tracking-widest text-on-surface-variant block mb-1">
+                    Prêmio acumulado até agora
+                  </span>
+                  <span className="font-headline font-black text-3xl text-primary block leading-none">
+                    R$ {premiacao.pote.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                  {premiacao.porPosicao.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-1.5">
+                      {premiacao.porPosicao.map((linha) => (
+                        <div key={linha.posicao} className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-on-surface-variant uppercase">
+                            {linha.posicao}º lugar
+                          </span>
+                          <span className="font-headline font-black text-sm text-white">
+                            R$ {linha.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[9px] text-on-surface-variant/70 mt-3 leading-relaxed">
+                    O valor cresce conforme novas assinaturas entram e só é fechado no
+                    encerramento da temporada.
+                  </p>
+                </div>
+              )}
+
+              {premiacao && premiacao.pote === 0 && (
+                <div className="bg-background/40 border border-white/5 rounded-2xl p-4 mb-4">
+                  <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                    Nenhum valor acumulado nesta temporada ainda.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {(premiacao?.faixas || []).map((faixa) => {
+                  const atual = premiacao?.faixaAtual === faixa.numero;
+                  return (
+                    <div
+                      key={faixa.numero}
+                      className={cn(
+                        'flex items-center gap-3 rounded-2xl p-3 border',
+                        atual
+                          ? 'border-primary bg-primary/10'
+                          : 'border-white/[0.07]'
+                      )}
+                    >
+                      <span className={cn('font-headline font-black text-base w-16 shrink-0', atual ? 'text-primary' : 'text-on-surface-variant')}>
+                        Faixa {faixa.numero}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className={cn('text-[12px] font-bold block', atual ? 'text-white' : 'text-on-surface-variant')}>
+                          A partir de {faixa.minimoAtletas} atletas
+                        </span>
+                        {atual && (
+                          <span className="font-label text-[9px] font-black uppercase tracking-widest text-primary">
+                            Faixa atual
+                          </span>
+                        )}
+                      </div>
+                      <span className={cn('text-[11px] font-bold uppercase shrink-0', atual ? 'text-primary' : 'text-on-surface-variant')}>
+                        Top {faixa.premiados}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <p className="text-on-surface-variant/70 text-[9px] font-semibold uppercase tracking-wide leading-relaxed mt-4 pt-4 border-t border-white/[0.06]">
+                Os incentivos exibidos nesta temporada fazem parte de campanhas
+                promocionais, ações de engajamento e programas de reconhecimento
+                esportivo disponibilizados pela plataforma e parceiros participantes.
+              </p>
+
+              <button
+                onClick={() => setMostrarFaixas(false)}
+                className="w-full mt-5 py-3.5 rounded-2xl bg-primary text-black font-label text-[11px] font-black uppercase tracking-widest active:scale-95 transition-transform"
+              >
+                Fechar
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

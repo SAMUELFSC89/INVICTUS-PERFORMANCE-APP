@@ -1,4 +1,5 @@
 import { db, FieldValue } from './common.js';
+import { getOrInitCurrentSeasonWindow, calcularProximaJanela } from './season-prize-engine.js';
 
 export interface CalculatedSeason {
   seasonId: string;
@@ -10,57 +11,28 @@ export interface CalculatedSeason {
 /**
  * Calculates season details based on payment date as requested by the strict season policy.
  */
-export function calculateSeasonDetails(purchaseDate: Date): CalculatedSeason {
-  const day = purchaseDate.getDate();
-  const year = purchaseDate.getFullYear();
-  const month = purchaseDate.getMonth(); // 0-11
-  
-  if (day === 1) {
-    const startsAt = new Date(year, month, 1, 0, 0, 0, 0);
-    const endsAt = new Date(year, month, 14, 23, 59, 59, 999);
-    const seasonId = `season_${year}_${String(month + 1).padStart(2, '0')}_A`;
-    return {
-      seasonId,
-      seasonStart: startsAt.toISOString(),
-      seasonEnd: endsAt.toISOString(),
-      status: 'ACTIVE'
-    };
-  } else if (day >= 2 && day <= 14) {
-    const startsAt = new Date(year, month, 15, 0, 0, 0, 0);
-    const endsAt = new Date(year, month + 1, 0, 23, 59, 59, 999);
-    const seasonId = `season_${year}_${String(month + 1).padStart(2, '0')}_B`;
-    return {
-      seasonId,
-      seasonStart: startsAt.toISOString(),
-      seasonEnd: endsAt.toISOString(),
-      status: 'WAITING'
-    };
-  } else if (day === 15) {
-    const startsAt = new Date(year, month, 15, 0, 0, 0, 0);
-    const endsAt = new Date(year, month + 1, 0, 23, 59, 59, 999);
-    const seasonId = `season_${year}_${String(month + 1).padStart(2, '0')}_B`;
-    return {
-      seasonId,
-      seasonStart: startsAt.toISOString(),
-      seasonEnd: endsAt.toISOString(),
-      status: 'ACTIVE'
-    };
-  } else {
-    // Day >= 16. Starts Dia 1 of next month.
-    const nextMonthDate = new Date(year, month + 1, 1);
-    const nYear = nextMonthDate.getFullYear();
-    const nMonth = nextMonthDate.getMonth();
-    
-    const startsAt = new Date(nYear, nMonth, 1, 0, 0, 0, 0);
-    const endsAt = new Date(nYear, nMonth, 14, 23, 59, 59, 999);
-    const seasonId = `season_${nYear}_${String(nMonth + 1).padStart(2, '0')}_A`;
-    return {
-      seasonId,
-      seasonStart: startsAt.toISOString(),
-      seasonEnd: endsAt.toISOString(),
-      status: 'WAITING'
-    };
-  }
+/**
+ * Em qual temporada a assinatura entra.
+ *
+ * REGRA: quem assina com a temporada JA EM ANDAMENTO entra na seguinte. Quem
+ * assina antes de ela abrir (janela de campanha) entra nela mesma.
+ *
+ * Este calculo usa a MESMA janela de temporada do motor de premiacao
+ * (season-prize-engine) e da tela do app -- 30 dias comecando numa segunda.
+ * Antes havia aqui um calendario quinzenal proprio, com IDs em outro formato,
+ * que nunca casava com o que o motor procurava na hora de pagar.
+ */
+export async function calculateSeasonDetails(purchaseDate: Date): Promise<CalculatedSeason> {
+  const atual = await getOrInitCurrentSeasonWindow();
+  const jaComecou = atual.startDate.getTime() <= purchaseDate.getTime();
+  const janela = jaComecou ? calcularProximaJanela(atual) : atual;
+
+  return {
+    seasonId: janela.seasonId,
+    seasonStart: janela.startDate.toISOString(),
+    seasonEnd: janela.endDate.toISOString(),
+    status: jaComecou ? 'WAITING' : 'ACTIVE',
+  };
 }
 
 /**
@@ -160,13 +132,20 @@ export async function grantProAccessAfterApprovedPayment(orderId: string, paymen
   }, { merge: true });
 
   // 4. Calculate elegant Season details
-  const seasonDetails = calculateSeasonDetails(now);
+  const seasonDetails = await calculateSeasonDetails(now);
   const startD = new Date(seasonDetails.seasonStart);
   const nextSeasonStartStr = `${String(startD.getDate()).padStart(2, '0')}/${String(startD.getMonth() + 1).padStart(2, '0')}/${startD.getFullYear()}`;
   
   const subscriptionTier = planId === 'invictus_performance' ? 'performance' : 'open';
 
   if (subscriptionTier === 'performance') {
+    // NOTA: a assinatura NAO inscreve mais ninguem em temporada. Quem compete
+    // e quem paga a INSCRICAO (ver api/_lib/inscricao-service.ts), cobrada por
+    // PIX fora das lojas. O plano Pro vende recursos, nao entrada na disputa.
+    //
+    // A colecao season_registrations deixou de ser lida pelo motor de
+    // premiacao, que agora usa season_inscriptions. Mantemos o registro apenas
+    // como historico de que a assinatura comecou nesta janela.
     const registrationId = `${userId}_${seasonDetails.seasonId}`;
     await db.collection('season_registrations').doc(registrationId).set({
       userId,
@@ -174,8 +153,9 @@ export async function grantProAccessAfterApprovedPayment(orderId: string, paymen
       seasonStart: seasonDetails.seasonStart,
       seasonEnd: seasonDetails.seasonEnd,
       registrationDate: now.toISOString(),
-      status: seasonDetails.status
-    });
+      status: seasonDetails.status,
+      origem: 'assinatura',
+    }, { merge: true });
   }
 
   // 5. Synchronize User profile database settings on the backend (safe from client updates)

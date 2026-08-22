@@ -1,27 +1,32 @@
 import { db, FieldValue } from './common.js';
 import { RewardsEngine } from './rewards-engine.js';
+import { lerConfiguracaoInscricao } from './season-settings.js';
 import {
-  SEASON_PRIZE_POOL_PERCENT,
-  SEASON_FUTURE_RESERVE_PERCENT,
   SEASON_MIN_PARTICIPANTS_FOR_PRIZE,
   SEASON_TOP5_PARTICIPANTS_THRESHOLD,
+  SEASON_MIN_PARTICIPANTS_PER_GYM,
+  SEASON_TOP5_THRESHOLD_PER_GYM,
   TOP_10_PERCENTAGES,
 } from '../../src/constants.js';
 
 /**
  * Motor de premiacao da temporada (Liga Invictus).
  *
- * O pote da temporada NAO e mais um valor fixo por numero de participantes.
- * Agora e calculado como uma porcentagem da receita bruta de assinaturas
- * (Plano Performance) aprovadas dentro da janela da temporada:
+ * A disputa acontece DENTRO de cada academia, e o pote de cada uma vem das
+ * INSCRICOES pagas pelos alunos dela:
  *
- *   pote (top N)      = SEASON_PRIZE_POOL_PERCENT     (20%) da receita bruta
- *   reserva futura     = SEASON_FUTURE_RESERVE_PERCENT (5%)  da receita bruta (NAO distribuida ainda)
+ *   pote da academia = percentualPote (padrao 55%) do arrecadado em inscricoes
  *
- * Numero de vencedores:
- *   < 50 participantes com monthlyScore > 0  -> nenhuma premiacao (pote nao ativado)
- *   50 a 149 participantes                   -> top 3
- *   >= 150 participantes                     -> top 5
+ * A assinatura do plano Pro NAO entra nesta conta e NAO da direito a competir:
+ * ela vende recursos (IA, saude, relatorios, integracoes). Quem compete e quem
+ * pagou inscricao -- cobrada por PIX fora das lojas, porque a regra delas
+ * proibe usar compra dentro do app para entrada em disputa de dinheiro real.
+ *
+ * Numero de vencedores, por academia:
+ *   sem inscritos            -> nenhuma premiacao
+ *   ate 149 inscritos        -> top 3
+ *   >= 150 inscritos         -> top 5
+ * Nunca mais vencedores do que participantes.
  *
  * A janela de temporada (inicio/fim, 30 dias) e controlada por um documento
  * de ancora em system_config/season_tracker, para garantir janelas continuas
@@ -41,20 +46,35 @@ export interface SeasonWindow {
 
 export interface SeasonWinner {
   userId: string;
+  gymId: string;
   rank: number;
   prizeAmount: number;
   monthlyScore: number;
 }
 
-export interface SeasonPayoutResult {
-  seasonId: string;
-  alreadyDistributed: boolean;
+/** Resultado da premiacao de UMA academia dentro da temporada. */
+export interface ResultadoAcademia {
+  gymId: string;
   participantsCount: number;
   grossRevenue: number;
   prizePool: number;
   futureReserve: number;
   winnerCount: number;
   winners: SeasonWinner[];
+}
+
+export interface SeasonPayoutResult {
+  seasonId: string;
+  alreadyDistributed: boolean;
+  /** Somatorio de todas as academias. */
+  participantsCount: number;
+  grossRevenue: number;
+  prizePool: number;
+  futureReserve: number;
+  winnerCount: number;
+  winners: SeasonWinner[];
+  /** Detalhe por academia -- a premiacao e disputada dentro de cada unidade. */
+  academias: ResultadoAcademia[];
 }
 
 function nextMonday(from: Date): Date {
@@ -74,6 +94,19 @@ function addDays(date: Date, days: number): Date {
 
 function seasonIdFor(startDate: Date): string {
   return `season_${startDate.toISOString().slice(0, 10)}`;
+}
+
+/**
+ * Calcula, SEM gravar nada, a janela da temporada seguinte a uma dada janela.
+ *
+ * Existe separada de advanceToNextSeasonWindow porque aquela AVANCA a ancora
+ * global em system_config -- chamar aquela a partir do fluxo de pagamento
+ * empurraria a temporada de todos os usuarios.
+ */
+export function calcularProximaJanela(atual: SeasonWindow): SeasonWindow {
+  const startDate = atual.endDate;
+  const endDate = addDays(startDate, SEASON_LENGTH_DAYS);
+  return { seasonId: seasonIdFor(startDate), startDate, endDate };
 }
 
 /**
@@ -129,6 +162,20 @@ function getWinnerCount(participantsCount: number): number {
   return participantsCount >= SEASON_TOP5_PARTICIPANTS_THRESHOLD ? 5 : 3;
 }
 
+/**
+ * Quantos atletas de UMA academia sao premiados, dado o tamanho dela.
+ *
+ * Nunca devolve mais vencedores do que participantes existentes. Isso importa:
+ * se devolvesse 3 numa academia com 1 atleta, os percentuais seriam calculados
+ * sobre 3 posicoes e a pessoa receberia apenas a fatia do 1o lugar (41%),
+ * deixando o resto do pote sem destino.
+ */
+export function getWinnerCountPorAcademia(participantsCount: number): number {
+  if (participantsCount < SEASON_MIN_PARTICIPANTS_PER_GYM) return 0;
+  const teto = participantsCount >= SEASON_TOP5_THRESHOLD_PER_GYM ? 5 : 3;
+  return Math.min(teto, participantsCount);
+}
+
 function normalizedPercentages(n: number): number[] {
   const raw = TOP_10_PERCENTAGES.slice(0, n);
   const sum = raw.reduce((a: number, b: number) => a + b, 0);
@@ -139,19 +186,64 @@ function normalizedPercentages(n: number): number[] {
  * Soma o campo `amount` de todos os pedidos (orders) com status 'approved' e
  * `paidAt` dentro da janela [startDate, endDate) da temporada.
  */
-export async function computeSeasonRevenue(startDate: Date, endDate: Date): Promise<number> {
-  const snap = await db.collection('orders')
+/**
+ * CORRECAO: esta funcao lia da colecao 'orders', que NAO existe -- nada no
+ * projeto escreve nela. Os pagamentos sao gravados em 'payment_orders'
+ * (ver api/_lib/payments-service.ts e api/_handlers/payments-verify-purchase.ts),
+ * que ja traz status 'approved', paidAt e amount no formato esperado.
+ * Enquanto apontava para 'orders', a receita somava sempre zero e portanto
+ * nenhuma premiacao era distribuida em nenhuma temporada.
+ */
+const COLECAO_PAGAMENTOS = 'payment_orders';
+
+async function buscarPagamentosAprovados(startDate: Date, endDate: Date) {
+  const snap = await db.collection(COLECAO_PAGAMENTOS)
     .where('status', '==', 'approved')
     .where('paidAt', '>=', startDate.toISOString())
     .where('paidAt', '<', endDate.toISOString())
     .get();
+  return snap.docs;
+}
+
+export async function computeSeasonRevenue(startDate: Date, endDate: Date): Promise<number> {
+  const docs = await buscarPagamentosAprovados(startDate, endDate);
 
   let total = 0;
-  snap.docs.forEach((doc: any) => {
+  docs.forEach((doc: any) => {
     const amount = doc.data().amount;
     if (typeof amount === 'number' && amount > 0) total += amount;
   });
   return total;
+}
+
+/**
+ * Total arrecadado em INSCRICOES da temporada, separado por academia.
+ *
+ * MUDANCA IMPORTANTE: antes isso somava assinaturas (payment_orders). Nao soma
+ * mais. Assinatura do plano Pro vende recursos e NAO da direito a competir --
+ * quem forma o pote e a inscricao, cobrada por PIX fora das lojas.
+ *
+ * A academia vem congelada no proprio documento da inscricao, gravada no ato
+ * do pagamento. Trocar de academia depois nao muda onde o atleta compete.
+ */
+export async function computeSeasonRevenueByGym(seasonId: string): Promise<Map<string, number>> {
+  const snap = await db.collection('season_inscriptions')
+    .where('seasonId', '==', seasonId)
+    .where('status', '==', 'paga')
+    .limit(2000)
+    .get();
+
+  const porAcademia = new Map<string, number>();
+
+  snap.docs.forEach((d: any) => {
+    const dados = d.data();
+    const gymId = dados.gymId;
+    const valor = typeof dados.valorPago === 'number' ? dados.valorPago : dados.valor;
+    if (!gymId || typeof valor !== 'number' || valor <= 0) return;
+    porAcademia.set(gymId, (porAcademia.get(gymId) || 0) + valor);
+  });
+
+  return porAcademia;
 }
 
 /**
@@ -162,12 +254,60 @@ export async function getSeasonParticipants(): Promise<Array<{ id: string; month
   const snap = await db.collection('users')
     .where('monthlyScore', '>', 0)
     .orderBy('monthlyScore', 'desc')
-    .limit(500)
+    .limit(2000)
     .get();
 
   return snap.docs
     .filter((d: any) => d.data().subscriptionTier === 'performance')
     .map((d: any) => ({ id: d.id, monthlyScore: d.data().monthlyScore }));
+}
+
+/**
+ * Participantes da temporada agrupados por academia, ja ordenados do maior
+ * para o menor monthlyScore dentro de cada academia.
+ *
+ * Usuarios sem gymId nao entram em academia nenhuma e portanto nao concorrem
+ * a premiacao -- a competicao e interna a cada unidade.
+ */
+export async function getSeasonParticipantsByGym(seasonId: string): Promise<Map<string, Array<{ id: string; monthlyScore: number }>>> {
+  const snap = await db.collection('users')
+    .where('monthlyScore', '>', 0)
+    .orderBy('monthlyScore', 'desc')
+    .limit(2000)
+    .get();
+
+  // Quem compete e quem tem INSCRICAO PAGA nesta temporada -- nao quem assina
+  // o plano Pro. O plano vende recursos; a inscricao e a entrada na disputa.
+  //
+  // A academia vem congelada no ato da inscricao, entao trocar de academia
+  // depois nao muda onde o atleta compete. E quem se inscreveu com a temporada
+  // ja rodando tem inscricao para a SEGUINTE, e por isso nao aparece aqui.
+  const academiaCongelada = await lerAcademiasCongeladas(seasonId);
+
+  if (academiaCongelada.size === 0) {
+    console.warn(
+      `[Season Prize Engine] Nenhuma inscricao paga na temporada ${seasonId}. Ninguem concorre.`
+    );
+  }
+
+  const porAcademia = new Map<string, Array<{ id: string; monthlyScore: number }>>();
+
+  snap.docs.forEach((d: any) => {
+    const dados = d.data();
+
+    const gymId = academiaCongelada.get(d.id);
+    if (!gymId) return;
+
+    const lista = porAcademia.get(gymId) || [];
+    lista.push({ id: d.id, monthlyScore: dados.monthlyScore });
+    porAcademia.set(gymId, lista);
+  });
+
+  // A consulta ja vem ordenada globalmente, entao cada lista tambem esta
+  // ordenada. Reordenamos por seguranca, caso a consulta mude no futuro.
+  porAcademia.forEach((lista) => lista.sort((a, b) => b.monthlyScore - a.monthlyScore));
+
+  return porAcademia;
 }
 
 /**
@@ -190,62 +330,130 @@ export async function distributeSeasonPrizes(season: SeasonWindow): Promise<Seas
       futureReserve: data.futureReserve,
       winnerCount: data.winnerCount,
       winners: data.winners || [],
+      academias: data.academias || [],
     };
   }
 
-  const [grossRevenue, participants] = await Promise.all([
-    computeSeasonRevenue(season.startDate, season.endDate),
-    getSeasonParticipants(),
+  // A premiacao e disputada DENTRO de cada academia: cada unidade tem o seu
+  // proprio pote, formado pela receita das assinaturas dos seus alunos, e os
+  // seus proprios vencedores.
+  const [receitaPorAcademia, participantesPorAcademia, configInscricao] = await Promise.all([
+    computeSeasonRevenueByGym(season.seasonId),
+    getSeasonParticipantsByGym(season.seasonId),
+    lerConfiguracaoInscricao(),
   ]);
 
-  const participantsCount = participants.length;
-  const winnerCount = getWinnerCount(participantsCount);
-  const prizePool = Math.round(grossRevenue * SEASON_PRIZE_POOL_PERCENT * 100) / 100;
-  const futureReserve = Math.round(grossRevenue * SEASON_FUTURE_RESERVE_PERCENT * 100) / 100;
+  const percentualPote = configInscricao.percentualPote;
 
-  const winners: SeasonWinner[] = [];
+  const academias: ResultadoAcademia[] = [];
+  const todosVencedores: SeasonWinner[] = [];
 
-  if (winnerCount > 0 && prizePool > 0) {
-    const percentages = normalizedPercentages(winnerCount);
-    const topN = participants.slice(0, winnerCount);
+  // Percorre toda academia que tenha participantes OU receita.
+  const idsAcademias = new Set<string>([
+    ...participantesPorAcademia.keys(),
+    ...receitaPorAcademia.keys(),
+  ]);
 
-    for (let i = 0; i < topN.length; i++) {
-      const rank = i + 1;
-      const prizeAmount = Math.round(prizePool * percentages[i] * 100) / 100;
-      winners.push({ userId: topN[i].id, rank, prizeAmount, monthlyScore: topN[i].monthlyScore });
+  for (const gymId of idsAcademias) {
+    const participantes = participantesPorAcademia.get(gymId) || [];
+    const receita = receitaPorAcademia.get(gymId) || 0;
+
+    const participantsCount = participantes.length;
+    const winnerCount = getWinnerCountPorAcademia(participantsCount);
+    // O pote e uma fatia das INSCRICOES daquela academia. O restante fica com
+    // a operacao -- nao ha mais reserva separada, que existia no modelo antigo
+    // baseado em receita de assinatura.
+    const prizePool = Math.round(receita * percentualPote * 100) / 100;
+    const futureReserve = 0;
+
+    const vencedores: SeasonWinner[] = [];
+
+    if (winnerCount > 0 && prizePool > 0) {
+      const percentages = normalizedPercentages(winnerCount);
+      const topN = participantes.slice(0, winnerCount);
+
+      for (let i = 0; i < topN.length; i++) {
+        vencedores.push({
+          userId: topN[i].id,
+          gymId,
+          rank: i + 1,
+          prizeAmount: Math.round(prizePool * percentages[i] * 100) / 100,
+          monthlyScore: topN[i].monthlyScore,
+        });
+      }
+    } else {
+      console.log(
+        `[Season Prize Engine] Academia ${gymId}: sem premiacao ` +
+        `(participantes=${participantsCount}, minimo=${SEASON_MIN_PARTICIPANTS_PER_GYM}, pote=R$ ${prizePool.toFixed(2)})`
+      );
     }
 
-    // Sequencial (nao Promise.all) para nao sobrecarregar o WalletEngine com
-    // escritas concorrentes na mesma janela de tempo.
-    for (const winner of winners) {
-      console.log(`[Season Prize Engine] Creditando R$ ${winner.prizeAmount.toFixed(2)} para ${winner.userId} (rank #${winner.rank})`);
-      await RewardsEngine.rewardLeaguePrize(winner.userId, 'Liga Invictus', winner.rank, winner.prizeAmount);
-    }
+    academias.push({ gymId, participantsCount, grossRevenue: receita, prizePool, futureReserve, winnerCount, winners: vencedores });
+    todosVencedores.push(...vencedores);
   }
+
+  // Sequencial (nao Promise.all) para nao sobrecarregar o WalletEngine com
+  // escritas concorrentes na mesma janela de tempo.
+  for (const winner of todosVencedores) {
+    console.log(`[Season Prize Engine] Creditando R$ ${winner.prizeAmount.toFixed(2)} para ${winner.userId} (academia ${winner.gymId}, rank #${winner.rank})`);
+    await RewardsEngine.rewardLeaguePrize(winner.userId, 'Liga Invictus', winner.rank, winner.prizeAmount);
+  }
+
+  const somar = (campo: keyof ResultadoAcademia) =>
+    Math.round(academias.reduce((total, a) => total + (a[campo] as number), 0) * 100) / 100;
+
+  const resultado: SeasonPayoutResult = {
+    seasonId: season.seasonId,
+    alreadyDistributed: false,
+    participantsCount: academias.reduce((t, a) => t + a.participantsCount, 0),
+    grossRevenue: somar('grossRevenue'),
+    prizePool: somar('prizePool'),
+    futureReserve: somar('futureReserve'),
+    winnerCount: todosVencedores.length,
+    winners: todosVencedores,
+    academias,
+  };
 
   await payoutRef.set({
     seasonId: season.seasonId,
     startDate: season.startDate.toISOString(),
     endDate: season.endDate.toISOString(),
-    participantsCount,
-    grossRevenue,
-    prizePool,
-    futureReserve,
-    winnerCount,
-    winners,
+    participantsCount: resultado.participantsCount,
+    grossRevenue: resultado.grossRevenue,
+    prizePool: resultado.prizePool,
+    futureReserve: resultado.futureReserve,
+    winnerCount: resultado.winnerCount,
+    winners: todosVencedores,
+    academias,
     distributedAt: FieldValue.serverTimestamp(),
   });
 
-  return {
-    seasonId: season.seasonId,
-    alreadyDistributed: false,
-    participantsCount,
-    grossRevenue,
-    prizePool,
-    futureReserve,
-    winnerCount,
-    winners,
-  };
+  return resultado;
+}
+
+/**
+ * Le, para uma temporada, qual academia ficou congelada para cada atleta.
+ * Devolve um mapa userId -> gymId.
+ */
+async function lerAcademiasCongeladas(seasonId: string): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  try {
+    const snap = await db.collection('season_inscriptions')
+      .where('seasonId', '==', seasonId)
+      .where('status', '==', 'paga')
+      .limit(2000)
+      .get();
+
+    snap.docs.forEach((d: any) => {
+      const dados = d.data();
+      if (dados.userId && dados.gymId) mapa.set(dados.userId, dados.gymId);
+    });
+  } catch (erro: any) {
+    // Falha aqui significa que ninguem sera considerado inscrito. E fail-closed
+    // de proposito: melhor nao premiar do que premiar quem nao se inscreveu.
+    console.error('[Season Prize Engine] nao foi possivel ler season_inscriptions:', erro?.message);
+  }
+  return mapa;
 }
 
 /**

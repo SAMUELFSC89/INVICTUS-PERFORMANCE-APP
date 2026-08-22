@@ -40,6 +40,8 @@ import revenuecatWebhookHandler from './_handlers/revenuecat-webhook.js';
 import asaasWebhookHandler from './_handlers/asaas-webhook.js';
 import asaasAuthorizeWithdrawalHandler from './_handlers/asaas-withdrawal-authorization.js';
 import seasonPayoutCronHandler from './_handlers/season-payout-cron.js';
+import seasonPrizeHandler from './_handlers/season-prize.js';
+import seasonInscriptionHandler from './_handlers/season-inscription.js';
 import paymentsStatusHandler from './_handlers/payments-status.js';
 import paymentsConfigHandler from './_handlers/payments-config.js';
 import privateChallengesHandler from './_handlers/private-challenges.js';
@@ -117,6 +119,8 @@ const assertHandler = (name: string, handler: any) => {
 };
 
 assertHandler('healthHandler', healthHandler);
+assertHandler('seasonPrizeHandler', seasonPrizeHandler);
+assertHandler('seasonInscriptionHandler', seasonInscriptionHandler);
 assertHandler('profileHandler', profileHandler);
 assertHandler('rankingHandler', rankingHandler);
 assertHandler('shareHandler', shareHandler);
@@ -218,6 +222,10 @@ console.log('[ROUTE] /payments/asaas-authorize-withdrawal', typeof asaasAuthoriz
 router.all('/payments/asaas-authorize-withdrawal', wrap(asaasAuthorizeWithdrawalHandler));
 console.log('[ROUTE] /season-payout-cron', typeof seasonPayoutCronHandler);
 router.all('/season-payout-cron', wrap(seasonPayoutCronHandler));
+console.log('[ROUTE] /season-prize', typeof seasonPrizeHandler);
+router.all('/season-prize', wrap(seasonPrizeHandler));
+console.log('[ROUTE] /season-inscription', typeof seasonInscriptionHandler);
+router.all('/season-inscription', wrap(seasonInscriptionHandler));
 
 console.log('[ROUTE] /payments/config', typeof paymentsConfigHandler);
 router.all('/payments/config', wrap(paymentsConfigHandler));

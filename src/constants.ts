@@ -23,6 +23,17 @@ export const SEASON_FUTURE_RESERVE_PERCENT = 0.05; // 5% da receita bruta fica r
 export const SEASON_MIN_PARTICIPANTS_FOR_PRIZE = 50; // abaixo disso, nenhuma premiacao e distribuida na temporada
 export const SEASON_TOP5_PARTICIPANTS_THRESHOLD = 150; // >= 150 participantes: top 5 vencedores; 50-149: top 3 vencedores
 
+// A premiacao passou a ser POR ACADEMIA: cada academia tem seu proprio pote,
+// formado por 20% da receita das assinaturas dos seus proprios alunos, e seus
+// proprios vencedores.
+//
+// NAO ha minimo de participantes: se a temporada rodou e a academia tem pelo
+// menos um atleta pontuando, a premiacao acontece. O tamanho do pote ja e
+// proporcional a receita daquela unidade, entao uma academia pequena premia
+// um valor pequeno -- o que e justo, e nao exige um piso artificial.
+export const SEASON_MIN_PARTICIPANTS_PER_GYM = 1;
+export const SEASON_TOP5_THRESHOLD_PER_GYM = 150; // a partir daqui a academia premia top 5 em vez de top 3
+
 export interface RewardTier {
   participants: number;
   prizePool: number;
