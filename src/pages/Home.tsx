@@ -171,33 +171,43 @@ export function Home() {
               id="home-avatar-btn"
               onClick={() => navigate('/profile')}
               aria-label="Ver perfil"
-              className="rounded-full overflow-hidden shrink-0 flex items-center justify-center relative cursor-pointer active:scale-95 transition-transform"
-              /* Medido na arte: foto de 66px, anel de 4px, diametro externo
-                 74px. Estava 78px de foto com anel de 3px -- avatar maior e
-                 anel mais fino que a referencia. O brilho e mais forte e em
-                 duas camadas, como o halo da arte. */
+              className="rounded-full shrink-0 flex items-center justify-center relative cursor-pointer active:scale-95 transition-transform"
               style={{
-                width: '66px',
-                height: '66px',
+                // Anel de metal, nao cor chapada. Amostrado a cada 20 graus na
+                // arte: o brilho fica no TOPO e chega quase a branco (#FDFCC8),
+                // fechando em ambar escuro embaixo a direita (#D29603). Um
+                // box-shadow de cor unica nao tem como reproduzir isso -- era
+                // o que faltava de "vida".
+                // Diametro externo 74, anel 4, foto 66. Tudo medido.
+                width: '74px',
+                height: '74px',
                 borderRadius: '50%',
-                boxShadow: '0 0 0 4px var(--dourado), 0 0 14px rgba(241,190,34,0.55), 0 0 30px rgba(241,190,34,0.30)'
+                padding: '4px',
+                background: `conic-gradient(from 0deg,
+                  #FDD935 0deg, #FDFCC8 12deg, #FFF053 50deg, #FEDA33 70deg,
+                  #FFB11F 90deg, #F5A914 130deg, #D29603 152deg, #DBAA00 190deg,
+                  #E68800 210deg, #FDB820 230deg, #FA8406 250deg, #FDB11E 270deg,
+                  #FFDC2E 310deg, #FCD71D 330deg, #FDD935 360deg)`,
+                boxShadow: '0 0 14px rgba(253,217,53,0.50), 0 0 34px rgba(241,190,34,0.28)'
               }}
             >
-              {user?.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt={rawName}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover rounded-full"
-                />
-              ) : (
-                <div
-                  className="w-full h-full rounded-full flex items-center justify-center iv-titulo text-2xl text-black"
-                  style={{ background: 'var(--dourado)' }}
-                >
-                  {firstName.charAt(0) || 'A'}
-                </div>
-              )}
+              <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+                {user?.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt={rawName}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div
+                    className="w-full h-full flex items-center justify-center iv-titulo text-2xl text-black"
+                    style={{ background: 'var(--dourado)' }}
+                  >
+                    {firstName.charAt(0) || 'A'}
+                  </div>
+                )}
+              </div>
             </button>
 
             {/* Badges Empilhados: LVL X e PRO */}

@@ -144,16 +144,20 @@
 
 .iv-card__dentro {
   clip-path: var(--recorte);
-  /* Bem mais transparente do que parecia. Medindo a arte, o fogo atras chega
-     ao interior com ~45-55% do brilho original -- o card e vidro escuro, nao
-     painel solido. Com 0.78 ele tapava o espartano. */
-  background: linear-gradient(160deg, rgba(30, 22, 15, 0.58) 0%, rgba(18, 14, 11, 0.50) 55%, rgba(12, 9, 7, 0.56) 100%);
+  /* Escurecimento NEUTRO, sem tingir.
+     Medido: a matiz dentro do card e a mesma de fora (0.07 nos dois lados), so
+     muda o brilho. Ou seja o card nao adiciona cor nenhuma -- e um vidro
+     fume. O marrom quente que estava aqui (rgba(30,22,15)) somado ao brilho
+     dourado por dentro deixava tudo amarelado, que nao e o que a arte faz. */
+  background: linear-gradient(160deg, rgba(6, 5, 4, 0.46) 0%, rgba(6, 5, 4, 0.52) 55%, rgba(4, 3, 2, 0.58) 100%);
   /* Blur menor: na arte da para ver a textura da rocha e do fogo atraves do
      card. Com 12px virava leitosa. */
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  /* Brilho por dentro da linha, acompanhando a moldura. */
-  box-shadow: inset 0 0 14px rgba(241, 190, 34, 0.16);
+  /* Brilho colado na linha, nao espalhado para dentro. Com 14px de raio ele
+     tingia metade do card de amarelo -- que e justamente o que a arte nao faz.
+     4px mantem a sensacao de filamento aceso sem colorir o vidro. */
+  box-shadow: inset 0 0 4px rgba(241, 190, 34, 0.20);
   /* Padding maior a esquerda e a direita: as laterais sao inclinadas, e nos
      cantos a area util recua. Sem isso o conteudo encosta no fio. */
   padding: 16px 26px;
