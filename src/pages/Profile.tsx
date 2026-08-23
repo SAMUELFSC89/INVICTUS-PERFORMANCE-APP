@@ -17,6 +17,7 @@ import { AchievementShareCard } from '../components/AchievementShareCard';
 import { ACHIEVEMENTS } from '../achievements';
 import { cn, compressImage } from '../lib/utils';
 import { WearableManager } from '../services/wearables/WearableManager';
+import type { WearableConfig } from '../services/wearables/types';
 
 import { useUser } from '../UserContext';
 import { getLevelFromXP, getXPProgress, getBarbellWeight } from '../lib/levelUtils';
@@ -50,10 +51,19 @@ export function Profile() {
   const [sharingAchievement, setSharingAchievement] = useState<any>(null);
   const [stravaStatus, setStravaStatus] = useState<StravaStatus | null>(null);
   const [stravaLoading, setStravaLoading] = useState(false);
+  const [wearableConfig, setWearableConfig] = useState<WearableConfig | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
+      const loadWearableConfig = async () => {
+        try {
+          setWearableConfig(await WearableManager.getInstance().loadConfig());
+        } catch (err) {
+          console.error('[Profile] Erro ao carregar o estado das conexões:', err);
+        }
+      };
+      loadWearableConfig();
       if (searchParams.get('strava') === 'connected') {
         // Clear the param and refresh
         navigate('/profile', { replace: true });
@@ -66,7 +76,7 @@ export function Profile() {
             setStravaStatus(status);
             
             // 2. Trigger WearableManager config loading, which will sync the genuine state to Firestore
-            await WearableManager.getInstance().loadConfig();
+            setWearableConfig(await WearableManager.getInstance().loadConfig());
             
             alert('Strava conectado com sucesso!');
           } catch (err) {
@@ -306,6 +316,8 @@ export function Profile() {
       onNavigate={navigate}
       onLogout={handleLogout}
       stravaConnected={Boolean(stravaStatus?.connected)}
+      appleHealthConnected={Boolean(wearableConfig?.appleHealthConnected)}
+      healthConnectConnected={Boolean(wearableConfig?.healthConnectConnected)}
     />
   );
 
@@ -1063,7 +1075,9 @@ function ProfileReference({
   onAudit,
   onNavigate,
   onLogout,
-  stravaConnected
+  stravaConnected,
+  appleHealthConnected,
+  healthConnectConnected
 }: {
   user: any;
   progress: ReturnType<typeof getXPProgress>;
@@ -1074,11 +1088,13 @@ function ProfileReference({
   onNavigate: (path: string) => void;
   onLogout: () => void;
   stravaConnected: boolean;
+  appleHealthConnected: boolean;
+  healthConnectConnected: boolean;
 }) {
   const level = getLevelFromXP(user.xp || 0);
   const connectionItems = [
-    { name: 'Apple Health', icon: <Heart size={21} fill="currentColor" />, className: 'profile-provider-apple', connected: true },
-    { name: 'Health Connect', icon: <ActivityIcon size={22} />, className: 'profile-provider-health', connected: true },
+    { name: 'Apple Health', icon: <Heart size={21} fill="currentColor" />, className: 'profile-provider-apple', connected: appleHealthConnected },
+    { name: 'Health Connect', icon: <ActivityIcon size={22} />, className: 'profile-provider-health', connected: healthConnectConnected },
     { name: 'Strava', icon: <Mountain size={22} />, className: 'profile-provider-strava', connected: stravaConnected }
   ];
   const menuItems = [
