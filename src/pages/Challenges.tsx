@@ -48,8 +48,8 @@ const CORE_CHALLENGES: CoreChallenge[] = [
   {
     id: 'workout',
     title: 'Treino de Musculação',
-    subtitle: 'Check-in na academia',
-    description: 'Complete uma sessão de musculação com presença validada.',
+    subtitle: 'Complete seu treino na academia',
+    description: 'Complete uma sessão de musculação registrada no aplicativo.',
     xp: 100,
     icon: <Dumbbell size={28} className="text-amber-400" />,
     tag: 'Atividade Principal',
@@ -136,10 +136,6 @@ export function Challenges() {
 
   // Cardio States
   const [selectedCardioType, setSelectedCardioType] = useState<string>('running');
-  const [smartwatchConnected, setSmartwatchConnected] = useState<boolean>(false);
-  const [watchAvgHR] = useState<number>(142);
-  const [watchMaxHR] = useState<number>(175);
-  const [watchCalories] = useState<number>(380);
   const [stravaConnecting, setStravaConnecting] = useState(false);
 
   // Load today's submissions
@@ -263,12 +259,7 @@ export function Challenges() {
         type,
         undefined,
         type === 'cardio' ? selectedCardioType : undefined,
-        type === 'cardio' && smartwatchConnected ? {
-          avgHR: watchAvgHR,
-          maxHR: watchMaxHR,
-          calories: watchCalories,
-          source: 'manual_smartwatch'
-        } : undefined
+        undefined
       );
       setActiveSession(session);
       setPendingChallenge(null);
@@ -368,8 +359,6 @@ ${parsed.message}` : (parsed.message || rawMsg);
           const timeSeconds = durationMinsRaw ? durationMinsRaw * 60 : elapsedTime;
           durationMins = Math.round(timeSeconds / 60);
           pace = calculatePace(distanceKm * 1000, timeSeconds);
-          calories = Math.round(distanceKm * 62);
-          steps = Math.round(distanceKm * 1350);
           const rawTrajectory = (sessionBeforeEnd.checkpoints || [])
             .filter((cp: any) => cp.location)
             .map((cp: any) => ({ lat: cp.location.lat, lng: cp.location.lng }));
@@ -396,7 +385,6 @@ ${parsed.message}` : (parsed.message || rawMsg);
           calories,
           pace,
           steps,
-          elevationGain: sessionType === 'cardio' ? 0 : undefined,
           trajectory,
         });
         setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
@@ -882,10 +870,11 @@ ${parsed.message}` : (parsed.message || rawMsg);
           distance={liveDistanceKm}
           trajectory={finishedActivityItem?.trajectory}
           gymName={profile?.gymName || 'Sua academia'}
+          completedChallengeIds={Object.keys(submissions)}
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
-          onSummary={() => setFlowScreen('cardio-summary')}
+          onSummary={() => setFlowScreen(flowScreen === 'cardio-complete' ? 'cardio-summary' : 'day-progress')}
           onDone={() => { setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); }}
         />
       )}
