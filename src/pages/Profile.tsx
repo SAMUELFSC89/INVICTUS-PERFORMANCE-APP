@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapPin, Award, TrendingUp, Medal, Star, Sun, Dumbbell, Flame, ChevronRight, Edit, LogOut, Bell, Camera, X, Check, BellOff, ShieldAlert, Share2, Copy, Utensils, Wallet, Calendar, Heart, Trophy, Building2, Globe, QrCode, Shield, Crown, RefreshCw, Activity as ActivityIcon, Settings as SettingsIcon, Trash2, Watch, Target, LockKeyhole, BarChart3, Landmark, Crosshair, CircleCheck, Mountain, BadgeCheck } from 'lucide-react';
+import { MapPin, Award, TrendingUp, Medal, Star, Sun, Dumbbell, Flame, ChevronRight, Edit, LogOut, Bell, Camera, X, Check, BellOff, ShieldAlert, Share2, Copy, Utensils, Wallet, Calendar, Heart, Trophy, Building2, Globe, QrCode, Shield, Crown, RefreshCw, Activity as ActivityIcon, Settings as SettingsIcon, Trash2, Watch, Target, LockKeyhole, BarChart3, Landmark, Crosshair, CircleCheck, Mountain, BadgeCheck, HeartPulse } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, db } from '../firebase';
@@ -1083,6 +1083,7 @@ function ProfileReference({
   ];
   const menuItems = [
     { label: 'Dispositivos e relógios', detail: 'Gerencie seus dispositivos e sincronizações', icon: <Watch size={27} />, action: () => onNavigate('/wearables') },
+    { label: 'Saúde', detail: 'Dados, métricas e relatório de saúde', icon: <HeartPulse size={27} />, action: () => onNavigate('/health') },
     { label: 'Minha academia', detail: user.gymName || 'Vincule sua academia', icon: <Landmark size={27} />, action: () => onNavigate('/gym') },
     { label: 'Carteira', detail: 'Meu saldo, histórico e saques', icon: <Wallet size={27} />, action: () => onNavigate('/wallet') },
     { label: 'Metas', detail: 'Defina e acompanhe suas metas', icon: <Crosshair size={27} />, action: () => onNavigate('/settings') },

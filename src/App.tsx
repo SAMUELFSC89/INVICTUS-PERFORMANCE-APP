@@ -29,6 +29,7 @@ import { API_CONFIG } from './config';
 import { Gym } from './pages/Gym';
 import { PowerModule } from './pages/PowerModule';
 import { WearablesDashboard } from './pages/WearablesDashboard';
+import { Health, HealthReport } from './pages/Health';
 import './styles/invictus.css';
 
 export default function App() {
@@ -65,6 +66,8 @@ export default function App() {
                 <Route path="/power" element={<PowerModule />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/wearables" element={<WearablesDashboard />} />
+                <Route path="/health" element={<Health />} />
+                <Route path="/health/report" element={<HealthReport />} />
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
                 <Route path="/pagamento/pendente" element={<PaymentSuccess />} />
                 <Route path="/pagamento/falha" element={<PaymentSuccess />} />
@@ -72,7 +75,6 @@ export default function App() {
                 <Route path="/saude" element={<Navigate to="/" replace />} />
                 <Route path="/medical" element={<Navigate to="/" replace />} />
                 <Route path="/clinical" element={<Navigate to="/" replace />} />
-                <Route path="/health" element={<Navigate to="/" replace />} />
                 <Route path="/admin/workouts" element={<AdminGuard><AdminWorkouts /></AdminGuard>} />
                 <Route path="/admin/payouts" element={<AdminGuard><AdminPayouts /></AdminGuard>} />
                 <Route path="/admin/gym-audit" element={<AdminGuard><AdminGymAudit /></AdminGuard>} />
