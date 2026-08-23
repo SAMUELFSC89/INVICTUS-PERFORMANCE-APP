@@ -30,6 +30,8 @@ import { Gym } from './pages/Gym';
 import { PowerModule } from './pages/PowerModule';
 import { WearablesDashboard } from './pages/WearablesDashboard';
 import { Health, HealthReport } from './pages/Health';
+import { League } from './pages/League';
+import { Notifications } from './pages/Notifications';
 import './styles/invictus.css';
 
 export default function App() {
@@ -56,6 +58,8 @@ export default function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/invite" element={<Home />} />
                 <Route path="/rankings" element={<Rankings />} />
+                <Route path="/league" element={<League />} />
+                <Route path="/notifications" element={<Notifications />} />
                 <Route path="/gym" element={<Gym />} />
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />

@@ -369,7 +369,7 @@ export function Home() {
         {/* 3) CARD LIGA INVICTUS (Duas Colunas) */}
         <section
           id="home-league-card"
-          onClick={() => navigate('/rankings')}
+          onClick={() => navigate('/league')}
           className="iv-card--liga w-full flex items-center gap-4 cursor-pointer active:scale-[0.98] transition-transform"
         >
           {/* Coluna Esquerda — troféu.
@@ -401,7 +401,7 @@ export function Home() {
                 lineHeight: 1.2
               }}
             >
-              PRÓXIMA TEMPORADA DE PREMIAÇÃO
+              TEMPORADA EM ANDAMENTO
             </span>
 
             {/* Caixa do Contador Ocupando 100% da Largura da Coluna Direita */}

@@ -4,12 +4,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Gauge, Trophy, Award, User, Zap, Settings as SettingsIcon, Medal, Wallet, Users, Heart, Dumbbell, Bell, Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { auth, db } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
-import { UserProfile } from '../types';
 import { AchievementTracker } from './AchievementTracker';
 import { Onboarding } from './Onboarding';
-import { NotificationCenter } from './NotificationCenter';
 import { XPToast } from './XPToast';
 import { FloatingSessionIndicator } from './FloatingSessionIndicator';
 import { InvictusAIFloatingAssistant } from './InvictusAIFloatingAssistant';
@@ -25,7 +21,6 @@ export function Layout() {
   const { user, refreshUser } = useUser();
   const progress = getXPProgress(user?.xp || 0);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [showBarbellModal, setShowBarbellModal] = useState(false);
   const [xpToast, setXpToast] = useState<{ visible: boolean; points: number; message?: string; rankingPoints?: number }>({ 
     visible: false, points: 0 
@@ -80,17 +75,6 @@ export function Layout() {
     };
   }, [user, refreshUser]);
 
-  const handleMarkNotifRead = async (id: string) => {
-    if (!user) return;
-    const updated = user.notifications?.map(n => n.id === id ? { ...n, read: true } : n);
-    await updateDoc(doc(db, 'users', user.uid), { notifications: updated });
-  };
-
-  const handleClearAllNotifs = async () => {
-    if (!user) return;
-    await updateDoc(doc(db, 'users', user.uid), { notifications: [] });
-  };
-
   const unreadCount = user?.notifications?.filter(n => !n.read).length || 0;
 
   return (
@@ -111,19 +95,11 @@ export function Layout() {
         onComplete={() => setXpToast(prev => ({ ...prev, visible: false }))} 
       />
 
-      <NotificationCenter 
-        isOpen={isNotifOpen}
-        onClose={() => setIsNotifOpen(false)}
-        notifications={user?.notifications || []}
-        onMarkAsRead={handleMarkNotifRead}
-        onClearAll={handleClearAllNotifs}
-      />
-
       {/* Notification Bell Only */}
-      <div className="fixed top-3.5 right-4 z-50 pointer-events-auto">
+      {location.pathname !== '/notifications' && <div className="fixed top-3.5 right-4 z-50 pointer-events-auto">
         <button 
           id="notification-bell-btn"
-          onClick={() => setIsNotifOpen(true)}
+          onClick={() => navigate('/notifications')}
           className="w-10 h-10 flex items-center justify-center rounded-2xl bg-[#16120C]/85 backdrop-blur-xl border border-[#F5A623]/25 text-[#9E8E7E] hover:text-[#F5A623] transition-colors relative shadow-lg active:scale-95 cursor-pointer"
           title="Notificações"
           aria-label="Abrir notificações"
@@ -133,7 +109,7 @@ export function Layout() {
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F5A623] rounded-full shadow-[0_0_10px_rgba(245,166,35,0.9)]" />
           )}
         </button>
-      </div>
+      </div>}
 
       {/* Main Content */}
       {/* A Home desenha o proprio cabecalho (capacete + assinatura) e controla

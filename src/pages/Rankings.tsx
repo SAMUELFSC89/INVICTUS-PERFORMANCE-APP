@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, ChevronUp, ChevronDown, Zap, Filter, Lock, Clock, Info, CheckCircle, AlertCircle, MapPin, Building2, Globe, Dumbbell, TrendingUp, Star, Crown, Target, Sparkles, Timer, ArrowRight, Share2, Heart, Flag, ShieldAlert } from 'lucide-react';
+import { Trophy, ChevronUp, ChevronDown, Zap, Filter, Clock, Info, CheckCircle, AlertCircle, MapPin, Building2, Globe, Dumbbell, TrendingUp, Star, Crown, Target, Sparkles, Timer, ArrowRight, Share2, Heart, Flag, ShieldAlert } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { getNextSeasonCountdown } from '../lib/seasonUtils';
 import { rankingService } from '../services/rankingService';
-import { rewardService } from '../services/rewardService';
 import { gymService } from '../services/gymService';
 import { RankingSnapshot, UserProfile, RankingEntry } from '../types';
 import { RankingShareCard } from '../components/RankingShareCard';
@@ -15,7 +14,6 @@ import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { usePro } from '../ProContext';
 import { QuotaExhaustedError } from '../services/errors';
-import { seasonPrizeService, PremiacaoTemporada } from '../services/seasonPrizeService';
 
 const TABS = [
   { id: 'gym', label: 'Academia', icon: <Building2 size={16} /> },
@@ -39,9 +37,6 @@ export function Rankings() {
   const [totalUsersCount, setTotalUsersCount] = useState(0);
   const [isNewUserThisSeason, setIsNewUserThisSeason] = useState(false);
   const [seasonStatus, setSeasonStatus] = useState<any>(null);
-  const [categoryPools, setCategoryPools] = useState<any>(null);
-  const [rewards, setRewards] = useState<number[]>([]);
-  const [activeParticipants, setActiveParticipants] = useState(0);
   const [countdown, setCountdown] = useState('');
   const [seasonDaysRemaining, setSeasonDaysRemaining] = useState(() => getNextSeasonCountdown().time.days);
   const realSeasonEndDateRef = useRef<Date | null>(null);
@@ -84,20 +79,6 @@ export function Rankings() {
   const [showShareCard, setShowShareCard] = useState(false);
   const [shareUserData, setShareUserData] = useState<UserProfile | null>(null);
   const [showIGAModal, setShowIGAModal] = useState(false);
-
-  // Premiacao real da temporada (20% da receita arrecadada). Fica null quando
-  // nao foi possivel obter -- e nesse caso a tela nao mostra valor nenhum,
-  // em vez de exibir zero ou um numero estimado.
-  const [premiacao, setPremiacao] = useState<PremiacaoTemporada | null>(null);
-  const [mostrarFaixas, setMostrarFaixas] = useState(false);
-
-  useEffect(() => {
-    let cancelado = false;
-    seasonPrizeService.buscarPremiacao().then((dados) => {
-      if (!cancelado) setPremiacao(dados);
-    });
-    return () => { cancelado = true; };
-  }, [user?.uid]);
 
   // States & handlers for interactive podium liking / cheering
   const [podiumLikes, setPodiumLikes] = useState<Record<string, number>>({});
@@ -196,11 +177,7 @@ export function Rankings() {
       // Always fetch fresh data for production stats
       try {
         // 1. Parallel fetch counts and ranking
-        const [totalSubscribers, usersInGym, usersInCity] = await Promise.all([
-          rankingService.getActiveUserCount(),
-          user.gymId ? rankingService.getActiveUserCount('gymId' as any, user.gymId) : Promise.resolve(0),
-          user.city ? rankingService.getActiveUserCount('city' as any, user.city) : Promise.resolve(0)
-        ]);
+        const totalSubscribers = await rankingService.getActiveUserCount();
 
         setTotalUsersCount(totalSubscribers);
 
@@ -211,26 +188,11 @@ export function Rankings() {
         const rankingData = await rankingService.getRanking(activeTab as any, levelId, activePeriod, activeTier);
         setRanking(rankingData);
 
-        // 2. Calculate pools
-        const pools = rewardService.calculatePools(totalSubscribers, usersInGym, usersInCity);
-        setCategoryPools(pools);
-
-        let currentPool = 0;
-        if (activeTab === 'gym') currentPool = pools.gym;
-        else if (activeTab === 'city') currentPool = pools.city;
-        else currentPool = pools.national;
-
-        setActiveParticipants(rankingData.topUsers.length);
-        const calculatedRewards = rewardService.calculateTop10Rewards(currentPool);
-        setRewards(calculatedRewards);
-
-        // Update local cache
+        // Atualiza o cache apenas com dados de classificação.
         localStorage.setItem(cacheKey, JSON.stringify({
           data: {
             totalUsersCount: totalSubscribers,
-            pools,
-            ranking: rankingData,
-            currentPool
+            ranking: rankingData
           },
           timestamp: Date.now()
         }));
@@ -247,49 +209,6 @@ export function Rankings() {
     fetchRanking();
   }, [activeTab, activePeriod, activeTier, user?.score, user?.streak, user?.gymId, user?.city, user?.uid]);
 
-  const getResolvedRewardForRank = (userEntry: any, rank: number) => {
-    const standardReward = rewards[rank - 1] || 0;
-    const pos = userEntry.positions || {};
-
-    if (activeTab === 'gym') {
-      if (rank === 1) {
-        const isTopCity = pos.city === 1;
-        const isTopNational = pos.national === 1;
-        if (isTopCity || isTopNational) {
-          return 0; // Promoted, gets 0 here
-        }
-      } else if (rank === 2) {
-        const top1User = ranking?.topUsers.find(tu => tu.positions?.gym === 1 || tu.rank === 1);
-        if (top1User) {
-          const t1Pos = top1User.positions || {};
-          const isTopCity = t1Pos.city === 1;
-          const isTopNational = t1Pos.national === 1;
-          if (isTopCity || isTopNational) {
-            return rewards[0] || 0; // Gets the Rank 1 reward!
-          }
-        }
-      }
-    } else if (activeTab === 'city') {
-      if (rank === 1) {
-        const isTopNational = pos.national === 1;
-        if (isTopNational) {
-          return 0; // Promoted, gets 0 here
-        }
-      } else if (rank === 2) {
-        const top1User = ranking?.topUsers.find(tu => tu.positions?.city === 1 || tu.rank === 1);
-        if (top1User) {
-          const t1Pos = top1User.positions || {};
-          const isTopNational = t1Pos.national === 1;
-          if (isTopNational) {
-            return rewards[0] || 0; // Gets the Rank 1 reward!
-          }
-        }
-      }
-    }
-
-    return standardReward;
-  };
-
   if (!user) return null;
 
 
@@ -300,22 +219,16 @@ export function Rankings() {
         <div className="sticky top-16 md:top-20 z-40 bg-background backdrop-blur-2xl border-b border-white/[0.06] px-4 md:px-6">
           <div className="flex gap-4 md:gap-10 py-1 overflow-x-auto no-scrollbar justify-start md:justify-center whitespace-nowrap">
             {TABS.map((tab) => {
-              const isLocked = (tab.id === 'city' && !categoryPools?.status?.isCityUnlocked) || 
-                               (tab.id === 'global' && !categoryPools?.status?.isNationalUnlocked);
               return (
                 <button
                   key={tab.id}
                   id={`tab-${tab.id}`}
                   onClick={() => {
-                    if (!isLocked) {
-                      setActiveTab(tab.id);
-                    }
+                    setActiveTab(tab.id);
                   }}
-                  disabled={isLocked}
                   className={cn(
                     "flex flex-col items-center justify-center min-w-[60px] md:min-w-[70px] h-14 md:h-16 transition-all relative group shrink-0",
-                    activeTab === tab.id ? "text-primary" : "text-on-surface-variant/40 hover:text-white",
-                    isLocked && "opacity-40 grayscale cursor-not-allowed"
+                    activeTab === tab.id ? "text-primary" : "text-on-surface-variant/40 hover:text-white"
                   )}
                 >
                   <div className={cn(
@@ -333,7 +246,6 @@ export function Rankings() {
                       className="absolute bottom-0 w-full h-0.5 bg-primary rounded-full shadow-[0_0_10px_rgba(255,204,0,0.6)]"
                     />
                   )}
-                  {isLocked && <Lock size={10} className="absolute top-2 right-2 opacity-50" />}
                 </button>
               );
             })}
@@ -362,47 +274,6 @@ export function Rankings() {
           ))}
         </div>
 
-
-        {/* Premiacao da temporada, compacta. O valor real fica atras do toque. */}
-        <div className="px-4 md:px-6 pb-1">
-          <button
-            onClick={() => setMostrarFaixas(true)}
-            className="w-full flex items-center gap-3 bg-surface-container/80 border border-[#F5A623]/35 rounded-2xl p-3.5 text-left active:scale-[0.99] transition-transform"
-          >
-            <div className="w-10 h-10 rounded-full border border-primary/60 bg-primary/10 flex items-center justify-center shrink-0">
-              <Trophy size={18} className="text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <span className="font-label text-[9px] font-black uppercase tracking-[0.15em] text-on-surface-variant block leading-none mb-1">
-                Premiação da temporada
-              </span>
-              {!premiacao ? (
-                <span className="font-headline font-black text-sm text-on-surface-variant uppercase block">
-                  Carregando
-                </span>
-              ) : premiacao.faixaAtual === 0 ? (
-                <>
-                  <span className="font-headline font-black text-base text-white uppercase block leading-tight">
-                    Ainda não ativada
-                  </span>
-                  <span className="text-[10px] text-on-surface-variant font-semibold">
-                    Faixa 1 abre com {premiacao.faixas[0]?.minimoAtletas ?? 50} atletas
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="font-headline font-black text-lg text-primary uppercase block leading-tight">
-                    Faixa {premiacao.faixaAtual}
-                  </span>
-                  <span className="text-[10px] text-on-surface-variant font-semibold">
-                    {premiacao.premiados} primeiros são premiados
-                  </span>
-                </>
-              )}
-            </div>
-            <ArrowRight size={18} className="text-primary shrink-0" />
-          </button>
-        </div>
 
         {/* Seletor de plano removido da tela. O estado activeTier continua
             sendo inicializado pelo plano do usuario e enviado a consulta do
@@ -707,7 +578,6 @@ export function Rankings() {
                         entry={u}
                         isMe={u.uid === user.uid}
                         rank={idx + 1}
-                        reward={getResolvedRewardForRank(u, idx + 1)}
                         pointsToNext={idx > 0 ? todos[idx - 1].score - u.score : 0}
                         tab={activeTab}
                       />
@@ -847,126 +717,11 @@ export function Rankings() {
         userName={user?.name}
       />
 
-      {/* Folha de faixas de premiacao. Mostra os valores REAIS vindos de
-          /api/season-prize (20% da receita arrecadada), nunca estimativa. */}
-      <AnimatePresence>
-        {mostrarFaixas && (
-          <div
-            className="fixed inset-0 z-[130] flex items-end justify-center bg-black/85 backdrop-blur-md"
-            onClick={() => setMostrarFaixas(false)}
-          >
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md bg-surface-container-low border-t border-x border-[#F5A623]/35 rounded-t-[28px] p-5 pb-10 max-h-[85vh] overflow-y-auto"
-            >
-              <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
-
-              <h3 className="font-headline font-black text-xl text-white uppercase tracking-tight">
-                Faixas de premiação
-              </h3>
-              <p className="text-[11px] text-on-surface-variant leading-relaxed mt-1 mb-4">
-                A premiação da Liga Invictus é nacional e única: uma parte da receita
-                de assinaturas da temporada é dividida entre os primeiros colocados
-                do ranking nacional.
-              </p>
-
-              {premiacao && premiacao.pote > 0 && (
-                <div className="bg-background/40 border border-white/5 rounded-2xl p-4 mb-4">
-                  <span className="font-label text-[9px] font-black uppercase tracking-widest text-on-surface-variant block mb-1">
-                    Prêmio acumulado até agora
-                  </span>
-                  <span className="font-headline font-black text-3xl text-primary block leading-none">
-                    R$ {premiacao.pote.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </span>
-                  {premiacao.porPosicao.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-1.5">
-                      {premiacao.porPosicao.map((linha) => (
-                        <div key={linha.posicao} className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-on-surface-variant uppercase">
-                            {linha.posicao}º lugar
-                          </span>
-                          <span className="font-headline font-black text-sm text-white">
-                            R$ {linha.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-[9px] text-on-surface-variant/70 mt-3 leading-relaxed">
-                    O valor cresce conforme novas assinaturas entram e só é fechado no
-                    encerramento da temporada.
-                  </p>
-                </div>
-              )}
-
-              {premiacao && premiacao.pote === 0 && (
-                <div className="bg-background/40 border border-white/5 rounded-2xl p-4 mb-4">
-                  <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                    Nenhum valor acumulado nesta temporada ainda.
-                  </p>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {(premiacao?.faixas || []).map((faixa) => {
-                  const atual = premiacao?.faixaAtual === faixa.numero;
-                  return (
-                    <div
-                      key={faixa.numero}
-                      className={cn(
-                        'flex items-center gap-3 rounded-2xl p-3 border',
-                        atual
-                          ? 'border-primary bg-primary/10'
-                          : 'border-white/[0.07]'
-                      )}
-                    >
-                      <span className={cn('font-headline font-black text-base w-16 shrink-0', atual ? 'text-primary' : 'text-on-surface-variant')}>
-                        Faixa {faixa.numero}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <span className={cn('text-[12px] font-bold block', atual ? 'text-white' : 'text-on-surface-variant')}>
-                          A partir de {faixa.minimoAtletas} atletas
-                        </span>
-                        {atual && (
-                          <span className="font-label text-[9px] font-black uppercase tracking-widest text-primary">
-                            Faixa atual
-                          </span>
-                        )}
-                      </div>
-                      <span className={cn('text-[11px] font-bold uppercase shrink-0', atual ? 'text-primary' : 'text-on-surface-variant')}>
-                        Top {faixa.premiados}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <p className="text-on-surface-variant/70 text-[9px] font-semibold uppercase tracking-wide leading-relaxed mt-4 pt-4 border-t border-white/[0.06]">
-                Os incentivos exibidos nesta temporada fazem parte de campanhas
-                promocionais, ações de engajamento e programas de reconhecimento
-                esportivo disponibilizados pela plataforma e parceiros participantes.
-              </p>
-
-              <button
-                onClick={() => setMostrarFaixas(false)}
-                className="w-full mt-5 py-3.5 rounded-2xl bg-primary text-black font-label text-[11px] font-black uppercase tracking-widest active:scale-95 transition-transform"
-              >
-                Fechar
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
     </div>
   );
 }
 
-function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
+function RankingItem({ entry, isMe, rank, pointsToNext, tab }: any) {
   const [movement, setMovement] = useState<'up' | 'down' | 'same'>('same');
   const [showDenounceConfirm, setShowDenounceConfirm] = useState(false);
   const [denouncing, setDenouncing] = useState(false);
@@ -1122,27 +877,11 @@ function RankingItem({ entry, isMe, rank, reward, pointsToNext, tab }: any) {
       </div>
       
       <div className="flex flex-col items-end gap-1 shrink-0 border-l border-white/[0.03] pl-4 md:pl-6 ml-1 md:ml-2 relative z-10 min-w-[60px] md:min-w-[80px]">
-        {reward > 0 ? (
-          <div className="text-right">
-            {!entry.isSubscribed ? (
-               <div className="flex flex-col items-end opacity-20">
-                 <span className="font-label text-[7px] md:text-[8px] font-black text-on-surface-variant uppercase tracking-widest block mb-1">BLOQ</span>
-                 <Lock className="text-on-surface-variant w-[10px] h-[10px] md:w-[12px] md:h-[12px]" />
-               </div>
-            ) : (
-              <>
-                <span className="font-label text-[7px] md:text-[8px] font-black text-on-surface-variant uppercase tracking-widest block mb-1 opacity-40">PRIZE</span>
-                <span className="font-headline font-black text-base md:text-xl text-primary money-glow">R${reward}</span>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="text-right opacity-20 group-hover:opacity-40 transition-opacity">
-            <span className="font-headline font-black text-[9px] md:text-[10px] uppercase">
-              {movement === 'up' ? 'SB' : movement === 'down' ? 'DS' : '--'}
-            </span>
-          </div>
-        )}
+        <div className="text-right opacity-20 group-hover:opacity-40 transition-opacity">
+          <span className="font-headline font-black text-[9px] md:text-[10px] uppercase">
+            {movement === 'up' ? 'SB' : movement === 'down' ? 'DS' : '--'}
+          </span>
+        </div>
       </div>
     </div>
   );
