@@ -414,6 +414,49 @@
   box-shadow: 0 0 24px rgba(245,166,35,.2);
 }
 
+/* Perfil mobile: composição de conta e performance baseada na referência aprovada. */
+.profile-reference-screen {
+  position: relative;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(3,3,3,.68), rgba(3,3,3,.90) 55%, rgba(3,3,3,.97));
+}
+
+.profile-identity { display: flex; gap: 1.25rem; align-items: center; }
+.profile-avatar {
+  width: 130px; height: 130px; flex: 0 0 130px; padding: 3px; border-radius: 50%; overflow: hidden;
+  background: linear-gradient(145deg, #ffe783, #f5a623 45%, #7b4700); box-shadow: 0 0 22px rgba(245,166,35,.34);
+}
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; border: 2px solid #17110a; }
+.profile-pro,.profile-level,.profile-xp { display: inline-flex; align-items: center; min-height: 33px; padding: 0 .7rem; border: 1px solid rgba(245,166,35,.7); border-radius: 12px; color: var(--color-primary); background: rgba(10,8,5,.78); font-family: Anton, sans-serif; font-size: 17px; font-style: italic; }
+.profile-xp { border-color: rgba(255,255,255,.16); color: #fff; font-family: Barlow, sans-serif; font-size: 15px; font-style: normal; }
+.profile-xp-track { height: 11px; flex: 1; overflow: hidden; border-radius: 999px; background: #2a2a2a; }
+.profile-xp-track div { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#ffb82b,#f39200); }
+.profile-stats { display: grid; grid-template-columns: repeat(4, 1fr); padding: .8rem 0; border: 1px solid rgba(245,166,35,.33); border-radius: 23px; background: rgba(9,9,9,.82); box-shadow: 0 14px 32px rgba(0,0,0,.34); }
+.profile-stat { min-width: 0; display: grid; justify-items: center; gap: .35rem; padding: .45rem .2rem; color: var(--color-primary); border-right: 1px solid rgba(255,255,255,.12); }
+.profile-stat:last-child { border-right: 0; }
+.profile-stat strong { color:#fff; font-family: Anton,sans-serif; font-size: 26px; line-height: 1; }
+.profile-stat span { color:#e5e5e5; font-size: 11px; font-weight: 700; line-height: 1.15; text-align: center; text-transform: uppercase; }
+.profile-panel { padding: 1rem 1.2rem; border: 1px solid rgba(245,166,35,.25); border-radius: 23px; background: linear-gradient(135deg,rgba(16,16,16,.92),rgba(7,7,7,.88)); box-shadow: 0 12px 26px rgba(0,0,0,.30); }
+.profile-panel h2,.profile-brand-card h2 { margin: 0; font-family: Anton,sans-serif; font-size: 17px; font-weight: 400; line-height: 1; text-transform: uppercase; }
+.profile-panel > div > button { color:var(--color-primary); font-family:Anton,sans-serif; font-size:15px; font-style:italic; text-transform:uppercase; }
+.profile-connection,.profile-menu-item { width:100%; display:flex; align-items:center; gap:.8rem; padding:.72rem 0; }
+.profile-connection b,.profile-menu-item b { display:block; color:#fff; font-family: Barlow,sans-serif; font-size:16px; font-weight:700; line-height:1.05; text-transform:uppercase; }
+.profile-connection small,.profile-menu-item small { display:block; margin-top:.28rem; color:rgba(255,255,255,.78); font-size:13px; line-height:1.12; }
+.profile-brand-card { display:flex; align-items:center; gap:.9rem; min-height:105px; padding:1rem; border:1px solid rgba(255,255,255,.12); border-radius:23px; background:rgba(13,13,13,.92); }
+.profile-brand-card img { width:64px; height:64px; object-fit:contain; filter:drop-shadow(0 0 12px rgba(245,166,35,.45)); }
+.profile-brand-card p { margin:.45rem 0 0; color:rgba(255,255,255,.80); font-size:12px; line-height:1.3; }
+.profile-brand-card button { display:inline-flex; align-items:center; gap:.5rem; padding:.8rem .65rem; border:1px solid rgba(245,166,35,.65); border-radius:12px; color:var(--color-primary); font-family:Anton,sans-serif; font-size:14px; font-style:italic; text-transform:uppercase; white-space:nowrap; }
+
+@media (max-width: 380px) {
+  .profile-identity { gap:.85rem; }
+  .profile-avatar { width:108px; height:108px; flex-basis:108px; }
+  .profile-identity .font-headline { font-size:23px; }
+  .profile-pro,.profile-level { font-size:14px; min-height:29px; }
+  .profile-xp { padding:0 .45rem; font-size:13px; }
+  .profile-brand-card { gap:.5rem; padding:.8rem; }
+  .profile-brand-card button { font-size:12px; padding:.65rem .45rem; }
+}
+
 @media (max-width: 380px) {
   .challenge-screen { padding-right: 14px; padding-left: 14px; }
   .challenge-level-progress { width: 116px; gap: .45rem; font-size: 1.2rem; }
