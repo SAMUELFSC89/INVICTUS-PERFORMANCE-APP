@@ -133,6 +133,8 @@ export const activityService = {
       elliptical: { label: 'Elíptico', isIndoor: true, requiresGps: false },
       stair_climber: { label: 'Escada', isIndoor: true, requiresGps: false },
       rowing: { label: 'Remo', isIndoor: true, requiresGps: false },
+      swimming: { label: 'Natação', isIndoor: true, requiresGps: false },
+      hiit: { label: 'HIIT / Funcional', isIndoor: true, requiresGps: false },
       other: { label: 'Outros', isIndoor: true, requiresGps: false }
     };
 

@@ -22,6 +22,7 @@ import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection, ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
 import { PowerModule } from './PowerModule';
 import { RunShareCard } from '../components/RunShareCard';
+import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption } from '../components/ChallengeActivityFlow';
 
 export type ChallengeCategory =
   | 'all'
@@ -124,6 +125,9 @@ export function Challenges() {
 
   // Modals & Pending Operations
   const [pendingChallenge, setPendingChallenge] = useState<CoreChallenge | null>(null);
+  const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(null);
+  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState('Pernas');
+  const [selectedCardioOption, setSelectedCardioOption] = useState<CardioOption>(CARDIO_OPTIONS[0]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
@@ -239,6 +243,7 @@ export function Challenges() {
     setPendingChallenge(challenge);
     setStartActivityError(null);
     setError(null);
+    setFlowScreen(challenge.id === 'workout' ? 'workout-details' : 'cardio-picker');
   };
 
   // Start Session (Workout / Cardio)
@@ -267,6 +272,7 @@ export function Challenges() {
       );
       setActiveSession(session);
       setPendingChallenge(null);
+      setFlowScreen('active');
     } catch (err: any) {
       console.error('Error starting activity:', err);
       let rawMsg = err.message || 'Falha ao iniciar atividade.';
@@ -347,7 +353,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
         const now = new Date();
         const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
         const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-        const cardioTypeLabels: Record<string, string> = { running: 'Corrida ao ar livre', walking: 'Caminhada', cycling: 'Ciclismo' };
+        const cardioTypeLabels: Record<string, string> = Object.fromEntries(CARDIO_OPTIONS.map((option) => [option.id, option.label]));
 
         let trajectory: Array<{ lat: number; lng: number }> | undefined;
         let distanceKm: number | undefined;
@@ -393,6 +399,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
           elevationGain: sessionType === 'cardio' ? 0 : undefined,
           trajectory,
         });
+        setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
       }
       await refreshUser();
       await loadSubmissions();
@@ -426,6 +433,24 @@ ${parsed.message}` : (parsed.message || rawMsg);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const handleFlowStart = (type: 'workout' | 'cardio') => {
+    if (type === 'workout' && flowScreen === 'workout-details') {
+      setFlowScreen('workout-checkin');
+      return;
+    }
+    if (type === 'cardio' && flowScreen === 'cardio-picker' && selectedCardioOption.gps) {
+      setFlowScreen('cardio-checkin');
+      return;
+    }
+    handleStartActivity(type);
+  };
+
+  const handleFlowBack = () => {
+    if (flowScreen === 'workout-checkin') setFlowScreen('workout-details');
+    else if (flowScreen === 'cardio-checkin') setFlowScreen('cardio-picker');
+    else { setFlowScreen(null); setPendingChallenge(null); }
+  };
+
   return (
     <div className="challenge-screen min-h-screen bg-transparent pb-28 text-on-surface pt-4 px-0 max-w-[430px] mx-auto space-y-5">
 
@@ -450,7 +475,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
       </header>
 
       {/* ACTIVE SESSION RUNNING BANNER */}
-      {activeSession && (
+      {activeSession && !flowScreen && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -725,7 +750,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
       {/* MODAL: Pending Challenge (Check-in / Workout / Cardio setup) */}
       <AnimatePresence>
-        {pendingChallenge && (
+        {pendingChallenge && !flowScreen && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -833,7 +858,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
       )}
 
       {/* #217: tela de detalhe estilo Strava mostrada JA na hora de finalizar a atividade */}
-      {finishedActivityItem && (
+      {finishedActivityItem && !flowScreen && (
         <ActivityDetailScreen
           item={finishedActivityItem}
           onClose={() => setFinishedActivityItem(null)}
@@ -844,6 +869,25 @@ ${parsed.message}` : (parsed.message || rawMsg);
       {/* Card premium de compartilhamento pós-atividade (estilo Strava) */}
       {shareCardData && (
         <RunShareCard session={shareCardData} onClose={() => setShareCardData(null)} />
+      )}
+      {flowScreen && (
+        <ChallengeActivityFlow
+          screen={flowScreen}
+          group={selectedMuscleGroup}
+          onGroup={setSelectedMuscleGroup}
+          cardio={selectedCardioOption}
+          onCardio={(option) => { setSelectedCardioOption(option); setSelectedCardioType(option.id); }}
+          session={activeSession}
+          elapsed={elapsedTime}
+          distance={liveDistanceKm}
+          trajectory={finishedActivityItem?.trajectory}
+          gymName={profile?.gymName || 'Sua academia'}
+          onBack={handleFlowBack}
+          onStart={handleFlowStart}
+          onEnd={handleEndActivity}
+          onSummary={() => setFlowScreen('cardio-summary')}
+          onDone={() => { setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); }}
+        />
       )}
     </div>
   );
