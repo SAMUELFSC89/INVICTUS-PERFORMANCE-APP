@@ -1098,13 +1098,13 @@ function ProfileReference({
     { name: 'Strava', icon: <Mountain size={22} />, className: 'profile-provider-strava', connected: stravaConnected }
   ];
   const menuItems = [
-    { label: 'Dispositivos e relógios', detail: 'Gerencie seus dispositivos e sincronizações', icon: <Watch size={27} />, action: () => onNavigate('/wearables') },
+    { label: 'Dispositivos e relógios', detail: 'Gerencie seus dispositivos e sincronizações', icon: <Watch size={27} />, action: () => onNavigate('/profile/wearables') },
     { label: 'Saúde', detail: 'Dados, métricas e relatório de saúde', icon: <HeartPulse size={27} />, action: () => onNavigate('/health') },
-    { label: 'Minha academia', detail: user.gymName || 'Vincule sua academia', icon: <Landmark size={27} />, action: () => onNavigate('/gym') },
-    { label: 'Carteira', detail: 'Meu saldo, histórico e saques', icon: <Wallet size={27} />, action: () => onNavigate('/wallet') },
-    { label: 'Metas', detail: 'Defina e acompanhe suas metas', icon: <Crosshair size={27} />, action: () => onNavigate('/settings') },
-    { label: 'Segurança e privacidade', detail: 'Dados, permissões e segurança da conta', icon: <LockKeyhole size={27} />, action: () => onNavigate('/settings') },
-    { label: 'Configurações', detail: 'Preferências do app', icon: <SettingsIcon size={27} />, action: () => onNavigate('/settings') }
+    { label: 'Minha academia', detail: user.gymName || 'Vincule sua academia', icon: <Landmark size={27} />, action: () => onNavigate('/profile/academy') },
+    { label: 'Carteira', detail: 'Meu saldo, histórico e saques', icon: <Wallet size={27} />, action: () => onNavigate('/profile/wallet') },
+    { label: 'Metas', detail: 'Defina e acompanhe suas metas', icon: <Crosshair size={27} />, action: () => onNavigate('/profile/goals') },
+    { label: 'Segurança e privacidade', detail: 'Dados, permissões e segurança da conta', icon: <LockKeyhole size={27} />, action: () => onNavigate('/profile/security') },
+    { label: 'Configurações', detail: 'Preferências do app', icon: <SettingsIcon size={27} />, action: () => onNavigate('/profile/preferences') }
   ];
 
   return (
