@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Dumbbell, TrendingUp, MapPin, RefreshCw, CheckCircle, XCircle,
+  Dumbbell, TrendingUp, MapPin, CheckCircle, XCircle,
   Clock, Lock, Play, ShieldCheck, Flame, Trophy, Users, Camera, X,
   Zap, AlertCircle, ArrowRight, Sparkles, Watch, Calendar,
-  Medal, Star, Building2, ChevronRight, Gift, Info, Target, Footprints, Crosshair
+  Medal, Star, Building2, ChevronRight, Gift, Info, Target, Footprints
 } from 'lucide-react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -16,7 +16,6 @@ import { auth, db } from '../firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivitySession } from '../types';
 import { cn } from '../lib/utils';
-import { getCurrentLocation } from '../lib/locationUtils';
 import { calculatePace } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
@@ -34,7 +33,7 @@ export type ChallengeCategory =
   | 'conquistas';
 
 interface CoreChallenge {
-  id: 'checkin' | 'workout' | 'cardio';
+  id: 'workout' | 'cardio';
   title: string;
   subtitle: string;
   description: string;
@@ -45,16 +44,6 @@ interface CoreChallenge {
 }
 
 const CORE_CHALLENGES: CoreChallenge[] = [
-  {
-    id: 'checkin',
-    title: 'Check-in de Presença',
-    subtitle: 'Validação da presença na academia',
-    description: 'Validação da presença na academia.',
-    xp: 20,
-    icon: <Crosshair size={28} className="text-primary" />,
-    tag: 'Desafio Diário',
-    badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-  },
   {
     id: 'workout',
     title: 'Treino de Musculação',
@@ -77,7 +66,7 @@ const CORE_CHALLENGES: CoreChallenge[] = [
   }
 ];
 
-const DAILY_CHALLENGES_ORDER = ['workout', 'cardio', 'checkin'] as const;
+const DAILY_CHALLENGES_ORDER = ['workout', 'cardio'] as const;
 
 // All Badges & Conquistas Data
 const ALL_BADGES = [
@@ -140,20 +129,6 @@ export function Challenges() {
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
   const [presenceCheckRequired, setPresenceCheckRequired] = useState(false);
   const [presenceCheckData, setPresenceCheckData] = useState<{ id: string; prompt: string } | null>(null);
-
-  // Gym Check-in Modal States
-  const [gymCheckinStatus, setGymCheckinStatus] = useState<
-    'not_started' | 'checking_location' | 'eligible' | 'blocked_out_of_range' | 'blocked_no_permission' | 'blocked_low_accuracy' | 'confirmed'
-  >('not_started');
-  const [gymCheckinError, setGymCheckinError] = useState<string | null>(null);
-  const [gymCheckinDistance, setGymCheckinDistance] = useState<number | null>(null);
-  const [gymCheckinAccuracy, setGymCheckinAccuracy] = useState<number | null>(null);
-  const [verifiedCheckInId, setVerifiedCheckInId] = useState<string | null>(null);
-  const [checkinSuccessMessage, setCheckinSuccessMessage] = useState<string | null>(null);
-  const [isPerformingCheckin, setIsPerformingCheckin] = useState(false);
-  const [checkinExpiresAt, setCheckinExpiresAt] = useState<string | null>(null);
-  const [timeLeftStr, setTimeLeftStr] = useState<string>('');
-  const [verifiedCheckinLocation, setVerifiedCheckinLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
 
   // Cardio States
   const [selectedCardioType, setSelectedCardioType] = useState<string>('running');
@@ -259,165 +234,11 @@ export function Challenges() {
     };
   }, [activeSession?.id, activeSession?.requiresGpsDistance]);
 
-  // Checkin countdown timer
-  useEffect(() => {
-    if (gymCheckinStatus !== 'confirmed' || !checkinExpiresAt) {
-      setTimeLeftStr('');
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const remainingMs = new Date(checkinExpiresAt).getTime() - Date.now();
-      if (remainingMs <= 0) {
-        setGymCheckinStatus('not_started');
-        setVerifiedCheckInId(null);
-        setCheckinExpiresAt(null);
-        setGymCheckinError('Seu check-in expirou. Realize um novo check-in para iniciar seu treino.');
-        setTimeLeftStr('');
-        clearInterval(interval);
-      } else {
-        const mins = Math.floor(remainingMs / 60000);
-        const secs = Math.floor((remainingMs % 60000) / 1000);
-        setTimeLeftStr(`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [gymCheckinStatus, checkinExpiresAt]);
-
-  // Gym Proximity Check
-  const evaluateGymProximityCheck = async () => {
-    setGymCheckinStatus('checking_location');
-    setGymCheckinError(null);
-    setGymCheckinDistance(null);
-    setGymCheckinAccuracy(null);
-
-    if (!profile?.gymId) {
-      setGymCheckinStatus('blocked_out_of_range');
-      setGymCheckinError('Academia não cadastrada. Por favor, vincule uma academia no seu perfil para fazer check-in.');
-      return;
-    }
-
-    let location: { lat: number; lng: number; accuracy?: number };
-    try {
-      location = await getCurrentLocation(true, 15000);
-      setVerifiedCheckinLocation(location);
-      const acc = location.accuracy !== undefined ? Math.round(location.accuracy) : null;
-      setGymCheckinAccuracy(acc);
-
-      if (acc !== null && acc > 30) {
-        setGymCheckinStatus('blocked_low_accuracy');
-        setGymCheckinError(`📍 Sinal GPS impreciso (${acc}m). O check-in exige precisão de no máximo 30 metros. Vá para uma área aberta e tente novamente.`);
-        return;
-      }
-    } catch (err: any) {
-      console.error('GPS error:', err);
-      setGymCheckinStatus('blocked_no_permission');
-      setGymCheckinError(err?.message || 'Ative a localização do dispositivo para confirmar presença.');
-      return;
-    }
-
-    try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) {
-        setGymCheckinStatus('blocked_no_permission');
-        setGymCheckinError('Sessão expirada. Faça login novamente.');
-        return;
-      }
-
-      const response = await fetch('/api/gyms/checkin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          action: 'verify',
-          latitude: location.lat,
-          longitude: location.lng,
-          accuracy: location.accuracy || 15,
-          isMock: false
-        })
-      });
-
-      const data = await response.json();
-      if (data.distanceMeters !== undefined) {
-        setGymCheckinDistance(data.distanceMeters);
-      }
-      if (!response.ok) {
-        setGymCheckinStatus(data.status || 'blocked_out_of_range');
-        setGymCheckinError(data.error || 'Não foi possível confirmar sua proximidade com a academia.');
-      } else {
-        setGymCheckinStatus(data.status);
-        if (data.status !== 'eligible') {
-          setGymCheckinError(data.error || data.message || '📍 Aproxime-se da sua academia para realizar o check-in.');
-        }
-      }
-    } catch (err: any) {
-      console.error('Checkin validation error:', err);
-      setGymCheckinStatus('blocked_out_of_range');
-      setGymCheckinError('Falha ao comunicar com o servidor de check-in.');
-    }
-  };
-
-  const handleConfirmGymCheckin = async () => {
-    if (gymCheckinStatus !== 'eligible' || !verifiedCheckinLocation) return;
-    setIsPerformingCheckin(true);
-    setGymCheckinError(null);
-
-    try {
-      const location = await getCurrentLocation(true, 15000);
-      const user = auth.currentUser;
-      if (!user) throw new Error('Usuário não autenticado.');
-
-      const idToken = await user.getIdToken();
-
-      const response = await fetch('/api/gyms/checkin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          action: 'confirm',
-          latitude: location.lat,
-          longitude: location.lng,
-          accuracy: location.accuracy || 15,
-          isMock: false,
-          deviceId: `web_${Math.random().toString(36).substring(2, 10)}`,
-          deviceFingerprint: `usr_${user.uid}`
-        })
-      });
-
-      if (!response.ok) {
-        const errJson = await response.json();
-        throw new Error(errJson.error || 'Check-in não aprovado.');
-      }
-
-      const resJson = await response.json();
-      setVerifiedCheckInId(resJson.checkInId);
-      setCheckinExpiresAt(resJson.expiresAt);
-      setGymCheckinStatus('confirmed');
-      setCheckinSuccessMessage(`Check-in verificado com sucesso na academia "${profile?.gymName || 'Academia'}"! Presença confirmada (+20 XP).`);
-
-      triggerXPToast(20, 'Check-in Presencial Confirmado! 📍');
-      await refreshUser();
-    } catch (err: any) {
-      console.error('Error confirming checkin:', err);
-      setGymCheckinError(err?.message || 'Erro ao processar check-in.');
-    } finally {
-      setIsPerformingCheckin(false);
-    }
-  };
-
   // Open Challenge Modal
   const handleOpenChallenge = (challenge: CoreChallenge) => {
     setPendingChallenge(challenge);
     setStartActivityError(null);
     setError(null);
-    if (challenge.id === 'checkin' || challenge.id === 'workout') {
-      evaluateGymProximityCheck();
-    }
   };
 
   // Start Session (Workout / Cardio)
@@ -442,8 +263,7 @@ export function Challenges() {
           maxHR: watchMaxHR,
           calories: watchCalories,
           source: 'manual_smartwatch'
-        } : undefined,
-        verifiedCheckInId || undefined
+        } : undefined
       );
       setActiveSession(session);
       setPendingChallenge(null);
@@ -847,11 +667,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
               <div className="grid grid-cols-1 gap-2.5">
                 {CORE_CHALLENGES.slice().sort((a, b) => DAILY_CHALLENGES_ORDER.indexOf(a.id) - DAILY_CHALLENGES_ORDER.indexOf(b.id)).map((ch) => {
-                  const isCompletedToday = Boolean(
-                    ch.id === 'checkin'
-                      ? (gymCheckinStatus === 'confirmed' || verifiedCheckInId)
-                      : submissions[ch.id]
-                  );
+                  const isCompletedToday = Boolean(submissions[ch.id]);
                   const isRunning = activeSession?.type === ch.id;
 
                   return (
@@ -888,7 +704,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                           </div>
 
                           <div className="shrink-0 text-right">
-                            <button onClick={() => handleOpenChallenge(ch)} disabled={isCompletedToday && ch.id !== 'checkin'} className="challenge-xp-action disabled:opacity-50">
+                            <button onClick={() => handleOpenChallenge(ch)} disabled={isCompletedToday} className="challenge-xp-action disabled:opacity-50">
                               +{ch.xp} XP <ArrowRight size={26} />
                             </button>
                             {ch.id !== 'workout' && <span className="challenge-mini-progress">0 / 1</span>}
@@ -935,63 +751,6 @@ ${parsed.message}` : (parsed.message || rawMsg);
                   <p className="text-xs text-on-surface-variant">{pendingChallenge.subtitle}</p>
                 </div>
               </div>
-
-              {/* Workout / Check-in Flow */}
-              {pendingChallenge.id === 'checkin' && (
-                <div className="space-y-4">
-                  <div className="bg-surface-container p-4 rounded-xl border border-white/5 space-y-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-on-surface-variant">Academia Cadastrada:</span>
-                      <strong className="text-white">{profile?.gymName || 'Não definida'}</strong>
-                    </div>
-
-                    {gymCheckinStatus === 'checking_location' && (
-                      <div className="flex items-center gap-2 text-amber-400 text-xs py-2">
-                        <RefreshCw className="animate-spin" size={16} />
-                        <span>Validando sinal de GPS e geolocalização...</span>
-                      </div>
-                    )}
-
-                    {gymCheckinError && (
-                      <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-xs space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold">
-                          <AlertCircle size={14} />
-                          <span>Validação de Proximidade</span>
-                        </div>
-                        <p>{gymCheckinError}</p>
-                      </div>
-                    )}
-
-                    {gymCheckinStatus === 'eligible' && (
-                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-xs flex items-center gap-2">
-                        <CheckCircle size={16} />
-                        <span>Você está no raio da sua academia! Clique abaixo para confirmar presença.</span>
-                      </div>
-                    )}
-
-                    {gymCheckinStatus === 'confirmed' && (
-                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-xs space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold">
-                          <CheckCircle size={16} />
-                          <span>Check-in Verificado Ativo!</span>
-                        </div>
-                        {timeLeftStr && <p className="font-mono text-white">Tempo restante: {timeLeftStr}</p>}
-                      </div>
-                    )}
-                  </div>
-
-                  {gymCheckinStatus === 'eligible' && (
-                    <button
-                      onClick={handleConfirmGymCheckin}
-                      disabled={isPerformingCheckin}
-                      className="w-full py-3 bg-primary hover:bg-primary-hover text-black font-headline font-black italic text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      {isPerformingCheckin ? <RefreshCw className="animate-spin" size={16} /> : <MapPin size={16} />}
-                      <span>Confirmar Check-in Presencial (+20 XP)</span>
-                    </button>
-                  )}
-                </div>
-              )}
 
               {startActivityError && (
                 <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 rounded-2xl text-xs space-y-1.5 shadow-sm">
