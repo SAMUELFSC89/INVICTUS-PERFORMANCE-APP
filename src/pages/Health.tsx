@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, Flame, Heart, Info, MapPin, SlidersHorizontal } from 'lucide-react';
+import { Activity, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, Flame, Footprints, Heart, Info, MapPin, SlidersHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -87,6 +87,21 @@ function ChartBars({ points, color = 'gold' }: { points: { value: number; label:
   return <div className={cn('health-chart-bars', color === 'violet' && 'is-violet')} aria-label="Gráfico de tendência">{points.map((point, index) => <div key={`${point.label}-${index}`}><i style={{ height: `${Math.max(4, Math.round((point.value / max) * 100))}%` }} /><span>{point.label}</span></div>)}</div>;
 }
 
+function HeartLineChart({ points }: { points: { value: number; label: string }[] }) {
+  const values = points.length ? points.map((point) => point.value) : [0, 0, 0, 0, 0, 0, 0];
+  const min = Math.min(...values);
+  const max = Math.max(...values, min + 1);
+  const coordinates = values.map((value, index) => {
+    const x = values.length === 1 ? 125 : (index / (values.length - 1)) * 250;
+    const y = 48 - ((value - min) / (max - min)) * 38;
+    return `${x.toFixed(1)} ${y.toFixed(1)}`;
+  });
+  const path = `M${coordinates.join(' L')}`;
+  const peak = values.indexOf(max);
+  const [peakX, peakY] = coordinates[peak].split(' ');
+  return <div className="health-heart-line" aria-label="Variação da frequência cardíaca média"><svg viewBox="0 0 250 58" role="img" aria-label="Linha de frequência cardíaca"><defs><linearGradient id="health-heart-gradient" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stopColor="#ff9235" /><stop offset=".48" stopColor="#ff3f4c" /><stop offset="1" stopColor="#ff752e" /></linearGradient></defs><path className="health-heart-line-glow" d={path} /><path className="health-heart-line-trace" d={path} /><circle className="health-heart-line-dot" cx={peakX} cy={peakY} r="3" /></svg></div>;
+}
+
 function ZoneChart({ state, onDetails }: { state: UserPerformanceState; onDetails?: () => void }) {
   const total = metricNumber(state, 'total_volume_time');
   const zones = state.hrZones;
@@ -94,12 +109,12 @@ function ZoneChart({ state, onDetails }: { state: UserPerformanceState; onDetail
     const previous = zones.slice(0, index).reduce((sum, item) => sum + item.percent, 0);
     return [...result, `${zone.color} ${previous}% ${previous + zone.percent}%`];
   }, []);
-  return <article className="health-zone-card"><div className="health-section-name">DISTRIBUIÇÃO DE ZONAS CARDÍACAS <Info /></div><div className="health-zone-body"><div className="health-donut" style={{ background: `conic-gradient(${stops.join(',')})` }}><div><small>Tempo total</small><strong>{formatDuration(total)}</strong></div></div><div className="health-zone-list">{zones.map((zone) => <div key={zone.zoneName}><i style={{ background: zone.color }} /><span>{zone.zoneName.replace(/ \(.+\)/, '')}</span><b>{formatDuration(zone.minutes)}</b><em>{zone.percent}%</em></div>)}</div></div>{onDetails && <button onClick={onDetails} className="health-card-link">VER DETALHES <ChevronRight /></button>}</article>;
+  return <article className="health-zone-card"><div className="health-section-name">DISTRIBUIÇÃO DE ZONAS CARDÍACAS <Info /></div><div className="health-zone-body"><div className="health-donut" style={{ background: `conic-gradient(${stops.join(',')})` }}><div><small>Tempo total</small><strong>{formatDuration(total)}</strong></div></div><div className="health-zone-list">{zones.map((zone) => <div key={zone.zoneName}><i style={{ background: zone.color, boxShadow: `0 0 9px ${zone.color}` }} /><span>{zone.zoneName.replace(/ \(.+\)/, '')}</span><b>{formatDuration(zone.minutes)}</b><em>{zone.percent}%</em></div>)}</div></div>{onDetails && <button onClick={onDetails} className="health-card-link">VER DETALHES <ChevronRight /></button>}</article>;
 }
 
 function LatestWorkouts({ state }: { state: UserPerformanceState }) {
   const workouts = [...state.timeframeWorkouts].sort((a, b) => b.timestamp - a.timestamp).slice(0, 2);
-  return <article className="health-latest"><div className="health-section-line"><div>ÚLTIMOS TREINOS</div><span>VER TODOS</span></div>{workouts.length ? workouts.map((workout) => <div className="health-workout" key={workout.id}><span className={cn('health-workout-icon', /corrida|run/i.test(workout.workoutType || '') && 'is-run')}><Dumbbell /></span><div><b>{workout.workoutName}</b><small>{new Date(workout.timestamp).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</small></div><span><Clock3 />{formatDuration(workout.durationMinutes)}</span><span><Flame />{Math.round(workout.caloriesBurned || 0)} kcal</span><span><Heart />{workout.avgHeartRate || '—'} bpm</span><ChevronRight /></div>) : <p className="health-empty">Quando seu próximo treino for validado, ele aparecerá aqui.</p>}</article>;
+  return <article className="health-latest"><div className="health-section-line"><div>ÚLTIMOS TREINOS</div><span>VER TODOS</span></div>{workouts.length ? workouts.map((workout) => { const isRun = /corrida|run/i.test(workout.workoutType || ''); return <div className="health-workout" key={workout.id}><span className={cn('health-workout-icon', isRun && 'is-run')}>{isRun ? <Footprints /> : <Dumbbell />}</span><div><b>{workout.workoutName}</b><small>{new Date(workout.timestamp).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</small></div><span><Clock3 />{formatDuration(workout.durationMinutes)}</span><span><Flame />{Math.round(workout.caloriesBurned || 0)} kcal</span><span><Heart />{workout.avgHeartRate || '—'} bpm</span><ChevronRight /></div>; }) : <p className="health-empty">Quando seu próximo treino for validado, ele aparecerá aqui.</p>}</article>;
 }
 
 function HealthSummaryContent({ state, range, onRange, onReport }: { state: UserPerformanceState; range: TimeRange; onRange: (range: TimeRange) => void; onReport: () => void }) {
@@ -113,7 +128,7 @@ function HealthSummaryContent({ state, range, onRange, onReport }: { state: User
     <div className="health-tabs"><button className="is-active">RESUMO</button><button>CALORIAS</button><button>ZONAS FC</button><button>TENDÊNCIAS</button><button onClick={onReport}>RELATÓRIOS</button></div>
     <section className="health-overview"><div className="health-section-line"><div><Activity /> VISÃO GERAL</div><small>Última sincronização: agora <span>●</span></small></div><div className="health-metrics-grid"><MetricCard icon={<Flame />} label="CALORIAS" value={calories.toLocaleString('pt-BR')} unit="kcal" detail={`Média diária: ${workouts ? Math.round(calories / workouts) : 0} kcal`} /><MetricCard icon={<Clock3 />} label="TEMPO ATIVO" value={formatDuration(minutes)} detail={`Média diária: ${workouts ? formatDuration(minutes / workouts) : '0h 00m'}`} /><MetricCard icon={<Dumbbell />} label="TREINOS" value={workouts} detail="No período selecionado" progress={(Number(state.computedMetrics.weekly_active_days?.currentValue) / 5) * 100} /><MetricCard icon={<Heart />} label="FC MÉDIA" value={heartRate || '—'} unit={heartRate ? 'bpm' : ''} detail={heartRate ? 'Dados do sensor' : 'Conecte o relógio'} tone="red" /></div></section>
     <section className="health-dual"><ZoneChart state={state} onDetails={onReport} /><article className="health-trend-card"><div className="health-section-name">TENDÊNCIA SEMANAL <Info /></div><PeriodControl value={range} onChange={onRange} /><strong>{calories.toLocaleString('pt-BR')} <small>kcal</small></strong><p>Média no período</p><ChartBars points={caloriePoints.length ? caloriePoints : [{ label: 'SEG', value: 0 }]} /><button onClick={onReport} className="health-card-link">VER MAIS <ChevronRight /></button></article></section>
-    <section className="health-heart-card"><div className="health-section-name">FREQUÊNCIA CARDÍACA MÉDIA <Info /></div><div className="health-heart-layout"><span className="health-heart-icon"><Heart /></span><div><strong>{heartRate || '—'} <small>bpm</small></strong><p>Média dos últimos dias</p></div><div className="health-heart-graph"><ChartBars points={heartPoints.length ? heartPoints : [{ label: '', value: 0 }]} color="violet" /></div><div className="health-heart-minmax"><span>MÁXIMA <b>{metricNumber(state, 'max_heart_rate_session') || '—'} bpm</b></span><span>RECUPERAÇÃO <b>{metricNumber(state, 'recovery_index')}%</b></span></div></div></section>
+    <section className="health-heart-card"><div className="health-section-name">FREQUÊNCIA CARDÍACA MÉDIA <Info /></div><div className="health-heart-layout"><span className="health-heart-icon"><Heart /></span><div><strong>{heartRate || '—'} <small>bpm</small></strong><p>Média dos últimos dias</p></div><div className="health-heart-graph"><HeartLineChart points={heartPoints} /></div><div className="health-heart-minmax"><span>MÁXIMA <b>{metricNumber(state, 'max_heart_rate_session') || '—'} bpm</b></span><span>RECUPERAÇÃO <b>{metricNumber(state, 'recovery_index')}%</b></span></div></div></section>
     <LatestWorkouts state={state} />
   </>;
 }
