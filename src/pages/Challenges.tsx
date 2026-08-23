@@ -3,7 +3,7 @@ import {
   Dumbbell, TrendingUp, MapPin, RefreshCw, CheckCircle, XCircle,
   Clock, Lock, Play, ShieldCheck, Flame, Trophy, Users, Camera, X,
   Zap, AlertCircle, ArrowRight, Sparkles, Watch, Calendar,
-  Medal, Star, Building2, ChevronRight, Gift, Bell, Info, Target
+  Medal, Star, Building2, ChevronRight, Gift, Info, Target
 } from 'lucide-react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -21,7 +21,6 @@ import { calculatePace } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection, ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
-import { HabitTrackerSection } from '../components/HabitTrackerSection';
 import { PowerModule } from './PowerModule';
 import { RunShareCard } from '../components/RunShareCard';
 
@@ -33,15 +32,6 @@ export type ChallengeCategory =
   | 'privados'
   | 'ranking'
   | 'conquistas';
-
-const CATEGORY_TABS: { id: ChallengeCategory; label: string; icon: string }[] = [
-  { id: 'all', label: '🌟 Todos', icon: '🌟' },
-  { id: 'diarios', label: '☀️ Diários', icon: '☀️' },
-  { id: 'powerlift', label: '🔥 Invictus Power Lift', icon: '🔥' },
-  { id: 'privados', label: '👥 Privados', icon: '👥' },
-  { id: 'ranking', label: '📊 Ranking', icon: '📊' },
-  { id: 'conquistas', label: '🎖️ Conquistas', icon: '🎖️' },
-];
 
 interface CoreChallenge {
   id: 'checkin' | 'workout' | 'cardio';
@@ -621,15 +611,11 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
       {/* CABEÇALHO MOBILE */}
       <header className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div>
           <div>
             <h1 className="text-[26px] leading-none font-headline font-black tracking-tight uppercase italic text-white">Desafios</h1>
             <p className="mt-1 text-[10px] text-white/45 uppercase tracking-wide">Supere seus limites</p>
           </div>
-          <button aria-label="Notificações" className="relative grid h-10 w-10 place-items-center rounded-2xl border border-[#f6a800]/25 bg-black/30 text-primary transition-colors hover:border-primary">
-            <Bell size={18} />
-            <span className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_#f6a800]" />
-          </button>
         </div>
 
         <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-r from-[#14100a] via-[#11100d] to-[#0b0b0b] px-4 py-3 shadow-[0_12px_36px_rgba(0,0,0,.32)]">
@@ -647,13 +633,6 @@ ${parsed.message}` : (parsed.message || rawMsg);
               <div className="h-1.5 overflow-hidden rounded-full bg-white/15"><div className="h-full w-[88%] rounded-full bg-primary" /></div>
             </div>
           </div>
-        </div>
-
-        {/* Categorias continuam disponíveis sem poluir a experiência mobile. */}
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-          {CATEGORY_TABS.map((cat) => (
-            <button key={cat.id} onClick={() => { setSelectedCategory(cat.id); setSearchParams({ category: cat.id }); }} className={cn("shrink-0 rounded-full border px-3 py-1.5 text-[9px] font-bold uppercase tracking-wide transition-colors", selectedCategory === cat.id ? "border-primary bg-primary text-black" : "border-white/10 bg-white/[.03] text-white/55 hover:text-white")}>{cat.label}</button>
-          ))}
         </div>
       </header>
 
@@ -841,11 +820,11 @@ ${parsed.message}` : (parsed.message || rawMsg);
         </div>
       ) : (
         /* 5. DEFAULT CHALLENGES CATALOGUE VIEW */
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
 
           {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="relative min-h-[184px] overflow-hidden rounded-[22px] border border-primary/45 bg-[#120d06] shadow-[0_18px_40px_rgba(0,0,0,.44)]">
+            <div className="order-2 relative min-h-[184px] overflow-hidden rounded-[22px] border border-primary/45 bg-[#120d06] shadow-[0_18px_40px_rgba(0,0,0,.44)]">
               <img src="/invictus-power-lift-card.png" alt="Arte do Invictus Power Lift" className="absolute inset-0 h-full w-full object-cover object-center opacity-70" />
               <div className="absolute inset-0 bg-gradient-to-r from-[#100b05] via-[#100b05]/90 to-[#100b05]/25" />
               <div className="relative flex min-h-[184px] flex-col justify-between p-4">
@@ -863,7 +842,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
           {/* CORE DAILY CHALLENGES SECTION */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="space-y-3">
+            <div className="order-1 space-y-3">
               <div className="flex items-center justify-between px-0.5">
                 <div>
                   <h2 className="text-sm font-black text-white uppercase tracking-wide">Desafios principais do dia</h2>
@@ -882,6 +861,12 @@ ${parsed.message}` : (parsed.message || rawMsg);
                   const isRunning = activeSession?.type === ch.id;
 
                   return (
+                    <React.Fragment key={ch.id}>
+                      {ch.id === 'cardio' && (
+                        <div className="mt-2 border-t border-white/[.07] pt-5 md:col-span-3">
+                          <h2 className="text-sm font-black uppercase tracking-wide text-white">Outros desafios diários</h2>
+                        </div>
+                      )}
                     <div
                       key={ch.id}
                       className={cn(
@@ -955,6 +940,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                         </button>
                       </div>
                     </div>
+                    </React.Fragment>
                   );
                 })}
               </div>
@@ -962,14 +948,6 @@ ${parsed.message}` : (parsed.message || rawMsg);
           )}
         </div>
       )}
-
-      {/* CRIAR HÁBITO — vinculado exclusivamente à área de Cardio/Desafios */}
-      <div className="mb-4">
-        <HabitTrackerSection />
-      </div>
-
-      {/* HISTÓRICO DE ATIVIDADES NO FIM DA ABA DESAFIOS */}
-      <ActivityHistorySection />
 
       {/* MODAL: Pending Challenge (Check-in / Workout / Cardio setup) */}
       <AnimatePresence>
