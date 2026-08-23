@@ -607,7 +607,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
   };
 
   return (
-    <div className="min-h-screen bg-[#090909] pb-28 text-on-surface pt-5 px-4 max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen bg-transparent pb-28 text-on-surface pt-5 px-4 max-w-5xl mx-auto space-y-6">
 
       {/* CABEÇALHO MOBILE */}
       <header className="space-y-3">
