@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Dumbbell, TrendingUp, MapPin, RefreshCw, CheckCircle, XCircle,
   Clock, Lock, Play, ShieldCheck, Flame, Trophy, Users, Camera, X,
-  Zap, Award, AlertCircle, ArrowRight, Sparkles, Watch, Calendar,
-  Medal, Star, Building2, ChevronRight, Gift
+  Zap, AlertCircle, ArrowRight, Sparkles, Watch, Calendar,
+  Medal, Star, Building2, ChevronRight, Gift, Bell, Info, Target
 } from 'lucide-react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -86,6 +86,8 @@ const CORE_CHALLENGES: CoreChallenge[] = [
     badgeColor: 'bg-orange-500/10 text-orange-400 border-orange-500/20'
   }
 ];
+
+const DAILY_CHALLENGES_ORDER = ['workout', 'cardio', 'checkin'] as const;
 
 // All Badges & Conquistas Data
 const ALL_BADGES = [
@@ -615,57 +617,45 @@ ${parsed.message}` : (parsed.message || rawMsg);
   };
 
   return (
-    <div className="min-h-screen bg-surface-dark pb-28 text-on-surface pt-4 px-4 max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#090909] pb-28 text-on-surface pt-5 px-4 max-w-5xl mx-auto space-y-6">
 
-      {/* HEADER BANNER */}
-      <div className="bg-gradient-to-br from-surface-card via-surface-card to-surface-card/60 p-6 rounded-[28px] border border-white/10 shadow-xl relative overflow-hidden">
-        <div className="absolute -right-10 -top-10 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* CABEÇALHO MOBILE */}
+      <header className="space-y-3">
+        <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Trophy className="text-primary" size={26} />
-              <h1 className="text-2xl sm:text-3xl font-black font-headline tracking-tight uppercase italic text-white">
-                Central de Desafios & Evolução
-              </h1>
-            </div>
-            <p className="text-xs text-on-surface-variant max-w-lg">
-              Escolha sua modalidade, cumpra metas diárias, participe do Power Lift oficial e supere seus limites para conquistar badges e ranking.
-            </p>
+            <h1 className="text-[26px] leading-none font-headline font-black tracking-tight uppercase italic text-white">Desafios</h1>
+            <p className="mt-1 text-[10px] text-white/45 uppercase tracking-wide">Supere seus limites</p>
           </div>
+          <button aria-label="Notificações" className="relative grid h-10 w-10 place-items-center rounded-2xl border border-[#f6a800]/25 bg-black/30 text-primary transition-colors hover:border-primary">
+            <Bell size={18} />
+            <span className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_#f6a800]" />
+          </button>
+        </div>
 
-          <div className="flex items-center gap-3 bg-black/40 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/10 shrink-0">
-            <Zap className="text-primary" size={20} />
-            <div>
-              <span className="text-[9px] font-mono text-on-surface-variant uppercase block">Seu Nível Atual</span>
-              <span className="text-sm font-headline italic font-black text-white">
-                Nível {profile?.level || 1} • <span className="text-primary">{profile?.xp || 0} XP</span>
-              </span>
+        <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-r from-[#14100a] via-[#11100d] to-[#0b0b0b] px-4 py-3 shadow-[0_12px_36px_rgba(0,0,0,.32)]">
+          <div className="absolute -left-6 top-0 h-full w-24 bg-primary/5 blur-2xl" />
+          <div className="relative flex items-center gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-primary/45 bg-primary/10 text-primary shadow-[0_0_16px_rgba(246,168,0,.16)]">
+              <Zap size={20} fill="currentColor" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="block text-[8px] font-bold uppercase tracking-widest text-white/50">Seu nível atual</span>
+              <p className="font-headline text-base font-black italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 0} XP</span></p>
+            </div>
+            <div className="w-24">
+              <div className="mb-1 flex justify-end text-[10px] font-black text-primary">88%</div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/15"><div className="h-full w-[88%] rounded-full bg-primary" /></div>
             </div>
           </div>
         </div>
 
-        {/* CATEGORIES PILLS BAR */}
-        <div className="mt-6 pt-4 border-t border-white/10 flex gap-2 overflow-x-auto no-scrollbar pb-1">
+        {/* Categorias continuam disponíveis sem poluir a experiência mobile. */}
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
           {CATEGORY_TABS.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => {
-                setSelectedCategory(cat.id);
-                setSearchParams({ category: cat.id });
-              }}
-              className={cn(
-                "px-4 py-2.5 rounded-2xl text-xs font-headline font-black italic uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shrink-0 border",
-                selectedCategory === cat.id
-                  ? "bg-primary text-black border-primary shadow-lg shadow-primary/20 scale-105"
-                  : "bg-surface-container/85 hover:bg-surface-container-high border-[#F5A623]/20 text-white/90 hover:text-white"
-              )}
-            >
-              <span>{cat.label}</span>
-            </button>
+            <button key={cat.id} onClick={() => { setSelectedCategory(cat.id); setSearchParams({ category: cat.id }); }} className={cn("shrink-0 rounded-full border px-3 py-1.5 text-[9px] font-bold uppercase tracking-wide transition-colors", selectedCategory === cat.id ? "border-primary bg-primary text-black" : "border-white/10 bg-white/[.03] text-white/55 hover:text-white")}>{cat.label}</button>
           ))}
         </div>
-      </div>
+      </header>
 
       {/* ACTIVE SESSION RUNNING BANNER */}
       {activeSession && (
@@ -855,44 +845,35 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
           {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="bg-gradient-to-r from-amber-500/20 via-surface-container-high to-primary/20 border border-amber-500/40 p-6 rounded-[28px] relative overflow-hidden shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1 relative z-10 max-w-xl">
-                <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-mono font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
-                  <Flame size={12} /> Categoria Destaque
-                </span>
-                <h3 className="text-xl sm:text-2xl font-headline italic font-black text-white uppercase">
-                  🔥 Invictus Power Lift
-                </h3>
-                <p className="text-xs text-on-surface-variant">
-                  Supino • Agachamento • Levantamento Terra. Registre marcas pessoais de carga com homologação de vídeo por IA e dispute o cinturão da sua academia!
-                </p>
+            <div className="relative min-h-[184px] overflow-hidden rounded-[22px] border border-primary/45 bg-[#120d06] shadow-[0_18px_40px_rgba(0,0,0,.44)]">
+              <img src="/invictus-power-lift-card.png" alt="Arte do Invictus Power Lift" className="absolute inset-0 h-full w-full object-cover object-center opacity-70" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#100b05] via-[#100b05]/90 to-[#100b05]/25" />
+              <div className="relative flex min-h-[184px] flex-col justify-between p-4">
+                <div className="max-w-[72%]">
+                  <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-[.16em] text-primary"><Flame size={13} fill="currentColor" /> Categoria destaque</span>
+                  <h3 className="mt-1 font-headline text-xl font-black italic uppercase text-white">Invictus Power Lift</h3>
+                  <p className="mt-1 text-[10px] leading-snug text-white/70">Supino · Agachamento · Levantamento Terra. Registre marcas pessoais de carga com homologação de vídeo por IA.</p>
+                </div>
+                <button onClick={() => { setSelectedCategory('powerlift'); setSearchParams({ category: 'powerlift' }); }} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 font-headline text-[11px] font-black italic uppercase tracking-wide text-black transition-colors hover:bg-[#ffc13d]">
+                  <span>Acessar desafios de carga</span><ArrowRight size={16} />
+                </button>
               </div>
-
-              <button
-                onClick={() => {
-                  setSelectedCategory('powerlift');
-                  setSearchParams({ category: 'powerlift' });
-                }}
-                className="px-5 py-3 bg-amber-400 hover:bg-amber-300 text-black font-headline font-black italic text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center gap-2 shrink-0 cursor-pointer"
-              >
-                <span>Acessar Desafios de Carga</span>
-                <ArrowRight size={16} />
-              </button>
             </div>
           )}
 
           {/* CORE DAILY CHALLENGES SECTION */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-sm font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
-                  <Zap size={16} className="text-primary" /> Desafios Principais do Dia
-                </h2>
-                <span className="text-xs text-on-surface-variant">Validação GPS e Presença</span>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-0.5">
+                <div>
+                  <h2 className="text-sm font-black text-white uppercase tracking-wide">Desafios principais do dia</h2>
+                  <span className="text-[10px] text-white/45">Complete os desafios e ganhe XP</span>
+                </div>
+                <Info size={18} className="text-white/50" />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {CORE_CHALLENGES.map((ch) => {
+              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+                {CORE_CHALLENGES.slice().sort((a, b) => DAILY_CHALLENGES_ORDER.indexOf(a.id) - DAILY_CHALLENGES_ORDER.indexOf(b.id)).map((ch) => {
                   const isCompletedToday = Boolean(
                     ch.id === 'checkin'
                       ? (gymCheckinStatus === 'confirmed' || verifiedCheckInId)
@@ -904,7 +885,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                     <div
                       key={ch.id}
                       className={cn(
-                        "bg-surface-card border rounded-2xl p-5 flex flex-col justify-between transition-all relative overflow-hidden group hover:border-primary/40",
+                        "relative overflow-hidden rounded-2xl border bg-[#101010] p-4 transition-all group hover:border-primary/50",
                         isCompletedToday
                           ? "border-emerald-500/30 bg-emerald-950/10"
                           : isRunning
@@ -913,33 +894,31 @@ ${parsed.message}` : (parsed.message || rawMsg);
                       )}
                     >
                       <div>
-                        <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3">
-                            <div className="p-3 bg-white/5 rounded-xl border border-white/10 group-hover:scale-105 transition-transform">
+                            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-primary/35 bg-primary/[.06] shadow-[0_0_16px_rgba(246,168,0,.10)] group-hover:scale-105 transition-transform">
                               {ch.icon}
                             </div>
                             <div>
-                              <span className={cn("text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border", ch.badgeColor)}>
-                                {ch.tag}
-                              </span>
-                              <h3 className="text-base font-bold text-white mt-1 group-hover:text-primary transition-colors">
+                              {ch.id === 'workout' && <span className="text-[8px] font-black uppercase tracking-widest text-primary">Em andamento</span>}
+                              <h3 className="text-[13px] font-black uppercase text-white group-hover:text-primary transition-colors">
                                 {ch.title}
                               </h3>
+                              <p className="text-[10px] text-white/50">{ch.subtitle}</p>
                             </div>
                           </div>
 
-                          <div className="bg-primary/10 border border-primary/20 text-primary px-2.5 py-1 rounded-xl text-xs font-black font-mono flex items-center gap-1">
-                            <Award size={12} />
-                            +{ch.xp} XP
+                          <div className="shrink-0 rounded-lg border border-primary/45 bg-primary/[.06] px-2.5 py-1.5 text-[10px] font-black text-primary">
+                            +{ch.xp} XP <ArrowRight className="ml-2 inline" size={13} />
                           </div>
                         </div>
 
-                        <p className="text-xs text-on-surface-variant line-clamp-2 mb-4 leading-relaxed">
+                        <p className="mt-2 text-[10px] leading-snug text-white/55">
                           {ch.description}
                         </p>
                       </div>
 
-                      <div className="pt-3 border-t border-white/5 flex items-center justify-between">
+                      <div className="mt-3 border-t border-white/[.07] pt-2.5 flex items-center justify-between">
                         {isCompletedToday ? (
                           <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
                             <CheckCircle size={16} />
@@ -951,9 +930,9 @@ ${parsed.message}` : (parsed.message || rawMsg);
                             <span>Em Andamento</span>
                           </div>
                         ) : (
-                          <div className="text-xs text-on-surface-variant flex items-center gap-1">
-                            <ShieldCheck size={14} className="text-emerald-400" />
-                            <span>Validação Antifraude</span>
+                          <div className="text-[10px] text-white/45 flex items-center gap-1">
+                            <Target size={13} className="text-primary" />
+                            <span>Progresso do dia</span>
                           </div>
                         )}
 
@@ -961,7 +940,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                           onClick={() => handleOpenChallenge(ch)}
                           disabled={isCompletedToday && ch.id !== 'checkin'}
                           className={cn(
-                            "px-4 py-2 rounded-xl text-xs font-headline font-black italic uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md cursor-pointer",
+                            "px-3 py-1.5 rounded-lg text-[10px] font-headline font-black italic uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md cursor-pointer",
                             isCompletedToday
                               ? "bg-white/5 text-on-surface-variant cursor-not-allowed border border-white/10"
                               : "bg-primary text-black hover:bg-primary-hover"
