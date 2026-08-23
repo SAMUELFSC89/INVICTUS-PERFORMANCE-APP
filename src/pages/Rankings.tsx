@@ -9,6 +9,7 @@ type RankScope = 'gym' | 'city' | 'global';
 type RankPeriod = 'weekly' | 'all' | 'monthly';
 const scopeLabels: Record<RankScope, string> = { gym: 'ACADEMIA', city: 'CIDADE', global: 'NACIONAL' };
 const periodLabels: Record<RankPeriod, string> = { weekly: 'SEMANA ATUAL', all: 'TEMPORADA', monthly: 'MÊS ATUAL' };
+const weekOptions = ['Semana atual', 'Semana anterior', '2 semanas atrás', '3 semanas atrás', '4 semanas atrás', '5 semanas atrás'];
 const avatar = (entry: any) => entry.photoURL || '/logo.svg';
 const name = (entry: any) => entry.displayName || 'Atleta Invictus';
 const gym = (entry: any) => entry.gymName || entry.gym || 'Academia Invictus';
@@ -32,24 +33,28 @@ export function Rankings() {
   const [showTop50, setShowTop50] = useState(false);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [showGymPicker, setShowGymPicker] = useState(false);
+  const [selectedWeek, setSelectedWeek] = useState('Semana atual');
+  const [selectedGymId, setSelectedGymId] = useState('');
+  const [selectedGymName, setSelectedGymName] = useState('SUA ACADEMIA');
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     setLoading(true);
-    const levelId = scope === 'gym' ? user.gymId || '' : scope === 'city' ? user.city || '' : '';
+    const levelId = scope === 'gym' ? selectedGymId || user.gymId || '' : scope === 'city' ? user.city || '' : '';
     rankingService.getRanking(scope, levelId, period, user.subscriptionTier === 'performance' ? 'performance' : 'open').then((data) => { if (!cancelled) setRanking(data); }).catch((error) => console.error('Falha ao carregar ranking:', error)).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [scope, period, user?.uid, user?.gymId, user?.city, user?.subscriptionTier]);
+  }, [scope, period, selectedGymId, user?.uid, user?.gymId, user?.city, user?.subscriptionTier]);
 
   const athletes = ranking?.topUsers || [];
   const myRank = athletes.findIndex((entry) => entry.uid === user?.uid) + 1 || user?.positions?.[scope === 'global' ? 'national' : scope] || 0;
   const myEntry = athletes.find((entry) => entry.uid === user?.uid) || { ...user, score: period === 'weekly' ? user?.weeklyScore || user?.score : user?.score };
+  const academyOptions = Array.from(new Map([{ id: user.gymId || '', label: (user as any).gymName || (user as any).gym || 'Sua academia atual' }, ...athletes.map((entry: any) => ({ id: entry.gymId || '', label: gym(entry) }))].map((entry) => [entry.id || entry.label, entry])).values());
   if (!user) return null;
 
   if (showTop50) return <section className="ranking-flow">
     <header className="ranking-flow-header"><button onClick={() => setShowTop50(false)} aria-label="Voltar"><ArrowLeft /></button><div><h1>TOP 50 – {scope === 'gym' ? 'SUA ACADEMIA' : scopeLabels[scope]}</h1><p>{period === 'weekly' ? 'Semana atual' : periodLabels[period]}</p></div><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button></header>
-    <div className="rank-selectors"><div className="rank-select-wrap"><button onClick={() => setShowPeriodPicker(!showPeriodPicker)}><CalendarDays />{periodLabels[period]}<ChevronDown /></button>{showPeriodPicker && <div className="rank-options">{(['weekly', 'all', 'monthly'] as RankPeriod[]).map((option) => <button key={option} onClick={() => { setPeriod(option); setShowPeriodPicker(false); }}><span>{periodLabels[option]}</span>{option === period && <span>✓</span>}</button>)}</div>}</div><div className="rank-select-wrap"><button onClick={() => setShowGymPicker(!showGymPicker)}><Building2 />{scope === 'gym' ? 'SUA ACADEMIA' : scopeLabels[scope]}<ChevronDown /></button>{showGymPicker && <div className="rank-options rank-options--right">{(['gym', 'city', 'global'] as RankScope[]).map((option) => <button key={option} onClick={() => { setScope(option); setShowGymPicker(false); }}><span>{scopeLabels[option]}</span>{option === scope && <span>✓</span>}</button>)}</div>}</div></div>
+    <div className="rank-selectors"><div className="rank-select-wrap"><button onClick={() => setShowPeriodPicker(!showPeriodPicker)}><CalendarDays />{selectedWeek.toUpperCase()}<ChevronDown /></button>{showPeriodPicker && <div className="rank-options">{weekOptions.map((option) => <button key={option} onClick={() => { setSelectedWeek(option); setPeriod('weekly'); setShowPeriodPicker(false); }}><span>{option}</span>{option === selectedWeek && <span>✓</span>}</button>)}</div>}</div><div className="rank-select-wrap"><button onClick={() => setShowGymPicker(!showGymPicker)}><Building2 />{selectedGymName}<ChevronDown /></button>{showGymPicker && <div className="rank-options rank-options--right">{academyOptions.map((option) => <button key={option.id || option.label} onClick={() => { setSelectedGymId(option.id); setSelectedGymName(option.label.toUpperCase()); setShowGymPicker(false); }}><span>{option.label}</span>{option.label.toUpperCase() === selectedGymName && <span>✓</span>}</button>)}</div>}</div></div>
     <div className="rank-table-head"><span>POSIÇÃO</span><span>ATLETA</span><span>IGA (PONTUAÇÃO)</span></div><div className="rank-list">{loading ? <p className="rank-loading">ATUALIZANDO RANKING…</p> : athletes.slice(0, 50).map((entry, index) => <RankingRow key={entry.uid} entry={entry} rank={index + 1} current={entry.uid === user.uid} />)}</div>
     {myRank > 0 && !athletes.slice(0, 50).some((entry) => entry.uid === user.uid) && <RankingRow entry={myEntry} rank={myRank} current />}<button className="rank-position-button" onClick={() => document.querySelector('.rank-row--current')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}><CircleDot /> VER MINHA POSIÇÃO</button>
   </section>;
