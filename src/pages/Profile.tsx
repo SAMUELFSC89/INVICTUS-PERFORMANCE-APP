@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapPin, Award, TrendingUp, Medal, Star, Sun, Dumbbell, Flame, ChevronRight, Edit, LogOut, Bell, Camera, X, Check, BellOff, ShieldAlert, Share2, Copy, Utensils, Wallet, Calendar, Heart, Trophy, Building2, Globe, QrCode, Shield, Crown, RefreshCw, Activity as ActivityIcon, Settings as SettingsIcon, Trash2 } from 'lucide-react';
+import { MapPin, Award, TrendingUp, Medal, Star, Sun, Dumbbell, Flame, ChevronRight, Edit, LogOut, Bell, Camera, X, Check, BellOff, ShieldAlert, Share2, Copy, Utensils, Wallet, Calendar, Heart, Trophy, Building2, Globe, QrCode, Shield, Crown, RefreshCw, Activity as ActivityIcon, Settings as SettingsIcon, Trash2, Watch, Target, LockKeyhole, Smartphone, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, db } from '../firebase';
@@ -294,6 +294,20 @@ export function Profile() {
   };
 
   if (!user) return null;
+
+  return (
+    <ProfileReference
+      user={user}
+      progress={progress}
+      onEdit={() => setIsEditing(true)}
+      onPhotoChange={handlePhotoChange}
+      photoInputRef={fileInputRef}
+      onAudit={() => setShowIGAModal(true)}
+      onNavigate={navigate}
+      onLogout={handleLogout}
+      stravaConnected={Boolean(stravaStatus?.connected)}
+    />
+  );
 
   const unlockedAchievements = ACHIEVEMENTS.filter(a => user.achievements?.includes(a.id));
   const isTop3 = user.positions.league && user.positions.league <= 3;
@@ -1036,6 +1050,106 @@ export function Profile() {
         auditData={(user as any)?.igaAudit || (user ? calculateWeeklyIGA([], { age: user.age, weightKg: user.weight, maxHeartRate: user.maxHeartRate }) : null)}
         userName={user?.name}
       />
+    </div>
+  );
+}
+
+function ProfileReference({
+  user,
+  progress,
+  onEdit,
+  onPhotoChange,
+  photoInputRef,
+  onAudit,
+  onNavigate,
+  onLogout,
+  stravaConnected
+}: {
+  user: any;
+  progress: ReturnType<typeof getXPProgress>;
+  onEdit: () => void;
+  onPhotoChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  photoInputRef: React.RefObject<HTMLInputElement | null>;
+  onAudit: () => void;
+  onNavigate: (path: string) => void;
+  onLogout: () => void;
+  stravaConnected: boolean;
+}) {
+  const level = getLevelFromXP(user.xp || 0);
+  const connectionItems = [
+    { name: 'Apple Health', icon: <Heart size={24} fill="currentColor" />, className: 'bg-white text-rose-500', connected: true },
+    { name: 'Health Connect', icon: <ActivityIcon size={25} />, className: 'bg-sky-100 text-blue-500', connected: true },
+    { name: 'Strava', icon: <TrendingUp size={25} />, className: 'bg-[#fc4c02] text-white', connected: stravaConnected }
+  ];
+  const menuItems = [
+    { label: 'Dispositivos e relógios', detail: 'Gerencie seus dispositivos e sincronizações', icon: <Watch size={27} />, action: () => onNavigate('/wearables') },
+    { label: 'Minha academia', detail: user.gymName || 'Vincule sua academia', icon: <Building2 size={27} />, action: () => onNavigate('/gym') },
+    { label: 'Carteira', detail: 'Meu saldo, histórico e saques', icon: <Wallet size={27} />, action: () => onNavigate('/wallet') },
+    { label: 'Metas', detail: 'Defina e acompanhe suas metas', icon: <Target size={27} />, action: () => onNavigate('/settings') },
+    { label: 'Segurança e privacidade', detail: 'Dados, permissões e segurança da conta', icon: <LockKeyhole size={27} />, action: () => onNavigate('/settings') },
+    { label: 'Configurações', detail: 'Preferências do app', icon: <SettingsIcon size={27} />, action: () => onNavigate('/settings') }
+  ];
+
+  return (
+    <div className="profile-reference-screen min-h-screen pb-28 text-white">
+      <input ref={photoInputRef} type="file" className="hidden" accept="image/*" onChange={onPhotoChange} />
+      <div className="mx-auto w-full max-w-[430px] px-4 pt-6">
+        <header className="mb-7">
+          <h1 className="font-headline text-[30px] leading-none uppercase tracking-tight">Perfil</h1>
+          <p className="mt-2 text-[13px] leading-none uppercase tracking-wide text-white/80">Gerencie sua conta e sua performance</p>
+        </header>
+
+        <section className="profile-identity mb-5">
+          <button onClick={() => photoInputRef.current?.click()} className="profile-avatar" aria-label="Alterar foto de perfil">
+            <img
+              src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
+              alt={`Foto de ${user.displayName}`}
+              referrerPolicy="no-referrer"
+              onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid || 'athlete'}`; }}
+            />
+          </button>
+          <div className="min-w-0 flex-1 pt-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={onEdit} className="truncate text-left font-headline text-[27px] leading-none italic text-white">{user.displayName}</button>
+              {user.subscriptionTier === 'performance' && <button onClick={() => onNavigate('/performance')} className="profile-pro">PRO</button>}
+              <Shield size={25} className="shrink-0 text-primary" fill="currentColor" />
+            </div>
+            <p className="mt-3 flex items-center gap-2 text-[17px] text-white/85"><Shield size={18} /> {user.gymName || 'Invictus Gym'}</p>
+            <div className="mt-5 flex items-center gap-3"><span className="profile-level">LVL {level}</span><span className="profile-xp">{progress.xpInCurrentLevel} / {progress.xpNeededForNextLevel} XP</span></div>
+            <div className="mt-5 flex items-center gap-3"><div className="profile-xp-track"><div style={{ width: `${progress.percentage}%` }} /></div><strong className="text-[21px] italic text-primary">{Math.round(progress.percentage)}%</strong></div>
+          </div>
+        </section>
+
+        <section className="profile-stats mb-5">
+          <button type="button" className="profile-stat"><Flame size={31} /><strong>{user.streak || 0}</strong><span>Sequência<br />dias</span></button>
+          <button type="button" className="profile-stat" onClick={onAudit}><Trophy size={31} /><strong>{(user.weeklyScore || 0).toLocaleString('pt-BR')}</strong><span>IGA <small>ⓘ</small></span></button>
+          <button type="button" className="profile-stat" onClick={() => onNavigate('/achievements')}><Star size={31} /><strong>{user.achievements?.length || 0}</strong><span>Conquistas</span></button>
+          <button type="button" className="profile-stat"><BarChart3 size={31} /><strong>{Math.max(1, Math.ceil((user.streak || 0) / 7))}</strong><span>Semanas<br />ativas</span></button>
+        </section>
+
+        <section className="profile-panel mb-4">
+          <div className="mb-2 flex items-center justify-between"><h2>Conexões</h2><button onClick={() => onNavigate('/wearables')}>Gerenciar</button></div>
+          {connectionItems.map((item, index) => (
+            <button key={item.name} onClick={() => onNavigate('/wearables')} className={cn('profile-connection', index > 0 && 'border-t border-white/10')}>
+              <span className={cn('grid h-12 w-12 place-items-center rounded-xl', item.className)}>{item.icon}</span>
+              <span className="flex-1 text-left"><b>{item.name}</b><small>{item.connected ? 'Conectado' : 'Conectar'}</small></span>
+              {item.connected && <Check className="text-emerald-400" size={26} />}<ChevronRight className="ml-2 text-primary" size={25} />
+            </button>
+          ))}
+        </section>
+
+        <section className="profile-panel mb-5">
+          {menuItems.map((item, index) => (
+            <button key={item.label} onClick={item.action} className={cn('profile-menu-item', index > 0 && 'border-t border-white/10')}>
+              <span className="text-primary">{item.icon}</span><span className="flex-1 text-left"><b>{item.label}</b><small>{item.detail}</small></span><ChevronRight className="text-primary" size={27} />
+            </button>
+          ))}
+        </section>
+
+        <section className="profile-brand-card mb-4">
+          <img src="/capacete.webp" alt="Capacete Invictus" /><div className="flex-1"><h2>Invictus Performance</h2><p>Versão 1.0.0<br />Construindo uma comunidade invencível.</p></div><button onClick={onLogout}>Sair da conta <LogOut size={24} /></button>
+        </section>
+      </div>
     </div>
   );
 }
