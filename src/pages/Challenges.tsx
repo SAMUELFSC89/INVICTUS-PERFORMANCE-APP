@@ -607,20 +607,20 @@ ${parsed.message}` : (parsed.message || rawMsg);
   };
 
   return (
-    <div className="challenge-screen min-h-screen bg-transparent pb-28 text-on-surface pt-7 px-5 max-w-[430px] mx-auto space-y-7">
+    <div className="challenge-screen min-h-screen bg-transparent pb-28 text-on-surface pt-4 px-0 max-w-[430px] mx-auto space-y-5">
 
       {/* CABEÇALHO MOBILE */}
-      <header className="challenge-header space-y-6">
+      <header className="challenge-header space-y-4">
         <div>
-          <h1 className="text-[42px] leading-[.9] font-headline tracking-tight uppercase text-white">Desafios</h1>
-          <p className="mt-2 text-[18px] leading-none text-white/65 uppercase tracking-wide">Supere seus limites</p>
+          <h1 className="text-[30px] leading-[.9] font-headline tracking-tight uppercase text-white">Desafios</h1>
+          <p className="mt-1.5 text-[12px] leading-none text-white/65 uppercase tracking-wide">Supere seus limites</p>
         </div>
 
         <div className="challenge-level-card">
           <div className="challenge-icon challenge-icon--level"><Zap size={31} strokeWidth={2.4} /></div>
           <div className="min-w-0 flex-1">
             <span className="block text-[12px] font-bold uppercase tracking-wide text-white/80">Seu nível atual</span>
-            <p className="mt-1 font-headline text-[28px] leading-none italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 425} XP</span></p>
+            <p className="mt-1 font-headline text-[18px] leading-none italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 425} XP</span></p>
           </div>
           <div className="challenge-level-progress">
             <div className="challenge-progress-track"><div className="challenge-progress-value" /></div>
@@ -817,17 +817,17 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
           {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="challenge-powerlift order-2 relative min-h-[336px] overflow-hidden rounded-[25px] border border-primary/60 bg-[#100c06] shadow-[0_18px_40px_rgba(0,0,0,.50)]">
+            <div className="challenge-powerlift order-2 relative min-h-[214px] overflow-hidden rounded-[22px] border border-primary/60 bg-[#100c06] shadow-[0_18px_40px_rgba(0,0,0,.50)]">
               <img src="/invictus-power-lift-badge-v2.png" alt="Emblema dourado do Invictus Power Lift" className="challenge-powerlift-art" />
               <div className="challenge-powerlift-shade" />
-              <div className="relative flex min-h-[336px] flex-col justify-between p-4">
+              <div className="relative flex min-h-[214px] flex-col justify-between p-3.5">
                 <div className="max-w-[80%]">
-                  <div className="challenge-icon challenge-icon--fire"><Flame size={27} fill="currentColor" /></div>
-                  <h3 className="mt-3 font-headline text-[27px] leading-none italic uppercase text-white">Invictus Power Lift</h3>
-                  <p className="mt-3 text-[12px] leading-snug text-white/75">Supino · Agachamento · Levantamento Terra.</p>
-                  <p className="mt-3 max-w-[270px] text-[16px] leading-snug text-white/80">Registre marcas pessoais de carga com homologação de vídeo por IA e dispute o cinturão da sua academia!</p>
+                  <div className="challenge-icon challenge-icon--fire"><Flame size={20} fill="currentColor" /></div>
+                  <h3 className="mt-2 font-headline text-[21px] leading-none italic uppercase text-white">Invictus Power Lift</h3>
+                  <p className="mt-2 text-[10px] leading-snug text-white/75">Supino · Agachamento · Levantamento Terra.</p>
+                  <p className="mt-2 max-w-[230px] text-[12px] leading-snug text-white/80">Registre marcas pessoais de carga com homologação de vídeo por IA e dispute o cinturão da sua academia!</p>
                 </div>
-                <button onClick={() => { setSelectedCategory('powerlift'); setSearchParams({ category: 'powerlift' }); }} className="challenge-powerlift-button flex w-full items-center justify-center gap-3 rounded-xl bg-primary px-4 py-4 font-headline text-[17px] leading-none italic uppercase tracking-wide text-black transition-colors hover:bg-[#ffc13d]">
+                <button onClick={() => { setSelectedCategory('powerlift'); setSearchParams({ category: 'powerlift' }); }} className="challenge-powerlift-button flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-headline text-[12px] leading-none italic uppercase tracking-wide text-black transition-colors hover:bg-[#ffc13d]">
                   <span>Acessar desafios de carga</span><ArrowRight size={16} />
                 </button>
               </div>
@@ -836,13 +836,13 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
           {/* CORE DAILY CHALLENGES SECTION */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="order-1 space-y-5">
+            <div className="order-1 space-y-3">
               <div className="flex items-center justify-between px-0.5">
                 <div>
-                  <h2 className="text-[25px] leading-none font-headline text-white uppercase tracking-wide">Desafios principais do dia</h2>
-                  <span className="mt-2 block text-[16px] leading-none text-white/65">Complete os desafios diários e ganhe XP</span>
+                  <h2 className="text-[18px] leading-none font-headline text-white uppercase tracking-wide">Desafios principais do dia</h2>
+                  <span className="mt-1 block text-[12px] leading-none text-white/65">Complete os desafios diários e ganhe XP</span>
                 </div>
-                <Info size={32} strokeWidth={1.7} className="text-white/60" />
+                <Info size={22} strokeWidth={1.7} className="text-white/60" />
               </div>
 
               <div className="grid grid-cols-1 gap-2.5">
@@ -858,7 +858,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                     <React.Fragment key={ch.id}>
                       {ch.id === 'cardio' && (
                         <div className="mt-2 border-t border-white/[.07] pt-5 md:col-span-3">
-                          <h2 className="font-headline text-[22px] leading-none uppercase tracking-wide text-white">Outros desafios diários</h2>
+                          <h2 className="font-headline text-[16px] leading-none uppercase tracking-wide text-white">Outros desafios diários</h2>
                         </div>
                       )}
                     <div
@@ -872,18 +872,18 @@ ${parsed.message}` : (parsed.message || rawMsg);
                             : "border-white/10"
                       )}
                     >
-                      <div className={ch.id === 'workout' ? 'min-h-[224px]' : 'min-h-[112px]'}>
+                      <div className={ch.id === 'workout' ? 'min-h-[144px]' : 'min-h-[74px]'}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3">
-                            <div className="challenge-icon grid h-[76px] w-[76px] shrink-0 place-items-center group-hover:scale-105 transition-transform">
+                            <div className="challenge-icon grid h-[50px] w-[50px] shrink-0 place-items-center group-hover:scale-105 transition-transform">
                               {ch.icon}
                             </div>
                             <div>
                               {ch.id === 'workout' && <span className="challenge-running">Em andamento</span>}
-                              <h3 className="text-[22px] leading-none font-headline uppercase text-white group-hover:text-primary transition-colors">
+                              <h3 className="text-[16px] leading-none font-headline uppercase text-white group-hover:text-primary transition-colors">
                                 {ch.title}
                               </h3>
-                              <p className="mt-2 text-[16px] leading-snug text-white/65">{ch.subtitle}</p>
+                              <p className="mt-1.5 text-[12px] leading-snug text-white/65">{ch.subtitle}</p>
                             </div>
                           </div>
 
