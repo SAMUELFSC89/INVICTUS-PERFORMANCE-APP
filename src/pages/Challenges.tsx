@@ -3,7 +3,7 @@ import {
   Dumbbell, TrendingUp, MapPin, RefreshCw, CheckCircle, XCircle,
   Clock, Lock, Play, ShieldCheck, Flame, Trophy, Users, Camera, X,
   Zap, AlertCircle, ArrowRight, Sparkles, Watch, Calendar,
-  Medal, Star, Building2, ChevronRight, Gift, Info, Target
+  Medal, Star, Building2, ChevronRight, Gift, Info, Target, Footprints, Crosshair
 } from 'lucide-react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -51,7 +51,7 @@ const CORE_CHALLENGES: CoreChallenge[] = [
     subtitle: 'Validação da presença na academia',
     description: 'Validação da presença na academia.',
     xp: 20,
-    icon: <MapPin size={28} className="text-emerald-400" />,
+    icon: <Crosshair size={28} className="text-primary" />,
     tag: 'Desafio Diário',
     badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
   },
@@ -71,7 +71,7 @@ const CORE_CHALLENGES: CoreChallenge[] = [
     subtitle: 'Corrida ou caminhada ao ar livre via GPS',
     description: 'Corrida ou caminhada ao ar livre via GPS.',
     xp: 80,
-    icon: <TrendingUp size={28} className="text-orange-400" />,
+    icon: <Footprints size={28} className="text-primary" />,
     tag: 'Resistência & Queima',
     badgeColor: 'bg-orange-500/10 text-orange-400 border-orange-500/20'
   }
@@ -607,31 +607,24 @@ ${parsed.message}` : (parsed.message || rawMsg);
   };
 
   return (
-    <div className="min-h-screen bg-transparent pb-28 text-on-surface pt-5 px-4 max-w-5xl mx-auto space-y-6">
+    <div className="challenge-screen min-h-screen bg-transparent pb-28 text-on-surface pt-7 px-5 max-w-[430px] mx-auto space-y-7">
 
       {/* CABEÇALHO MOBILE */}
-      <header className="space-y-3">
+      <header className="challenge-header space-y-6">
         <div>
-          <div>
-            <h1 className="text-[26px] leading-none font-headline font-black tracking-tight uppercase italic text-white">Desafios</h1>
-            <p className="mt-1 text-[10px] text-white/45 uppercase tracking-wide">Supere seus limites</p>
-          </div>
+          <h1 className="text-[42px] leading-[.9] font-headline tracking-tight uppercase text-white">Desafios</h1>
+          <p className="mt-2 text-[18px] leading-none text-white/65 uppercase tracking-wide">Supere seus limites</p>
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-r from-[#14100a] via-[#11100d] to-[#0b0b0b] px-4 py-3 shadow-[0_12px_36px_rgba(0,0,0,.32)]">
-          <div className="absolute -left-6 top-0 h-full w-24 bg-primary/5 blur-2xl" />
-          <div className="relative flex items-center gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-primary/45 bg-primary/10 text-primary shadow-[0_0_16px_rgba(246,168,0,.16)]">
-              <Zap size={20} fill="currentColor" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="block text-[8px] font-bold uppercase tracking-widest text-white/50">Seu nível atual</span>
-              <p className="font-headline text-base font-black italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 0} XP</span></p>
-            </div>
-            <div className="w-24">
-              <div className="mb-1 flex justify-end text-[10px] font-black text-primary">88%</div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/15"><div className="h-full w-[88%] rounded-full bg-primary" /></div>
-            </div>
+        <div className="challenge-level-card">
+          <div className="challenge-icon challenge-icon--level"><Zap size={31} strokeWidth={2.4} /></div>
+          <div className="min-w-0 flex-1">
+            <span className="block text-[12px] font-bold uppercase tracking-wide text-white/80">Seu nível atual</span>
+            <p className="mt-1 font-headline text-[28px] leading-none italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 425} XP</span></p>
+          </div>
+          <div className="challenge-level-progress">
+            <div className="challenge-progress-track"><div className="challenge-progress-value" /></div>
+            <span>88%</span>
           </div>
         </div>
       </header>
@@ -820,20 +813,21 @@ ${parsed.message}` : (parsed.message || rawMsg);
         </div>
       ) : (
         /* 5. DEFAULT CHALLENGES CATALOGUE VIEW */
-        <div className="flex flex-col gap-6">
+        <div className="challenge-catalogue flex flex-col gap-8">
 
           {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="order-2 relative min-h-[184px] overflow-hidden rounded-[22px] border border-primary/45 bg-[#120d06] shadow-[0_18px_40px_rgba(0,0,0,.44)]">
-              <img src="/invictus-power-lift-card.png" alt="Arte do Invictus Power Lift" className="absolute inset-0 h-full w-full object-cover object-center opacity-70" />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#100b05] via-[#100b05]/90 to-[#100b05]/25" />
-              <div className="relative flex min-h-[184px] flex-col justify-between p-4">
-                <div className="max-w-[72%]">
-                  <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-[.16em] text-primary"><Flame size={13} fill="currentColor" /> Categoria destaque</span>
-                  <h3 className="mt-1 font-headline text-xl font-black italic uppercase text-white">Invictus Power Lift</h3>
-                  <p className="mt-1 text-[10px] leading-snug text-white/70">Supino · Agachamento · Levantamento Terra. Registre marcas pessoais de carga com homologação de vídeo por IA.</p>
+            <div className="challenge-powerlift order-2 relative min-h-[336px] overflow-hidden rounded-[25px] border border-primary/60 bg-[#100c06] shadow-[0_18px_40px_rgba(0,0,0,.50)]">
+              <img src="/invictus-power-lift-badge-v2.png" alt="Emblema dourado do Invictus Power Lift" className="challenge-powerlift-art" />
+              <div className="challenge-powerlift-shade" />
+              <div className="relative flex min-h-[336px] flex-col justify-between p-4">
+                <div className="max-w-[80%]">
+                  <div className="challenge-icon challenge-icon--fire"><Flame size={27} fill="currentColor" /></div>
+                  <h3 className="mt-3 font-headline text-[27px] leading-none italic uppercase text-white">Invictus Power Lift</h3>
+                  <p className="mt-3 text-[12px] leading-snug text-white/75">Supino · Agachamento · Levantamento Terra.</p>
+                  <p className="mt-3 max-w-[270px] text-[16px] leading-snug text-white/80">Registre marcas pessoais de carga com homologação de vídeo por IA e dispute o cinturão da sua academia!</p>
                 </div>
-                <button onClick={() => { setSelectedCategory('powerlift'); setSearchParams({ category: 'powerlift' }); }} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 font-headline text-[11px] font-black italic uppercase tracking-wide text-black transition-colors hover:bg-[#ffc13d]">
+                <button onClick={() => { setSelectedCategory('powerlift'); setSearchParams({ category: 'powerlift' }); }} className="challenge-powerlift-button flex w-full items-center justify-center gap-3 rounded-xl bg-primary px-4 py-4 font-headline text-[17px] leading-none italic uppercase tracking-wide text-black transition-colors hover:bg-[#ffc13d]">
                   <span>Acessar desafios de carga</span><ArrowRight size={16} />
                 </button>
               </div>
@@ -842,16 +836,16 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
           {/* CORE DAILY CHALLENGES SECTION */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="order-1 space-y-3">
+            <div className="order-1 space-y-5">
               <div className="flex items-center justify-between px-0.5">
                 <div>
-                  <h2 className="text-sm font-black text-white uppercase tracking-wide">Desafios principais do dia</h2>
-                  <span className="text-[10px] text-white/45">Complete os desafios e ganhe XP</span>
+                  <h2 className="text-[25px] leading-none font-headline text-white uppercase tracking-wide">Desafios principais do dia</h2>
+                  <span className="mt-2 block text-[16px] leading-none text-white/65">Complete os desafios diários e ganhe XP</span>
                 </div>
-                <Info size={18} className="text-white/50" />
+                <Info size={32} strokeWidth={1.7} className="text-white/60" />
               </div>
 
-              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2.5">
                 {CORE_CHALLENGES.slice().sort((a, b) => DAILY_CHALLENGES_ORDER.indexOf(a.id) - DAILY_CHALLENGES_ORDER.indexOf(b.id)).map((ch) => {
                   const isCompletedToday = Boolean(
                     ch.id === 'checkin'
@@ -864,13 +858,13 @@ ${parsed.message}` : (parsed.message || rawMsg);
                     <React.Fragment key={ch.id}>
                       {ch.id === 'cardio' && (
                         <div className="mt-2 border-t border-white/[.07] pt-5 md:col-span-3">
-                          <h2 className="text-sm font-black uppercase tracking-wide text-white">Outros desafios diários</h2>
+                          <h2 className="font-headline text-[22px] leading-none uppercase tracking-wide text-white">Outros desafios diários</h2>
                         </div>
                       )}
                     <div
                       key={ch.id}
                       className={cn(
-                        "relative overflow-hidden rounded-2xl border bg-[#101010] p-4 transition-all group hover:border-primary/50",
+                        "challenge-card relative overflow-hidden rounded-[23px] border bg-[#101010] p-4 transition-all group hover:border-primary/50",
                         isCompletedToday
                           ? "border-emerald-500/30 bg-emerald-950/10"
                           : isRunning
@@ -878,66 +872,30 @@ ${parsed.message}` : (parsed.message || rawMsg);
                             : "border-white/10"
                       )}
                     >
-                      <div>
+                      <div className={ch.id === 'workout' ? 'min-h-[224px]' : 'min-h-[112px]'}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3">
-                            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-primary/35 bg-primary/[.06] shadow-[0_0_16px_rgba(246,168,0,.10)] group-hover:scale-105 transition-transform">
+                            <div className="challenge-icon grid h-[76px] w-[76px] shrink-0 place-items-center group-hover:scale-105 transition-transform">
                               {ch.icon}
                             </div>
                             <div>
-                              {ch.id === 'workout' && <span className="text-[8px] font-black uppercase tracking-widest text-primary">Em andamento</span>}
-                              <h3 className="text-[13px] font-black uppercase text-white group-hover:text-primary transition-colors">
+                              {ch.id === 'workout' && <span className="challenge-running">Em andamento</span>}
+                              <h3 className="text-[22px] leading-none font-headline uppercase text-white group-hover:text-primary transition-colors">
                                 {ch.title}
                               </h3>
-                              <p className="text-[10px] text-white/50">{ch.subtitle}</p>
+                              <p className="mt-2 text-[16px] leading-snug text-white/65">{ch.subtitle}</p>
                             </div>
                           </div>
 
-                          <div className="shrink-0 rounded-lg border border-primary/45 bg-primary/[.06] px-2.5 py-1.5 text-[10px] font-black text-primary">
-                            +{ch.xp} XP <ArrowRight className="ml-2 inline" size={13} />
+                          <div className="shrink-0 text-right">
+                            <button onClick={() => handleOpenChallenge(ch)} disabled={isCompletedToday && ch.id !== 'checkin'} className="challenge-xp-action disabled:opacity-50">
+                              +{ch.xp} XP <ArrowRight size={26} />
+                            </button>
+                            {ch.id !== 'workout' && <span className="challenge-mini-progress">0 / 1</span>}
                           </div>
                         </div>
 
-                        <p className="mt-2 text-[10px] leading-snug text-white/55">
-                          {ch.description}
-                        </p>
-                      </div>
-
-                      <div className="mt-3 border-t border-white/[.07] pt-2.5 flex items-center justify-between">
-                        {isCompletedToday ? (
-                          <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
-                            <CheckCircle size={16} />
-                            <span>Concluído Hoje</span>
-                          </div>
-                        ) : isRunning ? (
-                          <div className="flex items-center gap-2 text-primary text-xs font-bold animate-pulse">
-                            <Flame size={16} />
-                            <span>Em Andamento</span>
-                          </div>
-                        ) : (
-                          <div className="text-[10px] text-white/45 flex items-center gap-1">
-                            <Target size={13} className="text-primary" />
-                            <span>Progresso do dia</span>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => handleOpenChallenge(ch)}
-                          disabled={isCompletedToday && ch.id !== 'checkin'}
-                          className={cn(
-                            "px-3 py-1.5 rounded-lg text-[10px] font-headline font-black italic uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md cursor-pointer",
-                            isCompletedToday
-                              ? "bg-white/5 text-on-surface-variant cursor-not-allowed border border-white/10"
-                              : "bg-primary text-black hover:bg-primary-hover"
-                          )}
-                        >
-                          {ch.id === 'checkin'
-                            ? (verifiedCheckInId ? 'Check-in Ativo' : 'Fazer Check-in')
-                            : ch.id === 'workout'
-                              ? (isRunning ? 'Ver Treino' : 'Iniciar Treino')
-                              : (isRunning ? 'Ver Cardio' : 'Iniciar Cardio')}
-                          <ArrowRight size={14} />
-                        </button>
+                        {ch.id === 'workout' && <div className="challenge-day-progress"><span><Clock size={19} /> Progresso do dia</span><strong>0 / 1</strong><div className="challenge-day-progress-track" /></div>}
                       </div>
                     </div>
                     </React.Fragment>
