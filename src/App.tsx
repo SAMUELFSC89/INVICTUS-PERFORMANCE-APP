@@ -7,6 +7,7 @@ import { Achievements } from './pages/Achievements';
 import { Challenges } from './pages/Challenges';
 import { PublicProfile } from './pages/PublicProfile';
 import { Profile } from './pages/Profile';
+import { ProfileSecondary } from './pages/ProfileSecondary';
 import { Wallet } from './pages/Wallet';
 import { Settings } from './pages/Settings';
 import { PaymentSuccess } from './pages/PaymentSuccess';
@@ -63,6 +64,14 @@ export default function App() {
                 <Route path="/gym" element={<Gym />} />
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />
+                <Route path="/profile/academy" element={<ProfileSecondary />} />
+                <Route path="/profile/academy/search" element={<ProfileSecondary />} />
+                <Route path="/profile/academy/confirm" element={<ProfileSecondary />} />
+                <Route path="/profile/wearables" element={<ProfileSecondary />} />
+                <Route path="/profile/wallet" element={<ProfileSecondary />} />
+                <Route path="/profile/goals" element={<ProfileSecondary />} />
+                <Route path="/profile/security" element={<ProfileSecondary />} />
+                <Route path="/profile/preferences" element={<ProfileSecondary />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/achievements" element={<Achievements />} />
                 <Route path="/wallet" element={<Wallet />} />
