@@ -778,6 +778,7 @@ html.app-nativo body {
 /* Artes extraídas da referência do ranking: emblema e pictogramas inferiores. */
 .rank-summary-card>img { object-fit:cover; }
 .rank-mini-stats img { display:block; width:1.05rem; height:.95rem; margin:0 auto .08rem; object-fit:contain; }
+.rank-evolution-empty { padding:.8rem .1rem .28rem; color:#a09c95; font-size:.65rem; line-height:1.35; }
 
 /* Ranking — fluxo aprovado: visão geral e lista Top 50. */
 .ranking-flow { width:min(100%,430px); min-height:100vh; margin:0 auto; padding:1rem .72rem 7rem; color:#f6f3ed; font-family:Barlow,sans-serif; background:radial-gradient(circle at 50% 28%,rgba(205,126,0,.12),transparent 28%),#050505; }
