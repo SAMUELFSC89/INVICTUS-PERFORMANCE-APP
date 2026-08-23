@@ -5,7 +5,6 @@ import {
   FaStar,
   FaDumbbell,
   FaPersonRunning,
-  FaBullseye,
   FaArrowRight
 } from 'react-icons/fa6';
 import { useUser } from '../UserContext';
@@ -105,7 +104,7 @@ export function Home() {
     {
       id: 'workout',
       title: 'TREINO DE MUSCULAÇÃO',
-      description: 'Check-in na academia e validação de presença',
+      description: 'Inicie o treino para validar sua presença na academia',
       xp: 100,
       icon: FaDumbbell,
       path: '/challenges?type=workout'
@@ -117,14 +116,6 @@ export function Home() {
       xp: 80,
       icon: FaPersonRunning,
       path: '/challenges?type=cardio'
-    },
-    {
-      id: 'checkin',
-      title: 'CHECK-IN PRESENCIAL GPS',
-      description: 'Validação de presença na academia',
-      xp: 20,
-      icon: FaBullseye,
-      path: '/challenges?type=checkin'
     }
   ];
 

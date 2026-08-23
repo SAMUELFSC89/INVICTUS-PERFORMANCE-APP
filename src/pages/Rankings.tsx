@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Bell, Building2, CalendarDays, ChevronDown, CircleDot, Flame, MapPin, ShieldCheck, Trophy, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Bell, Building2, CalendarDays, ChevronDown, CircleDot, MapPin, ShieldCheck, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { rankingService } from '../services/rankingService';
 import { useUser } from '../UserContext';
@@ -16,7 +16,7 @@ const gym = (entry: any) => entry.gymName || entry.gym || 'Academia Invictus';
 
 function TopAvatar({ entry, rank }: { entry: any; rank: number }) {
   const frame = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
-  return <span className={`rank-avatar ${frame ? `rank-avatar--${frame}` : ''}`}><img src={avatar(entry)} alt={`Foto de ${name(entry)}`} onError={(event) => { event.currentTarget.src = '/logo.svg'; }} />{frame && <img className="rank-avatar-frame" src={`/rank-laurel-${frame}.png`} alt="" aria-hidden="true" />}</span>;
+  return <span className={`rank-avatar ${frame ? `rank-avatar--${frame}` : ''}`}><img src={avatar(entry)} alt={`Foto de ${name(entry)}`} onError={(event) => { event.currentTarget.src = '/logo.svg'; }} />{frame && <img className="rank-avatar-frame" src={`/ranking-frame-${frame}-reference.png`} alt="" aria-hidden="true" />}</span>;
 }
 
 function RankingRow({ entry, rank, current }: { entry: any; rank: number; current?: boolean }) {
@@ -62,10 +62,10 @@ export function Rankings() {
   return <section className="ranking-flow ranking-flow--overview">
     <header className="ranking-overview-header"><div><h1>RANKING</h1><p>COMPITA. EVOLUA. SEJA INVICTUS.</p></div><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button></header>
     <nav className="rank-scope-tabs">{(['gym', 'city', 'global'] as RankScope[]).map((item) => <button key={item} onClick={() => setScope(item)} className={scope === item ? 'is-active' : ''}>{item === 'gym' ? <Building2 /> : item === 'city' ? <MapPin /> : <ShieldCheck />}{scopeLabels[item]}</button>)}</nav>
-    <article className="rank-summary-card"><div><small>SUA POSIÇÃO</small><b>{myRank ? `${myRank}º` : '—'}</b><span>de {athletes.length || 0}</span></div><img src="/logo.svg" alt="Emblema Invictus" /><div><small>SUA PONTUAÇÃO (IGA)</small><b className="rank-gold">{Number(myEntry.score || 0).toLocaleString('pt-BR')} <i>▲ 12</i></b><span>vs. ontem</span></div></article>
+    <article className="rank-summary-card"><div><small>SUA POSIÇÃO</small><b>{myRank ? `${myRank}º` : '—'}</b><span>de {athletes.length || 0}</span></div><img src="/ranking-emblem-reference.png" alt="Emblema de posição Invictus" /><div><small>SUA PONTUAÇÃO (IGA)</small><b className="rank-gold">{Number(myEntry.score || 0).toLocaleString('pt-BR')} <i>▲ 12</i></b><span>vs. ontem</span></div></article>
     <div className="rank-overview-selectors"><button onClick={() => setPeriod(period === 'weekly' ? 'all' : 'weekly')}><CalendarDays /> {periodLabels[period]} <ChevronDown /></button><button onClick={() => setScope(scope === 'gym' ? 'city' : scope === 'city' ? 'global' : 'gym')}><Building2 /> {scope === 'gym' ? 'SUA ACADEMIA' : scopeLabels[scope]} <ChevronDown /></button></div>
     <div className="rank-list rank-list--overview">{loading ? <p className="rank-loading">ATUALIZANDO RANKING…</p> : athletes.slice(0, 5).map((entry, index) => <RankingRow key={entry.uid} entry={entry} rank={index + 1} current={entry.uid === user.uid} />)}</div><button className="rank-top50-button" onClick={() => setShowTop50(true)}>VER TOP 50 <ArrowLeft /></button>
     <article className="rank-evolution"><h2><TrendingUp /> EVOLUÇÃO DA SUA POSIÇÃO</h2><div className="rank-line"><i /><i /><i /><i /><i /></div><div className="rank-days"><span>37º<small>SEG</small></span><span>29º<small>TER</small></span><span>28º<small>QUA</small></span><span>31º<small>QUI</small></span><span className="rank-gold">{myRank || 25}º<small>SEX</small></span></div></article>
-    <div className="rank-mini-stats"><div><Trophy /><b>{athletes.length}</b><small>Atletas no ranking</small></div><div><MapPin /><b>10 km</b><small>Raio</small></div><div><CalendarDays /><b>4 dias</b><small>para o fim da semana</small></div><div><Flame /><b>5/5</b><small>Dias treinados</small></div></div>
+    <div className="rank-mini-stats"><div><img src="/ranking-stat-athletes-reference.png" alt="Atletas no ranking" /><b>{athletes.length}</b><small>Atletas no ranking</small></div><div><img src="/ranking-stat-location-reference.png" alt="Raio de localização" /><b>10 km</b><small>Raio</small></div><div><img src="/ranking-stat-calendar-reference.png" alt="Calendário da semana" /><b>4 dias</b><small>para o fim da semana</small></div><div><img src="/ranking-stat-fire-reference.png" alt="Dias treinados" /><b>5/5</b><small>Dias treinados</small></div></div>
   </section>;
 }
