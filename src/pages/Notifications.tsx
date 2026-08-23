@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, ChevronRight, CircleInfo, Dumbbell, Gift, Medal, Settings, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Bell, CheckCheck, ChevronRight, Dumbbell, Gift, Info, Medal, Settings, ShieldCheck, TrendingUp } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
@@ -57,7 +57,7 @@ export function Notifications() {
           {notifications.some((notification) => !notification.read) && <button className="notifications-read-all" onClick={markAllAsRead}><CheckCheck /> MARCAR TODAS COMO LIDAS</button>}
         </section>
       )}
-      <p className="notifications-data-note"><CircleInfo /> Notificações só aparecem quando geradas por uma ação real no app.</p>
+      <p className="notifications-data-note"><Info /> Notificações só aparecem quando geradas por uma ação real no app.</p>
     </main>
   );
 }
