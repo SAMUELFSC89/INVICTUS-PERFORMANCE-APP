@@ -47,9 +47,9 @@ interface CoreChallenge {
 const CORE_CHALLENGES: CoreChallenge[] = [
   {
     id: 'checkin',
-    title: 'Check-in Presencial GPS',
-    subtitle: 'Validação na Academia',
-    description: 'Confirme sua presença física na academia vinculada ao seu perfil via geolocalização para liberar a rotina e somar pontos.',
+    title: 'Check-in de Presença',
+    subtitle: 'Validação da presença na academia',
+    description: 'Validação da presença na academia.',
     xp: 20,
     icon: <MapPin size={28} className="text-emerald-400" />,
     tag: 'Desafio Diário',
@@ -57,20 +57,20 @@ const CORE_CHALLENGES: CoreChallenge[] = [
   },
   {
     id: 'workout',
-    title: 'Desafio de Força Musculação',
-    subtitle: 'Treino Auditado',
-    description: 'Complete uma sessão de musculação verificando presença física e tempo de execução na sala de peso.',
-    xp: 40,
+    title: 'Treino de Musculação',
+    subtitle: 'Check-in na academia',
+    description: 'Complete uma sessão de musculação com presença validada.',
+    xp: 100,
     icon: <Dumbbell size={28} className="text-amber-400" />,
     tag: 'Atividade Principal',
     badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20'
   },
   {
     id: 'cardio',
-    title: 'Queima de Gordura Aeróbica',
-    subtitle: 'Cardio & Esteira',
-    description: 'Registre caminhada ou corrida ao ar livre/esteira com telemetria GPS ou sincronização Strava / Smartwatch.',
-    xp: 30,
+    title: 'Cardio Aeróbico',
+    subtitle: 'Corrida ou caminhada ao ar livre via GPS',
+    description: 'Corrida ou caminhada ao ar livre via GPS.',
+    xp: 80,
     icon: <TrendingUp size={28} className="text-orange-400" />,
     tag: 'Resistência & Queima',
     badgeColor: 'bg-orange-500/10 text-orange-400 border-orange-500/20'
