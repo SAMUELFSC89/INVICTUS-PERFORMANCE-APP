@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronRight, CircleInfo, ShieldCheck, Trophy, TrendingUp } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Info, ShieldCheck, Trophy, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../UserContext';
 import { getNextSeasonCountdown } from '../lib/seasonUtils';
@@ -26,7 +26,7 @@ export function League() {
       <header className="league-header">
         <button className="league-icon-button" onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft /></button>
         <h1>LIGA INVICTUS</h1>
-        <button className="league-icon-button" onClick={() => navigate('/rankings')} aria-label="Ver ranking"><CircleInfo /></button>
+        <button className="league-icon-button" onClick={() => navigate('/rankings')} aria-label="Ver ranking"><Info /></button>
       </header>
 
       <section className="league-season" aria-label="Temporada atual">
