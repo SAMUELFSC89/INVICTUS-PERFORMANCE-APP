@@ -4,6 +4,7 @@
 @import "@fontsource/barlow/600.css";
 @import "@fontsource/barlow/700.css";
 @import "@fontsource/bebas-neue";
+.challenge-flow-checkin article.is-blocked{border-color:rgba(255,59,48,.65)}.challenge-flow-checkin article.is-blocked small,.challenge-flow-checkin article.is-blocked>svg{color:#ff3b30}.challenge-flow-checkin article.is-blocked p{padding-right:1.7rem;color:#ffd0cc}
 @import "@fontsource/roboto-condensed/400.css";
 @import "@fontsource/roboto-condensed/700.css";
 @import "@fontsource/roboto-condensed/700-italic.css";

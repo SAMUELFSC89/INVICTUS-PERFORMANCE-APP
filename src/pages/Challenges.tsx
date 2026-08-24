@@ -866,6 +866,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
           trajectory={finishedActivityItem?.trajectory}
           gymName={profile?.gymName || 'Sua academia'}
           completedChallengeIds={Object.keys(submissions)}
+          startError={startActivityError}
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
