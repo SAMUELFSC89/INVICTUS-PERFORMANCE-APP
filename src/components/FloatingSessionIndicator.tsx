@@ -88,7 +88,7 @@ export function FloatingSessionIndicator() {
 
   const handleAction = () => {
     if (activeSession) navigate('/challenges');
-    else navigate('/running');
+    else navigate('/challenges?type=cardio');
   };
 
   const handleCancel = (e: React.MouseEvent) => {

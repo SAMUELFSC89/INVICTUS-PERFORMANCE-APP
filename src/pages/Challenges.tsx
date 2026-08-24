@@ -461,7 +461,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
           <div className="challenge-icon challenge-icon--level"><Zap size={31} strokeWidth={2.4} /></div>
           <div className="min-w-0 flex-1">
             <span className="block text-[12px] font-bold uppercase tracking-wide text-white/80">Seu nível atual</span>
-            <p className="mt-1 font-headline text-[18px] leading-none italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 425} XP</span></p>
+            <p className="mt-1 font-headline text-[18px] leading-none italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 0} XP</span></p>
           </div>
           <div className="challenge-level-progress">
             <div className="challenge-progress-track"><div className="challenge-progress-value" /></div>
