@@ -13,7 +13,7 @@
       "destination": "/api/app.ts"
     },
     {
-      "source": "/((?!api/|assets/|__/auth/|icon-180\\.png|manifest\\.json|logo\\.svg|sw\\.js).*)",
+      "source": "/((?!api/|assets/|__/auth/|capacete\\.webp|favicon-16\\.png|favicon-32\\.png|apple-touch-icon\\.png|icon-180\\.png|icon-192\\.png|icon-512\\.png|icon-512-maskable\\.png|brand-share\\.png|manifest\\.json|sw\\.js).*)",
       "destination": "/index.html"
     }
   ],

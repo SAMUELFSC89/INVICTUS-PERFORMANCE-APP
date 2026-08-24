@@ -88,7 +88,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     <meta property="twitter:image" content="${imageUrl}">
 
     <!-- Favicon -->
-    <link rel="icon" href="${baseUrl}/logo.svg" type="image/svg+xml">
+    <link rel="icon" href="${baseUrl}/favicon-32.png" type="image/png">
 
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -210,7 +210,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     <div class="container">
         <div class="header">
             <div class="logo">
-                <img src="${baseUrl}/logo.svg" alt="INVICTUS" onerror="this.src='https://moove-app.site/logo.svg'">
+                <img src="${baseUrl}/capacete.webp" alt="INVICTUS">
                 <span>INVICTUS</span>
             </div>
             <div class="user-tag">@${user.displayName.toLowerCase().replace(/\s+/g, '')}</div>

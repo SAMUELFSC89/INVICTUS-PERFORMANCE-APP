@@ -10,7 +10,7 @@ type RankPeriod = 'weekly' | 'all' | 'monthly';
 const scopeLabels: Record<RankScope, string> = { gym: 'ACADEMIA', city: 'CIDADE', global: 'NACIONAL' };
 const periodLabels: Record<RankPeriod, string> = { weekly: 'SEMANA ATUAL', all: 'TEMPORADA', monthly: 'MÊS ATUAL' };
 const periodOptions: { label: string; value: RankPeriod }[] = [{ label: 'Semana atual', value: 'weekly' }, { label: 'Mês atual', value: 'monthly' }, { label: 'Temporada', value: 'all' }];
-const avatar = (entry: any) => entry.photoURL || '/logo.svg';
+const avatar = (entry: any) => entry.photoURL || '/capacete.webp';
 const name = (entry: any) => entry.displayName || 'Atleta Invictus';
 const gym = (entry: any) => entry.gymName || entry.gym || 'Academia Invictus';
 const daysUntilWeekEnd = () => (7 - new Date().getDay()) % 7 || 7;
@@ -18,7 +18,7 @@ const formatUpdatedAt = (updatedAt?: string) => updatedAt ? new Intl.DateTimeFor
 
 function TopAvatar({ entry, rank }: { entry: any; rank: number }) {
   const frame = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
-  return <span className={`rank-avatar ${frame ? `rank-avatar--${frame}` : ''}`}><img src={avatar(entry)} alt={`Foto de ${name(entry)}`} onError={(event) => { event.currentTarget.src = '/logo.svg'; }} />{frame && <img className="rank-avatar-frame" src={`/ranking-frame-${frame}-reference.png`} alt="" aria-hidden="true" />}</span>;
+  return <span className={`rank-avatar ${frame ? `rank-avatar--${frame}` : ''}`}><img src={avatar(entry)} alt={`Foto de ${name(entry)}`} onError={(event) => { event.currentTarget.src = '/capacete.webp'; }} />{frame && <img className="rank-avatar-frame" src={`/ranking-frame-${frame}-reference.png`} alt="" aria-hidden="true" />}</span>;
 }
 
 function RankingRow({ entry, rank, current }: { entry: any; rank: number; current?: boolean }) {
