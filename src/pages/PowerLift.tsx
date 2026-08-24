@@ -10,6 +10,7 @@ import './PowerLift.css';
 import './PowerLiftFlow.css';
 import './PowerLiftFidelity.css';
 import './PowerLiftUpload.css';
+import './PowerLiftMobile.css';
 
 type Exercise = 'supino' | 'agachamento' | 'terra';
 type RecordRow = { id: string; userId: string; userName?: string; userPhoto?: string; gymName?: string; exercise: Exercise; weight: number; videoStatus?: string };

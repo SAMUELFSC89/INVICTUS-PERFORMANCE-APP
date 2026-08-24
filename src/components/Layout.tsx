@@ -29,6 +29,9 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === '/' || location.pathname === '/invite';
+  // Power Lift is a dedicated, edge-to-edge mobile flow. Generic page gutters
+  // make it look like a desktop card squeezed into the phone viewport.
+  const isPowerLift = location.pathname === '/power';
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -116,8 +119,11 @@ export function Layout() {
           o respiro do topo, para o espartano do fundo aparecer como na arte.
           Nas outras telas o padding padrao continua valendo. */}
       <main className={cn(
-        "flex-grow pb-40 max-w-screen-xl mx-auto w-full px-4 md:px-6 relative z-[2]",
-        isHome ? "pt-0" : "pt-16 md:pt-20"
+        "flex-grow pb-40 w-full relative z-[2]",
+        isPowerLift
+          ? "max-w-none p-0"
+          : "max-w-screen-xl mx-auto px-4 md:px-6",
+        isPowerLift || isHome ? "pt-0" : "pt-16 md:pt-20"
       )}>
         <AnimatePresence mode="wait">
           <motion.div
