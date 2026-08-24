@@ -426,16 +426,11 @@ ${parsed.message}` : (parsed.message || rawMsg);
       setFlowScreen('workout-checkin');
       return;
     }
-    if (type === 'cardio' && flowScreen === 'cardio-picker' && selectedCardioOption.gps) {
-      setFlowScreen('cardio-checkin');
-      return;
-    }
     handleStartActivity(type);
   };
 
   const handleFlowBack = () => {
     if (flowScreen === 'workout-checkin') setFlowScreen('workout-details');
-    else if (flowScreen === 'cardio-checkin') setFlowScreen('cardio-picker');
     else { setFlowScreen(null); setPendingChallenge(null); }
   };
 
@@ -871,6 +866,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
           trajectory={finishedActivityItem?.trajectory}
           gymName={profile?.gymName || 'Sua academia'}
           completedChallengeIds={Object.keys(submissions)}
+          startError={startActivityError}
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
