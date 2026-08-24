@@ -20,7 +20,7 @@ import { calculatePace } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection, ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
-import { PowerModule } from './PowerModule';
+import { PowerLift } from './PowerLift';
 import { RunShareCard } from '../components/RunShareCard';
 import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption } from '../components/ChallengeActivityFlow';
 
@@ -562,7 +562,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
       {/* 1. POWER LIFT CATEGORY VIEW */}
       {selectedCategory === 'powerlift' ? (
         <div className="bg-surface-card border border-white/10 rounded-[28px] p-4 sm:p-6 shadow-2xl">
-          <PowerModule />
+          <PowerLift />
         </div>
       ) : selectedCategory === 'privados' ? (
         /* 2. PRIVATE CHALLENGES CATEGORY VIEW */
