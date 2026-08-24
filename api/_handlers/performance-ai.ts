@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors } from '../_lib/common.js';
+import { cors, verifyAuth } from '../_lib/common.js';
 import { GoogleGenAI } from '@google/genai';
 import { MemoryRepository } from '../_repositories/memory-repository.js';
 import { MemoryService } from '../_services/ai/memory-service.js';
@@ -102,11 +102,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Método não permitido.' });
   }
 
+  const authUser = await verifyAuth(req);
+  if (!authUser) {
+    return res.status(401).json({ error: 'Sessão expirada ou inválida. Conecte-se novamente.' });
+  }
+
   const payload = req.method === 'GET' ? req.query : req.body || {};
   const action = payload.action;
 
-  // Extract authenticated userId from userProfile, body or query
-  const userId = payload.userId || payload.userProfile?.uid || payload.userProfile?.id || (req as any).userId;
+  // O usuário sempre vem do token assinado, nunca de dados controlados pelo cliente.
+  const userId = authUser.uid;
 
   // Handle Memory Management Actions
   if (action === 'get-memories') {
