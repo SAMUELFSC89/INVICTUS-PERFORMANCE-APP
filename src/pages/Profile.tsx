@@ -1145,9 +1145,9 @@ function ProfileReference({
         </section>
 
         <section className="profile-panel profile-connections">
-          <div className="profile-panel-heading"><h2>Conexões</h2><button onClick={() => onNavigate('/wearables')}>Gerenciar</button></div>
+          <div className="profile-panel-heading"><h2>Conexões</h2><button onClick={() => onNavigate('/profile/wearables')}>Gerenciar</button></div>
           {connectionItems.map((item, index) => (
-            <button key={item.name} onClick={() => onNavigate('/wearables')} className={cn('profile-connection', index > 0 && 'profile-row-divider')}>
+            <button key={item.name} onClick={() => onNavigate('/profile/wearables')} className={cn('profile-connection', index > 0 && 'profile-row-divider')}>
               <span className={cn('profile-provider', item.className)}>{item.icon}</span>
               <span className="flex-1 text-left"><b>{item.name}</b><small>{item.connected ? 'Conectado' : 'Conectar'}</small></span>
               {item.connected && <CircleCheck className="profile-connected" size={25} />}<ChevronRight className="profile-chevron" size={25} />

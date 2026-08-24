@@ -8,8 +8,6 @@ import { Challenges } from './pages/Challenges';
 import { PublicProfile } from './pages/PublicProfile';
 import { Profile } from './pages/Profile';
 import { ProfileSecondary } from './pages/ProfileSecondary';
-import { Wallet } from './pages/Wallet';
-import { Settings } from './pages/Settings';
 import { PaymentSuccess } from './pages/PaymentSuccess';
 import { AdminWorkouts } from './pages/AdminWorkouts';
 import { AdminPayouts } from './pages/AdminPayouts';
@@ -27,9 +25,7 @@ import { MobileBridge } from './components/MobileBridge';
 import { UserProvider } from './UserContext';
 import { ProProvider } from './ProContext';
 import { API_CONFIG } from './config';
-import { Gym } from './pages/Gym';
 import { PowerModule } from './pages/PowerModule';
-import { WearablesDashboard } from './pages/WearablesDashboard';
 import { Health, HealthReport } from './pages/Health';
 import { League } from './pages/League';
 import { Notifications } from './pages/Notifications';
@@ -61,7 +57,7 @@ export default function App() {
                 <Route path="/rankings" element={<Rankings />} />
                 <Route path="/league" element={<League />} />
                 <Route path="/notifications" element={<Notifications />} />
-                <Route path="/gym" element={<Gym />} />
+                <Route path="/gym" element={<Navigate to="/profile/academy" replace />} />
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />
                 <Route path="/profile/academy" element={<ProfileSecondary />} />
@@ -74,11 +70,11 @@ export default function App() {
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/achievements" element={<Achievements />} />
-                <Route path="/wallet" element={<Wallet />} />
+                <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
                 <Route path="/performance" element={<Performance />} />
                 <Route path="/power" element={<PowerModule />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/wearables" element={<WearablesDashboard />} />
+                <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
+                <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
                 <Route path="/health" element={<Health />} />
                 <Route path="/health/report" element={<HealthReport />} />
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
