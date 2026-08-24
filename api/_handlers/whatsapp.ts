@@ -12,14 +12,12 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Método não permitido' });
   }
 
-  const { to, message, type } = req.body;
-
-  console.log(`[WhatsApp API] Mock sending message to ${to}: ${message}`);
-
-  return res.status(200).json({ 
-    success: true, 
-    message: 'Mock message sent',
-    to,
-    type
+  // Não reporte como entregue algo que não foi enviado. A implementação
+  // anterior era apenas um mock e ainda registrava telefone/mensagem em log.
+  // Quando houver provedor oficial (Meta/Twilio), ele deve ser integrado aqui
+  // com credenciais de ambiente, template aprovado e consentimento do usuário.
+  return res.status(501).json({
+    success: false,
+    error: 'A integração de WhatsApp ainda não está disponível.'
   });
 }

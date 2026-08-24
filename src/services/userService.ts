@@ -127,17 +127,12 @@ export const userService = {
   },
 
   async unlockAchievement(achievementId: string) {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const userRef = doc(db, 'users', user.uid);
-    try {
-      await updateDoc(userRef, {
-        achievements: arrayUnion(achievementId)
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-    }
+    // Conquistas alteram ranking e precisam ser concedidas pela rotina
+    // autenticada do servidor, após a atividade ter sido homologada. Este
+    // método existe apenas para não quebrar integrações legadas do cliente;
+    // ele nunca grava uma conquista por conta própria.
+    console.warn(`[UserService] A conquista ${achievementId} só pode ser concedida pelo servidor.`);
+    return false;
   },
   
   async likeProfile(targetUserId: string) {

@@ -1,4 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import { timingSafeEqual } from 'crypto';
 import { cors } from '../_lib/common.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 import { confirmarInscricaoPorPagamento } from '../_lib/inscricao-service.js';
@@ -20,9 +21,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Método não permitido.' });
   }
 
-  const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN;
-  const receivedToken = req.headers['asaas-access-token'];
-  if (expectedToken && receivedToken !== expectedToken) {
+  const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN?.trim();
+  const headerToken = req.headers['asaas-access-token'];
+  const receivedToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
+
+  // Webhooks financeiros devem falhar fechados: sem segredo configurado, não
+  // existe origem confiável para confirmar pagamentos ou movimentar saques.
+  if (!expectedToken) {
+    console.error('[Asaas Webhook] ASAAS_WEBHOOK_TOKEN ausente; evento recusado por segurança.');
+    return res.status(503).json({ error: 'Webhook temporariamente indisponível.' });
+  }
+
+  const tokenMatches = typeof receivedToken === 'string'
+    && receivedToken.length === expectedToken.length
+    && timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken));
+
+  if (!tokenMatches) {
     console.warn('[Asaas Webhook] Requisição rejeitada: token de acesso inválido ou ausente.');
     return res.status(401).json({ error: 'Não autorizado.' });
   }
@@ -69,6 +83,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ received: true });
   } catch (error: any) {
     console.error('[Asaas Webhook Error]', error);
-    return res.status(500).json({ error: 'Erro interno ao processar webhook do Asaas.', details: error.message });
+    return res.status(500).json({ error: 'Erro interno ao processar webhook do Asaas.' });
   }
 }

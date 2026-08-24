@@ -5,15 +5,13 @@ import {
   Volume2, Activity, Play, Check 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, db } from '../firebase';
-import { doc, updateDoc, arrayUnion, increment } from 'firebase/firestore';
 import { UserProfile, Achievement, Workout } from '../types';
 import { ACHIEVEMENTS } from '../achievements';
 import { cn } from '../lib/utils';
 import { useUser } from '../UserContext';
 import { workoutService } from '../services/workoutService';
 import { toPng } from 'html-to-image';
-import confetti from 'canvas-confetti';
+import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 
 const CATEGORIES = [
   { id: 'all', label: 'TODAS', icon: <Trophy size={14} /> },
@@ -24,7 +22,7 @@ const CATEGORIES = [
 ];
 
 export function Achievements() {
-  const { user, refreshUser } = useUser();
+  const { user } = useUser();
   const [activeCategory, setActiveCategory] = useState('all');
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loadingWorkouts, setLoadingWorkouts] = useState(true);
@@ -91,21 +89,29 @@ export function Achievements() {
   if (!user) return null;
 
   // Filter workouts inside the current week
-  const currentWeekWorkouts = workouts.filter(w => {
-    if (!w.timestamp) return false;
-    const wDate = new Date(w.timestamp);
-    const diffTime = Math.abs(new Date().getTime() - wDate.getTime());
+  const validatedWorkouts = workouts.filter((workout) =>
+    normalizeActivityValidationStatus((workout as any).validationStatus ?? workout.status ?? workout.validation?.status) === 'validated'
+  );
+  const currentWeekWorkouts = validatedWorkouts.filter(w => {
+    const timestamp = readActivityTimestamp(w.timestamp);
+    if (timestamp === null) return false;
+    const diffTime = Math.abs(Date.now() - timestamp);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays <= 7;
   });
 
-  // Calculate high-fidelity metrics mirroring Home.tsx exactly
+  // Métricas apenas dos registros validados já sincronizados; não estimamos
+  // gasto por duração nem multiplicamos dados de perfil.
   const weeklyOMSMins = currentWeekWorkouts.reduce((sum, act) => sum + (act.duration || 0), 0);
   const currentWeekCalories = currentWeekWorkouts.reduce((sum, act) => {
-    return sum + ((act as any).calories || (act.duration || 0) * 8.5);
+    const calories = Number((act as any).caloriesBurned ?? (act as any).calories);
+    return sum + (Number.isFinite(calories) && calories > 0 ? calories : 0);
   }, 0);
-
-  const totalCaloriesEarned = Math.round((user.totalWorkouts || 0) * 380 + currentWeekCalories);
+  const totalCaloriesEarned = Math.round(validatedWorkouts.reduce((sum, act) => {
+    const calories = Number((act as any).caloriesBurned ?? (act as any).calories);
+    return sum + (Number.isFinite(calories) && calories > 0 ? calories : 0);
+  }, 0));
+  const hasCalorieData = validatedWorkouts.some((act) => Number((act as any).caloriesBurned ?? (act as any).calories) > 0);
 
   // 1. Desafio Derrete Gordura
   const dgBronze = 3850;
@@ -133,17 +139,11 @@ export function Achievements() {
     dgPercent = Math.min(100, Math.round((totalCaloriesEarned / dgPrata) * 100));
   }
 
-  // 2. Elite Cardiovascular calculations mirroring Home.tsx
-  const currentMaxHR = 220 - (user.age || 28);
-  const icvWeekly = Math.round(
-    currentWeekWorkouts.reduce((sum, act) => {
-      const hr = Number((act as any).avgHeartRate) || 0;
-      const intensityFactor = hr > 0 ? (hr / currentMaxHR) * 1.5 : 0.8;
-      return sum + (act.duration || 0) * intensityFactor;
-    }, 0)
-  );
-  const icvMonthly = Math.round(icvWeekly * 3.8 + (user.totalWorkouts || 5) * 12);
-  const icvRecord = Math.max(750, Math.round(icvMonthly * 1.4 + 200));
+  // ICV não é calculado localmente: depende de uma fórmula auditada e de
+  // biometria real. Sem valor homologado pelo servidor, permanece indisponível.
+  const icvWeekly = 0;
+  const icvRecord = 0;
+  const hasICVData = false;
 
   // Determine Elite Cardiovascular levels based on icvRecord
   let cvLevel: 'Nenhum' | 'Bronze' | 'Prata' | 'Ouro' | 'Diamante' = 'Nenhum';
@@ -193,49 +193,6 @@ export function Achievements() {
     omsPercent = Math.min(100, Math.round((weeklyOMSMins / omsGoalOpt) * 100));
   }
 
-  // Auto-sync milestones to Firestore achievement log permanently
-  const syncPersonalAchievements = async () => {
-    const toUnlock: string[] = [];
-    
-    if (dgLevel === 'Ouro') toUnlock.push('dg_golden', 'dg_silver', 'dg_bronze');
-    else if (dgLevel === 'Prata') toUnlock.push('dg_silver', 'dg_bronze');
-    else if (dgLevel === 'Bronze') toUnlock.push('dg_bronze');
-
-    if (cvLevel === 'Diamante') toUnlock.push('cv_diamond', 'cv_golden', 'cv_silver', 'cv_bronze');
-    else if (cvLevel === 'Ouro') toUnlock.push('cv_golden', 'cv_silver', 'cv_bronze');
-    else if (cvLevel === 'Prata') toUnlock.push('cv_silver', 'cv_bronze');
-    else if (cvLevel === 'Bronze') toUnlock.push('cv_bronze');
-
-    if (omsStatus === 'Ouro') toUnlock.push('oms_golden', 'oms_bronze');
-    else if (omsStatus === 'Bronze') toUnlock.push('oms_bronze');
-
-    const newToAward = toUnlock.filter(id => !user.achievements?.includes(id));
-    if (newToAward.length > 0) {
-      const userRef = doc(db, 'users', user.uid);
-      try {
-        await updateDoc(userRef, {
-          achievements: arrayUnion(...newToAward),
-          score: increment(newToAward.length * 50) // Grant 50 XP per milestone
-        });
-        await refreshUser();
-        
-        // Sensory feedback
-        playAchievementSound();
-        confetti({ particleCount: 160, spread: 90, origin: { y: 0.6 } });
-        if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
-      } catch (err) {
-        console.error('Error auto-syncing personal achievements:', err);
-      }
-    }
-  };
-
-  // Perform auto-sync on workout update
-  useEffect(() => {
-    if (user && workouts.length > 0) {
-      syncPersonalAchievements();
-    }
-  }, [workouts, user]);
-
   // Standard category display
   const filteredAchievements = ACHIEVEMENTS.filter(a => 
     activeCategory === 'all' || a.category === activeCategory
@@ -243,20 +200,6 @@ export function Achievements() {
 
   const unlockedCount = user.achievements?.length || 0;
   const progressPercent = Math.round((unlockedCount / (ACHIEVEMENTS.length + 9)) * 100);
-
-  // Manual trigger for a rewarding mock visual check
-  const triggerCelebrationDemo = () => {
-    playAchievementSound();
-    confetti({
-      particleCount: 200,
-      spread: 100,
-      colors: ['#eab308', '#2ecc71', '#ff5722', '#ffffff'],
-      origin: { y: 0.6 }
-    });
-    if (navigator.vibrate) {
-      navigator.vibrate([100, 50, 100, 50, 150]);
-    }
-  };
 
   // Handles exporting designated Share Card (PNG)
   const handleExportPNG = async () => {
@@ -309,7 +252,6 @@ export function Achievements() {
             <button 
               onClick={() => {
                 setAudioEnabled(!audioEnabled);
-                triggerCelebrationDemo();
               }}
               className={cn(
                 "p-3 rounded-2xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95",
@@ -317,7 +259,7 @@ export function Achievements() {
                   ? "bg-primary/10 border-primary/20 text-primary" 
                   : "bg-surface-container border-white/5 text-on-surface-variant opacity-50"
               )}
-              title="Testar áudio e efeitos"
+              title="Ativar ou silenciar efeitos sonoros em conquistas confirmadas"
             >
               <Volume2 size={16} />
               <span className="text-[9px] font-black tracking-wider uppercase">{audioEnabled ? 'Efeitos LIGADO' : 'MUDO'}</span>
@@ -385,13 +327,13 @@ export function Achievements() {
             <div className="bg-background/40 border border-white/5 p-4 rounded-2xl space-y-3">
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-on-surface-variant">
                 <span>CONQUISTA ATUAL CONCLUÍDA</span>
-                <span className="text-white font-mono">{totalCaloriesEarned.toLocaleString('pt-BR')} / {dgNextTarget.toLocaleString('pt-BR')} kcal</span>
+                <span className="text-white font-mono">{hasCalorieData ? `${totalCaloriesEarned.toLocaleString('pt-BR')} / ${dgNextTarget.toLocaleString('pt-BR')} kcal` : 'Aguardando calorias reais'}</span>
               </div>
               
               {/* Linear milestone tracker */}
               <div className="relative">
                 <div className="h-3 w-full bg-surface-container-highest rounded-full overflow-hidden p-0.5">
-                  <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-600" style={{ width: `${dgPercent}%` }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-600" style={{ width: `${hasCalorieData ? dgPercent : 0}%` }} />
                 </div>
                 <div className="flex justify-between mt-2.5 text-[8px] font-black uppercase tracking-widest text-on-surface-variant/50">
                   <span className={cn(totalCaloriesEarned >= dgBronze ? "text-amber-500" : "")}>BRONZE (3.8k)</span>
@@ -403,7 +345,7 @@ export function Achievements() {
 
             <div className="flex gap-3 pt-1">
               <button 
-                disabled={dgLevel === 'Nenhum'}
+                disabled={!hasCalorieData || dgLevel === 'Nenhum'}
                 onClick={() => setSelectedShareCard({
                   type: 'derrete_gordura',
                   level: dgLevel,
@@ -422,7 +364,11 @@ export function Achievements() {
               </button>
             </div>
             
-            {dgLevel === 'Nenhum' && (
+            {!hasCalorieData ? (
+              <p className="text-[8.5px] text-on-surface-variant/60 uppercase font-black tracking-widest text-center mt-1">
+                Sincronize atividades com calorias medidas para acompanhar esta categoria.
+              </p>
+            ) : dgLevel === 'Nenhum' && (
               <p className="text-[8.5px] text-on-surface-variant/60 uppercase font-black tracking-widest text-center mt-1">
                 Faltam {(dgBronze - totalCaloriesEarned).toLocaleString('pt-BR')} Kcal para atingir a Medalha Bronze 🥉
               </p>
@@ -462,11 +408,11 @@ export function Achievements() {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-background/40 border border-white/5 p-3 rounded-xl">
                 <span className="text-[8px] font-black text-on-surface-variant/65 uppercase tracking-wider block">ICV DA SEMANA</span>
-                <span className="font-headline italic font-black text-lg text-white mt-0.5 block">{icvWeekly.toLocaleString('pt-BR')} ICP</span>
+                <span className="font-headline italic font-black text-lg text-white mt-0.5 block">{hasICVData ? `${icvWeekly.toLocaleString('pt-BR')} ICP` : '—'}</span>
               </div>
               <div className="bg-background/40 border border-white/5 p-3 rounded-xl text-right">
                 <span className="text-[8px] font-black text-on-surface-variant/65 uppercase tracking-wider block">MELHOR ICV HISTÓRICO</span>
-                <span className="font-headline italic font-black text-lg text-primary mt-0.5 block">{icvRecord.toLocaleString('pt-BR')} ICP</span>
+                <span className="font-headline italic font-black text-lg text-primary mt-0.5 block">{hasICVData ? `${icvRecord.toLocaleString('pt-BR')} ICP` : '—'}</span>
               </div>
             </div>
 
@@ -474,13 +420,13 @@ export function Achievements() {
               {/* Evolução indicators */}
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-on-surface-variant">
                 <span>PROGRESSO PARA PRÓXIMO NÍVEL</span>
-                <span className="text-white font-mono">{icvRecord.toLocaleString('pt-BR')} / {cvNextTarget.toLocaleString('pt-BR')} ICV</span>
+                <span className="text-white font-mono">{hasICVData ? `${icvRecord.toLocaleString('pt-BR')} / ${cvNextTarget.toLocaleString('pt-BR')} ICV` : 'Aguardando dados homologados'}</span>
               </div>
 
               {/* Progress bar */}
               <div className="relative">
                 <div className="h-3 w-full bg-surface-container-highest rounded-full overflow-hidden p-0.5">
-                  <div className="h-full rounded-full bg-gradient-to-r from-rose-500 to-indigo-500" style={{ width: `${cvPercent}%` }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-rose-500 to-indigo-500" style={{ width: `${hasICVData ? cvPercent : 0}%` }} />
                 </div>
                 <div className="flex justify-between mt-2.5 text-[8px] font-black uppercase tracking-widest text-on-surface-variant/50">
                   <span className={cn(icvRecord >= 750 ? "text-amber-500" : "")}>BRONZE (750)</span>
@@ -493,7 +439,7 @@ export function Achievements() {
 
             <div className="flex gap-3 pt-1">
               <button 
-                disabled={cvLevel === 'Nenhum'}
+                disabled={!hasICVData || cvLevel === 'Nenhum'}
                 onClick={() => setSelectedShareCard({
                   type: 'cardio',
                   level: cvLevel,
@@ -512,7 +458,11 @@ export function Achievements() {
               </button>
             </div>
             
-            {cvLevel === 'Nenhum' && (
+            {!hasICVData ? (
+              <p className="text-[8.5px] text-on-surface-variant/60 uppercase font-black tracking-widest text-center mt-1">
+                O ICV será exibido quando houver cálculo cardiovascular homologado pelo servidor.
+              </p>
+            ) : cvLevel === 'Nenhum' && (
               <p className="text-[8.5px] text-on-surface-variant/60 uppercase font-black tracking-widest text-center mt-1">
                 Faltam {(750 - icvRecord).toLocaleString('pt-BR')} pontos de ICV para atingir a Medalha Bronze 🥉
               </p>

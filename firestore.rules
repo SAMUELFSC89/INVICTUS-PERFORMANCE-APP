@@ -39,9 +39,11 @@ service cloud.firestore {
 
     function isValidUserProfile(data) {
       return (data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 128) &&
-             (data.email is string && data.email.size() <= 256) &&
-             (data.uid == request.auth.uid) && // Identity Integrity
-             (data.get('role', 'user') == 'user' || (data.get('role', 'user') == 'admin' && data.email in ["samuelfsc89@gmail.com", "mucafsc89@gmail.com"])); // Prevent self-elevated roles except for bootstrapping admin
+              (data.email is string && data.email.size() <= 256) &&
+              (data.email == request.auth.token.email) &&
+              (data.uid == request.auth.uid) && // Identity Integrity
+              (data.get('isAdmin', false) == false) &&
+              (data.get('role', 'user') == 'user' || (data.get('role', 'user') == 'admin' && data.email in ["samuelfsc89@gmail.com", "mucafsc89@gmail.com"])); // Prevent self-elevated roles except for bootstrapping admin
     }
 
     function isValidWorkout(data) {
@@ -79,7 +81,7 @@ service cloud.firestore {
 
     // System Config Collection (For dynamic settings and parameters)
     match /system_config/{configId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
@@ -97,7 +99,11 @@ service cloud.firestore {
 
     // Users Collection
     match /users/{userId} {
-      allow get, list: if isSignedIn();
+      // Perfis completos contém CPF, dados de saúde e dados de contato. Perfis
+      // públicos são servidos pelo /api/profile, que seleciona somente campos
+      // explicitamente públicos.
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
       allow create: if isOwner(userId) && isValidUserProfile(incoming());
       
       allow update: if isAdmin() || (
@@ -105,15 +111,16 @@ service cloud.firestore {
         !incoming().diff(existing()).affectedKeys().hasAny([
           'score', 'weeklyScore', 'monthlyScore', 'streak', 
           'walletBalance', 'badges', 'achievements', 'positions', 'activeSeason', 
-          'seasonBoost', 'seasonEntryStatus', 'totalEarnings', 'totalWins', 'rankingPosition',
-          'premiumStatus', 'subscriptionStatus', 'boostMultiplier', 'challengeProgress',
-          'role', 'isBanned', 'isSubscribed', 'status', 'seasonStatus', 'nextSeasonStart',
-          'isPro', 'pro', 'plan', 'entitlement',
-          'plano', 'assinatura', 'statusPagamento', 'premium', 'performance', 'currentPlan', 'subscriptionTier'
-        ])
-      ) || (
-        isSignedIn() && 
-        incoming().diff(existing()).affectedKeys().hasOnly(['profileLikes'])
+           'seasonBoost', 'seasonEntryStatus', 'totalEarnings', 'totalWins', 'rankingPosition',
+           'premiumStatus', 'subscriptionStatus', 'boostMultiplier', 'challengeProgress',
+           'role', 'isBanned', 'isSubscribed', 'status', 'seasonStatus', 'nextSeasonStart',
+           'isPro', 'pro', 'plan', 'entitlement',
+           'plano', 'assinatura', 'statusPagamento', 'premium', 'performance', 'currentPlan', 'subscriptionTier',
+           'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
+            'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
+            'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes', 'isAdmin', 'email', 'uid',
+            'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt'
+          ])
       );
       
       allow delete: if isAdmin() || isOwner(userId);
@@ -134,9 +141,9 @@ service cloud.firestore {
     match /workouts/{workoutId} {
       allow get: if isSignedIn() && isValidId(workoutId) && (resource.data.userId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
-      
-      allow create: if isSignedIn() && isValidId(workoutId) && isValidWorkout(incoming());
-      allow update: if isAdmin() || (isOwner(existing().userId) && isValidWorkout(incoming()));
+      // Atividades que afetam IGA, saúde e antifraude são escritas somente
+      // pelo backend (Admin SDK), após validação.
+      allow create, update: if isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -152,8 +159,8 @@ service cloud.firestore {
 
     // User Nutrition Profiles Collection
     match /user_nutrition_profiles/{userId} {
-      allow get: if isSignedIn() && isValidId(userId);
-      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
@@ -244,38 +251,42 @@ service cloud.firestore {
 
     // Running Stats
     match /running_stats/{userId} {
-      allow read: if isSignedIn() && isValidId(userId);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      // Estatísticas oficiais de corrida são calculadas no servidor para não
+      // permitir forja de ranking, distância ou métricas biométricas.
+      allow write: if isAdmin();
     }
 
     // Run Sessions
     match /run_sessions/{sessionId} {
       allow read: if isSignedIn() && isValidId(sessionId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidId(sessionId) && incoming().userId == request.auth.uid;
-      allow delete: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if isAdmin();
     }
 
     // Active Activity Sessions
     match /active_sessions/{sessionId} {
       allow get, list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && isValidId(sessionId) && incoming().userId == request.auth.uid;
-      allow update: if isSignedIn() && isValidId(sessionId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && isValidId(sessionId) && (
+        (resource.data.userId == request.auth.uid && incoming().userId == resource.data.userId) || isAdmin()
+      );
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // Photo Fingerprints
     match /photo_fingerprints/{fingerprint} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      // Hashes biométricos fazem parte do antifraude e não podem ser sondados
+      // por clientes. Todo acesso é server-side.
+      allow read, write: if false;
     }
 
     // Referrals
     match /referrals/{referralId} {
       allow read: if isSignedIn() && isValidId(referralId) && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidId(referralId) && (incoming().referrerUid == request.auth.uid || incoming().refereeUid == request.auth.uid);
-      allow update: if isAdmin();
+      // Indicação e contadores são criados pelo endpoint autenticado /api/profile
+      // com Admin SDK; o cliente não pode forjar relação ou recompensa.
+      allow create, update, delete: if isAdmin();
     }
 
     // Elite Seasons
@@ -317,8 +328,10 @@ service cloud.firestore {
 
     // Wearable Configurations
     match /wearable_configs/{userId} {
-      allow read: if isSignedIn() && isOwner(userId);
-      allow write: if isSignedIn() && isOwner(userId);
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      // Atualizações passam pelo /api/wearables autenticado. O cliente não
+      // escreve status que possa influenciar prioridade de fontes ou ranking.
+      allow write: if isAdmin();
     }
 
     // Wearable Sync Logs
@@ -333,9 +346,7 @@ service cloud.firestore {
     match /wearable_activities/{activityId} {
       allow get: if isSignedIn() && isValidId(activityId) && (resource.data.userId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
-      allow create: if isSignedIn() && isValidId(activityId) && incoming().userId == request.auth.uid;
-      allow update: if isSignedIn() && isValidId(activityId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     // Strava Activities
@@ -354,11 +365,9 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow get: if isSignedIn() && isValidId(notificationId) && (resource.data.recipientId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (resource.data.recipientId == request.auth.uid || isAdmin());
-      
-      allow create: if isSignedIn() && isValidId(notificationId); 
-      allow update: if isSignedIn() && (resource.data.recipientId == request.auth.uid || isAdmin()) && 
-                    incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow delete: if isSignedIn() && (resource.data.recipientId == request.auth.uid || isAdmin());
+      // Notificações são emitidas por fluxos de servidor; o cliente não pode
+      // forjar alertas de sistema, prêmio ou pagamento para outro atleta.
+      allow write: if isAdmin();
     }
 
     // Gym Check-ins Collection
@@ -371,13 +380,6 @@ service cloud.firestore {
     // Payment Orders Collection
     match /payment_orders/{orderId} {
       allow get: if isSignedIn() && isValidId(orderId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow write: if isAdmin();
-    }
-
-    // Pagar.me Payments Collection
-    match /payments/{paymentId} {
-      allow get: if isSignedIn() && isValidId(paymentId) && (resource.data.userId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if isAdmin();
     }
@@ -426,40 +428,31 @@ service cloud.firestore {
     match /biometric_metrics/{metricId} {
       allow get: if isSignedIn() && isValidId(metricId) && (resource.data.userId == request.auth.uid || isAdmin());
       allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
-      allow create: if isSignedIn() && isValidId(metricId) && incoming().userId == request.auth.uid;
-      allow update: if isSignedIn() && isValidId(metricId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     // Power Records (INVICTUS POWER RECORDS)
     match /power_records/{recordId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(recordId) && incoming().userId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        isOwner(existing().userId) || 
-        incoming().diff(existing()).affectedKeys().hasOnly(['reports', 'videoStatus']) ||
-        isAdmin()
-      );
-      allow delete: if isAdmin();
+      // Vídeos e logs de auditoria são dados sensíveis. Ranking e "meus
+      // vídeos" passam pelo /api/powerlift, que devolve somente os campos
+      // apropriados para cada contexto; nenhum SDK de cliente lê o documento
+      // bruto ou sua URL de download.
+      allow read: if false;
+      // Nenhum cliente pode aprovar, alterar peso ou mudar status de um vídeo.
+      // Submissão, auditoria e homologação passam pelo backend/Admin SDK.
+      allow write: if isAdmin();
     }
 
     // Power Duels (INVICTUS POWER DUELS)
     match /power_duels/{duelId} {
       allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(duelId) && incoming().challengerId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        existing().challengerId == request.auth.uid || 
-        existing().defenderId == request.auth.uid || 
-        isAdmin()
-      );
-      allow delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     // Power Feed Events (INVICTUS POWER SOCAL FEED)
     match /power_feed_events/{eventId} {
       allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(eventId) && incoming().userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     // Habit Goals ("Criar Habito") — todo o acesso passa exclusivamente pelo

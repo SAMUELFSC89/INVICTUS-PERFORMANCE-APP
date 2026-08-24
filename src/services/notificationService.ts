@@ -21,18 +21,27 @@ const TITLES: Record<string, string> = {
   achievement: 'Conquista desbloqueada 🏆',
 };
 
-async function postNotification(body: Record<string, any>) {
+async function postNotification(body: Record<string, any>): Promise<boolean> {
   const user = auth.currentUser;
-  if (!user) return;
+  if (!user) return false;
+  if (body.recipientId && body.recipientId !== user.uid) {
+    // Eventos sociais para terceiros precisam ser criados por uma função
+    // confiável no servidor. O cliente autenticado não pode escolher destino.
+    console.warn('[Notifications] Envio para outro usuário bloqueado no cliente.');
+    return false;
+  }
   try {
     const token = await user.getIdToken();
-    await fetch('/api/notifications', {
+    const response = await fetch('/api/notifications', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(body),
     });
+    if (!response.ok) throw new Error('Servidor recusou a notificação.');
+    return true;
   } catch (error) {
     console.error('Error creating notification:', error);
+    return false;
   }
 }
 
@@ -60,7 +69,7 @@ export const notificationService = {
     if (type === 'comment') body = `${senderName} comentou: "${message || ''}"`;
     // 'achievement' already arrives with a fully-formatted message from achievementService.ts
 
-    await postNotification({
+    return postNotification({
       recipientId,
       type: type === 'achievement' ? 'achievement' : 'social',
       title,

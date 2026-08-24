@@ -15,7 +15,6 @@ import { TermsAndConsent } from './TermsAndConsent';
 import { getXPProgress, getLevelFromXP } from '../lib/levelUtils';
 import { BarbellLifter } from './BarbellLifter';
 import { MiniBarbellProgress } from './MiniBarbellProgress';
-import { initPushNotifications } from '../services/pushNotificationService';
 
 export function Layout() {
   const { user, refreshUser } = useUser();
@@ -55,14 +54,6 @@ export function Layout() {
       }
     }
   }, [user]);
-
-  // Push notifications: register this device's FCM token once we have an
-  // authenticated user (real registration, not just a permission check).
-  useEffect(() => {
-    if (user?.uid) {
-      initPushNotifications(user.uid, (url) => navigate(url));
-    }
-  }, [user?.uid, navigate]);
 
   // UserContext fetches the profile once on login (no live Firestore
   // listener), so without this the Bell badge would only refresh after a

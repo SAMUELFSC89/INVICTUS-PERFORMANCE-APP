@@ -21,7 +21,11 @@ export default async function handler(req: VercelRequest & { userId?: string; us
     // 2. Authorize Admin
     const userSnap = await db.collection('users').doc(req.userId!).get();
     const userData = userSnap.exists ? userSnap.data() : {};
-    const isAdmin = req.userEmail === 'samuelfsc89@gmail.com' || userData?.isAdmin === true;
+    // Nunca confie em um booleano editável do perfil para conceder privilégio.
+    // O e-mail vem do token Firebase já verificado; roles são gravadas apenas
+    // pelo servidor/regras administrativas.
+    const adminEmails = new Set(['samuelfsc89@gmail.com', 'mucafsc89@gmail.com']);
+    const isAdmin = adminEmails.has(String(req.userEmail || '').toLowerCase()) || userData?.role === 'admin';
 
     if (!isAdmin) {
       await logEvent({

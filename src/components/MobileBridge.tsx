@@ -4,8 +4,6 @@ import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 import { auth, getRedirectResult } from '../firebase';
-import { NativePermissionBanner } from './NativePermissionBanner';
-import { checkAllNativePermissions, requestAllNativePermissions } from '../lib/nativePermissions';
 
 export function MobileBridge() {
   const navigate = useNavigate();
@@ -13,16 +11,6 @@ export function MobileBridge() {
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-
-    // Check & proactively prompt for native permissions on initial native launch
-    checkAllNativePermissions().then((status) => {
-      if (!status.allGranted) {
-        console.log('[MobileBridge] Proactively requesting missing native permissions...');
-        requestAllNativePermissions().catch((e) =>
-          console.warn('[MobileBridge] Permission prompt error:', e)
-        );
-      }
-    });
 
     // Handle back button
     const backListener = CapApp.addListener('backButton', ({ canGoBack }) => {
@@ -90,6 +78,10 @@ export function MobileBridge() {
     };
   }, [navigate, location]);
 
-  return <NativePermissionBanner />;
+  // Permissões são solicitadas no contexto do recurso: GPS ao iniciar
+  // atividade/alterar academia, HealthKit/Health Connect ao conectar a fonte e
+  // notificações quando o atleta as ativa. Isso evita prompts em cascata ao
+  // abrir o app e atende as exigências de revisão da Apple e do Google Play.
+  return null;
 }
 

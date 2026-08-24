@@ -13,8 +13,9 @@ export class StravaProvider implements WearableProvider {
       const status = await stravaService.getStatus();
       return status.connected;
     } catch (e) {
-      // Fallback local storage connection state for robust testing
-      return localStorage.getItem('wearable_conn_strava') === 'true';
+      // O vínculo OAuth é autoridade do servidor; não recuperamos um status
+      // "conectado" de localStorage depois de uma falha de rede.
+      return false;
     }
   }
 
@@ -85,8 +86,8 @@ export class StravaProvider implements WearableProvider {
       const actTime = new Date(actDateStr).getTime();
       if (actTime < sinceTime) return;
 
-      const avgHR = data.average_heartrate || 140; 
-      const maxHR = data.max_heartrate || 160;
+      const avgHR = Number(data.average_heartrate) || 0;
+      const maxHR = Number(data.max_heartrate) || 0;
       
       const durationSeconds = data.movingTime || 0;
       const distanceMeters = data.distance || 0;
@@ -99,8 +100,9 @@ export class StravaProvider implements WearableProvider {
         pace = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
       }
 
-      // Estimate calories: ~70 kcal per km
-      const calories = Math.round((distanceMeters / 1000) * 70) || 100;
+      // Strava nem sempre disponibiliza calorias. Nesse caso preservamos a
+      // ausência como zero, em vez de estimar uma métrica de saúde fictícia.
+      const calories = Number(data.calories) || 0;
 
       activities.push({
         id: `st_sync_${data.id}_${user.uid}`,
@@ -132,6 +134,5 @@ export class StravaProvider implements WearableProvider {
     } catch (e) {
       console.warn('[StravaProvider] Local disconnect fallback');
     }
-    localStorage.removeItem('wearable_conn_strava');
   }
 }

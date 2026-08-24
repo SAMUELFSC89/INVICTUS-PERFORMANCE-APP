@@ -3,8 +3,8 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps, getApp, App, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
 
 // Helper to fix project ID (ensure gen-lang-client- prefix for numeric IDs)
 function fixProjectId(id?: string): string | undefined {
@@ -25,27 +25,34 @@ try {
   }
 } catch (e) {}
 
-// 1. Load Service Account
-let serviceAccount: any;
-const saPath = path.resolve(process.cwd(), 'api/_lib/serviceAccountKey.json');
+type FirebaseServiceAccount = {
+  project_id?: string;
+  client_email?: string;
+  private_key?: string;
+};
 
-try {
-  if (fs.existsSync(saPath)) {
-    serviceAccount = JSON.parse(fs.readFileSync(saPath, 'utf8'));
-    console.log(`[Firebase Admin] Service Account loaded from file: ${saPath}`);
-  }
-} catch (e: any) {
-  // Silent fallback
-}
+/**
+ * Credenciais de servidor nunca devem ser lidas do repositório. Em Vercel, use
+ * FIREBASE_SERVICE_ACCOUNT (JSON completo) ou uma Application Default
+ * Credential configurada pela própria plataforma.
+ */
+function loadServiceAccountFromEnvironment(): FirebaseServiceAccount | undefined {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) return undefined;
 
-if ((!serviceAccount || !serviceAccount.private_key) && process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    console.log(`[Firebase Admin] Service Account loaded from FIREBASE_SERVICE_ACCOUNT`);
-  } catch (e: any) {
-    console.error(`[Firebase Admin] Failed to parse env FIREBASE_SERVICE_ACCOUNT`);
+    const parsed = JSON.parse(raw) as FirebaseServiceAccount;
+    if (!parsed.project_id || !parsed.client_email || !parsed.private_key) {
+      throw new Error('campos obrigatórios ausentes');
+    }
+    return parsed;
+  } catch (error: any) {
+    console.error(`[Firebase Admin] FIREBASE_SERVICE_ACCOUNT inválida: ${error?.message || 'JSON inválido'}`);
+    return undefined;
   }
 }
+
+const serviceAccount = loadServiceAccountFromEnvironment();
 
 // 2. Initialize App
 let app: App;
@@ -56,12 +63,6 @@ let initError: Error | null = null;
 const configPid = fixProjectId(config.projectId);
 const envPid = fixProjectId(process.env.GOOGLE_CLOUD_PROJECT || process.env.PROJECT_ID);
 
-// Force the correct project ID into the environment to help auto-detection
-if (configPid) {
-  process.env.PROJECT_ID = configPid;
-  process.env.GOOGLE_CLOUD_PROJECT = configPid;
-}
-
 const saPid = serviceAccount?.project_id ? fixProjectId(serviceAccount.project_id) : undefined;
 const primaryPid = configPid || saPid || envPid;
 
@@ -70,18 +71,31 @@ const isSaMatching = !configPid || !saPid || saPid === configPid;
 
 try {
   if (!getApps().length) {
-    console.log(`[Firebase Admin] Forcing environment Project ID to: ${primaryPid || 'auto-detect'}`);
-    try {
-      const options: any = { projectId: primaryPid };
-      // Only use cert() if the service account matches the target project_id
-      if (serviceAccount?.private_key && isSaMatching) {
-        options.credential = cert(serviceAccount);
-      }
-      app = initializeApp(options);
-    } catch (e: any) {
-      console.warn(`[Firebase Admin] Init with options failed: ${e.message}. Trying generic init.`);
-      app = initializeApp();
+    const options: any = {};
+    if (primaryPid) options.projectId = primaryPid;
+    // Necessário para o backend verificar se um vídeo PowerLift pertence ao
+    // atleta antes de persistir o record. O bucket é configuração pública do
+    // app, não uma credencial; aceita override seguro por ambiente.
+    const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || config.storageBucket;
+    if (storageBucket) options.storageBucket = String(storageBucket).trim();
+
+    // Certificamos somente credenciais vindas do ambiente. Nunca há fallback
+    // para um arquivo local versionado nem para credenciais de outro projeto.
+    if (serviceAccount?.private_key && isSaMatching) {
+      options.credential = cert(serviceAccount);
+      console.log('[Firebase Admin] Inicializado com credencial de ambiente.');
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      // Cloud Run/Google Cloud podem fornecer ADC por arquivo montado fora do
+      // repositório. Não tentamos adivinhar caminhos locais.
+      options.credential = applicationDefault();
+      console.log('[Firebase Admin] Inicializado com Application Default Credentials.');
+    } else if (serviceAccount?.private_key && !isSaMatching) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT pertence a um projeto diferente do Firebase configurado.');
+    } else {
+      console.warn('[Firebase Admin] Nenhuma credencial de servidor configurada; operações de banco falharão até FIREBASE_SERVICE_ACCOUNT ou ADC ser configurada.');
     }
+
+    app = initializeApp(options);
   } else {
     app = getApp();
   }
@@ -134,7 +148,7 @@ export function sanitizeForFirestore<T>(data: T): T {
 export const db = new Proxy({} as Firestore, {
   get(target, prop, receiver) {
     if (!dbInstance) {
-      throw new Error(`[Firebase Connection Error] O Firestore não foi inicializado corretamente fora do ambiente de produção. Verifique se o arquivo /api/_lib/serviceAccountKey.json ou a variável de ambiente FIREBASE_SERVICE_ACCOUNT está configurada.`);
+      throw new Error('[Firebase Connection Error] O Firestore não foi inicializado. Configure FIREBASE_SERVICE_ACCOUNT ou uma Application Default Credential no ambiente seguro.');
     }
     const value = Reflect.get(dbInstance, prop, receiver);
     if (typeof value === 'function') {
@@ -201,22 +215,9 @@ export async function verifyAuth(req: VercelRequest): Promise<{ uid: string; ema
     console.log(`[AUTH] [VERIFY_TOKEN] [${decodedToken.uid}] [SUCCESS] Token de autenticação verificado`);
     return { uid: decodedToken.uid, email: decodedToken.email };
   } catch (error: any) {
-    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [NOTICE] Auth SDK verification failed (${error.message}). Attempting token payload decode...`);
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
-        const payload = JSON.parse(payloadJson);
-        const uid = payload.user_id || payload.sub;
-        const email = payload.email;
-        if (uid) {
-          console.log(`[AUTH] [VERIFY_TOKEN] [${uid}] [FALLBACK_SUCCESS] Token verificado por payload JWT`);
-          return { uid, email };
-        }
-      }
-    } catch (fallbackErr: any) {
-      console.error(`[AUTH] [VERIFY_TOKEN] [FALLBACK_FAILURE] JWT fallback failed: ${fallbackErr.message}`);
-    }
+    // Nunca decodifique o payload como fallback: JWT sem verificação de
+    // assinatura permite que qualquer pessoa forje uid, email e permissões.
+    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [REJECTED] Token inválido (${error?.message || 'erro de verificação'}).`);
     return null;
   }
 }
@@ -229,23 +230,64 @@ export function auth() {
   return getAuth(app);
 }
 
+const DEFAULT_CORS_ORIGINS = [
+  'https://invictusperformance.app.br',
+  'https://www.invictusperformance.app.br',
+  // WebViews oficiais: Capacitor no iOS e localhost/https no Android.
+  'capacitor://localhost',
+  'http://localhost',
+  'https://localhost',
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:4173',
+  'http://127.0.0.1:5173'
+];
+
+function getCorsOrigins(): Set<string> {
+  const configured = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return new Set([...DEFAULT_CORS_ORIGINS, ...configured]);
+}
+
+export function isCorsOriginAllowed(origin?: string): boolean {
+  // Requisições servidor-a-servidor (webhooks, cron e app nativo fora de um
+  // browser) não carregam Origin. A autenticação própria continua obrigatória.
+  if (!origin) return true;
+  return getCorsOrigins().has(origin);
+}
+
+/**
+ * Aplica CORS por allowlist. Retorna true quando a resposta já foi finalizada
+ * (preflight ou origem não autorizada), mantendo o contrato dos handlers.
+ */
 export function cors(req: VercelRequest, res: VercelResponse) {
-  const origin = req.headers.origin;
-  if (origin && origin !== 'null') {
+  const originHeader = req.headers.origin;
+  const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
+
+  if (origin && !isCorsOriginAllowed(origin)) {
+    res.status(403).json({ error: 'Origem não autorizada.' });
+    return true;
+  }
+
+  if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Vary', 'Origin');
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-cron-secret'
   );
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
+    res.status(204).end();
     return true;
   }
   return false;

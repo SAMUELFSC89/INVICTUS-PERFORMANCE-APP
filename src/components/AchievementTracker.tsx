@@ -1,73 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, CheckCircle, Share2, X } from 'lucide-react';
-import { auth, db, onAuthStateChanged } from '../firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { UserProfile, Achievement } from '../types';
+import { Share2, X } from 'lucide-react';
+import { Achievement } from '../types';
 import { ACHIEVEMENTS } from '../achievements';
-import { userService } from '../services/userService';
-import { cn } from '../lib/utils';
-
 import { useUser } from '../UserContext';
 
 export function AchievementTracker() {
   const { user } = useUser();
   const [newAchievement, setNewAchievement] = useState<Achievement | null>(null);
-  const [lastAchievementCheck, setLastAchievementCheck] = useState<string[]>([]);
+  const knownAchievementIds = useRef<Set<string> | null>(null);
+  const knownUserId = useRef<string | null>(null);
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (user) {
-      handleUserUpdate(user);
+    if (!user) {
+      knownAchievementIds.current = null;
+      knownUserId.current = null;
+      setNewAchievement(null);
+      return;
     }
+
+    const unlockedIds = new Set(user.achievements || []);
+    if (!knownAchievementIds.current || knownUserId.current !== user.uid) {
+      // A primeira carga só estabelece a referência. Exibir uma celebração
+      // nessa etapa faria parecer que o navegador acabou de concedê-la.
+      knownAchievementIds.current = unlockedIds;
+      knownUserId.current = user.uid;
+      return;
+    }
+
+    const newlyUnlockedId = [...unlockedIds].find(id => !knownAchievementIds.current?.has(id));
+    knownAchievementIds.current = unlockedIds;
+    if (!newlyUnlockedId) return;
+
+    const newlyUnlocked = ACHIEVEMENTS.find(achievement => achievement.id === newlyUnlockedId);
+    if (!newlyUnlocked) return;
+
+    setNewAchievement(newlyUnlocked);
+    if (dismissTimer.current) clearTimeout(dismissTimer.current);
+    dismissTimer.current = setTimeout(() => setNewAchievement(null), 5000);
   }, [user]);
 
-  const handleUserUpdate = (userData: UserProfile) => {
-    // Avoid re-checking if achievements haven't changed in the doc
-    // but we need to check if they *should* be unlocked
-    const unlockedIds = userData.achievements || [];
-    const newlyUnlocked = ACHIEVEMENTS.find(achievement => {
-      if (unlockedIds.includes(achievement.id)) return false;
-      
-      try {
-        const criteria = achievement.criteria;
-        const context = {
-          streak: userData.streak || 0,
-          totalWorkouts: userData.totalWorkouts || 0,
-          totalActiveDays: userData.totalActiveDays || 0,
-          positions: userData.positions || { league: 0 },
-          referralStats: userData.referralStats || { validReferrals: 0 }
-        };
-
-        if (criteria.includes('streak')) {
-          const val = parseInt(criteria.split('>=')[1]);
-          return context.streak >= val;
-        }
-        if (criteria.includes('totalWorkouts')) {
-          const val = parseInt(criteria.split('>=')[1]);
-          return context.totalWorkouts >= val;
-        }
-        if (criteria.includes('positions.league')) {
-          const val = parseInt(criteria.split('<=')[1]);
-          return context.positions.league > 0 && context.positions.league <= val;
-        }
-        if (criteria.includes('referralStats.validReferrals')) {
-          const val = parseInt(criteria.split('>=')[1]);
-          return context.referralStats.validReferrals >= val;
-        }
-
-        return false;
-      } catch (e) {
-        console.error("Error evaluating achievement criteria:", e);
-        return false;
-      }
-    });
-
-    if (newlyUnlocked) {
-      userService.unlockAchievement(newlyUnlocked.id);
-      setNewAchievement(newlyUnlocked);
-      setTimeout(() => setNewAchievement(null), 5000);
-    }
-  };
+  useEffect(() => () => {
+    if (dismissTimer.current) clearTimeout(dismissTimer.current);
+  }, []);
 
   const handleShare = () => {
     if (!newAchievement || !user) return;

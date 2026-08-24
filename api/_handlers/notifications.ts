@@ -3,10 +3,9 @@ import { notificationService } from '../_services/notification-service.js';
 
 /**
  * POST /api/notifications
- * Unified endpoint for creating a notification (in-app + push) for ANY user.
- * Used by client-side triggers (likes, comments, follows, achievement
- * unlocks) that need to notify a DIFFERENT user than the caller - which
- * requires the admin SDK to bypass per-owner Firestore security rules.
+ * Unified endpoint for a signed-in user to create a notification for himself.
+ * Cross-user/system notifications must originate from trusted server-side
+ * workflows, never from a browser token that could spam arbitrary accounts.
  *
  * Body: { recipientId: string, type: string, title: string, message: string, actionUrl?: string }
  */
@@ -30,6 +29,9 @@ export default async function handler(req: any, res: any) {
 
   if (!recipientId || typeof recipientId !== 'string') {
     return res.status(400).json({ error: 'recipientId é obrigatório.' });
+  }
+  if (recipientId !== auth.uid) {
+    return res.status(403).json({ error: 'Não é permitido criar notificações para outro usuário.' });
   }
   if (!title || typeof title !== 'string' || title.length > MAX_TEXT_LEN) {
     return res.status(400).json({ error: 'title é obrigatório (máx 300 caracteres).' });

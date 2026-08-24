@@ -39,13 +39,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 3. POST Request PIX Withdrawal (amount is in R$ / Reais directly)
     if (req.method === 'POST' && (action === 'withdraw' || req.url.includes('/withdraw'))) {
-      const { amount, pixKey, pixKeyType, deviceId } = req.body;
+      const { amount, pixKey, pixKeyType, deviceId, requestId } = req.body;
       const withdrawal = await WithdrawalEngine.requestWithdrawal({
         userId: auth.uid,
         amount: Number(amount),
-        pixKey: String(pixKey),
+        pixKey: typeof pixKey === 'string' ? pixKey : '',
         pixKeyType: pixKeyType || 'cpf',
-        deviceId
+        deviceId,
+        requestId: typeof requestId === 'string' ? requestId : undefined
       });
 
       return res.status(200).json({

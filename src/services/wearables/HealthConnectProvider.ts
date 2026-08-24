@@ -28,8 +28,21 @@ export class HealthConnectProvider implements WearableProvider {
   }
 
   async isConnected(): Promise<boolean> {
-    const saved = localStorage.getItem('wearable_conn_health_connect');
-    return saved === 'true';
+    if (!this.isSupportedPlatform()) return false;
+    try {
+      const { available } = await Health.isHealthAvailable();
+      if (!available) return false;
+      // No Android o plugin permite consultar os grants reais. Não usamos
+      // localStorage como prova de que o usuário ainda autorizou a leitura.
+      const response = await Health.checkHealthPermissions({ permissions: [...READ_PERMISSIONS] as any });
+      const granted = response?.permissions || [];
+      return READ_PERMISSIONS.every((permission) =>
+        granted.some((entry: Record<string, boolean>) => entry?.[permission] === true)
+      );
+    } catch (error) {
+      console.warn('[HealthConnectProvider] Não foi possível consultar permissões atuais:', error);
+      return false;
+    }
   }
 
   async requestPermissions(): Promise<boolean> {
@@ -44,9 +57,10 @@ export class HealthConnectProvider implements WearableProvider {
         return false;
       }
       const response = await Health.requestHealthPermissions({ permissions: [...READ_PERMISSIONS] as any });
-      const granted = (response?.permissions || []).some((p: any) => Object.values(p).some(Boolean));
-      localStorage.setItem('wearable_conn_health_connect', granted ? 'true' : 'false');
-      return granted;
+      const granted = response?.permissions || [];
+      return READ_PERMISSIONS.every((permission) =>
+        granted.some((entry: Record<string, boolean>) => entry?.[permission] === true)
+      );
     } catch (error) {
       console.error('[HealthConnectProvider] Erro ao solicitar permissões do Health Connect:', error);
       return false;
@@ -71,7 +85,9 @@ export class HealthConnectProvider implements WearableProvider {
   }
 
   async disconnect(): Promise<void> {
-    localStorage.setItem('wearable_conn_health_connect', 'false');
+    // Health Connect não permite revogar o consentimento pelo app. O vínculo
+    // visual é removido na configuração autenticada; o usuário pode revogar
+    // as permissões no próprio Health Connect.
   }
 
   private mapWorkout(w: any): WearableActivity {

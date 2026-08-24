@@ -1,4 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import { timingSafeEqual } from 'crypto';
 import { cors, db } from '../_lib/common.js';
 
 /**
@@ -24,15 +25,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
   try {
-    const incomingToken = req.headers['asaas-access-token'];
-    const expectedToken = process.env.ASAAS_AUTHORIZATION_TOKEN;
+    const headerToken = req.headers['asaas-access-token'];
+    const incomingToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
+    const expectedToken = process.env.ASAAS_AUTHORIZATION_TOKEN?.trim();
 
     if (!expectedToken) {
       console.error('[Asaas Authorization] ASAAS_AUTHORIZATION_TOKEN nao configurado no servidor.');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Configuracao ausente no servidor.' });
     }
 
-    if (incomingToken !== expectedToken) {
+    const tokenMatches = typeof incomingToken === 'string'
+      && incomingToken.length === expectedToken.length
+      && timingSafeEqual(Buffer.from(incomingToken), Buffer.from(expectedToken));
+
+    if (!tokenMatches) {
       console.error('[Asaas Authorization] Token de acesso invalido recebido.');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Token de autenticacao invalido.' });
     }
@@ -56,8 +62,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const withdrawal: any = snapshot.docs[0].data();
 
-    if (withdrawal.status !== 'paid') {
-      console.error('[Asaas Authorization] Saque', withdrawal.id, 'nao esta com status "paid" (atual:', withdrawal.status, ').');
+    // O dinheiro continua bloqueado enquanto o Asaas processa a transferência.
+    // "paid" só é gravado após o webhook final TRANSFER_DONE.
+    if (withdrawal.status !== 'processing') {
+      console.error('[Asaas Authorization] Saque', withdrawal.id, 'nao esta com status "processing" (atual:', withdrawal.status, ').');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Saque nao esta no status esperado para pagamento.' });
     }
 

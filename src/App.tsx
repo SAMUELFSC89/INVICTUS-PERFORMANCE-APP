@@ -47,9 +47,13 @@ export default function App() {
       <UserProvider>
         <ProProvider>
           <BrowserRouter>
-            {/* <MobileBridge /> */}
+            <MobileBridge />
             <AuthGuard>
             <Routes>
+              {/* Continue URLs de verificação/reset do Firebase apontam para
+                  /login. Mantemos a rota dentro do guard para não cair em tela
+                  inexistente no PWA/nativo. */}
+              <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="/onboarding/diet" element={<Navigate to="/" replace />} />
               <Route element={<Layout />}>
                 <Route path="/" element={<Home />} />

@@ -1,14 +1,27 @@
 apply plugin: 'com.android.application'
 
+// Codemagic injeta estas quatro variáveis somente quando uma identidade Android
+// de release foi configurada no painel. Não mantemos keystore nem senha no
+// repositório; builds locais continuam possíveis e a publicação só usa uma
+// assinatura quando todos os dados seguros estiverem presentes.
+def hasCodemagicReleaseSigning = [
+    'CM_KEYSTORE_PATH',
+    'CM_KEYSTORE_PASSWORD',
+    'CM_KEY_ALIAS',
+    'CM_KEY_PASSWORD'
+].every { System.getenv(it) }
+
 android {
     namespace = "com.desafiosemdesculpa.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    def buildNumber = (System.getenv("BUILD_NUMBER") ?: "1").toInteger()
+    def appVersion = System.getenv("APP_VERSION") ?: "1.0.0"
     defaultConfig {
         applicationId "com.desafiosemdesculpa.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode buildNumber
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +29,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasCodemagicReleaseSigning) {
+                storeFile file(System.getenv('CM_KEYSTORE_PATH'))
+                storePassword System.getenv('CM_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('CM_KEY_ALIAS')
+                keyPassword System.getenv('CM_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasCodemagicReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -1,4 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import { timingSafeEqual } from 'crypto';
 import { db, cors } from '../_lib/common.js';
 import { grantProAccessAfterApprovedPayment, revokeProAccess } from '../_lib/payments-service.js';
 
@@ -22,9 +23,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Autenticação do webhook: a RevenueCat envia o header Authorization com o valor
   // configurado no dashboard. Nunca processamos eventos sem essa validação.
-  const expectedToken = process.env.REVENUECAT_WEBHOOK_AUTH_TOKEN;
-  const authHeader = req.headers['authorization'];
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+  const expectedToken = process.env.REVENUECAT_WEBHOOK_AUTH_TOKEN?.trim();
+  const authorization = req.headers['authorization'];
+  const authHeader = Array.isArray(authorization) ? authorization[0] : authorization;
+  const receivedToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const tokenMatches = Boolean(expectedToken)
+    && receivedToken.length === expectedToken!.length
+    && timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken!));
+  if (!tokenMatches) {
     console.warn('[RevenueCat Webhook] Requisição rejeitada: token de autorização inválido ou ausente.');
     return res.status(401).json({ error: 'Não autorizado.' });
   }
@@ -121,6 +127,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ received: true });
   } catch (error: any) {
     console.error('[RevenueCat Webhook Error]', error);
-    return res.status(500).json({ error: 'Erro interno ao processar webhook da RevenueCat.', details: error.message });
+    return res.status(500).json({ error: 'Erro interno ao processar webhook da RevenueCat.' });
   }
 }

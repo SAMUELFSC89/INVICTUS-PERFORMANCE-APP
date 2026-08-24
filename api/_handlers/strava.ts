@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'crypto';
 import { db, cors, verifyAuth, FieldValue } from '../_lib/common.js';
 import { StravaApi } from '../_lib/strava-api.js';
 import { SyncService } from '../_lib/sync-service.js';
@@ -12,16 +13,21 @@ const STRAVA_REDIRECT_URI = process.env.STRAVA_REDIRECT_URI && process.env.STRAV
   : process.env.STRAVA_REDIRECT_URI;
 const STRAVA_VERIFY_TOKEN = process.env.STRAVA_VERIFY_TOKEN || process.env.STRAVA_WEBHOOK_SECRET;
 
+function sanitizeReturnPath(value: unknown): string {
+  const candidate = typeof value === 'string' ? value.trim() : '';
+  // Nunca aceite URL absoluta, protocolo ou caminho de rede no state OAuth.
+  if (!candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('://')) {
+    return '/profile/wearables';
+  }
+  return /^\/[a-zA-Z0-9_/?=&.-]{0,256}$/.test(candidate) ? candidate : '/profile/wearables';
+}
+
 // 1. Rewrite middleware to support unified query-based / body-based actions (for backwards compatibility)
 router.use((req: any, res: any, next: any) => {
   if (cors(req, res)) return;
   
-  // Adicione logs temporários exatamente como solicitado antes da lógica de decisão
-  console.log(req.method);
-  console.log(req.path);
-  console.log(req.query);
-  console.log(req.body);
-  console.log(req.params);
+  // Não registre query/body: o fluxo OAuth pode carregar códigos ou tokens.
+  console.log('[Strava]', req.method, req.path);
 
   const path = req.path || '';
 
@@ -88,22 +94,33 @@ router.get('/webhook', (req: any, res: any) => {
   const verifyToken = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
   
-  console.log('[Strava Webhook Validation] Received request:', req.query);
-  if (verifyToken === STRAVA_VERIFY_TOKEN) {
+  if (STRAVA_VERIFY_TOKEN && verifyToken === STRAVA_VERIFY_TOKEN) {
     return res.status(200).json({ 'hub.challenge': challenge });
   }
-  console.warn('[Strava Webhook Validation] Verification failed. Tokens mismatch:', { verifyToken, expected: STRAVA_VERIFY_TOKEN });
+  console.warn('[Strava Webhook Validation] Verification failed.');
   return res.status(403).json({ error: 'Webhook verification failed' });
 });
 
 // --- Webhook Event (POST /webhook) ---
 router.post('/webhook', async (req: any, res: any) => {
-  const event = req.body;
-  console.log('[Strava Webhook] Event received:', event);
+  const event = req.body || {};
+  const subscriptionId = process.env.STRAVA_SUBSCRIPTION_ID?.trim();
+  if (subscriptionId && String(event.subscription_id || '') !== subscriptionId) {
+    console.warn('[Strava Webhook] Evento recusado: subscription_id incompatível.');
+    return res.status(403).json({ error: 'Webhook não autorizado.' });
+  }
+  console.log('[Strava Webhook] Evento recebido:', {
+    objectType: event.object_type,
+    aspectType: event.aspect_type,
+    objectId: event.object_id ? String(event.object_id).slice(0, 32) : undefined
+  });
 
   // We only care about new activities
   if (event.object_type === 'activity' && event.aspect_type === 'create') {
-    const athleteId = event.owner_id.toString();
+    if (!event.owner_id || !event.object_id || !/^[0-9]+$/.test(String(event.owner_id)) || !/^[0-9]+$/.test(String(event.object_id))) {
+      return res.status(400).json({ error: 'Evento Strava inválido.' });
+    }
+    const athleteId = String(event.owner_id);
     try {
       const athleteSnap = await db.collection('strava_athletes').doc(athleteId).get();
       
@@ -144,46 +161,39 @@ router.post('/webhook', async (req: any, res: any) => {
   return res.status(200).json({ success: true });
 });
 
-// Helper to safely determine the external host and protocol, especially inside proxy/container environments like Cloud Run
-function getRequestHostAndProtocol(req: any) {
-  let host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'invictusperformance.app.br';
-  let protocol = (req.headers['x-forwarded-proto'] as string) || 'https';
-  
-  // Robust fallback: parse from Referer header if present
-  if (req.headers.referer) {
-    try {
-      const refUrl = new URL(req.headers.referer);
-      // Only override if current host is local/container-bound, and the referer is a real domain
-      if ((host.includes('localhost') || host.includes('127.0.0.1')) && !refUrl.host.includes('localhost') && !refUrl.host.includes('127.0.0.1')) {
-        host = refUrl.host;
-        protocol = refUrl.protocol.replace(':', '');
-      }
-    } catch (e) {
-      console.warn('[Strava Host Helper] Failed to parse referer:', e);
-    }
-  }
-  
-  return { host, protocol };
-}
-
 // --- Callback Handler (GET /callback) ---
 router.get('/callback', async (req: any, res: any) => {
   try {
     const { code, state } = req.query;
-    if (!state) return res.status(400).json({ error: 'State (userId) missing' });
+    if (!state) return res.status(400).json({ error: 'Estado OAuth inválido ou expirado.' });
 
-    const stateStr = state as string;
-    const parts = stateStr.split('__');
-    const userId = parts[0];
-    const returnPath = parts[1] || '/profile';
+    const stateId = String(state);
+    if (!/^[a-f0-9]{32}$/i.test(stateId)) {
+      return res.status(400).json({ error: 'Estado OAuth inválido ou expirado.' });
+    }
+    const stateRef = db.collection('oauth_states').doc(stateId);
+    const stateData = await db.runTransaction(async (transaction: any) => {
+      const stateSnap = await transaction.get(stateRef);
+      if (!stateSnap.exists) return null;
+      const data = stateSnap.data() || {};
+      transaction.delete(stateRef);
+      const expiresAt = new Date(String(data.expiresAt || '')).getTime();
+      if (!data.userId || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+      return data;
+    });
+    if (!stateData) {
+      return res.status(400).json({ error: 'Estado OAuth inválido ou expirado.' });
+    }
+    const userId = String(stateData.userId);
+    const returnPath = sanitizeReturnPath(stateData.returnPath);
 
-    console.log('[Strava Callback] Received code:', code, 'and state (userId):', userId, 'returnPath:', returnPath);
+    console.log('[Strava Callback] Recebido retorno OAuth para usuário autenticado previamente.');
 
-    if (!code) return res.status(400).json({ error: 'Code missing' });
-    if (!userId) return res.status(400).json({ error: 'State (userId) missing' });
+    if (!code || !userId) return res.status(400).json({ error: 'Estado OAuth inválido ou expirado.' });
 
     if (!STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET) {
-      return res.status(400).json({ error: 'Credenciais do Strava não configuradas no servidor. Verifique STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET.' });
+      console.error('[Strava Callback] Credenciais Strava ausentes no servidor.');
+      return res.status(503).json({ error: 'A conexão com o Strava está indisponível no momento.' });
     }
 
     const response = await fetch('https://www.strava.com/oauth/token', {
@@ -203,9 +213,6 @@ router.get('/callback', async (req: any, res: any) => {
     }
 
     const data = await response.json();
-    console.log("===== CALLBACK RESPONSE =====");
-    console.log(JSON.stringify(data, null, 2));
-
     const strava = new StravaApi(userId);
     await strava.saveConnection(data);
 
@@ -215,20 +222,14 @@ router.get('/callback', async (req: any, res: any) => {
     .doc(userId)
     .get();
 
-    console.log(
-    "===== FIRESTORE SAVED =====");
-
-    console.log(saved.data());
+    console.log('[Strava Callback] Conexão persistida:', saved.exists);
 
     // Trigger initial historical import (async)
     manualSyncInternal(strava).catch(err => {
       console.warn('[Strava Callback] Initial historical sync completed with warning/error:', err.message || err);
     });
 
-    const { host, protocol } = getRequestHostAndProtocol(req);
-    const fallbackUrl = `${protocol}://${host}`;
-    
-    let appUrl = process.env.APP_URL || fallbackUrl;
+    let appUrl = process.env.APP_URL || 'https://www.invictusperformance.app.br';
     appUrl = appUrl.replace(/\/$/, '');
     
     if (appUrl.includes('sem-desculpa.vercel.app')) {
@@ -239,7 +240,7 @@ router.get('/callback', async (req: any, res: any) => {
     return res.redirect(`${appUrl}${returnPath}?strava=connected`);
   } catch (error: any) {
     console.error('[Strava Callback Error]:', error);
-    return res.status(500).json({ error: error.message || 'Error exchanging tokens' });
+    return res.status(500).json({ error: 'Não foi possível concluir a conexão com o Strava.' });
   }
 });
 
@@ -251,33 +252,32 @@ router.get('/auth', requireUserAuth, async (req: any, res: any) => {
     if (!STRAVA_CLIENT_ID) {
       return res.status(400).json({ error: 'Configuração do Strava ausente no servidor. Defina STRAVA_CLIENT_ID nas variáveis de ambiente.' });
     }
-    const { host, protocol } = getRequestHostAndProtocol(req);
-    const derivedRedirect = `${protocol}://${host}/api/strava/callback`;
-    
     let redirectUri = STRAVA_REDIRECT_URI;
     if (!redirectUri && process.env.APP_URL) {
       const cleanAppUrl = process.env.APP_URL.replace(/\/$/, '');
       redirectUri = `${cleanAppUrl}/api/strava/callback`;
     }
     if (!redirectUri) {
-      redirectUri = derivedRedirect;
+      redirectUri = 'https://www.invictusperformance.app.br/api/strava/callback';
     }
 
-    const state = `${userId}__${returnPath}`;
-
-    console.log('[Strava GET /auth] Building OAuth URL:', {
+    const state = randomUUID().replace(/-/g, '');
+    await db.collection('oauth_states').doc(state).set({
       userId,
-      returnPath,
-      redirectUri,
-      client_id: STRAVA_CLIENT_ID
+      returnPath: sanitizeReturnPath(returnPath),
+      provider: 'strava',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
     });
+
+    console.log('[Strava GET /auth] Criado state OAuth temporário para Strava.');
 
     const scope = 'read,activity:read_all';
     const url = `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&state=${state}&approval_prompt=force`;
     return res.json({ url });
   } catch (error: any) {
     console.error('[Strava GET /auth Error]:', error);
-    return res.status(500).json({ error: error.message || 'Erro ao iniciar autorização do Strava' });
+    return res.status(500).json({ error: 'Não foi possível iniciar a conexão com o Strava.' });
   }
 });
 
@@ -327,7 +327,7 @@ router.post('/sync', requireUserAuth, async (req: any, res: any) => {
       });
     }
     console.error('[Strava POST /sync Error]:', error);
-    return res.status(500).json({ error: error.message || 'Erro ao sincronizar atividades do Strava' });
+    return res.status(500).json({ error: 'Não foi possível sincronizar as atividades do Strava.' });
   }
 });
 
@@ -340,7 +340,7 @@ router.post('/disconnect', requireUserAuth, async (req: any, res: any) => {
     return res.json({ success: true });
   } catch (error: any) {
     console.error('[Strava POST /disconnect Error]:', error);
-    return res.status(500).json({ error: error.message || 'Erro ao desconectar Strava' });
+    return res.status(500).json({ error: 'Não foi possível desconectar o Strava.' });
   }
 });
 
@@ -353,7 +353,7 @@ router.post('/refresh', requireUserAuth, async (req: any, res: any) => {
     return res.json({ success: true, refreshed: !!accessToken });
   } catch (err: any) {
     console.error('[Strava POST /refresh Error]:', err);
-    return res.status(500).json({ error: err.message || 'Failed to refresh token' });
+    return res.status(500).json({ error: 'Não foi possível atualizar a conexão com o Strava.' });
   }
 });
 

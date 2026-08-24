@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Star, Trophy, ArrowUpRight, Award, Zap, History, ChevronRight } from 'lucide-react';
+import { History, ChevronRight } from 'lucide-react';
 import { getXPProgress, getLevelTitle, getBarbellWeight } from '../lib/levelUtils';
-import { cn } from '../lib/utils';
 import { UserProfile } from '../types';
-import { LevelUpOverlay } from './LevelUpOverlay';
 
 interface PremiumLevelCardProps {
   user: UserProfile;
@@ -12,58 +10,16 @@ interface PremiumLevelCardProps {
 
 export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [showTestLevelUp, setShowTestLevelUp] = useState(false);
-  const userXP = user.xp || 0;
-  const progressSnap = getXPProgress(userXP);
-  const rankTitle = getLevelTitle(progressSnap.currentLevel);
+  const hasServerXP = typeof user.xp === 'number' && Number.isFinite(user.xp) && user.xp >= 0;
+  const progressSnap = getXPProgress(hasServerXP ? user.xp : 0);
+  const rankTitle = hasServerXP ? getLevelTitle(progressSnap.currentLevel) : 'AGUARDANDO DADOS';
 
   // Formatted numbers for presentation
-  const currentXP = userXP;
+  const currentXP = hasServerXP ? user.xp : null;
   const xpInCurrentLevel = progressSnap.xpInCurrentLevel;
   const xpNeededForNextLevel = progressSnap.xpNeededForNextLevel;
   const nextLevel = progressSnap.nextLevel;
   const percentage = progressSnap.percentage;
-
-  // Generate mock-authentic recent XP history logs to keep it elegant and realistic
-  const generateRecentLogs = () => {
-    const logs = [];
-    let tempScore = currentXP;
-    
-    // Day milestones
-    const date = new Date();
-    
-    if (user.streak > 0) {
-      logs.push({
-        id: 'streak',
-        action: 'Consistência Diária',
-        xp: 50,
-        time: 'Hoje',
-        icon: '🔥'
-      });
-    }
-
-    if (user.totalWorkouts && user.totalWorkouts > 0) {
-      logs.push({
-        id: 'workout',
-        action: 'Treino Validado IA',
-        xp: 150,
-        time: 'Ontem',
-        icon: '💪'
-      });
-    }
-
-    logs.push({
-      id: 'welcome',
-      action: 'Cadastro Ativo Elite',
-      xp: 250,
-      time: 'Inscrição',
-      icon: '🏆'
-    });
-
-    return logs;
-  };
-
-  const logs = generateRecentLogs();
 
   return (
     <>
@@ -85,10 +41,9 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
               <span className="text-sm font-black uppercase text-primary italic font-headline tracking-tighter">
                 {rankTitle}
               </span>
-              <span className="w-1 h-1 bg-white/20 rounded-full" />
-              <span className="text-[10px] font-bold text-on-surface-variant uppercase">
+              {hasServerXP && <><span className="w-1 h-1 bg-white/20 rounded-full" /><span className="text-[10px] font-bold text-on-surface-variant uppercase">
                 {getBarbellWeight(progressSnap.currentLevel)} KG
-              </span>
+              </span></>}
             </div>
           </div>
           
@@ -101,7 +56,7 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
               <div className="w-full h-full bg-black/90 rounded-[11px] flex flex-col justify-center items-center">
                 <span className="text-[7px] text-primary font-black uppercase leading-none tracking-widest -mb-0.5">LVL</span>
                 <span className="text-xl font-bold italic font-headline text-white leading-none">
-                  {progressSnap.currentLevel}
+                  {hasServerXP ? progressSnap.currentLevel : '—'}
                 </span>
               </div>
             </motion.div>
@@ -117,7 +72,7 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
             <motion.div 
               className="h-full bg-gradient-to-r from-primary to-amber-400 rounded-full relative shadow-[0_0_8px_rgba(255,204,0,0.4)]"
               initial={{ width: 0 }}
-              animate={{ width: `${percentage}%` }}
+              animate={{ width: hasServerXP ? `${percentage}%` : '0%' }}
               transition={{ duration: 1.2, ease: "easeOut" }}
             >
               <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.2)_50%,transparent_100%)] w-2/3 h-full animate-[shimmer_2s_infinite]" />
@@ -125,10 +80,10 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
           </div>
 
           <div className="flex justify-between items-center text-[9px] font-black uppercase text-on-surface-variant/80">
-            <span>{xpInCurrentLevel} / {xpNeededForNextLevel} XP</span>
-            <span className="text-primary tracking-tight font-extrabold flex items-center gap-0.5">
+            <span>{hasServerXP ? `${xpInCurrentLevel} / ${xpNeededForNextLevel} XP` : 'XP aguardando sincronização'}</span>
+            {hasServerXP && <span className="text-primary tracking-tight font-extrabold flex items-center gap-0.5">
               PROX {nextLevel} <ChevronRight size={10} className="stroke-2" />
-            </span>
+            </span>}
           </div>
         </div>
       </div>
@@ -173,7 +128,7 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
                   <div className="w-full h-full bg-black/95 rounded-[22px] flex flex-col justify-center items-center">
                     <span className="text-[9px] text-primary font-black uppercase leading-none tracking-[0.2em] mb-1">LEVEL</span>
                     <span className="text-5xl font-black italic font-headline text-white leading-none">
-                      {progressSnap.currentLevel}
+                      {hasServerXP ? progressSnap.currentLevel : '—'}
                     </span>
                   </div>
                   <div className="absolute -bottom-2 bg-gradient-to-r from-primary to-amber-500 text-black px-4 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest whitespace-nowrap shadow-md">
@@ -182,11 +137,11 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
                 </div>
 
                 <div className="pt-2">
-                  <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
+                  {hasServerXP && <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
                     HALTER ATUAL: {getBarbellWeight(progressSnap.currentLevel)} KG
-                  </p>
+                  </p>}
                   <p className="text-xs text-on-surface-variant font-medium mt-1">
-                    Complete treinos com consistência na academia para aumentar o peso do seu halter e subir no ranking.
+                    {hasServerXP ? 'Seu nível é atualizado apenas após atividades homologadas.' : 'O nível será exibido quando o servidor disponibilizar o histórico de XP validado.'}
                   </p>
                 </div>
               </div>
@@ -195,7 +150,7 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
               <div className="bg-surface-container-high/60 border border-white/5 rounded-2xl p-4 space-y-3 mb-5">
                 <div className="flex justify-between items-center text-[10px] font-black uppercase text-on-surface-variant">
                   <span>PROGRESSO GERAL</span>
-                  <span className="text-primary">{Math.round(percentage)}%</span>
+                  <span className="text-primary">{hasServerXP ? `${Math.round(percentage)}%` : '—'}</span>
                 </div>
                 
                 {/* Glow Bar */}
@@ -203,7 +158,7 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
                   <motion.div 
                     className="h-full bg-gradient-to-r from-primary to-amber-400 rounded-full relative"
                     initial={{ width: 0 }}
-                    animate={{ width: `${percentage}%` }}
+                    animate={{ width: hasServerXP ? `${percentage}%` : '0%' }}
                     transition={{ duration: 1.2, ease: "easeOut" }}
                   >
                     <div className="absolute inset-0 bg-primary/25 blur-sm" />
@@ -213,11 +168,11 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 text-center">
                   <div>
                     <span className="text-[8px] font-black text-on-surface-variant uppercase block">XP TOTAL</span>
-                    <span className="text-sm font-black italic font-headline text-white">{currentXP.toLocaleString()} XP</span>
+                    <span className="text-sm font-black italic font-headline text-white">{currentXP === null ? '—' : `${currentXP.toLocaleString()} XP`}</span>
                   </div>
                   <div>
-                    <span className="text-[8px] font-black text-on-surface-variant uppercase block">FALTA PARA LVL {nextLevel}</span>
-                    <span className="text-sm font-black italic font-headline text-primary">{(xpNeededForNextLevel - xpInCurrentLevel).toLocaleString()} XP</span>
+                    <span className="text-[8px] font-black text-on-surface-variant uppercase block">{hasServerXP ? `FALTA PARA LVL ${nextLevel}` : 'PRÓXIMO NÍVEL'}</span>
+                    <span className="text-sm font-black italic font-headline text-primary">{hasServerXP ? `${(xpNeededForNextLevel - xpInCurrentLevel).toLocaleString()} XP` : '—'}</span>
                   </div>
                 </div>
               </div>
@@ -229,36 +184,12 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
                   <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">HISTÓRICO RECENTE DE XP</span>
                 </div>
 
-                <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
-                  {logs.map((log) => (
-                    <div key={log.id} className="flex justify-between items-center p-2.5 rounded-xl bg-surface-container-low border border-white/[0.03]">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{log.icon}</span>
-                        <div>
-                          <p className="text-xs font-bold text-white uppercase tracking-tight">{log.action}</p>
-                          <p className="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">{log.time}</p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-black italic font-headline text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-md">
-                        +{log.xp} XP
-                      </span>
-                    </div>
-                  ))}
+                <div className="rounded-xl border border-white/[0.05] bg-surface-container-low p-3 text-xs text-on-surface-variant">
+                  O detalhamento de ganhos de XP será exibido quando estiver disponível no histórico homologado do servidor.
                 </div>
               </div>
 
               <div className="mt-6 flex flex-col gap-2">
-                <button 
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setTimeout(() => setShowTestLevelUp(true), 350);
-                  }}
-                  className="w-full py-4 bg-gradient-to-r from-emerald-500 to-primary text-black rounded-xl text-xs font-black uppercase tracking-widest hover:scale-[1.01] transition-transform active:scale-[0.99] flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10"
-                >
-                  <Sparkles size={12} fill="currentColor" />
-                  <span>SIMULAR LEVEL UP (TESTAR)</span>
-                </button>
-                
                 <button 
                   onClick={() => setIsModalOpen(false)}
                   className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
@@ -271,12 +202,6 @@ export function PremiumLevelCard({ user }: PremiumLevelCardProps) {
         )}
       </AnimatePresence>
 
-      {/* Special Sandbox Level Up Simulation overlay */}
-      <LevelUpOverlay 
-        level={progressSnap.currentLevel + 1} 
-        isOpen={showTestLevelUp} 
-        onClose={() => setShowTestLevelUp(false)} 
-      />
     </>
   );
 }

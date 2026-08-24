@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications, type Token, type PushNotificationSchema, type ActionPerformed } from '@capacitor/push-notifications';
-import { db } from '../firebase';
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { auth } from '../firebase';
+import { API_CONFIG } from '../config';
 
 /**
  * REAL PUSH NOTIFICATION REGISTRATION (Android/iOS notification bar)
@@ -26,14 +26,34 @@ import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
  */
 
 let initialized = false;
+const DEVICE_TOKEN_KEY = 'invictus_push_device_token';
+const currentPushPlatform = () => Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
 
-export async function initPushNotifications(userId: string, onNavigate?: (url: string) => void) {
+async function saveDeviceToken(token: string): Promise<void> {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) throw new Error('Sessão inválida para registrar notificações.');
+
+  const response = await fetch(`${API_CONFIG.baseUrl}/api/profile?action=device-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ token, platform: currentPushPlatform() }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error || 'Não foi possível registrar este dispositivo.');
+  }
+}
+
+export async function initPushNotifications(onNavigate?: (url: string) => void): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) {
     console.log('[Push] Ambiente web/preview - registro de push pulado (apenas apps nativos).');
-    return;
+    return true;
   }
-  if (initialized) return;
-  initialized = true;
+  if (initialized) return true;
 
   try {
     const permStatus = await PushNotifications.checkPermissions();
@@ -41,18 +61,17 @@ export async function initPushNotifications(userId: string, onNavigate?: (url: s
       const req = await PushNotifications.requestPermissions();
       if (req.receive !== 'granted') {
         console.warn('[Push] Permissão de notificações negada pelo usuário.');
-        return;
+        return false;
       }
     }
 
     await PushNotifications.addListener('registration', async (token: Token) => {
       console.log('[Push] Dispositivo registrado, token FCM obtido.');
       try {
-        await updateDoc(doc(db, 'users', userId), {
-          fcmTokens: arrayUnion(token.value),
-        });
+        await saveDeviceToken(token.value);
+        localStorage.setItem(DEVICE_TOKEN_KEY, token.value);
       } catch (err) {
-        console.error('[Push] Falha ao salvar token FCM no Firestore:', err);
+        console.error('[Push] Falha ao salvar token de push no servidor:', err);
       }
     });
 
@@ -72,7 +91,42 @@ export async function initPushNotifications(userId: string, onNavigate?: (url: s
     });
 
     await PushNotifications.register();
+    initialized = true;
+    return true;
   } catch (err) {
     console.error('[Push] Falha ao inicializar push notifications:', err);
+    return false;
   }
+}
+
+/**
+ * Desativa a inscrição deste aparelho no servidor. A preferência visual nunca
+ * deve dizer "desativada" enquanto o token ainda está apto a receber push.
+ */
+export async function disablePushNotifications(): Promise<void> {
+  const token = localStorage.getItem(DEVICE_TOKEN_KEY);
+  if (token) {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) throw new Error('Sessão inválida para desativar notificações.');
+
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/profile?action=remove-device-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ token, platform: currentPushPlatform() }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'Não foi possível remover este dispositivo.');
+    }
+    localStorage.removeItem(DEVICE_TOKEN_KEY);
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    await PushNotifications.removeAllListeners();
+  }
+  initialized = false;
 }

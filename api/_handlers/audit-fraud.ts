@@ -1,20 +1,32 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { db } from '../_lib/common.js';
-
+import { timingSafeEqual } from 'crypto';
+import { cors, db } from '../_lib/common.js';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (cors(req, res)) return;
+  // Vercel Cron dispara GET com Authorization: Bearer <CRON_SECRET>; POST é
+  // aceito para execução manual autenticada.
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ success: false, message: 'Método não permitido.' });
+  }
+
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
-    return res.status(401).json({ success: false, message: 'CRON_SECRET not configured on server' });
+    console.error('[FRAUD_AUDIT] CRON_SECRET não configurado; auditoria recusada.');
+    return res.status(503).json({ success: false, message: 'Serviço temporariamente indisponível.' });
   }
 
   const authHeader = req.headers['authorization'];
   const customSecretHeader = req.headers['x-cron-secret'];
-  const providedSecret = authHeader?.startsWith('Bearer ') 
-    ? authHeader.slice(7).trim() 
-    : ((customSecretHeader as string) || (authHeader as string) || '').trim();
+  const rawAuthorization = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  const rawCustomSecret = Array.isArray(customSecretHeader) ? customSecretHeader[0] : customSecretHeader;
+  const providedSecret = rawAuthorization?.startsWith('Bearer ')
+    ? rawAuthorization.slice(7).trim()
+    : (rawCustomSecret || rawAuthorization || '').trim();
 
-  if (!providedSecret || providedSecret !== cronSecret) {
-    return res.status(401).json({ success: false, message: 'Unauthorized: Invalid or missing secret header' });
+  const secretMatches = providedSecret.length === cronSecret.length
+    && timingSafeEqual(Buffer.from(providedSecret), Buffer.from(cronSecret));
+  if (!secretMatches) {
+    return res.status(401).json({ success: false, message: 'Não autorizado.' });
   }
 
   try {
@@ -66,8 +78,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: any) {
     console.error('[FRAUD_AUDIT] Error running periodic audit:', error);
-    return res.status(500).json({ success: false, message: error?.message || 'Internal error' });
+    return res.status(500).json({ success: false, message: 'Erro interno ao executar auditoria.' });
   }
 }
-
-                                                                                                                                  

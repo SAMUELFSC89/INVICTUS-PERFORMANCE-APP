@@ -1,119 +1,95 @@
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { PushNotifications } from '@capacitor/push-notifications';
+import { AppleHealthProvider } from '../services/wearables/AppleHealthProvider';
 import { HealthConnectProvider } from '../services/wearables/HealthConnectProvider';
 
+export type PermissionState = 'granted' | 'denied' | 'prompt';
+
 export interface PermissionStatusSummary {
-  location: 'granted' | 'denied' | 'prompt';
-  healthConnect: 'granted' | 'denied' | 'prompt';
-  notifications: 'granted' | 'denied' | 'prompt';
+  location: PermissionState;
+  health: PermissionState;
+  notifications: PermissionState;
   isNative: boolean;
-  allGranted: boolean;
 }
 
-const healthProvider = new HealthConnectProvider();
+function healthProvider() {
+  return Capacitor.getPlatform() === 'ios'
+    ? new AppleHealthProvider()
+    : new HealthConnectProvider();
+}
 
-/**
- * Check state of core permissions on native Android APK / iOS / Web
- */
-export async function checkAllNativePermissions(): Promise<PermissionStatusSummary> {
-  const isNative = Capacitor.isNativePlatform();
-
-  if (!isNative) {
-    // In browser preview, return mock granted state so web dev is smooth
-    return {
-      location: 'granted',
-      healthConnect: 'granted',
-      notifications: 'granted',
-      isNative: false,
-      allGranted: true,
-    };
-  }
-
-  let locationStatus: 'granted' | 'denied' | 'prompt' = 'prompt';
-  let healthConnectStatus: 'granted' | 'denied' | 'prompt' = 'prompt';
-  let notificationStatus: 'granted' | 'denied' | 'prompt' = 'prompt';
-
-  // 1. Geolocation check
-  try {
-    const geo = await Geolocation.checkPermissions();
-    if (geo.location === 'granted' || geo.coarseLocation === 'granted') {
-      locationStatus = 'granted';
-    } else if (geo.location === 'denied' && geo.coarseLocation === 'denied') {
-      locationStatus = 'denied';
-    } else {
-      locationStatus = 'prompt';
-    }
-  } catch (err) {
-    console.warn('[Permissions] Failed checking location status:', err);
-  }
-
-  // 2. Health Connect check
-  try {
-    const isHCConnected = await healthProvider.isConnected();
-    healthConnectStatus = isHCConnected ? 'granted' : 'prompt';
-  } catch (err) {
-    console.warn('[Permissions] Failed checking Health Connect status:', err);
-  }
-
-  // 3. Push Notifications check
-  try {
-    const notif = await PushNotifications.checkPermissions();
-    if (notif.receive === 'granted') {
-      notificationStatus = 'granted';
-    } else if (notif.receive === 'denied') {
-      notificationStatus = 'denied';
-    } else {
-      notificationStatus = 'prompt';
-    }
-  } catch (err) {
-    console.warn('[Permissions] Failed checking Push Notifications status:', err);
-  }
-
-  const allGranted = locationStatus === 'granted' && healthConnectStatus === 'granted';
-
-  return {
-    location: locationStatus,
-    healthConnect: healthConnectStatus,
-    notifications: notificationStatus,
-    isNative,
-    allGranted,
-  };
+function normalizeNativePermission(value: string | undefined): PermissionState {
+  if (value === 'granted') return 'granted';
+  if (value === 'denied') return 'denied';
+  return 'prompt';
 }
 
 /**
- * Sequentially trigger native OS permission dialogs for Location, Health Connect & Notifications
+ * Consulta permissões sem abrir qualquer diálogo do sistema. Em navegadores
+ * não há equivalência para HealthKit/Health Connect, por isso não fingimos que
+ * elas estão liberadas: a interface deve mostrar dados apenas quando existirem.
  */
-export async function requestAllNativePermissions(): Promise<PermissionStatusSummary> {
-  console.log('[NativePermissions] Triggering full native permissions request flow...');
-
+export async function checkNativePermissions(): Promise<PermissionStatusSummary> {
   if (!Capacitor.isNativePlatform()) {
-    return checkAllNativePermissions();
+    return { location: 'prompt', health: 'prompt', notifications: 'prompt', isNative: false };
   }
 
-  // 1. Request Geolocation (Fine & Coarse)
+  let location: PermissionState = 'prompt';
+  let health: PermissionState = 'prompt';
+  let notifications: PermissionState = 'prompt';
+
   try {
-    console.log('[NativePermissions] Step 1: Requesting Geolocation...');
-    await Geolocation.requestPermissions();
-  } catch (err) {
-    console.error('[NativePermissions] Error requesting geolocation:', err);
+    const status = await Geolocation.checkPermissions();
+    if (status.location === 'granted' || status.coarseLocation === 'granted') location = 'granted';
+    else if (status.location === 'denied' && status.coarseLocation === 'denied') location = 'denied';
+  } catch (error) {
+    console.warn('[Permissions] Não foi possível consultar localização:', error);
   }
 
-  // 2. Request Health Connect (HeartRate, Steps, Distance, Calories, Exercise)
   try {
-    console.log('[NativePermissions] Step 2: Requesting Health Connect permissions...');
-    await healthProvider.requestPermissions();
-  } catch (err) {
-    console.error('[NativePermissions] Error requesting Health Connect:', err);
+    health = (await healthProvider().isConnected()) ? 'granted' : 'prompt';
+  } catch (error) {
+    console.warn('[Permissions] Não foi possível consultar integração de saúde:', error);
   }
 
-  // 3. Request Push Notifications
   try {
-    console.log('[NativePermissions] Step 3: Requesting Push Notifications...');
-    await PushNotifications.requestPermissions();
-  } catch (err) {
-    console.error('[NativePermissions] Error requesting push notifications:', err);
+    notifications = normalizeNativePermission((await PushNotifications.checkPermissions()).receive);
+  } catch (error) {
+    console.warn('[Permissions] Não foi possível consultar notificações:', error);
   }
 
-  return checkAllNativePermissions();
+  return { location, health, notifications, isNative: true };
+}
+
+/** Solicita GPS somente quando uma tela que usa localização a chama. */
+export async function requestNativeLocationPermission(): Promise<PermissionState> {
+  if (!Capacitor.isNativePlatform()) return 'prompt';
+  try {
+    const status = await Geolocation.requestPermissions();
+    return status.location === 'granted' || status.coarseLocation === 'granted'
+      ? 'granted'
+      : normalizeNativePermission(status.location);
+  } catch (error) {
+    console.warn('[Permissions] Não foi possível solicitar localização:', error);
+    return 'denied';
+  }
+}
+
+/** Solicita HealthKit no iOS ou Health Connect no Android após o toque em conectar. */
+export async function requestNativeHealthPermission(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  return healthProvider().requestPermissions();
+}
+
+/** Solicita notificações somente após o usuário optar por ativá-las. */
+export async function requestNativeNotificationPermission(): Promise<PermissionState> {
+  if (!Capacitor.isNativePlatform()) return 'prompt';
+  try {
+    const status = await PushNotifications.requestPermissions();
+    return normalizeNativePermission(status.receive);
+  } catch (error) {
+    console.warn('[Permissions] Não foi possível solicitar notificações:', error);
+    return 'denied';
+  }
 }

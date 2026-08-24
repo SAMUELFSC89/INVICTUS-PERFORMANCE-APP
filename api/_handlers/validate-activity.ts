@@ -9,6 +9,7 @@ import { AuditRepository } from '../_repositories/audit-repository.js';
 import { NotificationService } from '../_services/notification-service.js';
 import { ValidateActivityService } from '../_services/activities/validate-activity-service.js';
 import { GoogleGenAI, Type } from "@google/genai";
+import { db } from '../_lib/common.js';
 
 // Instanciar repositórios e serviços (Injeção de Dependência)
 const activityRepository = new ActivityRepository();
@@ -25,6 +26,82 @@ const validateActivityService = new ValidateActivityService(
 
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const POWER_EXERCISES = new Set(['supino', 'agachamento', 'terra']);
+const MAX_POWER_FRAMES = 3;
+const MAX_POWER_FRAME_BASE64_LENGTH = 1_500_000;
+
+type PowerDecision = 'approved' | 'manual_review' | 'rejected';
+
+function cleanPowerMotives(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().slice(0, 300))
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+/**
+ * A validação de frames e o posterior upload do vídeo são etapas distintas no
+ * cliente. Esta sessão, emitida apenas pelo backend, liga as duas etapas para
+ * que /api/powerlift nunca aceite uma decisão/score forjado pelo dispositivo.
+ */
+async function createPowerValidationSession(input: {
+  userId: string;
+  exercise: 'supino' | 'agachamento' | 'terra';
+  weight: number;
+  decision: PowerDecision;
+  confidence: number;
+  analysis: string;
+  motives: string[];
+  estimatedWeight: number;
+}): Promise<string> {
+  const ref = db.collection('power_validation_sessions').doc();
+  const now = new Date();
+  await ref.create({
+    ...input,
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
+    source: 'server_gemini_frames_v1'
+  });
+  return ref.id;
+}
+
+async function powerValidationResponse(input: {
+  userId: string;
+  exercise: 'supino' | 'agachamento' | 'terra';
+  weight: number;
+  decision: PowerDecision;
+  confidence: number;
+  estimatedWeight: number;
+  motives: string[];
+  analysis: string;
+}) {
+  let finalDecision = input.decision;
+  let validationId: string | undefined;
+  try {
+    validationId = await createPowerValidationSession(input);
+  } catch (error: any) {
+    // Sem uma sessão imutável, o PowerLift não pode aplicar o resultado de IA
+    // à gravação posterior. Em vez de aprovar no escuro, rebaixa a revisão.
+    console.error('[validate-activity] Não foi possível emitir sessão PowerLift:', error?.message || 'erro desconhecido');
+    finalDecision = 'manual_review';
+  }
+
+  const isValid = finalDecision === 'approved';
+  const isManualReview = finalDecision === 'manual_review';
+  return {
+    success: true,
+    isValid,
+    isManualReview,
+    auditResult: isValid ? 'VALIDADO' : isManualReview ? 'AUDITORIA_MANUAL' : 'REPROVADO',
+    confidence: input.confidence,
+    estimatedWeight: input.estimatedWeight,
+    motivos: input.motives,
+    analysis: input.analysis,
+    ...(validationId ? { validationId } : {})
+  };
+}
 
 export default async function handler(req: VercelRequest & { userId?: string }, res: VercelResponse) {
   try {
@@ -38,100 +115,120 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
     const activityData = req.body.activityData || req.body;
     const type = payload.type || activityData?.type;
 
-    // Handling Power Video Validation with Gemini AI
+    // PowerLift nunca cai no fluxo genérico de treino/XP. A decisão é criada
+    // e persistida pelo servidor e depois consumida por /api/powerlift.
     if (type === 'power_video') {
-      const { exercise, exerciseName, weight, weightKg, reps, photoBase64, framesBase64 } = payload;
-      const exName = exercise || exerciseName || 'Power Lift';
-      const declaredWeight = weight || weightKg || 0;
+      const exercise = typeof payload.exercise === 'string' ? payload.exercise.trim() : '';
+      const declaredWeight = Math.round(Number(payload.weight ?? payload.weightKg) * 100) / 100;
+      const repetitions = Math.floor(Number(payload.reps) || 1);
+      if (!POWER_EXERCISES.has(exercise) || !Number.isFinite(declaredWeight) || declaredWeight < 2.5 || declaredWeight > 1000 || repetitions < 1 || repetitions > 20) {
+        return res.status(400).json({ error: 'Dados do levantamento Power Lift inválidos.' });
+      }
 
-      const frames: string[] = Array.isArray(framesBase64) && framesBase64.length > 0
-        ? framesBase64
-        : photoBase64 ? [photoBase64] : [];
+      const rawFrames = Array.isArray(payload.framesBase64) && payload.framesBase64.length > 0
+        ? payload.framesBase64
+        : payload.photoBase64 ? [payload.photoBase64] : [];
+      const frames = rawFrames
+        .filter((frame: unknown): frame is string => typeof frame === 'string')
+        .slice(0, MAX_POWER_FRAMES);
+      if (frames.some((frame) => frame.length > MAX_POWER_FRAME_BASE64_LENGTH)) {
+        return res.status(413).json({ error: 'Os frames de auditoria excedem o tamanho permitido.' });
+      }
 
-      if (ai && frames.length > 0) {
-        try {
-          const imageParts = frames.map(f => {
-            const cleanBase64 = f.replace(/^data:image\/\w+;base64,/, '');
-            return {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: 'image/jpeg'
-              }
-            };
-          });
+      const manual = (reason: string) => powerValidationResponse({
+        userId: req.userId!,
+        exercise: exercise as 'supino' | 'agachamento' | 'terra',
+        weight: declaredWeight,
+        decision: 'manual_review',
+        confidence: 0,
+        estimatedWeight: declaredWeight,
+        motives: [reason],
+        analysis: 'Vídeo encaminhado para auditoria manual. A homologação só ocorre após a validação segura.'
+      });
 
-          const promptText = `# AUDITORIA TÉCNICA OFICIAL POWER LIFT INVICTUS IA
+      if (!ai || frames.length === 0) {
+        return res.status(200).json(await manual('Não foi possível concluir a auditoria automática do vídeo.'));
+      }
+
+      try {
+        const imageParts = frames.map((frame) => ({
+          inlineData: {
+            data: frame.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, ''),
+            mimeType: 'image/jpeg'
+          }
+        }));
+
+        const exerciseName = exercise === 'supino' ? 'Supino reto' : exercise === 'agachamento' ? 'Agachamento livre' : 'Levantamento terra';
+        const promptText = `# AUDITORIA TÉCNICA OFICIAL POWER LIFT INVICTUS IA
 
 Você é o auditor biomecânico e antifraude oficial do Invictus Power Lift.
-Valide a submissão de vídeo de levantamento de força conforme os dados declarados e as REGRAS MANDATÓRIAS abaixo.
+Analise os frames de um vídeo de levantamento. O resultado é apenas uma etapa; a homologação final também exige o vídeo do próprio atleta no armazenamento seguro.
 
 DADOS DECLARADOS:
-- Exercício Declarado: ${exName}
-- Carga Declarada: ${declaredWeight} kg
-- Repetições: ${reps || 1}
+- Exercício: ${exerciseName}
+- Carga: ${declaredWeight} kg
+- Repetições: ${repetitions}
 
---------------------------------------------------
-REGRAS OBRIGATÓRIAS DE VALIDAÇÃO (POWER LIFT)
---------------------------------------------------
-1. EXIBIÇÃO DA PRIMEIRA ANILHA NO INÍCIO DO VÍDEO:
-O vídeo DEVE obrigatoriamente abrir/iniciar mostrando claramente o peso gravado/impresso na primeira anilha (ex: "20kg", "15kg", "25kg", "45lb").
-2. MÚLTIPLAS ANILHAS:
-Se houver mais de uma anilha de cada lado da barra, exige-se apenas a exibição nítida da marcação da primeira anilha no início. No entanto, o atleta DEVE informar (falado no áudio do vídeo ou por texto sobreposto na tela) o valor total combinado das demais anilhas.
-3. CONTINUIDADE SEM CORTES OU EDIÇÕES:
-O vídeo deve ser 100% contínuo desde a exibição inicial do peso na primeira anilha até a conclusão total do levantamento (lockout), sem cortes, edições, acelerações, pausas ou transições de câmera.
-4. AMBIENTE E BIOMECÂNICA:
-Ambiente de academia real. Exercício correto (${exName}) com amplitude técnica completa (Supino: barra toca peito + lockout; Agachamento: quadril abaixo do joelho + lockout; Terra: extensão completa de joelhos e quadril no topo).
-5. ANTIFRAUDE:
-Qualquer suspeita de vídeo editado, gravação de tela, deepfake ou ausência da exibição inicial do peso da anilha deve resultar em REPROVADO ou AUDITORIA_MANUAL.
+REGRAS:
+1. A primeira anilha e a carga precisam estar visíveis no início.
+2. O movimento precisa ser contínuo, sem cortes, edições ou gravação de tela.
+3. O ambiente deve ser uma academia real; a técnica precisa ter amplitude completa.
+4. Suspeita de edição, deepfake, peso incompatível ou imagem insuficiente deve resultar em AUDITORIA_MANUAL ou REPROVADO.
 
-Retorne estritamente o JSON com a avaliação.`;
+Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isValid, confidence (0-100), estimatedWeight, motivos e analysis.`;
 
-          const response = await ai.models.generateContent({
-            model: 'gemini-3.6-flash',
-            contents: [promptText, ...imageParts],
-            config: {
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  status: { type: Type.STRING },
-                  isValid: { type: Type.BOOLEAN },
-                  confidence: { type: Type.NUMBER },
-                  exercise: { type: Type.STRING },
-                  estimatedWeight: { type: Type.NUMBER },
-                  motivos: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                  },
-                  analysis: { type: Type.STRING }
-                }
-              },
-              temperature: 0.1
-            }
-          });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: [promptText, ...imageParts],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                status: { type: Type.STRING },
+                isValid: { type: Type.BOOLEAN },
+                confidence: { type: Type.NUMBER },
+                estimatedWeight: { type: Type.NUMBER },
+                motivos: { type: Type.ARRAY, items: { type: Type.STRING } },
+                analysis: { type: Type.STRING }
+              }
+            },
+            temperature: 0.1
+          }
+        });
 
-          const parsed = JSON.parse(response.text || '{}');
-          const confidence = parsed.confidence || 0;
-          const statusStr = (parsed.status || '').toUpperCase();
-          const isValid = statusStr === 'VALIDADO' || (parsed.isValid === true && confidence >= 95);
-          const isManualReview = statusStr === 'AUDITORIA_MANUAL' || (!isValid && confidence >= 80);
+        const parsed = JSON.parse(response.text || '{}');
+        const confidence = Math.max(0, Math.min(100, Number(parsed.confidence) || 0));
+        const estimatedWeightRaw = Number(parsed.estimatedWeight);
+        const estimatedWeight = Number.isFinite(estimatedWeightRaw) && estimatedWeightRaw > 0
+          ? Math.round(estimatedWeightRaw * 100) / 100
+          : declaredWeight;
+        const status = String(parsed.status || '').toUpperCase();
+        const motives = cleanPowerMotives(parsed.motivos);
+        const analysis = typeof parsed.analysis === 'string'
+          ? parsed.analysis.trim().slice(0, 2000)
+          : 'Auditoria automática concluída.';
+        const weightConsistent = Math.abs(estimatedWeight - declaredWeight) <= Math.max(5, declaredWeight * 0.10);
+        const approved = parsed.isValid === true && status !== 'REPROVADO' && status !== 'AUDITORIA_MANUAL' && confidence >= 95 && weightConsistent;
+        const decision: PowerDecision = approved
+          ? 'approved'
+          : status === 'REPROVADO' || (!weightConsistent && confidence < 80)
+            ? 'rejected'
+            : 'manual_review';
 
-          const auditResult = isValid ? 'VALIDADO' : isManualReview ? 'AUDITORIA_MANUAL' : 'REPROVADO';
-          const motivos = parsed.motivos || [parsed.analysis || 'Validação concluída.'];
-
-          return res.status(200).json({
-            success: true,
-            isValid,
-            isManualReview,
-            auditResult,
-            confidence,
-            estimatedWeight: parsed.estimatedWeight || declaredWeight,
-            motivos,
-            analysis: parsed.analysis || `STATUS: ${auditResult}\nCONFIANÇA: ${confidence}%`
-          });
-        } catch (gemErr: any) {
-          console.warn('[validate-activity] Power video Gemini audit warning:', gemErr?.message);
-        }
+        return res.status(200).json(await powerValidationResponse({
+          userId: req.userId!,
+          exercise: exercise as 'supino' | 'agachamento' | 'terra',
+          weight: declaredWeight,
+          decision,
+          confidence,
+          estimatedWeight,
+          motives: motives.length ? motives : [analysis],
+          analysis
+        }));
+      } catch (gemErr: any) {
+        console.warn('[validate-activity] Power video Gemini audit warning:', gemErr?.message || 'erro desconhecido');
+        return res.status(200).json(await manual('A auditoria automática falhou; o vídeo seguirá para revisão manual.'));
       }
     }
 

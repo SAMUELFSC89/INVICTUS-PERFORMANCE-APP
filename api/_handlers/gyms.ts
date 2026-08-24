@@ -1,7 +1,7 @@
 import { cors, verifyAuth } from '../_lib/common.js';
 import NodeCache from 'node-cache';
 
-const cache = new NodeCache({ stdTTL: 1800 }); // 30 minutes cache for gyms
+const cache = new NodeCache({ stdTTL: 1800, maxKeys: 2000, useClones: false }); // 30 minutes cache for gyms
 
 export default async function handler(req: any, res: any) {
   const requestId = Math.random().toString(36).substring(7);
@@ -14,15 +14,18 @@ export default async function handler(req: any, res: any) {
   try {
     const latStr = req.query.lat as string;
     const lngStr = req.query.lng as string;
-    const q = req.query.q as string;
-    const neighborhood = req.query.neighborhood as string;
-    const city = req.query.city as string;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const neighborhood = typeof req.query.neighborhood === 'string' ? req.query.neighborhood.trim() : '';
+    const city = typeof req.query.city === 'string' ? req.query.city.trim() : '';
 
     const lat = parseFloat(latStr);
     const lng = parseFloat(lngStr);
 
-    if (isNaN(lat) || isNaN(lng)) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       return res.status(400).json({ error: 'Latitude e longitude são obrigatórios' });
+    }
+    if (q.length > 128 || neighborhood.length > 128 || city.length > 128) {
+      return res.status(400).json({ error: 'Termo de busca inválido.' });
     }
 
     // Cache key based on coordinates (rounded to 3 decimal places ~110m accuracy)
@@ -39,7 +42,8 @@ export default async function handler(req: any, res: any) {
 
     const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'API key não configurada.' });
+      console.error('[GymAPI] Google Places não configurada no ambiente.');
+      return res.status(503).json({ error: 'A busca de academias está indisponível no momento.' });
     }
 
     // Helpers for Legacy Google Places API
@@ -55,22 +59,20 @@ export default async function handler(req: any, res: any) {
         const response = await fetch(url.toString());
         
         if (!response.ok) {
-          const text = await response.text().catch(() => 'no body');
-          console.error(`[GymAPI][${requestId}][${requestId_f}] HTTP ERROR:`, response.status, text);
-          return [];
+          console.error(`[GymAPI][${requestId}][${requestId_f}] HTTP ERROR:`, response.status);
+          return { error: true, status: `HTTP_${response.status}` };
         }
 
         const data: any = await response.json();
         
         if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-          console.error(`[GymAPI][${requestId}][${requestId_f}] GOOGLE API STATUS ERROR:`, data.status, data.error_message || 'No error message');
+          console.error(`[GymAPI][${requestId}][${requestId_f}] GOOGLE API STATUS ERROR:`, data.status);
           
           if (data.status === 'REQUEST_DENIED') {
             const isBillingError = data.error_message?.toLowerCase().includes('billing');
             return { 
               error: true, 
               status: data.status, 
-              message: data.error_message,
               isBillingError 
             };
           }
@@ -80,8 +82,8 @@ export default async function handler(req: any, res: any) {
         
         return data.results || [];
       } catch (err: any) {
-        console.error(`[GymAPI][${requestId}][${requestId_f}] FETCH EXCEPTION:`, err.message);
-        return [];
+        console.error(`[GymAPI][${requestId}][${requestId_f}] FETCH EXCEPTION:`, err?.message || 'erro desconhecido');
+        return { error: true, status: 'NETWORK_ERROR' };
       }
     };
 
@@ -111,7 +113,7 @@ export default async function handler(req: any, res: any) {
           if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             if (data.error) {
-              return { error: true, status: 'V1_ERROR', message: data.error.message };
+              return { error: true, status: 'V1_ERROR' };
             }
             return null;
           }
@@ -226,43 +228,10 @@ export default async function handler(req: any, res: any) {
 
     if (resultGyms && (resultGyms as any).error) {
       const err = resultGyms as any;
-      console.warn(`[GymAPI] Google API failed with error: ${err.message}. Providing robust local mock gyms fallback for uninterrupted testing.`);
-      
-      const mockNames = [
-        "Invictus Prime Unidade Centro",
-        "Invictus Club Unidade Jardins",
-        "Academia Smart Fit - Proximidade",
-        "Bluefit Academia Unidade Real",
-        "Invictus Arena & Fitness"
-      ];
-      
-      const fallbackGyms = mockNames.map((name, idx) => {
-        const offsetLat = lat + (idx % 2 === 0 ? 0.0003 : -0.0003) * (idx + 1);
-        const offsetLng = lng + (idx % 2 === 1 ? 0.0003 : -0.0003) * (idx + 1);
-        const distance = calculateDistance({ lat, lng }, { lat: offsetLat, lng: offsetLng });
-        
-        return {
-          id: `mock_gym_${idx + 1}_${roundedLat.replace('.', '')}`,
-          name,
-          address: `Rua do Esporte Real, ${100 * (idx + 1)}, Bairro Fitness - Fallback`,
-          lat: offsetLat,
-          lng: offsetLng,
-          rating: 4.8,
-          photoUrl: null,
-          distance,
-          score: distance
-        };
-      });
-      
-      return res.status(200).json({
-        success: true,
-        count: fallbackGyms.length,
-        gyms: fallbackGyms,
-        isDemoFallback: true,
-        originalError: err.message,
-        tip: err.isBillingError 
-          ? 'Modo de simulação ativo: Sua conta do Google Cloud precisa de faturamento ativo. Ative em: https://console.cloud.google.com/billing' 
-          : 'Modo de simulação ativo: Verifique se a Places API está ativada no seu console do Google Cloud.'
+      console.warn(`[GymAPI] Google API indisponível (${err.status || 'erro desconhecido'}). Nenhum dado simulado será retornado.`);
+      return res.status(502).json({
+        success: false,
+        error: 'Não foi possível consultar academias agora. Tente novamente em instantes.'
       });
     }
 
@@ -318,7 +287,13 @@ export default async function handler(req: any, res: any) {
       requestId
     };
 
-    cache.set(cacheKey, finalResult);
+    try {
+      cache.set(cacheKey, finalResult);
+    } catch (cacheError: any) {
+      // Cache cheio não pode transformar uma resposta real em erro para o
+      // atleta; simplesmente entregue o resultado e deixe o TTL liberar espaço.
+      console.warn('[GymAPI] Cache não atualizado:', cacheError?.code || cacheError?.message || 'erro desconhecido');
+    }
     return res.status(200).json(finalResult);
 
   } catch (error) {

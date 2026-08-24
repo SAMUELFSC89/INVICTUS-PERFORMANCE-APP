@@ -21,7 +21,7 @@ O operador e controlador do processamento de dados sob esta política é a equip
 - **Finalidade:** Criar a conta de acesso, estruturar suas credenciais de perfil competitivo individual nos Rankings semanais, garantir consistência fiscal perante a legislação brasileira nas premiações esportivas, efetuar saques legítimos e autenticar a titularidade eletrônica da conta.
 
 ### 2.2 Dados de Geolocalização (Posicionamento via GPS)
-- **Quais dados:** Coordenadas espaciais georreferenciadas (latitude, longitude, precisão std_dev, rumo e velocidade instantânea coletados em segundo plano quando a atividade física de cardio está em andamento).
+- **Quais dados:** Coordenadas espaciais georreferenciadas (latitude, longitude, precisão std_dev, rumo e velocidade instantânea coletados enquanto uma atividade de cardio ao ar livre está sendo registrada com o aplicativo em uso).
 - **Finalidade:** Auditar e certificar que o trajeto físico cadastrado pelo atleta representa uma corrida de deslocamento biomecanicamente real. Estes dados alimentam nosso gerador de assinatura de rota (route fingerprint) a fim de impedir táticas de "replay" (duplicidade histórica de trajetos sincronizados) e prevenir Spoofing.
 - **Reter e Excluir:** Não mantemos coordenadas estritas completas indefinidamente em nossos bancos de dados para preservar a privacidade geográfica do atleta doméstico. Após a validação final da atividade e do desafio esportivo associado, as coordenadas cruas do trajeto são convertidas em dados agregados e deletadas dos servidores principais, retendo-se apenas o resumo estatístico das distâncias obtidas.
 

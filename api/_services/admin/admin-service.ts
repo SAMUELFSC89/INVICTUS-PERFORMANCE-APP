@@ -102,7 +102,10 @@ export class AdminService {
     if (!withdrawalId || !status) {
       throw new AppError('withdrawalId e status são obrigatórios.', 400);
     }
-    const validStatuses = ['pending', 'under_review', 'approved', 'paid', 'cancelled', 'rejected'];
+    // "paid" é um estado terminal confirmado exclusivamente pelo webhook do
+    // provedor. Não permita que um clique administrativo baixe o saldo antes
+    // de o PIX estar efetivamente concluído.
+    const validStatuses = ['pending', 'under_review', 'approved', 'cancelled', 'rejected'];
     if (!validStatuses.includes(status)) {
       throw new AppError('Status de saque inválido.', 400);
     }

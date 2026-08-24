@@ -27,7 +27,6 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Post, Follow, SocialNotification, UserProfile } from '../types';
-import { achievementService } from './achievementService';
 import { notificationService } from './notificationService';
 
 export const socialService = {
@@ -161,19 +160,13 @@ export const socialService = {
 
       try {
         await updateDoc(userRef, {
-          postsCount: increment(1),
-          score: increment(10)
+          postsCount: increment(1)
         });
         console.log('User stats updated.');
       } catch (userUpdateError) {
         console.warn('Post created but user stats update failed:', userUpdateError);
         // We don't throw here because the post was already created successfully
       }
-      
-      // Check achievements
-      achievementService.checkAndAwardAchievements(currentUid || userId, {}).catch(err => 
-        console.error('Error checking achievements:', err)
-      );
       
       return post;
     } catch (error) {
@@ -371,8 +364,6 @@ export const socialService = {
       
       if (!isFollowing) {
         await notificationService.createNotification(followingId, followerId, 'follow', undefined, undefined, followerInfo);
-        // Check achievements for the person being followed
-        await achievementService.checkAndAwardAchievements(followingId, {});
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'follows');

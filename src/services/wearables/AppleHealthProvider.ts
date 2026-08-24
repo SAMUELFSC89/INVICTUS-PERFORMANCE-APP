@@ -22,14 +22,19 @@ export class AppleHealthProvider implements WearableProvider {
   id = 'apple_health' as const;
   name = 'Apple HealthKit';
   description = 'Integração nativa com o Apple Health para iOS e Apple Watch.';
+  // O HealthKit não expõe concessão de leitura de forma confiável. Mantemos
+  // apenas o consentimento desta instância e uma leitura bem-sucedida, nunca
+  // um valor persistido em localStorage como se fosse uma permissão real.
+  private consentRequestedInSession = false;
+  private hasSuccessfulRead = false;
 
   private isSupportedPlatform(): boolean {
     return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
   }
 
   async isConnected(): Promise<boolean> {
-    const saved = localStorage.getItem('wearable_conn_apple_health');
-    return saved === 'true';
+    if (!this.isSupportedPlatform()) return false;
+    return this.hasSuccessfulRead || this.consentRequestedInSession;
   }
 
   async requestPermissions(): Promise<boolean> {
@@ -44,9 +49,11 @@ export class AppleHealthProvider implements WearableProvider {
         return false;
       }
       const response = await Health.requestHealthPermissions({ permissions: [...READ_PERMISSIONS] as any });
-      // iOS nunca informa com certeza se o usuário negou; assumimos concedido se a chamada não lançar erro.
+      // iOS nunca informa com certeza se o usuário negou leitura. Este sinal
+      // representa apenas o consentimento/configuração da sessão; uma falha
+      // de leitura abaixo volta a exigir reconexão, sem alegar acesso real.
       const granted = !!response;
-      localStorage.setItem('wearable_conn_apple_health', granted ? 'true' : 'false');
+      this.consentRequestedInSession = granted;
       return granted;
     } catch (error) {
       console.error('[AppleHealthProvider] Erro ao solicitar permissões do HealthKit:', error);
@@ -64,15 +71,19 @@ export class AppleHealthProvider implements WearableProvider {
         includeRoute: false,
         includeSteps: false,
       });
+      this.hasSuccessfulRead = true;
       return (workouts || []).map((w) => this.mapWorkout(w));
     } catch (error) {
       console.error('[AppleHealthProvider] Erro ao buscar atividades do HealthKit:', error);
+      this.hasSuccessfulRead = false;
+      this.consentRequestedInSession = false;
       return [];
     }
   }
 
   async disconnect(): Promise<void> {
-    localStorage.setItem('wearable_conn_apple_health', 'false');
+    this.consentRequestedInSession = false;
+    this.hasSuccessfulRead = false;
   }
 
   private mapWorkout(w: any): WearableActivity {

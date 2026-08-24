@@ -2,13 +2,30 @@ import { ActivitySession, Workout, UserProfile, MealPlanEntry } from "../types";
 import { auth, db, handleFirestoreError, OperationType } from "../firebase";
 import { collection, addDoc, doc, updateDoc, getDoc, increment, query, where, getDocs, limit, runTransaction, setDoc } from "firebase/firestore";
 import { validationService } from "./validationService";
-import { workoutService, simpleHash } from "./workoutService";
-import { calculatePoints } from "../lib/seasonUtils";
 import { getCurrentLocation } from "../lib/locationUtils";
 import { compressBase64Image } from "../lib/imageCompression";
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from "./geofenceEngine";
 
 const SESSION_KEY = 'current_activity_session';
+
+/**
+ * Resultado devolvido pela validação da atividade. A sessão pode exigir uma
+ * prova de presença antes de existir um `workout`; por isso esse campo não é
+ * obrigatório. O cliente nunca deve inferir aprovação ou pontos quando ele
+ * estiver ausente.
+ */
+export interface EndSessionResult {
+  workout?: Workout;
+  validation?: any;
+  message?: string;
+  userMessage?: string;
+  isScoringEligible?: boolean;
+  nonScoringReason?: string | null;
+  rankingPointsEarned?: number;
+  presenceCheckRequired?: boolean;
+  presenceCheckId?: string;
+  livenessPrompt?: string;
+}
 
 // Acumulador de amostras reais de acelerometro/giroscopio (DeviceMotionEvent) durante a
 // sessao ativa, usado para calcular sensorTelemetry.accelVariance/gyroVariance reais e
@@ -111,19 +128,6 @@ export const activityService = {
     if (!userSnap.exists()) throw new Error('Perfil de usuário não encontrado');
     const userData = userSnap.data() as UserProfile;
 
-    let startLocation = providedLocation;
-
-    if (!startLocation) {
-      try {
-        startLocation = await getCurrentLocation(type === 'workout');
-      } catch (error: any) {
-        console.warn('Location capture failed for startSession', error);
-        if (error.message.includes('Permissão')) {
-          throw error;
-        }
-      }
-    }
-
     const CARDIO_TYPES_MAP: Record<string, { label: string; isIndoor: boolean; requiresGps: boolean }> = {
       running: { label: 'Corrida', isIndoor: false, requiresGps: true },
       walking: { label: 'Caminhada', isIndoor: false, requiresGps: true },
@@ -137,6 +141,24 @@ export const activityService = {
       hiit: { label: 'HIIT / Funcional', isIndoor: true, requiresGps: false },
       other: { label: 'Outros', isIndoor: true, requiresGps: false }
     };
+    const cardioMapEntry = cardioType ? CARDIO_TYPES_MAP[cardioType] : undefined;
+    const needsLocationAtStart = type === 'workout' || (type === 'cardio' && Boolean(cardioMapEntry?.requiresGps));
+
+    let startLocation = providedLocation;
+
+    if (!startLocation && needsLocationAtStart) {
+      try {
+        // Tanto o treino na academia quanto o cardio externo dependem de
+        // coordenadas confiáveis. O cardio interno não chega a este bloco e,
+        // portanto, nunca dispara GPS.
+        startLocation = await getCurrentLocation(true);
+      } catch (error: any) {
+        console.warn('Location capture failed for startSession', error);
+        if (error.message.includes('Permissão')) {
+          throw error;
+        }
+      }
+    }
 
     if (type === 'workout' && !checkInId) {
       if (!userData.gymId) {
@@ -232,8 +254,6 @@ export const activityService = {
       }
     }
 
-    const cardioMapEntry = cardioType ? CARDIO_TYPES_MAP[cardioType] : undefined;
-
     const session: ActivitySession = {
       id: Math.random().toString(36).substring(7),
       userId: user.uid,
@@ -296,19 +316,11 @@ export const activityService = {
         if (existingSensorStatus === 'granted') {
           registerListener();
         } else if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+          // No iOS a permissão de movimento só pode ser disparada dentro do
+          // gesto explícito do usuário (em Challenges). Não tentamos pedir de
+          // novo aqui, após consultas assíncronas, porque isso gera prompt
+          // inválido/inesperado.
           localStorage.setItem('sensor_status', 'unavailable');
-          (DeviceMotionEvent as any).requestPermission()
-            .then((permissionState: string) => {
-              if (permissionState === 'granted') {
-                localStorage.setItem('sensor_status', 'granted');
-                registerListener();
-              } else {
-                localStorage.setItem('sensor_status', 'denied');
-              }
-            })
-            .catch(() => {
-              localStorage.setItem('sensor_status', 'error');
-            });
         } else {
           localStorage.setItem('sensor_status', 'granted');
           registerListener();
@@ -398,7 +410,7 @@ export const activityService = {
     return distanceKm;
   },
 
-  async endSession(photoBase64?: string): Promise<{ workout: Workout; validation: any; message?: string; isScoringEligible?: boolean; nonScoringReason?: string | null; rankingPointsEarned?: number }> {
+  async endSession(photoBase64?: string): Promise<EndSessionResult> {
     const session = this.getCurrentSession();
     if (!session) throw new Error('Nenhuma atividade em andamento.');
 
@@ -407,7 +419,13 @@ export const activityService = {
 
     let endLocation: { lat: number; lng: number } | undefined;
     try {
-      endLocation = await getCurrentLocation(session.type === 'workout', 4000);
+      const needsLocationAtEnd = session.type === 'workout' || Boolean(session.requiresGpsDistance);
+      if (needsLocationAtEnd) {
+        // A rota de cardio externo também precisa de precisão alta para que o
+        // último trecho não seja descartado. Sessões internas são ignoradas
+        // pelo `needsLocationAtEnd` acima.
+        endLocation = await getCurrentLocation(true, 4000);
+      }
     } catch (error) {
       console.warn('Could not get end location', error);
     }
@@ -474,8 +492,10 @@ export const activityService = {
       const ua = navigator.userAgent || '';
       const rootedSigs = ['rooted', 'jailbreak', 'supersu', 'magisk', 'cydia', 'busybox', 'xposed', 'substrate', 'bypass'];
       const hasRootSignatures = rootedSigs.some(sig => ua.toLowerCase().includes(sig));
-      const hasCordovaJailbreak = !!(window as any).cordova || !!(window as any).Capacitor;
-      isRoot = hasRootSignatures || hasCordovaJailbreak;
+      // Capacitor/Cordova são runtimes legítimos do aplicativo. A simples
+      // presença deles não indica root/jailbreak e estava recusando iOS/Android
+      // nativos como se fossem dispositivos adulterados.
+      isRoot = hasRootSignatures;
     }
 
     let isMockLoc = false;
@@ -495,16 +515,24 @@ export const activityService = {
       isMockLoc = true;
     }
 
-    const hasOscillation = typeof window !== 'undefined' ? localStorage.getItem('has_sensor_oscillation') !== 'false' : true;
+    // Telemetria ausente não é evidência de movimento. Só enviamos positivo
+    // quando o listener capturou uma oscilação real nesta sessão.
+    const hasOscillation = typeof window !== 'undefined' && localStorage.getItem('has_sensor_oscillation') === 'true';
     const sensorStatus = typeof window !== 'undefined' ? (localStorage.getItem('sensor_status') || 'unavailable') : 'unavailable';
-    const pedometerSteps = Math.round(distanceKm * 1350);
+    const rawPedometerSteps = Number(session.smartwatchData?.pedometerSteps ?? session.smartwatchData?.steps);
+    const pedometerSteps = Number.isFinite(rawPedometerSteps) && rawPedometerSteps >= 0
+      ? rawPedometerSteps
+      : undefined;
 
     const accelVariance = computeVariance(sensorSamples.accel);
     const gyroVariance = computeVariance(sensorSamples.gyro);
     const sensorTelemetry = (accelVariance !== undefined || gyroVariance !== undefined)
       ? { accelVariance, gyroVariance }
       : undefined;
-    const avgHeartRate = (session.smartwatchData && (session.smartwatchData.avgHeartRate || session.smartwatchData.heartRate)) || undefined;
+    const rawAverageHeartRate = Number(session.smartwatchData?.avgHeartRate ?? session.smartwatchData?.heartRate);
+    const avgHeartRate = Number.isFinite(rawAverageHeartRate) && rawAverageHeartRate > 0
+      ? rawAverageHeartRate
+      : undefined;
 
     const response = await fetch('/api/validate-activity', {
       method: 'POST',
@@ -541,7 +569,9 @@ export const activityService = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      this.cancelSession();
+      // Uma falha transitória de rede/servidor não é um cancelamento escolhido
+      // pelo usuário. Mantemos a sessão local para permitir tentar encerrar de
+      // novo, sem perder evidências de GPS/sensores.
       throw new Error(errorData.userMessage || errorData.error || 'Não conseguimos validar esta atividade no momento.');
     }
 
@@ -554,7 +584,7 @@ export const activityService = {
           presenceCheckId: respData.presenceCheckId,
           livenessPrompt: respData.livenessPrompt,
           userMessage: respData.userMessage
-        } as any;
+        };
       }
 
       const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned } = respData;
@@ -665,6 +695,35 @@ export const activityService = {
           updatedAt: new Date().toISOString()
         }).catch(err => console.warn('[activityService] Falha ao cancelar a sessao no servidor:', err));
       } catch (e) {}
+    }
+    this.limparEstadoLocal();
+  },
+
+  /**
+   * Fecha a sessão somente depois que a API de presença devolve uma decisão
+   * final (aprovada ou pendente de análise). Não concede XP, não cria
+   * conquistas e não altera score no dispositivo.
+   */
+  async completeSessionAfterPresence() {
+    const session = this.getCurrentSession();
+    if (!session) return;
+
+    const now = new Date().toISOString();
+    try {
+      await updateDoc(doc(db, 'active_sessions', session.id), {
+        status: 'completed',
+        endTime: now,
+        updatedAt: now
+      });
+    } catch (error) {
+      console.error('[activityService] Falha ao fechar sessão após presença:', error);
+      // Evita restauração automática de uma atividade que já foi recebida e
+      // está sendo decidida pelo servidor.
+      try {
+        localStorage.setItem(`sessao_encerrada_${session.id}`, now);
+      } catch {
+        // localStorage pode não estar disponível no ambiente nativo.
+      }
     }
     this.limparEstadoLocal();
   },

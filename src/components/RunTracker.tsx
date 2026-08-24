@@ -14,7 +14,7 @@ import { calculateDistance, formatDuration, calculatePace } from '../lib/runUtil
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useUser } from '../UserContext';
-import { requestAllNativePermissions } from '../lib/nativePermissions';
+import { requestNativeLocationPermission } from '../lib/nativePermissions';
 
 // Fix for default marker icons in Leaflet with React
 import L from 'leaflet';
@@ -80,6 +80,9 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsSignal, setGpsSignal] = useState<'SEARCHING' | 'WEAK' | 'STRONG'>('SEARCHING');
   const [permissionStatus, setPermissionStatus] = useState<PermissionState | null>(null);
+  // O watcher nativo pode abrir o diálogo de GPS. Só é liberado depois do
+  // toque explícito em “Ativar localização”, salvo uma corrida já restaurada.
+  const [locationActivated, setLocationActivated] = useState(() => localStorage.getItem('kmfatal_active_run') === 'true');
   const wakeLockRef = useRef<any>(null);
 
   // Post-run state
@@ -167,13 +170,21 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
   const requestPermission = async () => {
     setError(null);
     try {
-      await requestAllNativePermissions();
+      const nativePermission = await requestNativeLocationPermission();
+      if (nativePermission === 'denied') {
+        setPermissionStatus('denied');
+        setError('Permissão de GPS negada. Ative nas configurações do seu celular.');
+        return;
+      }
     } catch (e) {
-      console.warn('[RunTracker] requestAllNativePermissions error:', e);
+      console.warn('[RunTracker] requestNativeLocationPermission error:', e);
+      setError('Não foi possível solicitar a localização agora.');
+      return;
     }
     navigator.geolocation.getCurrentPosition(
       () => {
         setPermissionStatus('granted');
+        setLocationActivated(true);
       },
       (err) => {
         console.error('Permission error:', err);
@@ -186,6 +197,11 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
 
   // GPS Tracking Core Logic
   useEffect(() => {
+    // Não instale um watchPosition ao apenas abrir a tela: no Capacitor ele
+    // chama o polyfill nativo e poderia abrir o prompt sem uma ação do atleta.
+    // Uma corrida restaurada conserva a permissão de continuar sendo seguida.
+    if (!isTracking && !locationActivated) return;
+
     if (!navigator.geolocation) {
       setError('Geolocalização não suportada no seu navegador.');
       return;
@@ -276,7 +292,7 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
     return () => {
       if (id !== null) navigator.geolocation.clearWatch(id);
     };
-  }, [isTracking]);
+  }, [isTracking, locationActivated]);
 
   // Handle timer with background resiliency
   useEffect(() => {
@@ -687,8 +703,8 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
                      <p className="text-[10px] font-black text-white/60 uppercase tracking-widest leading-relaxed">
                        {permissionStatus === 'denied' ? 'Acesso negado' : gpsAccuracy ? (gpsSignal === 'STRONG' ? 'Sinal Ativo' : 'Sinal Instável') : 'Buscando sua localização...'} <br/>
                        {gpsAccuracy && gpsSignal === 'WEAK' && "Vá para um local mais aberto para melhorar o sinal."}
-                       {!gpsAccuracy && !error && permissionStatus !== 'granted' && (
-                         <span className="text-primary block mt-2 animate-bounce">Aguardando permissão do navegador...</span>
+                       {!gpsAccuracy && !error && !locationActivated && (
+                         <span className="text-primary block mt-2 animate-bounce">Ative a localização para buscar o sinal.</span>
                        )}
                      </p>
                      
@@ -704,7 +720,7 @@ export function RunTracker({ onClose, onFinished, onPresenceCheckRequired }: Run
                      )}
                   </div>
 
-                  {permissionStatus !== 'granted' && (
+                  {(!locationActivated && !isTracking) && (
                     <button 
                       onClick={requestPermission}
                       className="px-8 py-4 bg-primary text-black rounded-2xl text-xs font-black uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-primary/20"

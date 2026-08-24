@@ -232,9 +232,17 @@ export class WalletEngine {
   static async holdForWithdrawal(userId: string, coinsAmount: number, withdrawalId: string): Promise<UserWallet> {
     if (!db) throw new Error('Database not initialized');
     const walletRef = db.collection('wallets').doc(userId);
+    const holdTxRef = db.collection('iv_transactions').doc(`tx_hold_${withdrawalId}`);
 
     await db.runTransaction(async (t) => {
-      const snap = await t.get(walletRef);
+      const [snap, existingHold] = await Promise.all([
+        t.get(walletRef),
+        t.get(holdTxRef)
+      ]);
+
+      // Requisições repetidas para o mesmo saque não podem bloquear o saldo
+      // duas vezes. O lançamento determinístico é a chave de idempotência.
+      if (existingHold.exists) return;
       if (!snap.exists) throw new Error('Carteira não encontrada.');
 
       const d = snap.data() || {};
@@ -257,8 +265,8 @@ export class WalletEngine {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      const txId = `tx_hold_${withdrawalId}`;
-      t.set(db.collection('iv_transactions').doc(txId), {
+      const txId = holdTxRef.id;
+      t.create(holdTxRef, {
         id: txId,
         userId,
         amount: coinsAmount,
@@ -280,9 +288,17 @@ export class WalletEngine {
   static async resolveWithdrawalHold(userId: string, coinsAmount: number, withdrawalId: string, action: 'pay' | 'refund'): Promise<UserWallet> {
     if (!db) throw new Error('Database not initialized');
     const walletRef = db.collection('wallets').doc(userId);
+    const resolutionTxRef = db.collection('iv_transactions').doc(`tx_res_${action}_${withdrawalId}`);
 
     await db.runTransaction(async (t) => {
-      const snap = await t.get(walletRef);
+      const [snap, existingResolution] = await Promise.all([
+        t.get(walletRef),
+        t.get(resolutionTxRef)
+      ]);
+
+      // O mesmo evento/webhook pode ser reenviado. Se a resolução já foi
+      // lançada, não alteramos novamente nenhum saldo.
+      if (existingResolution.exists) return;
       if (!snap.exists) throw new Error('Carteira não encontrada.');
 
       const d = snap.data() || {};
@@ -290,10 +306,9 @@ export class WalletEngine {
       let redeemable = Number(d.redeemableBalance) || 0;
 
       if (blocked < coinsAmount) {
-        blocked = 0; // Safeguard
-      } else {
-        blocked -= coinsAmount;
+        throw new Error('Saldo bloqueado inconsistente para resolver este saque. A operação foi interrompida para evitar duplicidade financeira.');
       }
+      blocked -= coinsAmount;
 
       if (action === 'refund') {
         redeemable += coinsAmount;
@@ -308,8 +323,8 @@ export class WalletEngine {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      const txId = `tx_res_${Date.now()}_${withdrawalId}`;
-      t.set(db.collection('iv_transactions').doc(txId), {
+      const txId = resolutionTxRef.id;
+      t.create(resolutionTxRef, {
         id: txId,
         userId,
         amount: coinsAmount,

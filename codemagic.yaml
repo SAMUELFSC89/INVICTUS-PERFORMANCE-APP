@@ -8,16 +8,18 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          npm install --no-audit --no-fund
-      - name: Build web app (Vite)
+          npm ci --no-audit --no-fund
+      - name: Build web app
         script: |
-          npx vite build
+          npm run build
       - name: Sync Capacitor Android project
         script: |
           npx cap sync android
-      - name: Repair Gradle wrapper jar (corrupted in repo)
+      - name: Verify Gradle wrapper
         script: |
-          curl -sSL -o android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.14.3/gradle/wrapper/gradle-wrapper.jar
+          cd android
+          chmod +x gradlew
+          ./gradlew --version
       - name: Build Android debug APK
         script: |
           cd android
@@ -29,10 +31,8 @@ workflows:
   # ---------------------------------------------------------------------------
   # #219: build iOS -> TestFlight.
   #
-  # A pasta ios/ NAO esta commitada (diferente de android/), entao este workflow
-  # a gera do zero a cada build com "npx cap add ios" na maquina macOS do
-  # Codemagic -- permitindo publicar sem um Mac local. Como e recriada a cada
-  # build, toda customizacao nativa precisa ser injetada por script aqui.
+  # O projeto ios/ e versionado para manter permissões, entitlements, ícones e
+  # configuração de plugins reproduzíveis entre o computador local e o CI.
   #
   # Xcode 26 e obrigatorio: desde 28/04/2026 a Apple rejeita uploads com SDK
   # anterior ao iOS 26 (ITMS-90725).
@@ -63,11 +63,11 @@ workflows:
     scripts:
       - name: Instalar dependencias npm
         script: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
 
-      - name: Build do app web (Vite)
+      - name: Build do app web
         script: |
-          npx vite build
+          npm run build
 
       - name: Criar projeto iOS nativo (se ainda nao existir)
         script: |
@@ -98,52 +98,12 @@ workflows:
           echo "=== erro detalhado do showBuildSettings ==="
           xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | head -40 || true
 
-      - name: Injetar permissoes de privacidade no Info.plist
+      - name: Verificar permissões e entitlements iOS versionados
         script: |
           set -e
-          PLIST="ios/App/App/Info.plist"
-
-          set_string () {
-            /usr/libexec/PlistBuddy -c "Delete :$1" "$PLIST" 2>/dev/null || true
-            /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"
-          }
-
-          # GPS -- cardio ao ar livre, check-in presencial e antifraude.
-          set_string "NSLocationWhenInUseUsageDescription" "O INVICTUS usa sua localizacao para registrar a rota das atividades de cardio e confirmar seu check-in presencial na academia."
-          set_string "NSLocationAlwaysAndWhenInUseUsageDescription" "O INVICTUS usa sua localizacao durante a atividade para medir distancia e ritmo com precisao, mesmo com a tela desligada."
-
-          # Sensores de movimento -- o antifraude exige acelerometro/giroscopio.
-          set_string "NSMotionUsageDescription" "O INVICTUS le os sensores de movimento do aparelho para validar que a atividade foi realmente executada por voce."
-
-          # HealthKit (plugin capacitor-health).
-          set_string "NSHealthShareUsageDescription" "O INVICTUS le dados de saude como frequencia cardiaca, passos e calorias para calcular sua pontuacao com mais precisao."
-          set_string "NSHealthUpdateUsageDescription" "O INVICTUS registra suas atividades concluidas no app Saude do iPhone."
-
-          # Camera / fotos -- comprovantes de treino e video do Power Lift.
-          set_string "NSCameraUsageDescription" "O INVICTUS usa a camera para registrar comprovantes de treino e os videos de homologacao do Power Lift."
-          set_string "NSPhotoLibraryUsageDescription" "O INVICTUS acessa suas fotos para anexar comprovantes de atividade."
-          set_string "NSPhotoLibraryAddUsageDescription" "O INVICTUS salva na sua galeria o card de compartilhamento das atividades."
-
-          # Background: rastreio de rota durante o cardio + push.
-          /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:1 string remote-notification" "$PLIST"
-
-          # Declaracao de criptografia (so HTTPS/TLS padrao). Sem isso o build
-          # sobe mas trava em "Missing Compliance".
-          /usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST"
-
-      - name: Configurar entitlements (HealthKit + Push)
-        script: |
-          set -e
-          ENT="ios/App/App/App.entitlements"
-          rm -f "$ENT"
-          /usr/libexec/PlistBuddy -c "Save" "$ENT"
-          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit bool true" "$ENT"
-          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit.access array" "$ENT"
-          /usr/libexec/PlistBuddy -c "Add :aps-environment string production" "$ENT"
+          plutil -lint ios/App/App/Info.plist
+          plutil -lint ios/App/App/App.entitlements
+          grep -q "CODE_SIGN_ENTITLEMENTS = App/App.entitlements" ios/App/App.xcodeproj/project.pbxproj
 
       - name: Instalar dependencias nativas (CocoaPods so se houver Podfile)
         script: |
@@ -155,32 +115,6 @@ workflows:
           else
             echo "Sem Podfile: projeto usa Swift Package Manager."
           fi
-
-      - name: Aplicar entitlements ao projeto Xcode
-        script: |
-          set -e
-          PBX="ios/App/App.xcodeproj/project.pbxproj"
-
-          # #228: o passo anterior CRIA o App.entitlements, mas ate agora nada
-          # apontava para ele. O Xcode so embute os entitlements no binario se a
-          # build setting CODE_SIGN_ENTITLEMENTS referenciar o arquivo. Sem isso
-          # o arquivo fica orfao: o app sai SEM HealthKit e SEM aps-environment,
-          # o iOS nao reconhece as capacidades e o Apple Health nunca conecta.
-          #
-          # Isso tambem explicava por que a build passava: entitlement ausente
-          # nao conflita com o perfil, entao a assinatura nao reclamava.
-          #
-          # O caminho e relativo ao SRCROOT (ios/App), por isso App/App.entitlements.
-          if grep -q "CODE_SIGN_ENTITLEMENTS" "$PBX"; then
-            echo "CODE_SIGN_ENTITLEMENTS ja presente -- nada a fazer."
-          else
-            perl -0pi -e 's/(\n(\s*)PRODUCT_BUNDLE_IDENTIFIER = )/\n$2CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;$1/g' "$PBX"
-            echo "CODE_SIGN_ENTITLEMENTS adicionado ao projeto."
-          fi
-
-          echo "Ocorrencias de CODE_SIGN_ENTITLEMENTS: $(grep -c CODE_SIGN_ENTITLEMENTS "$PBX")"
-          echo "--- conteudo do App.entitlements ---"
-          cat ios/App/App/App.entitlements
 
       - name: Buscar certificados e perfis da conta Apple
         script: |
@@ -223,9 +157,10 @@ workflows:
           # Com SPM o xcodebuild precisa baixar/resolver os pacotes antes de
           # conseguir ler as build settings -- sem isso o build falha com
           # "Failed to show build settings".
+          set -o pipefail
           xcodebuild -resolvePackageDependencies \
             -project ios/App/App.xcodeproj \
-            -scheme "$XCODE_SCHEME" 2>&1 | tail -30 || true
+            -scheme "$XCODE_SCHEME" 2>&1 | tail -30
 
       - name: Compilar e gerar o .ipa
         script: |

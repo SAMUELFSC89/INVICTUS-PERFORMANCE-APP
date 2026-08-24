@@ -18,6 +18,10 @@ export class StravaApi {
   }
 
   async saveConnection(data: any) {
+    if (!data?.athlete?.id || typeof data.access_token !== 'string' || typeof data.refresh_token !== 'string' || !Number.isFinite(Number(data.expires_at))) {
+      throw new Error('Resposta de autorização do Strava inválida.');
+    }
+
     const connectionData = {
       userId: this.userId,
       athleteId: data.athlete.id,
@@ -76,20 +80,15 @@ export class StravaApi {
     const conn = await this.getConnection();
     if (!conn) return null;
 
-    console.log("===== TOKEN INFO =====");
-    console.log({
-        accessTokenExists: !!conn?.accessToken,
-        refreshTokenExists: !!conn?.refreshToken,
-        expiresAt: conn?.expiresAt,
-        now: Math.floor(Date.now()/1000),
-        expired:
-            conn?.expiresAt <
-            Math.floor(Date.now()/1000)
-    });
-
     const now = Math.floor(Date.now() / 1000);
-    if (conn.expiresAt > now + 300) { // 5 min buffer
+    const expiresAt = Number(conn.expiresAt);
+    if (typeof conn.accessToken === 'string' && Number.isFinite(expiresAt) && expiresAt > now + 300) { // 5 min buffer
       return conn.accessToken;
+    }
+
+    if (!STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET || typeof conn.refreshToken !== 'string') {
+      console.error('[StravaApi] Configuração ou conexão de renovação inválida.');
+      return null;
     }
 
     // Refresh token
@@ -106,11 +105,10 @@ export class StravaApi {
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error(`[StravaApi] Token refresh failed: ${err}`);
+      console.error(`[StravaApi] Token refresh failed with status ${response.status}.`);
       
       // If token refresh fails due to invalid/revoked refresh token (HTTP 400 Bad Request, 401, or 403)
-      if (response.status === 400 || response.status === 401 || response.status === 403 || err.includes('invalid') || err.includes('RefreshToken')) {
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
         console.warn(`[StravaApi] Refresh token invalid or revoked for user ${this.userId}. Cleaning up stale connection.`);
         try {
           await this.deleteConnection();
@@ -123,8 +121,10 @@ export class StravaApi {
     }
 
     const data = await response.json();
-    console.log("===== REFRESH RESPONSE =====");
-    console.log(JSON.stringify(data, null, 2));
+    if (typeof data?.access_token !== 'string' || typeof data?.refresh_token !== 'string' || !Number.isFinite(Number(data?.expires_at))) {
+      console.error('[StravaApi] A renovação retornou um formato de token inválido.');
+      return null;
+    }
 
     const updates = {
       accessToken: data.access_token,
@@ -145,36 +145,18 @@ export class StravaApi {
     if (after) url.searchParams.append('after', after.toString());
     url.searchParams.append('per_page', '50');
 
-    const maskedToken = token ? `${token.slice(0, 10)}...${token.slice(-5)}` : 'null';
-    console.log(`[StravaApi] GET ${url.toString()} with Authorization: Bearer ${maskedToken}`);
-
     const response = await fetch(url.toString(), {
         headers: {
             Authorization: `Bearer ${token}`
         }
     });
 
-    const body = await response.text();
-
-    console.log("===== STRAVA ACTIVITIES =====");
-    console.log("STATUS:", response.status);
-    console.log("BODY:", body);
-
-    if (response.status === 401 || response.status === 403) {
-      console.error("===== STRAVA API ERROR =====");
-      console.error("URL:", url.toString());
-      console.error("STATUS:", response.status);
-      console.error("HEADERS:", JSON.stringify(Array.from(response.headers.entries())));
-      console.error("BODY:", body);
-    }
-
     if (!response.ok) {
-        throw new Error(
-            `Status ${response.status}: ${body}`
-        );
+      throw new Error(`Strava activities request failed (${response.status}).`);
     }
 
-    return JSON.parse(body);
+    const activities = await response.json();
+    return Array.isArray(activities) ? activities : [];
   }
 
   async fetchActivity(activityId: string | number) {
@@ -182,35 +164,16 @@ export class StravaApi {
     if (!token) throw new Error('Not connected to Strava');
 
     const url = `https://www.strava.com/api/v3/activities/${activityId}`;
-    const maskedToken = token ? `${token.slice(0, 10)}...${token.slice(-5)}` : 'null';
-    console.log(`[StravaApi] GET ${url} with Authorization: Bearer ${maskedToken}`);
-
     const response = await fetch(url, {
         headers: {
             Authorization: `Bearer ${token}`
         }
     });
 
-    const body = await response.text();
-
-    console.log("===== STRAVA ACTIVITY =====");
-    console.log("STATUS:", response.status);
-    console.log("BODY:", body);
-
-    if (response.status === 401 || response.status === 403) {
-      console.error("===== STRAVA API ERROR =====");
-      console.error("URL:", url);
-      console.error("STATUS:", response.status);
-      console.error("HEADERS:", JSON.stringify(Array.from(response.headers.entries())));
-      console.error("BODY:", body);
-    }
-
     if (!response.ok) {
-        throw new Error(
-            `Status ${response.status}: ${body}`
-        );
+      throw new Error(`Strava activity request failed (${response.status}).`);
     }
 
-    return JSON.parse(body);
+    return response.json();
   }
 }

@@ -18,6 +18,7 @@ import { MetricMatrixModal } from '../components/performance/MetricMatrixModal';
 import { TimelineView } from '../components/performance/TimelineView';
 import { PerformanceAIModal } from '../components/performance/PerformanceAIModal';
 import { ModuleDetailModal } from '../components/performance/ModuleDetailModal';
+import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 
 export function Performance() {
   const { user, refreshUser } = useUser();
@@ -49,23 +50,29 @@ export function Performance() {
         );
         const snap = await getDocs(workoutsQuery);
         
-        const fetchedWorkouts: RawWorkoutSession[] = snap.docs.map(doc => {
+        const fetchedWorkouts: RawWorkoutSession[] = snap.docs.flatMap(doc => {
           const d = doc.data();
-          const timestamp = d.createdAt?.seconds ? d.createdAt.seconds * 1000 : (d.timestamp || Date.now());
-          return {
+          const timestamp = readActivityTimestamp(d.timestamp ?? d.createdAt);
+          const status = normalizeActivityValidationStatus(d.validationStatus ?? d.status ?? d.validation?.status);
+          if (timestamp === null || status !== 'validated') return [];
+          const duration = Number(d.durationMinutes ?? d.duration);
+          const avgHeartRate = Number(d.avgHeartRate ?? d.avgHr);
+          const maxHeartRate = Number(d.maxHeartRate ?? d.maxHr);
+          const calories = Number(d.caloriesBurned ?? d.calories);
+          return [{
             id: doc.id,
-            userId: d.userId || user.uid,
+            userId: user.uid,
             timestamp,
-            durationMinutes: Number(d.durationMinutes) || Number(d.duration) || 30,
-            avgHeartRate: Number(d.avgHeartRate) || Number(d.avgHr) || 0,
-            maxHeartRate: Number(d.maxHeartRate) || Number(d.maxHr) || 0,
-            caloriesBurned: Number(d.caloriesBurned) || Number(d.calories) || 0,
+            durationMinutes: Number.isFinite(duration) && duration >= 0 ? duration : 0,
+            avgHeartRate: Number.isFinite(avgHeartRate) && avgHeartRate > 0 ? avgHeartRate : undefined,
+            maxHeartRate: Number.isFinite(maxHeartRate) && maxHeartRate > 0 ? maxHeartRate : undefined,
+            caloriesBurned: Number.isFinite(calories) && calories >= 0 ? calories : 0,
             workoutType: d.workoutType || d.type || 'workout',
-            workoutName: d.workoutName || d.title || 'Treino Validado Invictus',
-            validationStatus: d.validationStatus || 'validated',
-            hasSensorData: !!(d.avgHeartRate || d.maxHeartRate),
+            workoutName: d.workoutName || d.title || d.type || 'Atividade registrada',
+            validationStatus: 'validated',
+            hasSensorData: Number.isFinite(avgHeartRate) && avgHeartRate > 0,
             hasGPSData: !!(d.distanceKm || d.gpsTracked)
-          };
+          }];
         });
 
         setRawWorkouts(fetchedWorkouts);
@@ -308,14 +315,16 @@ export function Performance() {
 
                     <div className="text-left sm:text-right">
                       <span className="font-headline italic font-black text-3xl sm:text-4xl md:text-5xl text-emerald-400">
-                        {perfState.readinessScore}
+                        {perfState.readinessScore ?? '—'}
                       </span>
-                      <span className="text-zinc-400 font-bold text-lg ml-1">/ 100</span>
+                      {perfState.readinessScore !== null && <span className="text-zinc-400 font-bold text-lg ml-1">/ 100</span>}
                     </div>
                   </div>
 
                   <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                    Seus marcadores de intervalo de treino e estabilidade biométrica indicam um bom momento para absorver estímulos esportivos.
+                    {perfState.readinessScore === null
+                      ? 'A prontidão só é exibida quando houver dados de recuperação e biometria suficientes no período.'
+                      : 'Indicador calculado a partir dos registros validados disponíveis no período.'}
                   </p>
                 </div>
 
@@ -346,6 +355,7 @@ export function Performance() {
                     <span>Zonas de Frequência Cardíaca no Período</span>
                   </h3>
 
+                  {perfState.computedMetrics['hr_zones_distribution']?.hasEnoughData ? (
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                     {perfState.hrZones.map((z, idx) => (
                       <div key={idx} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 space-y-2">
@@ -360,6 +370,11 @@ export function Performance() {
                       </div>
                     ))}
                   </div>
+                  ) : (
+                    <p className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-6 text-center text-xs text-zinc-500">
+                      Sem dados cardíacos reais suficientes para calcular as zonas neste período.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -564,14 +579,14 @@ function MetricCard({ metric, onClick }: { metric?: CalculatedMetricValue; onCli
       <div className="flex items-baseline justify-between">
         <div>
           <span className="font-headline italic font-black text-3xl md:text-4xl text-white group-hover:scale-105 transition-transform inline-block">
-            {metric.currentValue}
+            {metric.hasEnoughData ? metric.currentValue : '—'}
           </span>
           <span className="text-zinc-500 font-bold ml-1.5 text-xs">{metric.unit}</span>
         </div>
       </div>
 
       <p className="text-[10px] text-zinc-500 line-clamp-2 leading-relaxed">
-        {def.simpleDescription}
+        {metric.hasEnoughData ? def.simpleDescription : (metric.statusMessage || 'Dados reais insuficientes para esta métrica.')}
       </p>
 
       <div className="pt-2 border-t border-zinc-900 flex items-center justify-between text-[10px] text-emerald-400 font-bold">

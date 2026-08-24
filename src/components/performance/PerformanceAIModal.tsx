@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Markdown from 'react-markdown';
 import { Sparkles, X, Send, ShieldCheck, Cpu, RefreshCw } from 'lucide-react';
 import { UserPerformanceState } from '../../core/performance/performanceEngine';
-import { useUser } from '../../UserContext';
+import { auth } from '../../firebase';
 
 interface PerformanceAIModalProps {
   isOpen: boolean;
@@ -21,7 +21,6 @@ interface Message {
 }
 
 export function PerformanceAIModal({ isOpen, onClose, perfState }: PerformanceAIModalProps) {
-  const { user } = useUser();
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -30,11 +29,11 @@ export function PerformanceAIModal({ isOpen, onClose, perfState }: PerformanceAI
       sender: 'ai',
       text: `Olá, ${perfState.userName}! Sou a Invictus Performance IA, sua especialista em ciência do exercício, saúde, fisiologia e análise de dados.
 
-Analisei todo o seu histórico de ${perfState.allWorkouts.length} treinos e marcadores biométricos. Posso responder qualquer dúvida sobre sua evolução, saúde cardiovascular, fisiologia, nutrição esportiva ou sobre o funcionamento interno do Invictus (IGA, Ranking, Antifraude, Sensores).
+Posso ajudar a interpretar os registros validados disponíveis e explicar o funcionamento do Invictus. Dados ausentes não serão estimados.
 
 Como posso ajudar na sua jornada hoje?`,
       confidence: perfState.overallReliability.toUpperCase(),
-      sources: ['Histórico Oficial Invictus', 'Algoritmo IGA Engine', 'Sensores Biométricos'],
+      sources: ['Registros validados do Invictus'],
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -57,15 +56,16 @@ Como posso ajudar na sua jornada hoje?`,
     setLoading(true);
 
     try {
-      // Call backend Performance AI route with full 4-layer system prompt
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error('Sessão não autenticada.');
+      const token = await firebaseUser.getIdToken();
       const res = await fetch('/api/performance-ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           queryText: textToSend,
           history: messages.slice(-6),
-          perfState,
-          userProfile: user
+          perfState
         })
       });
 
@@ -85,41 +85,28 @@ Como posso ajudar na sua jornada hoje?`,
           return;
         }
       }
-
-      // Fallback endpoint test
-      const appRes = await fetch('/api/app?action=performance-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          queryText: textToSend,
-          history: messages.slice(-6),
-          perfState,
-          userProfile: user
-        })
-      });
-
-      if (appRes.ok) {
-        const data = await appRes.json();
-        if (data && data.answer) {
-          const aiMsg: Message = {
-            id: `ai_${Date.now()}`,
-            sender: 'ai',
-            text: data.answer,
-            confidence: data.confidence || perfState.overallReliability.toUpperCase(),
-            sources: data.sources || ['Invictus Core API', 'Motor IGA'],
-            timestamp: data.timestamp || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-          };
-          setMessages(prev => [...prev, aiMsg]);
-          setLoading(false);
-          return;
-        }
-      }
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || 'A IA não retornou uma resposta válida.');
     } catch (e) {
-      console.warn('[Performance AI Client] Server request fallback trigger:', e);
+      console.warn('[Performance AI Client] Servidor indisponível:', e);
     }
 
-    // Client-side analytical reasoning fallback if server is unreachable
-    setTimeout(() => {
+    // Nunca substitua a IA autenticada por aconselhamento clínico/fitness
+    // fabricado no dispositivo.
+    setMessages(prev => [...prev, {
+      id: `ai_${Date.now()}`,
+      sender: 'ai',
+      text: 'Não foi possível consultar a IA agora. Nenhuma métrica ou recomendação foi estimada localmente. Tente novamente quando a conexão estiver disponível.',
+      confidence: 'INDISPONÍVEL',
+      sources: ['Servidor Invictus IA indisponível'],
+      timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    }]);
+    setLoading(false);
+
+    /* Código de fallback local removido funcionalmente: recomendações só são
+       emitidas pelo serviço autenticado. Mantido temporariamente como histórico
+       até a limpeza mecânica do arquivo nesta revisão. */
+    /* setTimeout(() => {
       const qLower = textToSend.toLowerCase();
       let aiResponseText = '';
 
@@ -195,7 +182,7 @@ Para aprofundar qualquer aspecto específico, você pode me perguntar sobre:
 
       setMessages(prev => [...prev, aiMsg]);
       setLoading(false);
-    }, 600);
+    }, 600); */
   };
 
   const quickPrompts = [

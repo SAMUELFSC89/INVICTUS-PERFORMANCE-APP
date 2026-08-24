@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors } from '../_lib/common.js';
+import { cors, verifyAuth } from '../_lib/common.js';
 import { GoogleGenAI } from '@google/genai';
 import { MemoryRepository } from '../_repositories/memory-repository.js';
 import { MemoryService } from '../_services/ai/memory-service.js';
@@ -105,22 +105,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const payload = req.method === 'GET' ? req.query : req.body || {};
   const action = payload.action;
 
-  // Extract authenticated userId from userProfile, body or query
-  const userId = payload.userId || payload.userProfile?.uid || payload.userProfile?.id || (req as any).userId;
+  const auth = await verifyAuth(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Autenticação necessária.' });
+  }
+
+  // A identidade da IA é sempre derivada do ID token. Nunca confie em userId
+  // vindo do body/query: isso permitiria acessar memórias de outro atleta.
+  const requestedUserId = payload.userId || payload.userProfile?.uid || payload.userProfile?.id;
+  if (requestedUserId && requestedUserId !== auth.uid) {
+    return res.status(403).json({ error: 'A identidade informada não corresponde à sessão autenticada.' });
+  }
+  const userId = auth.uid;
+
+  if (req.method === 'GET' && action !== 'get-memories') {
+    return res.status(405).json({ error: 'Esta ação exige POST.' });
+  }
 
   // Handle Memory Management Actions
   if (action === 'get-memories') {
-    if (!userId) {
-      return res.status(400).json({ error: 'userId é obrigatório para consultar memórias.' });
-    }
     const memories = await memoryService.getUserMemories(userId);
     return res.status(200).json({ memories });
   }
 
   if (action === 'delete-memory') {
     const memoryId = payload.memoryId;
-    if (!userId || !memoryId) {
-      return res.status(400).json({ error: 'userId e memoryId são obrigatórios.' });
+    if (!memoryId || typeof memoryId !== 'string') {
+      return res.status(400).json({ error: 'memoryId é obrigatório.' });
     }
     try {
       const deleted = await memoryService.deleteMemory(memoryId, userId);
@@ -132,14 +143,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === 'add-memory') {
     const { content, category, importance } = payload;
-    if (!userId || !content) {
-      return res.status(400).json({ error: 'userId e content são obrigatórios.' });
+    if (!content || typeof content !== 'string' || content.trim().length > 2000) {
+      return res.status(400).json({ error: 'content é obrigatório e deve ter no máximo 2.000 caracteres.' });
     }
     const created = await memoryService.saveOrUpdateMemory(userId, {
       userId,
-      content,
+      content: content.trim(),
       category: category || 'preference',
-      importance: Number(importance || 0.85),
+      importance: Math.min(1, Math.max(0, Number(importance ?? 0.85))),
       confidence: 1.0,
       source: 'user_explicit'
     });
@@ -148,8 +159,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { queryText, history, perfState, userProfile, screenName, currentPath, activeWorkoutSession } = payload;
 
-  if (!queryText || typeof queryText !== 'string') {
-    return res.status(400).json({ error: 'Texto da pergunta é obrigatório.' });
+  if (!queryText || typeof queryText !== 'string' || queryText.trim().length > 4000) {
+    return res.status(400).json({ error: 'Texto da pergunta é obrigatório e deve ter no máximo 4.000 caracteres.' });
   }
 
   try {
@@ -173,7 +184,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Load persistent user memories for context if userId exists
     let persistentMemoriesContext = '';
     if (userId) {
-      const memoryResult = await memoryService.getFormattedMemoriesForContext(userId, queryText);
+      const memoryResult = await memoryService.getFormattedMemoriesForContext(userId, queryText.trim());
       persistentMemoriesContext = memoryResult.formattedContext;
     }
 
@@ -282,7 +293,7 @@ AVISO: Nenhum dado individualizado pré-carregado nesta chamada. Se o usuário p
     if (Array.isArray(history) && history.length > 0) {
       formattedHistory = history
         .slice(-6)
-        .map((m: any) => `${m.sender === 'user' ? 'Usuário' : 'Invictus AI'}: ${m.text}`)
+        .map((m: any) => `${m.sender === 'user' ? 'Usuário' : 'Invictus AI'}: ${String(m.text || '').slice(0, 2000)}`)
         .join('\n');
     }
 
@@ -372,7 +383,7 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
     // Silently extract and save persistent memories in the background
     if (userId) {
       memoryService
-        .extractAndStoreMemoriesFromInteraction(userId, queryText, aiText)
+        .extractAndStoreMemoriesFromInteraction(userId, queryText.trim(), aiText)
         .catch(err => console.warn('[PerformanceAI] Memory extraction error:', err));
     }
 
@@ -393,8 +404,7 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
   } catch (err: any) {
     console.error('[API Performance AI Error]:', err);
     return res.status(500).json({
-      error: 'Erro ao conectar à Invictus Performance AI.',
-      details: err.message
+      error: 'Erro ao conectar à Invictus Performance AI.'
     });
   }
 }

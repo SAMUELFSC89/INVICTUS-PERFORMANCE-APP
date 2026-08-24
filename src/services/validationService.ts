@@ -149,10 +149,9 @@ export const validationService = {
     resumoMotivos?: string;
     mensagemParabens?: string;
     mensagemRecusa?: string;
-    reason?: string
+    reason?: string;
+    validationId?: string;
   }> {
-    const exName = exercise === 'supino' ? 'Supino' : exercise === 'agachamento' ? 'Agachamento' : 'Terra';
-
     try {
       const headers = await cabecalhosAutenticados();
 
@@ -204,7 +203,8 @@ export const validationService = {
           resumoMotivos,
           mensagemParabens,
           mensagemRecusa,
-          reason: data.reasonCode || data.reason || data.userMessage
+          reason: data.reasonCode || data.reason || data.userMessage,
+          validationId: typeof data.validationId === 'string' ? data.validationId : undefined
         };
       }
 
@@ -217,10 +217,10 @@ export const validationService = {
       isValid: false,
       isManualReview: true,
       auditResult: 'AUDITORIA_MANUAL',
-      analysis: "STATUS: AUDITORIA_MANUAL\nCONFIANÇA: 85%\nMOTIVOS:\n• Vídeo submetido para revisão técnica da equipe de auditoria.",
-      confidence: 85,
+      analysis: 'A auditoria segura do vídeo não foi iniciada.',
+      confidence: 0,
       estimatedWeight: weight,
-      motivos: ["Vídeo submetido para revisão técnica da equipe de auditoria."]
+      motivos: ['Não foi possível iniciar a auditoria do vídeo.']
     };
   },
 

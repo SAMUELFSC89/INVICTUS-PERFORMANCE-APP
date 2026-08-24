@@ -1,24 +1,36 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, app } from '../_lib/common.js';
+import { cors, db, verifyAuth } from '../_lib/common.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  let firestoreTest = 'Not started';
+  if (cors(req, res)) return;
+
+  // Diagnóstico operacional não deve existir publicamente em produção. Para
+  // habilitá-lo, além de ENABLE_ENV_CHECK=true, é necessário ser admin.
+  if (process.env.ENABLE_ENV_CHECK !== 'true') {
+    return res.status(404).json({ error: 'Não encontrado.' });
+  }
+
+  const auth = await verifyAuth(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Autenticação necessária.' });
+  }
+
+  const userSnap = await db.collection('users').doc(auth.uid).get();
+  const userData = userSnap.exists ? userSnap.data() : null;
+  if (userData?.role !== 'admin' && auth.email !== 'samuelfsc89@gmail.com' && auth.email !== 'mucafsc89@gmail.com') {
+    return res.status(403).json({ error: 'Acesso administrativo necessário.' });
+  }
+
+  let firestoreAvailable = false;
   try {
-    const snap = await db.collection('test').doc('ping').get();
-    firestoreTest = `Success! Exists: ${snap.exists}`;
-  } catch (e: any) {
-    firestoreTest = `Failed: ${e.message}`;
+    await db.collection('_connection_test_').doc('ping').get();
+    firestoreAvailable = true;
+  } catch {
+    // Não exponha detalhes de credencial, topologia ou mensagens do SDK.
   }
 
   return res.json({
-    GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT,
-    PROJECT_ID: process.env.PROJECT_ID,
-    FIREBASE_CONFIG: process.env.FIREBASE_CONFIG,
-    NODE_ENV: process.env.NODE_ENV,
-    GEMINI_KEY_PRESENT: !!process.env.GEMINI_API_KEY,
-    GEMINI_KEY_LENGTH: process.env.GEMINI_API_KEY?.length || 0,
-    firestoreTest,
-    appProjectId: (app.options as any).projectId,
-    appDatabaseId: (db as any).databaseId
+    ok: firestoreAvailable,
+    timestamp: new Date().toISOString()
   });
 }

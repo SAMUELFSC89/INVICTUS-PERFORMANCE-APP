@@ -7,6 +7,7 @@ import { RequestLogger } from './_lib/logger.js';
 import { initSentry, captureException } from './_lib/sentry.js';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import path from 'path';
+import { cors } from './_lib/common.js';
 
 // Initialize Sentry APM
 initSentry();
@@ -51,6 +52,9 @@ import financialHandler from './_handlers/financial.js';
 import missionsHandler from './_handlers/missions.js';
 import sponsorsHandler from './_handlers/sponsors.js';
 import storeHandler from './_handlers/store.js';
+import activityMapHandler from './activity-map.js';
+import wearablesHandler from './_handlers/wearables.js';
+import powerLiftHandler from './_handlers/powerlift.js';
 
 
 const router = express.Router();
@@ -75,21 +79,10 @@ router.use((req: express.Request & { user?: { id?: string; uid?: string } }, res
   next();
 });
 
-// Global API CORS and headers
+// Global API CORS and headers. The same strict allowlist is also used by
+// standalone handlers, so no route can reflect arbitrary browser origins.
 router.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (cors(req as VercelRequest, res as VercelResponse)) return;
   next();
 });
 
@@ -100,9 +93,15 @@ const wrap = (handler: any) => async (req: any, res: any) => {
   } catch (err: any) {
     console.error(`[API Error] Error in handler:`, err);
     if (!res.headersSent) {
-      res.status(500).json({ 
-        error: err.message || 'Erro interno no servidor.',
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      const statusCode = Number.isInteger(err?.statusCode) && err.statusCode >= 400 && err.statusCode < 600
+        ? err.statusCode
+        : 500;
+      const development = process.env.NODE_ENV === 'development';
+      res.status(statusCode).json({
+        error: development || statusCode < 500
+          ? (err?.message || 'Erro interno no servidor.')
+          : 'Erro interno no servidor.',
+        stack: development ? err?.stack : undefined
       });
     }
   }
@@ -136,6 +135,8 @@ assertHandler('stravaHandler', stravaHandler);
 assertHandler('whatsappHandler', whatsappHandler);
 assertHandler('auditFraudHandler', auditFraudHandler);
 assertHandler('envCheckHandler', envCheckHandler);
+assertHandler('wearablesHandler', wearablesHandler);
+assertHandler('powerLiftHandler', powerLiftHandler);
 assertHandler('paymentsVerifyPurchaseHandler', paymentsVerifyPurchaseHandler);
 assertHandler('revenuecatWebhookHandler', revenuecatWebhookHandler);
 assertHandler('paymentsConfigHandler', paymentsConfigHandler);
@@ -147,6 +148,7 @@ assertHandler('denounceHandler', denounceHandler);
 assertHandler('privateChallengesHandler', privateChallengesHandler);
 assertHandler('performanceDashboardHandler', performanceDashboardHandler);
 assertHandler('performanceAiHandler', performanceAiHandler);
+assertHandler('activityMapHandler', activityMapHandler);
 
 console.log('[ROUTE-INIT] All handlers validated successfully. Registering routes...');
 
@@ -183,6 +185,9 @@ router.all('/running', wrap(runningHandler));
 console.log('[ROUTE] /activities/running', typeof handleRunActivity);
 router.post('/activities/running', activityLimiter, wrap(handleRunActivity));
 
+console.log('[ROUTE] /activity-map', typeof activityMapHandler);
+router.all('/activity-map', wrap(activityMapHandler));
+
 console.log('[ROUTE] /habits', typeof habitsHandler);
 router.all('/habits', wrap(habitsHandler));
 
@@ -207,8 +212,10 @@ router.all('/notifications', wrap(notificationsHandler));
 console.log('[ROUTE] /audit-fraud', typeof auditFraudHandler);
 router.all('/audit-fraud', wrap(auditFraudHandler));
 
-console.log('[ROUTE] /env-check', typeof envCheckHandler);
-router.all('/env-check', wrap(envCheckHandler));
+if (process.env.ENABLE_ENV_CHECK === 'true') {
+  console.log('[ROUTE] /env-check (diagnóstico administrativo habilitado)');
+  router.all('/env-check', wrap(envCheckHandler));
+}
 
 console.log('[ROUTE] /payments/verify-purchase', typeof paymentsVerifyPurchaseHandler);
 router.all('/payments/verify-purchase', wrap(paymentsVerifyPurchaseHandler));
@@ -238,6 +245,12 @@ router.all('/payments/status', wrap(paymentsStatusHandler));
 
 console.log('[ROUTE] /wallet/redeem', typeof walletRedeemHandler);
 router.all('/wallet/redeem', wrap(walletRedeemHandler));
+
+console.log('[ROUTE] /wearables', typeof wearablesHandler);
+router.all('/wearables', wrap(wearablesHandler));
+
+console.log('[ROUTE] /powerlift', typeof powerLiftHandler);
+router.all('/powerlift', wrap(powerLiftHandler));
 
 console.log('[ROUTE] /migrate-reset', typeof migrateResetHandler);
 router.all('/migrate-reset', wrap(migrateResetHandler));
@@ -292,6 +305,8 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'strava': return await stravaHandler(req as any, res as any, () => {});
     case 'whatsapp-send': return await whatsappHandler(req as any, res as any);
     case 'wallet-redeem': return await walletRedeemHandler(req as any, res as any);
+    case 'wearables': return await wearablesHandler(req as any, res as any);
+    case 'powerlift': return await powerLiftHandler(req as any, res as any);
     case 'financial': return await financialHandler(req as any, res as any);
     case 'missions': return await missionsHandler(req as any, res as any);
     case 'sponsors': return await sponsorsHandler(req as any, res as any);
@@ -304,6 +319,7 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'private-challenges': return await privateChallengesHandler(req as any, res as any);
     case 'performance-dashboard': return await performanceDashboardHandler(req as any, res as any);
     case 'performance-ai': return await performanceAiHandler(req as any, res as any);
+    case 'activity-map': return await activityMapHandler(req as any, res as any);
     default: 
       return res.status(400).json({ 
         error: 'Ação inválida ou não fornecida.',

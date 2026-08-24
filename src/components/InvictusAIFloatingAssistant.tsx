@@ -34,13 +34,16 @@ import {
   Lock,
   FileText,
   Brain,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { useUser } from '../UserContext';
 import { processUserPerformance } from '../core/performance/performanceEngine';
 import { workoutService } from '../services/workoutService';
 import { activityService } from '../services/activityService';
 import { invictusAudioEffects } from '../lib/invictusAudioEffects';
+import { auth } from '../firebase';
+import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 
 interface Message {
   id: string;
@@ -419,15 +422,17 @@ export function InvictusAIFloatingAssistant() {
   const [loadingMemories, setLoadingMemories] = useState<boolean>(false);
 
   const loadUserMemories = async () => {
-    if (!user) return;
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
     setLoadingMemories(true);
     try {
-      const uId = user.uid || (user as any).id;
-      const res = await fetch(`/api/performance-ai?action=get-memories&userId=${uId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setUserMemories(data.memories || []);
-      }
+      const token = await firebaseUser.getIdToken();
+      const res = await fetch('/api/performance-ai?action=get-memories', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Não foi possível carregar as memórias da conta.');
+      const data = await res.json();
+      setUserMemories(data.memories || []);
     } catch (e) {
       console.warn('[Memories] Load error:', e);
     } finally {
@@ -436,21 +441,20 @@ export function InvictusAIFloatingAssistant() {
   };
 
   const handleDeleteMemory = async (memoryId: string) => {
-    if (!user || !memoryId) return;
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser || !memoryId) return;
     try {
-      const uId = user.uid || (user as any).id;
+      const token = await firebaseUser.getIdToken();
       const res = await fetch('/api/performance-ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           action: 'delete-memory',
-          userId: uId,
           memoryId
         })
       });
-      if (res.ok) {
-        setUserMemories(prev => prev.filter(m => m.id !== memoryId));
-      }
+      if (!res.ok) throw new Error('Não foi possível excluir esta memória.');
+      setUserMemories(prev => prev.filter(m => m.id !== memoryId));
     } catch (e) {
       console.warn('[Memories] Delete error:', e);
     }
@@ -558,23 +562,29 @@ export function InvictusAIFloatingAssistant() {
       if (!user) return;
       try {
         const workouts = await workoutService.getUserWorkouts(50);
-        const mappedWorkouts = workouts.map((w: any) => {
+        const mappedWorkouts = workouts.flatMap((w: any) => {
+          const timestamp = readActivityTimestamp(w.timestamp ?? w.date ?? w.createdAt);
+          const validationStatus = normalizeActivityValidationStatus(w.validationStatus ?? w.status ?? w.validation?.status);
+          if (timestamp === null || validationStatus !== 'validated') return [];
           const hr = Number(w.avgHeartRate) || Number(w.avgHr) || (w.hasSensorData ? Number(w.avgHeartRate) : undefined);
           const maxHr = Number(w.maxHeartRate) || Number(w.maxHr) || undefined;
-          return {
+          const duration = Number(w.duration ?? w.durationMinutes);
+          const calories = Number(w.caloriesBurned ?? w.calories);
+          const distance = Number(w.distance ?? w.distanceKm);
+          return [{
             id: w.id,
             userId: w.userId,
-            timestamp: w.date || w.createdAt || new Date().toISOString(),
+            timestamp,
             type: w.type || 'workout',
-            durationMinutes: w.duration || 45,
-            caloriesBurned: w.caloriesBurned || (w.points ? w.points * 12 : 0),
+            durationMinutes: Number.isFinite(duration) && duration >= 0 ? duration : 0,
+            caloriesBurned: Number.isFinite(calories) && calories >= 0 ? calories : 0,
             avgHeartRate: hr && hr > 0 ? hr : undefined,
             maxHeartRate: maxHr && maxHr > 0 ? maxHr : undefined,
-            distanceKm: w.distance || 0,
-            isValidated: w.status === 'valid',
-            validationMethod: hr ? 'Sensors' : 'Manual/CheckIn',
+            distanceKm: Number.isFinite(distance) && distance >= 0 ? distance : 0,
+            isValidated: true,
+            validationMethod: hr ? 'Sensors' : 'Unknown',
             hasSensorData: !!(hr && hr > 0)
-          };
+          }];
         });
         const state = processUserPerformance(
           mappedWorkouts as any,
@@ -583,7 +593,7 @@ export function InvictusAIFloatingAssistant() {
         );
         if (isMounted) setPerfState(state);
       } catch (err) {
-        console.warn('[Invictus AI] Performance state load fallback:', err);
+        console.warn('[Invictus AI] Não foi possível carregar o contexto de desempenho:', err);
       }
     }
     loadPerf();
@@ -602,8 +612,8 @@ export function InvictusAIFloatingAssistant() {
           text: `Olá, ${user.name || 'Atleta'}! Sou a **${user?.aiName || 'IA Invictus'}**, seu especialista em fisiologia, treinamento e inteligência do seu desempenho.
 
 Estou acompanhando você na tela de **${screenCtx.name}**. Como posso ajudar na sua evolução agora?`,
-          confidence: 'ALTA',
-          sources: ['Base de Dados Invictus', 'Biometria Real', 'Ciência do Esporte'],
+          confidence: 'PENDENTE',
+          sources: ['Contexto da conta', 'Servidor Invictus'],
           timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -628,21 +638,17 @@ Estou acompanhando você na tela de **${screenCtx.name}**. Como posso ajudar na 
       const mins = Math.floor(elapsedMs / 60000);
       const secs = Math.floor((elapsedMs % 60000) / 1000);
 
-      const weight = user?.weight || 70;
-      const estimatedCalories = Math.round((mins * 8.5) * (weight / 70));
-
-      const sessAny = currentSession as any;
-      const hasSensor = !!sessAny.hasSensorData || !!(sessAny.currentHeartRate && sessAny.currentHeartRate > 0);
       return {
         isSessionActive: true,
         type: currentSession.type,
         cardioTypeLabel: currentSession.cardioTypeLabel || (currentSession.type === 'workout' ? 'Treino de Força' : 'Atividade Cardio'),
         durationMinutes: mins,
         elapsedFormatted: `${mins} min e ${secs} seg`,
-        estimatedCalories,
-        hasHeartRateSensor: hasSensor,
-        currentHeartRate: hasSensor ? sessAny.currentHeartRate : null,
-        currentZone: hasSensor ? sessAny.currentZone : null,
+        // A sessão local não é uma fonte de telemetria cardíaca contínua.
+        // Não estimamos calorias nem fabricamos FC/zona para a conversa.
+        hasHeartRateSensor: false,
+        currentHeartRate: null,
+        currentZone: null,
         checkInId: currentSession.checkInId
       };
     } catch (e) {
@@ -883,17 +889,18 @@ Por favor, procure atendimento de emergência imediatamente:
     const activeWorkoutSession = getActiveWorkoutContext();
 
     try {
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error('Sessão não autenticada.');
+      const token = await firebaseUser.getIdToken();
       const res = await fetch('/api/performance-ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
-          userId: user?.uid || (user as any)?.id,
           queryText: textToSend,
           history: messages.slice(-6),
           screenName: screenCtx.name,
           currentPath: location.pathname,
           perfState,
-          userProfile: user,
           activeWorkoutSession
         })
       });
@@ -926,70 +933,20 @@ Por favor, procure atendimento de emergência imediatamente:
         }
       }
     } catch (err) {
-      console.warn('[Invictus AI] API error fallback trigger:', err);
+      console.warn('[Invictus AI] API indisponível:', err);
     }
 
-    // Client-side fallback reasoning if backend is unreachable
-    setTimeout(() => {
-      const qLower = textToSend.toLowerCase();
-      let fallbackText = '';
-
-      // Check workout real-time queries
-      if (activeWorkoutSession && (qLower.includes('tempo') || qLower.includes('caloria') || qLower.includes('frequência') || qLower.includes('frequencia') || qLower.includes('zona') || qLower.includes('meta') || qLower.includes('finalizar'))) {
-        if (qLower.includes('tempo')) {
-          fallbackText = `Você está treinando há **${activeWorkoutSession.elapsedFormatted}** nesta sessão de **${activeWorkoutSession.cardioTypeLabel}**.`;
-        } else if (qLower.includes('caloria')) {
-          fallbackText = `Você já queimou aproximadamente **${activeWorkoutSession.estimatedCalories} kcal** nesta sessão auditada.`;
-        } else if (qLower.includes('frequência') || qLower.includes('frequencia') || qLower.includes('zona') || qLower.includes('batimento') || qLower.includes('bpm') || qLower.includes('relogio') || qLower.includes('relógio') || qLower.includes('smartwatch')) {
-          if (activeWorkoutSession && activeWorkoutSession.hasHeartRateSensor && activeWorkoutSession.currentHeartRate) {
-            fallbackText = `Sua frequência cardíaca atual está em **${activeWorkoutSession.currentHeartRate} bpm**, mantendo você na **${activeWorkoutSession.currentZone}**.`;
-          } else {
-            fallbackText = `Você ainda **não conectou um smartwatch ou cinta cardíaca** (como Apple Watch, Garmin, Galaxy Watch ou Strava).
-            
-Por isso, para garantir 100% de veracidade, o Invictus **não inventa batimentos cardíacos (bpm) nem zonas fictícias**. Sincronize seu relógio na aba **Dispositivos** para registrar gráficos e biométricos reais!`;
-          }
-        } else if (qLower.includes('meta')) {
-          fallbackText = `Faltam cerca de **${Math.max(0, 40 - activeWorkoutSession.durationMinutes)} minutos** para concluir sua meta diária de treino auditado e garantir pontuação total no IGA.`;
-        } else if (qLower.includes('finalizar')) {
-          fallbackText = `Para finalizar o treino e enviar os dados para auditoria do IGA, basta tocar no indicador flutuante de treino no rodapé da tela!`;
-        }
-      } else if (qLower.includes('ranking') || qLower.includes('posição') || qLower.includes('subir')) {
-        fallbackText = `Para subir no ranking da sua liga nesta semana:
-1. **Consistência Semanal**: Mantenha pelo menos 4 a 5 sessões auditadas por semana para maximizar o multiplicador do IGA.
-2. **Qualidade do Batimento**: Treinos com acompanhamento biométrico via Strava ou smartwatch garantem pontuação total.
-3. **Validação de Presença**: Atividades presenciais em academias parceiras ganham selo de auditoria prioritária no ranking.`;
-      } else if (qLower.includes('iga') || qLower.includes('pontos') || qLower.includes('calculo')) {
-        fallbackText = `O IGA (Índice de Aderência Geral) é calculado pela fórmula:
-$$ IGA = \\text{Frequência} \\times \\text{Tempo Efetivo} \\times \\text{Intensidade (METs/FC)} $$
-
-O algoritmo reduz a zero treinos duplicados ou com gasto calórico biologicamente impossível para garantir um ranking 100% auditável.`;
-      } else if (qLower.includes('prontidão') || qLower.includes('recuperação') || qLower.includes('hoje')) {
-        const score = perfState?.readinessScore || 85;
-        fallbackText = `Sua prontidão calculada hoje é de **${score}/100**.
-
-Sua carga fisiológica acumulada está em zona ideal de supercompensação. Recomendamos realizar um treino de intensidade moderada a alta para estimular o ganho de VO₂ Max e hipertrofia com segurança.`;
-      } else {
-        fallbackText = `Na tela de **${screenCtx.name}**, analisei seus dados atuais:
-- **Pontuação Semanal**: ${user?.weeklyScore || 0} pts
-- **Sequência Atual**: ${user?.streak || 0} dias consecutivos
-- **Status do Perfil**: ${user?.level || 'Atleta Invictus'}
-
-Como seu especialista de saúde e fisiologia, estou pronto para responder sobre IGA, zonas cardíacas, treinos atração ou ranking!`;
-      }
-
-      const aiMsg: Message = {
-        id: `ai_${Date.now()}`,
-        sender: 'ai',
-        text: fallbackText,
-        confidence: 'ALTA',
-        sources: ['Motor Local Invictus', screenCtx.name],
-        timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setMessages(prev => [...prev, aiMsg]);
-      setLoading(false);
-      speakResponseText(fallbackText);
-    }, 400);
+    // Sem resposta autenticada do servidor, a IA não emite recomendações nem
+    // métricas locais que poderiam ser desatualizadas ou fabricadas.
+    setMessages(prev => [...prev, {
+      id: `ai_${Date.now()}`,
+      sender: 'ai',
+      text: 'Não foi possível consultar a IA agora. Nenhuma métrica ou recomendação foi estimada localmente. Tente novamente quando a conexão estiver disponível.',
+      confidence: 'INDISPONÍVEL',
+      sources: ['Servidor Invictus IA indisponível'],
+      timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    }]);
+    setLoading(false);
   };
 
   const handleOpenPanel = () => {
@@ -1474,8 +1431,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                       </div>
                       <div className="flex items-center gap-3 text-[10px] text-zinc-300">
                         <span className="flex items-center gap-1"><Clock size={10} /> {activeWorkoutSession.elapsedFormatted}</span>
-                        <span className="flex items-center gap-1"><Flame size={10} className="text-amber-400" /> {activeWorkoutSession.estimatedCalories} kcal</span>
-                        <span className="flex items-center gap-1"><Heart size={10} className="text-rose-400" /> {activeWorkoutSession.currentHeartRate} bpm</span>
+                        <span className="flex items-center gap-1 text-zinc-500"><Info size={10} /> Telemetria disponível após sincronização</span>
                       </div>
                     </div>
                   </div>

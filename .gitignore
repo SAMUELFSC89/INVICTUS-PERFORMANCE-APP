@@ -1,8 +1,15 @@
 node_modules/
 build/
 dist/
+server-dist/
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
+
+# Credenciais privadas de servidor nunca pertencem ao repositório.
+api/_lib/serviceAccountKey.json
+**/serviceAccountKey.json
+**/*service-account*.json
+*.pem

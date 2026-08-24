@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { workoutService } from '../services/workoutService';
 import { activityService } from '../services/activityService';
 import { userService } from '../services/userService';
 import { stravaService } from '../services/stravaService';
@@ -22,7 +21,10 @@ import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection, ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
 import { PowerLift } from './PowerLift';
 import { RunShareCard } from '../components/RunShareCard';
-import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption } from '../components/ChallengeActivityFlow';
+import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption, ActivityCompletion } from '../components/ChallengeActivityFlow';
+import { getXPProgress } from '../lib/levelUtils';
+import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { ACHIEVEMENTS } from '../achievements';
 
 export type ChallengeCategory =
   | 'all'
@@ -38,7 +40,6 @@ interface CoreChallenge {
   title: string;
   subtitle: string;
   description: string;
-  xp: number;
   icon: React.ReactNode;
   tag: string;
   badgeColor: string;
@@ -50,7 +51,6 @@ const CORE_CHALLENGES: CoreChallenge[] = [
     title: 'Treino de Musculação',
     subtitle: 'Complete seu treino na academia',
     description: 'Complete uma sessão de musculação registrada no aplicativo.',
-    xp: 100,
     icon: <Dumbbell size={28} className="text-amber-400" />,
     tag: 'Atividade Principal',
     badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20'
@@ -60,7 +60,6 @@ const CORE_CHALLENGES: CoreChallenge[] = [
     title: 'Cardio Aeróbico',
     subtitle: 'Corrida ou caminhada ao ar livre via GPS',
     description: 'Corrida ou caminhada ao ar livre via GPS.',
-    xp: 80,
     icon: <Footprints size={28} className="text-primary" />,
     tag: 'Resistência & Queima',
     badgeColor: 'bg-orange-500/10 text-orange-400 border-orange-500/20'
@@ -69,29 +68,9 @@ const CORE_CHALLENGES: CoreChallenge[] = [
 
 const DAILY_CHALLENGES_ORDER = ['workout', 'cardio'] as const;
 
-// All Badges & Conquistas Data
-const ALL_BADGES = [
-  { id: 'b-1', title: 'Primeiro Check-in Presencial', category: 'Frequência', xp: 50, icon: '📍', unlocked: true, desc: 'Realizou o primeiro check-in de geolocalização validado na academia.' },
-  { id: 'b-2', title: 'Titã da Musculação', category: 'Treino', xp: 150, icon: '🏋️', unlocked: true, desc: 'Completou 10 treinos de musculação auditados por IA.' },
-  { id: 'b-3', title: 'Clube dos 100KG', category: 'Power Lift', xp: 250, icon: '🏆', unlocked: true, desc: 'Supino Reto com 100 kg ou mais homologado por vídeo.' },
-  { id: 'b-4', title: 'Inabalável 30 Dias', category: 'Consistência', xp: 500, icon: '⚡', unlocked: false, desc: '30 dias seguidos de treinos validados sem interrupção.' },
-  { id: 'b-5', title: 'Atleta Growth', category: 'Patrocinados', xp: 200, icon: '🤝', unlocked: true, desc: 'Completou o Desafio Semanal Growth Supplements.' },
-  { id: 'b-6', title: 'Cinturão de Agachamento', category: 'Power Lift', xp: 400, icon: '👑', unlocked: false, desc: 'Maior carga homologada da academia no Agachamento.' },
-  { id: 'b-7', title: 'Maratonista Centauro', category: 'Cardio', xp: 300, icon: '🏃', unlocked: false, desc: 'Acumulou 50km de corrida monitorados por GPS ou Strava.' },
-  { id: 'b-8', title: 'Lenda da Temporada', category: 'Temporada', xp: 1000, icon: '🎖️', unlocked: false, desc: '100 treinos concluídos na temporada 2026.' }
-];
-
-// Challenge Ranking Leaderboard Data
-const CHALLENGE_LEADERBOARD = [
-  { rank: 1, name: 'Lucas "Gladiador" Silva', gym: 'Invictus Jardins', xp: 4250, challengesCount: 38, avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200' },
-  { rank: 2, name: 'Beatriz Ramos', gym: 'Invictus Moema', xp: 3980, challengesCount: 34, avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200' },
-  { rank: 3, name: 'Carlos "Iron" Mendes', gym: 'Invictus Pinheiros', xp: 3720, challengesCount: 31, avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200' },
-  { rank: 4, name: 'Mariana Duarte', gym: 'Invictus Jardins', xp: 3450, challengesCount: 29, avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200' },
-  { rank: 5, name: 'Thiago "Power" Alcantara', gym: 'Invictus Vila Olímpia', xp: 3100, challengesCount: 26, avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200' }
-];
-
 export function Challenges() {
   const { user: profile, refreshUser } = useUser();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Selected Category State
@@ -133,27 +112,44 @@ export function Challenges() {
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
   const [presenceCheckRequired, setPresenceCheckRequired] = useState(false);
   const [presenceCheckData, setPresenceCheckData] = useState<{ id: string; prompt: string } | null>(null);
+  const [completion, setCompletion] = useState<ActivityCompletion | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Cardio States
   const [selectedCardioType, setSelectedCardioType] = useState<string>('running');
   const [stravaConnecting, setStravaConnecting] = useState(false);
+  const levelProgress = getXPProgress(profile?.xp || 0);
+  const unlockedBadges = ACHIEVEMENTS.filter((achievement) => profile?.achievements?.includes(achievement.id));
 
   // Load today's submissions
   const loadSubmissions = async () => {
     const firebaseUser = auth.currentUser;
     if (firebaseUser) {
-      const today = new Date().toISOString().split('T')[0];
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
       const qSub = query(
         collection(db, 'workouts'),
-        where('userId', '==', firebaseUser.uid),
-        where('timestamp', '>=', today)
+        where('userId', '==', firebaseUser.uid)
       );
       try {
         const snap = await getDocs(qSub);
         const subs: Record<string, any> = {};
         snap.docs.forEach(d => {
           const data = d.data();
-          subs[data.type] = data;
+          const timestamp = readActivityTimestamp(data.timestamp ?? data.createdAt);
+          const status = normalizeActivityValidationStatus(
+            data.validationStatus ?? data.status ?? data.validation?.status
+          );
+          // Apenas uma atividade já validada pelo servidor entra no progresso
+          // diário. Envios pendentes e recusados nunca simulam conclusão.
+          if (
+            (data.type === 'workout' || data.type === 'cardio') &&
+            status === 'validated' &&
+            timestamp !== null &&
+            timestamp >= todayStart.getTime()
+          ) {
+            subs[data.type] = data;
+          }
         });
         setSubmissions(subs);
       } catch (err) {
@@ -239,6 +235,8 @@ export function Challenges() {
     setPendingChallenge(challenge);
     setStartActivityError(null);
     setError(null);
+    setNotice(null);
+    setCompletion(null);
     setFlowScreen(challenge.id === 'workout' ? 'workout-details' : 'cardio-picker');
   };
 
@@ -266,8 +264,8 @@ export function Challenges() {
     // (ex.: startSession fazendo consultas no Firestore), o Safari ja descartou a "user
     // activation" e o prompt nunca aparece (bug reportado: solicitações indevidas de permissões).
     // Ver auditoria antifraude 2026-08.
-    await activityService.requestMotionPermission();
     try {
+      await activityService.requestMotionPermission();
       const session = await activityService.startSession(
         type,
         undefined,
@@ -276,6 +274,7 @@ export function Challenges() {
       );
       setActiveSession(session);
       setPendingChallenge(null);
+      setCompletion(null);
       setFlowScreen('active');
     } catch (err: any) {
       console.error('Error starting activity:', err);
@@ -332,6 +331,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
     if (!activeSession) return;
     setLoading(true);
     setError(null);
+    setNotice(null);
 
     const sessionType = activeSession.type;
     // Captura o snapshot mais recente da sessao (com todos os checkpoints de GPS
@@ -341,73 +341,94 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
     try {
       const res = await activityService.endSession();
-      const points = res.workout?.points || (sessionType === 'workout' ? 40 : 30);
-      const rankingPoints = (res).rankingPointsEarned ?? res.workout?.rankingPointsEarned;
-      setActiveSession(null);
+      if (res.presenceCheckRequired) {
+        if (!res.presenceCheckId) {
+          throw new Error('A validação de presença foi solicitada sem um identificador válido. Tente finalizar novamente.');
+        }
+        // A sessão permanece ativa e não recebe XP até a decisão da prova de
+        // presença. Repetir endSession aqui criava conclusões duplicadas.
+        setPresenceCheckData({ id: res.presenceCheckId, prompt: res.livenessPrompt || 'Siga o gesto indicado' });
+        setPresenceCheckRequired(true);
+        setNotice(res.userMessage || 'Uma confirmação de presença é necessária antes da validação da atividade.');
+        return;
+      }
 
-      if (res.message && res.validation?.success === false) {
-        triggerXPToast(0, 'Sessão encerrada.');
-        setError(res.message);
-      } else {
-        triggerXPToast(points, `${sessionType === 'workout' ? 'Treino de Musculação' : 'Queima de Gordura'} Concluído! 🔥`, rankingPoints);
+      const status = normalizeActivityValidationStatus(
+        res.validation?.status ?? res.workout?.status
+      );
+      const rankingPoints = res.rankingPointsEarned ?? res.workout?.rankingPointsEarned;
+      const points = typeof res.workout?.points === 'number' && Number.isFinite(res.workout.points) && res.workout.points > 0
+        ? res.workout.points
+        : undefined;
 
-        // #217: mostra a tela de detalhe estilo Strava JA na hora de finalizar,
-        // com os dados reais desta sessao -- nao inventados. O mapa so aparece
-        // se realmente houver checkpoints de GPS coletados durante a sessao.
-        const now = new Date();
-        const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-        const cardioTypeLabels: Record<string, string> = Object.fromEntries(CARDIO_OPTIONS.map((option) => [option.id, option.label]));
+      if (status === 'validated') {
+        setActiveSession(null);
+        setCompletion({ status: 'approved', message: res.message, pointsAwarded: points });
+        if (points !== undefined) {
+          triggerXPToast(points, 'Atividade validada.', rankingPoints);
+        }
 
-        let trajectory: Array<{ lat: number; lng: number }> | undefined;
-        let distanceKm: number | undefined;
-        let durationMins: number | undefined;
-        let calories: number | undefined;
-        let pace: string | undefined;
-        let steps: number | undefined;
-
-        if (sessionType === 'cardio') {
-          distanceKm = (res.workout?.distance ?? activityService.calculateSessionDistance(sessionBeforeEnd)) || 0;
-          const durationMinsRaw = res.workout?.duration;
-          const timeSeconds = durationMinsRaw ? durationMinsRaw * 60 : elapsedTime;
-          durationMins = Math.round(timeSeconds / 60);
-          pace = calculatePace(distanceKm * 1000, timeSeconds);
+        // A tela de detalhe é montada somente a partir de um registro retornado
+        // pelo servidor. Não criamos IDs, timestamps ou pontuações locais.
+        const timestampMs = res.workout?.timestamp ? Date.parse(res.workout.timestamp) : Number.NaN;
+        if (res.workout?.id && Number.isFinite(timestampMs)) {
+          const completedAt = new Date(timestampMs);
+          const dateStr = completedAt.toLocaleDateString('pt-BR');
+          const timeStr = completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          const cardioTypeLabels: Record<string, string> = Object.fromEntries(CARDIO_OPTIONS.map((option) => [option.id, option.label]));
+          const serverDistance = typeof res.workout.distance === 'number' && Number.isFinite(res.workout.distance) ? res.workout.distance : undefined;
+          const serverDuration = typeof res.workout.duration === 'number' && Number.isFinite(res.workout.duration) ? res.workout.duration : undefined;
+          const rawCalories = (res.workout as any).calories;
+          const calories = typeof rawCalories === 'number' && Number.isFinite(rawCalories) ? rawCalories : undefined;
           const rawTrajectory = (sessionBeforeEnd.checkpoints || [])
             .filter((cp: any) => cp.location)
             .map((cp: any) => ({ lat: cp.location.lat, lng: cp.location.lng }));
-          trajectory = rawTrajectory.length >= 2 ? rawTrajectory : undefined;
-        } else {
-          durationMins = res.workout?.duration ? Number(res.workout.duration) : Math.round(elapsedTime / 60);
-        }
+          const trajectory = rawTrajectory.length >= 2 ? rawTrajectory : undefined;
+          const timeSeconds = serverDuration !== undefined ? serverDuration * 60 : undefined;
+          const pace = sessionType === 'cardio' && serverDistance !== undefined && timeSeconds !== undefined
+            ? calculatePace(serverDistance * 1000, timeSeconds)
+            : undefined;
 
-        setFinishedActivityItem({
-          id: res.workout?.id || `local_${Date.now()}`,
-          source: 'workout',
-          type: sessionType === 'cardio' ? 'cardio' : 'workout',
-          typeLabel: sessionType === 'cardio' ? 'Cardio ao ar livre' : 'Treino',
-          title: sessionType === 'cardio' ? (cardioTypeLabels[selectedCardioType] || 'Corrida ao ar livre') : 'Treino de Musculação',
-          dateStr,
-          timeStr,
-          rawTimestamp: now.getTime(),
-          status: 'homologada',
-          statusRaw: 'valid',
-          points,
-          rankingPointsEarned: rankingPoints || undefined,
-          durationMins,
-          distanceKm,
-          calories,
-          pace,
-          steps,
-          trajectory,
-        });
+          setFinishedActivityItem({
+            id: res.workout.id,
+            source: 'workout',
+            type: sessionType === 'cardio' ? 'cardio' : 'workout',
+            typeLabel: sessionType === 'cardio' ? 'Cardio' : 'Treino',
+            title: sessionType === 'cardio' ? (cardioTypeLabels[res.workout.cardioType || selectedCardioType] || 'Cardio') : 'Treino de Musculação',
+            dateStr,
+            timeStr,
+            rawTimestamp: timestampMs,
+            status: 'homologada',
+            statusRaw: 'valid',
+            points,
+            rankingPointsEarned: typeof rankingPoints === 'number' ? rankingPoints : undefined,
+            durationMins: serverDuration,
+            distanceKm: serverDistance,
+            calories,
+            pace,
+            trajectory,
+          });
+        }
         setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
+      } else if (status === 'pending') {
+        setActiveSession(null);
+        setCompletion({ status: 'pending', message: res.message });
+        setFlowScreen(null);
+        setNotice(res.message || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
+      } else if (status === 'rejected' || status === 'not_eligible') {
+        setActiveSession(null);
+        setError(res.message || 'A atividade não foi validada. Nenhuma pontuação foi concedida.');
+      } else {
+        // Sem decisão explícita do servidor, falhamos de forma segura: não
+        // marcamos a atividade como homologada e não concedemos XP.
+        setError(res.message || 'O servidor não confirmou o status da atividade. Nenhuma pontuação foi liberada.');
       }
       await refreshUser();
       await loadSubmissions();
     } catch (err: any) {
       console.error('Error ending activity:', err);
-      activityService.cancelSession();
-      setActiveSession(null);
+      // Não descarta a sessão automaticamente: o usuário pode repetir o envio
+      // quando houver falha temporária de rede ou do serviço de validação.
       setError(err.message || 'Falha ao encerrar atividade.');
     } finally {
       setLoading(false);
@@ -461,11 +482,11 @@ ${parsed.message}` : (parsed.message || rawMsg);
           <div className="challenge-icon challenge-icon--level"><Zap size={31} strokeWidth={2.4} /></div>
           <div className="min-w-0 flex-1">
             <span className="block text-[12px] font-bold uppercase tracking-wide text-white/80">Seu nível atual</span>
-            <p className="mt-1 font-headline text-[18px] leading-none italic uppercase text-white">Nível {profile?.level || 1} <span className="text-primary">· {profile?.xp || 0} XP</span></p>
+            <p className="mt-1 font-headline text-[18px] leading-none italic uppercase text-white">Nível {levelProgress.currentLevel} <span className="text-primary">· {profile?.xp || 0} XP</span></p>
           </div>
           <div className="challenge-level-progress">
-            <div className="challenge-progress-track"><div className="challenge-progress-value" /></div>
-            <span>88%</span>
+            <div className="challenge-progress-track"><div className="challenge-progress-value" style={{ width: `${levelProgress.percentage}%` }} /></div>
+            <span>{Math.round(levelProgress.percentage)}%</span>
           </div>
         </div>
       </header>
@@ -557,6 +578,23 @@ ${parsed.message}` : (parsed.message || rawMsg);
         </motion.div>
       )}
 
+      {notice && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-sky-500/10 border border-sky-500/30 text-sky-100 p-4 rounded-2xl text-xs shadow-sm flex items-start gap-3"
+        >
+          <Info size={18} className="text-sky-300 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-1">
+            <p className="font-bold uppercase tracking-wider text-[11px] text-sky-300">Status da atividade</p>
+            <p className="whitespace-pre-line leading-relaxed text-[12px] text-sky-100/85">{notice}</p>
+          </div>
+          <button onClick={() => setNotice(null)} className="text-sky-300/60 hover:text-sky-200 p-1 shrink-0 cursor-pointer" aria-label="Fechar aviso">
+            <X size={16} />
+          </button>
+        </motion.div>
+      )}
+
       {/* DYNAMIC VIEW CONTENT BASED ON SELECTED CATEGORY */}
 
       {/* 1. POWER LIFT CATEGORY VIEW */}
@@ -568,55 +606,18 @@ ${parsed.message}` : (parsed.message || rawMsg);
         /* 2. PRIVATE CHALLENGES CATEGORY VIEW */
         <PrivateChallengesTab />
       ) : selectedCategory === 'ranking' ? (
-        /* 3. RANKING LEADERBOARD VIEW */
-        <div className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-mono font-black text-primary uppercase tracking-widest block">
-                📊 CLASSIFICAÇÃO DOS ATLETAS
-              </span>
-              <h2 className="text-xl font-headline italic font-black text-white uppercase">
-                Ranking da Academia & Global
-              </h2>
-            </div>
-            <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl">
-              Atualizado em Tempo Real 🟢
-            </span>
+        <div className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-5 text-center">
+          <Trophy className="mx-auto text-primary" size={34} />
+          <div>
+            <h2 className="text-xl font-headline italic font-black text-white uppercase">Ranking</h2>
+            <p className="mt-2 text-sm text-on-surface-variant">A classificação é carregada apenas na tela oficial de ranking, com dados verificados do servidor.</p>
           </div>
-
-          <div className="space-y-3">
-            {CHALLENGE_LEADERBOARD.map((item) => (
-              <div
-                key={item.rank}
-                className={cn(
-                  "p-4 rounded-2xl border flex items-center justify-between gap-4 transition-all",
-                  item.rank === 1 ? "bg-amber-500/10 border-amber-500/40 shadow-lg" : "bg-surface-container-low border-white/5 hover:border-white/20"
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={cn(
-                    "w-8 h-8 rounded-xl font-headline italic font-black text-sm flex items-center justify-center shrink-0",
-                    item.rank === 1 ? "bg-amber-400 text-black" : item.rank === 2 ? "bg-slate-300 text-black" : item.rank === 3 ? "bg-amber-700 text-white" : "bg-white/10 text-on-surface-variant"
-                  )}>
-                    #{item.rank}
-                  </div>
-                  <img src={item.avatar} alt={item.name} className="w-10 h-10 rounded-full object-cover border border-white/20 shrink-0" />
-                  <div>
-                    <h4 className="font-bold text-sm text-white">{item.name}</h4>
-                    <p className="text-xs text-on-surface-variant">{item.gym} • {item.challengesCount} desafios concluídos</p>
-                  </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <span className="text-sm font-headline italic font-black text-primary block">{item.xp} XP</span>
-                  <span className="text-[9px] font-mono text-on-surface-variant uppercase">Total Acumulado</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <button onClick={() => navigate('/rankings')} className="challenge-powerlift-button w-full rounded-xl bg-primary px-4 py-3 font-headline text-sm italic uppercase text-black">
+            Abrir ranking
+          </button>
         </div>
       ) : selectedCategory === 'conquistas' ? (
-        /* 4. CONQUISTAS & BADGES GRID VIEW */
+        /* 4. CONQUISTAS CONFIRMADAS PELO PERFIL */
         <div className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-6">
           <div>
             <span className="text-[10px] font-mono font-black text-primary uppercase tracking-widest block">
@@ -627,30 +628,31 @@ ${parsed.message}` : (parsed.message || rawMsg);
             </h2>
           </div>
 
+          {unlockedBadges.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-5 py-8 text-center text-sm text-on-surface-variant">
+              Nenhuma conquista validada foi registrada ainda.
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {ALL_BADGES.map((badge) => (
+            {unlockedBadges.map((badge) => (
               <div
                 key={badge.id}
-                className={cn(
-                  "p-4 rounded-2xl border flex flex-col justify-between gap-3 text-center transition-all",
-                  badge.unlocked ? "bg-primary/5 border-primary/30" : "bg-surface-container-low/40 border-white/5 opacity-60"
-                )}
+                className="p-4 rounded-2xl border flex flex-col justify-between gap-3 text-center transition-all bg-primary/5 border-primary/30"
               >
                 <div className="space-y-2">
                   <div className="text-4xl mx-auto">{badge.icon}</div>
-                  <h4 className="font-headline italic font-black text-sm text-white uppercase">{badge.title}</h4>
-                  <p className="text-[11px] text-on-surface-variant line-clamp-3">{badge.desc}</p>
+                  <h4 className="font-headline italic font-black text-sm text-white uppercase">{badge.name}</h4>
+                  <p className="text-[11px] text-on-surface-variant line-clamp-3">{badge.description}</p>
                 </div>
 
                 <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-primary font-bold">+{badge.xp} XP</span>
-                  <span className={badge.unlocked ? "text-emerald-400 font-bold" : "text-on-surface-variant"}>
-                    {badge.unlocked ? 'Desbloqueado ✅' : 'Bloqueado 🔒'}
-                  </span>
+                  <span className="text-emerald-400 font-bold">Desbloqueado ✓</span>
+                  <span className="text-on-surface-variant">Verificado</span>
                 </div>
               </div>
             ))}
           </div>
+          )}
         </div>
       ) : (
         /* 5. DEFAULT CHALLENGES CATALOGUE VIEW */
@@ -681,7 +683,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
               <div className="flex items-center justify-between px-0.5">
                 <div>
                   <h2 className="text-[18px] leading-none font-headline text-white uppercase tracking-wide">Desafios principais do dia</h2>
-                  <span className="mt-1 block text-[12px] leading-none text-white/65">Complete os desafios diários e ganhe XP</span>
+                  <span className="mt-1 block text-[12px] leading-none text-white/65">Atividades validadas atualizam seu progresso</span>
                 </div>
                 <Info size={22} strokeWidth={1.7} className="text-white/60" />
               </div>
@@ -716,7 +718,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                               {ch.icon}
                             </div>
                             <div>
-                              {ch.id === 'workout' && <span className="challenge-running">Em andamento</span>}
+                              {isRunning && <span className="challenge-running">Em andamento</span>}
                               <h3 className="text-[16px] leading-none font-headline uppercase text-white group-hover:text-primary transition-colors">
                                 {ch.title}
                               </h3>
@@ -726,13 +728,13 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
                           <div className="shrink-0 text-right">
                             <button onClick={() => handleOpenChallenge(ch)} disabled={isCompletedToday} className="challenge-xp-action disabled:opacity-50">
-                              +{ch.xp} XP <ArrowRight size={26} />
+                              {isCompletedToday ? 'VALIDADO' : 'INICIAR'} <ArrowRight size={26} />
                             </button>
-                            {ch.id !== 'workout' && <span className="challenge-mini-progress">0 / 1</span>}
+                            {ch.id !== 'workout' && <span className="challenge-mini-progress">{isCompletedToday ? '1 / 1' : '0 / 1'}</span>}
                           </div>
                         </div>
 
-                        {ch.id === 'workout' && <div className="challenge-day-progress"><span><Clock size={19} /> Progresso do dia</span><strong>0 / 1</strong><div className="challenge-day-progress-track" /></div>}
+                        {ch.id === 'workout' && <div className="challenge-day-progress"><span><Clock size={19} /> Progresso do dia</span><strong>{isCompletedToday ? '1 / 1' : '0 / 1'}</strong><div className="challenge-day-progress-track"><i style={{ width: isCompletedToday ? '100%' : '0%' }} /></div></div>}
                       </div>
                     </div>
                     </React.Fragment>
@@ -786,7 +788,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
               {pendingChallenge.id === 'workout' && (
                 <div className="space-y-4">
                   <p className="text-xs text-on-surface-variant">
-                    Para iniciar seu treino de musculação, o aplicativo valida sua presença presencial para liberar a contagem de tempo e auditoria do treino.
+                    Para iniciar seu treino de musculação, o aplicativo confirma sua localização na academia antes de iniciar a atividade.
                   </p>
 
                   <button
@@ -794,7 +796,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                     className="w-full py-3 bg-primary hover:bg-primary-hover text-black font-headline font-black italic text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Play size={16} />
-                    <span>Iniciar Cronômetro de Treino (+40 XP)</span>
+                    <span>Iniciar cronômetro de treino</span>
                   </button>
                 </div>
               )}
@@ -830,7 +832,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
                     className="w-full py-3 bg-orange-500 hover:bg-orange-400 text-black font-headline font-black italic text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Play size={16} />
-                    <span>Iniciar Cardio com Telemetria (+30 XP)</span>
+                    <span>Iniciar cardio com telemetria</span>
                   </button>
                 </div>
               )}
@@ -845,11 +847,42 @@ ${parsed.message}` : (parsed.message || rawMsg);
           presenceCheckId={presenceCheckData.id}
           livenessPrompt={presenceCheckData.prompt}
           isOpen={presenceCheckRequired}
-          onSuccess={() => {
+          onSuccess={async (result) => {
             setPresenceCheckRequired(false);
-            if (activeSession) handleEndActivity();
+            setPresenceCheckData(null);
+            const presenceStatus = normalizeActivityValidationStatus(result.status);
+            const sessionType = activeSession?.type;
+
+            if (presenceStatus === 'validated') {
+              await activityService.completeSessionAfterPresence();
+              setActiveSession(null);
+              const points = typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded) && result.pointsAwarded > 0
+                ? result.pointsAwarded
+                : undefined;
+              setCompletion({ status: 'approved', message: result.userMessage, pointsAwarded: points });
+              if (points !== undefined) triggerXPToast(points, 'Atividade validada.');
+              setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
+              setNotice(null);
+            } else if (presenceStatus === 'pending') {
+              await activityService.completeSessionAfterPresence();
+              setActiveSession(null);
+              setCompletion({ status: 'pending', message: result.userMessage });
+              setFlowScreen(null);
+              setNotice(result.userMessage || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
+            } else {
+              activityService.cancelSession();
+              setActiveSession(null);
+              setFlowScreen(null);
+              setError(result.userMessage || 'A confirmação de presença não foi aprovada. Nenhuma pontuação foi concedida.');
+            }
+            await refreshUser();
+            await loadSubmissions();
           }}
-          onClose={() => setPresenceCheckRequired(false)}
+          onClose={() => {
+            setPresenceCheckRequired(false);
+            setPresenceCheckData(null);
+            setNotice('A atividade continua em andamento. Finalize novamente quando estiver pronto para concluir a confirmação de presença.');
+          }}
         />
       )}
 
@@ -879,12 +912,13 @@ ${parsed.message}` : (parsed.message || rawMsg);
           trajectory={finishedActivityItem?.trajectory}
           gymName={profile?.gymName || 'Sua academia'}
           completedChallengeIds={Object.keys(submissions)}
+          completion={completion}
           startError={startActivityError}
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
           onSummary={() => setFlowScreen(flowScreen === 'cardio-complete' ? 'cardio-summary' : 'day-progress')}
-          onDone={() => { setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); }}
+          onDone={() => { setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); setCompletion(null); }}
         />
       )}
     </div>

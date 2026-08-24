@@ -296,8 +296,8 @@ O INVICTUS emprega os melhores esforços técnicos para manter a plataforma disp
 export const LEGAL_CONSENTS = `
 TERMOS E FORMATOS DE CONSENTIMENTO EXPLÍCITO DOS USUÁRIOS
 
-1. Consentimento para Dados de Localização (GPS em Segundo Plano):
-"Autorizo o INVICTUS a acessar minha localização exata via GPS, inclusive em segundo plano durante a gravação ativa de treinos de corrida e ciclismo, para mapear minha rota, calcular distância, altimetria e verificar a autenticidade da atividade. Posso desativar o acesso a qualquer momento nas configurações do meu aparelho."
+1. Consentimento para Dados de Localização durante a Atividade:
+"Autorizo o INVICTUS a acessar minha localização exata via GPS enquanto estiver registrando um treino de corrida, caminhada ou ciclismo com o aplicativo em uso, para mapear minha rota, calcular distância, altimetria e verificar a autenticidade da atividade. Posso desativar o acesso a qualquer momento nas configurações do meu aparelho."
 
 2. Consentimento para Dados de Saúde (Apple Health / Health Connect):
 "Concedo meu consentimento explícito para que o INVICTUS leia minhas métricas de exercício, frequência cardíaca e gasto calórico registradas no Apple Health / Health Connect. Declaro estar ciente de que esses dados sensíveis de saúde serão utilizados unicamente para validação dos meus treinos e cálculo da minha pontuação de consistência, conforme a Política de Privacidade."
@@ -371,7 +371,7 @@ export const LEGAL_FAQ_100: FAQItem[] = [
   { id: 50, category: 'Health & Wearables', question: 'Como conectar o Android Health Connect no Android?', answer: 'Acesse Wearables no aplicativo, escolha "Health Connect" e permita que o INVICTUS acesse os dados de treino autorizados.' },
   { id: 51, category: 'Health & Wearables', question: 'O INVICTUS sincroniza com relógios Garmin?', answer: 'Sim. Você pode conectar sua conta Garmin Connect para importar automaticamente suas corridas, pedaladas e métricas cardíacas.' },
   { id: 52, category: 'Health & Wearables', question: 'Como funciona a integração com o Strava?', answer: 'Acesse Wearables -> Strava, faça login e autorize a leitura de suas atividades. Treinos no Strava serão importados e validados pelo INVICTUS.' },
-  { id: 53, category: 'Health & Wearables', question: 'O INVICTUS lê meus dados de saúde se o app estiver fechado?', answer: 'Apenas quando uma atividade física for sincronizada em segundo plano com permissão prévia do usuário concedida nas configurações do celular.' },
+  { id: 53, category: 'Health & Wearables', question: 'O INVICTUS lê meus dados de saúde se o app estiver fechado?', answer: 'Não. A leitura ocorre quando você usa a integração ou inicia uma sincronização no aplicativo, sempre após a permissão prévia do sistema operacional.' },
   { id: 54, category: 'Health & Wearables', question: 'Por que meu treino do smartwatch não apareceu imediatamente?', answer: 'A sincronização pode levar até alguns minutos dependendo do tempo de envio do aplicativo proprietário do seu relógio para o HealthKit/Health Connect.' },
   { id: 55, category: 'Health & Wearables', question: 'O INVICTUS vende meus dados de saúde para terceiros?', answer: 'NUNCA! O INVICTUS não vende, não aluga e não compartilha dados de saúde com nenhuma empresa de marketing, anúncios ou terceiros.' },
   { id: 56, category: 'Health & Wearables', question: 'Como revogo a permissão de acesso ao Apple Health ou Health Connect?', answer: 'Abra os Ajustes do seu sistema operacional (Ajustes -> Privacidade -> Saúde no iOS / Configurações -> Health Connect no Android) e remova as permissões.' },

@@ -37,26 +37,9 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
   const [errorText, setErrorText] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
   const [showCountdown, setShowCountdown] = useState(false);
-  const [scanStats, setScanStats] = useState({ light: 'OK', pupils: 'Detectando', position: 'Ajustando' });
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Auto-refresh fake telemetry stats
-  useEffect(() => {
-    let interval: any;
-    if (isOpen && !isAnalyzing) {
-      interval = setInterval(() => {
-        setScanStats({
-          light: Math.random() > 0.15 ? 'EXCELENTE (92%)' : 'SOMBREADO (45%)',
-          pupils: Math.random() > 0.2 ? 'FOCO ATIVO' : 'VARIAÇÃO ALTA',
-          position: Math.random() > 0.1 ? 'CENTRALIZADO' : 'CORRIGIR ALINHAMENTO'
-        });
-      }, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [isOpen, isAnalyzing]);
 
   // Start the camera-only stream used for presence validation.
   useEffect(() => {
@@ -92,10 +75,12 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
         }
       } else {
         setUseFallback(true);
+        setErrorText('Este dispositivo não disponibilizou uma câmera para a verificação de presença. Tente novamente em um aparelho com câmera liberada.');
       }
     } catch (err: any) {
-      console.warn("Face webcam access blocked, falling back to secure mobile file-capture:", err);
+      console.warn('Acesso à câmera bloqueado para verificação de presença:', err);
       setUseFallback(true);
+      setErrorText('Não foi possível acessar a câmera. Verifique a permissão de câmera do aplicativo e tente novamente.');
     }
   };
 
@@ -149,20 +134,6 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         setCapturedPhoto(dataUrl);
       }
-    }
-  };
-
-  // Capture file upload base64 (Fallback)
-  const handleFallbackFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setCapturedPhoto(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -250,7 +221,7 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
         <div className="p-4 bg-zinc-900/40 border-b border-zinc-900 flex items-start gap-3">
           <Info className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
           <p className="text-xs text-zinc-400 leading-relaxed">
-            {userMessage || "Para manter a integridade fiscal, desafios dinâmicos e combater fraudes de empréstimo de contas, complete a confirmação com o gesto biométrico."}
+            {userMessage || "Para manter a integridade dos desafios e evitar fraude, complete a confirmação com o gesto solicitado."}
           </p>
         </div>
 
@@ -353,25 +324,17 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
                 {useFallback ? (
                   <div className="w-64 h-64 border border-zinc-805 bg-zinc-900/50 rounded-full flex flex-col items-center justify-center p-4 text-center">
                     <Camera className="w-10 h-10 text-zinc-500 mb-3" />
-                    <p className="text-xs text-zinc-400 uppercase tracking-wider font-semibold font-mono">Câmera Auxiliar</p>
+                    <p className="text-xs text-zinc-400 uppercase tracking-wider font-semibold font-mono">Câmera indisponível</p>
                     <p className="text-[10px] text-zinc-500 leading-normal mt-1 max-w-[180px]">
-                      Use a câmera do seu celular para registrar. Gallery uploads são bloqueados de forma segura.
+                      A confirmação exige uma captura ao vivo. O aplicativo não usa imagens escolhidas da galeria como prova de presença.
                     </p>
                     <button
-                      id="trigger-fallback-file-btn"
-                      onClick={() => fileInputRef.current?.click()}
+                      id="retry-live-camera-btn"
+                      onClick={startCamera}
                       className="mt-4 px-3.5 py-1.5 bg-cyan-950 text-cyan-400 border border-cyan-800 hover:bg-cyan-900 font-bold text-xs rounded-xl tracking-tight transition duration-150"
                     >
-                      Capturar Selfie
+                      Tentar abrir câmera
                     </button>
-                    <input 
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      capture="user"
-                      onChange={handleFallbackFile}
-                      className="hidden"
-                    />
                   </div>
                 ) : (
                   <div className="relative w-64 h-64 border-4 border-cyan-500/30 rounded-full overflow-hidden shadow-inner bg-zinc-950 select-none">
@@ -412,21 +375,9 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
                 )}
               </div>
 
-              {/* Dynamic Telemetry stats readout in mono style */}
-              <div className="mt-5 w-full grid grid-cols-3 gap-2 px-3 tracking-tight">
-                <div className="bg-zinc-900 border border-zinc-805/60 rounded-xl p-2 text-center">
-                  <span className="block text-[8px] uppercase text-zinc-500 font-mono">ILUMINAÇÃO</span>
-                  <span className="text-[10px] font-bold text-zinc-300 font-mono">{scanStats.light}</span>
-                </div>
-                <div className="bg-zinc-900 border border-zinc-805/60 rounded-xl p-2 text-center">
-                  <span className="block text-[8px] uppercase text-zinc-500 font-mono">SINAL BIOMÉTRICO</span>
-                  <span className="text-[10px] font-bold text-zinc-300 font-mono">{scanStats.pupils}</span>
-                </div>
-                <div className="bg-zinc-900 border border-zinc-805/60 rounded-xl p-2 text-center">
-                  <span className="block text-[8px] uppercase text-zinc-500 font-mono">ALINHAMENTO</span>
-                  <span className="text-[10px] font-bold text-cyan-400 font-mono text-ellipsis overflow-hidden whitespace-nowrap block">{scanStats.position}</span>
-                </div>
-              </div>
+              <p className="mt-5 max-w-sm px-4 text-center text-[10px] leading-relaxed text-zinc-500">
+                A validação de presença é decidida no servidor após o envio; esta tela não exibe indicadores biométricos simulados.
+              </p>
 
               {/* Action Buttons */}
               <div className="mt-8 w-full flex items-center justify-between gap-3">
@@ -438,7 +389,7 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
                   }}
                   className="px-6 py-3 bg-zinc-900 text-zinc-400 border border-zinc-805 hover:bg-zinc-850 hover:text-white text-xs font-semibold rounded-2xl transition duration-150"
                 >
-                  Cancelar Treino
+                  Cancelar verificação
                 </button>
 
                 {!useFallback && (

@@ -9,13 +9,20 @@ import {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
+  // Esta é uma operação destrutiva de manutenção, nunca um recurso público
+  // da produção. Só habilite temporariamente durante uma migração planejada.
+  if (process.env.ENABLE_MIGRATE_RESET !== 'true') {
+    return res.status(404).json({ error: 'Rota não disponível.' });
+  }
+
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
   // Safety check: verify admin role
   const userSnap = await db.collection('users').doc(auth.uid).get();
   const userData = userSnap.data();
-  if (userData?.role !== 'admin' && userData?.email !== 'samuelfsc89@gmail.com') {
+  const adminEmails = new Set(['samuelfsc89@gmail.com', 'mucafsc89@gmail.com']);
+  if (userData?.role !== 'admin' && !adminEmails.has(String(auth.email || '').toLowerCase())) {
     return res.status(403).json({ error: 'Só administradores podem realizar esta ação.' });
   }
 
@@ -74,6 +81,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ success: true, message: 'Todo o progresso foi zerado com sucesso.' });
   } catch (error: any) {
     console.error('[Migration] Reset failed:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: 'Não foi possível executar a migração.' });
   }
 }

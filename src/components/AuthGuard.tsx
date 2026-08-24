@@ -17,7 +17,6 @@ import {
   signOut
 } from '../firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, onSnapshot } from 'firebase/firestore';
-import { getCurrentLocation } from '../lib/locationUtils';
 import { purchasePerformanceSubscription } from '../lib/revenuecat';
 import { UserProfile } from '../types';
 import { fitnessService } from '../services/fitnessService';
@@ -46,6 +45,21 @@ const generateSearchKeywords = (name: string, username?: string): string[] => {
   return Array.from(keywords).slice(0, 100);
 };
 
+async function isCpfAlreadyInUse(firebaseUser: { getIdToken: () => Promise<string> }, cpf: string): Promise<boolean> {
+  const token = await firebaseUser.getIdToken();
+  const response = await fetch('/api/profile?action=check-cpf', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ cpf })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Não foi possível validar o CPF agora.');
+  return Boolean(payload.exists);
+}
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading: contextLoading, refreshUser } = useUser();
   const [loading, setLoading] = useState(false);
@@ -70,7 +84,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [whatsapp, setWhatsapp] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
-  const [neighborhood, setNeighborhood] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
   const [weeklyFrequency, setWeeklyFrequency] = useState<UserProfile['weeklyFrequency']>('3-4');
@@ -83,8 +96,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [referralCodeInput, setReferralCodeInput] = useState('');
   const [error, setError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
-  const [userCoords, setUserCoords] = useState<{lat: number, lon: number} | null>(null);
   const [registrationStep, setRegistrationStep] = useState(1);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<'invictus_open' | 'invictus_performance'>('invictus_open');
@@ -123,7 +134,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   // Validação de acesso da conta em produção (Membro Open, Performance PRO e Administrador)
-  const isPaid = user?.subscriptionStatus === 'active_basic' || user?.subscriptionStatus === 'active_premium' || user?.isSubscribed || user?.role === 'admin' || user?.subscriptionTier === 'open' || Boolean(user?.uid);
+  const isPaid = user?.subscriptionStatus === 'active_basic' || user?.subscriptionStatus === 'active_premium' || user?.isSubscribed || user?.role === 'admin' || user?.subscriptionTier === 'open';
 
   useEffect(() => {
     if (user && !showTerms && !isPaid) {
@@ -153,60 +164,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Combined loading state for initial load and auth processes
   const isGlobalLoading = contextLoading || isRedirecting || loading;
-
-  const detectLocation = async () => {
-    setIsDetectingLocation(true);
-    setError('');
-
-    try {
-      const coords = await getCurrentLocation(true);
-      const { lat: latitude, lng: longitude } = coords;
-      setUserCoords({ lat: latitude, lon: longitude });
-      
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
-        {
-          headers: {
-            'Accept-Language': 'pt-BR',
-            'User-Agent': 'mooveApp/1.0'
-          }
-        }
-      );
-      const data = await response.json();
-      
-      if (data.address) {
-        const addr = data.address;
-        const detectedCity = addr.city || addr.town || addr.village || addr.municipality || addr.city_district || addr.county || addr.hamlet || '';
-        const detectedState = addr.state || '';
-        const detectedNeighborhood = addr.suburb || addr.neighbourhood || addr.district || addr.city_district || '';
-        
-        if (detectedCity) setCity(detectedCity);
-        if (detectedNeighborhood) setNeighborhood(detectedNeighborhood);
-        
-        if (detectedState) {
-          const statesMap: { [key: string]: string } = {
-            'Acre': 'AC', 'Alagoas': 'AL', 'Amapá': 'AP', 'Amazonas': 'AM',
-            'Bahia': 'BA', 'Ceará': 'CE', 'Distrito Federal': 'DF', 'Espírito Santo': 'ES',
-            'Goiás': 'GO', 'Maranhão': 'MA', 'Mato Grosso': 'MT', 'Mato Grosso do Sul': 'MS',
-            'Minas Gerais': 'MG', 'Pará': 'PA', 'Paraíba': 'PB', 'Paraná': 'PR',
-            'Pernambuco': 'PE', 'Piauí': 'PI', 'Rio de Janeiro': 'RJ', 'Rio Grande do Norte': 'RN',
-            'Rio Grande do Sul': 'RS', 'Rondônia': 'RO', 'Roraima': 'RR', 'Santa Catarina': 'SC',
-            'São Paulo': 'SP', 'Sergipe': 'SE', 'Tocantins': 'TO'
-          };
-          setState(statesMap[detectedState] || detectedState);
-        }
-      }
-    } catch (err: any) {
-      console.error("Error detecting location:", err);
-      if (err.message?.includes('denied')) {
-        setError('Permissão de localização negada. Ative a localização e tente novamente.');
-      } else {
-        setError('Erro ao detectar localização. Digite sua cidade manualmente.');
-      }
-    } finally {
-      setIsDetectingLocation(false);
-    }
-  };
 
   const formatAuthError = (err: any): string => {
     const code = err?.code || '';
@@ -367,13 +324,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         console.error(`[AUTH] [VERIFY_EMAIL] [${res.user.uid}] [FAILURE] Erro ao enviar confirmação: ${verificationErr.message}`);
       }
       
-      // Check for duplicate CPF (now that we are authenticated, we can safely query Firestore)
+      // A consulta de CPF ocorre somente no endpoint autenticado, que devolve
+      // um booleano sem expor perfis de terceiros.
       const cleanCpf = cpf.replace(/\D/g, '');
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('cpf', '==', cleanCpf));
-      const querySnapshot = await getDocs(q);
+      const cpfAlreadyInUse = await isCpfAlreadyInUse(res.user, cleanCpf);
       
-      if (!querySnapshot.empty) {
+      if (cpfAlreadyInUse) {
         console.warn(`[AUTH] [REGISTER] [${res.user.uid}] [FAILURE] CPF duplicado detectado: ${cleanCpf}`);
         setError('Este CPF já está em uso por outra conta.');
         sessionStorage.removeItem('is_registering_user');
@@ -458,7 +414,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       if (referralCodeInput) {
         const referrer = await referralService.getReferrerByCode(referralCodeInput);
         if (referrer) {
-          await referralService.createReferral(referrer.uid, res.user.uid, fullName);
+          await referralService.createReferral(referralCodeInput);
           console.log(`[AUTH] [REFERRAL] [${res.user.uid}] [SUCCESS] Indicação vinculada ao código ${referralCodeInput}`);
         }
       }
@@ -987,15 +943,10 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
                 try {
                   const cleanCpf = cpf.replace(/\D/g, '');
                   
-                  // Check for duplicate CPF
-                  const usersRef = collection(db, 'users');
-                  const q = query(usersRef, where('cpf', '==', cleanCpf));
-                  const querySnapshot = await getDocs(q);
-                  
-                  // Check if this CPF already belongs to ANOTHER user
-                  const existingUserWithCpf = querySnapshot.docs.find(doc => doc.id !== user.uid);
-                  
-                  if (existingUserWithCpf) {
+                  const firebaseUser = auth.currentUser;
+                  if (!firebaseUser) throw new Error('Sua sessão expirou. Faça login novamente.');
+                  const cpfAlreadyInUse = await isCpfAlreadyInUse(firebaseUser, cleanCpf);
+                  if (cpfAlreadyInUse) {
                     setError('Este CPF já está em uso por outra conta.');
                     setLoading(false);
                     return;

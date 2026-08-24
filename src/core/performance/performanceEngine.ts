@@ -1,5 +1,4 @@
 import { TimeRange, ReliabilityLevel, METRIC_CATALOG, PerformanceMetricDef } from './metricCatalog';
-import { calculateWeeklyIGA, IGASession } from '../iga';
 
 export interface RawWorkoutSession {
   id: string;
@@ -13,7 +12,8 @@ export interface RawWorkoutSession {
   caloriesBurned?: number;
   workoutType?: string;
   workoutName?: string;
-  validationStatus?: 'validated' | 'approved' | 'pending' | 'rejected' | 'not_eligible';
+  validationStatus?: 'valid' | 'validated' | 'approved' | 'pending' | 'rejected' | 'not_eligible';
+  distanceKm?: number;
   hasSensorData?: boolean;
   hasGPSData?: boolean;
   imageHash?: string;
@@ -70,8 +70,8 @@ export interface UserPerformanceState {
   }[];
 
   // Calculated Overall Physio Readiness & Whoop-like Score
-  readinessScore: number;
-  readinessStatus: 'Excelente' | 'Boa' | 'Atenção' | 'Descanso Recomendado';
+  readinessScore: number | null;
+  readinessStatus: 'Excelente' | 'Boa' | 'Atenção' | 'Descanso Recomendado' | 'Indisponível';
   overallReliability: ReliabilityLevel;
 
   // Permanent Timeline Log
@@ -157,17 +157,18 @@ export function processUserPerformance(
   },
   selectedRange: TimeRange = '7days'
 ): UserPerformanceState {
-  const userName = userProfile.name || userProfile.displayName || 'Atleta Invictus';
-  const userAge = Number(userProfile.age) || 30;
-  const userWeight = Number(userProfile.weight) || 70;
+  const userName = userProfile.name || userProfile.displayName || 'Atleta';
+  const userAge = Number(userProfile.age) > 0 ? Number(userProfile.age) : 0;
+  const userWeight = Number(userProfile.weight) > 0 ? Number(userProfile.weight) : 0;
   const userHeight = Number(userProfile.height) || 0;
   const userSex = userProfile.sex || '';
   const userIMC = Number(userProfile.imc) || (userHeight > 0 && userWeight > 0 ? Number((userWeight / Math.pow(userHeight / 100, 2)).toFixed(1)) : 0);
-  const userMaxHR = Number(userProfile.maxHeartRate) || (220 - userAge);
+  const userMaxHR = Number(userProfile.maxHeartRate) > 0 ? Number(userProfile.maxHeartRate) : 0;
 
   // Filter valid workouts
   const validAllWorkouts = allWorkouts
-    .filter(w => w.validationStatus !== 'rejected' && w.validationStatus !== 'not_eligible')
+    .filter(w => ['valid', 'validated', 'approved'].includes(String(w.validationStatus || '').toLowerCase()))
+    .filter(w => Number.isFinite(w.timestamp) && w.timestamp > 0)
     .sort((a, b) => a.timestamp - b.timestamp);
 
   const timeframeWorkouts = filterWorkoutsByRange(validAllWorkouts, selectedRange);
@@ -302,20 +303,21 @@ export function processUserPerformance(
       }
 
       case 'total_calories_burned': {
-        const totalCals = timeframeWorkouts.reduce((acc, w) => acc + (w.caloriesBurned || 0), 0);
-        hasEnoughData = totalCals > 0 || timeframeWorkouts.length > 0;
+        const calorieWorkouts = timeframeWorkouts.filter(w => Number(w.caloriesBurned) > 0);
+        const totalCals = calorieWorkouts.reduce((acc, w) => acc + (w.caloriesBurned || 0), 0);
+        hasEnoughData = calorieWorkouts.length > 0;
         currentValue = Math.round(totalCals);
-        if (timeframeWorkouts.length > 0) {
-          const calVals = timeframeWorkouts.map(w => w.caloriesBurned || 0);
+        if (calorieWorkouts.length > 0) {
+          const calVals = calorieWorkouts.map(w => w.caloriesBurned || 0);
           bestVal = Math.max(...calVals);
-          avgVal = Math.round(totalCals / timeframeWorkouts.length);
-          historyPoints = timeframeWorkouts.map((w, idx) => ({
+          avgVal = Math.round(totalCals / calorieWorkouts.length);
+          historyPoints = calorieWorkouts.map((w, idx) => ({
             label: w.workoutName || `Treino ${idx + 1}`,
             value: w.caloriesBurned || 0,
             date: new Date(w.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
           }));
         } else {
-          statusMessage = 'Nenhuma caloria registrada no período';
+          statusMessage = 'Nenhuma caloria medida ou sincronizada no período';
         }
         break;
       }
@@ -326,40 +328,29 @@ export function processUserPerformance(
           currentValue = Number(userProfile.igaAudit.overallCalorieRatio).toFixed(2);
           reliability = 'alta';
         } else {
-          currentValue = '1.00 (Padrão)';
-          hasEnoughData = timeframeWorkouts.length > 0;
-          statusMessage = 'Gate ativo. Aguardando auditoria do motor IGA.';
+          currentValue = '—';
+          hasEnoughData = false;
+          statusMessage = 'Aguardando auditoria do motor IGA.';
         }
         break;
       }
 
       case 'acute_chronic_workload_ratio': {
-        const totalMin = timeframeWorkouts.reduce((acc, w) => acc + (w.durationMinutes || 0), 0);
-        hasEnoughData = validAllWorkouts.length >= 2;
-        if (hasEnoughData) {
-          const acuteLoad = Math.round(totalMin * 1.5);
-          const chronicLoad = Math.max(100, Math.round(acuteLoad * 0.9));
-          currentValue = (acuteLoad / chronicLoad).toFixed(2);
-        } else {
-          currentValue = '0.00';
-          statusMessage = 'Acumule 2 semanas de treino para ativar o gráfico ACWR';
-        }
+        // Não estimamos carga com multiplicadores arbitrários no cliente. A
+        // métrica só deve existir quando vier de um motor auditado/sensor.
+        currentValue = '—';
+        hasEnoughData = false;
+        statusMessage = 'Aguardando carga de treino auditada pelo servidor.';
         break;
       }
 
       case 'recovery_index': {
-        hasEnoughData = validAllWorkouts.length > 0;
-        if (hasEnoughData) {
-          const lastWorkout = validAllWorkouts[validAllWorkouts.length - 1];
-          const hoursSinceLast = (Date.now() - lastWorkout.timestamp) / (3600 * 1000);
-          // Ideal recovery is 24 to 48 hours
-          let score = Math.min(100, Math.round(50 + Math.min(48, hoursSinceLast) * 1.1));
-          if (hoursSinceLast < 12) score = 65; // temporary fatigue
-          currentValue = score;
-        } else {
-          currentValue = 100;
-          statusMessage = 'Sem fadiga acumulada registrada.';
-        }
+        // Intervalo desde o treino não é, por si só, uma medição de
+        // recuperação. Sem HRV/sono/dado auditado, o valor deve permanecer
+        // indisponível em vez de se apresentar como recomendação médica.
+        currentValue = '—';
+        hasEnoughData = false;
+        statusMessage = 'Conecte um dispositivo com dados de recuperação para liberar esta métrica.';
         break;
       }
 
@@ -377,7 +368,7 @@ export function processUserPerformance(
       }
 
       case 'weekly_active_days': {
-        hasEnoughData = true;
+        hasEnoughData = validAllWorkouts.length > 0;
         // Count distinct days in current week
         const now = new Date();
         const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
@@ -390,9 +381,9 @@ export function processUserPerformance(
       }
 
       case 'current_streak_days': {
-        hasEnoughData = true;
-        currentValue = userProfile.streak || 0;
-        bestVal = userProfile.streak || 0;
+        hasEnoughData = typeof userProfile.streak === 'number';
+        currentValue = Number(userProfile.streak) || 0;
+        bestVal = Number(userProfile.streak) || 0;
         break;
       }
 
@@ -417,23 +408,15 @@ export function processUserPerformance(
       }
 
       case 'iga_weekly_score': {
-        hasEnoughData = true;
-        currentValue = userProfile.weeklyScore || (userProfile.igaAudit ? userProfile.igaAudit.igaRanking : 0);
+        hasEnoughData = typeof userProfile.weeklyScore === 'number' || typeof userProfile.igaAudit?.igaRanking === 'number';
+        currentValue = Number(userProfile.weeklyScore ?? userProfile.igaAudit?.igaRanking ?? 0);
         break;
       }
 
       case 'projected_monthly_workouts': {
-        const count = timeframeWorkouts.length;
-        hasEnoughData = count >= 1;
-        if (hasEnoughData) {
-          const todayDate = new Date().getDate();
-          const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-          const proj = Math.round((count / Math.max(1, todayDate)) * daysInMonth);
-          currentValue = proj;
-        } else {
-          currentValue = 0;
-          statusMessage = 'Projeção ativada a partir do primeiro treino do mês';
-        }
+        currentValue = '—';
+        hasEnoughData = false;
+        statusMessage = 'Projeções serão exibidas quando o motor analítico auditado estiver disponível.';
         break;
       }
     }
@@ -455,59 +438,55 @@ export function processUserPerformance(
     };
   });
 
-  // Calculate HR Zones Distribution (Minutes & Percentages)
-  const totalDurationTimeframe = timeframeWorkouts.reduce((acc, w) => acc + (w.durationMinutes || 0), 0);
+  // Não existe série temporal de frequência cardíaca em RawWorkoutSession.
+  // Logo não é correto distribuir artificialmente toda a duração entre zonas.
+  // Mantemos a estrutura vazia para o layout e aguardamos dados reais de zona.
+  const zoneRange = (from: number, to: number) => userMaxHR ? `${Math.round(userMaxHR * from)} - ${Math.round(userMaxHR * to)} bpm` : '—';
   const hrZones = [
     {
       zoneName: 'Zona Máxima (Vermelho Z5)',
-      range: `${Math.round(userMaxHR * 0.9)} - ${userMaxHR} bpm`,
-      minutes: Math.round(totalDurationTimeframe * 0.10),
-      percent: 10,
+      range: zoneRange(0.9, 1),
+      minutes: 0,
+      percent: 0,
       color: '#EF4444',
       description: 'Potência anaeróbica máxima, sprints intensos e esforços limite.'
     },
     {
       zoneName: 'Zona Limiar Anaeróbico (Z4)',
-      range: `${Math.round(userMaxHR * 0.8)} - ${Math.round(userMaxHR * 0.89)} bpm`,
-      minutes: Math.round(totalDurationTimeframe * 0.25),
-      percent: 25,
+      range: zoneRange(0.8, 0.89),
+      minutes: 0,
+      percent: 0,
       color: '#F97316',
       description: 'Aumento de tolerância ao lactato muscular e velocidade sustentada.'
     },
     {
       zoneName: 'Zona Aeróbica Moderada (Z3)',
-      range: `${Math.round(userMaxHR * 0.7)} - ${Math.round(userMaxHR * 0.79)} bpm`,
-      minutes: Math.round(totalDurationTimeframe * 0.45),
-      percent: 45,
+      range: zoneRange(0.7, 0.79),
+      minutes: 0,
+      percent: 0,
       color: '#EAB308',
       description: 'Eficiência cardiovascular, vascularização e queima de gordura.'
     },
     {
       zoneName: 'Zona Leve (Aquecimento Z2)',
-      range: `${Math.round(userMaxHR * 0.6)} - ${Math.round(userMaxHR * 0.69)} bpm`,
-      minutes: Math.round(totalDurationTimeframe * 0.15),
-      percent: 15,
+      range: zoneRange(0.6, 0.69),
+      minutes: 0,
+      percent: 0,
       color: '#22C55E',
       description: 'Aquecimento, queima basal de gorduras e resistência de base.'
     },
     {
       zoneName: 'Zona de Recuperação (Z1)',
-      range: `${Math.round(userMaxHR * 0.5)} - ${Math.round(userMaxHR * 0.59)} bpm`,
-      minutes: Math.round(totalDurationTimeframe * 0.05),
-      percent: 5,
+      range: zoneRange(0.5, 0.59),
+      minutes: 0,
+      percent: 0,
       color: '#3B82F6',
       description: 'Recuperação ativa, mobilidade e regeneração tecidual.'
     }
   ];
 
-  // Overall Physio Readiness Score
-  const recMetric = computedMetrics['recovery_index']?.currentValue;
-  const readinessScore = typeof recMetric === 'number' ? recMetric : 85;
-  let readinessStatus: UserPerformanceState['readinessStatus'] = 'Excelente';
-  if (readinessScore >= 80) readinessStatus = 'Excelente';
-  else if (readinessScore >= 65) readinessStatus = 'Boa';
-  else if (readinessScore >= 45) readinessStatus = 'Atenção';
-  else readinessStatus = 'Descanso Recomendado';
+  const readinessScore = null;
+  const readinessStatus: UserPerformanceState['readinessStatus'] = 'Indisponível';
 
   // Build Permanent Timeline Events based on real achievements
   const timelineEvents: TimelineEvent[] = [];
@@ -545,32 +524,6 @@ export function processUserPerformance(
         badgeText: 'Maior Duração'
       });
     }
-  }
-
-  if ((userProfile.streak || 0) >= 3) {
-    timelineEvents.push({
-      id: 'evt_streak',
-      title: `Sequência de ${userProfile.streak} Dias / Semanas Ativas`,
-      description: 'Consistência excelente auditada pelo sistema Invictus.',
-      date: 'Ativo Agora',
-      timestamp: Date.now(),
-      type: 'streak_milestone',
-      iconType: 'flame',
-      badgeText: 'Habito Consistente'
-    });
-  }
-
-  if ((userProfile.weeklyScore || 0) > 0) {
-    timelineEvents.push({
-      id: 'evt_iga',
-      title: `Sessão IGA Semanal: ${userProfile.weeklyScore} Pontos`,
-      description: 'Métrica auditada com base em Frequência (Fn), Tempo (Tn) e Intensidade (In).',
-      date: 'Semana Atual',
-      timestamp: Date.now(),
-      type: 'iga_record',
-      iconType: 'trophy',
-      badgeText: 'Pontuação IGA'
-    });
   }
 
   // Personal Records List

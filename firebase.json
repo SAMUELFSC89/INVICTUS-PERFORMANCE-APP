@@ -3,21 +3,7 @@
     "database": "ai-studio-42777a57-821e-48f8-9e9d-06c615ecdcda",
     "rules": "firestore.rules"
   },
-  "hosting": {
-    "public": "dist",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "run": {
-          "serviceId": "REPLACE_WITH_YOUR_CLOUD_RUN_SERVICE_ID",
-          "region": "us-east1"
-        }
-      }
-    ]
+  "storage": {
+    "rules": "storage.rules"
   }
 }
