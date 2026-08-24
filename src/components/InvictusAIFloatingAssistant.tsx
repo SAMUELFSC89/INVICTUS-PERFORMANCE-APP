@@ -9,8 +9,6 @@ import {
   ShieldCheck,
   Cpu,
   RefreshCw,
-  Mic,
-  MicOff,
   Volume2,
   VolumeX,
   Compass,
@@ -32,7 +30,6 @@ import {
   Square,
   Info,
   ShieldAlert,
-  AlertTriangle,
   HelpCircle,
   Lock,
   FileText,
@@ -58,7 +55,6 @@ interface Message {
 
 export interface AIVoiceConfig {
   speechEnabled: boolean;
-  wakeWordEnabled: boolean;
   speechRate: number;
   pitch: number;
   soundEffectsEnabled: boolean;
@@ -68,7 +64,6 @@ export interface AIVoiceConfig {
 
 const DEFAULT_VOICE_CONFIG: AIVoiceConfig = {
   speechEnabled: false,
-  wakeWordEnabled: true,
   speechRate: 1.0,
   pitch: 1.0,
   soundEffectsEnabled: true,
@@ -302,13 +297,13 @@ function getScreenContext(pathname: string) {
   };
 }
 
-// Siri / ChatGPT style visual voice feedback wave & orb
+// Siri / ChatGPT style visual feedback wave & orb for AI processing and playback.
 function SiriChatGPTVoiceVisualizer({
   mode,
   onStop,
   aiName
 }: {
-  mode: 'listening' | 'thinking' | 'speaking';
+  mode: 'thinking' | 'speaking';
   onStop?: () => void;
   aiName?: string;
 }) {
@@ -327,40 +322,20 @@ function SiriChatGPTVoiceVisualizer({
         <div className="relative w-12 h-12 rounded-full flex items-center justify-center shrink-0">
           {/* Outer glowing pulsing ring */}
           <motion.div
-            animate={
-              mode === 'listening'
-                ? { scale: [1, 1.4, 1], opacity: [0.4, 0.9, 0.4] }
-                : mode === 'speaking'
-                ? { scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] }
-                : { rotate: 360 }
-            }
+            animate={mode === 'speaking' ? { scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] } : { rotate: 360 }}
             transition={{
               repeat: Infinity,
               duration: mode === 'thinking' ? 2 : 1.4,
               ease: 'easeInOut'
             }}
-            className={`absolute inset-0 rounded-full blur-md ${
-              mode === 'listening'
-                ? 'bg-rose-500/70'
-                : mode === 'speaking'
-                ? 'bg-emerald-400/80'
-                : 'bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-500'
-            }`}
+            className={`absolute inset-0 rounded-full blur-md ${mode === 'speaking' ? 'bg-emerald-400/80' : 'bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-500'}`}
           />
 
           {/* Core Orb */}
           <div
-            className={`relative w-10 h-10 rounded-full flex items-center justify-center shadow-lg border ${
-              mode === 'listening'
-                ? 'bg-gradient-to-br from-rose-500 via-pink-600 to-rose-700 border-rose-300/70 text-white'
-                : mode === 'speaking'
-                ? 'bg-gradient-to-br from-emerald-400 via-teal-500 to-emerald-600 border-emerald-300/80 text-black'
-                : 'bg-gradient-to-br from-cyan-400 via-emerald-500 to-teal-600 border-emerald-300/70 text-black'
-            }`}
+            className={`relative w-10 h-10 rounded-full flex items-center justify-center shadow-lg border ${mode === 'speaking' ? 'bg-gradient-to-br from-emerald-400 via-teal-500 to-emerald-600 border-emerald-300/80 text-black' : 'bg-gradient-to-br from-cyan-400 via-emerald-500 to-teal-600 border-emerald-300/70 text-black'}`}
           >
-            {mode === 'listening' ? (
-              <Mic size={20} className="animate-bounce" />
-            ) : mode === 'speaking' ? (
+            {mode === 'speaking' ? (
               <Volume2 size={20} className="animate-pulse" />
             ) : (
               <Sparkles size={20} className="animate-spin" />
@@ -372,17 +347,9 @@ function SiriChatGPTVoiceVisualizer({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span
-              className={`text-xs font-black uppercase tracking-wider ${
-                mode === 'listening'
-                  ? 'text-rose-400'
-                  : mode === 'speaking'
-                  ? 'text-emerald-400'
-                  : 'text-cyan-400'
-              }`}
+              className={`text-xs font-black uppercase tracking-wider ${mode === 'speaking' ? 'text-emerald-400' : 'text-cyan-400'}`}
             >
-              {mode === 'listening'
-                ? 'Ouvindo sua voz...'
-                : mode === 'speaking'
+              {mode === 'speaking'
                 ? `${aiName || 'Invictus IA'} Falando...`
                 : 'Analisando fisiologia e dados...'}
             </span>
@@ -398,17 +365,11 @@ function SiriChatGPTVoiceVisualizer({
                 }}
                 transition={{
                   repeat: Infinity,
-                  duration: mode === 'listening' ? 0.5 : 0.7,
+                  duration: 0.7,
                   delay: delay * 0.15,
                   ease: 'easeInOut'
                 }}
-                className={`w-1 rounded-full ${
-                  mode === 'listening'
-                    ? 'bg-rose-400'
-                    : mode === 'speaking'
-                    ? 'bg-emerald-400'
-                    : 'bg-cyan-400'
-                }`}
+                className={`w-1 rounded-full ${mode === 'speaking' ? 'bg-emerald-400' : 'bg-cyan-400'}`}
               />
             ))}
           </div>
@@ -437,7 +398,6 @@ export function InvictusAIFloatingAssistant() {
   const [showSettings, setShowSettings] = useState(false);
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasNewInsight, setHasNewInsight] = useState(true);
   const [perfState, setPerfState] = useState<any>(null);
@@ -516,7 +476,34 @@ export function InvictusAIFloatingAssistant() {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('invictus_ai_voice_config');
-        if (saved) return { ...DEFAULT_VOICE_CONFIG, ...JSON.parse(saved) };
+        if (saved) {
+          const storedConfig = JSON.parse(saved) as Partial<AIVoiceConfig>;
+          const normalizedConfig: AIVoiceConfig = {
+            ...DEFAULT_VOICE_CONFIG,
+            speechEnabled: typeof storedConfig.speechEnabled === 'boolean'
+              ? storedConfig.speechEnabled
+              : DEFAULT_VOICE_CONFIG.speechEnabled,
+            speechRate: typeof storedConfig.speechRate === 'number'
+              ? storedConfig.speechRate
+              : DEFAULT_VOICE_CONFIG.speechRate,
+            pitch: typeof storedConfig.pitch === 'number'
+              ? storedConfig.pitch
+              : DEFAULT_VOICE_CONFIG.pitch,
+            soundEffectsEnabled: typeof storedConfig.soundEffectsEnabled === 'boolean'
+              ? storedConfig.soundEffectsEnabled
+              : DEFAULT_VOICE_CONFIG.soundEffectsEnabled,
+            voiceName: typeof storedConfig.voiceName === 'string'
+              ? storedConfig.voiceName
+              : DEFAULT_VOICE_CONFIG.voiceName,
+            language: typeof storedConfig.language === 'string'
+              ? storedConfig.language
+              : DEFAULT_VOICE_CONFIG.language
+          };
+
+          // Regrava somente as preferências ainda suportadas.
+          localStorage.setItem('invictus_ai_voice_config', JSON.stringify(normalizedConfig));
+          return normalizedConfig;
+        }
       } catch (e) {
         console.warn('[VoiceConfig] Load error:', e);
       }
@@ -524,17 +511,12 @@ export function InvictusAIFloatingAssistant() {
     return DEFAULT_VOICE_CONFIG;
   });
 
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const wakeWordRecognitionRef = useRef<any>(null);
   const isDraggingRef = useRef(false);
 
   const speechChunksRef = useRef<string[]>([]);
   const speechChunkIndexRef = useRef<number>(0);
   const speechHeartbeatRef = useRef<any>(null);
-  const shouldRunWakeWordRef = useRef<boolean>(true);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const screenCtx = getScreenContext(location.pathname);
@@ -568,102 +550,6 @@ export function InvictusAIFloatingAssistant() {
       }
     }
   }, []);
-
-  // Foreground Wake-Word Listener Effect ("Ei, Invictus" / "Olá, Invictus" / "Invictus")
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    if (!voiceConfig.wakeWordEnabled) {
-      if (wakeWordRecognitionRef.current) {
-        try { wakeWordRecognitionRef.current.abort(); } catch (e) {}
-        wakeWordRecognitionRef.current = null;
-      }
-      return;
-    }
-
-    let isComponentMounted = true;
-
-    const startWakeWordListener = () => {
-      if (!isComponentMounted || !voiceConfig.wakeWordEnabled || !shouldRunWakeWordRef.current) return;
-      if (isListening || isSpeaking || loading) return;
-
-      try {
-        if (wakeWordRecognitionRef.current) {
-          try { wakeWordRecognitionRef.current.abort(); } catch (e) {}
-        }
-
-        const wakeRec = new SpeechRecognition();
-        wakeRec.continuous = true;
-        wakeRec.interimResults = true;
-        wakeRec.lang = 'pt-BR';
-
-        wakeRec.onresult = (event: any) => {
-          if (!shouldRunWakeWordRef.current) return;
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            const transcript = result[0].transcript.toLowerCase().trim();
-
-            const WAKE_WORDS = ['ei invictus', 'olá invictus', 'ola invictus', 'invictus', 'hey invictus', 'ok invictus'];
-            const matchedWakeWord = WAKE_WORDS.find(w => transcript.includes(w));
-
-            if (matchedWakeWord) {
-              shouldRunWakeWordRef.current = false;
-              try { wakeRec.abort(); } catch (e) {}
-              invictusAudioEffects.playWakeChime(voiceConfig.soundEffectsEnabled);
-
-              setIsOpen(true);
-              setHasNewInsight(false);
-
-              const afterWake = transcript.split(matchedWakeWord)[1]?.trim();
-              if (afterWake && afterWake.length > 4) {
-                setInputQuery(afterWake);
-                handleSend(afterWake);
-              } else {
-                setTimeout(() => {
-                  startActiveSpeechRecognition();
-                }, 200);
-              }
-              break;
-            }
-          }
-        };
-
-        wakeRec.onerror = (err: any) => {
-          if (err?.error === 'not-allowed' || err?.error === 'service-not-allowed') {
-            shouldRunWakeWordRef.current = false;
-          }
-        };
-
-        wakeRec.onend = () => {
-          if (isComponentMounted && voiceConfig.wakeWordEnabled && shouldRunWakeWordRef.current && !isListening && !isSpeaking && !loading) {
-            setTimeout(() => {
-              if (isComponentMounted && shouldRunWakeWordRef.current && !isListening && !isSpeaking) {
-                startWakeWordListener();
-              }
-            }, 1200);
-          }
-        };
-
-        wakeWordRecognitionRef.current = wakeRec;
-        wakeRec.start();
-      } catch (err) {
-        // Non-fatal
-      }
-    };
-
-    startWakeWordListener();
-
-    return () => {
-      isComponentMounted = false;
-      if (wakeWordRecognitionRef.current) {
-        try { wakeWordRecognitionRef.current.abort(); } catch (e) {}
-        wakeWordRecognitionRef.current = null;
-      }
-    };
-  }, [voiceConfig.wakeWordEnabled, voiceConfig.soundEffectsEnabled, isListening, isSpeaking, loading]);
 
   // Fetch real user performance metrics for AI context
   useEffect(() => {
@@ -818,112 +704,6 @@ Estou acompanhando você na tela de **${screenCtx.name}**. Como posso ajudar na 
     } catch (err) {
       console.warn('[Gemini TTS Audio Exception]:', err);
       setIsSpeaking(false);
-    }
-  };
-
-  // Start active speech recognition for user question with real-time transcription
-  const startActiveSpeechRecognition = () => {
-    if (typeof window === 'undefined') return;
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceError('Reconhecimento de voz não é suportado neste navegador.');
-      return;
-    }
-
-    setVoiceError(null);
-    stopSpeaking();
-
-    // Disable wake word loop while active speech recognition is processing
-    shouldRunWakeWordRef.current = false;
-    if (wakeWordRecognitionRef.current) {
-      try { wakeWordRecognitionRef.current.abort(); } catch (e) {}
-      wakeWordRecognitionRef.current = null;
-    }
-
-    invictusAudioEffects.playListeningChime(voiceConfig.soundEffectsEnabled);
-
-    setTimeout(() => {
-      try {
-        if (recognitionRef.current) {
-          try { recognitionRef.current.abort(); } catch (e) {}
-        }
-
-        const rec = new SpeechRecognition();
-        rec.continuous = false;
-        rec.interimResults = true; // Show live audio transcription as user speaks
-        rec.lang = voiceConfig.language || 'pt-BR';
-
-        rec.onstart = () => {
-          setIsListening(true);
-          setVoiceError(null);
-        };
-
-        rec.onresult = (event: any) => {
-          let interimTranscript = '';
-          let finalTranscript = '';
-
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              finalTranscript += transcript;
-            } else {
-              interimTranscript += transcript;
-            }
-          }
-
-          const currentText = finalTranscript || interimTranscript;
-          if (currentText) {
-            setInputQuery(currentText);
-          }
-
-          if (finalTranscript && finalTranscript.trim().length > 0) {
-            setIsListening(false);
-            handleSend(finalTranscript.trim());
-          }
-        };
-
-        rec.onerror = (err: any) => {
-          console.warn('[Active SpeechRec Error]:', err?.error || err);
-          setIsListening(false);
-          const errCode = err?.error || '';
-          if (errCode === 'not-allowed' || errCode === 'permission-denied') {
-            setVoiceError('Permissão do microfone negada no navegador. Habilite o acesso ao microfone.');
-          } else if (errCode === 'no-speech') {
-            setVoiceError('Nenhum som detectado. Toque no microfone e fale novamente.');
-          } else if (errCode === 'audio-capture') {
-            setVoiceError('Microfone ocupado ou não encontrado.');
-          } else if (errCode !== 'aborted') {
-            setVoiceError('Erro ao capturar áudio do microfone.');
-          }
-        };
-
-        rec.onend = () => {
-          setIsListening(false);
-          setTimeout(() => {
-            shouldRunWakeWordRef.current = true;
-          }, 800);
-        };
-
-        recognitionRef.current = rec;
-        rec.start();
-      } catch (e: any) {
-        console.warn('[Active SpeechRec] Start failed:', e);
-        setIsListening(false);
-        setVoiceError('Não foi possível ativar o microfone neste navegador.');
-        shouldRunWakeWordRef.current = true;
-      }
-    }, 150);
-  };
-
-  const toggleVoiceInput = () => {
-    if (isListening) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch (e) {}
-      }
-      setIsListening(false);
-      shouldRunWakeWordRef.current = true;
-    } else {
-      startActiveSpeechRecognition();
     }
   };
 
@@ -1217,15 +997,6 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
     setHasNewInsight(false);
   };
 
-  const handleQuickMicTap = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsOpen(true);
-    setHasNewInsight(false);
-    setTimeout(() => {
-      startActiveSpeechRecognition();
-    }, 200);
-  };
-
   const activeWorkoutSession = getActiveWorkoutContext();
 
   return (
@@ -1235,7 +1006,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
         <>
           {/* Top Floating Siri/ChatGPT Voice Visualizer Banner when active outside panel */}
           <AnimatePresence>
-            {(isListening || isSpeaking) && (
+            {isSpeaking && (
               <motion.div
                 initial={{ y: -50, opacity: 0, scale: 0.9 }}
                 animate={{ y: 0, opacity: 1, scale: 1 }}
@@ -1248,20 +1019,16 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                     <motion.div
                       animate={{ scale: [1, 1.35, 1], opacity: [0.5, 0.9, 0.5] }}
                       transition={{ repeat: Infinity, duration: 1.2 }}
-                      className={`absolute inset-0 rounded-full blur-sm ${
-                        isListening ? 'bg-rose-500' : 'bg-emerald-400'
-                      }`}
+                      className="absolute inset-0 rounded-full blur-sm bg-emerald-400"
                     />
-                    <div className={`relative w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                      isListening ? 'bg-rose-500 text-white' : 'bg-emerald-400 text-black'
-                    }`}>
-                      {isListening ? <Mic size={14} className="animate-bounce" /> : <Volume2 size={14} className="animate-pulse" />}
+                    <div className="relative w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-emerald-400 text-black">
+                      <Volume2 size={14} className="animate-pulse" />
                     </div>
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className={`text-xs font-black uppercase tracking-wide truncate ${isListening ? 'text-rose-400' : 'text-emerald-300'}`}>
-                      {isListening ? 'Ouvindo sua voz...' : `${user?.aiName || 'Invictus IA'} Falando...`}
+                    <div className="text-xs font-black uppercase tracking-wide truncate text-emerald-300">
+                      {user?.aiName || 'Invictus IA'} Falando...
                     </div>
                     {/* Frequency bars */}
                     <div className="flex items-center gap-1 mt-0.5 h-3">
@@ -1270,7 +1037,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                           key={idx}
                           animate={{ height: ['3px', '12px', '3px'] }}
                           transition={{ repeat: Infinity, duration: 0.5, delay: d * 0.15 }}
-                          className={`w-0.5 rounded-full ${isListening ? 'bg-rose-400' : 'bg-emerald-400'}`}
+                          className="w-0.5 rounded-full bg-emerald-400"
                         />
                       ))}
                     </div>
@@ -1278,10 +1045,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                 </div>
 
                 <button
-                  onClick={() => {
-                    if (isListening) toggleVoiceInput();
-                    if (isSpeaking) stopSpeaking();
-                  }}
+                  onClick={stopSpeaking}
                   className="p-1.5 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white shrink-0 cursor-pointer"
                   title="Parar voz"
                 >
@@ -1482,7 +1246,7 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                     <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
                       <span className="font-bold text-white flex items-center gap-1.5">
                         <Settings size={14} className="text-emerald-400" />
-                        Configurações de Conversação por Voz
+                        Configurações de áudio e IA
                       </span>
                       <button
                         onClick={() => setShowSettings(false)}
@@ -1493,26 +1257,6 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Wake Word Toggle */}
-                      <div className="flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
-                        <div>
-                          <div className="font-semibold text-zinc-200 text-[11px]">Despertador por Voz</div>
-                          <div className="text-[9px] text-zinc-400">Ativação por "Ei, Invictus"</div>
-                        </div>
-                        <button
-                          onClick={() => updateVoiceConfig({ wakeWordEnabled: !voiceConfig.wakeWordEnabled })}
-                          className={`w-9 h-5 rounded-full transition-colors relative ${
-                            voiceConfig.wakeWordEnabled ? 'bg-emerald-500' : 'bg-zinc-800'
-                          }`}
-                        >
-                          <span
-                            className={`block w-4 h-4 bg-white rounded-full transition-transform transform ${
-                              voiceConfig.wakeWordEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                            }`}
-                          />
-                        </button>
-                      </div>
-
                       {/* TTS Toggle */}
                       <div className="flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
                         <div>
@@ -1711,13 +1455,10 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
 
               {/* Dynamic Voice/Audio Siri/ChatGPT Visualizer Banner */}
               <AnimatePresence>
-                {isListening && (
-                  <SiriChatGPTVoiceVisualizer mode="listening" onStop={toggleVoiceInput} aiName={user?.aiName} />
-                )}
-                {!isListening && loading && (
+                {loading && (
                   <SiriChatGPTVoiceVisualizer mode="thinking" aiName={user?.aiName} />
                 )}
-                {!isListening && !loading && isSpeaking && (
+                {!loading && isSpeaking && (
                   <SiriChatGPTVoiceVisualizer mode="speaking" onStop={stopSpeaking} aiName={user?.aiName} />
                 )}
               </AnimatePresence>
@@ -1864,49 +1605,15 @@ Como seu especialista de saúde e fisiologia, estou pronto para responder sobre 
                 </div>
               </div>
 
-              {/* Voice Error Alert Banner */}
-              {voiceError && (
-                <div className="shrink-0 my-1 bg-rose-950/50 border border-rose-500/40 rounded-xl p-2 px-3 flex items-center justify-between text-[11px] text-rose-300">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <AlertTriangle size={14} className="text-rose-400 shrink-0" />
-                    <span className="truncate">{voiceError}</span>
-                  </div>
-                  <button onClick={() => setVoiceError(null)} className="text-rose-400 hover:text-white shrink-0 ml-2">
-                    <X size={12} />
-                  </button>
-                </div>
-              )}
-
-              {/* Input Area with Voice & Audio Bar */}
+              {/* Área de mensagem por texto */}
               <div className="shrink-0 pt-2 flex items-center gap-2">
-                {/* Voice Input Button */}
-                <button
-                  onClick={toggleVoiceInput}
-                  className={`w-11 h-11 rounded-2xl flex items-center justify-center cursor-pointer transition-all border shrink-0 ${
-                    isListening
-                      ? 'bg-rose-500/20 border-rose-500/60 text-rose-400 animate-pulse shadow-[0_0_15px_rgba(244,63,94,0.5)]'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                  title={isListening ? 'Ouvindo pergunta...' : 'Falar Pergunta'}
-                >
-                  <Mic size={18} className={isListening ? 'animate-bounce' : ''} />
-                </button>
-
                 <input
                   type="text"
-                  placeholder={
-                    isListening
-                      ? 'Ouvindo sua voz...'
-                      : voiceConfig.wakeWordEnabled
-                      ? 'Digite ou fale "Ei, Invictus"...'
-                      : `Pergunte sobre ${screenCtx.name}...`
-                  }
+                  placeholder={`Pergunte sobre ${screenCtx.name}...`}
                   value={inputQuery}
                   onChange={e => setInputQuery(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSend()}
-                  className={`flex-1 min-w-0 bg-zinc-900 border rounded-2xl px-3.5 py-3 text-xs text-white placeholder-zinc-500 focus:outline-none transition-colors ${
-                    isListening ? 'border-rose-500/60 bg-rose-950/20' : 'border-zinc-800 focus:border-emerald-500/50'
-                  }`}
+                  className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded-2xl px-3.5 py-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
                 />
 
                 <button
