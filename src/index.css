@@ -566,7 +566,8 @@
 .health-heart-minmax span { color:#d3cdc6; font-family:Anton,sans-serif; font-size:12px; }
 .health-heart-minmax b { display:block; margin-top:.2rem; color:#fff; font-family:Barlow,sans-serif; font-size:18px; }
 .health-latest { margin-top:1rem; padding:1rem 1.1rem; }
-.health-section-line > span { color:#ffad00; font-family:Anton,sans-serif; font-size:15px; font-style:italic; }
+.health-section-line > span,.health-section-line > button { color:#ffad00; font-family:Anton,sans-serif; font-size:15px; font-style:italic; background:transparent; border:0; padding:0; cursor:pointer; }
+.health-section-line > button:focus-visible { outline:2px solid #ffad00; outline-offset:3px; border-radius:3px; }
 .health-workout { display:grid; grid-template-columns:55px minmax(120px,1fr) auto auto auto 20px; align-items:center; gap:.75rem; padding:.85rem 0; border-top:1px solid rgba(255,255,255,.1); }
 .health-workout-icon { display:grid; width:46px; height:46px; place-items:center; border-radius:50%; background:#4dc76e; color:#050505; }
 .health-workout-icon.is-run { background:#ff8c28; }
