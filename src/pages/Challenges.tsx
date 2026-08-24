@@ -264,7 +264,7 @@ export function Challenges() {
     // DeviceMotionEvent.requestPermission() so exibe o prompt real se chamado dentro da
     // mesma pilha de execucao do gesto do usuario -- se colocado depois de qualquer await
     // (ex.: startSession fazendo consultas no Firestore), o Safari ja descartou a "user
-    // activation" e o prompt nunca aparece (bug reportado: so pedia microfone/localização).
+    // activation" e o prompt nunca aparece (bug reportado: solicitações indevidas de permissões).
     // Ver auditoria antifraude 2026-08.
     await activityService.requestMotionPermission();
     try {

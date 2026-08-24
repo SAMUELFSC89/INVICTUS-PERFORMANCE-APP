@@ -121,7 +121,6 @@ workflows:
 
           # Camera / fotos -- comprovantes de treino e video do Power Lift.
           set_string "NSCameraUsageDescription" "O INVICTUS usa a camera para registrar comprovantes de treino e os videos de homologacao do Power Lift."
-          set_string "NSMicrophoneUsageDescription" "O INVICTUS grava audio junto com o video de homologacao do Power Lift."
           set_string "NSPhotoLibraryUsageDescription" "O INVICTUS acessa suas fotos para anexar comprovantes de atividade."
           set_string "NSPhotoLibraryAddUsageDescription" "O INVICTUS salva na sua galeria o card de compartilhamento das atividades."
 

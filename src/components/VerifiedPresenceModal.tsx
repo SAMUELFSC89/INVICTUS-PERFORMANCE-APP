@@ -58,7 +58,7 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
     return () => clearInterval(interval);
   }, [isOpen, isAnalyzing]);
 
-  // Start the microphone/video stream
+  // Start the camera-only stream used for presence validation.
   useEffect(() => {
     if (isOpen) {
       startCamera();
