@@ -25,7 +25,7 @@ import { MobileBridge } from './components/MobileBridge';
 import { UserProvider } from './UserContext';
 import { ProProvider } from './ProContext';
 import { API_CONFIG } from './config';
-import { PowerModule } from './pages/PowerModule';
+import { PowerLift } from './pages/PowerLift';
 import { Health, HealthReport } from './pages/Health';
 import { League } from './pages/League';
 import { Notifications } from './pages/Notifications';
@@ -68,11 +68,12 @@ export default function App() {
                 <Route path="/profile/goals" element={<ProfileSecondary />} />
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
+                <Route path="/profile/preferences/:section" element={<ProfileSecondary />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/achievements" element={<Achievements />} />
                 <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
                 <Route path="/performance" element={<Performance />} />
-                <Route path="/power" element={<PowerModule />} />
+                <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
                 <Route path="/health" element={<Health />} />
@@ -90,7 +91,7 @@ export default function App() {
                 <Route path="/admin/ranking-simulator" element={<AdminGuard><AdminRankingSimulator /></AdminGuard>} />
 <Route path="/admin/iga-teste-original" element={<AdminGuard><AdminIGATesteOriginal /></AdminGuard>} />
                 <Route path="/admin/security" element={<AdminGuard><AdminSecurityAudit /></AdminGuard>} />
-                <Route path="/admin/wearables" element={<AdminGuard><WearablesDashboard /></AdminGuard>} />
+                <Route path="/admin/wearables" element={<AdminGuard><ProfileSecondary /></AdminGuard>} />
                 <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
               </Route>
             </Routes>
