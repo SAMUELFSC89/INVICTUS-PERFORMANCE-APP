@@ -242,6 +242,19 @@ export function Challenges() {
     setFlowScreen(challenge.id === 'workout' ? 'workout-details' : 'cardio-picker');
   };
 
+  // A Home pode abrir diretamente o fluxo correto. Consumimos o parâmetro após
+  // a abertura para que fechar a tela não a reabra em loop.
+  useEffect(() => {
+    const requestedType = searchParams.get('type');
+    if (flowScreen || (requestedType !== 'workout' && requestedType !== 'cardio')) return;
+    const challenge = CORE_CHALLENGES.find((item) => item.id === requestedType);
+    if (!challenge) return;
+    handleOpenChallenge(challenge);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('type');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, flowScreen, setSearchParams]);
+
   // Start Session (Workout / Cardio)
   const handleStartActivity = async (type: 'workout' | 'cardio') => {
     setStartActivityError(null);
