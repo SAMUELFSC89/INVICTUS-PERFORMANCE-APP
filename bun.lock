@@ -66,7 +66,6 @@
         "typescript": "~5.8.2",
         "uuid": "^14.0.1",
         "vite": "^6.2.0",
-        "webp-converter": "^3.0.1",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -2167,8 +2166,6 @@
     "web-vitals": ["web-vitals@4.2.4", "", {}, "sha512-r4DIlprAGwJ7YM11VZp4R884m0Vmgr6EAKe3P+kO0PPj3Unqyvv59rczf6UiGcb9Z8QxZVcqKNwv/g0WNdWwsw=="],
 
     "webidl-conversions": ["webidl-conversions@3.0.1", "", {}, "sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ=="],
-
-    "webp-converter": ["webp-converter@3.0.1", "", {}, "sha512-gpx9DUQXi1ZLhrlYP6yoliQUXDD96Ae6nxF9aA2y7TfMlyeSQu2kDBB+5/kEsWOagf022usL4kgihxKCPtzXPQ=="],
 
     "websocket-driver": ["websocket-driver@0.7.4", "", { "dependencies": { "http-parser-js": ">=0.5.1", "safe-buffer": ">=5.1.0", "websocket-extensions": ">=0.1.1" } }, "sha512-b17KeDIQVjvb0ssuSDF2cYXSg2iztliJ4B9WdsuB6J952qCPKmnVq4DyW5motImXHDC1cBT/1UezrJVsKw5zjg=="],
 

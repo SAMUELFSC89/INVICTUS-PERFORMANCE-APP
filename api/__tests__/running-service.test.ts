@@ -6,6 +6,7 @@ describe('RunningService', () => {
   let mockRunningRepo: jest.Mocked<RunningRepository>;
 
   beforeEach(() => {
+    jest.spyOn(Math, 'random').mockReturnValue(0.99);
     mockRunningRepo = {
       getUserStats: jest.fn().mockResolvedValue(null),
       setUserStats: jest.fn().mockResolvedValue(undefined),
@@ -27,6 +28,10 @@ describe('RunningService', () => {
     } as any;
 
     runningService = new RunningService(mockRunningRepo);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   test('getUserStats should return default stats if user has no records', async () => {
