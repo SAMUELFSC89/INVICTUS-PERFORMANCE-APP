@@ -5,6 +5,7 @@ import { validationService } from "./validationService";
 import { getCurrentLocation } from "../lib/locationUtils";
 import { compressBase64Image } from "../lib/imageCompression";
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from "./geofenceEngine";
+import { HealthDataCollector } from "./healthDataCollector";
 
 const SESSION_KEY = 'current_activity_session';
 
@@ -69,7 +70,7 @@ export const activityService = {
     return 'granted';
   },
 
-  async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string): Promise<ActivitySession> {
+  async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string, muscleGroup?: string): Promise<ActivitySession> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
 
@@ -103,6 +104,7 @@ export const activityService = {
             type: sessData.type,
             cardioType: sessData.cardioType || undefined,
             cardioTypeLabel: sessData.cardioTypeLabel || undefined,
+            muscleGroup: sessData.muscleGroup || undefined,
             isIndoorCardio: sessData.isIndoorCardio,
             requiresGpsDistance: sessData.requiresGpsDistance,
             smartwatchData: sessData.smartwatchData || undefined,
@@ -260,6 +262,7 @@ export const activityService = {
       type,
       cardioType,
       cardioTypeLabel: cardioMapEntry?.label,
+      muscleGroup,
       isIndoorCardio: cardioMapEntry?.isIndoor,
       requiresGpsDistance: cardioMapEntry?.requiresGps,
       smartwatchData,
@@ -336,6 +339,7 @@ export const activityService = {
       type: session.type,
       cardioType: session.cardioType || null,
       cardioTypeLabel: session.cardioTypeLabel || null,
+      muscleGroup: session.muscleGroup || null,
       isIndoorCardio: !!session.isIndoorCardio,
       requiresGpsDistance: !!session.requiresGpsDistance,
       smartwatchData: session.smartwatchData || null,
@@ -375,13 +379,29 @@ export const activityService = {
     }
   },
 
-  addCheckpoint(location: { lat: number; lng: number }) {
+  addCheckpoint(location: { lat: number; lng: number; accuracy?: number }) {
     const session = this.getCurrentSession();
     if (!session) return;
 
+    if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return;
+    if (typeof location.accuracy === 'number' && location.accuracy > 50) {
+      console.warn('[ActivityService] Checkpoint skipped due to low accuracy:', location.accuracy);
+      return;
+    }
+
+    // Evita checkpoints idênticos repetidos em sequência
+    const last = session.checkpoints[session.checkpoints.length - 1];
+    if (last && last.location) {
+      const dLat = Math.abs(last.location.lat - location.lat);
+      const dLng = Math.abs(last.location.lng - location.lng);
+      if (dLat < 0.000005 && dLng < 0.000005) {
+        return;
+      }
+    }
+
     session.checkpoints.push({
       timestamp: new Date().toISOString(),
-      location
+      location: { lat: location.lat, lng: location.lng }
     });
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -520,7 +540,7 @@ export const activityService = {
     const hasOscillation = typeof window !== 'undefined' && localStorage.getItem('has_sensor_oscillation') === 'true';
     const sensorStatus = typeof window !== 'undefined' ? (localStorage.getItem('sensor_status') || 'unavailable') : 'unavailable';
     const rawPedometerSteps = Number(session.smartwatchData?.pedometerSteps ?? session.smartwatchData?.steps);
-    const pedometerSteps = Number.isFinite(rawPedometerSteps) && rawPedometerSteps >= 0
+    const initialPedometerSteps = Number.isFinite(rawPedometerSteps) && rawPedometerSteps >= 0
       ? rawPedometerSteps
       : undefined;
 
@@ -529,10 +549,27 @@ export const activityService = {
     const sensorTelemetry = (accelVariance !== undefined || gyroVariance !== undefined)
       ? { accelVariance, gyroVariance }
       : undefined;
-    const rawAverageHeartRate = Number(session.smartwatchData?.avgHeartRate ?? session.smartwatchData?.heartRate);
-    const avgHeartRate = Number.isFinite(rawAverageHeartRate) && rawAverageHeartRate > 0
-      ? rawAverageHeartRate
-      : undefined;
+
+    // Coleta telemetria e biometria unificada de saúde (Apple Health / Health Connect / Sensores)
+    const collectedHealth = await HealthDataCollector.collectForSession(
+      session.startTime,
+      endTime.toISOString(),
+      initialPedometerSteps,
+      hasOscillation || sensorTelemetry !== undefined
+    );
+
+    const pedometerSteps = collectedHealth.healthTelemetry?.steps ?? initialPedometerSteps;
+    const avgHeartRate = collectedHealth.healthTelemetry?.avgHeartRate ??
+      (Number.isFinite(Number(session.smartwatchData?.avgHeartRate ?? session.smartwatchData?.heartRate)) && Number(session.smartwatchData?.avgHeartRate ?? session.smartwatchData?.heartRate) > 0
+        ? Number(session.smartwatchData?.avgHeartRate ?? session.smartwatchData?.heartRate)
+        : undefined);
+
+    const smartwatchData = {
+      ...(session.smartwatchData || {}),
+      ...(collectedHealth.smartwatchData || {}),
+      avgHeartRate,
+      steps: pedometerSteps,
+    };
 
     const response = await fetch('/api/validate-activity', {
       method: 'POST',
@@ -542,11 +579,14 @@ export const activityService = {
       },
       body: JSON.stringify({
         type: session.type,
+        muscleGroup: session.muscleGroup,
         cardioType: session.cardioType,
         cardioTypeLabel: session.cardioTypeLabel,
         isIndoorCardio: session.isIndoorCardio,
         requiresGpsDistance: session.requiresGpsDistance,
-        smartwatchData: session.smartwatchData,
+        smartwatchData,
+        healthTelemetry: collectedHealth.healthTelemetry,
+        metricSources: collectedHealth.metricSources,
         durationMins,
         distanceKm,
         startLocation: session.startLocation,
