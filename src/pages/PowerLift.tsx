@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Award, CheckCircle2, ChevronRight, Dumbbell, FileVideo, ShieldCheck, Trophy, Upload, Users, Video, Camera, CircleX, Filter, Minus, Plus, Check } from 'lucide-react';
+import { ArrowLeft, Award, CheckCircle2, ChevronRight, Dumbbell, FileVideo, ShieldCheck, Trophy, Upload, Users, Video, Camera, CircleX, Filter, Minus, Plus, Check, TrendingUp, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auth, storage } from '../firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -14,10 +14,10 @@ import './PowerLiftMobile.css';
 
 type Exercise = 'supino' | 'agachamento' | 'terra';
 type RecordRow = { id: string; userId: string; userName?: string; userPhoto?: string; gymId?: string; gymName?: string; exercise: Exercise; weight: number; videoStatus?: 'approved' | 'manual_review' | 'rejected' | string; videoUrl?: string; userMessage?: string; motives?: string[]; date?: string; createdAt?: string };
-const exercises: Array<{ id: Exercise; title: string; accent: string; image: string; icon: React.ReactNode }> = [
-  { id: 'supino', title: 'SUPINO RETO', accent: 'gold', image: '/powerlift-supino.jpg', icon: <Dumbbell /> },
-  { id: 'agachamento', title: 'AGACHAMENTO LIVRE', accent: 'green', image: '/powerlift-agachamento.jpg', icon: <Award /> },
-  { id: 'terra', title: 'LEVANTAMENTO TERRA', accent: 'violet', image: '/powerlift-terra.jpg', icon: <Dumbbell /> },
+const exercises: Array<{ id: Exercise; title: string; shortTitle?: string; accent: string; image: string; icon: React.ReactNode }> = [
+  { id: 'supino', title: 'SUPINO RETO', shortTitle: 'SUPINO', accent: 'gold', image: '/powerlift-supino.jpg', icon: <Dumbbell /> },
+  { id: 'agachamento', title: 'AGACHAMENTO LIVRE', shortTitle: 'AGACHAMENTO', accent: 'green', image: '/powerlift-agachamento.jpg', icon: <Award /> },
+  { id: 'terra', title: 'LEVANTAMENTO TERRA', shortTitle: 'LEV. TERRA', accent: 'violet', image: '/powerlift-terra.jpg', icon: <Dumbbell /> },
 ];
 const framesFromVideo = (file: File) => new Promise<string[]>((resolve) => { const url=URL.createObjectURL(file); const video=document.createElement('video'); const out:string[]=[]; let done=false; const finish=()=>{if(done)return;done=true;URL.revokeObjectURL(url);resolve(out)}; video.muted=true; video.playsInline=true; video.src=url; video.onloadedmetadata=()=>{const take=(time:number)=>{video.currentTime=time};let step=0;video.onseeked=()=>{const c=document.createElement('canvas');const ratio=Math.min(1,512/(video.videoWidth||512));c.width=(video.videoWidth||512)*ratio;c.height=(video.videoHeight||512)*ratio;c.getContext('2d')?.drawImage(video,0,0,c.width,c.height);out.push(c.toDataURL('image/jpeg',.65));step++;step<3?take(Math.min((video.duration||2)*step/3,Math.max(.1,(video.duration||2)-.1))):finish()};take(.1)};video.onerror=finish;setTimeout(finish,6000)});
 
@@ -28,7 +28,7 @@ export function PowerLift() {
   const [myRecords, setMyRecords] = useState<RecordRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [modal, setModal] = useState<'rules' | 'videos' | 'register' | null>(null);
+  const [modal, setModal] = useState<'rules' | 'videos' | null>(null);
   const [selected, setSelected] = useState<Exercise>('supino');
   const [view, setView] = useState<'home'|'ranking'|'register'|'record'|'processing'|'manual-review'|'approved'|'rejected'|'rules'>('home');
   const [weight, setWeight] = useState(0);
@@ -76,7 +76,21 @@ export function PowerLift() {
   const personalBest = (id: Exercise) => byExercise(id).find(row => row.userId === user?.uid)?.weight ?? null;
   const top = useMemo(() => [...records].sort((a,b)=>b.weight-a.weight).slice(0,3), [records]);
   const athleteCount = useMemo(() => new Set(records.map((row) => row.userId).filter(Boolean)).size, [records]);
-  const stat = (label: string, icon: React.ReactNode, value: React.ReactNode) => <article className="power-stat"><span>{icon}</span><small>{label}</small><b>{value}</b></article>;
+  const approvedCount = useMemo(() => myRecords.filter(row => row.videoStatus === 'approved').length, [myRecords]);
+  const approvalRate = useMemo(() => myRecords.length ? `${Math.round((approvedCount / myRecords.length) * 100)}%` : '—', [myRecords.length, approvedCount]);
+  const totalScore = useMemo(() => {
+    const pts = myRecords.filter(row => row.videoStatus === 'approved').reduce((acc, row) => acc + (row.weight || 0) * 10, 0);
+    return pts > 0 ? `${pts.toLocaleString('pt-BR')} pts` : '—';
+  }, [myRecords]);
+
+  const stat = (label: string, icon: React.ReactNode, value: React.ReactNode, isHighlighted = false) => (
+    <article className={`power-stat ${isHighlighted ? 'is-highlighted' : ''}`}>
+      <span>{icon}</span>
+      <small>{label}</small>
+      <b>{value}</b>
+    </article>
+  );
+
   const submitVideo = async () => {
     if (!user || !videoFile) return;
     setSubmissionError(null);
@@ -141,14 +155,187 @@ export function PowerLift() {
       setView('record');
     }
   };
+
+  // Close modal on Escape
+  useEffect(() => {
+    if (!modal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setModal(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modal]);
+
   if (view !== 'home') return <PowerLiftFlow view={view} exercise={selected} records={records} userId={user?.uid} userGymId={user?.gymId} weight={weight} setWeight={setWeight} videoFile={videoFile} reasons={reasons} submissionError={submissionError} onFile={setVideoFile} onSubmit={submitVideo} onBack={()=>setView('home')} onView={setView} onExercise={setSelected} />;
-  return <main className="power-screen"><header className="power-header"><button onClick={()=>navigate('/challenges')}><ArrowLeft /></button><div><h1>DESAFIO DE FORÇA <em>PRO</em></h1><p>Supere seus limites. Prove sua força.</p></div><button className="power-rules" onClick={()=>setModal('rules')}><FileVideo /> REGRAS</button></header>
-    <section className="power-panel power-ranking"><div className="power-panel-title"><h2>RANKING GERAL</h2><span><Users /> {athleteCount || '—'} atletas</span></div>{loadError && <p className="power-load-error">Não foi possível carregar o ranking agora. Tente novamente em instantes.</p>}<div className="power-podium">{[1,0,2].map((rank, position) => { const row=top[rank]; return <button key={rank} onClick={()=>{setSelected(row?.exercise || 'supino');setView('ranking')}} className={`power-podium-item pos-${position}`}>{row?.userPhoto ? <img src={row.userPhoto} alt="" /> : <span className="power-avatar">{row?.userName?.slice(0,1) || '—'}</span>}<i>{rank+1}</i><b>{row?.userName || 'Sem registros'}</b><strong>{row ? `${row.weight} kg` : '—'}</strong></button>})}<ChevronRight className="power-next" /></div></section>
-    <section className="power-panel power-how"><h2>COMO FUNCIONA</h2><div>{[[<Video/>, 'Grave seu vídeo', 'Execute o movimento com carga visível'], [<Upload/>, 'Envie para validação', 'Nossa IA analisará seu vídeo'], [<ShieldCheck/>, 'Validamos seu desafio', 'Garantimos justiça e integridade'], [<Trophy/>, 'Receba sua posição', 'Entre no ranking e acompanhe sua evolução']].map(([icon,title,text],i)=><article key={i}><span>{icon}</span><b>{title}</b><small>{text}</small></article>)}</div></section>
-    <section className="power-panel power-modalities"><h2>MODALIDADES</h2><div className="power-cards">{exercises.map(item => { const best=personalBest(item.id); const standing=byExercise(item.id).findIndex(row=>row.userId===user?.uid); return <article key={item.id} className={`power-card ${item.accent}`}><div className="power-card-top"><span>{item.icon}</span><div><b>{item.title}</b><small><i /> Ranking ativo</small></div></div><img src={item.image} alt=""/><div className="power-card-data"><small>SUA MELHOR MARCA</small><strong>{best ? `${best} kg` : '—'}</strong><hr/><small>SUA POSIÇÃO</small><strong>{standing >= 0 ? `${standing+1}º` : '—'}</strong><button onClick={()=>{setSelected(item.id);setView('ranking')}}>VER RANKING</button></div></article> })}</div></section>
-    <section className="power-panel power-stats"><h2>SUAS ESTATÍSTICAS GERAIS</h2><div>{stat('DESAFIOS ENVIADOS',<Trophy/>,myRecords.length)}{stat('DESAFIOS APROVADOS',<ShieldCheck/>,myRecords.filter(row=>row.videoStatus==='approved').length)}{stat('TAXA DE APROVAÇÃO',<Award/>, myRecords.length ? `${Math.round((myRecords.filter(row=>row.videoStatus==='approved').length / myRecords.length) * 100)}%` : '—')}{stat('PONTUAÇÃO TOTAL',<Trophy/>, '—')}</div></section>
-    <section className="power-actions"><button className="power-register" onClick={()=>setView('register')}><Dumbbell /><span>REGISTRAR NOVO LEVANTAMENTO<small>Envie seu vídeo e desafie seus limites</small></span></button><button onClick={()=>setModal('videos')}><FileVideo /><span>MEUS VÍDEOS<small>Ver envios e status</small></span></button></section>
-    {modal && <div className="power-overlay" onClick={()=>setModal(null)}><section onClick={e=>e.stopPropagation()}><button className="power-close" onClick={()=>setModal(null)}>×</button>{modal==='rules' && <><h2>REGRAS DO DESAFIO</h2><p>Grave o movimento completo, com carga visível e ambiente de academia identificável. Cada registro passa por validação antes de entrar no ranking.</p></>}{modal==='videos' && <><h2>MEUS VÍDEOS</h2>{myRecords.map(row=><p key={row.id}>{row.exercise.toUpperCase()} · {row.weight} kg · {row.videoStatus === 'approved' ? 'Aprovado' : row.videoStatus === 'manual_review' ? 'Em revisão manual' : 'Recusado'}</p>)}{!myRecords.length&&<p>Nenhum vídeo enviado ainda.</p>}</>}{modal==='register' && <><h2>REGISTRAR LEVANTAMENTO</h2><select value={selected} onChange={e=>setSelected(e.target.value as Exercise)}>{exercises.map(x=><option key={x.id} value={x.id}>{x.title}</option>)}</select><p>O envio de vídeo será conectado ao fluxo de validação na próxima etapa do Power Lift.</p></>}</section></div>}
+
+  return <main className="power-screen">
+    <header className="power-header">
+      <button onClick={()=>navigate('/challenges')} aria-label="Voltar"><ArrowLeft /></button>
+      <div>
+        <h1>DESAFIO DE FORÇA <em>PRO</em></h1>
+        <p>Supere seus limites. Prove sua força.</p>
+      </div>
+      <button className="power-rules" onClick={()=>setModal('rules')}><FileVideo /> REGRAS</button>
+    </header>
+
+    <section className="power-panel power-ranking">
+      <div className="power-panel-title">
+        <h2>RANKING GERAL</h2>
+        <span><Users /> {athleteCount || '—'} atletas</span>
+      </div>
+      {loadError && <p className="power-load-error">Não foi possível carregar o ranking agora. Tente novamente em instantes.</p>}
+      <div className="power-podium">
+        {[1,0,2].map((rank, position) => {
+          const row=top[rank];
+          return <button key={rank} onClick={()=>{setSelected(row?.exercise || 'supino');setView('ranking')}} className={`power-podium-item pos-${position}`}>
+            {row?.userPhoto ? <img src={row.userPhoto} alt="" /> : <span className="power-avatar">{row?.userName?.slice(0,1) || '—'}</span>}
+            <i>{rank+1}</i>
+            <b>{row?.userName || 'Sem registros'}</b>
+            <strong>{row ? `${row.weight} kg` : '—'}</strong>
+          </button>
+        })}
+        <ChevronRight className="power-next" />
+      </div>
+    </section>
+
+    <section className="power-panel power-how">
+      <h2>COMO FUNCIONA</h2>
+      <div>
+        {[[<Video/>, 'Grave seu vídeo', 'Execute o movimento com carga visível'],
+          [<Upload/>, 'Envie para validação', 'Nossa IA analisará seu vídeo'],
+          [<ShieldCheck/>, 'Validamos seu desafio', 'Garantimos justiça e integridade'],
+          [<Trophy/>, 'Receba sua posição', 'Entre no ranking e acompanhe sua evolução']].map(([icon,title,text],i)=>(
+          <article key={i}>
+            <span>{icon}</span>
+            <b>{title}</b>
+            <small>{text}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section className="power-panel power-modalities">
+      <h2>MODALIDADES</h2>
+      <div className="power-cards">
+        {exercises.map(item => {
+          const best=personalBest(item.id);
+          const standing=byExercise(item.id).findIndex(row=>row.userId===user?.uid);
+          return <article key={item.id} className={`power-card ${item.accent}`}>
+            <div className="power-card-top">
+              <span>{item.icon}</span>
+              <div><b>{item.title}</b><small><i /> Ranking ativo</small></div>
+            </div>
+            <img src={item.image} alt={item.title}/>
+            <div className="power-card-data">
+              <small>SUA MELHOR MARCA</small>
+              <strong>{best ? `${best} kg` : '—'}</strong>
+              <hr/>
+              <small>SUA POSIÇÃO</small>
+              <strong>{standing >= 0 ? `${standing+1}º` : '—'}</strong>
+              <button onClick={()=>{setSelected(item.id);setView('ranking')}}>VER RANKING</button>
+            </div>
+          </article>
+        })}
+      </div>
+    </section>
+
+    <section className="power-panel power-stats">
+      <h2>SUAS ESTATÍSTICAS GERAIS</h2>
+      <div>
+        {stat('DESAFIOS ENVIADOS', <Trophy />, myRecords.length)}
+        {stat('DESAFIOS APROVADOS', <ShieldCheck />, approvedCount)}
+        {stat('TAXA DE APROVAÇÃO', <TrendingUp />, approvalRate, approvalRate !== '—')}
+        {stat('PONTUAÇÃO TOTAL', <Star />, totalScore, totalScore !== '—')}
+      </div>
+    </section>
+
+    <section className="power-actions">
+      <button className="power-register" onClick={()=>setView('register')}>
+        <Dumbbell />
+        <span>
+          REGISTRAR NOVO LEVANTAMENTO
+          <small>Envie seu vídeo e desafie seus limites</small>
+        </span>
+      </button>
+      <button className="power-my-videos" onClick={()=>setModal('videos')}>
+        <FileVideo />
+        <span>
+          MEUS VÍDEOS
+          <small>Ver envios e status</small>
+        </span>
+      </button>
+    </section>
+
+    {modal && <div className="power-overlay" onClick={()=>setModal(null)}>
+      <section onClick={e=>e.stopPropagation()}>
+        <div className="power-modal-header">
+          <div className="power-modal-title">
+            {modal === 'rules' ? <ShieldCheck className="power-modal-icon" /> : <FileVideo className="power-modal-icon" />}
+            <div>
+              <h2>{modal === 'rules' ? 'REGRAS DO DESAFIO' : 'MEUS VÍDEOS ENVIADOS'}</h2>
+              <small>{modal === 'rules' ? 'Diretrizes oficiais para homologação no ranking' : `${myRecords.length} registro(s) no total`}</small>
+            </div>
+          </div>
+          <button className="power-close" onClick={()=>setModal(null)} aria-label="Fechar modal">×</button>
+        </div>
+
+        {modal === 'rules' && <div className="power-rules-content">
+          <div className="power-rule-box">
+            <b>1. Gravação Contínua e Enquadramento</b>
+            <p>Posicione a câmera na lateral ou em diagonal de modo que o corpo completo e a barra fiquem 100% visíveis durante toda a execução. Vídeos com cortes, acelerados ou com edição não são aceitos.</p>
+          </div>
+
+          <div className="power-rule-box">
+            <b>2. Comprovação de Carga</b>
+            <p>Mostre claramente as anilhas e a barra no início ou no fim da gravação, permitindo a checagem do peso total declarado.</p>
+          </div>
+
+          <div className="power-rule-box">
+            <b>3. Critérios de Execução Válida</b>
+            <ul>
+              <li><strong>Supino Reto:</strong> A barra deve tocar o peito sem rebote e subir até a extensão completa dos cotovelos.</li>
+              <li><strong>Agachamento Livre:</strong> O quadril deve quebrar a linha da paralela com os joelhos na fase mais baixa.</li>
+              <li><strong>Levantamento Terra:</strong> Barra sai do chão em movimento contínuo até a extensão e bloqueio total de joelhos e quadril eretos.</li>
+            </ul>
+          </div>
+
+          <div className="power-rule-box">
+            <b>4. Auditoria e Validação</b>
+            <p>Cada gravação é avaliada pela inteligência de visão computacional e equipe técnica antes de ser homologada no ranking oficial.</p>
+          </div>
+
+          <button className="power-modal-btn" onClick={()=>setModal(null)}>
+            ENTENDI AS REGRAS
+          </button>
+        </div>}
+
+        {modal === 'videos' && <div className="power-videos-content">
+          {myRecords.length ? (
+            <div className="power-videos-list">
+              {myRecords.map(row => (
+                <div key={row.id} className="power-video-item">
+                  <div className="power-video-item-info">
+                    <b>{row.exercise.toUpperCase()}</b>
+                    <span>Carga informada: <strong>{row.weight} kg</strong></span>
+                    {row.date && <small>Enviado em {new Date(row.date).toLocaleDateString('pt-BR')}</small>}
+                  </div>
+                  <span className={`power-video-badge ${row.videoStatus || 'manual_review'}`}>
+                    {row.videoStatus === 'approved' ? 'Aprovado' : row.videoStatus === 'rejected' ? 'Recusado' : 'Em Revisão'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="power-empty-videos">
+              <p>Você ainda não enviou nenhum vídeo para auditoria.</p>
+              <button className="power-modal-btn" onClick={()=>{setModal(null);setView('register')}}>
+                REGISTRAR PRIMEIRO LEVANTAMENTO
+              </button>
+            </div>
+          )}
+        </div>}
+      </section>
+    </div>}
   </main>;
 }
 

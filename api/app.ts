@@ -55,6 +55,12 @@ import storeHandler from './_handlers/store.js';
 import activityMapHandler from './activity-map.js';
 import wearablesHandler from './_handlers/wearables.js';
 import powerLiftHandler from './_handlers/powerlift.js';
+import {
+  acceptChampionshipRegulationHandler,
+  createChampionshipPaymentHandler,
+  asaasChampionshipWebhookHandler,
+  submitActivityToChampionshipHandler
+} from './_handlers/championships.js';
 
 
 const router = express.Router();
@@ -251,6 +257,18 @@ router.all('/wearables', wrap(wearablesHandler));
 
 console.log('[ROUTE] /powerlift', typeof powerLiftHandler);
 router.all('/powerlift', wrap(powerLiftHandler));
+
+console.log('[ROUTE] /championships/accept-regulation', typeof acceptChampionshipRegulationHandler);
+router.post('/championships/accept-regulation', wrap(acceptChampionshipRegulationHandler));
+
+console.log('[ROUTE] /championships/payment', typeof createChampionshipPaymentHandler);
+router.post('/championships/payment', wrap(createChampionshipPaymentHandler));
+
+console.log('[ROUTE] /championships/webhook-asaas', typeof asaasChampionshipWebhookHandler);
+router.post('/championships/webhook-asaas', wrap(asaasChampionshipWebhookHandler));
+
+console.log('[ROUTE] /championships/submit-activity', typeof submitActivityToChampionshipHandler);
+router.post('/championships/submit-activity', wrap(submitActivityToChampionshipHandler));
 
 console.log('[ROUTE] /migrate-reset', typeof migrateResetHandler);
 router.all('/migrate-reset', wrap(migrateResetHandler));

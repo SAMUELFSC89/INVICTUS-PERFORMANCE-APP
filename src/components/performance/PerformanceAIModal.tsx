@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { Sparkles, X, Send, ShieldCheck, Cpu, RefreshCw } from 'lucide-react';
 import { UserPerformanceState } from '../../core/performance/performanceEngine';
@@ -37,6 +37,18 @@ Como posso ajudar na sua jornada hoje?`,
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     }
   ]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -195,13 +207,39 @@ Para aprofundar qualquer aspecto específico, você pode me perguntar sobre:
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+      <div
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto cursor-pointer select-none"
+      >
         <motion.div
+          onClick={(e) => e.stopPropagation()}
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-2xl bg-zinc-950 border border-emerald-500/40 rounded-3xl p-6 md:p-8 shadow-2xl text-white space-y-6 my-8 max-h-[85vh] flex flex-col"
+          drag="y"
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.5 }}
+          onDragEnd={(_, info) => {
+            if (info.offset.y > 100 || info.velocity.y > 300) {
+              onClose();
+            }
+          }}
+          className="relative w-full max-w-2xl bg-zinc-950 border border-emerald-500/40 rounded-3xl p-6 md:p-8 shadow-2xl text-white space-y-6 my-8 max-h-[85vh] flex flex-col cursor-default select-auto"
         >
+          {/* Top Drag & Pull Handle */}
+          <div
+            onClick={onClose}
+            className="w-full -mt-3 -mb-2 flex flex-col items-center justify-center cursor-pointer group shrink-0 py-1"
+            title="Pressione Esc, puxe para baixo ou clique para fechar"
+          >
+            <div className="w-12 h-1.5 bg-zinc-700 group-hover:bg-emerald-400 group-active:scale-95 transition-all rounded-full" />
+            <span className="text-[9px] text-zinc-500 group-hover:text-emerald-400 font-medium tracking-wide mt-1 transition-colors">
+              Pressione Esc, puxe ou toque para fechar
+            </span>
+          </div>
+
           {/* Header */}
           <div className="flex items-center justify-between border-b border-zinc-800 pb-4 shrink-0">
             <div className="flex items-center gap-3">
@@ -222,9 +260,12 @@ Para aprofundar qualquer aspecto específico, você pode me perguntar sobre:
             </div>
             <button
               onClick={onClose}
-              className="w-9 h-9 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors border border-zinc-800"
+              aria-label="Fechar conversa"
+              className="h-9 px-3 rounded-full bg-zinc-900 hover:bg-rose-500/20 border border-zinc-800 hover:border-rose-500/40 text-zinc-400 hover:text-rose-300 flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm active:scale-95"
+              title="Fechar conversa (Esc ou puxar)"
             >
-              <X size={20} />
+              <X size={18} />
+              <span className="text-xs font-bold hidden xs:inline">Fechar</span>
             </button>
           </div>
 

@@ -29,6 +29,14 @@ import { PowerLift } from './pages/PowerLift';
 import { Health, HealthReport } from './pages/Health';
 import { League } from './pages/League';
 import { Notifications } from './pages/Notifications';
+import { ChampionshipsHub } from './pages/championships/ChampionshipsHub';
+import { ChampionshipDetails } from './pages/championships/ChampionshipDetails';
+import { ChampionshipRegulation } from './pages/championships/ChampionshipRegulation';
+import { ChampionshipRegistration } from './pages/championships/ChampionshipRegistration';
+import { ChampionshipCheckoutAsaas } from './pages/championships/ChampionshipCheckoutAsaas';
+import { ChampionshipConfirmation } from './pages/championships/ChampionshipConfirmation';
+import { MyChampionships } from './pages/championships/MyChampionships';
+import { MyChampionshipDetail } from './pages/championships/MyChampionshipDetail';
 import './styles/invictus.css';
 
 export default function App() {
@@ -74,6 +82,14 @@ export default function App() {
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences/:section" element={<ProfileSecondary />} />
                 <Route path="/profile" element={<Profile />} />
+                <Route path="/championships" element={<ChampionshipsHub />} />
+                <Route path="/championships/my" element={<MyChampionships />} />
+                <Route path="/championships/my/:id" element={<MyChampionshipDetail />} />
+                <Route path="/championships/:id" element={<ChampionshipDetails />} />
+                <Route path="/championships/:id/rules" element={<ChampionshipRegulation />} />
+                <Route path="/championships/:id/register" element={<ChampionshipRegistration />} />
+                <Route path="/championships/:id/checkout-redirect" element={<ChampionshipCheckoutAsaas />} />
+                <Route path="/championships/:id/confirmed" element={<ChampionshipConfirmation />} />
                 <Route path="/achievements" element={<Achievements />} />
                 <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
                 <Route path="/performance" element={<Performance />} />

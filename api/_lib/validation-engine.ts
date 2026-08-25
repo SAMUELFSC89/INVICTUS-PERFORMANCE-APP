@@ -1,4 +1,5 @@
 import { SECURITY_CONFIG } from './security-config.js';
+import { resolveModality } from './modality-config.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -47,7 +48,8 @@ export class ValidationEngine {
     }
 
     // 3. GPS presente quando necessário
-    const isGpsRequired = cfg.requireGpsForTypes.includes(rawType);
+    const modality = resolveModality(activity);
+    const isGpsRequired = modality ? modality.requiresGps : cfg.requireGpsForTypes.includes(rawType);
     const hasGpsData = Boolean(
       (activity.checkpoints && Array.isArray(activity.checkpoints) && activity.checkpoints.length > 0) ||
       (activity.gpsTrack && activity.gpsTrack.length > 0) ||

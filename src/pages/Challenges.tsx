@@ -80,7 +80,8 @@ export function Challenges() {
   const { triggerXPToast } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void }>();
 
   // Active activity session state
-  const [activeSession, setActiveSession] = useState<ActivitySession | null>(activityService.getCurrentSession());
+  const initialActive = activityService.getCurrentSession();
+  const [activeSession, setActiveSession] = useState<ActivitySession | null>(initialActive);
   const [elapsedTime, setElapsedTime] = useState(0);
 
   // Live GPS tracking state (distância/pace em tempo real durante cardio ao ar livre)
@@ -104,9 +105,11 @@ export function Challenges() {
 
   // Modals & Pending Operations
   const [pendingChallenge, setPendingChallenge] = useState<CoreChallenge | null>(null);
-  const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(null);
-  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState('Pernas');
-  const [selectedCardioOption, setSelectedCardioOption] = useState<CardioOption>(CARDIO_OPTIONS[0]);
+  const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(initialActive ? 'active' : null);
+  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState(initialActive?.muscleGroup || 'Pernas');
+  const [selectedCardioOption, setSelectedCardioOption] = useState<CardioOption>(
+    (initialActive?.cardioType && CARDIO_OPTIONS.find(o => o.id === initialActive.cardioType)) || CARDIO_OPTIONS[0]
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
@@ -116,7 +119,7 @@ export function Challenges() {
   const [notice, setNotice] = useState<string | null>(null);
 
   // Cardio States
-  const [selectedCardioType, setSelectedCardioType] = useState<string>('running');
+  const [selectedCardioType, setSelectedCardioType] = useState<string>(initialActive?.cardioType || 'running');
   const [stravaConnecting, setStravaConnecting] = useState(false);
   const levelProgress = getXPProgress(profile?.xp || 0);
   const unlockedBadges = ACHIEVEMENTS.filter((achievement) => profile?.achievements?.includes(achievement.id));
@@ -173,6 +176,19 @@ export function Challenges() {
           : new Date(current.startTime).getTime();
         const duration = Math.floor((Date.now() - startTimeMs) / 1000);
         setElapsedTime(duration);
+        if (!flowScreen) {
+          setFlowScreen('active');
+          if (current.cardioType) {
+            const matched = CARDIO_OPTIONS.find(o => o.id === current.cardioType);
+            if (matched) {
+              setSelectedCardioOption(matched);
+              setSelectedCardioType(matched.id);
+            }
+          }
+          if (current.muscleGroup) {
+            setSelectedMuscleGroup(current.muscleGroup);
+          }
+        }
       } else {
         setElapsedTime(0);
       }
@@ -181,7 +197,7 @@ export function Challenges() {
     syncSession();
     const interval = setInterval(syncSession, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [flowScreen]);
 
   // GPS checkpoint tracking em tempo real para cardio ao ar livre (corrida/caminhada/bike).
   // Antes addCheckpoint() nunca era chamado durante a sessao, entao a "rota" virava so
@@ -207,7 +223,8 @@ export function Challenges() {
 
         activityService.addCheckpoint({
           lat: position.coords.latitude,
-          lng: position.coords.longitude
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy
         });
 
         const current = activityService.getCurrentSession();
@@ -257,20 +274,15 @@ export function Challenges() {
   const handleStartActivity = async (type: 'workout' | 'cardio') => {
     setStartActivityError(null);
     setError(null);
-    // IMPORTANTE: solicitar permissao de sensores (acelerometro/giroscopio) como a
-    // PRIMEIRA acao, de forma sincrona em relacao ao clique do usuario. No iOS Safari,
-    // DeviceMotionEvent.requestPermission() so exibe o prompt real se chamado dentro da
-    // mesma pilha de execucao do gesto do usuario -- se colocado depois de qualquer await
-    // (ex.: startSession fazendo consultas no Firestore), o Safari ja descartou a "user
-    // activation" e o prompt nunca aparece (bug reportado: solicitações indevidas de permissões).
-    // Ver auditoria antifraude 2026-08.
     try {
       await activityService.requestMotionPermission();
       const session = await activityService.startSession(
         type,
         undefined,
-        type === 'cardio' ? selectedCardioType : undefined,
-        undefined
+        type === 'cardio' ? selectedCardioOption.id : undefined,
+        undefined,
+        undefined,
+        type === 'workout' ? selectedMuscleGroup : undefined
       );
       setActiveSession(session);
       setPendingChallenge(null);
@@ -282,9 +294,7 @@ export function Challenges() {
       if (rawMsg.startsWith('{') && rawMsg.endsWith('}')) {
         try {
           const parsed = JSON.parse(rawMsg);
-          rawMsg = parsed.title ? `${parsed.title}
-
-${parsed.message}` : (parsed.message || rawMsg);
+          rawMsg = parsed.title ? `${parsed.title}\n\n${parsed.message}` : (parsed.message || rawMsg);
         } catch (e) {
           // keep rawMsg
         }
@@ -389,12 +399,15 @@ ${parsed.message}` : (parsed.message || rawMsg);
             ? calculatePace(serverDistance * 1000, timeSeconds)
             : undefined;
 
+          const muscleGroup = (res.workout as any)?.muscleGroup || sessionBeforeEnd.muscleGroup || selectedMuscleGroup;
+          const workoutTitle = muscleGroup ? `Treino de ${muscleGroup}` : 'Treino de Musculação';
+
           setFinishedActivityItem({
             id: res.workout.id,
             source: 'workout',
             type: sessionType === 'cardio' ? 'cardio' : 'workout',
             typeLabel: sessionType === 'cardio' ? 'Cardio' : 'Treino',
-            title: sessionType === 'cardio' ? (cardioTypeLabels[res.workout.cardioType || selectedCardioType] || 'Cardio') : 'Treino de Musculação',
+            title: sessionType === 'cardio' ? (cardioTypeLabels[res.workout.cardioType || selectedCardioType] || 'Cardio') : workoutTitle,
             dateStr,
             timeStr,
             rawTimestamp: timestampMs,
@@ -440,6 +453,8 @@ ${parsed.message}` : (parsed.message || rawMsg);
     if (confirm('Deseja realmente descartar e cancelar a sessão em andamento? Nenhum ponto será salvo.')) {
       activityService.cancelSession();
       setActiveSession(null);
+      setFlowScreen(null);
+      setPendingChallenge(null);
       setError(null);
       triggerXPToast(0, 'Sessão descartada.');
     }
@@ -491,75 +506,6 @@ ${parsed.message}` : (parsed.message || rawMsg);
         </div>
       </header>
 
-      {/* ACTIVE SESSION RUNNING BANNER */}
-      {activeSession && !flowScreen && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-primary/20 border border-primary/40 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden"
-        >
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary animate-pulse shrink-0 mt-0.5">
-              <Flame size={24} />
-            </div>
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-primary flex items-center gap-1">
-                  Sessão em Andamento
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block ml-1" />
-                </span>
-
-                {elapsedTime >= 1800 ? (
-                  <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <CheckCircle size={12} /> Meta de 30 min Concluída!
-                  </span>
-                ) : (
-                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md">
-                    Meta de 30 min em andamento (Faltam {Math.ceil((1800 - elapsedTime) / 60)} min)
-                  </span>
-                )}
-              </div>
-
-              <h3 className="text-lg font-bold text-white uppercase italic">
-                {activeSession.type === 'workout' ? 'Treino de Musculação' : 'Queima de Gordura (Cardio)'}
-              </h3>
-              <p className="text-xs text-on-surface-variant flex items-center gap-1">
-                <Clock size={13} className="text-primary" /> Tempo decorrido: <strong className="text-white font-mono text-sm">{formatTime(elapsedTime)}</strong>
-              </p>
-              {activeSession.requiresGpsDistance && (
-                <p className="text-xs text-on-surface-variant flex items-center gap-1 flex-wrap">
-                  <MapPin size={13} className="text-primary" /> Distância: <strong className="text-white font-mono text-sm">{liveDistanceKm.toFixed(2)} km</strong>
-                  {liveDistanceKm > 0.01 && elapsedTime > 0 && (
-                    <span className="ml-1">• Pace: <strong className="text-white font-mono text-sm">{calculatePace(liveDistanceKm * 1000, elapsedTime)}</strong></span>
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 shrink-0 self-stretch md:self-auto justify-end">
-            <button
-              onClick={handleEndActivity}
-              disabled={loading}
-              className="flex-1 md:flex-initial px-5 py-3 bg-primary hover:bg-primary-hover text-black font-headline font-black italic text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              <CheckCircle size={16} />
-              <span>{loading ? 'Finalizando...' : 'Finalizar Atividade'}</span>
-            </button>
-
-            <button
-              onClick={handleCancelActivity}
-              disabled={loading}
-              className="px-4 py-3 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 font-headline font-black italic text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Descartar e encerrar sessão"
-            >
-              <XCircle size={16} />
-              <span>Descartar</span>
-            </button>
-          </div>
-        </motion.div>
-      )}
-
       {/* MENSAGEM REAL DE APROVAÇÃO/REJEIÇÃO DA ÚLTIMA ATIVIDADE ENCERRADA */}
       {error && (
         <motion.div
@@ -599,7 +545,7 @@ ${parsed.message}` : (parsed.message || rawMsg);
 
       {/* 1. POWER LIFT CATEGORY VIEW */}
       {selectedCategory === 'powerlift' ? (
-        <div className="bg-surface-card border border-white/10 rounded-[28px] p-4 sm:p-6 shadow-2xl">
+        <div className="w-full">
           <PowerLift />
         </div>
       ) : selectedCategory === 'privados' ? (
@@ -746,101 +692,6 @@ ${parsed.message}` : (parsed.message || rawMsg);
         </div>
       )}
 
-      {/* MODAL: Pending Challenge (Check-in / Workout / Cardio setup) */}
-      <AnimatePresence>
-        {pendingChallenge && !flowScreen && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-surface-card border border-white/10 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-5 relative"
-            >
-              <button
-                onClick={() => setPendingChallenge(null)}
-                className="absolute top-4 right-4 text-on-surface-variant hover:text-white p-1 rounded-lg bg-white/5 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl text-primary">
-                  {pendingChallenge.icon}
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white uppercase italic">
-                    {pendingChallenge.title}
-                  </h3>
-                  <p className="text-xs text-on-surface-variant">{pendingChallenge.subtitle}</p>
-                </div>
-              </div>
-
-              {startActivityError && (
-                <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 rounded-2xl text-xs space-y-1.5 shadow-sm">
-                  <div className="flex items-center gap-2 font-bold text-emerald-400">
-                    <MapPin size={16} />
-                    <span className="font-headline italic uppercase tracking-wider text-[11px]">Informação de Localização</span>
-                  </div>
-                  <p className="whitespace-pre-line leading-relaxed text-[11.5px] text-zinc-300 font-medium">{startActivityError}</p>
-                </div>
-              )}
-
-              {pendingChallenge.id === 'workout' && (
-                <div className="space-y-4">
-                  <p className="text-xs text-on-surface-variant">
-                    Para iniciar seu treino de musculação, o aplicativo confirma sua localização na academia antes de iniciar a atividade.
-                  </p>
-
-                  <button
-                    onClick={() => handleStartActivity('workout')}
-                    className="w-full py-3 bg-primary hover:bg-primary-hover text-black font-headline font-black italic text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Play size={16} />
-                    <span>Iniciar cronômetro de treino</span>
-                  </button>
-                </div>
-              )}
-
-              {pendingChallenge.id === 'cardio' && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-on-surface-variant uppercase block">Tipo de Cardio</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: 'running', label: 'Corrida' },
-                        { id: 'walking', label: 'Caminhada' },
-                        { id: 'cycling', label: 'Ciclismo' }
-                      ].map(type => (
-                        <button
-                          key={type.id}
-                          onClick={() => setSelectedCardioType(type.id)}
-                          className={cn(
-                            "py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer",
-                            selectedCardioType === type.id
-                              ? "bg-primary text-black border-primary"
-                              : "bg-surface-container border-white/5 text-on-surface-variant hover:text-white"
-                          )}
-                        >
-                          {type.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleStartActivity('cardio')}
-                    className="w-full py-3 bg-orange-500 hover:bg-orange-400 text-black font-headline font-black italic text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Play size={16} />
-                    <span>Iniciar cardio com telemetria</span>
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
       {/* Anti-cheat presence modal if required */}
       {presenceCheckRequired && presenceCheckData && (
         <VerifiedPresenceModal
@@ -914,11 +765,14 @@ ${parsed.message}` : (parsed.message || rawMsg);
           completedChallengeIds={Object.keys(submissions)}
           completion={completion}
           startError={startActivityError}
+          loading={loading}
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
           onSummary={() => setFlowScreen(flowScreen === 'cardio-complete' ? 'cardio-summary' : 'day-progress')}
           onDone={() => { setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); setCompletion(null); }}
+          onCancel={handleCancelActivity}
+          onShare={finishedActivityItem ? () => setShareCardData(buildShareableFromItem(finishedActivityItem)) : undefined}
         />
       )}
     </div>

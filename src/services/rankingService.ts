@@ -123,7 +123,36 @@ export const rankingService = {
           } as RankingSnapshot;
         }
 
-        const topUsers = parsed?.topUsers || [];
+        let topUsers = parsed?.topUsers || [];
+
+        // Direct client Firestore fallback if server API returned empty users list
+        if (topUsers.length === 0 && db) {
+          try {
+            const scoreField = period === 'weekly' ? 'weeklyScore' : period === 'monthly' ? 'monthlyScore' : 'score';
+            const usersRef = collection(db, 'users');
+            let q = query(usersRef, orderBy(scoreField, 'desc'), limit(50));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              topUsers = snap.docs.map((d, i) => {
+                const data = d.data();
+                return {
+                  uid: d.id,
+                  displayName: data.displayName || 'Atleta',
+                  photoURL: data.photoURL || '',
+                  score: data[scoreField] || 0,
+                  streak: data.streak || 0,
+                  rank: i + 1,
+                  isSubscribed: data.isSubscribed || false,
+                  city: data.city || '',
+                  gymId: data.gymId || '',
+                  positions: data.positions || {}
+                };
+              });
+            }
+          } catch (clientFallbackErr) {
+            console.warn('[Ranking Service] Client Firestore fallback warning:', clientFallbackErr);
+          }
+        }
 
         return {
           id: `${level}_${levelId}`,

@@ -1,3 +1,5 @@
+import { resolveModality } from './modality-config.js';
+
 export interface SensorEngineReport {
   isSensorDataValid: boolean;
   hasMotionVariance: boolean;
@@ -16,9 +18,12 @@ export class SensorEngine {
 
     const activityType = (activity.activityType || activity.type || '').toString().toUpperCase();
     const cardioType = (activity.cardioType || '').toString().toUpperCase();
-    const requiresMotionEvidence = activity.requiresGpsDistance === true ||
+    const modality = resolveModality(activity);
+    const requiresMotionEvidence = modality ? modality.requiresMotionEvidence : (
+      activity.requiresGpsDistance === true ||
       ['RUNNING', 'WALKING', 'CYCLING'].includes(activityType) ||
-      ['RUNNING', 'WALKING', 'BIKE'].includes(cardioType);
+      ['RUNNING', 'WALKING', 'BIKE'].includes(cardioType)
+    );
 
     // 1. Motion Variance (Accelerometer / Gyroscope).
     // Antes, quando activity.sensorTelemetry vinha completamente ausente (ex.: o app nunca
