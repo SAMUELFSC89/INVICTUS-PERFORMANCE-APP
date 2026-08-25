@@ -88,7 +88,7 @@ router.use((req: express.Request & { user?: { id?: string; uid?: string } }, res
 // Global API CORS and headers. The same strict allowlist is also used by
 // standalone handlers, so no route can reflect arbitrary browser origins.
 router.use((req, res, next) => {
-  if (cors(req as VercelRequest, res as VercelResponse)) return;
+  if (cors(req, res)) return;
   next();
 });
 

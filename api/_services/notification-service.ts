@@ -217,7 +217,7 @@ export class NotificationService {
           ? current.fcmTokens.filter((item: unknown): item is string => typeof item === 'string').slice(-MAX_PUSH_TOKENS)
           : [];
         apnsTokens = Array.isArray(current.apnsTokens)
-          ? current.apnsTokens.filter((item: unknown): item is string => /^[A-Fa-f0-9]{64,256}$/.test(item)).slice(-MAX_PUSH_TOKENS)
+          ? current.apnsTokens.filter((item: unknown): item is string => typeof item === 'string' && /^[A-Fa-f0-9]{64,256}$/.test(item)).slice(-MAX_PUSH_TOKENS)
           : [];
         const stored = Array.isArray(current.notifications) ? current.notifications : [];
         transaction.set(userRef, {

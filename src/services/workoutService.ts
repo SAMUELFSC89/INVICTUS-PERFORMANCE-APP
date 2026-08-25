@@ -53,12 +53,35 @@ export const workoutService = {
           data.validationStatus ?? data.status ?? (data.validation as { status?: unknown } | undefined)?.status
         );
         if (timestamp === null || status !== 'validated') return [];
-        return [{
-          ...(data as Workout),
+
+        const workoutType: 'workout' | 'cardio' | 'diet' | 'recovery' =
+          data.type === 'cardio' || data.type === 'diet' || data.type === 'recovery' || data.type === 'workout'
+            ? data.type
+            : 'workout';
+
+        const workout: Workout = {
           id: entry.id,
+          userId: typeof data.userId === 'string' ? data.userId : user.uid,
           timestamp: new Date(timestamp).toISOString(),
-          status: 'valid'
-        }];
+          status: 'valid',
+          type: workoutType,
+          photoUrl: typeof data.photoUrl === 'string' ? data.photoUrl : undefined,
+          muscleGroup: typeof data.muscleGroup === 'string' ? data.muscleGroup : undefined,
+          cardioType: typeof data.cardioType === 'string' ? data.cardioType : undefined,
+          cardioTypeLabel: typeof data.cardioTypeLabel === 'string' ? data.cardioTypeLabel : undefined,
+          isIndoorCardio: typeof data.isIndoorCardio === 'boolean' ? data.isIndoorCardio : undefined,
+          requiresGpsDistance: typeof data.requiresGpsDistance === 'boolean' ? data.requiresGpsDistance : undefined,
+          duration: typeof data.duration === 'number' ? data.duration : undefined,
+          distance: typeof data.distance === 'number' ? data.distance : undefined,
+          calories: typeof data.calories === 'number' ? data.calories : undefined,
+          points: typeof data.points === 'number' ? data.points : undefined,
+          rankingPointsEarned: typeof data.rankingPointsEarned === 'number' ? data.rankingPointsEarned : undefined,
+          gymId: typeof data.gymId === 'string' ? data.gymId : undefined,
+          validationStatus: typeof data.validationStatus === 'string' ? data.validationStatus : undefined,
+          sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
+          verificationPhotoUrl: typeof data.verificationPhotoUrl === 'string' ? data.verificationPhotoUrl : undefined
+        };
+        return [workout];
       })
         .sort((a, b) => Date.parse(String(b.timestamp)) - Date.parse(String(a.timestamp)))
         .slice(0, limitCount);

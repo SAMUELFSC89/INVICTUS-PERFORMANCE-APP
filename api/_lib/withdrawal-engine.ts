@@ -344,21 +344,12 @@ export class WithdrawalEngine {
     const updated: any = {
       status: newStatus,
       updatedAt: new Date().toISOString(),
-      ...(newStatus === 'paid' ? { processedAt: new Date().toISOString() } : {}),
       ...(adminNote ? { adminNote } : {}),
       ...(reviewerId ? { reviewerId } : {})
     };
 
     await docRef.set(updated, { merge: true });
-    if (newStatus === 'paid') {
-      notificationService.notify({
-        userId: withdrawal.userId,
-        type: 'payment',
-        title: 'Saque pago! 💰',
-        message: 'Seu saque de R$ ' + withdrawal.amount.toFixed(2) + ' foi enviado via PIX.',
-        actionUrl: '/wallet',
-      }).catch((e) => console.error('[WithdrawalEngine] Falha ao notificar saque pago:', e));
-    } else if (newStatus === 'rejected' || newStatus === 'cancelled') {
+    if (newStatus === 'rejected' || newStatus === 'cancelled') {
       notificationService.notify({
         userId: withdrawal.userId,
         type: 'payment',
@@ -468,21 +459,17 @@ export class WithdrawalEngine {
     const docRef = snap.docs[0].ref;
     const failed = event === 'TRANSFER_FAILED' || providerStatus === 'FAILED' || providerStatus === 'CANCELLED';
     const succeeded = event === 'TRANSFER_DONE' || providerStatus === 'DONE';
-    let outcome: 'failed' | 'paid' | 'ignored' = 'ignored';
-    let withdrawalForNotification: PIXWithdrawal | null = null;
-
-    await db.runTransaction(async (transaction: any) => {
+    const result = await db.runTransaction(async (transaction: any): Promise<{ outcome: 'failed' | 'paid' | 'ignored'; withdrawal: PIXWithdrawal | null }> => {
       const freshSnap = await transaction.get(docRef);
-      if (!freshSnap.exists) return;
+      if (!freshSnap.exists) return { outcome: 'ignored', withdrawal: null };
       const withdrawal = freshSnap.data() as PIXWithdrawal & Record<string, any>;
-      withdrawalForNotification = withdrawal;
 
       if (!failed && !succeeded) {
         transaction.set(docRef, {
           providerStatus: providerStatus || event,
           updatedAt: new Date().toISOString()
         }, { merge: true });
-        return;
+        return { outcome: 'ignored', withdrawal };
       }
 
       const operation = failed ? 'refund' : 'pay';
@@ -498,7 +485,7 @@ export class WithdrawalEngine {
           providerStatus: providerStatus || (failed ? 'FAILED' : 'DONE'),
           updatedAt: new Date().toISOString()
         }, { merge: true });
-        return;
+        return { outcome: 'ignored', withdrawal };
       }
 
       if (!walletSnap.exists) {
@@ -556,8 +543,11 @@ export class WithdrawalEngine {
         processedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }, { merge: true });
-      outcome = failed ? 'failed' : 'paid';
+      return { outcome: failed ? 'failed' : 'paid', withdrawal };
     });
+
+    const outcome = result?.outcome;
+    const withdrawalForNotification = result?.withdrawal;
 
     if (outcome === 'failed' && withdrawalForNotification) {
       notificationService.notify({

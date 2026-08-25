@@ -35,6 +35,7 @@ export interface Championship {
   badgeUrl?: string;
   antiFraudProfile: {
     minDurationMinutes?: number;
+    maxDurationMinutes?: number;
     requireGeofence?: boolean;
     requireContinuousGPS?: boolean;
     maxRiskScore?: number;

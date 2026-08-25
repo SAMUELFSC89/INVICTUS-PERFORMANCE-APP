@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { initializeApp, cert, getApps, getApp, App, applicationDefault } from 'firebase-admin/app';
+import { initializeApp, cert, getApps, getApp, App, applicationDefault, ServiceAccount } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import fs from 'fs';
@@ -25,27 +25,29 @@ try {
   }
 } catch (e) {}
 
-type FirebaseServiceAccount = {
-  project_id?: string;
-  client_email?: string;
-  private_key?: string;
-};
-
 /**
  * Credenciais de servidor nunca devem ser lidas do repositório. Em Vercel, use
  * FIREBASE_SERVICE_ACCOUNT (JSON completo) ou uma Application Default
  * Credential configurada pela própria plataforma.
  */
-function loadServiceAccountFromEnvironment(): FirebaseServiceAccount | undefined {
+function loadServiceAccountFromEnvironment(): ServiceAccount | undefined {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) return undefined;
 
   try {
-    const parsed = JSON.parse(raw) as FirebaseServiceAccount;
-    if (!parsed.project_id || !parsed.client_email || !parsed.private_key) {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const projectId = typeof parsed.projectId === 'string' ? parsed.projectId : typeof parsed.project_id === 'string' ? parsed.project_id : undefined;
+    const clientEmail = typeof parsed.clientEmail === 'string' ? parsed.clientEmail : typeof parsed.client_email === 'string' ? parsed.client_email : undefined;
+    const privateKey = typeof parsed.privateKey === 'string' ? parsed.privateKey : typeof parsed.private_key === 'string' ? parsed.private_key : undefined;
+
+    if (!projectId || !clientEmail || !privateKey) {
       throw new Error('campos obrigatórios ausentes');
     }
-    return parsed;
+    return {
+      projectId,
+      clientEmail,
+      privateKey: privateKey.replace(/\\n/g, '\n')
+    };
   } catch (error: any) {
     console.error(`[Firebase Admin] FIREBASE_SERVICE_ACCOUNT inválida: ${error?.message || 'JSON inválido'}`);
     return undefined;
@@ -63,7 +65,7 @@ let initError: Error | null = null;
 const configPid = fixProjectId(config.projectId);
 const envPid = fixProjectId(process.env.GOOGLE_CLOUD_PROJECT || process.env.PROJECT_ID);
 
-const saPid = serviceAccount?.project_id ? fixProjectId(serviceAccount.project_id) : undefined;
+const saPid = serviceAccount?.projectId ? fixProjectId(serviceAccount.projectId) : undefined;
 const primaryPid = configPid || saPid || envPid;
 
 // Check if service account project matches current primary project
@@ -81,7 +83,7 @@ try {
 
     // Certificamos somente credenciais vindas do ambiente. Nunca há fallback
     // para um arquivo local versionado nem para credenciais de outro projeto.
-    if (serviceAccount?.private_key && isSaMatching) {
+    if (serviceAccount?.privateKey && isSaMatching) {
       options.credential = cert(serviceAccount);
       console.log('[Firebase Admin] Inicializado com credencial de ambiente.');
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
@@ -89,7 +91,7 @@ try {
       // repositório. Não tentamos adivinhar caminhos locais.
       options.credential = applicationDefault();
       console.log('[Firebase Admin] Inicializado com Application Default Credentials.');
-    } else if (serviceAccount?.private_key && !isSaMatching) {
+    } else if (serviceAccount?.privateKey && !isSaMatching) {
       throw new Error('FIREBASE_SERVICE_ACCOUNT pertence a um projeto diferente do Firebase configurado.');
     } else {
       console.warn('[Firebase Admin] Nenhuma credencial de servidor configurada; operações de banco falharão até FIREBASE_SERVICE_ACCOUNT ou ADC ser configurada.');
@@ -261,11 +263,24 @@ export function isCorsOriginAllowed(origin?: string): boolean {
   return getCorsOrigins().has(origin);
 }
 
+export interface CorsCompatibleRequest {
+  headers: Record<string, string | string[] | undefined>;
+  method?: string;
+}
+
+export interface CorsCompatibleResponse {
+  setHeader(name: string, value: string): unknown;
+  status(code: number): {
+    json(body: unknown): unknown;
+    end(): unknown;
+  } | any;
+}
+
 /**
  * Aplica CORS por allowlist. Retorna true quando a resposta já foi finalizada
  * (preflight ou origem não autorizada), mantendo o contrato dos handlers.
  */
-export function cors(req: VercelRequest, res: VercelResponse) {
+export function cors(req: CorsCompatibleRequest, res: CorsCompatibleResponse) {
   const originHeader = req.headers.origin;
   const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
 

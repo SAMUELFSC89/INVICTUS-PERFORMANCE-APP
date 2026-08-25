@@ -152,6 +152,7 @@ export const validationService = {
     reason?: string;
     validationId?: string;
   }> {
+    const exName = exercise === 'supino' ? 'Supino Reto' : exercise === 'agachamento' ? 'Agachamento' : 'Levantamento Terra';
     try {
       const headers = await cabecalhosAutenticados();
 
