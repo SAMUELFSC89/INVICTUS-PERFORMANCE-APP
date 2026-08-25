@@ -1,3 +1,5 @@
+import { resolveModality } from './modality-config.js';
+
 export interface GpsEngineReport {
   isValid: boolean;
   isMockLocation: boolean;
@@ -76,11 +78,20 @@ export class GpsEngine {
       threats.push('IMPOSSIBLE_LOCATION_TELEPORT');
     }
 
-    // Check speed vs mode
-    const maxAllowedSpeed = activityType === 'CYCLING' ? 80 : activityType === 'RUNNING' ? 30 : 15;
+    // 3. Teleportation & Speed Calculation
+    const modality = resolveModality(activity);
+    let maxAllowedSpeed = 15; // default walking
+    if (modality?.maxSpeedKmH) {
+      maxAllowedSpeed = modality.maxSpeedKmH;
+    } else if (activityType === 'CYCLING' || cardioType.includes('BIKE')) {
+      maxAllowedSpeed = 80;
+    } else if (activityType === 'RUNNING') {
+      maxAllowedSpeed = 30;
+    }
+
     if (maxSpeedKmH > maxAllowedSpeed && maxSpeedKmH < 250) {
       hasExcessiveSpeed = true;
-      threats.push(`EXCESSIVE_SPEED_FOR_ACTIVITY (${Math.round(maxSpeedKmH)} km/h)`);
+      threats.push(`EXCESSIVE_SPEED_FOR_ACTIVITY (${Math.round(maxSpeedKmH)} km/h vs max ${maxAllowedSpeed} km/h)`);
     }
 
     // 4. Gym Geofence / Location Persistence
@@ -96,20 +107,12 @@ export class GpsEngine {
       }
     }
 
-    // 5. Insufficient GPS Samples (fail-closed).
-    // Antes, uma atividade de cardio ao ar livre com apenas 2 checkpoints (inicio + fim,
-    // sem nenhum ponto intermediario real) passava batido no antifraude -- a "rota"
-    // virava uma linha reta e so um unico calculo de velocidade media era possivel,
-    // insuficiente pra detectar padroes de transporte motorizado com paradas (ex: onibus
-    // parado no transito, o que mantem a velocidade media baixa mesmo em um trajeto de
-    // varios km). Agora, atividades que dependem de distancia por GPS (corrida, caminhada,
-    // ciclismo ao ar livre) exigem uma amostragem minima real de trajeto para serem
-    // consideradas validas -- caso contrario a evidencia e tratada como insuficiente
-    // (fail-closed) em vez de assumida como valida por padrao. Ver auditoria antifraude
-    // 2026-08 (teste do onibus homologado sem dados).
-    const requiresGpsDistance = activity.requiresGpsDistance === true ||
+    // 5. Insufficient GPS Samples (fail-closed)
+    const requiresGpsDistance = modality ? modality.requiresGps : (
+      activity.requiresGpsDistance === true ||
       ['RUNNING', 'WALKING', 'CYCLING'].includes(activityType) ||
-      ['RUNNING', 'WALKING', 'BIKE'].includes(cardioType);
+      ['RUNNING', 'WALKING', 'BIKE'].includes(cardioType)
+    );
     let hasInsufficientSamples = false;
     if (requiresGpsDistance && checkpoints.length < 3) {
       hasInsufficientSamples = true;

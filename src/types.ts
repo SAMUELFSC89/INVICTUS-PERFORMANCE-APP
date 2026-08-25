@@ -287,9 +287,24 @@ export interface ActivitySession {
   type: 'workout' | 'cardio' | 'diet';
   cardioType?: string;
   cardioTypeLabel?: string;
+  muscleGroup?: string;
   isIndoorCardio?: boolean;
   requiresGpsDistance?: boolean;
   smartwatchData?: any;
+  healthTelemetry?: {
+    avgHeartRate?: number;
+    maxHeartRate?: number;
+    steps?: number;
+    calories?: number;
+    source?: 'apple_health' | 'health_connect' | 'wearable' | 'none';
+  };
+  metricSources?: {
+    heartRate?: string;
+    steps?: string;
+    distance?: string;
+    calories?: string;
+    motion?: string;
+  };
   startTime: string;
   startLocation?: { lat: number; lng: number; accuracy?: number };
   nearbyGymsAtStart?: string[];
@@ -307,11 +322,26 @@ export interface Workout {
   userId: string;
   photoUrl?: string;
   timestamp: string;
+  muscleGroup?: string;
   cardioType?: string;
   cardioTypeLabel?: string;
   isIndoorCardio?: boolean;
   requiresGpsDistance?: boolean;
   smartwatchData?: any;
+  healthTelemetry?: {
+    avgHeartRate?: number;
+    maxHeartRate?: number;
+    steps?: number;
+    calories?: number;
+    source?: 'apple_health' | 'health_connect' | 'wearable' | 'none';
+  };
+  metricSources?: {
+    heartRate?: string;
+    steps?: string;
+    distance?: string;
+    calories?: string;
+    motion?: string;
+  };
   location?: {
     lat: number;
     lng: number;
@@ -322,12 +352,16 @@ export interface Workout {
   imageHash?: string;
   duration?: number; // in minutes
   distance?: number; // in km
+  calories?: number;
   points?: number;
   rankingPointsEarned?: number;
   gymId?: string;
   
   // Anti-fraud and Validation fields
   validation?: ValidationResult;
+  integrityScore?: number;
+  riskScore?: number;
+  validationStatus?: string;
   sessionId?: string;
   isMockLocation?: boolean;
   deviceInfo?: string;

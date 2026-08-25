@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Bell, Building2, CalendarDays, ChevronDown, CircleDot, MapPin, ShieldCheck, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Bell, Building2, CalendarDays, ChevronDown, ChevronRight, CircleDot, MapPin, ShieldCheck, TrendingUp, Trophy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { rankingService } from '../services/rankingService';
 import { useUser } from '../UserContext';
@@ -63,6 +63,7 @@ export function Rankings() {
 
   return <section className="ranking-flow ranking-flow--overview">
     <header className="ranking-overview-header"><div><h1>RANKING</h1><p>COMPITA. EVOLUA. SEJA INVICTUS.</p></div><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button></header>
+    
     <nav className="rank-scope-tabs">{(['gym', 'city', 'global'] as RankScope[]).map((item) => <button key={item} onClick={() => setScope(item)} className={scope === item ? 'is-active' : ''}>{item === 'gym' ? <Building2 /> : item === 'city' ? <MapPin /> : <ShieldCheck />}{scopeLabels[item]}</button>)}</nav>
     <article className="rank-summary-card"><div><small>SUA POSIÇÃO</small><b>{myRank ? `${myRank}º` : '—'}</b><span>de {athletes.length || 0}</span></div><span className="rank-summary-emblem"><img src="/ranking-emblem-user-provided.png" alt="Emblema de posição Invictus" /></span><div><small>SUA PONTUAÇÃO (IGA)</small><b className="rank-gold">{Number(myEntry.score || 0).toLocaleString('pt-BR')}</b><span>Atualizado às {formatUpdatedAt(ranking?.updatedAt)}</span></div></article>
     <div className="rank-overview-selectors"><button onClick={() => setPeriod(period === 'weekly' ? 'all' : 'weekly')}><CalendarDays /> {periodLabels[period]} <ChevronDown /></button><button onClick={() => setScope(scope === 'gym' ? 'city' : scope === 'city' ? 'global' : 'gym')}><Building2 /> {scope === 'gym' ? 'SUA ACADEMIA' : scopeLabels[scope]} <ChevronDown /></button></div>
