@@ -32,8 +32,6 @@ import { motion } from 'motion/react';
 import { db, auth } from '../firebase';
 import { collection, query, getDocs, getDoc, limit, orderBy, where, getCountFromServer, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
-import { REWARD_RULES } from '../constants';
-import { rewardService } from '../services/rewardService';
 import { rankingService } from '../services/rankingService';
 import { cn } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -450,16 +448,13 @@ export function AdminDashboard() {
 
         const totalUsers = totalUsersSnap.data().count;
         const totalSubscribers = subUsersSnap.data().count;
-        const totalRevenue = totalSubscribers * REWARD_RULES.SUBSCRIPTION_PRICE;
-        const activePhase = rewardService.getCurrentPhase(totalSubscribers);
+        const totalRevenue = totalSubscribers * 49.90; // Receita de assinaturas digitais PRO
+        const activePhase = totalSubscribers >= 150 ? 3 : (totalSubscribers >= 50 ? 2 : 1);
         
-        // Approximated pools for dashboard overview (national calculation)
-        const values = rewardService.getValuesPerUserByLeague(totalSubscribers);
-        // For simplicity in global view, we'll show national pool and potential total gym pool
         const pools = {
-          gym: totalSubscribers * values.gym, // Total gym pool across all gyms
-          city: totalSubscribers * values.city,
-          national: totalSubscribers * values.national
+          gym: 0,
+          city: 0,
+          national: 0
         };
 
         setStats({

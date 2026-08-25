@@ -13,8 +13,13 @@ export class StravaApi {
   constructor(private userId: string) {}
 
   async getConnection() {
-    const snap = await db.collection('strava_connections').doc(this.userId).get();
-    return snap.exists ? snap.data() : null;
+    try {
+      const snap = await db.collection('strava_connections').doc(this.userId).get();
+      return snap.exists ? snap.data() : null;
+    } catch (err: any) {
+      console.warn('[StravaApi] Falha ao ler conexão do Strava:', err?.message || err);
+      return null;
+    }
   }
 
   async saveConnection(data: any) {

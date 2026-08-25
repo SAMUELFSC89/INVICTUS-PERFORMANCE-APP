@@ -139,6 +139,10 @@ export class ValidateActivityService {
       weightKg: userWeightKg
     });
     const estimatedPace = formatPace(rawActivity.distanceKm, durationForMetrics);
+    const finalCalories = (rawActivity.healthTelemetry && typeof rawActivity.healthTelemetry.calories === 'number' && rawActivity.healthTelemetry.calories > 0)
+      ? rawActivity.healthTelemetry.calories
+      : estimatedCalories;
+
     let securityBlocked = false;
     let securityReason: string | null = null;
     let securityUserMessage: string | null = null;
@@ -148,13 +152,19 @@ export class ValidateActivityService {
         {
           activityType: (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
           type: (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
+          muscleGroup: rawActivity.muscleGroup,
+          cardioType: rawActivity.cardioType,
           durationMins: Number(rawActivity.durationMins ?? rawActivity.duration) || 0,
           distanceKm: Number(rawActivity.distanceKm) || 0,
           checkpoints: rawActivity.checkpoints,
           timestamp: rawActivity.startTime || new Date().toISOString(),
-          source: 'LEGACY_VALIDATE_ACTIVITY',
-          avgHeartRate: rawActivity.avgHeartRate,
-          steps: rawActivity.pedometerSteps ?? rawActivity.evidence?.steps,
+          source: 'UNIFIED_ACTIVITY_ENGINE',
+          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps,
+          calories: finalCalories,
+          smartwatchData: rawActivity.smartwatchData,
+          healthTelemetry: rawActivity.healthTelemetry,
+          metricSources: rawActivity.metricSources,
           sensorTelemetry: rawActivity.sensorTelemetry,
           isMockLocation: rawActivity.isMockLocation,
           isEmulator: rawActivity.isEmulator,
@@ -191,14 +201,18 @@ export class ValidateActivityService {
         await this.activityRepository.create({
           userId: request.userId,
           type: request.activityData.type,
+          muscleGroup: rawActivity.muscleGroup,
           cardioType: rawActivity.cardioType,
           cardioTypeLabel: rawActivity.cardioTypeLabel,
           duration: durationForMetrics,
           distance: Number(rawActivity.distanceKm) || 0,
           trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
-          avgHeartRate: rawActivity.avgHeartRate ?? undefined,
-          steps: rawActivity.pedometerSteps ?? rawActivity.evidence?.steps ?? undefined,
-          calories: estimatedCalories,
+          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate ?? undefined,
+          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps ?? undefined,
+          calories: finalCalories,
+          healthTelemetry: rawActivity.healthTelemetry ?? undefined,
+          metricSources: rawActivity.metricSources ?? undefined,
+          smartwatchData: rawActivity.smartwatchData ?? undefined,
           pace: estimatedPace ?? undefined,
           intensity: request.activityData.intensity || 'moderate',
           startTime: request.activityData.startTime || new Date().toISOString(),
@@ -291,14 +305,20 @@ export class ValidateActivityService {
     const savedActivity = await this.activityRepository.create({
       userId: request.userId,
       type: request.activityData.type,
+      muscleGroup: rawActivity.muscleGroup,
       cardioType: rawActivity.cardioType,
       cardioTypeLabel: rawActivity.cardioTypeLabel,
+      isIndoorCardio: rawActivity.isIndoorCardio,
+      requiresGpsDistance: rawActivity.requiresGpsDistance,
       duration: durationForMetrics,
       distance: Number(rawActivity.distanceKm) || 0,
       trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
-      avgHeartRate: rawActivity.avgHeartRate ?? undefined,
-      steps: rawActivity.pedometerSteps ?? rawActivity.evidence?.steps ?? undefined,
-      calories: estimatedCalories,
+      avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate ?? undefined,
+      steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps ?? undefined,
+      calories: finalCalories,
+      healthTelemetry: rawActivity.healthTelemetry ?? undefined,
+      metricSources: rawActivity.metricSources ?? undefined,
+      smartwatchData: rawActivity.smartwatchData ?? undefined,
       pace: estimatedPace ?? undefined,
       photoUrl: rawActivity.photoBase64 || undefined,
       intensity: request.activityData.intensity || 'moderate',
@@ -357,8 +377,15 @@ export class ValidateActivityService {
         level: newLevel,
         status: 'valid',
         type: request.activityData.type,
+        muscleGroup: rawActivity.muscleGroup,
+        cardioType: rawActivity.cardioType,
+        cardioTypeLabel: rawActivity.cardioTypeLabel,
         distance: Number(rawActivity.distanceKm) || 0,
-        duration: request.activityData.duration || rawActivity.durationMins || 30
+        duration: request.activityData.duration || rawActivity.durationMins || 30,
+        calories: finalCalories,
+        avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+        steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
+        timestamp: savedActivity.createdAt || new Date().toISOString()
       },
       validation: {
         success: true,
