@@ -947,9 +947,6 @@ export function InvictusAIFloatingAssistant() {
                 }}
               />
 
-              {/* Status Micro-Accent Dot */}
-              <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 border-2 border-black" />
-
               {/* Notification badge / Ping */}
               {hasNewInsight && (
                 <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
@@ -1021,8 +1018,6 @@ export function InvictusAIFloatingAssistant() {
                         e.currentTarget.src = '/ranking-emblem-user-provided.png';
                       }}
                     />
-                    {/* Microaccent Green active dot */}
-                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-black" />
                   </div>
 
                   <div className="min-w-0 flex flex-col justify-center">
@@ -1198,7 +1193,6 @@ export function InvictusAIFloatingAssistant() {
                               e.currentTarget.src = '/ranking-emblem-user-provided.png';
                             }}
                           />
-                          <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-black" />
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -1257,7 +1251,6 @@ export function InvictusAIFloatingAssistant() {
                         alt="Invictus IA"
                         className="w-full h-full object-contain"
                       />
-                      <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-black animate-pulse" />
                     </div>
                     <div className="bg-[#18181b] border border-zinc-800/80 rounded-2xl rounded-tl-xs px-4 py-3 text-xs text-zinc-300 flex items-center gap-2">
                       <Sparkles size={14} className="text-emerald-400 animate-spin" />

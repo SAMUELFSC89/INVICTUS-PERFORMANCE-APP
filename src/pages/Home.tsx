@@ -327,19 +327,26 @@ export function Home() {
           </div>
         </section>
 
-        {/* 3) BANNER OFICIAL: CAMPEONATOS INVICTUS — EM BREVE */}
+        {/* 3) BANNER OFICIAL: POWER LIFT & CAMPEONATOS INVICTUS */}
         <section
           id="home-championships-banner-card"
           onClick={() => navigate('/championships')}
           className="w-full rounded-[24px] overflow-hidden bg-[#121113]/95 border border-amber-500/40 shadow-2xl relative cursor-pointer active:scale-[0.98] transition-all hover:border-amber-400 group"
         >
           {/* Banner Oficial Responsivo */}
-          <div className="relative w-full aspect-[16/9.6] overflow-hidden bg-black/80">
+          <div className="relative w-full aspect-[3/2] overflow-hidden bg-black/80">
             <img
-              src="/assets/championships/campeonatos_em_breve_banner.webp"
-              alt="CAMPEONATOS INVICTUS - EM BREVE"
+              src="/assets/championships/banner_home_power_lift.webp"
+              alt="BANNER HOME POWER LIFT"
               className="w-full h-full object-cover object-center group-hover:scale-[1.02] transition-transform duration-300"
               referrerPolicy="no-referrer"
+              onError={(e) => {
+                // Fallback para PNG caso o navegador antigo prefira
+                const target = e.currentTarget;
+                if (!target.src.endsWith('.png')) {
+                  target.src = '/assets/championships/banner_home_power_lift.png';
+                }
+              }}
             />
             {/* Efeito de borda interna */}
             <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />

@@ -11,8 +11,11 @@ async function startServer() {
   app.set('trust proxy', true);
   const PORT = 3000;
 
+  // Immediate health check endpoints for Cloud Run & load balancers
+  app.get('/health', (req, res) => res.json({ status: 'ok' }));
+  app.get('/ping', (req, res) => res.send('pong'));
+
   // Log e Proxy para autenticação Firebase usando domínio customizado
-  // IMPORTANTE: Deve ser registrado ANTES do bodyParser (express.json) para que requisições POST funcionem corretamente.
   app.use('/__/auth', (req, res, next) => {
     console.log(`[Firebase Auth Proxy Request] ${req.method} ${req.originalUrl}`);
     next();
@@ -23,8 +26,6 @@ async function startServer() {
     target: 'https://gen-lang-client-0890994677.firebaseapp.com',
     changeOrigin: true,
   }));
-
-  app.get('/ping', (req, res) => res.send('pong'));
 
   // Request logger - filter out static assets and noise
   app.use((req, res, next) => {
