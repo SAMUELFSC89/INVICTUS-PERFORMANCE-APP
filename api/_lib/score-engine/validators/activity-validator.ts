@@ -34,13 +34,6 @@ export function getNormalizedDuration(activity: any): { durationMins: number; du
     }
   }
 
-  // If activity has recorded movement/time (e.g. Strava short sprint or quick session),
-  // clamp minimum duration to 1 minute so it passes sync and validation seamlessly.
-  if (durationSecs > 0 && durationMins < 1.0) {
-    durationMins = 1.0;
-    durationSecs = Math.max(durationSecs, 60);
-  }
-
   return { durationMins, durationSecs };
 }
 
@@ -86,10 +79,11 @@ export class ActivityValidator {
       // Antes, durationSecs<=0 passava sem erro (a condicao so disparava quando
       // durationSecs > 0), permitindo atividades com duracao zero/negativa
       // pontuarem. Ver auditoria de integridade.
+      const minDurationSecs = SCORE_CONFIG.MIN_ACTIVITY_DURATION_SECS || 60;
       if (durationSecs <= 0) {
         errors.push('Activity duration is required and must be greater than zero');
-      } else if (durationSecs < 5) {
-        errors.push('Activity duration must be at least 5 seconds');
+      } else if (durationSecs < minDurationSecs) {
+        errors.push(`Activity duration must be at least ${minDurationSecs} seconds`);
       } else if (durationSecs > SCORE_CONFIG.MAX_ACTIVITY_DURATION_SECS) {
         errors.push('Activity duration exceeds the maximum plausible duration');
       }

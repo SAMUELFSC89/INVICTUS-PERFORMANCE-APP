@@ -134,11 +134,17 @@ export function Home() {
         >
           <img
             src="/capacete.webp"
-            alt=""
+            alt="Invictus"
             width={30}
             height={52}
             className="h-[52px] w-auto select-none pointer-events-none"
             style={{ filter: 'drop-shadow(0 0 18px rgba(241,190,34,0.35))' }}
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.src.endsWith('/capacete.png')) {
+                target.src = '/capacete.png';
+              }
+            }}
           />
           <p
             className="font-barlow font-bold text-[13px] text-white uppercase mt-2 leading-none"

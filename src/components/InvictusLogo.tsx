@@ -17,6 +17,12 @@ export function InvictusLogo({ size = 120, className = '', showText = false }: I
         draggable={false}
         className="select-none object-contain"
         style={{ width: size, height: size }}
+        onError={(e) => {
+          const target = e.currentTarget;
+          if (!target.src.endsWith('/capacete.png')) {
+            target.src = '/capacete.png';
+          }
+        }}
       />
       
       {showText && (

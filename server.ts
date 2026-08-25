@@ -5,15 +5,17 @@ import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import apiRouter from './api/app.ts';
+import { aggregationService } from './api/_lib/aggregation.ts';
 
 async function startServer() {
   const app = express();
-  app.set('trust proxy', true);
   const PORT = 3000;
 
   // Immediate health check endpoints for Cloud Run & load balancers
-  app.get('/health', (req, res) => res.json({ status: 'ok' }));
-  app.get('/ping', (req, res) => res.send('pong'));
+  app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+  app.get('/ping', (req, res) => res.status(200).send('pong'));
+  app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
   // Log e Proxy para autenticação Firebase usando domínio customizado
   app.use('/__/auth', (req, res, next) => {
@@ -42,17 +44,14 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
 
   // API Routes - Using the consolidated router mounted at /api
-  console.log('[Server] Loading API routes...');
+  console.log('[Server] Mounting API routes...');
   try {
-    const apiAppModule = await import('./api/app.ts');
-    const apiRouter = apiAppModule.default;
-    
-    if (!apiRouter) {
-      throw new Error('API Router not found in api/app.ts export');
+    if (apiRouter) {
+      app.use('/api', apiRouter);
+      console.log('[Server] API routes mounted at /api');
+    } else {
+      console.error('[Server] API Router is not defined');
     }
-    
-    app.use('/api', apiRouter);
-    console.log('[Server] API routes mounted at /api');
   } catch (err) {
     console.error('[Server] Failed to load API routes:', err);
   }
@@ -65,17 +64,14 @@ async function startServer() {
   });
 
   // Background Aggregation Job
-  const startBackgroundJobs = async () => {
+  const startBackgroundJobs = () => {
     try {
-      const { aggregationService } = await import('./api/_lib/aggregation');
-      
       const runJob = async () => {
         console.log('[Background Job] Running aggregation...');
         await aggregationService.updateAllStats();
       };
 
       // Run every 2 hours instead of 15 minutes to save Firestore quota
-      // And remove the immediate runJob call that happens on every cold start
       setInterval(() => {
         runJob().catch(console.error);
       }, 2 * 60 * 60 * 1000);

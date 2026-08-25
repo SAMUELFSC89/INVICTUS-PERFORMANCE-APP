@@ -64,7 +64,9 @@ export class AuditLogger {
 
     try {
       // Append-only write into Firestore collection `security_audit_log` using auditId as document ID
-      await db.collection('security_audit_log').doc(auditId).set(fullEntry);
+      if (process.env.NODE_ENV !== 'test' && db) {
+        await db.collection('security_audit_log').doc(auditId).set(fullEntry);
+      }
       console.log(`[AuditLogger] [APPEND_ONLY] Security Audit Log persisted: ${auditId} | Decision: ${entry.decision} | Hash: ${decisionHash.substring(0, 10)}...`);
     } catch (err: any) {
       console.error(`[AuditLogger] Failed to write to security_audit_log: ${err.message}`);

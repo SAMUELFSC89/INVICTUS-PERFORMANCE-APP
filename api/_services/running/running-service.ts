@@ -32,7 +32,7 @@ async function persistCardioToHistory(userId: string, params: {
   nonScoringReason?: string | null;
   rejectionReason?: string | null;
 }) {
-  if (!db) return;
+  if (!db || process.env.NODE_ENV === 'test') return;
   try {
     const workoutRef = db.collection('workouts').doc();
     await workoutRef.set({

@@ -46,10 +46,12 @@ export async function logEvent(payload: LogPayload): Promise<string> {
   };
 
   try {
-    // Fire-and-forget write to Firestore (with error catch)
-    db.collection(payload.category).doc(logId).set(logEntry).catch(err => {
-      console.error(`[Observability] Firestore failed to save log ${logId} in ${payload.category}:`, err);
-    });
+    // Fire-and-forget write to Firestore (with error catch, skipped in test mode)
+    if (process.env.NODE_ENV !== 'test' && db) {
+      db.collection(payload.category).doc(logId).set(logEntry).catch(err => {
+        console.error(`[Observability] Firestore failed to save log ${logId} in ${payload.category}:`, err);
+      });
+    }
     
     // Console log for low-overhead local stdout observability
     const consoleMsg = `[${payload.severity}] [${payload.category.toUpperCase()}] ${payload.message} ${payload.userId ? `(User: ${payload.userId})` : ''}`;
@@ -115,15 +117,17 @@ export async function incrementMetric(metricName: string, incrementValue: number
     memoryCache.set(cacheKey, cachedVal, 1800); // cache for 30 mins
 
     // Batch or debounced firestore increments
-    metricDocRef.set({
-      date: todayStr,
-      metrics: {
-        [metricName]: FieldValue.increment(incrementValue)
-      },
-      updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true }).catch(err => {
-      console.error('[Metrics Error] Failed database write for system metrics:', err);
-    });
+    if (process.env.NODE_ENV !== 'test' && db) {
+      metricDocRef.set({
+        date: todayStr,
+        metrics: {
+          [metricName]: FieldValue.increment(incrementValue)
+        },
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true }).catch(err => {
+        console.error('[Metrics Error] Failed database write for system metrics:', err);
+      });
+    }
 
     // Run active alerts threshold check
     checkAlertThresholds(metricName, cachedVal);
@@ -178,7 +182,9 @@ export async function triggerAlert(category: string, severity: SeverityLevel, me
   };
 
   try {
-    await db.collection('system_alerts').doc(alertId).set(alertObj);
+    if (process.env.NODE_ENV !== 'test' && db) {
+      await db.collection('system_alerts').doc(alertId).set(alertObj);
+    }
     console.log(`[ALERT TRIGGERED] [${severity}] ${message}`);
   } catch (err) {
     console.error('[Alerts Error] Failed to store alert event in DB:', err);
@@ -282,7 +288,7 @@ export async function createPipelineTrace(ids: PipelineTraceIds, initialStage: P
 
   // Firestore background write
   try {
-    if (db) {
+    if (process.env.NODE_ENV !== 'test' && db) {
       db.collection('pipeline_traces').doc(ids.traceId).set({
         ...trace,
         createdAt: FieldValue.serverTimestamp(),
@@ -340,7 +346,7 @@ export async function recordPipelineStage(
 
   // Async update in Firestore
   try {
-    if (db) {
+    if (process.env.NODE_ENV !== 'test' && db) {
       db.collection('pipeline_traces').doc(traceId).get().then(doc => {
         if (doc.exists) {
           const currentData = doc.data() as PipelineTrace;
@@ -402,7 +408,7 @@ export async function failPipelineTrace(
   console.error(`[TRACE FAILED] [${traceId}] Failed at stage [${stage}]: ${reason}`);
 
   try {
-    if (db) {
+    if (process.env.NODE_ENV !== 'test' && db) {
       db.collection('pipeline_traces').doc(traceId).update({
         status: 'FAILED_AT_STAGE',
         currentStage: stage,
@@ -435,7 +441,7 @@ export async function completePipelineTrace(traceId: string, finalData?: Record<
   console.log(`[TRACE COMPLETED] [${traceId}] All pipeline stages executed successfully.`);
 
   try {
-    if (db) {
+    if (process.env.NODE_ENV !== 'test' && db) {
       db.collection('pipeline_traces').doc(traceId).update({
         status: 'COMPLETED',
         currentStage: 'Reward',
@@ -460,7 +466,7 @@ export async function getPipelineTrace(traceIdOrCorrelationId: string): Promise<
   if (cachedCorr) return cachedCorr;
 
   try {
-    if (!db) return null;
+    if (!db || process.env.NODE_ENV === 'test') return null;
 
     // Check direct trace ID
     const directSnap = await db.collection('pipeline_traces').doc(traceIdOrCorrelationId).get();
@@ -515,6 +521,10 @@ export async function getOverallMetricsForDashboard(): Promise<any> {
     estimated_gemini_cost_usd: 0.00,
     server_uptime_seconds: process.uptime()
   };
+
+  if (process.env.NODE_ENV === 'test' || !db) {
+    return result;
+  }
 
   try {
     const todayStr = new Date().toISOString().substring(0, 10);

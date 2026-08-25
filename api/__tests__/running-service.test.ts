@@ -47,10 +47,18 @@ describe('RunningService', () => {
   });
 
   test('addRun should process transaction and award points when valid', async () => {
+    const now = Date.now();
     const res = await runningService.addRun({
       userId: 'user123',
       km: 5.0,
-      timeSeconds: 1800
+      timeSeconds: 1800,
+      steps: 5200,
+      sensorTelemetry: { accelVariance: 1.5, gyroVariance: 0.9 },
+      trajectory: [
+        { latitude: -23.55052, longitude: -46.633308, timestamp: new Date(now - 1800000).toISOString() },
+        { latitude: -23.56052, longitude: -46.643308, timestamp: new Date(now - 900000).toISOString() },
+        { latitude: -23.57052, longitude: -46.653308, timestamp: new Date(now).toISOString() }
+      ]
     });
 
     expect(res.success).toBe(true);

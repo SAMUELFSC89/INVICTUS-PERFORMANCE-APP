@@ -1164,7 +1164,18 @@ function ProfileReference({
         </section>
 
         <section className="profile-brand-card">
-          <img src="/capacete.webp" alt="Capacete Invictus" /><div className="flex-1"><h2>Invictus Performance</h2><p>Versão 1.0.0<br />Construindo uma comunidade invencível.</p></div><button onClick={onLogout}>Sair da conta <LogOut size={24} /></button>
+          <img
+            src="/capacete.webp"
+            alt="Capacete Invictus"
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.src.endsWith('/capacete.png')) {
+                target.src = '/capacete.png';
+              }
+            }}
+          />
+          <div className="flex-1"><h2>Invictus Performance</h2><p>Versão 1.0.0<br />Construindo uma comunidade invencível.</p></div>
+          <button onClick={onLogout}>Sair da conta <LogOut size={24} /></button>
         </section>
       </div>
     </div>

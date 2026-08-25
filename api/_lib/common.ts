@@ -71,47 +71,88 @@ const primaryPid = configPid || saPid || envPid;
 // Check if service account project matches current primary project
 const isSaMatching = !configPid || !saPid || saPid === configPid;
 
-try {
-  if (!getApps().length) {
-    const options: any = {};
-    if (primaryPid) options.projectId = primaryPid;
-    // Necessário para o backend verificar se um vídeo PowerLift pertence ao
-    // atleta antes de persistir o record. O bucket é configuração pública do
-    // app, não uma credencial; aceita override seguro por ambiente.
-    const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || config.storageBucket;
-    if (storageBucket) options.storageBucket = String(storageBucket).trim();
+const isTestEnv = process.env.NODE_ENV === 'test' || !!process.env.JEST_WORKER_ID;
 
-    // Certificamos somente credenciais vindas do ambiente. Nunca há fallback
-    // para um arquivo local versionado nem para credenciais de outro projeto.
-    if (serviceAccount?.privateKey && isSaMatching) {
-      options.credential = cert(serviceAccount);
-      console.log('[Firebase Admin] Inicializado com credencial de ambiente.');
-    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      // Cloud Run/Google Cloud podem fornecer ADC por arquivo montado fora do
-      // repositório. Não tentamos adivinhar caminhos locais.
-      options.credential = applicationDefault();
-      console.log('[Firebase Admin] Inicializado com Application Default Credentials.');
-    } else if (serviceAccount?.privateKey && !isSaMatching) {
-      throw new Error('FIREBASE_SERVICE_ACCOUNT pertence a um projeto diferente do Firebase configurado.');
+try {
+  if (isTestEnv && !serviceAccount?.privateKey && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    const createMockDoc = (id: string = 'mock-id'): any => {
+      const docObj: any = {
+        id,
+        exists: false,
+        data: () => ({}),
+        get: async () => docObj,
+        set: async () => ({}),
+        update: async () => ({}),
+        delete: async () => ({}),
+        collection: (subName: string) => createMockCollection(subName)
+      };
+      docObj.ref = docObj;
+      return docObj;
+    };
+
+    const createMockCollection = (name: string): any => {
+      const collObj: any = {
+        doc: (id?: string) => createMockDoc(id || `doc_${Math.random().toString(36).substring(2, 9)}`),
+        add: async () => createMockDoc(),
+        where: () => collObj,
+        orderBy: () => collObj,
+        limit: () => collObj,
+        get: async () => ({ empty: true, size: 0, docs: [] })
+      };
+      return collObj;
+    };
+
+    dbInstance = {
+      collection: (name: string) => createMockCollection(name),
+      doc: (path: string) => createMockDoc(path),
+      runTransaction: async (cb: any) => cb({
+        get: async (ref: any) => ref.get(),
+        set: (ref: any, data: any) => {},
+        update: (ref: any, data: any) => {},
+        delete: (ref: any) => {}
+      }),
+      batch: () => ({
+        set: () => {},
+        update: () => {},
+        delete: () => {},
+        commit: async () => {}
+      }),
+      settings: () => {}
+    } as any;
+  } else {
+    if (!getApps().length) {
+      const options: any = {};
+      if (primaryPid) options.projectId = primaryPid;
+      const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || config.storageBucket;
+      if (storageBucket) options.storageBucket = String(storageBucket).trim();
+
+      if (serviceAccount?.privateKey && isSaMatching) {
+        options.credential = cert(serviceAccount);
+        console.log('[Firebase Admin] Inicializado com credencial de ambiente.');
+      } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        options.credential = applicationDefault();
+        console.log('[Firebase Admin] Inicializado com Application Default Credentials.');
+      } else if (serviceAccount?.privateKey && !isSaMatching) {
+        throw new Error('FIREBASE_SERVICE_ACCOUNT pertence a um projeto diferente do Firebase configurado.');
+      } else {
+        console.warn('[Firebase Admin] Nenhuma credencial de servidor configurada; operações de banco falharão até FIREBASE_SERVICE_ACCOUNT ou ADC ser configurada.');
+      }
+
+      app = initializeApp(options);
     } else {
-      console.warn('[Firebase Admin] Nenhuma credencial de servidor configurada; operações de banco falharão até FIREBASE_SERVICE_ACCOUNT ou ADC ser configurada.');
+      app = getApp();
     }
 
-    app = initializeApp(options);
-  } else {
-    app = getApp();
-  }
+    const firestoreDbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)' 
+      ? config.firestoreDatabaseId 
+      : undefined;
 
-  // Check if we should use a specific database from config
-  const firestoreDbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)' 
-    ? config.firestoreDatabaseId 
-    : undefined;
-
-  dbInstance = getFirestore(app, firestoreDbId);
-  try {
-    dbInstance.settings({ ignoreUndefinedProperties: true });
-  } catch (e: any) {
-    // Settings might already be set or not supported
+    dbInstance = getFirestore(app, firestoreDbId);
+    try {
+      dbInstance.settings({ ignoreUndefinedProperties: true });
+    } catch (e: any) {
+      // Settings might already be set or not supported
+    }
   }
 } catch (e: any) {
   console.error(`[Firebase Admin Init Error] Failed to initialize App or Firestore safely: ${e.message}`);

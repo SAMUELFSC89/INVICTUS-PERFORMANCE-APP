@@ -2,6 +2,14 @@ import { getDistance } from 'geolib';
 import { fraudLogger, FraudLogger } from '../logger.js';
 
 interface GPSPoint {
+  lat?: number;
+  latitude?: number;
+  lng?: number;
+  longitude?: number;
+  timestamp: number | string;
+}
+
+interface NormalizedGPSPoint {
   lat: number;
   lng: number;
   timestamp: number;
@@ -20,6 +28,16 @@ interface GPSValidationResult {
 }
 
 export class GPSValidator {
+  private static normalizeCoordinates(coordinates: GPSPoint[]): NormalizedGPSPoint[] {
+    return coordinates.map(c => {
+      const lat = typeof c.lat === 'number' ? c.lat : (typeof c.latitude === 'number' ? c.latitude : 0);
+      const lng = typeof c.lng === 'number' ? c.lng : (typeof c.longitude === 'number' ? c.longitude : 0);
+      let ts = typeof c.timestamp === 'number' ? c.timestamp : new Date(c.timestamp).getTime();
+      if (typeof ts !== 'number' || isNaN(ts)) ts = Date.now();
+      return { lat, lng, timestamp: ts };
+    });
+  }
+
   /**
    * Valida uma atividade GPS completa
    */
@@ -33,6 +51,8 @@ export class GPSValidator {
       return { isValid: true, fraudScore: 0, flags: [], details: {} };
     }
 
+    const normCoords = this.normalizeCoordinates(coordinates);
+
     const result: GPSValidationResult = {
       isValid: true,
       fraudScore: 0,
@@ -41,7 +61,7 @@ export class GPSValidator {
     };
 
     // 1. Checar velocidade impossível
-    const speedCheck = this.checkImpossibleSpeed(coordinates);
+    const speedCheck = this.checkImpossibleSpeed(normCoords);
     if (speedCheck.fraud) {
       result.fraudScore += 40;
       result.flags.push('IMPOSSIBLE_SPEED');
@@ -50,7 +70,7 @@ export class GPSValidator {
     }
 
     // 2. Checar teleporte (saltos geográficos)
-    const teleportCheck = this.checkTeleportation(coordinates);
+    const teleportCheck = this.checkTeleportation(normCoords);
     if (teleportCheck.fraud) {
       result.fraudScore += 35;
       result.flags.push('TELEPORTATION');
@@ -59,7 +79,7 @@ export class GPSValidator {
     }
 
     // 3. Checar frequência estacionária (sempre no mesmo lugar)
-    const stationaryCheck = this.checkStationaryFrequency(coordinates);
+    const stationaryCheck = this.checkStationaryFrequency(normCoords);
     if (stationaryCheck.fraud) {
       result.fraudScore += 15;
       result.flags.push('STATIONARY_FREQUENCY');
@@ -68,7 +88,7 @@ export class GPSValidator {
     }
 
     // 4. Checar precisão anômala (exatidão impossível)
-    const precisionCheck = this.checkPrecisionAnomaly(coordinates);
+    const precisionCheck = this.checkPrecisionAnomaly(normCoords);
     if (precisionCheck.fraud) {
       result.fraudScore += 20;
       result.flags.push('PRECISION_ANOMALY');
@@ -77,16 +97,17 @@ export class GPSValidator {
     }
 
     // 5. Validar distância vs coordenadas
-    const calculatedDistance = this.calculateDistanceFromCoordinates(coordinates);
+    const calculatedDistance = this.calculateDistanceFromCoordinates(normCoords);
     if (distance > 0) {
-      const distanceDifference = Math.abs(calculatedDistance - distance) / distance;
-      if (distanceDifference > 0.2) { // 20% de diferença
+      const absDiff = Math.abs(calculatedDistance - distance);
+      const distanceDifference = absDiff / distance;
+      if (distanceDifference > 0.4 && absDiff > 0.3) {
         result.fraudScore += 25;
         result.flags.push('DISTANCE_MISMATCH');
         fraudLogger.warn({
           userId,
           reportedDistance: distance,
-          calculatedDistance: Math.round(calculatedDistance),
+          calculatedDistance: Math.round(calculatedDistance * 100) / 100,
           difference: (distanceDifference * 100).toFixed(1)
         }, 'Distance mismatch detected');
       }
@@ -100,7 +121,7 @@ export class GPSValidator {
   /**
    * Detectar velocidade impossível (> 200 km/h)
    */
-  private static checkImpossibleSpeed(coordinates: GPSPoint[]): { fraud: boolean; maxSpeed: number; reason?: string } {
+  private static checkImpossibleSpeed(coordinates: NormalizedGPSPoint[]): { fraud: boolean; maxSpeed: number; reason?: string } {
     const MAX_SPEED_KMH = 200; // Max reasonable speed
     let maxSpeed = 0;
 
@@ -113,7 +134,7 @@ export class GPSValidator {
         { latitude: curr.lat, longitude: curr.lng }
       );
 
-      const timeSeconds = Math.max((curr.timestamp - prev.timestamp) / 1000, 0.001);
+      const timeSeconds = Math.max(Math.abs(curr.timestamp - prev.timestamp) / 1000, 0.001);
       const speedKmH = (distMeters / 1000) / (timeSeconds / 3600);
 
       if (speedKmH > maxSpeed) maxSpeed = speedKmH;
@@ -133,7 +154,7 @@ export class GPSValidator {
   /**
    * Detectar teleportação geográfica
    */
-  private static checkTeleportation(coordinates: GPSPoint[]): { fraud: boolean; maxDistance?: number; timeGap?: number } {
+  private static checkTeleportation(coordinates: NormalizedGPSPoint[]): { fraud: boolean; maxDistance?: number; timeGap?: number } {
     const MAX_DISTANCE_M = 5000; // Max 5km jump
     const MIN_TIME_S = 300; // Min 5 minutes between jumps
 
@@ -146,7 +167,7 @@ export class GPSValidator {
         { latitude: curr.lat, longitude: curr.lng }
       );
 
-      const timeSeconds = (curr.timestamp - prev.timestamp) / 1000;
+      const timeSeconds = Math.abs(curr.timestamp - prev.timestamp) / 1000;
 
       if (distMeters > MAX_DISTANCE_M && timeSeconds < MIN_TIME_S) {
         return {
@@ -163,7 +184,7 @@ export class GPSValidator {
   /**
    * Detectar frequência estacionária (muitos pontos no mesmo local)
    */
-  private static checkStationaryFrequency(coordinates: GPSPoint[]): { fraud: boolean; stationaryPercentage?: number } {
+  private static checkStationaryFrequency(coordinates: NormalizedGPSPoint[]): { fraud: boolean; stationaryPercentage?: number } {
     const STATIONARY_RADIUS_M = 50; // 50 metros
     let stationaryCount = 0;
 
@@ -194,7 +215,7 @@ export class GPSValidator {
   /**
    * Detectar precisão anômala (decimal places impossíveis)
    */
-  private static checkPrecisionAnomaly(coordinates: GPSPoint[]): { fraud: boolean; reason?: string } {
+  private static checkPrecisionAnomaly(coordinates: NormalizedGPSPoint[]): { fraud: boolean; reason?: string } {
     for (const coord of coordinates) {
       const latStr = coord.lat.toString();
       const lngStr = coord.lng.toString();
@@ -213,7 +234,7 @@ export class GPSValidator {
   /**
    * Calcular distância a partir de coordenadas em km
    */
-  private static calculateDistanceFromCoordinates(coordinates: GPSPoint[]): number {
+  private static calculateDistanceFromCoordinates(coordinates: NormalizedGPSPoint[]): number {
     let totalDistanceMeters = 0;
 
     for (let i = 1; i < coordinates.length; i++) {

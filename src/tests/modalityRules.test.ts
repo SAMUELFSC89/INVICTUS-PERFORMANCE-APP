@@ -143,3 +143,19 @@ export function runModalityRulesTests() {
   console.log(`\n📊 Resultado dos testes: ${passedCount} aprovados, ${failedCount} falhos.`);
   return { passedCount, failedCount, success: failedCount === 0 };
 }
+
+describe('Modality Rules & Antifraud Tests', () => {
+  it('should validate all cardio modalities, GPS requirements, and anti-fraud rules', () => {
+    const result = runModalityRulesTests();
+    expect(result.failedCount).toBe(0);
+    expect(result.passedCount).toBeGreaterThan(0);
+    expect(result.success).toBe(true);
+  });
+});
+
+if (typeof process !== 'undefined' && process.argv && process.argv[1] && process.argv[1].includes('modalityRules.test')) {
+  const result = runModalityRulesTests();
+  if (result.failedCount > 0) {
+    process.exit(1);
+  }
+}

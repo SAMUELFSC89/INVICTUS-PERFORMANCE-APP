@@ -273,7 +273,7 @@ export class SecurityPipeline {
         explanation
       });
 
-      if (db) {
+      if (process.env.NODE_ENV !== 'test' && db) {
         await db.collection('security_reports').doc(activityId).set(report);
       }
     } catch (saveErr) {

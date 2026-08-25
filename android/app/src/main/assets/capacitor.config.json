@@ -5,8 +5,19 @@
 	"server": {
 		"androidScheme": "https",
 		"allowNavigation": [
-			"desafiosemdesculpa.com.br"
+			"invictusperformance.app.br",
+			"www.invictusperformance.app.br",
+			"*.google.com",
+			"*.googleapis.com",
+			"*.firebaseapp.com",
+			"accounts.google.com"
 		]
+	},
+	"ios": {
+		"contentInset": "never",
+		"scrollEnabled": true,
+		"allowsLinkPreview": false,
+		"limitsNavigationsToAppBoundDomains": false
 	},
 	"plugins": {
 		"SplashScreen": {
