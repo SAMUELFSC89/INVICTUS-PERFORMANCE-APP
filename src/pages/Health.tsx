@@ -129,67 +129,25 @@ function LatestWorkouts({ state, expanded, onToggle }: { state: UserPerformanceS
   return <article id="health-activities" className="health-latest"><div className="health-section-line"><div>ÚLTIMOS TREINOS</div><button type="button" onClick={onToggle}>{expanded ? 'MOSTRAR MENOS' : 'VER TODOS'}</button></div>{workouts.length ? workouts.map((workout) => { const isRun = /corrida|run/i.test(workout.workoutType || ''); return <div className="health-workout" key={workout.id}><span className={cn('health-workout-icon', isRun && 'is-run')}>{isRun ? <Footprints /> : <Dumbbell />}</span><div><b>{workout.workoutName}</b><small>{new Date(workout.timestamp).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</small></div><span><Clock3 />{formatDuration(workout.durationMinutes)}</span><span><Flame />{Math.round(workout.caloriesBurned || 0)} kcal</span><span><Heart />{workout.avgHeartRate || '—'} bpm</span><ChevronRight /></div>; }) : <p className="health-empty">Quando seu próximo treino for validado, ele aparecerá aqui.</p>}</article>;
 }
 
-function HealthSummaryContent({ state, onReport }: { state: UserPerformanceState; onReport: () => void }) {
-  const [activeTab, setActiveTab] = useState<'summary' | 'report'>('summary');
+function HealthSummaryContent({ state, range, onRange, onReport }: { state: UserPerformanceState; range: TimeRange; onRange: (range: TimeRange) => void; onReport: () => void }) {
+  const [activeTab, setActiveTab] = useState<'summary' | 'calories' | 'zones' | 'trends'>('summary');
   const [activitiesExpanded, setActivitiesExpanded] = useState(false);
+  const goTo = (target: string, tab: typeof activeTab) => { setActiveTab(tab); window.setTimeout(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
   const calories = metricNumber(state, 'total_calories_burned');
   const minutes = metricNumber(state, 'total_volume_time');
   const workouts = metricNumber(state, 'workout_count');
   const heartRate = metricNumber(state, 'avg_heart_rate');
+  const caloriePoints = state.computedMetrics.total_calories_burned?.historyPoints.map((item) => ({ label: item.date, value: item.value })) || [];
+  const heartPoints = state.computedMetrics.avg_heart_rate?.historyPoints.map((item) => ({ label: item.date, value: item.value })) || [];
   const lastWorkout = [...state.timeframeWorkouts].sort((a, b) => b.timestamp - a.timestamp)[0];
   const lastUpdate = lastWorkout ? new Date(lastWorkout.timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : null;
-
-  return (
-    <>
-      <div className="health-tabs">
-        <button className={activeTab === 'summary' ? 'is-active' : ''} onClick={() => setActiveTab('summary')}>
-          RESUMO
-        </button>
-        <button className={activeTab === 'report' ? 'is-active' : ''} onClick={() => { setActiveTab('report'); onReport(); }}>
-          RELATÓRIOS
-        </button>
-      </div>
-
-      <section id="health-overview" className="health-overview">
-        <div className="health-section-line">
-          <div><Activity /> VISÃO GERAL</div>
-          <small>{lastUpdate ? `Última atividade: ${lastUpdate}` : 'Nenhuma atividade sincronizada'} <span>●</span></small>
-        </div>
-        <div className="health-metrics-grid">
-          <MetricCard 
-            icon={<Flame />} 
-            label="CALORIAS" 
-            value={calories.toLocaleString('pt-BR')} 
-            unit="kcal" 
-            detail={state.computedMetrics.total_calories_burned?.hasEnoughData ? `Média por sessão: ${workouts ? Math.round(calories / workouts) : 0} kcal` : 'Sem calorias registradas'} 
-          />
-          <MetricCard 
-            icon={<Clock3 />} 
-            label="TEMPO ATIVO" 
-            value={formatDuration(minutes)} 
-            detail={workouts ? `Média por sessão: ${formatDuration(minutes / workouts)}` : 'Sem sessões homologadas'} 
-          />
-          <MetricCard 
-            icon={<Dumbbell />} 
-            label="TREINOS" 
-            value={workouts} 
-            detail="Sessões homologadas no período" 
-            progress={workouts ? Math.min(100, Number(state.computedMetrics.weekly_active_days?.currentValue || 0) * 20) : 0} 
-          />
-          <MetricCard 
-            icon={<Heart />} 
-            label="FC MÉDIA" 
-            value={heartRate || '—'} 
-            unit={heartRate ? 'bpm' : ''} 
-            detail={heartRate ? 'Dados reais do sensor' : 'Conecte o relógio'} 
-            tone="red" 
-          />
-        </div>
-      </section>
-
-      <LatestWorkouts state={state} expanded={activitiesExpanded} onToggle={() => setActivitiesExpanded(value => !value)} />
-    </>
-  );
+  return <>
+    <div className="health-tabs"><button className={activeTab === 'summary' ? 'is-active' : ''} onClick={() => goTo('health-overview', 'summary')}>RESUMO</button><button className={activeTab === 'calories' ? 'is-active' : ''} onClick={() => goTo('health-calories', 'calories')}>CALORIAS</button><button className={activeTab === 'zones' ? 'is-active' : ''} onClick={() => goTo('health-zones', 'zones')}>ZONAS FC</button><button className={activeTab === 'trends' ? 'is-active' : ''} onClick={() => goTo('health-trends', 'trends')}>TENDÊNCIAS</button><button onClick={onReport}>RELATÓRIOS</button></div>
+    <section id="health-overview" className="health-overview"><div className="health-section-line"><div><Activity /> VISÃO GERAL</div><small>{lastUpdate ? `Última atividade: ${lastUpdate}` : 'Nenhuma atividade sincronizada'} <span>●</span></small></div><div className="health-metrics-grid"><MetricCard icon={<Flame />} label="CALORIAS" value={calories.toLocaleString('pt-BR')} unit="kcal" detail={state.computedMetrics.total_calories_burned?.hasEnoughData ? `Média por sessão: ${workouts ? Math.round(calories / workouts) : 0} kcal` : 'Sem calorias registradas'} /><MetricCard icon={<Clock3 />} label="TEMPO ATIVO" value={formatDuration(minutes)} detail={workouts ? `Média por sessão: ${formatDuration(minutes / workouts)}` : 'Sem sessões homologadas'} /><MetricCard icon={<Dumbbell />} label="TREINOS" value={workouts} detail="Sessões homologadas no período" progress={workouts ? Math.min(100, Number(state.computedMetrics.weekly_active_days?.currentValue || 0) * 20) : 0} /><MetricCard icon={<Heart />} label="FC MÉDIA" value={heartRate || '—'} unit={heartRate ? 'bpm' : ''} detail={heartRate ? 'Dados reais do sensor' : 'Conecte o relógio'} tone="red" /></div></section>
+    <section className="health-dual"><div id="health-zones"><ZoneChart state={state} onDetails={() => goTo('health-trends', 'trends')} /></div><article id="health-calories" className="health-trend-card"><div className="health-section-name">TENDÊNCIA SEMANAL <Info /></div><PeriodControl value={range} onChange={onRange} /><strong>{state.computedMetrics.total_calories_burned?.hasEnoughData ? calories.toLocaleString('pt-BR') : '—'} <small>{state.computedMetrics.total_calories_burned?.hasEnoughData ? 'kcal' : ''}</small></strong><p>Total de calorias registradas no período</p><ChartBars points={caloriePoints} /><button onClick={onReport} className="health-card-link">VER MAIS <ChevronRight /></button></article></section>
+    <section id="health-trends" className="health-heart-card"><div className="health-section-name">FREQUÊNCIA CARDÍACA MÉDIA <Info /></div><div className="health-heart-layout"><span className="health-heart-icon"><Heart /></span><div><strong>{heartRate || '—'} <small>{heartRate ? 'bpm' : ''}</small></strong><p>{heartRate ? 'Média dos dados sincronizados' : 'Conecte um sensor cardíaco'}</p></div><div className="health-heart-graph">{heartPoints.length ? <HeartLineChart points={heartPoints} /> : <p className="health-empty">Sem leituras de frequência cardíaca.</p>}</div><div className="health-heart-minmax"><span>MÁXIMA <b>{metricNumber(state, 'max_heart_rate_session') || '—'}{metricNumber(state, 'max_heart_rate_session') ? ' bpm' : ''}</b></span><span>RECUPERAÇÃO <b>{state.computedMetrics.recovery_index?.hasEnoughData ? `${metricNumber(state, 'recovery_index')}%` : '—'}</b></span></div></div></section>
+    <LatestWorkouts state={state} expanded={activitiesExpanded} onToggle={() => setActivitiesExpanded(value => !value)} />
+  </>;
 }
 
 export function Health() {
@@ -198,22 +156,7 @@ export function Health() {
   const { user, state, loading } = useHealthData(range);
   if (!user) return null;
   if (loading || !state) return <div className="health-screen health-loading">Preparando os seus dados de saúde…</div>;
-  return (
-    <main className="health-screen">
-      <div className="health-content">
-        <HealthHeader 
-          title="SAÚDE" 
-          subtitle="Sua saúde. Seus dados. Seu desempenho." 
-          onBack={() => navigate('/profile')} 
-          right={<PeriodControl value={range} onChange={setRange} />} 
-        />
-        <HealthSummaryContent 
-          state={state} 
-          onReport={() => navigate('/health/report')} 
-        />
-      </div>
-    </main>
-  );
+  return <main className="health-screen"><div className="health-content"><HealthHeader title="SAÚDE" subtitle="Sua saúde. Seus dados. Seu desempenho." onBack={() => navigate('/profile')} right={<PeriodControl value={range} onChange={setRange} />} /><HealthSummaryContent state={state} range={range} onRange={setRange} onReport={() => navigate('/health/report')} /></div></main>;
 }
 
 export function HealthReport() {

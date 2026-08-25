@@ -28,6 +28,9 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === '/' || location.pathname === '/invite';
+  // Power Lift is a dedicated, edge-to-edge mobile flow. Generic page gutters
+  // make it look like a desktop card squeezed into the phone viewport.
+  const isPowerLift = location.pathname === '/power';
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -107,8 +110,11 @@ export function Layout() {
           o respiro do topo, para o espartano do fundo aparecer como na arte.
           Nas outras telas o padding padrao continua valendo. */}
       <main className={cn(
-        "flex-grow pb-40 w-full relative z-[2] max-w-screen-xl mx-auto px-4 md:px-6",
-        isHome ? "pt-0" : "pt-16 md:pt-20"
+        "flex-grow pb-40 w-full relative z-[2]",
+        isPowerLift
+          ? "max-w-none p-0"
+          : "max-w-screen-xl mx-auto px-4 md:px-6",
+        isPowerLift || isHome ? "pt-0" : "pt-16 md:pt-20"
       )}>
         <AnimatePresence mode="wait">
           <motion.div
@@ -134,22 +140,10 @@ export function Layout() {
       <nav id="bottom-nav" className="fixed bottom-0 left-0 right-0 z-30 pb-safe-offset-4 pointer-events-none">
         <div className="max-w-lg mx-auto px-4 md:px-6 pb-4 md:pb-6">
           <div className="pointer-events-auto flex justify-between items-center h-16 md:h-20 px-2 md:px-4 bg-[#16120C]/85 backdrop-blur-3xl border border-[#F5A623]/25 shadow-[0_8px_32px_rgba(0,0,0,0.7)] rounded-[24px] md:rounded-[32px]">
-            <NavItem
-              id="nav-home"
-              to="/"
-              icon={<Gauge size={20} className="md:w-[22px] md:h-[22px]" />}
-              label="INÍCIO"
-              extraActiveCheck={(p) => p === '/' || p.startsWith('/championships')}
-            />
+            <NavItem id="nav-home" to="/" icon={<Gauge size={20} className="md:w-[22px] md:h-[22px]" />} label="INÍCIO" />
             <NavItem id="nav-rankings" to="/rankings" icon={<Trophy size={20} className="md:w-[22px] md:h-[22px]" />} label="RANKING" />
             <NavItem id="nav-challenges" to="/challenges" icon={<Award size={20} className="md:w-[22px] md:h-[22px]" />} label="DESAFIOS" />
-            <NavItem
-              id="nav-profile"
-              to="/profile"
-              icon={<User size={20} className="md:w-[22px] md:h-[22px]" />}
-              label="PERFIL"
-              extraActiveCheck={(p) => p.startsWith('/profile')}
-            />
+            <NavItem id="nav-profile" to="/profile" icon={<User size={20} className="md:w-[22px] md:h-[22px]" />} label="PERFIL" />
           </div>
         </div>
       </nav>
@@ -195,10 +189,7 @@ export function Layout() {
   );
 }
 
-function NavItem({ to, icon, label, id, extraActiveCheck }: { to: string; icon: React.ReactNode; label: string; id?: string; extraActiveCheck?: (pathname: string) => boolean }) {
-  const location = useLocation();
-  const isExtraActive = extraActiveCheck ? extraActiveCheck(location.pathname) : false;
-
+function NavItem({ to, icon, label, id }: { to: string; icon: React.ReactNode; label: string; id?: string }) {
   return (
     <NavLink
       id={id}
@@ -206,7 +197,7 @@ function NavItem({ to, icon, label, id, extraActiveCheck }: { to: string; icon: 
       className={({ isActive }) =>
         cn(
           "flex flex-col items-center justify-center transition-all duration-300 flex-1 h-full gap-1 outline-none py-1",
-          isActive || isExtraActive
+          isActive
             ? "text-[#F5A623] bg-[rgba(245,166,35,0.12)] rounded-2xl drop-shadow-[0_0_8px_rgba(245,166,35,0.4)]"
             : "text-[#9E8E7E] hover:text-white"
         )

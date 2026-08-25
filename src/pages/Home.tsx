@@ -5,10 +5,24 @@ import {
   FaStar,
   FaDumbbell,
   FaPersonRunning,
-  FaArrowRight,
-  FaTrophy
+  FaArrowRight
 } from 'react-icons/fa6';
 import { useUser } from '../UserContext';
+
+/**
+ * Contorno do card de saudacao: paralelogramo de cantos arredondados, inclinado
+ * 12,26 graus. Os pontos vieram de medicao em design/referencia-home.png, nao
+ * de escolha no olho -- os quatro cantos e o metodo estao em
+ * design/medidas-home.md. Mesmos numeros usados no clip-path do vidro
+ * (--recorte, em invictus.css); se um mudar, o outro tem que mudar junto.
+ */
+const MOLDURA_INCLINADA = [
+  '6.93,13.70', '7.53,8.77', '8.46,4.93', '9.72,2.19', '11.30,0.55',
+  '13.21,0.00', '92.21,0.00', '94.96,0.83', '96.96,3.31', '98.22,7.45',
+  '98.74,13.25', '98.52,20.70', '93.85,85.92', '93.28,90.99', '92.36,94.93',
+  '91.10,97.75', '89.50,99.44', '87.55,100.00', '7.97,100.00', '5.17,99.16',
+  '3.14,96.63', '1.88,92.41', '1.40,86.51', '1.69,78.91',
+].join(' ');
 import { workoutService } from '../services/workoutService';
 import { getXPProgress } from '../lib/levelUtils';
 import { getNextSeasonCountdown } from '../lib/seasonUtils';
@@ -148,11 +162,26 @@ export function Home() {
           </p>
         </header>
 
-        {/* 1) CARD DE SAUDAÇÃO (Retângulo Padrão) */}
+        {/* 1) CARD DE SAUDAÇÃO
+            Moldura inclinada em duas camadas -- ver .iv-card--inclinado em
+            invictus.css. O conteudo fica na camada de dentro e permanece na
+            horizontal, como na arte. */}
         <section
           id="home-greeting-card"
-          className="iv-card w-full flex items-center gap-4 !p-4"
+          className="iv-card--inclinado w-full"
         >
+         {/* vidro (atras) -> moldura (contorno) -> conteudo */}
+         <div className="iv-card__vidro" />
+         <svg
+           className="iv-card__moldura"
+           viewBox="0 0 100 100"
+           preserveAspectRatio="none"
+           aria-hidden="true"
+           focusable="false"
+         >
+           <polygon points={MOLDURA_INCLINADA} />
+         </svg>
+         <div className="iv-card__dentro flex items-center gap-4">
           {/* Avatar circular + Badges Empilhados */}
           <div className="flex flex-col items-center shrink-0 gap-2">
             <button
@@ -273,6 +302,7 @@ export function Home() {
               </span>
             </div>
           </div>
+         </div>
         </section>
 
         {/* 2) DUAS PÍLULAS (SEQUÊNCIA e XP HOJE) */}
@@ -327,53 +357,71 @@ export function Home() {
           </div>
         </section>
 
-        {/* 3) BANNER OFICIAL: CAMPEONATOS INVICTUS — EM BREVE */}
+        {/* 3) CARD LIGA INVICTUS (Duas Colunas) */}
         <section
-          id="home-championships-banner-card"
-          onClick={() => navigate('/championships')}
-          className="w-full rounded-[24px] overflow-hidden bg-[#121113]/95 border border-amber-500/40 shadow-2xl relative cursor-pointer active:scale-[0.98] transition-all hover:border-amber-400 group"
+          id="home-league-card"
+          onClick={() => navigate('/league')}
+          className="iv-card--liga w-full flex items-center gap-4 cursor-pointer active:scale-[0.98] transition-transform"
         >
-          {/* Banner Oficial Responsivo */}
-          <div className="relative w-full aspect-[16/9.6] overflow-hidden bg-black/80">
+          {/* Coluna Esquerda — troféu.
+              Medido na arte: ocupa 37,6% da largura do card e ~89% da altura,
+              o que dá 120x140. A 140px ele passa dos 121px internos e sangra
+              ~10px no padding, exatamente como na referência — por isso o
+              margin negativo. O card não precisa crescer. */}
+          <div className="w-[120px] min-w-[120px] max-w-[120px] shrink-0 flex items-center justify-center">
             <img
-              src="/assets/championships/campeonatos_em_breve_banner.webp"
-              alt="CAMPEONATOS INVICTUS - EM BREVE"
-              className="w-full h-full object-cover object-center group-hover:scale-[1.02] transition-transform duration-300"
-              referrerPolicy="no-referrer"
+              src="/trofeu.webp"
+              alt=""
+              width={120}
+              height={140}
+              className="w-[120px] h-[140px] object-contain -my-[10px] select-none pointer-events-none"
             />
-            {/* Efeito de borda interna */}
-            <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
           </div>
 
-          {/* Destaques Rápidos com Emojis (Musculação + Corrida) */}
-          <div className="p-3 bg-gradient-to-b from-[#18161b] to-[#100f12] border-t border-amber-500/20 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">🛡️</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-zinc-200 block uppercase tracking-wider leading-tight">Regras Claras</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">Competição justa</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">📊</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-zinc-200 block uppercase tracking-wider leading-tight">Rankings ao Vivo</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">Sua evolução</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">🏆</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-[#ffb000] block uppercase tracking-wider leading-tight">Premiações</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">Para os melhores</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">👥</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-teal-300 block uppercase tracking-wider leading-tight">Desafie Atletas</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">De todo o Brasil</span>
-              </div>
+          {/* Coluna Direita: Resto da largura, conteúdo alinhado à esquerda */}
+          <div className="flex-1 min-w-0 flex flex-col items-start text-left">
+            <h2
+              className="iv-titulo--ouro text-[30px] leading-none text-left"
+            >
+              LIGA INVICTUS
+            </h2>
+
+            <span
+              className="font-barlow font-bold text-[12px] uppercase tracking-[0.08em] my-1 text-left text-white"
+              style={{
+                lineHeight: 1.2
+              }}
+            >
+              TEMPORADA EM ANDAMENTO
+            </span>
+
+            {/* Caixa do Contador Ocupando 100% da Largura da Coluna Direita */}
+            <div
+              className="w-full flex items-center justify-center gap-2 mt-1 rounded-xl p-2.5"
+              style={{
+                border: '1px solid var(--liga-borda)',
+                background: 'rgba(42, 10, 63, 0.4)'
+              }}
+            >
+              <span
+                className="iv-titulo text-[30px] leading-none text-white"
+              >
+                {countdown.time.days > 0
+                  ? countdown.time.days
+                  : countdown.time.hours}
+              </span>
+              <span
+                className="font-barlow font-semibold text-[13px] uppercase leading-none"
+                style={{ color: 'var(--dourado-claro)' }}
+              >
+                {countdown.time.days > 0
+                  ? countdown.time.days === 1
+                    ? 'DIA RESTANTE'
+                    : 'DIAS RESTANTES'
+                  : countdown.time.hours === 1
+                  ? 'HORA RESTANTE'
+                  : 'HORAS RESTANTES'}
+              </span>
             </div>
           </div>
         </section>

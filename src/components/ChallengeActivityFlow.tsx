@@ -1,22 +1,16 @@
-import { ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, PersonStanding, Play, Plus, Timer, Waves, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { ActivityMapView } from './ActivityMapView';
-import { getModalityConfig } from '../config/cardioConfig';
 
 export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'cardio-complete' | 'cardio-summary' | 'day-progress';
 
 export type CardioOption = { id: string; label: string; icon: 'run' | 'walk' | 'bike' | 'treadmill' | 'elliptical' | 'stairs' | 'row' | 'swim' | 'hiit'; gps: boolean };
 export const CARDIO_OPTIONS: CardioOption[] = [
-  { id: 'running', label: 'Corrida ao ar livre', icon: 'run', gps: true },
-  { id: 'walking', label: 'Caminhada ao ar livre', icon: 'walk', gps: true },
-  { id: 'bike', label: 'Bike ao ar livre', icon: 'bike', gps: true },
-  { id: 'treadmill', label: 'Esteira', icon: 'treadmill', gps: false },
-  { id: 'stationary_bike', label: 'Bike ergométrica', icon: 'bike', gps: false },
-  { id: 'elliptical', label: 'Elíptico / Transport', icon: 'elliptical', gps: false },
-  { id: 'rowing', label: 'Remo indoor', icon: 'row', gps: false },
-  { id: 'stair_climber', label: 'Escada / Stairmaster', icon: 'stairs', gps: false },
-  { id: 'swimming', label: 'Natação', icon: 'swim', gps: false },
-  { id: 'hiit', label: 'HIIT / Funcional', icon: 'hiit', gps: false }
+  { id: 'running', label: 'Corrida ao ar livre', icon: 'run', gps: true }, { id: 'walking', label: 'Caminhada ao ar livre', icon: 'walk', gps: true },
+  { id: 'bike', label: 'Bike ao ar livre', icon: 'bike', gps: true }, { id: 'treadmill', label: 'Esteira', icon: 'treadmill', gps: false },
+  { id: 'stationary_bike', label: 'Bike ergométrica', icon: 'bike', gps: false }, { id: 'elliptical', label: 'Elíptico / Transport', icon: 'elliptical', gps: false },
+  { id: 'rowing', label: 'Remo indoor', icon: 'row', gps: false }, { id: 'stair_climber', label: 'Escada / Stairmaster', icon: 'stairs', gps: false },
+  { id: 'swimming', label: 'Natação', icon: 'swim', gps: false }, { id: 'hiit', label: 'HIIT / Funcional', icon: 'hiit', gps: false }
 ];
 const groups = ['Peito', 'Costas', 'Pernas', 'Ombros', 'Braços', 'Abdômen', 'Corpo todo'];
 const icon = (kind: CardioOption['icon'], size = 20) => kind === 'bike' ? <Bike size={size} /> : kind === 'swim' ? <Waves size={size} /> : kind === 'treadmill' ? <Gauge size={size} /> : kind === 'row' ? <Dumbbell size={size} /> : kind === 'stairs' ? <Navigation size={size} /> : kind === 'hiit' ? <Zap size={size} /> : kind === 'walk' ? <PersonStanding size={size} /> : <Footprints size={size} />;
@@ -28,344 +22,29 @@ export type ActivityCompletion = {
   pointsAwarded?: number;
 };
 
-export function ChallengeActivityFlow({
-  screen,
-  group,
-  onGroup,
-  cardio,
-  onCardio,
-  session,
-  elapsed,
-  distance,
-  trajectory,
-  gymName,
-  completedChallengeIds,
-  completion,
-  startError,
-  loading = false,
-  onBack,
-  onStart,
-  onEnd,
-  onSummary,
-  onDone,
-  onCancel,
-  onShare,
-  onDetail
-}: {
-  screen: ChallengeFlowScreen;
-  group: string;
-  onGroup: (value: string) => void;
-  cardio: CardioOption;
-  onCardio: (value: CardioOption) => void;
-  session: ActivitySession | null;
-  elapsed: number;
-  distance: number;
-  trajectory?: Array<{ lat: number; lng: number }>;
-  gymName: string;
-  completedChallengeIds: string[];
-  completion?: ActivityCompletion | null;
-  startError?: string | null;
-  loading?: boolean;
-  onBack: () => void;
-  onStart: (type: 'workout' | 'cardio') => void;
-  onEnd: () => void;
-  onSummary: () => void;
-  onDone: () => void;
-  onCancel?: () => void;
-  onShare?: () => void;
-  onDetail?: () => void;
+export function ChallengeActivityFlow({ screen, group, onGroup, cardio, onCardio, session, elapsed, distance, trajectory, gymName, completedChallengeIds, completion, startError, onBack, onStart, onEnd, onSummary, onDone }: {
+  screen: ChallengeFlowScreen; group: string; onGroup: (value: string) => void; cardio: CardioOption; onCardio: (value: CardioOption) => void;
+  session: ActivitySession | null; elapsed: number; distance: number; trajectory?: Array<{ lat: number; lng: number }>; gymName: string; completedChallengeIds: string[]; completion?: ActivityCompletion | null; startError?: string | null; onBack: () => void; onStart: (type: 'workout' | 'cardio') => void; onEnd: () => void; onSummary: () => void; onDone: () => void;
 }) {
-  const activeCardio = session?.type === 'cardio' || screen === 'cardio-complete' || screen === 'cardio-summary' || screen === 'cardio-picker';
-  const modalityCfg = getModalityConfig(session?.cardioType || cardio.id);
-  const effectiveCardioLabel = session?.cardioTypeLabel || modalityCfg?.label || cardio.label;
-  const effectiveMuscleGroup = session?.muscleGroup || group;
-  const activeTitle = (session?.type === 'cardio' || screen === 'cardio-complete' || screen === 'cardio-summary')
-    ? effectiveCardioLabel
-    : `Treino de ${effectiveMuscleGroup}`;
-  const isBike = session?.cardioType === 'bike' || cardio.id === 'bike';
-  const speedKmH = distance > 0.01 && elapsed > 0 ? (distance / (elapsed / 3600)).toFixed(1) : '—';
-  const pace = distance > 0.01 && elapsed ? `${Math.floor((elapsed / 60) / distance)}'${String(Math.round((elapsed / 60 / distance % 1) * 60)).padStart(2, '0')}"` : '—';
-  const hasDistanceMetric = Boolean(modalityCfg ? modalityCfg.hasDistance : (session?.requiresGpsDistance || cardio.gps));
-  const hasPaceMetric = Boolean(modalityCfg ? modalityCfg.hasPace : !isBike);
+  const activeCardio = session?.type === 'cardio' || screen === 'cardio-complete' || screen === 'cardio-summary';
+  const activeTitle = activeCardio ? cardio.label : `Treino de ${group}`;
+  const pace = distance > .01 && elapsed ? `${Math.floor((elapsed / 60) / distance)}'${String(Math.round((elapsed / 60 / distance % 1) * 60)).padStart(2, '0')}"` : '—';
   const checkin = screen === 'workout-checkin';
   const complete = screen === 'workout-complete' || screen === 'cardio-complete';
-  const subtitle = screen === 'workout-details'
-    ? 'DETALHES DO DESAFIO'
-    : screen === 'cardio-picker'
-      ? 'SELECIONE O TIPO DE CARDIO'
-      : checkin
-        ? 'CHECK-IN DE PRESENÇA'
-        : screen === 'active'
-          ? (session?.type === 'cardio' ? 'CARDIO EM ANDAMENTO' : 'TREINO EM ANDAMENTO')
-          : complete
-            ? (screen === 'cardio-complete' ? 'CARDIO CONCLUÍDO!' : 'TREINO CONCLUÍDO!')
-            : screen === 'cardio-summary'
-              ? 'RESUMO DA ATIVIDADE'
-              : 'DESAFIOS DO DIA';
+  const subtitle = screen === 'workout-details' ? 'DETALHES DO DESAFIO' : screen === 'cardio-picker' ? 'SELECIONE O TIPO DE CARDIO' : checkin ? 'CHECK-IN DE PRESENÇA' : screen === 'active' ? (activeCardio ? 'CARDIO EM ANDAMENTO' : 'TREINO EM ANDAMENTO') : complete ? (screen === 'cardio-complete' ? 'CARDIO CONCLUÍDO!' : 'TREINO CONCLUÍDO!') : screen === 'cardio-summary' ? 'RESUMO DA ATIVIDADE' : 'DESAFIOS DO DIA';
   const workoutCompleted = completedChallengeIds.includes('workout');
   const cardioCompleted = completedChallengeIds.includes('cardio');
   const completedToday = [workoutCompleted, cardioCompleted].filter(Boolean).length;
   const awardedPoints = typeof completion?.pointsAwarded === 'number' && Number.isFinite(completion.pointsAwarded) && completion.pointsAwarded > 0
     ? completion.pointsAwarded
     : null;
-
-  return (
-    <main className="challenge-flow-screen">
-      <header className="challenge-flow-header">
-        <button aria-label="Voltar" onClick={onBack}>
-          <ArrowLeft />
-        </button>
-        <h1>{subtitle}</h1>
-      </header>
-
-      {screen === 'workout-details' && (
-        <section className="challenge-flow-card challenge-flow-details">
-          <div className="challenge-flow-title">
-            <span className="challenge-flow-icon"><Dumbbell /></span>
-            <div>
-              <small>{workoutCompleted ? 'CONCLUÍDO HOJE' : 'ATIVIDADE PRINCIPAL'}</small>
-              <h2>TREINO DE MUSCULAÇÃO</h2>
-              <b>Pontuação definida após validação</b>
-            </div>
-          </div>
-          <p>Realize um treino completo na academia e registre a atividade para análise.</p>
-          <div className="challenge-flow-panel">
-            <strong>SELECIONE O GRUPO MUSCULAR</strong>
-            <div className="challenge-flow-groups">
-              {groups.map(item => (
-                <button
-                  className={group === item ? 'is-selected' : ''}
-                  onClick={() => onGroup(item)}
-                  key={item}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="challenge-flow-panel">
-            <strong>PROGRESSO DO DESAFIO <em>{workoutCompleted ? '1/1' : '0/1'}</em></strong>
-            <p>{workoutCompleted ? 'Treino validado hoje.' : 'Complete um treino de musculação validado hoje.'}</p>
-          </div>
-          <div className="challenge-flow-panel">
-            <strong>REQUISITOS</strong>
-            <ul>
-              <li><MapPin />Presença na academia verificada no início</li>
-              <li><Clock3 />Treino de 30 a 90 minutos</li>
-              <li><Timer />Dados de frequência quando houver sensor conectado</li>
-            </ul>
-          </div>
-          <button
-            className="challenge-flow-primary"
-            onClick={() => onStart('workout')}
-            disabled={workoutCompleted}
-          >
-            <Play />{workoutCompleted ? 'TREINO JÁ VALIDADO' : 'INICIAR TREINO'}
-          </button>
-        </section>
-      )}
-
-      {screen === 'cardio-picker' && (
-        <section className="challenge-flow-card challenge-flow-cardio-picker">
-          <p>Escolha a modalidade que você irá realizar.</p>
-          <div className="challenge-flow-cardio-grid">
-            {CARDIO_OPTIONS.map(item => (
-              <button
-                className={cardio.id === item.id ? 'is-selected' : ''}
-                key={item.id}
-                onClick={() => onCardio(item)}
-              >
-                {icon(item.icon)}
-                <span>{item.label}</span>
-                <small>{item.gps ? 'Com GPS' : 'Sem GPS'}</small>
-              </button>
-            ))}
-          </div>
-          <p className="challenge-flow-note">
-            <Navigation /> Corrida, caminhada e bike ao ar livre usam GPS.
-          </p>
-          <button className="challenge-flow-primary" onClick={() => onStart('cardio')}>
-            <Play />INICIAR CARDIO
-          </button>
-        </section>
-      )}
-
-      {checkin && (
-        <section className="challenge-flow-checkin">
-          <p>Confirme sua localização na academia antes de iniciar o treino.</p>
-          <div className="challenge-flow-radar"><MapPin /></div>
-          <span>{startError ? 'Validação de presença não concluída.' : 'Aguardando a confirmação da sua localização.'}</span>
-          <article className={startError ? 'is-blocked' : ''}>
-            <small>{startError ? 'LOCALIZAÇÃO NÃO VALIDADA' : 'PRONTO PARA VERIFICAR'}</small>
-            <b>{gymName || 'Sua academia'}</b>
-            <p>{startError || 'Toque abaixo para validar sua localização antes de iniciar.'}</p>
-            {startError ? <MapPin /> : <Check />}
-          </article>
-          <button className="challenge-flow-primary" onClick={() => onStart('workout')}>
-            <Check />{startError ? 'TENTAR NOVAMENTE' : 'VALIDAR E INICIAR'}
-          </button>
-        </section>
-      )}
-
-      {screen === 'active' && (
-        <section className="challenge-flow-active">
-          <button className="challenge-flow-activity-type">
-            {activeTitle}<ChevronDown />
-          </button>
-          <span className="challenge-flow-gps">
-            <Zap /> {session?.requiresGpsDistance ? 'GPS CONECTADO' : (session?.type === 'cardio' ? 'CARDIO INDOOR' : 'ATIVIDADE EM ANDAMENTO')}
-          </span>
-          <article className="challenge-flow-clock">
-            <strong>{time(elapsed)}</strong>
-            <small>Tempo decorrido</small>
-          </article>
-          <div className="challenge-flow-kpis">
-            {session?.type === 'cardio' ? (
-              hasDistanceMetric ? (
-                <>
-                  <article><b>{distance.toFixed(2)}</b><span>Distância (km)</span></article>
-                  <article><b>{hasPaceMetric ? pace : `${speedKmH} km/h`}</b><span>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade'}</span></article>
-                  <article><b>—</b><span>Calorias (kcal)</span></article>
-                </>
-              ) : (
-                <>
-                  <article><b>{time(elapsed)}</b><span>Tempo decorrido</span></article>
-                  <article><b>Indoor</b><span>Tipo de treino</span></article>
-                  <article><b>—</b><span>FC média (bpm)</span></article>
-                </>
-              )
-            ) : (
-              <>
-                <article><b>—</b><span>FC média (bpm)</span></article>
-                <article><b>—</b><span>Calorias (kcal)</span></article>
-                <article><b>—</b><span>Carga (ton)</span></article>
-                <article><b>—</b><span>Intensidade</span></article>
-              </>
-            )}
-          </div>
-          {session?.type !== 'cardio' && (
-            <article className="challenge-flow-zone">
-              <strong>ZONA CARDÍACA</strong>
-              <div><i /><i /><i /><i /></div>
-              <p>Dados exibidos somente quando houver sensor conectado.</p>
-            </article>
-          )}
-          <button
-            className="challenge-flow-primary"
-            onClick={onEnd}
-            disabled={loading}
-          >
-            {loading ? 'FINALIZANDO...' : (session?.type === 'cardio' ? 'FINALIZAR ATIVIDADE' : 'FINALIZAR TREINO')}
-          </button>
-          {onCancel && (
-            <button
-              type="button"
-              className="challenge-flow-secondary mt-2 flex items-center justify-center gap-1 text-rose-400 hover:text-rose-300 transition-colors"
-              onClick={onCancel}
-              disabled={loading}
-            >
-              <XCircle size={14} />
-              <span>Descartar e cancelar sessão</span>
-            </button>
-          )}
-        </section>
-      )}
-
-      {complete && (
-        <section className="challenge-flow-complete">
-          <div className="challenge-flow-confetti">✦ ✦ ✦ ✦ ✦</div>
-          <span className="challenge-flow-check"><Check /></span>
-          <p>{completion?.message || 'Atividade validada pelo servidor.'}</p>
-          {awardedPoints !== null ? (
-            <strong>+{awardedPoints} XP <Zap /></strong>
-          ) : (
-            <strong className="text-[15px]">Pontuação registrada pelo servidor</strong>
-          )}
-          <article>
-            <b>{screen === 'cardio-complete' ? effectiveCardioLabel.toUpperCase() : 'TREINO DE MUSCULAÇÃO'}</b>
-            <small>1/1</small>
-            <div />
-          </article>
-          <button className="challenge-flow-primary" onClick={onSummary}>
-            {screen === 'cardio-complete' ? 'VER RESUMO' : 'VER DESAFIOS DO DIA'}
-          </button>
-          <button className="challenge-flow-secondary" onClick={onDone}>
-            VOLTAR PARA DESAFIOS
-          </button>
-        </section>
-      )}
-
-      {screen === 'cardio-summary' && (
-        <section className="challenge-flow-summary">
-          <div className="challenge-flow-summary-title">
-            <div>
-              <h2>{effectiveCardioLabel}</h2>
-              <p>Atividade registrada com dados reais.</p>
-            </div>
-            <span>{time(elapsed)}</span>
-          </div>
-          {trajectory && trajectory.length >= 2 ? (
-            <ActivityMapView trajectory={trajectory} heightPx={220} />
-          ) : modalityCfg?.hasRouteMap ? (
-            <div className="challenge-flow-map is-empty">
-              <MapPin />
-              <span>O mapa estará disponível após o GPS registrar o percurso.</span>
-            </div>
-          ) : null}
-          <div className="challenge-flow-summary-kpis">
-            <article><b>{time(elapsed)}</b><small>DURAÇÃO</small></article>
-            {hasDistanceMetric ? (
-              <>
-                <article><b>{distance.toFixed(2)} km</b><small>DISTÂNCIA</small></article>
-                <article><b>{hasPaceMetric ? pace : `${speedKmH} km/h`}</b><small>{hasPaceMetric ? 'PACE MÉDIO' : 'VELOCIDADE'}</small></article>
-              </>
-            ) : (
-              <>
-                <article><b>Indoor</b><small>MODALIDADE</small></article>
-                <article><b>Validado</b><small>STATUS</small></article>
-              </>
-            )}
-          </div>
-          {onShare && (
-            <button className="challenge-flow-primary mt-3 flex items-center justify-center gap-2" onClick={onShare}>
-              <Share2 size={16} />
-              <span>COMPARTILHAR ATIVIDADE</span>
-            </button>
-          )}
-          {onDetail && (
-            <button className="challenge-flow-secondary mt-1" onClick={onDetail}>
-              VER DETALHES COMPLETOS
-            </button>
-          )}
-          <button className="challenge-flow-secondary" onClick={onDone}>
-            VOLTAR PARA DESAFIOS
-          </button>
-        </section>
-      )}
-
-      {screen === 'day-progress' && (
-        <section className="challenge-flow-day-progress">
-          <p>Progresso dos desafios validados hoje</p>
-          <strong>{completedToday}/2</strong>
-          <div className="challenge-flow-day-track">
-            <i style={{ width: `${Math.min(100, completedToday * 50)}%` }} />
-          </div>
-          <article>
-            <span className={workoutCompleted ? 'is-complete' : ''}><Check /></span>
-            <b>TREINO DE MUSCULAÇÃO</b>
-            <em>{workoutCompleted ? 'VALIDADO' : 'PENDENTE'}</em>
-          </article>
-          <article>
-            <span className={cardioCompleted ? 'is-complete' : ''}><Check /></span>
-            <b>CARDIO AERÓBICO</b>
-            <em>{cardioCompleted ? 'VALIDADO' : 'PENDENTE'}</em>
-          </article>
-          <button className="challenge-flow-primary" onClick={onDone}>
-            VOLTAR PARA DESAFIOS
-          </button>
-        </section>
-      )}
-    </main>
-  );
+  return <main className="challenge-flow-screen"><header className="challenge-flow-header"><button aria-label="Voltar" onClick={onBack}><ArrowLeft /></button><h1>{subtitle}</h1></header>
+    {screen === 'workout-details' && <section className="challenge-flow-card challenge-flow-details"><div className="challenge-flow-title"><span className="challenge-flow-icon"><Dumbbell /></span><div><small>{workoutCompleted ? 'CONCLUÍDO HOJE' : 'ATIVIDADE PRINCIPAL'}</small><h2>TREINO DE MUSCULAÇÃO</h2><b>Pontuação definida após validação</b></div></div><p>Realize um treino completo na academia e registre a atividade para análise.</p><div className="challenge-flow-panel"><strong>SELECIONE O GRUPO MUSCULAR</strong><div className="challenge-flow-groups">{groups.map(item => <button className={group === item ? 'is-selected' : ''} onClick={() => onGroup(item)} key={item}>{item}</button>)}</div></div><div className="challenge-flow-panel"><strong>PROGRESSO DO DESAFIO <em>{workoutCompleted ? '1/1' : '0/1'}</em></strong><p>{workoutCompleted ? 'Treino validado hoje.' : 'Complete um treino de musculação validado hoje.'}</p></div><div className="challenge-flow-panel"><strong>REQUISITOS</strong><ul><li><MapPin />Presença na academia verificada no início</li><li><Clock3 />Treino de 30 a 90 minutos</li><li><Timer />Dados de frequência quando houver sensor conectado</li></ul></div><button className="challenge-flow-primary" onClick={() => onStart('workout')} disabled={workoutCompleted}><Play />{workoutCompleted ? 'TREINO JÁ VALIDADO' : 'INICIAR TREINO'}</button></section>}
+    {screen === 'cardio-picker' && <section className="challenge-flow-card challenge-flow-cardio-picker"><p>Escolha a modalidade que você irá realizar.</p><div className="challenge-flow-cardio-grid">{CARDIO_OPTIONS.map(item => <button className={cardio.id === item.id ? 'is-selected' : ''} key={item.id} onClick={() => onCardio(item)}>{icon(item.icon)}<span>{item.label}</span><small>{item.gps ? 'Com GPS' : 'Sem GPS'}</small></button>)}</div><p className="challenge-flow-note"><Navigation /> Corrida, caminhada e bike ao ar livre usam GPS.</p><button className="challenge-flow-primary" onClick={() => onStart('cardio')}><Play />INICIAR CARDIO</button></section>}
+    {checkin && <section className="challenge-flow-checkin"><p>Confirme sua localização na academia antes de iniciar o treino.</p><div className="challenge-flow-radar"><MapPin /></div><span>{startError ? 'Validação de presença não concluída.' : 'Aguardando a confirmação da sua localização.'}</span><article className={startError ? 'is-blocked' : ''}><small>{startError ? 'LOCALIZAÇÃO NÃO VALIDADA' : 'PRONTO PARA VERIFICAR'}</small><b>{gymName || 'Sua academia'}</b><p>{startError || 'Toque abaixo para validar sua localização antes de iniciar.'}</p>{startError ? <MapPin /> : <Check />}</article><button className="challenge-flow-primary" onClick={() => onStart('workout')}><Check />{startError ? 'TENTAR NOVAMENTE' : 'VALIDAR E INICIAR'}</button></section>}
+    {screen === 'active' && <section className="challenge-flow-active"><button className="challenge-flow-activity-type">{activeTitle}<ChevronDown /></button><span className="challenge-flow-gps"><Zap /> {session?.requiresGpsDistance ? 'GPS CONECTADO' : 'ATIVIDADE EM ANDAMENTO'}</span><article className="challenge-flow-clock"><strong>{time(elapsed)}</strong><small>Tempo decorrido</small></article><div className="challenge-flow-kpis">{activeCardio ? <><article><b>{distance.toFixed(2)}</b><span>Distância (km)</span></article><article><b>{pace}</b><span>Pace médio (min/km)</span></article><article><b>—</b><span>Calorias (kcal)</span></article></> : <><article><b>—</b><span>FC média (bpm)</span></article><article><b>—</b><span>Calorias (kcal)</span></article><article><b>—</b><span>Carga (ton)</span></article><article><b>—</b><span>Intensidade</span></article></>}</div>{!activeCardio && <article className="challenge-flow-zone"><strong>ZONA CARDÍACA</strong><div><i /><i /><i /><i /></div><p>Dados exibidos somente quando houver sensor conectado.</p></article>}<button className="challenge-flow-primary" onClick={onEnd}>{activeCardio ? 'FINALIZAR ATIVIDADE' : 'FINALIZAR TREINO'}</button></section>}
+    {complete && <section className="challenge-flow-complete"><div className="challenge-flow-confetti">✦ ✦ ✦ ✦ ✦</div><span className="challenge-flow-check"><Check /></span><p>{completion?.message || 'Atividade validada pelo servidor.'}</p>{awardedPoints !== null ? <strong>+{awardedPoints} XP <Zap /></strong> : <strong className="text-[15px]">Pontuação registrada pelo servidor</strong>}<article><b>{activeCardio ? cardio.label.toUpperCase() : 'TREINO DE MUSCULAÇÃO'}</b><small>1/1</small><div /></article><button className="challenge-flow-primary" onClick={onSummary}>{activeCardio ? 'VER RESUMO' : 'VER DESAFIOS DO DIA'}</button><button className="challenge-flow-secondary" onClick={onDone}>VOLTAR PARA DESAFIOS</button></section>}
+    {screen === 'cardio-summary' && <section className="challenge-flow-summary"><div className="challenge-flow-summary-title"><div><h2>{cardio.label}</h2><p>Atividade registrada com dados reais.</p></div><span>{time(elapsed)}</span></div>{trajectory && trajectory.length >= 2 ? <ActivityMapView trajectory={trajectory} heightPx={220} /> : <div className="challenge-flow-map is-empty"><MapPin /><span>{cardio.gps ? 'O mapa estará disponível após o GPS registrar o percurso.' : 'Esta modalidade não utiliza GPS.'}</span></div>}<div className="challenge-flow-summary-kpis"><article><b>{time(elapsed)}</b><small>DURAÇÃO</small></article><article><b>{distance.toFixed(2)} km</b><small>DISTÂNCIA</small></article><article><b>{pace}</b><small>PACE MÉDIO</small></article></div><button className="challenge-flow-primary" onClick={onDone}>VOLTAR PARA DESAFIOS</button></section>}
+    {screen === 'day-progress' && <section className="challenge-flow-day-progress"><p>Progresso dos desafios validados hoje</p><strong>{completedToday}/2</strong><div className="challenge-flow-day-track"><i style={{ width: `${Math.min(100, completedToday * 50)}%` }} /></div><article><span className={workoutCompleted ? 'is-complete' : ''}><Check /></span><b>TREINO DE MUSCULAÇÃO</b><em>{workoutCompleted ? 'VALIDADO' : 'PENDENTE'}</em></article><article><span className={cardioCompleted ? 'is-complete' : ''}><Check /></span><b>CARDIO AERÓBICO</b><em>{cardioCompleted ? 'VALIDADO' : 'PENDENTE'}</em></article><button className="challenge-flow-primary" onClick={onDone}>VOLTAR PARA DESAFIOS</button></section>}
+  </main>;
 }
-

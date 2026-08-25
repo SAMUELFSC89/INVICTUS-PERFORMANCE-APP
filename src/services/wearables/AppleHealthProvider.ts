@@ -86,64 +86,6 @@ export class AppleHealthProvider implements WearableProvider {
     this.hasSuccessfulRead = false;
   }
 
-  async querySessionMetrics(startDate: Date, endDate: Date): Promise<{
-    avgHeartRate?: number;
-    maxHeartRate?: number;
-    steps?: number;
-    calories?: number;
-    workoutFound?: boolean;
-  } | null> {
-    if (!this.isSupportedPlatform()) return null;
-    try {
-      const { workouts } = await Health.queryWorkouts({
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        includeHeartRate: true,
-        includeRoute: false,
-        includeSteps: true,
-      });
-
-      const allHr: number[] = [];
-      let totalSteps = 0;
-      let totalCalories = 0;
-      let workoutFound = false;
-
-      if (workouts && workouts.length > 0) {
-        workoutFound = true;
-        for (const w of workouts) {
-          if (Array.isArray(w.heartRate)) {
-            for (const hr of w.heartRate) {
-              if (hr && typeof hr.bpm === 'number' && hr.bpm >= 35 && hr.bpm <= 230) {
-                allHr.push(hr.bpm);
-              }
-            }
-          }
-          if (typeof w.steps === 'number' && Number.isFinite(w.steps) && w.steps > 0) {
-            totalSteps += w.steps;
-          }
-          if (typeof w.calories === 'number' && Number.isFinite(w.calories) && w.calories > 0) {
-            totalCalories += w.calories;
-          }
-        }
-      }
-
-      const avgHeartRate = allHr.length ? Math.round(allHr.reduce((a, b) => a + b, 0) / allHr.length) : undefined;
-      const maxHeartRate = allHr.length ? Math.max(...allHr) : undefined;
-
-      this.hasSuccessfulRead = true;
-      return {
-        avgHeartRate,
-        maxHeartRate,
-        steps: totalSteps > 0 ? Math.round(totalSteps) : undefined,
-        calories: totalCalories > 0 ? Math.round(totalCalories) : undefined,
-        workoutFound
-      };
-    } catch (err) {
-      console.warn('[AppleHealthProvider] Erro ao consultar métricas da sessão:', err);
-      return null;
-    }
-  }
-
   private mapWorkout(w: any): WearableActivity {
     const heartRates: number[] = (w.heartRate || []).map((h: any) => h.bpm).filter((v: number) => !!v);
     const averageHeartRate = heartRates.length ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : undefined;

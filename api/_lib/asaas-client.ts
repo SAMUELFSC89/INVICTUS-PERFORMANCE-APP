@@ -1,14 +1,4 @@
-export function getAsaasBaseUrl(): string {
-  if (process.env.ASAAS_API_BASE_URL) {
-    return process.env.ASAAS_API_BASE_URL;
-  }
-  const env = (process.env.ASAAS_ENVIRONMENT || '').trim().toLowerCase();
-  if (env === 'production') {
-    return 'https://api.asaas.com/v3';
-  }
-  // Default to sandbox for safety when not explicitly in production
-  return 'https://sandbox.asaas.com/api/v3';
-}
+const ASAAS_API_BASE_URL = process.env.ASAAS_API_BASE_URL || 'https://api.asaas.com/v3';
 
 function getAsaasApiKey(): string {
   const key = process.env.ASAAS_API_KEY;
@@ -66,7 +56,7 @@ function mensagemDeErroAsaas(data: any, status: number, acao: string): string {
 }
 
 async function chamarAsaas(caminho: string, init: RequestInit, acao: string): Promise<any> {
-  const response = await fetch(getAsaasBaseUrl() + caminho, {
+  const response = await fetch(ASAAS_API_BASE_URL + caminho, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -74,6 +64,7 @@ async function chamarAsaas(caminho: string, init: RequestInit, acao: string): Pr
       ...(init.headers || {}),
     },
   });
+
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(mensagemDeErroAsaas(data, response.status, acao));
@@ -104,7 +95,7 @@ export class AsaasClient {
       throw new Error('Chave PIX de destino é obrigatória.');
     }
 
-    const response = await fetch(getAsaasBaseUrl() + '/transfers', {
+    const response = await fetch(ASAAS_API_BASE_URL + '/transfers', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -116,20 +116,9 @@ export class WearableManager {
     return normalized;
   }
 
-  /** Carrega apenas o estado confirmado pelo servidor ou fallback seguro local. */
+  /** Carrega apenas o estado confirmado pelo servidor. */
   public async loadConfig(): Promise<WearableConfig> {
-    const user = auth.currentUser;
-    const fallback = emptyConfig(user?.uid || '');
-    if (!user) return fallback;
-
-    try {
-      return await this.requestConfig('GET');
-    } catch (err) {
-      console.warn('[WearableManager] Usando configuração local de fallback:', err);
-      if (this.config) return this.config;
-      this.config = fallback;
-      return fallback;
-    }
+    return this.requestConfig('GET');
   }
 
   /**

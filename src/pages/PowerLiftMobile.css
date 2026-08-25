@@ -1,119 +1,13 @@
-/* REFINAMENTOS RESPONSIVOS CIRÚRGICOS PARA O POWER LIFT MOBILE */
-
-@media (max-width: 480px) {
-  .power-screen {
-    padding: 0 0 calc(env(safe-area-inset-bottom) + 4.8rem);
-  }
-
-  .power-header {
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .power-panel {
-    margin-bottom: 0.75rem;
-    padding: 0.75rem 0.85rem;
-    border-radius: 0.8rem;
-  }
-
-  .power-modalities {
-    padding: 0;
-    border: none;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .power-modalities h2 {
-    padding: 0 0.1rem;
-  }
-
-  .power-cards {
-    gap: 0.4rem;
-  }
-
-  .power-card-top {
-    min-height: 2.6rem;
-    padding: 0.35rem 0.35rem 0.3rem;
-  }
-
-  .power-card > img {
-    height: 9.5rem;
-  }
-
-  .power-card-top b {
-    font-size: 0.58rem;
-    white-space: normal;
-    word-break: normal;
-    overflow: visible;
-  }
-
-  .power-stats > div {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .power-stat {
-    padding: 0.2rem 0.1rem;
-  }
-
-  .power-stat small {
-    font-size: 0.48rem;
-  }
-
-  .power-stat b {
-    font-size: 1.05rem;
-  }
-
-  .power-actions {
-    grid-template-columns: 1.6fr 1fr;
-    gap: 0.45rem;
-  }
-
-  .power-actions button {
-    padding: 0.6rem 0.65rem;
-    gap: 0.45rem;
-    min-height: 3.6rem;
-  }
-
-  .power-actions span {
-    font-size: 0.7rem;
-  }
-
-  .power-actions small {
-    font-size: 0.52rem;
-  }
+/* Dedicated mobile composition. The Power Lift route uses the entire phone
+   viewport; cards keep their proportions rather than being squeezed. */
+@media (max-width:700px){
+  .power-screen{box-sizing:border-box;width:100%;min-height:100dvh;padding:calc(env(safe-area-inset-top) + 5.1rem) 1rem calc(env(safe-area-inset-bottom) + 8.75rem);background:radial-gradient(circle at 92% 16%,rgba(242,157,0,.19),transparent 26rem),radial-gradient(circle at 6% 48%,rgba(255,157,0,.12),transparent 20rem),linear-gradient(155deg,#0d0904 0%,#050505 42%,#090704 100%)}
+  .power-header{grid-template-columns:2.8rem minmax(0,1fr) auto;gap:.65rem;margin:0 0 1.25rem}.power-header h1{font-size:clamp(1.45rem,7vw,1.9rem);line-height:.94}.power-header p{font-size:.84rem;line-height:1.25}.power-header>button{width:2.8rem;height:2.8rem}.power-rules{min-width:2.8rem;padding:0!important;font-size:0}.power-rules svg{width:1.2rem}
+  .power-panel{margin-bottom:1rem;padding:1.1rem;border-radius:1.2rem;background:linear-gradient(145deg,rgba(20,20,19,.97),rgba(5,5,5,.98));box-shadow:inset 0 0 1.5rem rgba(255,179,0,.035),0 1rem 2.2rem rgba(0,0,0,.28)}.power-header h1,.power-panel h2{font-size:1.6rem}
+  .power-podium{gap:.45rem;margin-top:1.15rem}.power-podium-item img,.power-avatar{width:4.6rem;height:4.6rem}.pos-1 img,.pos-1 .power-avatar{width:6.65rem;height:6.65rem}.power-podium-item b{min-height:2.25rem;font-size:.92rem;text-align:center}.power-podium-item strong{font-size:1rem}.power-next{right:-.55rem}
+  .power-how>div{gap:.55rem}.power-how article span{width:3rem;height:3rem}.power-how svg{width:1.35rem}.power-how b{min-height:2.35rem;font-size:.72rem;line-height:1.05}.power-how small{font-size:.65rem;line-height:1.18}
+  .power-modalities{padding-right:0;padding-left:0;overflow:hidden}.power-modalities>h2{padding:0 1.1rem}.power-cards{display:flex;gap:.8rem;overflow-x:auto;padding:.05rem 1.1rem 1rem;scroll-snap-type:x mandatory;scrollbar-width:none}.power-cards::-webkit-scrollbar{display:none}.power-card{flex:0 0 min(74vw,18rem);scroll-snap-align:start;border-radius:.85rem}.power-card-top{gap:.55rem;padding:.75rem}.power-card-top svg{width:1.55rem;height:1.55rem}.power-card-top b{font-size:.85rem}.power-card-top small{font-size:.66rem}.power-card>img{height:11.75rem}.power-card-data{padding:.8rem}.power-card-data small{font-size:.64rem}.power-card-data strong{font-size:1.45rem}.power-card-data button{min-height:2.65rem;margin-top:.7rem;font-size:.72rem}
+  .power-stats>div{grid-template-columns:1fr 1fr;gap:.25rem}.power-stat{min-height:4.6rem;border-right:0;border-bottom:1px solid rgba(255,255,255,.1);padding:.55rem}.power-stat:nth-last-child(-n+2){border-bottom:0}.power-stat small{font-size:.6rem}.power-stat b{font-size:1.25rem}
+  .power-actions{grid-template-columns:1fr;gap:.7rem}.power-actions button{min-height:4.5rem;padding:1rem;font-size:.92rem}.power-actions svg{width:2rem;height:2rem}.power-actions small{font-size:.7rem}
 }
-
-@media (max-width: 360px) {
-  .power-header h1 {
-    font-size: 1.2rem;
-  }
-
-  .power-card-top b {
-    font-size: 0.5rem;
-  }
-
-  .power-card-data strong {
-    font-size: 0.95rem;
-  }
-
-  .power-stat svg {
-    width: 1.1rem;
-    height: 1.1rem;
-  }
-
-  .power-stat small {
-    font-size: 0.44rem;
-  }
-
-  .power-stat b {
-    font-size: 0.95rem;
-  }
-
-  .power-actions span {
-    font-size: 0.66rem;
-  }
-
-  .power-actions small {
-    font-size: 0.48rem;
-  }
-}
+@media (max-width:360px){.power-screen{padding-right:.75rem;padding-left:.75rem}.power-header h1{font-size:1.35rem}.power-panel{padding:.9rem}.power-podium-item img,.power-avatar{width:4rem;height:4rem}.pos-1 img,.pos-1 .power-avatar{width:5.6rem;height:5.6rem}.power-how small{font-size:.58rem}.power-card{flex-basis:80vw}}

@@ -8,6 +8,7 @@ import { UserProfile, Achievement } from '../types';
 import { fitnessService } from '../services/fitnessService';
 import { userService } from '../services/userService';
 import { rankingService } from '../services/rankingService';
+import { rewardService } from '../services/rewardService';
 import { activityService } from '../services/activityService';
 import { runningService, RunSession } from '../services/runningService';
 import { stravaService, StravaStatus } from '../services/stravaService';
@@ -57,10 +58,9 @@ export function Profile() {
     if (user) {
       const loadWearableConfig = async () => {
         try {
-          const config = await WearableManager.getInstance().loadConfig();
-          setWearableConfig(config);
+          setWearableConfig(await WearableManager.getInstance().loadConfig());
         } catch (err) {
-          console.warn('[Profile] Aviso ao carregar o estado das conexões:', err);
+          console.error('[Profile] Erro ao carregar o estado das conexões:', err);
         }
       };
       loadWearableConfig();
