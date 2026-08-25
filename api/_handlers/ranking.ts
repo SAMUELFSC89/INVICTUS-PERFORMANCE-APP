@@ -100,35 +100,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ topUsers });
   } catch (error: any) {
-    const errorMsg = error?.message || '';
+    const errorMsg = error.message || '';
     const isQuotaError = errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('Quota limit exceeded');
-    const isPermissionError = errorMsg.includes('PERMISSION_DENIED') || error?.code === 7 || error?.code === 'permission-denied';
     
-    // Safety Net: If Database has transient error, fallback to expired in-memory cache
+    console.error('Ranking API Error:', error);
+    
+    // Safety Net: If Database has transient error or quota exhaustion, fallback to expired in-memory cache
     const staleCached = serverRankingCache.get(cacheKey);
     if (staleCached) {
       console.warn(`[Ranking API] Serving expired cache for ${cacheKey} due to live db fetch error.`);
       return res.status(200).json({ topUsers: staleCached.topUsers, stale: true });
     }
 
-    if (isPermissionError) {
-      console.warn('[Ranking API] Permissão de servidor Firestore pendente de sincronização. Retornando resposta segura.');
-      return res.status(200).json({
-        topUsers: [],
-        message: 'Ranking em atualização.'
-      });
-    }
-
     if (isQuotaError) {
        return res.status(429).json({
          error: 'Limite de tráfego excedido temporariamente (Quota).',
          code: 'QUOTA_EXHAUSTED',
-         fallback: true,
-         topUsers: []
+         fallback: true
        });
     }
-
-    console.error('Ranking API Error:', error);
 
     // Check for common index error in Firestore
     const isIndexError = error.message?.includes('index') || error.code === 9;
@@ -138,8 +128,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error: isIndexError 
         ? 'Erro de Índice: O ranking requer um índice composto no Firestore. Por favor, verifique o console do Firebase.' 
         : (error.message || 'Falha ao carregar ranking'),
-      tip: isIndexError ? 'Abra o link de erro no log do servidor para criar o índice automaticamente.' : undefined,
-      topUsers: []
+      tip: isIndexError ? 'Abra o link de erro no log do servidor para criar o índice automaticamente.' : undefined
     });
   }
 }

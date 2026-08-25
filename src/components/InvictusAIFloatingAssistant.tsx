@@ -6,32 +6,36 @@ import {
   Sparkles,
   X,
   Send,
+  ShieldCheck,
+  Cpu,
+  RefreshCw,
   Volume2,
   VolumeX,
+  Compass,
   Zap,
   TrendingUp,
+  Award,
   Trophy,
   Activity,
+  Maximize2,
+  Minimize2,
   Settings,
+  Radio,
   Flame,
   Clock,
   Heart,
   Target,
   Check,
-  CheckCheck,
   Play,
   Square,
   Info,
   ShieldAlert,
   HelpCircle,
   Lock,
+  FileText,
   Brain,
   Trash2,
-  AlertTriangle,
-  ChevronRight,
-  MapPin,
-  Flag,
-  RotateCcw
+  AlertTriangle
 } from 'lucide-react';
 import { useUser } from '../UserContext';
 import { processUserPerformance } from '../core/performance/performanceEngine';
@@ -111,30 +115,51 @@ export function cleanTextForSpeech(rawText: string): string {
   if (!rawText) return '';
   let text = rawText;
 
+  // Replace LaTeX equations or common formulas
+  text = text.replace(/\$\$\s*IGA\s*=\s*\\text\{Frequência\}\s*\\times\s*\\text\{Tempo Efetivo\}\s*\\times\s*\\text\{Intensidade\s*\(METs\/FC\)\}\s*\$\$/gi, 
+    'O I G A é calculado multiplicando a frequência, o tempo efetivo e a intensidade.');
+  text = text.replace(/\$\$(.*?)\$\$/gs, (_, formula) => {
+    return formula.replace(/\\text\{([^}]+)\}/g, '$1')
+                  .replace(/\\times/g, ' vezes ')
+                  .replace(/=/g, ' igual a ');
+  });
+
+  // Remove code blocks, inline code, headings, markdown formatting
   text = text.replace(/```[\s\S]*?```/g, '');
   text = text.replace(/`([^`]+)`/g, '$1');
   text = text.replace(/#{1,6}\s?/g, '');
   text = text.replace(/[*_~`#$]/g, '');
   text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  // Clean list symbols and bullet points
   text = text.replace(/^[•\-\*\>]\s+/gm, '');
   text = text.replace(/^\d+[\.\)]\s+/gm, '');
+
+  // Parentheses cleaning for natural speech cadence
   text = text.replace(/\(([^)]+)\)/g, ', $1, ');
 
+  // Units and technical terms pronunciation expansions
   text = text.replace(/\bbpm\b/gi, 'batimentos por minuto');
   text = text.replace(/\bkcal\/dia\b/gi, 'quilocalorias por dia');
   text = text.replace(/\bkcal\b/gi, 'quilocalorias');
   text = text.replace(/\bkm\/h\b/gi, 'quilômetros por hora');
   text = text.replace(/\bkm\b/gi, 'quilômetros');
   text = text.replace(/\bkg\b/gi, 'quilos');
+  text = text.replace(/\bcm\b/gi, 'centímetros');
   text = text.replace(/\bmin\b/gi, 'minutos');
   text = text.replace(/\bseg\b/gi, 'segundos');
   text = text.replace(/\bpts?\b/gi, 'pontos');
   text = text.replace(/\bIGA\b/g, 'I G A');
   text = text.replace(/\bVO2\b/gi, 'V Ó 2');
   text = text.replace(/\bIA\b/g, 'I A');
+  text = text.replace(/\bTDEE\b/g, 'gasto calórico diário total');
+  text = text.replace(/\bBMR\b/g, 'metabolismo basal');
+  text = text.replace(/\bIMC\b/g, 'I M C');
 
   // Remove emojis
   text = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+
+  // Normalize punctuation and line breaks
   text = text.replace(/[:;]\s*/g, ', ');
   text = text.replace(/\n+/g, '. ');
   text = text.replace(/\s+/g, ' ').trim();
@@ -142,6 +167,7 @@ export function cleanTextForSpeech(rawText: string): string {
   return text;
 }
 
+// Split text into natural sentence chunks for reliable browser SpeechSynthesis
 export function splitTextIntoSentences(text: string): string[] {
   if (!text) return [];
   const matches = text.match(/[^.!?;]+[.!?;]+/g) || [text];
@@ -169,162 +195,218 @@ export function splitTextIntoSentences(text: string): string[] {
   return chunks;
 }
 
-export interface ContextualChip {
-  id: string;
-  label: string;
-  iconType: 'chart' | 'target' | 'flag' | 'flame' | 'heart' | 'zap' | 'trophy' | 'mapPin';
-  prompt: string;
-}
-
-// Map route path to human-readable screen title, contextual analysis CTA, and exactly 3 contextual chips
-function getScreenContext(pathname: string): {
-  name: string;
-  analysisAction: string;
-  analysisPrompt: string;
-  chips: ContextualChip[];
-} {
+// Map route path to human-readable screen title and contextual suggestions
+function getScreenContext(pathname: string) {
+  if (pathname.startsWith('/rankings')) {
+    return {
+      name: 'Ranking & Ligas',
+      badge: 'Ranking',
+      insight: 'Você está a poucas posições de subir na liga esta semana!',
+      prompts: [
+        'Como posso subir posições no ranking?',
+        'Quem está na minha frente e quantos pontos faltam?',
+        'Quanto falta para entrar no Top 10?',
+        'Por que o IGA ajusta minha pontuação no ranking?'
+      ]
+    };
+  }
+  if (pathname.startsWith('/performance')) {
+    return {
+      name: 'Centro de Performance',
+      badge: 'Performance',
+      insight: 'Sua biometria indica alta prontidão metabólica hoje.',
+      prompts: [
+        'Explique meu condicionamento físico atual.',
+        'Meu IGA e VO2 Max melhoraram este mês?',
+        'Qual a minha prontidão para treinar hoje?',
+        'Minha Frequência Cardíaca média está ideal?'
+      ]
+    };
+  }
+  if (pathname.startsWith('/challenges')) {
+    return {
+      name: 'Desafios & Temporada',
+      badge: 'Desafios',
+      insight: 'Complete os desafios semanais para turbinar seu XP e IGA!',
+      prompts: [
+        'Quais desafios dão mais pontos esta semana?',
+        'Dicas para completar o desafio ativo mais rápido.',
+        'Como funciona a validação presencial nos desafios?',
+        'Qual a premiação da temporada atual?'
+      ]
+    };
+  }
   if (pathname.startsWith('/profile')) {
     return {
       name: 'Perfil & Evolução',
-      analysisAction: 'Analisar minha evolução completa',
-      analysisPrompt: 'Resuma minha evolução completa e progresso desde meu primeiro treino.',
-      chips: [
-        { id: 'c1', label: 'Minha evolução', iconType: 'chart', prompt: 'Resuma minha evolução desde meu primeiro treino.' },
-        { id: 'c2', label: 'Como melhorar?', iconType: 'target', prompt: 'Como posso acelerar minha evolução e melhorar meus resultados?' },
-        { id: 'c3', label: 'Próxima meta', iconType: 'flag', prompt: 'Qual deve ser minha próxima meta física e de consistência?' }
+      badge: 'Perfil',
+      insight: 'Analisando todo o seu histórico desde o 1º treino.',
+      prompts: [
+        'Resuma minha evolução desde meu primeiro treino.',
+        'Qual foi meu maior recorde no Invictus?',
+        'Como está minha constância semanal de treinos?',
+        'Quais conquistas estou mais perto de desbloquear?'
       ]
     };
   }
-
-  if (pathname.startsWith('/activity') || pathname.startsWith('/cardio')) {
-    return {
-      name: 'Cardio',
-      analysisAction: 'Analisar meu desempenho no cardio',
-      analysisPrompt: 'Analise meu desempenho no cardio, ritmo e zonas cardíacas.',
-      chips: [
-        { id: 'c1', label: 'Meu cardio', iconType: 'zap', prompt: 'Como está meu desempenho e evolução no cardio?' },
-        { id: 'c2', label: 'Melhorar pace', iconType: 'target', prompt: 'Como posso melhorar meu pace mantendo a frequência cardíaca segura?' },
-        { id: 'c3', label: 'Recuperação', iconType: 'heart', prompt: 'Como está minha recuperação cardiovascular após os treinos?' }
-      ]
-    };
-  }
-
-  if (pathname.startsWith('/workouts') || pathname.startsWith('/workout')) {
-    return {
-      name: 'Musculação',
-      analysisAction: 'Analisar meus treinos',
-      analysisPrompt: 'Analise a frequência, consistência e evolução dos meus treinos de força.',
-      chips: [
-        { id: 'c1', label: 'Meus treinos', iconType: 'chart', prompt: 'Resuma meus treinos de musculação e volume recente.' },
-        { id: 'c2', label: 'Consistência', iconType: 'flame', prompt: 'Como manter minha constância e sequência semanal de treinos?' },
-        { id: 'c3', label: 'Próxima meta', iconType: 'flag', prompt: 'Qual deve ser o próximo aumento de carga ou meta de treino?' }
-      ]
-    };
-  }
-
-  if (pathname.startsWith('/rankings')) {
-    return {
-      name: 'Ranking',
-      analysisAction: 'Analisar minha pontuação no ranking',
-      analysisPrompt: 'Analise minha posição atual no ranking e quantos pontos preciso para subir na liga.',
-      chips: [
-        { id: 'c1', label: 'Meu ranking', iconType: 'trophy', prompt: 'Como posso subir posições no ranking esta semana?' },
-        { id: 'c2', label: 'Subir na liga', iconType: 'target', prompt: 'Quem está na minha frente e quantos pontos faltam?' },
-        { id: 'c3', label: 'Próxima meta', iconType: 'flag', prompt: 'Qual a pontuação necessária para me manter no Top 10?' }
-      ]
-    };
-  }
-
-  if (pathname.startsWith('/challenges') || pathname.startsWith('/campeonatos')) {
-    return {
-      name: 'Desafios',
-      analysisAction: 'Analisar meus desafios e temporada',
-      analysisPrompt: 'Analise meu progresso nos desafios e campeonatos ativos.',
-      chips: [
-        { id: 'c1', label: 'Desafio ativo', iconType: 'target', prompt: 'Dicas para completar meus desafios ativos mais rápido.' },
-        { id: 'c2', label: 'Ganhar XP', iconType: 'zap', prompt: 'Quais atividades dão mais pontuação para os desafios?' },
-        { id: 'c3', label: 'Premiações', iconType: 'trophy', prompt: 'Quais são as metas para alcançar as melhores premiações?' }
-      ]
-    };
-  }
-
-  if (pathname.startsWith('/performance') || pathname.startsWith('/health')) {
-    return {
-      name: 'Centro de Performance',
-      analysisAction: 'Analisar meus indicadores',
-      analysisPrompt: 'Analise meus indicadores biométricos, IGA, prontidão e VO2 Max.',
-      chips: [
-        { id: 'c1', label: 'Minha prontidão', iconType: 'zap', prompt: 'Qual a minha prontidão metabólica e recuperação para hoje?' },
-        { id: 'c2', label: 'Score IGA', iconType: 'chart', prompt: 'Como meu IGA e capacidade física evoluíram recentemente?' },
-        { id: 'c3', label: 'Ajuste de treino', iconType: 'target', prompt: 'Devo treinar pesado ou fazer um treino regenerativo hoje?' }
-      ]
-    };
-  }
-
   if (pathname.startsWith('/gym')) {
     return {
       name: 'Academia & Presença',
-      analysisAction: 'Analisar minha frequência presencial',
-      analysisPrompt: 'Analise meus check-ins e frequência presencial na academia.',
-      chips: [
-        { id: 'c1', label: 'Check-in GPS', iconType: 'mapPin', prompt: 'Como funciona a validação presencial por GPS na academia?' },
-        { id: 'c2', label: 'Frequência', iconType: 'chart', prompt: 'Quantos check-ins presenciais realizei este mês?' },
-        { id: 'c3', label: 'Acelerar IGA', iconType: 'zap', prompt: 'Dicas de treino presencial para acelerar meu IGA.' }
+      badge: 'Academia',
+      insight: 'Lembre-se de fazer o check-in presencial no app ao chegar.',
+      prompts: [
+        'Como funciona a validação de presença por GPS?',
+        'Qual é o ranking e nota da minha academia?',
+        'Dicas de treino presencial para acelerar o IGA.'
+      ]
+    };
+  }
+  if (pathname.startsWith('/devices')) {
+    return {
+      name: 'Dispositivos & Sensores',
+      badge: 'Wearables',
+      insight: 'Conecte seu Strava ou Apple Health para auditoria biométrica.',
+      prompts: [
+        'Como sincronizar o Strava e relógio com o Invictus?',
+        'Por que meus batimentos não apareceram no último treino?',
+        'Qual o relógio mais recomendado para precisão do IGA?'
+      ]
+    };
+  }
+  if (pathname.startsWith('/wallet')) {
+    return {
+      name: 'Carteira & Resgate',
+      badge: 'Carteira',
+      insight: 'Seus pontos do IGA e XP podem valer benefícios no ecossistema.',
+      prompts: [
+        'Como converter meu IGA e treino em recompensas?',
+        'Como funciona o saldo e regras de saque?',
+        'Quais as metas para o próximo nível financeiro?'
       ]
     };
   }
 
-  // Default Home / Visão Geral
+  // Default Home / Dashboard
   return {
-    name: 'Perfil & Evolução',
-    analysisAction: 'Analisar minha evolução completa',
-    analysisPrompt: 'Resuma minha evolução completa e progresso desde meu primeiro treino.',
-    chips: [
-      { id: 'c1', label: 'Minha evolução', iconType: 'chart', prompt: 'Resuma minha evolução desde meu primeiro treino.' },
-      { id: 'c2', label: 'Como melhorar?', iconType: 'target', prompt: 'Como posso acelerar minha evolução e melhorar meus treinos?' },
-      { id: 'c3', label: 'Próxima meta', iconType: 'flag', prompt: 'Qual deve ser minha próxima meta física e de consistência?' }
+    name: 'Visão Geral',
+    badge: 'Início',
+    insight: 'Estou monitorando seus dados e prontidão biométrica em tempo real.',
+    prompts: [
+      'Resuma meus treinos e progresso da semana.',
+      'Qual minha recomendação de treino e prontidão hoje?',
+      'Como funciona o cálculo do IGA no Invictus?',
+      'Dicas de saúde e fisiologia para evoluir mais rápido.'
     ]
   };
 }
 
-// Render chip icon cleanly
-function renderChipIcon(type: string) {
-  switch (type) {
-    case 'chart':
-      return <TrendingUp size={13} className="text-[#f5ab12] shrink-0" />;
-    case 'target':
-      return <Target size={13} className="text-[#f5ab12] shrink-0" />;
-    case 'flag':
-      return <Flag size={13} className="text-[#f5ab12] shrink-0" />;
-    case 'flame':
-      return <Flame size={13} className="text-[#f5ab12] shrink-0" />;
-    case 'heart':
-      return <Heart size={13} className="text-[#f5ab12] shrink-0" />;
-    case 'zap':
-      return <Zap size={13} className="text-[#f5ab12] shrink-0" />;
-    case 'trophy':
-      return <Trophy size={13} className="text-[#f5ab12] shrink-0" />;
-    case 'mapPin':
-      return <MapPin size={13} className="text-[#f5ab12] shrink-0" />;
-    default:
-      return <Sparkles size={13} className="text-[#f5ab12] shrink-0" />;
-  }
+// Siri / ChatGPT style visual feedback wave & orb for AI processing and playback.
+function SiriChatGPTVoiceVisualizer({
+  mode,
+  onStop,
+  aiName
+}: {
+  mode: 'thinking' | 'speaking';
+  onStop?: () => void;
+  aiName?: string;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95, y: -10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95, y: -10 }}
+      className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 border border-emerald-500/50 p-3 sm:p-4 my-2 shadow-[0_0_30px_rgba(16,185,129,0.25)] flex items-center justify-between gap-3 shrink-0"
+    >
+      {/* Background ambient glowing fluid aura */}
+      <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-teal-500/15 to-emerald-500/10 animate-pulse pointer-events-none" />
+
+      <div className="flex items-center gap-3.5 relative z-10 min-w-0">
+        {/* Animated Siri/ChatGPT Fluid Sphere */}
+        <div className="relative w-12 h-12 rounded-full flex items-center justify-center shrink-0">
+          {/* Outer glowing pulsing ring */}
+          <motion.div
+            animate={mode === 'speaking' ? { scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] } : { rotate: 360 }}
+            transition={{
+              repeat: Infinity,
+              duration: mode === 'thinking' ? 2 : 1.4,
+              ease: 'easeInOut'
+            }}
+            className={`absolute inset-0 rounded-full blur-md ${mode === 'speaking' ? 'bg-emerald-400/80' : 'bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-500'}`}
+          />
+
+          {/* Core Orb */}
+          <div
+            className={`relative w-10 h-10 rounded-full flex items-center justify-center shadow-lg border ${mode === 'speaking' ? 'bg-gradient-to-br from-emerald-400 via-teal-500 to-emerald-600 border-emerald-300/80 text-black' : 'bg-gradient-to-br from-cyan-400 via-emerald-500 to-teal-600 border-emerald-300/70 text-black'}`}
+          >
+            {mode === 'speaking' ? (
+              <Volume2 size={20} className="animate-pulse" />
+            ) : (
+              <Sparkles size={20} className="animate-spin" />
+            )}
+          </div>
+        </div>
+
+        {/* Text & Dynamic Audio Spectrum Waveform Bars */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-xs font-black uppercase tracking-wider ${mode === 'speaking' ? 'text-emerald-400' : 'text-cyan-400'}`}
+            >
+              {mode === 'speaking'
+                ? `${aiName || 'Invictus IA'} Falando...`
+                : 'Analisando fisiologia e dados...'}
+            </span>
+          </div>
+
+          {/* Dynamic Audio Bars Animation */}
+          <div className="flex items-center gap-1 mt-1.5 h-4">
+            {[0.4, 0.8, 1.2, 0.6, 1.0, 0.5, 0.9, 0.3].map((delay, idx) => (
+              <motion.span
+                key={idx}
+                animate={{
+                  height: mode === 'thinking' ? ['4px', '10px', '4px'] : ['4px', '18px', '6px', '14px', '4px']
+                }}
+                transition={{
+                  repeat: Infinity,
+                  duration: 0.7,
+                  delay: delay * 0.15,
+                  ease: 'easeInOut'
+                }}
+                className={`w-1 rounded-full ${mode === 'speaking' ? 'bg-emerald-400' : 'bg-cyan-400'}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Action / Stop button if speaking or listening */}
+      {onStop && (
+        <button
+          onClick={onStop}
+          className="relative z-10 px-3 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white text-[11px] font-bold flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+        >
+          <Square size={12} className="fill-current" />
+          <span>Parar</span>
+        </button>
+      )}
+    </motion.div>
+  );
 }
 
 export function InvictusAIFloatingAssistant() {
   const location = useLocation();
   const { user } = useUser();
   const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [hasNewInsight, setHasNewInsight] = useState(true);
   const [perfState, setPerfState] = useState<any>(null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
-  // Onboarding & Safety Modals
+  // Onboarding & Safety Transparency States
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('invictus_ai_onboarded') === 'true';
@@ -334,7 +416,7 @@ export function InvictusAIFloatingAssistant() {
   const [showFirstAccessModal, setShowFirstAccessModal] = useState<boolean>(false);
   const [showAboutModal, setShowAboutModal] = useState<boolean>(false);
 
-  // User Memories System
+  // Individual User Memories System State
   const [showMemoriesModal, setShowMemoriesModal] = useState<boolean>(false);
   const [userMemories, setUserMemories] = useState<any[]>([]);
   const [loadingMemories, setLoadingMemories] = useState<boolean>(false);
@@ -348,7 +430,7 @@ export function InvictusAIFloatingAssistant() {
       const res = await fetch('/api/performance-ai?action=get-memories', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error('Não foi possível carregar as memórias.');
+      if (!res.ok) throw new Error('Não foi possível carregar as memórias da conta.');
       const data = await res.json();
       setUserMemories(data.memories || []);
     } catch (e) {
@@ -378,6 +460,7 @@ export function InvictusAIFloatingAssistant() {
     }
   };
 
+  // Trigger First Access Welcome Modal when Assistant opens if not onboarded
   useEffect(() => {
     if (isOpen && !isOnboarded) {
       setShowFirstAccessModal(true);
@@ -399,7 +482,7 @@ export function InvictusAIFloatingAssistant() {
         const saved = localStorage.getItem('invictus_ai_voice_config');
         if (saved) {
           const storedConfig = JSON.parse(saved) as Partial<AIVoiceConfig>;
-          return {
+          const normalizedConfig: AIVoiceConfig = {
             ...DEFAULT_VOICE_CONFIG,
             speechEnabled: typeof storedConfig.speechEnabled === 'boolean'
               ? storedConfig.speechEnabled
@@ -420,6 +503,10 @@ export function InvictusAIFloatingAssistant() {
               ? storedConfig.language
               : DEFAULT_VOICE_CONFIG.language
           };
+
+          // Regrava somente as preferências ainda suportadas.
+          localStorage.setItem('invictus_ai_voice_config', JSON.stringify(normalizedConfig));
+          return normalizedConfig;
         }
       } catch (e) {
         console.warn('[VoiceConfig] Load error:', e);
@@ -438,6 +525,7 @@ export function InvictusAIFloatingAssistant() {
 
   const screenCtx = getScreenContext(location.pathname);
 
+  // Save voice configuration changes
   const updateVoiceConfig = (updater: Partial<AIVoiceConfig>) => {
     setVoiceConfig(prev => {
       const updated = { ...prev, ...updater };
@@ -452,6 +540,7 @@ export function InvictusAIFloatingAssistant() {
     });
   };
 
+  // Load browser voices for SpeechSynthesis
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const loadVoices = () => {
@@ -504,66 +593,41 @@ export function InvictusAIFloatingAssistant() {
         );
         if (isMounted) setPerfState(state);
       } catch (err) {
-        console.warn('[Invictus AI] Context load warning:', err);
+        console.warn('[Invictus AI] Não foi possível carregar o contexto de desempenho:', err);
       }
     }
     loadPerf();
     return () => { isMounted = false; };
   }, [user]);
 
-  // Handle ESC key for closing
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (showAboutModal) {
-          setShowAboutModal(false);
-          return;
-        }
-        if (showMemoriesModal) {
-          setShowMemoriesModal(false);
-          return;
-        }
-        if (showSettings) {
-          setShowSettings(false);
-          return;
-        }
-        if (showFirstAccessModal) {
-          setShowFirstAccessModal(false);
-          return;
-        }
-        if (isOpen) {
-          setIsOpen(false);
-          stopSpeaking();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, showAboutModal, showMemoriesModal, showSettings, showFirstAccessModal]);
-
   const [messages, setMessages] = useState<Message[]>([]);
 
-  // Initial welcome message (clean and contextual)
+  // Reset or set initial welcome when context opens
   useEffect(() => {
     if (user && messages.length === 0) {
       setMessages([
         {
           id: 'init_msg',
           sender: 'ai',
-          text: `Estou acompanhando você.\nComo posso ajudar na sua evolução?`,
+          text: `Olá, ${user.name || 'Atleta'}! Sou a **${user?.aiName || 'IA Invictus'}**, seu especialista em fisiologia, treinamento e inteligência do seu desempenho.
+
+Estou acompanhando você na tela de **${screenCtx.name}**. Como posso ajudar na sua evolução agora?`,
+          confidence: 'PENDENTE',
+          sources: ['Contexto da conta', 'Servidor Invictus'],
           timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
         }
       ]);
     }
-  }, [user, messages.length]);
+  }, [user, messages.length, screenCtx.name]);
 
+  // Scroll chat to bottom on new message
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isOpen, loading]);
 
+  // Gather current active workout session data if available
   const getActiveWorkoutContext = () => {
     try {
       const currentSession = activityService.getCurrentSession();
@@ -580,6 +644,8 @@ export function InvictusAIFloatingAssistant() {
         cardioTypeLabel: currentSession.cardioTypeLabel || (currentSession.type === 'workout' ? 'Treino de Força' : 'Atividade Cardio'),
         durationMinutes: mins,
         elapsedFormatted: `${mins} min e ${secs} seg`,
+        // A sessão local não é uma fonte de telemetria cardíaca contínua.
+        // Não estimamos calorias nem fabricamos FC/zona para a conversa.
         hasHeartRateSensor: false,
         currentHeartRate: null,
         currentZone: null,
@@ -590,6 +656,7 @@ export function InvictusAIFloatingAssistant() {
     }
   };
 
+  // Stop active text-to-speech output cleanly
   const stopSpeaking = () => {
     if (activeAudioRef.current) {
       try {
@@ -608,10 +675,10 @@ export function InvictusAIFloatingAssistant() {
       try { window.speechSynthesis.cancel(); } catch (e) {}
     }
     setIsSpeaking(false);
-    setSpeakingMessageId(null);
   };
 
-  const playBase64Audio = (base64Data: string, messageId?: string, mimeType: string = 'audio/mp3') => {
+  // Play high-fidelity TTS audio (Gemini 2.5 Flash TTS - Sulafat) returned by backend
+  const playBase64Audio = (base64Data: string, mimeType: string = 'audio/mp3') => {
     stopSpeaking();
     if (!voiceConfig.speechEnabled || !base64Data) return;
 
@@ -622,33 +689,32 @@ export function InvictusAIFloatingAssistant() {
 
       audio.onplay = () => {
         setIsSpeaking(true);
-        if (messageId) setSpeakingMessageId(messageId);
       };
 
       audio.onended = () => {
         setIsSpeaking(false);
-        setSpeakingMessageId(null);
         activeAudioRef.current = null;
         invictusAudioEffects.playResponseChime(voiceConfig.soundEffectsEnabled);
       };
 
-      audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.warn('[Gemini TTS Audio Error]:', e);
         setIsSpeaking(false);
-        setSpeakingMessageId(null);
         activeAudioRef.current = null;
       };
 
-      audio.play().catch(() => {
+      audio.play().catch(err => {
+        console.warn('[Gemini TTS Audio Play Error]:', err);
         setIsSpeaking(false);
-        setSpeakingMessageId(null);
       });
     } catch (err) {
+      console.warn('[Gemini TTS Audio Exception]:', err);
       setIsSpeaking(false);
-      setSpeakingMessageId(null);
     }
   };
 
-  const speakResponseText = (text: string, messageId?: string, force: boolean = false) => {
+  const speakResponseText = (text: string, force: boolean = false) => {
+    return; // Voz TTS desativada a pedido do usuario - somente chat de texto
     if ((!voiceConfig.speechEnabled && !force) || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     
     if (force && !voiceConfig.speechEnabled) {
@@ -715,7 +781,6 @@ export function InvictusAIFloatingAssistant() {
 
         utterance.onstart = () => {
           setIsSpeaking(true);
-          if (messageId) setSpeakingMessageId(messageId);
         };
 
         utterance.onend = () => {
@@ -723,7 +788,8 @@ export function InvictusAIFloatingAssistant() {
           playNextChunk();
         };
 
-        utterance.onerror = () => {
+        utterance.onerror = (e) => {
+          console.warn('[TTS Chunk Error]:', e);
           speechChunkIndexRef.current++;
           playNextChunk();
         };
@@ -734,11 +800,12 @@ export function InvictusAIFloatingAssistant() {
           }
           window.speechSynthesis.speak(utterance);
         } catch (err) {
+          console.warn('[TTS Speak Error]:', err);
           setIsSpeaking(false);
-          setSpeakingMessageId(null);
         }
       };
 
+      // Heartbeat keep-alive to prevent Chrome from freezing long speech output
       speechHeartbeatRef.current = setInterval(() => {
         if (window.speechSynthesis && window.speechSynthesis.speaking) {
           try {
@@ -759,8 +826,8 @@ export function InvictusAIFloatingAssistant() {
         playNextChunk();
       }, 80);
     } catch (e) {
+      console.warn('[Text-to-Speech Error]:', e);
       setIsSpeaking(false);
-      setSpeakingMessageId(null);
     }
   };
 
@@ -768,6 +835,7 @@ export function InvictusAIFloatingAssistant() {
     const textToSend = queryText || inputQuery;
     if (!textToSend.trim()) return;
 
+    // Stop speaking current AI audio if user asks new question
     stopSpeaking();
 
     const userMsg: Message = {
@@ -780,24 +848,39 @@ export function InvictusAIFloatingAssistant() {
     setMessages(prev => [...prev, userMsg]);
     if (!queryText) setInputQuery('');
 
-    // EMERGENCY CHECK
+    // EMERGENCY KEYWORDS CHECK
     const qLower = textToSend.toLowerCase();
     const EMERGENCY_KEYWORDS = [
-      'dor no peito', 'falta de ar', 'desmaio', 'desmaiei', 'convulsão', 'fraqueza súbita',
+      'dor no peito', 'dor intensa no peito', 'falta de ar', 'falta importante de ar',
+      'desmaio', 'desmaiei', 'convulsão', 'convulsao', 'fraqueza súbita', 'fraqueza subita',
+      'dificuldade para falar', 'sangramento intenso', 'perda de consciência', 'perda de consciencia',
       'parada cardiaca', 'avc', 'infarto'
     ];
 
     if (EMERGENCY_KEYWORDS.some(k => qLower.includes(k))) {
-      const emergencyMsg = `🚨 **ATENÇÃO: PROTOCOLO DE EMERGÊNCIA MÉDICA** 🚨\n\nIdentificamos relatos de possíveis sintomas de emergência.\n\n**A análise da IA foi interrompida.**\n\nPor favor, procure atendimento imediatamente:\n• **Ligue para o SAMU: 192**\n• **Dirija-se ao Pronto Socorro mais próximo**`;
+      const emergencyMsg = `🚨 **ATENÇÃO: PROTOCOLO DE EMERGÊNCIA MÉDICA** 🚨
+
+Identificamos relatos que correspondem a possíveis sintomas de emergência de saúde grave.
+
+**A análise da IA foi interrompida.**
+
+Por favor, procure atendimento de emergência imediatamente:
+• **Ligue para o SAMU: 192**
+• **Dirija-se ao Pronto Socorro ou UPA mais próximo**
+
+*A Invictus IA possui caráter meramente educativo e não realiza diagnósticos nem substitui atendimento médico emergencial.*`;
 
       const aiMsg: Message = {
         id: `ai_${Date.now()}`,
         sender: 'ai',
         text: emergencyMsg,
+        confidence: 'MÁXIMA',
+        sources: ['Protocolo de Emergência Médica Invictus'],
         timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, aiMsg]);
       setLoading(false);
+      speakResponseText('Atenção. Identificamos relato de possíveis sintomas de emergência. Por favor, procure atendimento médico de emergência imediatamente. Ligue para o SAMU 192.');
       return;
     }
 
@@ -827,39 +910,40 @@ export function InvictusAIFloatingAssistant() {
         if (data && data.answer) {
           const audioB64 = data.audioBase64 || data.audio?.data || null;
           const audioMime = data.audioMimeType || data.audio?.mimeType || 'audio/mp3';
-          const newAiMsgId = `ai_${Date.now()}`;
 
           const aiMsg: Message = {
-            id: newAiMsgId,
+            id: `ai_${Date.now()}`,
             sender: 'ai',
             text: data.answer,
             audioBase64: audioB64,
             audioMimeType: audioMime,
             confidence: data.confidence || 'ALTA',
-            sources: data.sources,
+            sources: data.sources || ['Módulo Invictus AI', 'Sensores Biométricos', screenCtx.name],
             timestamp: data.timestamp || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
           };
           setMessages(prev => [...prev, aiMsg]);
           setLoading(false);
 
-          if (voiceConfig.speechEnabled) {
-            if (audioB64) {
-              playBase64Audio(audioB64, newAiMsgId, audioMime);
-            } else {
-              speakResponseText(data.answer, newAiMsgId);
-            }
+          if (audioB64) {
+            playBase64Audio(audioB64, audioMime);
+          } else {
+            speakResponseText(data.answer);
           }
           return;
         }
       }
     } catch (err) {
-      console.warn('[Invictus AI] Erro ao consultar IA:', err);
+      console.warn('[Invictus AI] API indisponível:', err);
     }
 
+    // Sem resposta autenticada do servidor, a IA não emite recomendações nem
+    // métricas locais que poderiam ser desatualizadas ou fabricadas.
     setMessages(prev => [...prev, {
       id: `ai_${Date.now()}`,
       sender: 'ai',
-      text: 'Não foi possível consultar a IA no momento. Tente novamente em instantes.',
+      text: 'Não foi possível consultar a IA agora. Nenhuma métrica ou recomendação foi estimada localmente. Tente novamente quando a conexão estiver disponível.',
+      confidence: 'INDISPONÍVEL',
+      sources: ['Servidor Invictus IA indisponível'],
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     }]);
     setLoading(false);
@@ -870,226 +954,256 @@ export function InvictusAIFloatingAssistant() {
     setHasNewInsight(false);
   };
 
-  // Helper to parse message text and detect progressive disclosure CTA
-  const renderMessageContent = (m: Message) => {
-    const rawText = m.text;
-    const hasFullAnalysisCTA = 
-      rawText.includes('[Ver análise completa >]') || 
-      rawText.includes('Ver análise completa  >') ||
-      rawText.includes('Ver análise completa >') ||
-      rawText.includes('Ver análise completa');
-
-    // Clean CTA trigger from raw text if present at the end
-    const cleanedText = rawText
-      .replace(/\[?Ver análise completa\s*>?\]?/gi, '')
-      .trim();
-
-    return (
-      <div className="space-y-2">
-        <div className="markdown-body text-[13px] sm:text-sm leading-relaxed text-zinc-100 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_strong]:font-semibold [&_strong]:text-[#f5ab12]">
-          <Markdown>{cleanedText || rawText}</Markdown>
-        </div>
-
-        {/* Progressive Disclosure Interactive Action */}
-        {hasFullAnalysisCTA && (
-          <button
-            onClick={() => handleSend('Quero ver a análise completa detalhada com todos os dados e métricas.')}
-            className="mt-3 inline-flex items-center gap-1 text-[13px] font-semibold text-[#f5ab12] hover:text-amber-300 transition-colors cursor-pointer group py-0.5"
-          >
-            <span>Ver análise completa</span>
-            <ChevronRight size={14} className="text-[#f5ab12] group-hover:translate-x-0.5 transition-transform" />
-          </button>
-        )}
-      </div>
-    );
-  };
+  const activeWorkoutSession = getActiveWorkoutContext();
 
   return (
     <>
-      {/* GLOBAL FLOATING BUTTON (FAB) WHEN CHAT IS CLOSED */}
+      {/* GLOBAL FLOATING ACTION BUTTON (FAB) - DRAGGABLE IA ORB */}
       {!isOpen && (
-        <motion.div
-          drag
-          dragMomentum={false}
-          dragElastic={0.05}
-          onDragStart={() => {
-            isDraggingRef.current = true;
-          }}
-          onDragEnd={() => {
-            setTimeout(() => {
-              isDraggingRef.current = false;
-            }, 200);
-          }}
-          whileDrag={{ scale: 1.08 }}
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="fixed bottom-20 md:bottom-24 right-4 md:right-8 z-50 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none select-none"
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isDraggingRef.current) return;
-              handleOpenPanel();
+        <>
+          {/* Top Floating Siri/ChatGPT Voice Visualizer Banner when active outside panel */}
+          <AnimatePresence>
+            {isSpeaking && (
+              <motion.div
+                initial={{ y: -50, opacity: 0, scale: 0.9 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: -50, opacity: 0, scale: 0.9 }}
+                className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[92%] max-w-md bg-zinc-950/95 border border-emerald-500/60 rounded-full px-4 py-2.5 shadow-[0_0_35px_rgba(16,185,129,0.45)] backdrop-blur-xl flex items-center justify-between gap-3 text-white"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Siri/ChatGPT Orb */}
+                  <div className="relative w-8 h-8 rounded-full flex items-center justify-center shrink-0">
+                    <motion.div
+                      animate={{ scale: [1, 1.35, 1], opacity: [0.5, 0.9, 0.5] }}
+                      transition={{ repeat: Infinity, duration: 1.2 }}
+                      className="absolute inset-0 rounded-full blur-sm bg-emerald-400"
+                    />
+                    <div className="relative w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-emerald-400 text-black">
+                      <Volume2 size={14} className="animate-pulse" />
+                    </div>
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-black uppercase tracking-wide truncate text-emerald-300">
+                      {user?.aiName || 'Invictus IA'} Falando...
+                    </div>
+                    {/* Frequency bars */}
+                    <div className="flex items-center gap-1 mt-0.5 h-3">
+                      {[0.2, 0.5, 0.8, 0.4, 0.7, 0.3, 0.9].map((d, idx) => (
+                        <motion.span
+                          key={idx}
+                          animate={{ height: ['3px', '12px', '3px'] }}
+                          transition={{ repeat: Infinity, duration: 0.5, delay: d * 0.15 }}
+                          className="w-0.5 rounded-full bg-emerald-400"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={stopSpeaking}
+                  className="p-1.5 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white shrink-0 cursor-pointer"
+                  title="Parar voz"
+                >
+                  <X size={14} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Draggable Smaller IA Orb */}
+          <motion.div
+            drag
+            dragMomentum={false}
+            dragElastic={0.05}
+            onDragStart={() => {
+              isDraggingRef.current = true;
             }}
-            className="group relative flex flex-col items-center gap-1 focus:outline-none cursor-pointer"
-            title={`INVICTUS IA - ${screenCtx.name}`}
+            onDragEnd={() => {
+              setTimeout(() => {
+                isDraggingRef.current = false;
+              }, 200);
+            }}
+            whileDrag={{ scale: 1.1 }}
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: isOpen ? 0.8 : 1, opacity: isOpen ? 0 : 1 }}
+            className={`fixed bottom-20 md:bottom-24 right-4 md:right-8 z-50 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none select-none transition-opacity duration-200 ${
+              isOpen ? 'pointer-events-none opacity-0' : 'opacity-100'
+            }`}
           >
-            {/* Outer Ring with Invictus Golden Glow */}
-            <div className="relative w-12 h-12 rounded-full bg-zinc-950 border border-zinc-800 p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.8),0_0_15px_rgba(245,171,18,0.25)] transition-transform group-hover:scale-105 active:scale-95 flex items-center justify-center">
-              {/* Official Invictus Helmet Emblem */}
-              <img
-                src="/capacete.webp"
-                alt="Invictus IA"
-                className="w-full h-full object-contain select-none"
-                draggable={false}
-                onError={(e) => {
-                  e.currentTarget.src = '/ranking-emblem-user-provided.png';
-                }}
-              />
+            {/* Compact Smaller Glowing Green Orb */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isDraggingRef.current) return;
+                handleOpenPanel();
+              }}
+              className="group relative flex flex-col items-center gap-1 focus:outline-none cursor-pointer"
+              title={`Invictus IA - ${screenCtx.name} (Arraste para mover)`}
+            >
+              <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 p-0.5 shadow-[0_0_16px_rgba(16,185,129,0.5)] transition-transform group-hover:scale-110 active:scale-95 flex items-center justify-center">
+                <div className="w-full h-full rounded-full bg-zinc-950/90 backdrop-blur-md flex items-center justify-center border border-emerald-400/60">
+                  <Sparkles size={16} className="text-emerald-400 group-hover:rotate-12 transition-transform" />
+                </div>
 
-              {/* Status Micro-Accent Dot */}
-              <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 border-2 border-black" />
+                {/* Notification badge / Ping animation */}
+                {hasNewInsight && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border border-zinc-950" />
+                  </span>
+                )}
+              </div>
 
-              {/* Notification badge / Ping */}
-              {hasNewInsight && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f5ab12] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-[#f5ab12] border-2 border-zinc-950" />
-                </span>
-              )}
-            </div>
-
-            {/* Pill Label under orb */}
-            <span className="text-[10px] font-headline font-black uppercase tracking-wider text-white bg-zinc-950/95 px-2.5 py-0.5 rounded-full border border-zinc-800 shadow-md">
-              INVICTUS <span className="text-[#f5ab12]">IA</span>
-            </span>
-          </button>
-        </motion.div>
+              {/* Smaller Label under orb */}
+              <span className="text-[9px] font-black uppercase tracking-tight text-emerald-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] bg-zinc-950/90 px-2 py-0.5 rounded-full border border-emerald-500/40 whitespace-nowrap shadow-sm">
+                {user?.aiName || 'IA Invictus'}
+              </span>
+            </button>
+          </motion.div>
+        </>
       )}
 
-      {/* CHAT MODAL / BOTTOM SHEET */}
+      {/* IA BOTTOM SHEET / PANEL */}
       <AnimatePresence>
         {isOpen && (
-          <div
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setIsOpen(false);
-                stopSpeaking();
-              }
-            }}
-            className="fixed inset-0 z-[120] flex items-end justify-center sm:items-center p-0 sm:p-4 bg-black/85 backdrop-blur-sm cursor-pointer select-none"
-          >
+          <div className="fixed inset-0 z-[120] flex items-end justify-center sm:items-center p-0 sm:p-4 bg-black/85 backdrop-blur-md">
             <motion.div
-              onClick={(e) => e.stopPropagation()}
               initial={{ y: '100%', opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: '100%', opacity: 0 }}
               transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-              drag="y"
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={{ top: 0, bottom: 0.4 }}
-              onDragEnd={(_, info) => {
-                if (info.offset.y > 100 || info.velocity.y > 300) {
-                  setIsOpen(false);
-                  stopSpeaking();
-                }
-              }}
-              className="relative w-full max-w-lg h-[92dvh] sm:h-[86vh] bg-[#0c0c0e] border border-zinc-800/80 rounded-t-[32px] sm:rounded-[32px] px-4 pt-3 pb-3 sm:px-5 sm:pt-4 sm:pb-4 shadow-2xl text-white flex flex-col justify-between overflow-hidden cursor-default select-auto"
+              className={`relative w-full ${
+                isExpanded ? 'max-w-4xl h-[94dvh] sm:h-[90vh]' : 'max-w-xl h-[85dvh] sm:h-[80vh]'
+              } bg-zinc-950 border border-emerald-500/40 rounded-t-[28px] sm:rounded-[32px] p-4 sm:p-6 pb-6 sm:pb-6 shadow-2xl text-white flex flex-col justify-between overflow-hidden transition-all duration-300`}
             >
-              {/* Top Golden Pull Handle (Reference Visual) */}
-              <div
-                onClick={() => {
-                  setIsOpen(false);
-                  stopSpeaking();
-                }}
-                className="w-full flex items-center justify-center cursor-pointer py-1 shrink-0 group"
-              >
-                <div className="w-12 h-1 bg-[#f5ab12]/80 group-hover:bg-[#f5ab12] rounded-full transition-colors" />
-              </div>
-
-              {/* 1. Header (Follows visual reference faithful hierarchy) */}
-              <div className="flex items-center justify-between pt-1 pb-3 shrink-0">
-                {/* Left: Official Logo + Title + Context Subtitle */}
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="relative w-11 h-11 rounded-full bg-zinc-950 border border-zinc-800 p-1.5 flex items-center justify-center shrink-0 shadow-inner">
-                    <img
-                      src="/capacete.webp"
-                      alt="Invictus IA"
-                      className="w-full h-full object-contain select-none"
-                      draggable={false}
-                      onError={(e) => {
-                        e.currentTarget.src = '/ranking-emblem-user-provided.png';
-                      }}
-                    />
-                    {/* Microaccent Green active dot */}
-                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-black" />
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-black flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
+                    <Sparkles size={20} />
                   </div>
-
-                  <div className="min-w-0 flex flex-col justify-center">
-                    <h2 className="font-headline italic font-black text-lg text-white uppercase tracking-wider leading-none flex items-center gap-1.5">
-                      <span>INVICTUS</span>
-                      <span className="text-[#f5ab12]">IA</span>
-                    </h2>
-                    <p className="text-xs text-zinc-400 font-normal truncate mt-1">
-                      {screenCtx.name}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h3 className="font-headline italic font-black text-base sm:text-xl text-white uppercase tracking-tight">
+                        {(user?.aiName || 'INVICTUS IA').toUpperCase()}
+                      </h3>
+                      <span className="text-[9px] font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Radio size={10} className="animate-pulse text-emerald-400" />
+                        {screenCtx.badge}
+                      </span>
+                    </div>
+                    <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
+                      Contexto: <strong className="text-zinc-200 font-semibold">{screenCtx.name}</strong>
                     </p>
                   </div>
                 </div>
 
-                {/* Right: Sound, Settings, Close */}
-                <div className="flex items-center gap-1.5 shrink-0 text-zinc-400">
-                  {/* Sound Toggle */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Speech Audio Indicator / Interrupt Button */}
+                  {isSpeaking && (
+                    <button
+                      onClick={stopSpeaking}
+                      className="text-[10px] bg-rose-500/20 border border-rose-500/50 text-rose-300 px-2 py-1 rounded-full flex items-center gap-1 animate-pulse hover:bg-rose-500/30"
+                      title="Parar de falar"
+                    >
+                      <Square size={10} className="fill-rose-400" />
+                      <span>Parar Voz</span>
+                    </button>
+                  )}
+
+                  {/* Speech Output Toggle */}
+                  <button
+                    onClick={() => updateVoiceConfig({ speechEnabled: !voiceConfig.speechEnabled })}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-colors ${
+                      voiceConfig.speechEnabled
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                    }`}
+                    title={voiceConfig.speechEnabled ? 'Voz ativada' : 'Voz desativada'}
+                  >
+                    {voiceConfig.speechEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                  </button>
+
+                  {/* Sobre a Invictus IA Info Toggle */}
+                  <button
+                    onClick={() => setShowAboutModal(!showAboutModal)}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-colors ${
+                      showAboutModal
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title={`Sobre a ${user?.aiName || 'Invictus IA'} (Segurança e Termos)`}
+                  >
+                    <Info size={16} />
+                  </button>
+
+                  {/* Memory System Modal Toggle */}
                   <button
                     onClick={() => {
-                      if (isSpeaking) {
-                        stopSpeaking();
-                      }
-                      updateVoiceConfig({ speechEnabled: !voiceConfig.speechEnabled });
+                      const nextState = !showMemoriesModal;
+                      setShowMemoriesModal(nextState);
+                      if (nextState) loadUserMemories();
                     }}
-                    className={`p-2 rounded-xl hover:text-white transition-colors cursor-pointer ${
-                      voiceConfig.speechEnabled ? 'text-[#f5ab12]' : 'text-zinc-400'
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-colors ${
+                      showMemoriesModal
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
                     }`}
-                    title={voiceConfig.speechEnabled ? 'Áudio/Voz ativado' : 'Áudio desativado'}
+                    title={`Memórias da ${user?.aiName || 'Invictus IA'}`}
                   >
-                    {voiceConfig.speechEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                    <Brain size={16} />
                   </button>
 
-                  {/* Settings */}
+                  {/* Settings Modal Toggle */}
                   <button
                     onClick={() => setShowSettings(!showSettings)}
-                    className="p-2 rounded-xl text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                    title="Configurações da IA"
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-colors ${
+                      showSettings
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title="Configurações de Voz e IA"
                   >
-                    <Settings size={20} />
+                    <Settings size={16} />
                   </button>
 
-                  {/* Close */}
+                  {/* Expand Toggle */}
+                  <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="hidden sm:flex w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white items-center justify-center transition-colors"
+                    title={isExpanded ? 'Restaurar tamanho' : 'Expandir'}
+                  >
+                    {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                  </button>
+
+                  {/* Close Panel Button */}
                   <button
                     onClick={() => {
                       setIsOpen(false);
                       stopSpeaking();
                     }}
-                    className="p-2 rounded-xl text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                    title="Fechar conversa"
+                    className="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                   >
-                    <X size={22} />
+                    <X size={18} />
                   </button>
                 </div>
               </div>
 
-              {/* Settings / Memories Dropdown Drawer */}
+              {/* VOICE SETTINGS OVERLAY */}
               <AnimatePresence>
                 {showSettings && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="bg-zinc-900/95 border border-zinc-800 rounded-2xl p-3.5 my-1 text-xs space-y-3 shrink-0 overflow-hidden"
+                    className="bg-zinc-900/95 border border-emerald-500/30 rounded-2xl p-3 sm:p-4 my-2 text-xs space-y-3 shrink-0 overflow-hidden"
                   >
                     <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
                       <span className="font-bold text-white flex items-center gap-1.5">
-                        <Settings size={14} className="text-[#f5ab12]" />
-                        Preferências da Invictus IA
+                        <Settings size={14} className="text-emerald-400" />
+                        Configurações de áudio e IA
                       </span>
                       <button
                         onClick={() => setShowSettings(false)}
@@ -1099,17 +1213,17 @@ export function InvictusAIFloatingAssistant() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {/* TTS Toggle */}
-                      <div className="flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-800/80">
+                      <div className="flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
                         <div>
                           <div className="font-semibold text-zinc-200 text-[11px]">Resposta em Voz</div>
-                          <div className="text-[9px] text-zinc-400">Ler respostas em áudio</div>
+                          <div className="text-[9px] text-zinc-400">Reproduz resposta em áudio</div>
                         </div>
                         <button
                           onClick={() => updateVoiceConfig({ speechEnabled: !voiceConfig.speechEnabled })}
                           className={`w-9 h-5 rounded-full transition-colors relative ${
-                            voiceConfig.speechEnabled ? 'bg-[#f5ab12]' : 'bg-zinc-800'
+                            voiceConfig.speechEnabled ? 'bg-emerald-500' : 'bg-zinc-800'
                           }`}
                         >
                           <span
@@ -1120,411 +1234,592 @@ export function InvictusAIFloatingAssistant() {
                         </button>
                       </div>
 
-                      {/* Memories Manager Button */}
-                      <button
-                        onClick={() => {
-                          setShowMemoriesModal(true);
-                          loadUserMemories();
-                        }}
-                        className="flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-800/80 hover:border-zinc-700 text-left transition-colors cursor-pointer"
-                      >
-                        <div>
-                          <div className="font-semibold text-zinc-200 text-[11px] flex items-center gap-1">
-                            <Brain size={12} className="text-[#f5ab12]" /> Memórias do Coach
-                          </div>
-                          <div className="text-[9px] text-zinc-400">Ver e gerenciar aprendizados</div>
+                      {/* Speech Rate Selection */}
+                      <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 space-y-1.5">
+                        <div className="font-semibold text-zinc-200 text-[11px]">Velocidade da Fala</div>
+                        <div className="flex items-center gap-1.5">
+                          {[0.8, 0.95, 1.0, 1.15].map(rate => (
+                            <button
+                              key={rate}
+                              onClick={() => updateVoiceConfig({ speechRate: rate })}
+                              className={`flex-1 py-1 rounded-lg font-mono text-[10px] transition-colors border ${
+                                voiceConfig.speechRate === rate
+                                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
+                                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              {rate === 0.95 ? '0.95x (Fluida)' : `${rate}x`}
+                            </button>
+                          ))}
                         </div>
-                        <ChevronRight size={14} className="text-zinc-500" />
-                      </button>
+                      </div>
+
+                      {/* Pitch Selection */}
+                      <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 space-y-1.5">
+                        <div className="font-semibold text-zinc-200 text-[11px]">Tom de Voz (Pitch)</div>
+                        <div className="flex items-center gap-1.5">
+                          {[
+                            { value: 0.95, label: 'Grave' },
+                            { value: 1.0, label: 'Natural' },
+                            { value: 1.05, label: 'Suave' }
+                          ].map(item => (
+                            <button
+                              key={item.value}
+                              onClick={() => updateVoiceConfig({ pitch: item.value })}
+                              className={`flex-1 py-1 rounded-lg text-[10px] transition-colors border ${
+                                (voiceConfig.pitch || 1.0) === item.value
+                                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
+                                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Audio Sound Chimes Toggle */}
+                      <div className="flex items-center justify-between bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
+                        <div>
+                          <div className="font-semibold text-zinc-200 text-[11px]">Sons de Feedback</div>
+                          <div className="text-[9px] text-zinc-400">Chimes ao reconhecer voz</div>
+                        </div>
+                        <button
+                          onClick={() => updateVoiceConfig({ soundEffectsEnabled: !voiceConfig.soundEffectsEnabled })}
+                          className={`w-9 h-5 rounded-full transition-colors relative ${
+                            voiceConfig.soundEffectsEnabled ? 'bg-emerald-500' : 'bg-zinc-800'
+                          }`}
+                        >
+                          <span
+                            className={`block w-4 h-4 bg-white rounded-full transition-transform transform ${
+                              voiceConfig.soundEffectsEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-zinc-800/60 text-[10px]">
-                      <button
-                        onClick={() => setShowAboutModal(true)}
-                        className="text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                      >
-                        <Info size={12} /> Sobre a IA e Privacidade
-                      </button>
-                      <button
-                        onClick={() => setMessages([{
-                          id: `init_${Date.now()}`,
-                          sender: 'ai',
-                          text: `Estou acompanhando você.\nComo posso ajudar na sua evolução?`,
-                          timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                        }])}
-                        className="text-zinc-400 hover:text-[#f5ab12] flex items-center gap-1 cursor-pointer"
-                      >
-                        <RotateCcw size={12} /> Limpar chat
-                      </button>
-                    </div>
+                    {/* System Voice Selection */}
+                    {availableVoices.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-zinc-800">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] text-zinc-400 font-medium">Voz Neural / Humana Selecionada:</label>
+                          <span className="text-[9px] text-emerald-400 font-semibold bg-emerald-950/80 border border-emerald-500/30 px-1.5 py-0.5 rounded-md">
+                            Alta Definição
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={voiceConfig.voiceName}
+                            onChange={e => updateVoiceConfig({ voiceName: e.target.value })}
+                            className="flex-1 bg-zinc-950 border border-zinc-800 text-zinc-200 rounded-lg text-[10px] p-2 focus:outline-none focus:border-emerald-500"
+                          >
+                            <option value="">✨ Auto (Melhor Voz Neural do Sistema)</option>
+                            {getRankedPortugueseVoices(availableVoices).map(v => {
+                              const isNeural = /natural|neural|online|enhanced|google|microsoft|apple/i.test(v.name);
+                              return (
+                                <option key={v.name} value={v.name}>
+                                  {isNeural ? '✨ ' : ''}{v.name} ({v.lang})
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <button
+                            onClick={() => speakResponseText('Olá! Sou a Invictus IA. Minha voz foi otimizada para soar fluida, natural e humana no acompanhamento da sua performance.', true)}
+                            className="px-2.5 py-2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-lg text-[10px] font-semibold flex items-center gap-1 hover:bg-emerald-500/30 shrink-0"
+                            title="Ouvir teste de voz"
+                          >
+                            <Play size={10} /> Testar Voz
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-zinc-500 italic leading-tight">
+                          Dica: Para a melhor experiência humana, utilize navegadores como Google Chrome, Microsoft Edge ou Safari que disponibilizam vozes neurais de alta precisão.
+                        </p>
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* 2. Action CTA Card (Compact horizontal action like reference) */}
-              <div className="shrink-0 mb-2">
-                <button
-                  onClick={() => handleSend(screenCtx.analysisPrompt)}
-                  className="w-full bg-[#161619] hover:bg-[#1f1f23] border border-zinc-800/90 rounded-2xl px-4 py-3 flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer group"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Sparkles size={16} className="text-emerald-400 shrink-0" />
-                    <span className="text-xs sm:text-sm font-medium text-zinc-200 tracking-wide truncate">
-                      {screenCtx.analysisAction}
-                    </span>
-                  </div>
-                  <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
-                </button>
-              </div>
+              {/* MEMORY SYSTEM OVERLAY */}
+              <AnimatePresence>
+                {showMemoriesModal && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-zinc-900/95 border border-emerald-500/30 rounded-2xl p-3 sm:p-4 my-2 text-xs space-y-3 shrink-0 overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                      <span className="font-bold text-white flex items-center gap-1.5">
+                        <Brain size={14} className="text-emerald-400" />
+                        Memórias e Aprendizados do Seu Coach IA
+                      </span>
+                      <button
+                        onClick={() => setShowMemoriesModal(false)}
+                        className="text-zinc-400 hover:text-white"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
 
-              {/* 3. Conversation Area */}
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1 py-1 my-1">
-                {messages.map((m) => (
+                    <p className="text-[10px] text-zinc-400 leading-snug">
+                      A Invictus IA aprende com seus objetivos, preferências e evolução para oferecer um acompanhamento 100% individualizado. As memórias são exclusivas do seu ID e você tem controle total.
+                    </p>
+
+                    {loadingMemories ? (
+                      <div className="py-4 text-center text-[11px] text-zinc-400 flex items-center justify-center gap-2">
+                        <RefreshCw size={12} className="animate-spin text-emerald-400" /> Carregando memórias personalizadas...
+                      </div>
+                    ) : userMemories.length === 0 ? (
+                      <div className="py-4 text-center text-[11px] text-zinc-500 italic bg-zinc-950 p-3 rounded-xl border border-zinc-800/80">
+                        Nenhuma memória gravada ainda. Converse com a IA para que ela aprenda suas preferências e metas automaticamente.
+                      </div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                        {userMemories.map(m => (
+                          <div
+                            key={m.id}
+                            className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 flex items-start justify-between gap-2 group hover:border-zinc-700 transition-colors"
+                          >
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-1.5 text-[10px]">
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-500/20 uppercase font-semibold text-[8px]">
+                                  {m.category || 'Geral'}
+                                </span>
+                                <span className="text-zinc-500 text-[9px]">
+                                  {m.confidence ? `Confiança ${(m.confidence * 100).toFixed(0)}%` : ''}
+                                </span>
+                              </div>
+                              <p className="text-zinc-200 font-medium text-[11px] leading-tight break-words">
+                                {m.content}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteMemory(m.id)}
+                              className="text-zinc-500 hover:text-rose-400 p-1 rounded hover:bg-rose-950/30 transition-colors shrink-0"
+                              title="Esquecer esta memória"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Dynamic Voice/Audio Siri/ChatGPT Visualizer Banner */}
+              <AnimatePresence>
+                {loading && (
+                  <SiriChatGPTVoiceVisualizer mode="thinking" aiName={user?.aiName} />
+                )}
+                {!loading && isSpeaking && (
+                  <SiriChatGPTVoiceVisualizer mode="speaking" onStop={stopSpeaking} aiName={user?.aiName} />
+                )}
+              </AnimatePresence>
+
+              {/* Active Workout Real-Time Badge */}
+              {activeWorkoutSession && (
+                <div className="mt-2 bg-gradient-to-r from-emerald-950/80 to-zinc-900 border border-emerald-500/50 rounded-2xl p-2.5 px-3 flex items-center justify-between gap-2 shrink-0">
+                  <div className="flex items-center gap-2 text-emerald-300 min-w-0">
+                    <Activity size={16} className="text-emerald-400 animate-pulse shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-white">
+                        <span>TREINO EM ANDAMENTO: {activeWorkoutSession.cardioTypeLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] text-zinc-300">
+                        <span className="flex items-center gap-1"><Clock size={10} /> {activeWorkoutSession.elapsedFormatted}</span>
+                        <span className="flex items-center gap-1 text-zinc-500"><Info size={10} /> Telemetria disponível após sincronização</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleSend('Como está meu desempenho e tempo de treino nesta sessão ativa?')}
+                    className="px-2.5 py-1 bg-emerald-500 text-black text-[10px] font-black uppercase rounded-xl hover:bg-emerald-400 transition-colors shrink-0"
+                  >
+                    Analisar
+                  </button>
+                </div>
+              )}
+
+              {/* Context Proactive Insight Banner */}
+              {!activeWorkoutSession && screenCtx.insight && (
+                <div className="mt-2 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-2.5 px-3 flex items-center justify-between gap-2.5 text-xs shrink-0">
+                  <div className="flex items-center gap-2 text-emerald-300 min-w-0">
+                    <Zap size={14} className="shrink-0 text-emerald-400" />
+                    <span className="font-medium text-[10px] sm:text-[11px] leading-snug truncate">{screenCtx.insight}</span>
+                  </div>
+                  <button
+                    onClick={() => handleSend(screenCtx.prompts[0])}
+                    className="text-[10px] bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 px-2 py-1 rounded-lg border border-emerald-500/30 whitespace-nowrap font-bold shrink-0"
+                  >
+                    Analisar
+                  </button>
+                </div>
+              )}
+
+              {/* Chat Message Stream */}
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-3.5 my-2.5 pr-1">
+                {messages.map(m => (
                   <div
                     key={m.id}
                     className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
                   >
-                    {m.sender === 'ai' ? (
-                      // AI Message Bubble
-                      <div className="flex items-start gap-2.5 max-w-[94%] sm:max-w-[88%]">
-                        {/* Avatar */}
-                        <div className="relative w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 p-1 flex items-center justify-center shrink-0 mt-0.5">
-                          <img
-                            src="/capacete.webp"
-                            alt="Invictus IA"
-                            className="w-full h-full object-contain select-none"
-                            draggable={false}
-                            onError={(e) => {
-                              e.currentTarget.src = '/ranking-emblem-user-provided.png';
-                            }}
-                          />
-                          <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-black" />
+                    <div
+                      className={`max-w-[88%] p-3.5 rounded-2xl text-xs leading-relaxed ${
+                        m.sender === 'user'
+                          ? 'bg-emerald-500 text-black font-medium rounded-tr-none shadow-md'
+                          : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-tl-none space-y-2'
+                      }`}
+                    >
+                      {m.sender === 'user' ? (
+                        <p className="whitespace-pre-line">{m.text}</p>
+                      ) : (
+                        <div className="markdown-body space-y-2 text-xs leading-relaxed text-zinc-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_h1]:text-sm [&_h1]:font-bold [&_h2]:text-xs [&_h2]:font-bold [&_h3]:text-xs [&_h3]:font-bold [&_h3]:text-emerald-400 [&_strong]:font-semibold [&_strong]:text-emerald-300 [&_code]:bg-zinc-800 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
+                          <Markdown>{m.text}</Markdown>
                         </div>
+                      )}
 
-                        <div className="flex-1 min-w-0">
-                          <div className="bg-[#18181b] border border-zinc-800/80 rounded-2xl rounded-tl-xs p-3.5 sm:p-4 text-zinc-200 shadow-sm relative group">
-                            {renderMessageContent(m)}
-
-                            {/* Discreet Audio Speaker Icon */}
-                            <div className="absolute top-2.5 right-2.5">
-                              <button
-                                onClick={() => {
-                                  if (isSpeaking && speakingMessageId === m.id) {
-                                    stopSpeaking();
-                                  } else if (m.audioBase64) {
-                                    playBase64Audio(m.audioBase64, m.id, m.audioMimeType);
-                                  } else {
-                                    speakResponseText(m.text, m.id, true);
-                                  }
-                                }}
-                                className={`p-1 rounded-lg text-zinc-500 hover:text-[#f5ab12] transition-colors cursor-pointer ${
-                                  isSpeaking && speakingMessageId === m.id ? 'text-[#f5ab12]' : 'opacity-60 hover:opacity-100'
-                                }`}
-                                title="Ouvir resposta"
-                              >
-                                {isSpeaking && speakingMessageId === m.id ? (
-                                  <Square size={13} className="fill-current animate-pulse" />
-                                ) : (
-                                  <Volume2 size={14} />
-                                )}
-                              </button>
-                            </div>
+                      {m.sender === 'ai' && (
+                        <div className="pt-2 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-[10px] text-zinc-400">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 font-semibold text-emerald-400">
+                              <ShieldCheck size={12} />
+                              Confiabilidade: {m.confidence || 'ALTA'}
+                            </span>
+                            <button
+                              onClick={() => {
+                                if (isSpeaking) {
+                                  stopSpeaking();
+                                } else if (m.audioBase64) {
+                                  playBase64Audio(m.audioBase64, m.audioMimeType);
+                                } else {
+                                  speakResponseText(m.text, true);
+                                }
+                              }}
+                              className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 font-bold bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/40 px-2 py-0.5 rounded-lg transition-all cursor-pointer shadow-sm"
+                              title="Ouvir resposta com a voz da Invictus IA (Gemini 2.5 Flash TTS - Sulafat)"
+                            >
+                              {isSpeaking ? (
+                                <>
+                                  <Square size={10} className="fill-emerald-400 animate-pulse shrink-0" />
+                                  <span>Parar</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 size={12} className="text-emerald-400 shrink-0" />
+                                  <span>Ouvir</span>
+                                </>
+                              )}
+                            </button>
                           </div>
-                          <span className="text-[10px] text-zinc-500 mt-1 block pl-1">{m.timestamp}</span>
+                          {m.sources && <span className="text-zinc-500">{m.sources.join(' • ')}</span>}
                         </div>
-                      </div>
-                    ) : (
-                      // User Message Bubble
-                      <div className="max-w-[85%] sm:max-w-[80%]">
-                        <div className="bg-gradient-to-br from-[#7a5418] to-[#593d0f] border border-amber-600/30 text-white rounded-2xl rounded-tr-xs p-3.5 sm:p-4 text-[13px] sm:text-sm leading-relaxed shadow-md font-normal">
-                          <p className="whitespace-pre-line">{m.text}</p>
-                        </div>
-                        <div className="flex items-center justify-end gap-1 mt-1 pr-1 text-[10px] text-zinc-400">
-                          <span>{m.timestamp}</span>
-                          <CheckCheck size={13} className="text-[#f5ab12]" />
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                    <span className="text-[9px] text-zinc-500 mt-1 px-1">{m.timestamp}</span>
                   </div>
                 ))}
 
-                {/* Processing Indicator */}
                 {loading && (
-                  <div className="flex items-start gap-2.5 max-w-[90%]">
-                    <div className="relative w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 p-1 flex items-center justify-center shrink-0">
-                      <img
-                        src="/capacete.webp"
-                        alt="Invictus IA"
-                        className="w-full h-full object-contain"
-                      />
-                      <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-black animate-pulse" />
-                    </div>
-                    <div className="bg-[#18181b] border border-zinc-800/80 rounded-2xl rounded-tl-xs px-4 py-3 text-xs text-zinc-300 flex items-center gap-2">
-                      <Sparkles size={14} className="text-emerald-400 animate-spin" />
-                      <span className="font-medium">Analisando...</span>
-                    </div>
+                  <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/30 border border-emerald-500/20 p-3 rounded-2xl w-fit">
+                    <RefreshCw size={14} className="animate-spin text-emerald-400" />
+                    <span>Processando fisiologia e métricas biométricas...</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* 4. Three Contextual Suggestion Chips (Reference Visual) */}
-              <div className="shrink-0 pt-1 pb-2">
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                  {screenCtx.chips.slice(0, 3).map((chip) => (
+              {/* Permanent Discreet Safety Disclaimer */}
+              <div className="shrink-0 my-1 bg-zinc-900/90 border border-zinc-800/80 rounded-xl p-2 px-3 flex items-center gap-2 text-[10px] text-zinc-400">
+                <ShieldAlert size={14} className="text-emerald-400/80 shrink-0" />
+                <span className="leading-tight">
+                  A {user?.aiName || 'Invictus IA'} pode cometer erros. As respostas possuem finalidade educativa e informativa e não substituem orientação profissional.
+                </span>
+              </div>
+
+              {/* Contextual Quick Suggestion Chips */}
+              <div className="shrink-0 space-y-1.5 pt-2 border-t border-zinc-900">
+                <div className="flex items-center justify-between text-[10px] text-zinc-400 font-semibold px-1">
+                  <span className="flex items-center gap-1 text-zinc-300 truncate">
+                    <Compass size={12} className="text-emerald-400 shrink-0" />
+                    Perguntas recomendadas para esta tela:
+                  </span>
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                  {screenCtx.prompts.map((p, idx) => (
                     <button
-                      key={chip.id}
-                      onClick={() => handleSend(chip.prompt)}
-                      className="bg-black/60 hover:bg-[#f5ab12]/10 border border-[#f5ab12]/40 hover:border-[#f5ab12] text-amber-200/90 text-xs px-3.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer shadow-sm"
+                      key={idx}
+                      onClick={() => handleSend(p)}
+                      className="whitespace-nowrap bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-[11px] text-zinc-300 px-3 py-1.5 rounded-xl cursor-pointer transition-colors shrink-0"
                     >
-                      {renderChipIcon(chip.iconType)}
-                      <span className="font-medium">{chip.label}</span>
+                      {p}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* 5. Input Field + Circular Send Button */}
-              <div className="shrink-0 flex items-center gap-2.5 pt-1">
-                <div className="flex-1 bg-[#18181b] border border-zinc-800/90 focus-within:border-[#f5ab12]/60 rounded-full px-4 sm:px-5 py-3 flex items-center transition-colors shadow-inner">
-                  <input
-                    type="text"
-                    placeholder="Pergunte à Invictus IA..."
-                    value={inputQuery}
-                    onChange={(e) => setInputQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    className="w-full bg-transparent text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none"
-                  />
-                </div>
+              {/* Área de mensagem por texto */}
+              <div className="shrink-0 pt-2 flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder={`Pergunte sobre ${screenCtx.name}...`}
+                  value={inputQuery}
+                  onChange={e => setInputQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSend()}
+                  className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded-2xl px-3.5 py-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
+                />
 
                 <button
                   onClick={() => handleSend()}
                   disabled={loading || !inputQuery.trim()}
-                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#f5ab12] hover:bg-[#ffb72b] disabled:opacity-40 text-black flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-[0_4px_15px_rgba(245,171,18,0.35)] shrink-0"
-                  title="Enviar mensagem"
+                  className="w-11 h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50 shrink-0"
                 >
-                  <Send size={18} className="translate-x-0.5 -translate-y-0.5 fill-black" />
+                  <Send size={18} />
                 </button>
-              </div>
-
-              {/* 6. Discreet One-Line Safety Disclaimer */}
-              <div className="shrink-0 pt-2 pb-0.5 text-center">
-                <p className="text-[10px] sm:text-[11px] text-zinc-500 flex items-center justify-center gap-1 truncate px-2">
-                  <Info size={12} className="shrink-0 text-zinc-500" />
-                  <span>IA pode cometer erros. Use as orientações com consciência.</span>
-                </p>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* MEMORIES SYSTEM MODAL */}
+      {/* FIRST ACCESS WELCOME MODAL */}
       <AnimatePresence>
-        {showMemoriesModal && (
-          <div
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowMemoriesModal(false);
-            }}
-            className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-pointer select-none"
-          >
+        {showFirstAccessModal && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
             <motion.div
-              onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg bg-[#0f0f12] border border-zinc-800 rounded-3xl p-5 sm:p-6 shadow-2xl text-white flex flex-col max-h-[85vh] overflow-hidden cursor-default select-auto"
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-lg bg-zinc-950 border border-emerald-500/40 rounded-3xl p-6 sm:p-7 shadow-2xl text-white flex flex-col max-h-[90vh] overflow-y-auto space-y-5"
             >
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-3 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[#f5ab12]">
-                    <Brain size={18} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-white">Memórias do Coach</h3>
-                    <p className="text-[10px] text-zinc-400">Aprendizados individualizados para você</p>
-                  </div>
+              {/* Header Icon & Title */}
+              <div className="flex items-center gap-3 border-b border-zinc-800 pb-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-black flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
+                  <Sparkles size={24} />
                 </div>
-                <button
-                  onClick={() => setShowMemoriesModal(false)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white"
-                >
-                  <X size={18} />
-                </button>
+                <div>
+                  <h2 className="font-headline italic font-black text-xl sm:text-2xl text-white tracking-tight uppercase">
+                    Bem-vindo à {user?.aiName || 'Invictus IA'}
+                  </h2>
+                  <p className="text-xs text-emerald-400 font-medium">
+                    Inteligência Artificial & Fisiologia do Exercício
+                  </p>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto pr-1 my-3 space-y-2 text-xs">
-                {loadingMemories ? (
-                  <div className="py-8 text-center text-zinc-400 flex items-center justify-center gap-2">
-                    <Sparkles size={14} className="animate-spin text-[#f5ab12]" /> Carregando memórias...
-                  </div>
-                ) : userMemories.length === 0 ? (
-                  <div className="py-8 text-center text-zinc-500 italic bg-zinc-950 p-4 rounded-2xl border border-zinc-900">
-                    Nenhuma memória gravada ainda. Converse com a IA para que ela aprenda suas metas e preferências automaticamente.
-                  </div>
-                ) : (
-                  userMemories.map(m => (
-                    <div
-                      key={m.id}
-                      className="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 flex items-start justify-between gap-2"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-[#f5ab12] border border-[#f5ab12]/30 uppercase font-semibold text-[8px]">
-                          {m.category || 'Geral'}
-                        </span>
-                        <p className="text-zinc-200 text-xs break-words">
-                          {m.content}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteMemory(m.id)}
-                        className="text-zinc-500 hover:text-rose-400 p-1 rounded transition-colors shrink-0"
-                        title="Excluir memória"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))
-                )}
+              {/* Introduction */}
+              <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                A <strong>{user?.aiName || 'Invictus IA'}</strong> utiliza inteligência artificial para analisar seus dados e responder perguntas sobre saúde, atividade física, desempenho e funcionamento do aplicativo.
+              </p>
+
+              {/* Capabilities list */}
+              <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 space-y-2">
+                <h3 className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Zap size={14} />
+                  Ela pode ajudá-lo a:
+                </h3>
+                <ul className="text-xs text-zinc-300 space-y-1.5 pl-1">
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-400 font-bold">•</span>
+                    <span>interpretar suas métricas;</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-400 font-bold">•</span>
+                    <span>acompanhar sua evolução;</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-400 font-bold">•</span>
+                    <span>explicar conceitos científicos;</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-400 font-bold">•</span>
+                    <span>responder dúvidas relacionadas ao treinamento;</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-emerald-400 font-bold">•</span>
+                    <span>gerar análises e projeções baseadas nos seus dados.</span>
+                  </li>
+                </ul>
               </div>
 
-              <div className="pt-2 border-t border-zinc-800 shrink-0 text-right">
-                <button
-                  onClick={() => setShowMemoriesModal(false)}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold"
-                >
-                  Fechar
-                </button>
+              {/* Warnings / Disclaimer list */}
+              <div className="bg-amber-950/30 border border-amber-500/30 rounded-2xl p-4 space-y-2">
+                <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldAlert size={14} />
+                  Antes de continuar, é importante entender que:
+                </h3>
+                <ul className="text-xs text-zinc-300 space-y-1.5 pl-1">
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400 font-bold">•</span>
+                    <span>A inteligência artificial pode cometer erros.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400 font-bold">•</span>
+                    <span>Algumas respostas podem ser baseadas em estimativas.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400 font-bold">•</span>
+                    <span>A qualidade das respostas depende da qualidade dos dados registrados.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400 font-bold">•</span>
+                    <span>A {user?.aiName || 'Invictus IA'} <strong>não realiza diagnósticos médicos</strong>.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400 font-bold">•</span>
+                    <span>Ela <strong>não substitui</strong> médicos, nutricionistas, fisioterapeutas ou profissionais de Educação Física.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400 font-bold">•</span>
+                    <span>Nunca utilize as respostas da IA como único critério para decisões relacionadas à sua saúde.</span>
+                  </li>
+                </ul>
               </div>
+
+              <p className="text-[11px] text-zinc-400 text-center italic">
+                Ao continuar, você declara estar ciente dessas informações.
+              </p>
+
+              {/* Confirm Button */}
+              <button
+                onClick={handleConfirmOnboarding}
+                className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-sm rounded-2xl uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Entendi e continuar</span>
+                <Check size={18} />
+              </button>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* ABOUT MODAL */}
+      {/* SOBRE A INVICTUS IA MODAL */}
       <AnimatePresence>
         {showAboutModal && (
-          <div
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowAboutModal(false);
-            }}
-            className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-pointer select-none"
-          >
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
             <motion.div
-              onClick={(e) => e.stopPropagation()}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-xl bg-[#0f0f12] border border-zinc-800 rounded-3xl p-5 sm:p-6 shadow-2xl text-white flex flex-col max-h-[85vh] overflow-hidden cursor-default select-auto"
+              className="w-full max-w-2xl bg-zinc-950 border border-emerald-500/40 rounded-3xl p-5 sm:p-7 shadow-2xl text-white flex flex-col max-h-[88vh] overflow-hidden"
             >
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-3 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[#f5ab12]">
-                    <Info size={18} />
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
+                    <Info size={20} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-white">Sobre a INVICTUS IA</h3>
-                    <p className="text-[10px] text-zinc-400">Segurança, Termos e Limitações</p>
+                    <h2 className="font-headline italic font-black text-lg sm:text-xl text-white uppercase tracking-tight">
+                      Sobre a {user?.aiName || 'Invictus IA'}
+                    </h2>
+                    <p className="text-xs text-zinc-400">
+                      Funcionamento, Uso de Dados, Privacidade e Segurança
+                    </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowAboutModal(false)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white"
+                  className="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto pr-1 my-3 space-y-3 text-xs text-zinc-300 leading-relaxed">
-                <div className="bg-zinc-950 p-3.5 rounded-2xl border border-zinc-800/80 space-y-1.5">
-                  <h4 className="font-bold text-white text-xs flex items-center gap-1.5">
-                    <Zap size={14} className="text-[#f5ab12]" /> Inteligência & Fisiologia
-                  </h4>
-                  <p className="text-[11px] text-zinc-400">
-                    A Invictus IA interpreta seu histórico de treinos registrados (frequência, tempo, calorias e sensores) para oferecer suporte informativo à sua evolução.
+              {/* Content Body */}
+              <div className="flex-1 overflow-y-auto pr-1 my-4 space-y-4 text-xs text-zinc-300 leading-relaxed">
+                {/* Section 1: Como Funciona */}
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 space-y-2">
+                  <h3 className="font-bold text-sm text-emerald-300 flex items-center gap-2">
+                    <Cpu size={16} />
+                    Como a IA Funciona
+                  </h3>
+                  <p>
+                    A {user?.aiName || 'Invictus IA'} combina modelos avançados de inteligência artificial com princípios consolidados de fisiologia do esporte. Ela interpreta o histórico de treinos registrados (frequência semanal, tempo, calorias METs, IGA e frequência cardíaca via smartwatch) para responder perguntas e apoiar sua rotina esportiva.
                   </p>
                 </div>
 
-                <div className="bg-zinc-950 p-3.5 rounded-2xl border border-zinc-800/80 space-y-1.5">
-                  <h4 className="font-bold text-amber-400 text-xs flex items-center gap-1.5">
-                    <ShieldAlert size={14} /> Isenção Médica
-                  </h4>
-                  <p className="text-[11px] text-zinc-400">
-                    A IA não realiza diagnósticos clínicos e não substitui médicos, nutricionistas ou educadores físicos.
+                {/* Section 2: Uso de Dados e Privacidade */}
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 space-y-2">
+                  <h3 className="font-bold text-sm text-emerald-300 flex items-center gap-2">
+                    <Lock size={16} />
+                    Uso de Dados & Privacidade
+                  </h3>
+                  <p>
+                    A IA utiliza exclusivamente dados das permissões e integrações ativamente concedidas por você (Apple Health, Health Connect, Strava, Garmin, etc.).
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1 text-zinc-400">
+                    <li>Caso uma integração não esteja autorizada, a IA informará que a análise está indisponível sem inventar dados biométricos.</li>
+                    <li>Seus dados são criptografados e não são vendidos ou utilizados para modelos públicos.</li>
+                  </ul>
+                </div>
+
+                {/* Section 3: Limitações e Isenção Médica */}
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 space-y-2">
+                  <h3 className="font-bold text-sm text-amber-400 flex items-center gap-2">
+                    <ShieldAlert size={16} />
+                    Limitações & Isenção Médica
+                  </h3>
+                  <ul className="list-disc pl-4 space-y-1 text-zinc-300">
+                    <li>A IA não realiza diagnósticos clínicos nem substitui avaliação médica presencial.</li>
+                    <li>Não substitui médicos, nutricionistas, fisioterapeutas ou educadores físicos.</li>
+                    <li>Não prescreve nem altera medicamentos ou tratamentos terapêuticos.</li>
+                  </ul>
+                </div>
+
+                {/* Section 4: Emergências */}
+                <div className="bg-rose-950/30 border border-rose-500/30 rounded-2xl p-4 space-y-2">
+                  <h3 className="font-bold text-sm text-rose-400 flex items-center gap-2">
+                    <AlertTriangle size={16} />
+                    Protocolo em Situações de Emergência
+                  </h3>
+                  <p>
+                    Relatos de dor no peito, falta de ar grave, tontura intensa, desmaio ou perda de consciência disparam a interrupção da IA e orientação para ligar imediatamente para o <strong>SAMU (192)</strong> ou buscar atendimento emergencial.
                   </p>
                 </div>
 
-                <div className="bg-rose-950/20 p-3.5 rounded-2xl border border-rose-500/20 space-y-1.5">
-                  <h4 className="font-bold text-rose-400 text-xs flex items-center gap-1.5">
-                    <AlertTriangle size={14} /> Emergências de Saúde
-                  </h4>
-                  <p className="text-[11px] text-zinc-300">
-                    Em sintomas graves como dor no peito ou falta de ar intensa, ligue imediatamente para o SAMU (192).
-                  </p>
+                {/* Section 5: FAQs */}
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 space-y-3">
+                  <h3 className="font-bold text-sm text-emerald-300 flex items-center gap-2">
+                    <HelpCircle size={16} />
+                    Perguntas Frequentes (FAQ)
+                  </h3>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="font-bold text-white">A IA pode cometer erros?</p>
+                      <p className="text-zinc-400">Sim, como qualquer sistema de inteligência artificial. Por isso suas análises são informativas e educativas.</p>
+                    </div>
+                    <div>
+                      <p className="font-bold text-white">Sem smartwatch, os dados são inventados?</p>
+                      <p className="text-zinc-400">Não. O Invictus calcula métricas auditadas de duração e METs, mantendo gráficos de batimentos transparentes até a conexão do sensor.</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-zinc-800 shrink-0 text-right">
+              {/* Footer Actions */}
+              <div className="pt-3 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    setShowAboutModal(false);
+                    setShowFirstAccessModal(true);
+                  }}
+                  className="px-3.5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Sparkles size={14} className="text-emerald-400" />
+                  <span>Re-exibir Boas-Vindas</span>
+                </button>
+
                 <button
                   onClick={() => setShowAboutModal(false)}
-                  className="px-4 py-2 bg-[#f5ab12] text-black font-bold rounded-xl text-xs"
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs uppercase tracking-wider cursor-pointer transition-colors"
                 >
                   Entendi
                 </button>
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* FIRST ACCESS MODAL */}
-      <AnimatePresence>
-        {showFirstAccessModal && (
-          <div
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowFirstAccessModal(false);
-            }}
-            className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-pointer select-none"
-          >
-            <motion.div
-              onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-[#0f0f12] border border-zinc-800 rounded-3xl p-6 shadow-2xl text-white flex flex-col space-y-4 cursor-default select-auto"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-zinc-950 border border-zinc-800 p-1.5 flex items-center justify-center shrink-0">
-                  <img
-                    src="/capacete.webp"
-                    alt="Invictus IA"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <div>
-                  <h3 className="font-headline font-black italic uppercase text-lg text-white">
-                    INVICTUS <span className="text-[#f5ab12]">IA</span>
-                  </h3>
-                  <p className="text-xs text-zinc-400">Seu Coach e Inteligência de Treino</p>
-                </div>
-              </div>
-
-              <p className="text-xs text-zinc-300 leading-relaxed">
-                A Invictus IA ajuda você a interpretar suas métricas de treino, acompanhar sua evolução e esclarecer dúvidas sobre sua performance física.
-              </p>
-
-              <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800/80 text-[11px] text-zinc-400 space-y-1">
-                <p>• As orientações têm caráter informativo e educativo.</p>
-                <p>• Não realiza diagnósticos médicos nem substitui profissionais.</p>
-              </div>
-
-              <button
-                onClick={handleConfirmOnboarding}
-                className="w-full py-3 bg-[#f5ab12] hover:bg-[#ffb72b] text-black font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
-              >
-                <span>Entendi e Continuar</span>
-                <Check size={16} />
-              </button>
             </motion.div>
           </div>
         )}

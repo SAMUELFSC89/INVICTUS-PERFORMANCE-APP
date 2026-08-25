@@ -133,39 +133,12 @@ function tratarErroGlobal(texto: string) {
 // capture=true, porque erro de recurso nao sobe na fase de bubbling.
 window.addEventListener('error', (ev) => {
   const alvo = ev.target as any;
-  if (alvo && alvo !== window) {
-    if (alvo.tagName === 'SCRIPT' || alvo.tagName === 'LINK') {
-      const url = alvo.src || alvo.href || '(sem url)';
-      // Apenas registrar erro global se o app ainda não inicializou
-      if (!appMontou && !appJaRenderizou()) {
-        tratarErroGlobal(
-          '[falha ao carregar arquivo]\n' + alvo.tagName + ': ' + url +
-          '\n\nO WebView nao conseguiu baixar este arquivo.'
-        );
-      } else {
-        console.warn('[falha ao carregar recurso]', alvo.tagName, url);
-      }
-    }
-    // Erros em elementos como <img>, <video>, <audio>, etc. são normais e nunca devem derrubar a aplicação
-    return;
-  }
-
-  const rawMsg = ev.message || (ev.error && (ev.error.message || ev.error.stack)) || '';
-  if (typeof rawMsg === 'string') {
-    if (
-      rawMsg.includes('ResizeObserver') ||
-      rawMsg.includes('Script error.') ||
-      rawMsg.includes('AbortError') ||
-      rawMsg.includes('canceled')
-    ) {
-      console.warn('[aviso do navegador ignorado]', rawMsg);
-      return;
-    }
-  }
-
-  // Se o evento não possui detalhes de erro e o app já está montado/renderizado, não disparar aviso de "Erro desconhecido"
-  if (!ev.error && !ev.message) {
-    console.warn('[evento de erro sem detalhes]', ev);
+  if (alvo && alvo !== window && (alvo.tagName === 'SCRIPT' || alvo.tagName === 'LINK')) {
+    const url = alvo.src || alvo.href || '(sem url)';
+    tratarErroGlobal(
+      '[falha ao carregar arquivo]\n' + alvo.tagName + ': ' + url +
+      '\n\nO WebView nao conseguiu baixar este arquivo.'
+    );
     return;
   }
 
@@ -173,22 +146,6 @@ window.addEventListener('error', (ev) => {
 }, true);
 
 window.addEventListener('unhandledrejection', (ev) => {
-  const motivo = ev.reason as any;
-  if (motivo) {
-    const msg = motivo.message || (typeof motivo === 'string' ? motivo : '');
-    if (
-      motivo.name === 'AbortError' ||
-      msg.includes('aborted') ||
-      msg.includes('ResizeObserver') ||
-      msg.includes('canceled')
-    ) {
-      return;
-    }
-  } else if (appMontou || appJaRenderizou()) {
-    console.warn('[rejeição de promise vazia]');
-    return;
-  }
-
   tratarErroGlobal(descreverErro('promise rejeitada', ev.reason));
 });
 

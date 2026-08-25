@@ -122,11 +122,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const rankingPointsEarned = Number(session.rankingPointsEarned || 0);
   const xpPoints = Number(session.points || 0);
 
-  const isBike = title.toLowerCase().includes('bike') || session.cardioType === 'bike';
-  const isIndoor = session.isIndoorCardio || title.toLowerCase().includes('indoor') || title.toLowerCase().includes('esteira') || title.toLowerCase().includes('ergométrica') || title.toLowerCase().includes('hiit') || title.toLowerCase().includes('musculação') || title.toLowerCase().includes('treino de');
-  const hasDistance = distanceKm > 0.05;
-  const speedKmH = (distanceKm > 0.01 && durationMins > 0) ? (distanceKm / (durationMins / 60)).toFixed(1) : undefined;
-
   const activityDate = useMemo(() => {
     const raw = session.date || session.startTime || session.timestamp;
     return raw ? new Date(raw) : new Date();
@@ -285,40 +280,18 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
           {/* 3 stats */}
           <div className="grid grid-cols-3 gap-2 border-y border-white/10 py-4">
-            {hasDistance ? (
-              <>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Distância</p>
-                  <p className="text-primary font-black text-xl">{distanceKm.toFixed(2)}<span className="text-[10px] ml-0.5 text-primary/70">km</span></p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Tempo</p>
-                  <p className="text-primary font-black text-xl">{duration}</p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">{isBike ? 'Velocidade' : 'Ritmo médio'}</p>
-                  <p className="text-primary font-black text-xl">
-                    {isBike ? (speedKmH || '—') : pace.replace('/km', '')}
-                    <span className="text-[10px] ml-0.5 text-primary/70">{isBike ? 'km/h' : '/km'}</span>
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Tempo</p>
-                  <p className="text-primary font-black text-xl">{duration}</p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Modalidade</p>
-                  <p className="text-primary font-black text-xl">{isIndoor ? 'Indoor' : 'Geral'}</p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Status</p>
-                  <p className="text-primary font-black text-xl">Validado</p>
-                </div>
-              </>
-            )}
+            <div>
+              <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Distância</p>
+              <p className="text-primary font-black text-xl">{distanceKm.toFixed(2)}<span className="text-[10px] ml-0.5 text-primary/70">km</span></p>
+            </div>
+            <div>
+              <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Tempo</p>
+              <p className="text-primary font-black text-xl">{duration}</p>
+            </div>
+            <div>
+              <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Ritmo médio</p>
+              <p className="text-primary font-black text-xl">{pace.replace('/km', '')}<span className="text-[10px] ml-0.5 text-primary/70">/km</span></p>
+            </div>
           </div>
 
           {/* Map */}

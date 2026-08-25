@@ -1,5 +1,4 @@
 import { SECURITY_CONFIG } from './security-config.js';
-import { resolveModality } from './modality-config.js';
 
 export interface IntegrityResult {
   integrityScore: number; // 0 - 100
@@ -22,40 +21,33 @@ export class IntegrityEngine {
   static calculate(activity: any): IntegrityResult {
     const warnings: string[] = [];
     const weights = SECURITY_CONFIG.integrityWeights;
-    const modality = resolveModality(activity);
-    const requiresGps = modality ? modality.requiresGps : (activity.requiresGpsDistance ?? true);
 
     // 1. GPS Integrity (20%)
     let gpsIntegrityScore = 100;
-    if (requiresGps) {
-      const accuracyMeters = Number(activity.gpsAccuracy || activity.accuracy || 10);
-      if (accuracyMeters > 50) {
-        gpsIntegrityScore -= 40;
-        warnings.push(`Sinal GPS com baixa precisão (${accuracyMeters}m).`);
-      } else if (accuracyMeters > 25) {
-        gpsIntegrityScore -= 20;
-      }
+    const accuracyMeters = Number(activity.gpsAccuracy || activity.accuracy || 10);
+    if (accuracyMeters > 50) {
+      gpsIntegrityScore -= 40;
+      warnings.push(`Sinal GPS com baixa precisão (${accuracyMeters}m).`);
+    } else if (accuracyMeters > 25) {
+      gpsIntegrityScore -= 20;
+    }
 
-      if (activity.checkpoints && Array.isArray(activity.checkpoints) && activity.checkpoints.length > 1) {
-        // Check for static/frozen GPS checkpoints
-        const uniqueCoords = new Set(
-          activity.checkpoints.map((c: any) => `${c.latitude?.toFixed(5) || c.lat?.toFixed(5)},${c.longitude?.toFixed(5) || c.lng?.toFixed(5)}`)
-        );
-        if (uniqueCoords.size === 1 && activity.checkpoints.length > 5) {
-          gpsIntegrityScore -= 60;
-          warnings.push('Coordenadas de GPS congeladas ao longo do percurso.');
-        }
+    if (activity.checkpoints && Array.isArray(activity.checkpoints) && activity.checkpoints.length > 1) {
+      // Check for static/frozen GPS checkpoints
+      const uniqueCoords = new Set(
+        activity.checkpoints.map((c: any) => `${c.latitude?.toFixed(5)},${c.longitude?.toFixed(5)}`)
+      );
+      if (uniqueCoords.size === 1 && activity.checkpoints.length > 5) {
+        gpsIntegrityScore -= 60;
+        warnings.push('Coordenadas de GPS congeladas ao longo do percurso.');
       }
-    } else {
-      // Indoor activities and workouts do not require GPS checkpoints variance
-      gpsIntegrityScore = 100;
     }
     gpsIntegrityScore = Math.max(0, gpsIntegrityScore);
 
     // 2. Heart Rate Integrity (20%)
     let heartRateIntegrityScore = 100;
-    const avgHr = Number(activity.avgHeartRate || activity.heartRate || activity.healthTelemetry?.avgHeartRate || 0);
-    const maxHr = Number(activity.maxHeartRate || activity.healthTelemetry?.maxHeartRate || avgHr);
+    const avgHr = Number(activity.avgHeartRate || activity.heartRate || 0);
+    const maxHr = Number(activity.maxHeartRate || avgHr);
 
     if (avgHr > 0) {
       if (avgHr < 40 || maxHr > 220) {
@@ -67,8 +59,8 @@ export class IntegrityEngine {
         warnings.push('Sem variabilidade na frequência cardíaca (pulso plano).');
       }
     } else {
-      // HR missing is standard on non-wearable devices; baseline score
-      heartRateIntegrityScore = 75;
+      // Moderate deduction if HR missing but not required
+      heartRateIntegrityScore = 70;
     }
     heartRateIntegrityScore = Math.max(0, heartRateIntegrityScore);
 
@@ -99,19 +91,18 @@ export class IntegrityEngine {
 
     // 5. Sensor Integrity & Source Reliability (20%)
     let sensorIntegrityScore = 100;
-    const healthSource = activity.healthTelemetry?.source || activity.smartwatchData?.dataSource;
-    const source = (activity.source || activity.dataSource || healthSource || 'MANUAL').toUpperCase();
+    const source = (activity.source || activity.dataSource || 'MANUAL').toUpperCase();
     if (source === 'HEALTH_CONNECT' || source === 'APPLE_HEALTH' || source === 'GARMIN') {
       sensorIntegrityScore = 100; // High trust hardware sources
     } else if (source === 'STRAVA') {
       sensorIntegrityScore = 90;
-    } else if (source === 'GYM_CHECKIN' || activity.muscleGroup || !requiresGps) {
+    } else if (source === 'GYM_CHECKIN') {
       sensorIntegrityScore = 85;
     } else {
-      sensorIntegrityScore = 75;
+      sensorIntegrityScore = 70;
     }
 
-    if (activity.deviceInfo?.isEmulator || activity.isEmulator) {
+    if (activity.deviceInfo?.isEmulator) {
       sensorIntegrityScore = 0;
       warnings.push('Execução em ambiente de emulador detectada.');
     }
