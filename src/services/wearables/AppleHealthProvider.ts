@@ -6,7 +6,10 @@ import type { WearableProvider, WearableActivity } from './types';
 // uma API única para Apple HealthKit (iOS) e Google Health Connect (Android).
 // Documentação: https://github.com/mley/capacitor-health
 
-const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE'] as const;
+// #248: READ_ROUTE entra pra ingestao real -- sem ela nenhuma corrida do
+// Apple Watch tem coordenada, e o antifraude trata toda corrida como "sem
+// GPS" (perfil CARDIO exige evidencia de deslocamento).
+const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE', 'READ_ROUTE'] as const;
 
 function mapWorkoutType(hkType: string): string {
   if (!hkType) return 'Cardio';
@@ -68,7 +71,10 @@ export class AppleHealthProvider implements WearableProvider {
         startDate: since.toISOString(),
         endDate: new Date().toISOString(),
         includeHeartRate: true,
-        includeRoute: false,
+        // #248: precisa da rota real pra corrida/caminhada/bike passarem na
+        // checagem de GPS do antifraude -- sem isso toda atividade de cardio
+        // caia em "sem evidencia de deslocamento".
+        includeRoute: true,
         includeSteps: false,
       });
       this.hasSuccessfulRead = true;
@@ -148,6 +154,14 @@ export class AppleHealthProvider implements WearableProvider {
     const heartRates: number[] = (w.heartRate || []).map((h: any) => h.bpm).filter((v: number) => !!v);
     const averageHeartRate = heartRates.length ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : undefined;
     const maxHeartRate = heartRates.length ? Math.max(...heartRates) : undefined;
+    // #248: RouteSample vem como {timestamp, lat, lng, alt} -- convertido pro
+    // formato latitude/longitude que o antifraude (validation-engine,
+    // integrity-engine) ja espera em `activity.checkpoints`.
+    const checkpoints = Array.isArray(w.route) && w.route.length > 0
+      ? w.route
+          .filter((p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
+          .map((p: any) => ({ latitude: p.lat, longitude: p.lng }))
+      : undefined;
     return {
       id: `apple_health_${w.id}`,
       userId: '',
@@ -166,6 +180,7 @@ export class AppleHealthProvider implements WearableProvider {
       biometricValidated: !!averageHeartRate,
       pointsEarned: 0,
       createdAt: new Date().toISOString(),
+      checkpoints: checkpoints && checkpoints.length > 0 ? checkpoints : undefined,
     };
   }
 }

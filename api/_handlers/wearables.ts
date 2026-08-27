@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
+import { processarLoteWearable, WearableActivityPayload } from '../_lib/wearable-sync-service.js';
 
 const ALLOWED_PERMISSION_VALUES = new Set([
   'read_heart_rate',
@@ -26,6 +27,52 @@ function safePermissions(value: unknown): string[] | undefined {
   return [...new Set(value.filter((item): item is string =>
     typeof item === 'string' && ALLOWED_PERMISSION_VALUES.has(item)
   ))];
+}
+
+const FONTES_PERMITIDAS = new Set(['apple_health', 'health_connect']);
+// #248: teto por sincronizacao -- uma primeira sincronizacao apos meses sem
+// conectar pode trazer muitas atividades de uma vez. Isso nao e limite de
+// produto, e protecao contra payload gigante/abusivo numa unica chamada; o
+// cliente pode sincronizar de novo para pegar o restante (usa lastSyncTime).
+const MAX_ATIVIDADES_POR_SYNC = 50;
+
+/** Aceita só o que realmente veio do dispositivo, no formato esperado -- não
+ * confia em nenhum campo de pontuação/aprovação vindo do cliente (o cliente
+ * não pode se autoaprovar, quem decide é o SecurityPipeline no servidor). */
+function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
+  if (!Array.isArray(input)) return [];
+  const validas: WearableActivityPayload[] = [];
+  for (const item of input.slice(0, MAX_ATIVIDADES_POR_SYNC)) {
+    if (!item || typeof item !== 'object') continue;
+    const a = item as Record<string, unknown>;
+    if (!FONTES_PERMITIDAS.has(String(a.source))) continue;
+    if (typeof a.sourceActivityId !== 'string' || !a.sourceActivityId) continue;
+    if (typeof a.activityType !== 'string' || !a.activityType) continue;
+    if (typeof a.startTime !== 'string' || isNaN(new Date(a.startTime).getTime())) continue;
+    const durationSeconds = Number(a.durationSeconds);
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) continue;
+
+    const checkpoints = Array.isArray(a.checkpoints)
+      ? (a.checkpoints as unknown[])
+          .filter((p): p is { latitude: unknown; longitude: unknown } => !!p && typeof p === 'object')
+          .map((p) => ({ latitude: Number((p as any).latitude), longitude: Number((p as any).longitude) }))
+          .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
+      : undefined;
+
+    validas.push({
+      source: a.source as 'apple_health' | 'health_connect',
+      sourceActivityId: a.sourceActivityId,
+      activityType: a.activityType,
+      startTime: a.startTime,
+      durationSeconds,
+      distanceMeters: Number.isFinite(Number(a.distanceMeters)) ? Number(a.distanceMeters) : undefined,
+      calories: Number.isFinite(Number(a.calories)) ? Number(a.calories) : undefined,
+      averageHeartRate: Number.isFinite(Number(a.averageHeartRate)) ? Number(a.averageHeartRate) : undefined,
+      maxHeartRate: Number.isFinite(Number(a.maxHeartRate)) ? Number(a.maxHeartRate) : undefined,
+      checkpoints: checkpoints && checkpoints.length > 0 ? checkpoints : undefined
+    });
+  }
+  return validas;
 }
 
 function defaultConfig(userId: string) {
@@ -86,6 +133,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const action = String(req.body?.action || 'update-config');
+
+  // #248: ingestão real de HealthKit/Health Connect. O cliente só leu do
+  // aparelho (WearableManager.syncAll) -- quem decide se aquilo pontua é o
+  // SecurityPipeline aqui, atividade por atividade, mesmo pipeline que
+  // treino manual/check-in/corrida GPS/Strava já passam.
+  if (action === 'sync') {
+    const atividades = sanitizarAtividades(req.body?.activities);
+    if (atividades.length === 0) {
+      return res.status(200).json({ syncedCount: 0, duplicatesSkipped: 0, blockedCount: 0, logs: [] });
+    }
+
+    try {
+      const { resultados, syncedCount, duplicatesSkipped, blockedCount } = await processarLoteWearable(auth.uid, atividades);
+      const now = new Date().toISOString();
+      try {
+        await configRef.set({ lastSyncTime: now, updatedAt: now }, { merge: true });
+      } catch (writeErr) {
+        console.warn('[Wearables Handler] Aviso ao atualizar lastSyncTime:', writeErr);
+      }
+      return res.status(200).json({
+        syncedCount,
+        duplicatesSkipped,
+        blockedCount,
+        lastSyncTime: now,
+        logs: resultados
+      });
+    } catch (err: any) {
+      console.error('[Wearables Handler] Falha ao sincronizar atividades:', err);
+      return res.status(500).json({ error: 'Não foi possível sincronizar as atividades agora.' });
+    }
+  }
+
   if (action !== 'update-config') {
     return res.status(400).json({ error: 'Ação de wearable inválida.' });
   }

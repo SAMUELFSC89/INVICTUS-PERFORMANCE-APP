@@ -18,6 +18,9 @@ export interface WearableActivity {
   biometricValidated: boolean; // meets heart rate variability and fraud criteria
   pointsEarned: number;
   createdAt: string;
+  /** #248: rota real do GPS (quando o provedor e a atividade tiverem), usada
+   * pelo antifraude pra confirmar deslocamento em modalidades de cardio. */
+  checkpoints?: { latitude: number; longitude: number }[];
 }
 
 export interface WearableConfig {
