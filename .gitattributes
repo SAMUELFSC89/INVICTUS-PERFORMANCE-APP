@@ -1,0 +1,56 @@
+# Proteção contra corrupção de binários.
+#
+# Em 25/08/2026 as 48 imagens de public/ foram destruídas: alguma ferramenta
+# leu os arquivos como texto UTF-8 e regravou, trocando todo byte que não era
+# UTF-8 válido pelo caractere de substituição (EF BF BD, o "�"). A assinatura
+# PNG, que começa em 0x89, virou "�PNG" — e o dano foi commitado.
+#
+# `binary` diz ao Git para nunca converter nem tratar estes arquivos como
+# texto, e faz as ferramentas que respeitam gitattributes pararem de tentar
+# lê-los como string.
+#
+# Se uma imagem voltar a quebrar, o teste rápido é:
+#   xxd -l 4 -p public/logo.png     ->  esperado 89504e47, corrompido efbfbd50
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.icns binary
+*.avif binary
+
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.webm binary
+
+*.pdf binary
+*.zip binary
+*.jar binary
+*.keystore binary
+*.jks binary
+*.p8 binary
+*.p12 binary
+*.mobileprovision binary
+
+# Texto: normaliza para LF no repositório, sem mexer no que está no disco.
+# O projeto estava com o diretório de trabalho em CRLF e o repositório em LF,
+# o que fazia qualquer commit reescrever arquivos inteiros.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.jsx  text eol=lf
+*.css  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.html text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
