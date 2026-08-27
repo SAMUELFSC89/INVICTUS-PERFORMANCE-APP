@@ -7,6 +7,7 @@ import { GPSValidator } from '../../_lib/fraud-detection/gps-validator.js';
 import { SecurityPipeline } from '../../_lib/security-pipeline.js';
 import { db } from '../../_lib/common.js';
 import { recalculateAllUserScores } from '../../_lib/igaService.js';
+import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
 
 const cache = new NodeCache({ stdTTL: 300 });
 
@@ -232,7 +233,8 @@ export class RunningService {
         },
         userId,
         securityUserProfile,
-        []
+        // #237: historico real -- ver api/_lib/user-activity-history.ts.
+        await buscarHistoricoRecente(userId)
       );
 
       if (!securityResult.shouldScore) {

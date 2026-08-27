@@ -9,6 +9,7 @@ import { logEvent } from '../_lib/observability.js';
 import { GoogleGenAI } from "@google/genai";
 import { readActiveHabitGoal, applyHabitProgressWithGoal } from '../_lib/habit-integration.js';
 import { recalculateAllUserScores } from '../_lib/igaService.js';
+import { buscarHistoricoRecente } from '../_lib/user-activity-history.js';
 import { SCORE_CONFIG } from '../_lib/score-config.js';
 import { GPSValidator } from '../_lib/fraud-detection/gps-validator.js';
 import { SecurityPipeline } from '../_lib/security-pipeline.js';
@@ -409,7 +410,8 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       },
       userId,
       secUserProfile,
-      []
+      // #237: historico real -- ver api/_lib/user-activity-history.ts.
+      await buscarHistoricoRecente(userId)
     );
 
     if (!securityResult.shouldScore) {
@@ -701,7 +703,8 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       },
       userId,
       secUserProfile,
-      []
+      // #237: historico real -- ver api/_lib/user-activity-history.ts.
+      await buscarHistoricoRecente(userId)
     );
 
     if (!securityResult.shouldScore) {

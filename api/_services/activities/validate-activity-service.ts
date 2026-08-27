@@ -6,6 +6,7 @@ import { NotificationService } from '../notification-service.js';
 import { AppError } from '../../_middleware/error.js';
 import { SecurityPipeline } from '../../_lib/security-pipeline.js';
 import { recalculateAllUserScores } from '../../_lib/igaService.js';
+import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
 import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 
 export class ValidateActivityService {
@@ -137,6 +138,10 @@ export class ValidateActivityService {
     let securityReason: string | null = null;
     let securityUserMessage: string | null = null;
     let securityCanRetry = true;
+    // #237: historico real do atleta -- sem ele, BehaviorEngine e
+    // ReputationEngine ficam no ramo neutro e nunca comparam o atleta com ele
+    // mesmo. Ver api/_lib/user-activity-history.ts.
+    const userHistory = await buscarHistoricoRecente(request.userId);
     try {
       const securityResult = await SecurityPipeline.runPipeline(
         {
@@ -163,7 +168,7 @@ export class ValidateActivityService {
         },
         request.userId,
         user || {},
-        []
+        userHistory
       );
       if (!securityResult.shouldScore) {
         securityBlocked = true;
