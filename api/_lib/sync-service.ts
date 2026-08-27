@@ -3,6 +3,7 @@ import { ScoreEngine } from './score-engine.js';
 import { recalculateAllUserScores } from './igaService.js';
 import { SecurityPipeline } from './security-pipeline.js';
 import { buscarHistoricoRecente } from './user-activity-history.js';
+import { encontrarAtividadeDuplicada } from './activity-dedup.js';
 
 export class SyncService {
   static async processStravaActivity(userId: string, stravaActivity: any) {
@@ -84,8 +85,22 @@ export class SyncService {
         // media). Os outros tres caminhos (treino manual, check-in de presenca,
         // corrida GPS) ja rodavam o pipeline completo. Aqui a atividade passa
         // pelos mesmos 10 sub-motores antes de poder alimentar a competicao.
-        const aprovado = await this.avaliarSegurancaStrava(userId, stravaActivity, activityType);
-        await this.persistStravaWorkoutToHistory(userId, stravaActivity, activityType, aprovado);
+        // #240: a mesma corrida pode ter sido gravada pelo proprio Invictus e
+        // depois chegar de novo pelo Strava. UMA atividade fisica so pode gerar
+        // UMA contribuicao competitiva.
+        const duplicata = await encontrarAtividadeDuplicada(userId, {
+          inicio: new Date(stravaActivity?.start_date || stravaActivity?.start_date_local || Date.now()),
+          duracaoMin: Math.ceil((stravaActivity?.moving_time || stravaActivity?.elapsed_time || 0) / 60),
+          distanciaKm: (stravaActivity?.distance || 0) > 100 ? stravaActivity.distance / 1000 : (stravaActivity?.distance || 0),
+          tipo: activityType,
+          fonte: 'strava',
+          sourceActivityId: stravaActivity?.id?.toString()
+        });
+        if (duplicata) {
+          console.warn(`[SyncService] Atividade Strava ${stravaActivity?.id} e duplicata de ${duplicata.id} (${duplicata.motivo}) -- nao vai pontuar.`);
+        }
+        const aprovado = duplicata ? false : await this.avaliarSegurancaStrava(userId, stravaActivity, activityType, duplicata);
+        await this.persistStravaWorkoutToHistory(userId, stravaActivity, activityType, aprovado, duplicata?.detalhe);
         // Recalcular sempre: uma atividade reprovada tambem precisa que o
         // ranking reflita o historico atual (ela entra como nao elegivel).
         await recalculateAllUserScores(userId);
@@ -116,7 +131,7 @@ export class SyncService {
    * tecnicamente, a atividade NAO e aprovada para a competicao (ela continua
    * salva no historico, apenas sem alimentar o IGA).
    */
-  private static async avaliarSegurancaStrava(userId: string, stravaActivity: any, normalizedActivityType: string): Promise<boolean> {
+  private static async avaliarSegurancaStrava(userId: string, stravaActivity: any, normalizedActivityType: string, duplicata?: { detalhe: string } | null): Promise<boolean> {
     const rawDistance = stravaActivity?.distance || 0;
     const distanceKm = rawDistance > 100 ? rawDistance / 1000 : rawDistance;
     const rawDurationSeconds = stravaActivity?.moving_time || stravaActivity?.elapsed_time || 0;
@@ -156,7 +171,11 @@ export class SyncService {
           // O Strava e uma fonte de terceiros ja consolidada: nao ha telemetria
           // de sensor/dispositivo do nosso app para enviar. Nao inventamos esses
           // campos -- ausencia de dado nao pode virar dado valido.
-          manual: stravaActivity?.manual === true
+          manual: stravaActivity?.manual === true,
+          // Alimenta a evidencia REPLAY_DUPLICATE_ACTIVITY que ja existia no
+          // FraudEngine mas que nenhum chamador setava -- o sinal nunca chegava
+          // a disparar. Aproveitamos o motor existente em vez de criar outro.
+          isDuplicateActivity: Boolean(duplicata)
         },
         userId,
         perfil,
@@ -173,7 +192,7 @@ export class SyncService {
     }
   }
 
-  private static async persistStravaWorkoutToHistory(userId: string, stravaActivity: any, normalizedActivityType: string, aprovadoPeloAntifraude: boolean) {
+  private static async persistStravaWorkoutToHistory(userId: string, stravaActivity: any, normalizedActivityType: string, aprovadoPeloAntifraude: boolean, motivoDuplicata?: string) {
     const isRunType = normalizedActivityType.includes('run');
     const isCardioType = isRunType
       || normalizedActivityType.includes('walk')
@@ -208,7 +227,10 @@ export class SyncService {
       status: aprovadoPeloAntifraude ? 'completed' : 'suspicious',
       validationStatus: aprovadoPeloAntifraude ? 'validated' : 'invalid',
       securityBlocked: aprovadoPeloAntifraude ? undefined : true,
-      nonScoringReason: aprovadoPeloAntifraude ? undefined : 'SECURITY_PIPELINE_BLOCKED',
+      nonScoringReason: aprovadoPeloAntifraude ? undefined : (motivoDuplicata ? 'DUPLICATE_ACTIVITY' : 'SECURITY_PIPELINE_BLOCKED'),
+      // A atividade duplicada continua visivel no historico (a corrida
+      // aconteceu de verdade), so nao alimenta a competicao uma segunda vez.
+      userMessage: motivoDuplicata,
       points: 0,
       pointsEarned: 0,
       createdAt: activityDate

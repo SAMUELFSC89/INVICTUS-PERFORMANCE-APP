@@ -41,6 +41,10 @@ async function persistCardioToHistory(userId: string, params: {
       id: workoutRef.id,
       userId,
       type: 'cardio',
+      // #240: a origem passa a ser gravada no documento. A deduplicacao entre
+      // fontes (api/_lib/activity-dedup.ts) compara origem: sem este campo ela
+      // dependeria de um fallback implicito para saber o que veio do app.
+      source: 'invictus',
       timestamp: params.timestamp,
       duration: params.durationMins,
       distance: params.distanceKm,

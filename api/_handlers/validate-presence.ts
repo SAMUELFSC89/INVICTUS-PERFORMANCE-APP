@@ -566,6 +566,8 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       id: workoutRef.id,
       userId,
       type,
+      // #240: origem gravada no documento, usada pela deduplicacao entre fontes.
+      source: 'invictus',
       timestamp: nowLocalDate.toISOString(),
       duration: durationMins || 45,
       distance: distanceKm || 0,
@@ -832,6 +834,8 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       id: workoutDocRef.id,
       userId,
       type: 'cardio',
+      // #240: origem gravada no documento, usada pela deduplicacao entre fontes.
+      source: 'invictus',
       timestamp: nowIso,
       duration: Math.ceil((timeSeconds || 0) / 60),
       distance: currentKm,
