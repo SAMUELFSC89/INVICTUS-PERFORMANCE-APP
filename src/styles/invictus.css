@@ -823,7 +823,13 @@
   position: absolute;
   left: 41%;
   right: 5%;
-  top: 38%;
+  top: 40%;
+  /* #243: e um <p>, e sem reset o navegador aplica margin 1em por padrao.
+     Isso empurrava o texto pra baixo (media 6pp a mais que o `top` pedia) E
+     deixava so ~1,5px de folga ate o botao -- risco real de sobrepor. Zerado
+     o margin e o `top` ajustado pra compensar (era 38%, medido no navegador
+     com a fonte real: dava so 1px de folga pro titulo acima). */
+  margin: 0;
   color: #D8D2C9;
   font-family: 'Barlow', sans-serif;
   font-size: 2.5cqw;
@@ -856,6 +862,9 @@
 
 @container (max-width: 430px) {
   .iv-camp-cta__titulo { font-size: 7.6cqw; }
-  .iv-camp-cta__texto { font-size: 3.0cqw; top: 42%; }
+  /* #243: mesmo motivo do comentario acima -- 42% media medido, com o
+     margin do <p> zerado, ficava colado no titulo (0,2px de folga). 45%
+     da ~6px de respiro acima e ainda sobra >7px ate o botao. */
+  .iv-camp-cta__texto { font-size: 3.0cqw; top: 45%; }
   .iv-camp-cta__botao { font-size: 3.4cqw; }
 }
