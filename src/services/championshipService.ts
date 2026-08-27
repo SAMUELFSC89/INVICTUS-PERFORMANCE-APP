@@ -264,7 +264,7 @@ export function getRegulationSections(championshipId: string): RegulationSection
     },
     {
       id: 34,
-      title: '34. Disclaimer Apple Inc.',
+      title: '34. Disclaimer Apple Inc. e Google LLC',
       content: CHAMPIONSHIP_CONFIG.APPLE_DISCLAIMER
     }
   ];

@@ -8,7 +8,7 @@ export interface FAQItem {
   id: number;
   question: string;
   answer: string;
-  category: 'Geral' | 'Conta & Perfil' | 'Pontuação & IGA' | 'Assinaturas PRO' | 'Health & Wearables' | 'Desafios Privados' | 'Saques & PIX' | 'Antifraude & Auditoria' | 'Privacidade & LGPD';
+  category: 'Geral' | 'Conta & Perfil' | 'Pontuação & IGA' | 'Assinaturas PRO' | 'Health & Wearables' | 'Desafios Privados' | 'Campeonatos Oficiais' | 'Saques & PIX' | 'Antifraude & Auditoria' | 'Privacidade & LGPD';
 }
 
 export const LEGAL_TERMS_OF_USE = `
@@ -48,24 +48,31 @@ CLÁUSULA 5 - DESAFIOS PRIVADOS E REGRAS DE CONVIVÊNCIA
 5.4. Reconhecimento ao Campeão (TOP 1 Absoluto): Ao término do prazo regulamentar do Desafio Privado, o valor total do montante arrecadado, deduzida a taxa de serviço e manutenção da plataforma de 10% (dez por cento), será creditado integralmente sob a rubrica de "Reconhecimento ao Campeão" na carteira do atleta classificado em 1º lugar (TOP 1) geral. Não haverá fracionamento ou divisão de valores com demais colocações.
 5.5. Proibição Absoluta de Vedações e Vocabulário de Jogatina: É estritamente proibida a utilização de terminologias de apostas ou jogos de azar ("aposta", "bolão", "banca", "odd", "poker") na criação do nome ou descrição dos desafios. Desafios criados com nomenclaturas irregulares serão sumariamente excluídos e os participantes alertados.
 
-CLÁUSULA 6 - CARTEIRA VIRTUAL, RESGATES E LIMITES FINANCEIROS
-6.1. A Carteira Virtual armazena saldos decorrentes de premiações de rankings, conquistas de incentivo e estornos de desafios.
-6.2. Regras de Resgate via PIX: As solicitações de saque via PIX estão sujeitas às seguintes condições cumulativas:
+CLÁUSULA 6 - CAMPEONATOS OFICIAIS INVICTUS (EDIÇÕES E TEMPORADAS COM INSCRIÇÃO PAGA)
+6.1. Além dos Desafios Privados (Cláusula 5), o INVICTUS promove periodicamente Campeonatos Oficiais organizados diretamente pela plataforma (ex.: INVICTUS ARENA, INVICTUS RUN ELITE), estruturados em edições/temporadas sucessivas e independentes entre si, cada uma com duração determinada, regulamento próprio, datas de início e encerramento e valor de inscrição divulgados previamente na tela de cada edição antes da confirmação do pagamento.
+6.2. Pagamento por Gateway Externo (Fora do Ecossistema de Compras In-App): A inscrição nos Campeonatos Oficiais é processada exclusivamente por gateway de pagamento externo homologado (Asaas), via PIX instantâneo ou cartão de crédito, e NÃO utiliza o Apple In-App Purchase (IAP) nem o Google Play Billing. Isso ocorre porque a inscrição se refere à participação em uma competição esportiva real, com premiação vinculada a mérito físico auditado, e não à compra de conteúdo ou funcionalidade digital dentro do aplicativo.
+6.3. Isenção de Patrocínio das Lojas de Aplicativos: A Apple Inc. e a Google LLC NÃO são patrocinadoras, organizadoras, administradoras, avalistas nem participantes de nenhum Campeonato Oficial do INVICTUS, e não possuem qualquer responsabilidade pela inscrição, classificação, apuração de resultados, premiação ou entrega de prêmios. Essas obrigações são de responsabilidade exclusiva da INVICTUS PERFORMANCE E SOLUÇÕES LTDA., conforme detalhado no regulamento de cada edição.
+6.4. Premiação: o valor destinado à premiação de cada edição corresponde ao percentual definido no regulamento específico daquela edição sobre a Receita Líquida Elegível arrecadada das inscrições, distribuído entre os primeiros colocados conforme a tabela de percentuais divulgada e aceita expressamente pelo atleta no momento da inscrição.
+6.5. Novas Edições e Ciclos: O encerramento de uma edição não gera direito automático de inscrição, reembolso ou premiação em edições futuras. Cada novo ciclo/temporada terá suas próprias datas, valor de inscrição e regulamento, divulgados previamente na tela do respectivo campeonato antes de qualquer cobrança.
+
+CLÁUSULA 7 - CARTEIRA VIRTUAL, RESGATES E LIMITES FINANCEIROS
+7.1. A Carteira Virtual armazena saldos decorrentes de premiações de rankings, campeonatos oficiais, conquistas de incentivo e estornos de desafios.
+7.2. Regras de Resgate via PIX: As solicitações de saque via PIX estão sujeitas às seguintes condições cumulativas:
 - Saldo mínimo para solicitação de resgate: R$ 50,00 (cinquenta reais).
 - Obrigatoriedade de validação de chave PIX cadastrada sob o mesmo CPF do titular da conta no INVICTUS. Saques para contas bancárias de terceiros são bloqueados por segurança antifraude.
 - Prazo de auditoria financeira e liquidação: De 1 (um) a 5 (cinco) dias úteis após a solicitação, período no qual a esteira de integridade verifica a idoneidade das atividades que geraram os créditos.
 
-CLÁUSULA 7 - SANÇÕES, BANIMENTO E CANCELAMENTO DE CONTA
-7.1. O descumprimento de qualquer disposição destes Termos, em especial a prática de fraudes de GPS, submissão de evidências falsas, uso de veículos em corridas ou agressões na comunidade, resultará na aplicação das seguintes sanções administrativas a critério exclusivo do INVICTUS:
+CLÁUSULA 8 - SANÇÕES, BANIMENTO E CANCELAMENTO DE CONTA
+8.1. O descumprimento de qualquer disposição destes Termos, em especial a prática de fraudes de GPS, submissão de evidências falsas, uso de veículos em corridas ou agressões na comunidade, resultará na aplicação das seguintes sanções administrativas a critério exclusivo do INVICTUS:
 - Advertência formal via sistema;
 - Desconsideração da atividade irregular e perda dos pontos gerados;
 - Suspensão temporária da conta e bloqueio de participação em rankings por 30 a 90 dias;
 - Banimento definitivo da conta com cancelamento sumário de saldos pendentes de resgate oriundos de fraudes.
-7.2. O usuário pode requerer o encerramento definitivo de sua conta a qualquer momento nas configurações do aplicativo.
+8.2. O usuário pode requerer o encerramento definitivo de sua conta a qualquer momento nas configurações do aplicativo.
 
-CLÁUSULA 8 - PROPRIEDADE INTELECTUAL E FORO
-8.1. Todos os direitos de propriedade intelectual sobre o marca INVICTUS, algoritmos, design, telas, códigos e conteúdo pertencem exclusivamente à INVICTUS PERFORMANCE E SOLUÇÕES LTDA.
-8.2. Este contrato é regido pelas leis da República Federativa do Brasil. Fica eleito o Foro da Comarca de Porto Alegre/RS para dirimir quaisquer controvérsias decorrentes deste instrumento.
+CLÁUSULA 9 - PROPRIEDADE INTELECTUAL E FORO
+9.1. Todos os direitos de propriedade intelectual sobre o marca INVICTUS, algoritmos, design, telas, códigos e conteúdo pertencem exclusivamente à INVICTUS PERFORMANCE E SOLUÇÕES LTDA.
+9.2. Este contrato é regido pelas leis da República Federativa do Brasil. Fica eleito o Foro da Comarca de Porto Alegre/RS para dirimir quaisquer controvérsias decorrentes deste instrumento.
 `;
 
 export const LEGAL_PRIVACY_POLICY = `
@@ -113,7 +120,7 @@ D. Registros Fotográficos e Mídia:
 
 5. RETENÇÃO E EXCLUSÃO DE DADOS
 5.1. Período de Retenção: Os dados pessoais são mantidos enquanto a conta do usuário permanecer ativa na plataforma.
-5.2. Procedimento de Exclusão Definitiva: O usuário possui o direito de solicitar a exclusão integral e permanente de sua conta e de todos os seus dados pessoais a qualquer momento. O pedido pode ser realizado diretamente nas configurações do aplicativo ("Excluir Conta") ou via e-mail contato@invictusperfomance.app.br.
+5.2. Procedimento de Exclusão Definitiva: O usuário possui o direito de solicitar a exclusão integral e permanente de sua conta e de todos os seus dados pessoais a qualquer momento. O pedido pode ser realizado diretamente nas configurações do aplicativo ("Excluir Conta") ou via e-mail contato@invictusperformance.app.br.
 5.3. Prazo de Efetivação: A exclusão é concluída no prazo máximo de 15 (quinze) dias contados do pedido. Os dados armazenados em bancos de dados ativos e backups são purgados permanentemente, ressalvadas as hipóteses de conservação autorizadas por lei para cumprimento de obrigação legal ou regulatória (ex: registros de acesso a aplicações mantidos por 6 meses conforme o Marco Civil da Internet).
 
 6. DIREITOS DO TITULAR DOS DADOS (LGPD ART. 18)
@@ -126,7 +133,7 @@ O titular dos dados tem o direito de obter do INVICTUS, a qualquer momento e med
 - Eliminação dos dados pessoais tratados com o consentimento do titular;
 - Revogação do consentimento a qualquer momento.
 
-Para exercer seus direitos, entre em contato com nosso Encarregado de Proteção de Dados (DPO) pelo e-mail: contato@invictusperfomance.app.br.
+Para exercer seus direitos, entre em contato com nosso Encarregado de Proteção de Dados (DPO) pelo e-mail: contato@invictusperformance.app.br.
 `;
 
 export const LEGAL_HEALTH_DATA_POLICY = `
@@ -192,7 +199,7 @@ O ecossistema antifraude analisa de forma contínua e automatizada múltiplos ve
 - Fraude Grave (Uso intencional de simuladores de GPS, adulteração de arquivos ou reincidência): Banimento permanente da conta, bloqueio de dispositivo e perda sumária de qualquer saldo acumulado pendente de resgate.
 
 5. DIREITO DE RECURSO E CONTRADITÓRIO
-O atleta que tiver uma atividade invalidada possui o direito de solicitar revisão humana no prazo de até 5 (cinco) dias úteis após a notificação, enviando evidências complementares (ex: dados do relógio GPS, fotos adicionais da rota ou histórico de saúde) através do canal oficial de suporte: contato@invictusperfomance.app.br.
+O atleta que tiver uma atividade invalidada possui o direito de solicitar revisão humana no prazo de até 5 (cinco) dias úteis após a notificação, enviando evidências complementares (ex: dados do relógio GPS, fotos adicionais da rota ou histórico de saúde) através do canal oficial de suporte: contato@invictusperformance.app.br.
 `;
 
 export const LEGAL_PROMOTIONAL_RULES = `
@@ -220,6 +227,13 @@ REGULAMENTO GERAL DAS CAMPANHAS DE INCENTIVO E RECONHECIMENTO ESPORTIVO
 
 4. DESCLASSIFICAÇÃO E REDISTRIBUIÇÃO DE POSIÇÕES
 Atletas que forem desclassificados por violação da Política Antifraude perderão integralmente o direito à premiação, e a colocação correspondente avançará imediatamente para o próximo atleta elegível na ordem do ranking oficial.
+
+5. CAMPEONATOS OFICIAIS COM INSCRIÇÃO PAGA (EDIÇÕES E CICLOS DE TEMPORADA)
+5.1. Natureza Distinta dos Rankings Gratuitos: Diferentemente das Ligas e Temporadas do item 1.2 (integralmente financiadas pela INVICTUS e patrocinadores, sem custo de inscrição), os Campeonatos Oficiais (ex.: INVICTUS ARENA, INVICTUS RUN ELITE) exigem inscrição paga por edição, cujo valor arrecadado forma o Prize Pool distribuído aos primeiros colocados daquela edição, nos percentuais definidos e aceitos no regulamento específico no momento da inscrição.
+5.2. Mérito Esportivo, Não Jogo de Azar: A classificação em Campeonatos Oficiais depende exclusivamente de desempenho físico real, auditado por sensores, GPS e/ou presença validada, sem qualquer elemento de sorte, sorteio ou aleatoriedade — o mesmo fundamento de isenção do item 1.1 aplica-se integralmente aos Campeonatos Oficiais.
+5.3. Pagamento Fora do Ecossistema de Compras In-App: A inscrição é processada por gateway de pagamento externo homologado (Asaas, via PIX ou cartão), e não pelo Apple In-App Purchase nem pelo Google Play Billing, por se tratar de inscrição em competição esportiva real e não de compra de conteúdo digital.
+5.4. Isenção de Patrocínio das Lojas de Aplicativos: A Apple Inc. e a Google LLC NÃO patrocinam, organizam, administram ou se responsabilizam, em qualquer hipótese, por inscrição, classificação, apuração ou pagamento de premiação de nenhum Campeonato Oficial do INVICTUS.
+5.5. Edições e Ciclos Sucessivos: Cada Campeonato Oficial é organizado em edições/temporadas sucessivas e independentes, com datas, valor de inscrição e regulamento próprios, divulgados previamente na tela do respectivo campeonato antes de qualquer cobrança. O encerramento de uma edição não gera direito automático sobre edições futuras.
 `;
 
 export const LEGAL_ACCOUNT_DELETION_POLICY = `
@@ -239,7 +253,7 @@ A. Pelo Aplicativo (Autoatendimento Instantâneo):
 4. Confirme a operação digitando a palavra de confirmação e autenticando seu acesso.
 
 B. Por E-mail Oficial do DPO:
-Envie uma solicitação formal contendo seu e-mail cadastrado e CPF para: contato@invictusperfomance.app.br com o assunto "Solicitação de Exclusão de Conta - LGPD".
+Envie uma solicitação formal contendo seu e-mail cadastrado e CPF para: contato@invictusperformance.app.br com o assunto "Solicitação de Exclusão de Conta - LGPD".
 
 3. EFEITOS DA EXCLUSÃO DA CONTA
 A confirmação da exclusão da conta acarreta a perda imediata e irreversível de:
@@ -317,7 +331,7 @@ export const LEGAL_FAQ_100: FAQItem[] = [
   { id: 4, category: 'Geral', question: 'Quem desenvolveu o INVICTUS?', answer: 'O INVICTUS é desenvolvido e gerido pela INVICTUS PERFORMANCE E SOLUÇÕES LTDA. (CNPJ 67.770.822/0001-22), empresa brasileira de tecnologia e performance esportiva.' },
   { id: 5, category: 'Geral', question: 'O INVICTUS funciona em quais sistemas operacionais?', answer: 'O aplicativo é compatível com dispositivos móveis iOS (iPhone) e Android, além de versão web acessível via navegador.' },
   { id: 6, category: 'Geral', question: 'O INVICTUS fornece acompanhamento médico?', answer: 'Não. O INVICTUS não é um aplicativo médico nem substitui médicos, nutricionistas ou profissionais de Educação Física. Sempre consulte um médico antes de iniciar treinos intensos.' },
-  { id: 7, category: 'Geral', question: 'Como entro em contato com o suporte oficial?', answer: 'Você pode entrar em contato diretamente pelo aplicativo na aba Configurações -> Suporte ou pelo e-mail oficial: contato@invictusperfomance.app.br.' },
+  { id: 7, category: 'Geral', question: 'Como entro em contato com o suporte oficial?', answer: 'Você pode entrar em contato diretamente pelo aplicativo na aba Configurações -> Suporte ou pelo e-mail oficial: contato@invictusperformance.app.br.' },
   { id: 8, category: 'Geral', question: 'A Apple ou a Google patrocinam o INVICTUS?', answer: 'Não. A Apple Inc. e a Google LLC são apenas operadoras das lojas de aplicativos (App Store e Google Play Store) e não possuem qualquer vínculo ou responsabilidade sobre os prêmios do INVICTUS.' },
   { id: 9, category: 'Geral', question: 'O INVICTUS é uma plataforma de apostas?', answer: 'Não! O INVICTUS é estritamente uma plataforma de esporte e saúde baseada 100% em mérito físico real. Não existem apostas, jogos de azar, roletas ou sorteios.' },
   { id: 10, category: 'Geral', question: 'Quais modalidades esportivas são aceitas no INVICTUS?', answer: 'Aceitamos corrida de rua, esteira, caminhada, ciclismo, musculação/crossfit, natação e treinos funcionais validados.' },
@@ -406,7 +420,7 @@ export const LEGAL_FAQ_100: FAQItem[] = [
   { id: 81, category: 'Saques & PIX', question: 'O saldo expira se eu não sacar imediatamente?', answer: 'Não. O saldo obtido legalmente permanece salvo na sua carteira virtual enquanto sua conta estiver ativa.' },
   { id: 82, category: 'Saques & PIX', question: 'Tenho que pagar imposto de renda sobre os prêmios recebidos?', answer: 'Atletas que acumularem valores sujeitos a tributação fiscal anual são responsáveis por declarar seus rendimentos conforme as normas da Receita Federal.' },
   { id: 83, category: 'Saques & PIX', question: 'O que acontece com meu saldo se eu for banido por fraude?', answer: 'Saldos decorrentes de pontuações obtidas por práticas de fraude de GPS ou adulteração são cancelados sumariamente sem direito a resgate.' },
-  { id: 84, category: 'Saques & PIX', question: 'O que fazer se o valor retido demorar mais de 5 dias úteis?', answer: 'Entre em contato com contato@invictusperfomance.app.br informando o ID da solicitação de saque visível no extrato da sua carteira.' },
+  { id: 84, category: 'Saques & PIX', question: 'O que fazer se o valor retido demorar mais de 5 dias úteis?', answer: 'Entre em contato com contato@invictusperformance.app.br informando o ID da solicitação de saque visível no extrato da sua carteira.' },
 
   // ANTIFRAUDE & AUDITORIA (85 - 92)
   { id: 85, category: 'Antifraude & Auditoria', question: 'Como o INVICTUS detecta trapaças em treinos de corrida?', answer: 'Nosso algoritmo analisa dados de GPS, aceleração, variação altimétrica, coerência de ritmo humano e dados de frequência cardíaca do relógio.' },
@@ -414,17 +428,27 @@ export const LEGAL_FAQ_100: FAQItem[] = [
   { id: 87, category: 'Antifraude & Auditoria', question: 'O que é o "Trust Score" do usuário?', answer: 'É a pontuação de integridade do seu perfil. Quanto mais treinos validados por relógios com frequência cardíaca você realiza, maior é a sua reputação.' },
   { id: 88, category: 'Antifraude & Auditoria', question: 'O que acontece se eu mandar uma foto da tela do computador no treino?', answer: 'Nossa tecnologia de auditoria de imagens detecta fotos tiradas de monitores ou baixadas da internet, invalidando a sessão.' },
   { id: 89, category: 'Antifraude & Auditoria', question: 'Como funciona o processo de denúncia entre atletas?', answer: 'Se você identificar uma atividade suspeita no feed, toque no ícone de denúncia. A equipe técnica analisará os dados telemétricos sob sigilo.' },
-  { id: 90, category: 'Antifraude & Auditoria', question: 'Fui suspenso injustamente. Como posso recorrer?', answer: 'Envie um e-mail para contato@invictusperfomance.app.br no prazo de até 5 dias úteis com os arquivos originais do seu relógio GPS para reavaliação.' },
+  { id: 90, category: 'Antifraude & Auditoria', question: 'Fui suspenso injustamente. Como posso recorrer?', answer: 'Envie um e-mail para contato@invictusperformance.app.br no prazo de até 5 dias úteis com os arquivos originais do seu relógio GPS para reavaliação.' },
   { id: 91, category: 'Antifraude & Auditoria', question: 'O INVICTUS usa Inteligência Artificial para auditar treinos?', answer: 'Sim! Utilizamos modelos avançados de aprendizado de máquina para identificar padrões atípicos de deslocamento e falsificação de mídias.' },
   { id: 92, category: 'Antifraude & Auditoria', question: 'Quais são as punições para trapaças comprovadas?', answer: 'Desde advertência e remoção da atividade até suspensão de rankings por 90 dias ou banimento definitivo da conta.' },
 
   // PRIVACIDADE & LGPD (93 - 100)
   { id: 93, category: 'Privacidade & LGPD', question: 'O INVICTUS está em conformidade com a LGPD?', answer: 'Sim! Toda a coleta, armazenamento e tratamento de dados respeita integralmente os ditames da Lei nº 13.709/2018 (LGPD).' },
   { id: 94, category: 'Privacidade & LGPD', question: 'Meus dados de localização GPS são compartilhados publicamente?', answer: 'As coordenadas exatas da sua rota são utilizadas para cálculo telemétrico e não ficam expostas de forma vulnerável a terceiros.' },
-  { id: 95, category: 'Privacidade & LGPD', question: 'Quem é o Encarregado de Proteção de Dados (DPO) do INVICTUS?', answer: 'Nosso DPO pode ser contatado diretamente pelo canal exclusivo: contato@invictusperfomance.app.br.' },
-  { id: 96, category: 'Privacidade & LGPD', question: 'Como solicito um relatório de todos os dados que o app possui sobre mim?', answer: 'Envie uma mensagem com o assunto "Solicitação de Acesso a Dados - LGPD" para contato@invictusperfomance.app.br.' },
+  { id: 95, category: 'Privacidade & LGPD', question: 'Quem é o Encarregado de Proteção de Dados (DPO) do INVICTUS?', answer: 'Nosso DPO pode ser contatado diretamente pelo canal exclusivo: contato@invictusperformance.app.br.' },
+  { id: 96, category: 'Privacidade & LGPD', question: 'Como solicito um relatório de todos os dados que o app possui sobre mim?', answer: 'Envie uma mensagem com o assunto "Solicitação de Acesso a Dados - LGPD" para contato@invictusperformance.app.br.' },
   { id: 97, category: 'Privacidade & LGPD', question: 'O INVICTUS utiliza cookies na versão web?', answer: 'Utilizamos apenas cookies estritamente necessários para autenticação de sessão e segurança de navegação.' },
   { id: 98, category: 'Privacidade & LGPD', question: 'Os dados do meu treino são criptografados?', answer: 'Sim. Todos os dados são transmitidos via protocolos seguros TLS 1.3 e armazenados com criptografia AES-256 no Google Cloud.' },
   { id: 99, category: 'Privacidade & LGPD', question: 'O que é a opção "Consentimento para Pesquisa Científica"?', answer: 'É uma opção voluntária no aplicativo onde você permite que dados de treinos totalmente anonimizados contribuam com estudos de saúde física.' },
-  { id: 100, category: 'Privacidade & LGPD', question: 'Onde posso ler a Política de Privacidade completa a qualquer momento?', answer: 'No aplicativo, vá em Configurações -> Termos e Políticas -> Política de Privacidade, ou enviando e-mail para contato@invictusperfomance.app.br.' }
+  { id: 100, category: 'Privacidade & LGPD', question: 'Onde posso ler a Política de Privacidade completa a qualquer momento?', answer: 'No aplicativo, vá em Configurações -> Termos e Políticas -> Política de Privacidade, ou enviando e-mail para contato@invictusperformance.app.br.' },
+
+  // CAMPEONATOS OFICIAIS (101 - 108)
+  { id: 101, category: 'Campeonatos Oficiais', question: 'O que são os Campeonatos Oficiais Invictus?', answer: 'São competições esportivas organizadas diretamente pela plataforma (ex.: INVICTUS ARENA, INVICTUS RUN ELITE), com edições de duração determinada, inscrição paga e premiação em dinheiro para os primeiros colocados, distintas dos rankings gratuitos das Ligas.' },
+  { id: 102, category: 'Campeonatos Oficiais', question: 'Como funciona o pagamento da inscrição em um Campeonato Oficial?', answer: 'A inscrição é processada por um gateway de pagamento externo homologado (Asaas), via PIX instantâneo ou cartão de crédito. Ela não passa pelo Apple In-App Purchase nem pelo Google Play Billing, pois se trata de inscrição em competição esportiva real, não de compra de conteúdo digital.' },
+  { id: 103, category: 'Campeonatos Oficiais', question: 'A Apple ou a Google patrocinam os Campeonatos Oficiais?', answer: 'Não. A Apple Inc. e a Google LLC não são patrocinadoras, organizadoras nem responsáveis por inscrição, classificação, apuração de resultados ou pagamento de premiação em nenhum Campeonato Oficial do Invictus. A organização é de responsabilidade exclusiva da Invictus Performance e Soluções Ltda.' },
+  { id: 104, category: 'Campeonatos Oficiais', question: 'Cada edição de um Campeonato Oficial é diferente?', answer: 'Sim. Cada Campeonato é organizado em edições/temporadas sucessivas e independentes entre si, cada uma com suas próprias datas, valor de inscrição e regulamento, divulgados na tela do campeonato antes de qualquer cobrança. O fim de uma edição não gera direito automático sobre a próxima.' },
+  { id: 105, category: 'Campeonatos Oficiais', question: 'Como é formada a premiação de um Campeonato Oficial?', answer: 'O valor arrecadado com as inscrições daquela edição (descontados tributos, taxas do meio de pagamento, estornos e chargebacks) forma o Prize Pool, distribuído entre os primeiros colocados nos percentuais definidos no regulamento aceito no momento da inscrição.' },
+  { id: 106, category: 'Campeonatos Oficiais', question: 'Preciso ser assinante PRO para participar de um Campeonato Oficial?', answer: 'Não. O status do plano (Free ou PRO) não concede qualquer vantagem competitiva, multiplicador de pontos ou benefício desportivo na disputa. A participação depende apenas da inscrição paga na edição.' },
+  { id: 107, category: 'Campeonatos Oficiais', question: 'Posso pedir reembolso da inscrição em um Campeonato Oficial?', answer: 'Sim, dentro do prazo de arrependimento previsto no regulamento da edição (em geral, até 7 dias corridos após o pagamento), desde que você ainda não tenha submetido atividades pontuáveis ao ranking daquela edição.' },
+  { id: 108, category: 'Campeonatos Oficiais', question: 'Onde vejo o regulamento oficial antes de me inscrever?', answer: 'Todo Campeonato Oficial exibe seu regulamento completo (datas, critérios de pontuação, premiação e o aviso de que Apple e Google não patrocinam a competição) antes da tela de pagamento, e sua aceitação fica registrada de forma auditável.' }
 ];

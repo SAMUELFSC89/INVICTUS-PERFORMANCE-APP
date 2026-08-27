@@ -44,7 +44,12 @@ export const CHAMPIONSHIP_CONFIG = {
   ORGANIZER_NAME: 'Invictus Performance e Soluções Ltda.',
   ORGANIZER_CNPJ: (import.meta.env.VITE_CHAMPIONSHIP_ORGANIZER_CNPJ as string) || 'PENDENTE CONFIGURAÇÃO',
   PAID_CHAMPIONSHIPS_ANDROID: import.meta.env.VITE_PAID_CHAMPIONSHIPS_ANDROID !== 'false',
-  APPLE_DISCLAIMER: 'Este campeonato é promovido e administrado pela Invictus Performance e Soluções Ltda. A Apple Inc. não é patrocinadora, organizadora, administradora ou participante deste campeonato e não possui qualquer responsabilidade relacionada à inscrição, classificação, premiação ou entrega dos prêmios.',
+  // #48: nome mantido por compatibilidade (ja referenciado em varios lugares),
+  // mas o texto agora cobre as duas lojas -- antes so citava a Apple, e o
+  // usuario apontou que a inscricao paga (fora do IAP/Play Billing, via
+  // gateway externo Asaas) precisa deixar claro que NENHUMA das duas
+  // patrocina o campeonato, nao so uma.
+  APPLE_DISCLAIMER: 'Este campeonato é promovido e administrado exclusivamente pela Invictus Performance e Soluções Ltda. A inscrição é processada por gateway de pagamento externo (Asaas via PIX/cartão), fora do Apple In-App Purchase e do Google Play Billing. A Apple Inc. e a Google LLC não são patrocinadoras, organizadoras, administradoras ou participantes deste campeonato e não possuem qualquer responsabilidade relacionada à inscrição, classificação, premiação ou entrega dos prêmios.',
   NET_ELIGIBLE_REVENUE_DEFINITION: 'Receita Líquida Elegível corresponde à soma dos valores efetivamente recebidos e confirmados das inscrições do campeonato, deduzidos exclusivamente os tributos incidentes sobre a operação, taxas do meio de pagamento/Asaas, estornos, chargebacks, reembolsos e pagamentos cancelados ou não liquidados. Não serão deduzidos custos operacionais internos da Invictus, salvo se expressamente previstos no regulamento da edição.'
 };
 
