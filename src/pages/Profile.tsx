@@ -1096,10 +1096,14 @@ function ProfileReference({
   // truncava com "...", pedido explicito do usuario para mostrar so o
   // primeiro nome aqui (igual ja fazia a Home).
   const firstName = (user.displayName || '').trim().split(' ')[0] || user.displayName;
+  // #236: cada card abre o fluxo DA SUA integracao, nao a lista generica.
+  // Quem ja esta conectado vai para a tela de dispositivos (para poder revisar
+  // ou desconectar); quem nao esta cai direto no fluxo de conexao daquele
+  // provedor (?connect=<id>), sem precisar procurar a integracao de novo.
   const connectionItems = [
-    { name: 'Apple Health', icon: <Heart size={21} fill="currentColor" />, className: 'profile-provider-apple', connected: appleHealthConnected },
-    { name: 'Health Connect', icon: <ActivityIcon size={22} />, className: 'profile-provider-health', connected: healthConnectConnected },
-    { name: 'Strava', icon: <Mountain size={22} />, className: 'profile-provider-strava', connected: stravaConnected }
+    { name: 'Apple Health', id: 'apple_health', icon: <Heart size={21} fill="currentColor" />, className: 'profile-provider-apple', connected: appleHealthConnected },
+    { name: 'Health Connect', id: 'health_connect', icon: <ActivityIcon size={22} />, className: 'profile-provider-health', connected: healthConnectConnected },
+    { name: 'Strava', id: 'strava', icon: <Mountain size={22} />, className: 'profile-provider-strava', connected: stravaConnected }
   ];
   const menuItems = [
     { label: 'Dispositivos e relógios', detail: 'Gerencie seus dispositivos e sincronizações', icon: <Watch size={27} />, action: () => onNavigate('/profile/wearables') },
@@ -1151,7 +1155,7 @@ function ProfileReference({
         <section className="profile-panel profile-connections">
           <div className="profile-panel-heading"><h2>Conexões</h2><button onClick={() => onNavigate('/profile/wearables')}>Gerenciar</button></div>
           {connectionItems.map((item, index) => (
-            <button key={item.name} onClick={() => onNavigate('/profile/wearables')} className={cn('profile-connection', index > 0 && 'profile-row-divider')}>
+            <button key={item.name} onClick={() => onNavigate(item.connected ? '/profile/wearables' : `/profile/wearables?connect=${item.id}`)} className={cn('profile-connection', index > 0 && 'profile-row-divider')}>
               <span className={cn('profile-provider', item.className)}>{item.icon}</span>
               <span className="flex-1 text-left"><b>{item.name}</b><small>{item.connected ? 'Conectado' : 'Conectar'}</small></span>
               {item.connected && <CircleCheck className="profile-connected" size={25} />}<ChevronRight className="profile-chevron" size={25} />
