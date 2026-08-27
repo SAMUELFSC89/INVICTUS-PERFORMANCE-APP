@@ -333,60 +333,64 @@ export function Home() {
           </div>
         </section>
 
-        {/* 3) BANNER OFICIAL: POWER LIFT & CAMPEONATOS INVICTUS */}
+        {/* 3) BANNER LIGA INVICTUS.
+            A arte (banner_liga_base) nao tem texto gravado -- e escrita real
+            em HTML/CSS por cima, aprovada com o usuario via previa estatica
+            antes de entrar aqui. Isso e o que permite o contador funcionar
+            (nao daria pra animar segundo a segundo dentro de um PNG) e o
+            texto ficar legivel tanto no celular quanto em telas maiores:
+            o CSS em .iv-liga-banner* escala com container queries, nao com
+            o tamanho fixo da imagem. Medidas e comentarios em invictus.css. */}
         <section
-          id="home-championships-banner-card"
+          id="home-league-banner-card"
           onClick={() => navigate('/championships')}
-          className="w-full rounded-[24px] overflow-hidden bg-[#121113]/95 border border-amber-500/40 shadow-2xl relative cursor-pointer active:scale-[0.98] transition-all hover:border-amber-400 group"
+          className="iv-liga-banner w-full cursor-pointer active:scale-[0.98] transition-transform"
         >
-          {/* Banner Oficial Responsivo */}
-          <div className="relative w-full aspect-[3/2] overflow-hidden bg-black/80">
-            <img
-              src="/assets/championships/banner_home_power_lift.webp"
-              alt="BANNER HOME POWER LIFT"
-              className="w-full h-full object-cover object-center group-hover:scale-[1.02] transition-transform duration-300"
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                // Fallback para PNG caso o navegador antigo prefira
-                const target = e.currentTarget;
-                if (!target.src.endsWith('.png')) {
-                  target.src = '/assets/championships/banner_home_power_lift.png';
-                }
-              }}
-            />
-            {/* Efeito de borda interna */}
-            <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
-          </div>
+          <img
+            src="/assets/championships/banner_liga_base.webp"
+            alt="Liga Invictus — compita treinando, corra para vencer"
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.src.endsWith('.png')) {
+                target.src = '/assets/championships/banner_liga_base.png';
+              }
+            }}
+          />
 
-          {/* Destaques Rápidos com Emojis (Musculação + Corrida) */}
-          <div className="p-3 bg-gradient-to-b from-[#18161b] to-[#100f12] border-t border-amber-500/20 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">🛡️</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-zinc-200 block uppercase tracking-wider leading-tight">Regras Claras</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">Competição justa</span>
-              </div>
+          <div className="iv-liga-banner__texto">
+            <span className="iv-liga-banner__kicker">Liga Invictus</span>
+
+            <div className="iv-liga-banner__titulo">
+              <span className="l1">Compita treinando.</span>
+              <span className="l2">Corra para vencer.</span>
             </div>
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">📊</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-zinc-200 block uppercase tracking-wider leading-tight">Rankings ao Vivo</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">Sua evolução</span>
-              </div>
+
+            <div className="iv-liga-banner__rec iv-liga-banner__rec--1">
+              <b>Pote real</b>
+              <p>Prêmios de verdade para os melhores.</p>
             </div>
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">🏆</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-[#ffb000] block uppercase tracking-wider leading-tight">Premiações</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">Para os melhores</span>
-              </div>
+            <div className="iv-liga-banner__rec iv-liga-banner__rec--2">
+              <b>Competição justa</b>
+              <p>Sistema antifraude avançado.</p>
             </div>
-            <div className="flex items-center gap-2 bg-black/40 border border-zinc-800/80 rounded-xl px-2.5 py-1.5">
-              <span className="text-sm">👥</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-teal-300 block uppercase tracking-wider leading-tight">Desafie Atletas</span>
-                <span className="text-[8.5px] text-zinc-400 block leading-tight">De todo o Brasil</span>
-              </div>
+            <div className="iv-liga-banner__rec iv-liga-banner__rec--3">
+              <b>Evolução constante</b>
+              <p>Cada treino te aproxima do topo.</p>
+            </div>
+
+            {/* Faixa inferior: contador ao vivo de verdade, atualizado a cada
+                segundo pelo mesmo estado `countdown` que ja existia no
+                componente (getNextSeasonCountdown), so que agora aparece
+                na tela. */}
+            <div className="iv-liga-banner__faixa">
+              <span className="em">
+                {countdown.time.days > 0
+                  ? `${countdown.time.days}D ${countdown.time.hours}H`
+                  : `${countdown.time.hours}H ${String(countdown.time.minutes).padStart(2, '0')}MIN`}
+              </span>
+              <span className="sep" />
+              <span className="msg">Para a nova temporada começar</span>
             </div>
           </div>
         </section>

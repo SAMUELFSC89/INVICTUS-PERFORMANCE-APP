@@ -395,3 +395,169 @@
   color: var(--texto-apagado);
   background: transparent;
 }
+
+/* 6) Banner Liga Invictus.
+ *
+ * A arte (banner_liga_base) NAO tem texto gravado -- troféu, circulos dos
+ * icones e a faixa "em breve" vazios. O texto e HTML real por cima, o que
+ * resolve dois problemas que uma imagem com texto embutido nao resolve:
+ * o contador precisa mudar a cada segundo, e a mesma arte precisa ficar
+ * legivel tanto num card de 320px quanto num tablet.
+ *
+ * container-type: inline-size + cqw faz o texto escalar com a LARGURA REAL
+ * do card renderizado, nao com o viewport -- por isso funciona igual dentro
+ * de layouts diferentes. Posicoes em % foram medidas na arte-fonte
+ * (1536x1024): circulos dos 3 recursos centrados em 47.1% / 66.0% / 85.7%
+ * da largura; faixa "em breve" comeca em 80.5% da altura.
+ */
+.iv-liga-banner {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1400 / 933;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(168, 85, 247, 0.55);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 26px rgba(168, 85, 247, 0.22);
+}
+
+.iv-liga-banner img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.iv-liga-banner__texto {
+  position: absolute;
+  inset: 0;
+}
+
+.iv-liga-banner__kicker {
+  position: absolute;
+  left: 49.3%;
+  width: 31.2%;
+  top: 9.5%;
+  text-align: center;
+  color: var(--dourado);
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 2.3cqw;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+}
+
+.iv-liga-banner__titulo {
+  position: absolute;
+  left: 44%;
+  right: 3%;
+  top: 20%;
+  font-family: 'Anton', sans-serif;
+  text-transform: uppercase;
+  font-size: 7.4cqw;
+  line-height: 1.02;
+}
+
+.iv-liga-banner__titulo span {
+  display: block;
+}
+
+.iv-liga-banner__titulo .l1 {
+  background: linear-gradient(180deg, #FFFFFF 55%, #CFCFCF 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.iv-liga-banner__titulo .l2 {
+  background: linear-gradient(180deg, var(--dourado-claro) 20%, var(--dourado-escuro) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.iv-liga-banner__rec {
+  position: absolute;
+  top: 64%;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.iv-liga-banner__rec b {
+  display: block;
+  color: #FFFFFF;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 2.7cqw;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+}
+
+.iv-liga-banner__rec p {
+  display: block;
+  margin-top: 0.35em;
+  color: #CBBFE0;
+  font-family: 'Barlow', sans-serif;
+  font-size: 2.4cqw;
+  line-height: 1.25;
+}
+
+.iv-liga-banner__rec--1 { left: 47.1%; width: 20%; }
+.iv-liga-banner__rec--2 { left: 66.0%; width: 20%; }
+.iv-liga-banner__rec--3 { left: 85.7%; width: 22%; }
+
+.iv-liga-banner__faixa {
+  position: absolute;
+  left: 14.6%;
+  top: 80.5%;
+  width: 71%;
+  height: 11%;
+  display: flex;
+  align-items: center;
+  gap: 2.2cqw;
+  padding-left: 6.5cqw;
+}
+
+.iv-liga-banner__faixa .em {
+  color: var(--liga-borda);
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 3.1cqw;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.iv-liga-banner__faixa .sep {
+  width: 1px;
+  height: 52%;
+  background: rgba(255, 255, 255, 0.28);
+  flex-shrink: 0;
+}
+
+.iv-liga-banner__faixa .msg {
+  color: #E8E0F5;
+  font-family: 'Barlow', sans-serif;
+  font-size: 2.6cqw;
+  line-height: 1.15;
+}
+
+/* Celular estreito: a arte reflui -- titulo sobe/aumenta e os recursos
+   ganham mais respiro relativo. Medido contra card de 358px e 320px. */
+@container (max-width: 430px) {
+  .iv-liga-banner__titulo { left: 41%; top: 17%; font-size: 8.2cqw; }
+  .iv-liga-banner__rec { top: 60%; }
+  .iv-liga-banner__rec b { font-size: 3.5cqw; }
+  .iv-liga-banner__rec p { font-size: 3.1cqw; }
+  .iv-liga-banner__rec--1 { left: 47.1%; width: 19%; }
+  .iv-liga-banner__rec--2 { left: 66.0%; width: 19%; }
+  .iv-liga-banner__rec--3 { left: 85.5%; width: 21%; }
+  .iv-liga-banner__kicker { font-size: 2.9cqw; top: 9%; }
+  .iv-liga-banner__faixa .em { font-size: 3.6cqw; }
+  .iv-liga-banner__faixa .msg { font-size: 3.1cqw; }
+}
