@@ -14,7 +14,6 @@ import { useUser } from '../UserContext';
 import { TermsAndConsent } from './TermsAndConsent';
 import { getXPProgress, getLevelFromXP } from '../lib/levelUtils';
 import { BarbellLifter } from './BarbellLifter';
-import { MiniBarbellProgress } from './MiniBarbellProgress';
 
 export function Layout() {
   const { user, refreshUser } = useUser();
@@ -92,9 +91,25 @@ export function Layout() {
           sistema, e na web ficava colado na borda. env() vale 0px onde nao ha
           notch, entao na web o sino simplesmente desce para 1.5rem. */}
       {location.pathname !== '/notifications' && <div
-        className="fixed right-4 z-50 pointer-events-auto"
+        className="fixed right-4 z-50 pointer-events-auto flex items-center gap-2"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.5rem)' }}>
-        <button 
+        {/* #245: showBarbellModal e o BarbellLifter ja existiam prontos, mas
+            nada na tela chamava setShowBarbellModal(true) -- MiniBarbellProgress
+            (o widget largo pensado pra isso) tambem estava importado sem uso.
+            Em vez de forcar aquele widget largo num canto de 40px, um badge
+            compacto de nivel abre o mesmo modal -- conecta a funcionalidade
+            sem redesenhar nenhuma tela. */}
+        <button
+          id="barbell-level-btn"
+          onClick={() => setShowBarbellModal(true)}
+          className="h-10 px-3 flex items-center gap-1.5 rounded-2xl bg-[#16120C]/85 backdrop-blur-xl border border-[#F5A623]/25 text-[#F5A623] hover:border-[#F5A623]/60 transition-colors shadow-lg active:scale-95 cursor-pointer"
+          title="Nível do haltere"
+          aria-label="Ver nível do haltere"
+        >
+          <Dumbbell size={16} />
+          <span className="text-[11px] font-black uppercase tracking-wide">LVL {progress.currentLevel}</span>
+        </button>
+        <button
           id="notification-bell-btn"
           onClick={() => navigate('/notifications')}
           className="w-10 h-10 flex items-center justify-center rounded-2xl bg-[#16120C]/85 backdrop-blur-xl border border-[#F5A623]/25 text-[#9E8E7E] hover:text-[#F5A623] transition-colors relative shadow-lg active:scale-95 cursor-pointer"
