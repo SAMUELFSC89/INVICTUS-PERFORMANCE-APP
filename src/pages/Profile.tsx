@@ -1092,6 +1092,10 @@ function ProfileReference({
   healthConnectConnected: boolean;
 }) {
   const level = getLevelFromXP(user.xp || 0);
+  // So o primeiro nome no Perfil -- nome completo ficava grande demais e
+  // truncava com "...", pedido explicito do usuario para mostrar so o
+  // primeiro nome aqui (igual ja fazia a Home).
+  const firstName = (user.displayName || '').trim().split(' ')[0] || user.displayName;
   const connectionItems = [
     { name: 'Apple Health', icon: <Heart size={21} fill="currentColor" />, className: 'profile-provider-apple', connected: appleHealthConnected },
     { name: 'Health Connect', icon: <ActivityIcon size={22} />, className: 'profile-provider-health', connected: healthConnectConnected },
@@ -1127,7 +1131,7 @@ function ProfileReference({
           </button>
           <div className="profile-identity-details min-w-0 flex-1">
             <div className="profile-name-line">
-              <button onClick={onEdit} className="profile-name truncate text-left">{user.displayName}</button>
+              <button onClick={onEdit} className="profile-name truncate text-left">{firstName}</button>
               {user.subscriptionTier === 'performance' && <button onClick={() => onNavigate('/performance')} className="profile-pro">PRO</button>}
               <BadgeCheck size={25} className="profile-association shrink-0" />
             </div>
