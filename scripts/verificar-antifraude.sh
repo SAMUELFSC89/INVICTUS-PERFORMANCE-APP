@@ -75,6 +75,7 @@ export async function recordPipelineStage(..._args: any[]) { return null; }
 STUB
 cat > "$TRABALHO/wearable/entry.ts" <<'ENTRY'
 export { processarLoteWearable } from './lib/wearable-sync-service.js';
+export { registrarAmostrasPassivas } from './lib/health-data-layer.js';
 export { __setDb } from './lib/common.js';
 export { __getRecalcCalls, __resetRecalcCalls } from './lib/igaService.js';
 ENTRY
@@ -82,6 +83,12 @@ npx --yes esbuild "$TRABALHO/wearable/entry.ts" \
   --bundle --platform=node --format=esm \
   --outfile="$TRABALHO/wearable.mjs" --log-level=error
 node "$RAIZ/tests/ingestao-wearable.mjs" "$TRABALHO/wearable.mjs"
+
+echo
+echo "==> Vitais passivas: FC repouso, HRV, sono, peso (#253)"
+# Mesmo bundle/stub do bloco acima -- registrarAmostrasPassivas ja esta
+# exportado em wearable/entry.ts.
+node "$RAIZ/tests/vitais-passivas-saude.mjs" "$TRABALHO/wearable.mjs"
 
 echo
 echo "==> Metricas de saude: VO2 max e Indice de Consistencia (#45)"

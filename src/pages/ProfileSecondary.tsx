@@ -188,6 +188,16 @@ export function ProfileSecondary() {
         } catch (e: any) {
           partes.push(`Health: ${e?.message || 'falhou ao sincronizar'}.`);
         }
+
+        // #253: vitais passivas (FC repouso, HRV, sono, peso) -- não entram
+        // no ranking/pontos, então uma falha aqui não deve parecer um erro
+        // grave pro usuário; só some da mensagem se não vier nada.
+        try {
+          const vitais = await manager.syncVitals();
+          if (vitais.savedCount > 0) partes.push(`Saúde: ${vitais.savedCount} medição(ões) atualizada(s).`);
+        } catch (e) {
+          console.warn('[ProfileSecondary] Falha ao sincronizar vitais (não-bloqueante):', e);
+        }
       }
 
       if (partes.length === 0) {

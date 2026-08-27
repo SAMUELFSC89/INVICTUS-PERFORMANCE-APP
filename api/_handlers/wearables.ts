@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { processarLoteWearable, WearableActivityPayload } from '../_lib/wearable-sync-service.js';
+import { registrarAmostrasPassivas, HealthMetricType, HealthSampleSource } from '../_lib/health-data-layer.js';
 
 const ALLOWED_PERMISSION_VALUES = new Set([
   'read_heart_rate',
@@ -70,6 +71,37 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
       averageHeartRate: Number.isFinite(Number(a.averageHeartRate)) ? Number(a.averageHeartRate) : undefined,
       maxHeartRate: Number.isFinite(Number(a.maxHeartRate)) ? Number(a.maxHeartRate) : undefined,
       checkpoints: checkpoints && checkpoints.length > 0 ? checkpoints : undefined
+    });
+  }
+  return validas;
+}
+
+// #253: metricas passivas (FC repouso, HRV, sono, peso) lidas via
+// @capgo/capacitor-health (HealthVitalsProvider) -- distinto do payload de
+// atividades acima, que continua vindo do "capacitor-health" (mley).
+const VITAL_METRIC_TYPES = new Set(['heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg']);
+// Ate ~4 metricas x historico de varios meses cabe folgado; mesmo raciocinio
+// de MAX_ATIVIDADES_POR_SYNC -- protecao contra payload abusivo, nao limite
+// de produto (cliente pode sincronizar de novo).
+const MAX_VITAIS_POR_SYNC = 800;
+
+function sanitizarVitais(input: unknown): Array<{ metricType: HealthMetricType; value: number; unit: string; timestamp: string; device?: string }> {
+  if (!Array.isArray(input)) return [];
+  const validas: Array<{ metricType: HealthMetricType; value: number; unit: string; timestamp: string; device?: string }> = [];
+  for (const item of input.slice(0, MAX_VITAIS_POR_SYNC)) {
+    if (!item || typeof item !== 'object') continue;
+    const a = item as Record<string, unknown>;
+    if (!VITAL_METRIC_TYPES.has(String(a.metricType))) continue;
+    const value = Number(a.value);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    if (typeof a.unit !== 'string' || !a.unit) continue;
+    if (typeof a.timestamp !== 'string' || isNaN(new Date(a.timestamp).getTime())) continue;
+    validas.push({
+      metricType: a.metricType as HealthMetricType,
+      value,
+      unit: a.unit,
+      timestamp: a.timestamp,
+      device: typeof a.device === 'string' ? a.device.slice(0, 120) : undefined
     });
   }
   return validas;
@@ -162,6 +194,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err: any) {
       console.error('[Wearables Handler] Falha ao sincronizar atividades:', err);
       return res.status(500).json({ error: 'Não foi possível sincronizar as atividades agora.' });
+    }
+  }
+
+  // #253: vitais passivas (FC repouso, HRV, sono, peso) via
+  // @capgo/capacitor-health. NÃO passam pelo SecurityPipeline -- não são uma
+  // alegação competitiva, vão direto pra Health Data Layer. Separado da
+  // action 'sync' de propósito (ver HealthVitalsProvider.ts).
+  if (action === 'sync-vitals') {
+    const source: HealthSampleSource = req.body?.source === 'health_connect' ? 'health_connect' : 'apple_health';
+    const vitais = sanitizarVitais(req.body?.vitals);
+    if (vitais.length === 0) {
+      return res.status(200).json({ savedCount: 0 });
+    }
+    try {
+      const savedCount = await registrarAmostrasPassivas({ userId: auth.uid, source, amostras: vitais });
+      return res.status(200).json({ savedCount });
+    } catch (err: any) {
+      console.error('[Wearables Handler] Falha ao sincronizar vitais:', err);
+      return res.status(500).json({ error: 'Não foi possível sincronizar os dados de saúde agora.' });
     }
   }
 

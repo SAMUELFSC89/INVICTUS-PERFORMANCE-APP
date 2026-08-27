@@ -38,11 +38,11 @@ import { db } from './common.js';
 export type HealthMetricType =
   | 'heart_rate_avg'
   | 'heart_rate_max'
-  | 'heart_rate_resting'   // ainda nao coletado (nenhuma fonte manda hoje)
-  | 'hrv_rmssd'            // ainda nao coletado
+  | 'heart_rate_resting'   // #253: coletado via HealthVitalsProvider (@capgo/capacitor-health), sync separado de atividade (action 'sync-vitals')
+  | 'hrv_rmssd'            // #253: idem
   | 'vo2max_estimate'      // calculado no cliente (performanceEngine.ts), nao no servidor -- integracao futura
-  | 'sleep_duration_min'   // ainda nao coletado
-  | 'weight_kg'            // ainda nao coletado
+  | 'sleep_duration_min'   // #253: idem (agregado por noite a partir dos segmentos de estagio)
+  | 'weight_kg'            // #253: idem
   | 'calories_active'
   | 'distance_km'
   | 'duration_min';
@@ -160,6 +160,39 @@ export async function registrarAmostrasDeAtividade(params: {
 }
 
 /**
+ * #253: grava METRICAS PASSIVAS (FC repouso, HRV, sono, peso) lidas do
+ * HealthKit/Health Connect via @capgo/capacitor-health -- NAO estao ligadas a
+ * uma atividade/treino especifico, entao nao passam pelo SecurityPipeline
+ * (nao sao uma alegacao competitiva: nao geram pontos nem entram em
+ * ranking). Por isso `quality` e sempre 'sensor_verified' aqui -- vieram
+ * direto do sensor/app de saude do usuario, sem antifraude aplicavel.
+ *
+ * Deduplicacao: `gravarAmostraSaude` usa `source + (sourceActivityId ||
+ * timestamp) + metricType` como id do documento (merge:true). Vitais nao tem
+ * sourceActivityId, entao o `timestamp` da propria leitura garante que
+ * resincronizar uma janela sobreposta so sobrescreve o mesmo doc, nunca
+ * duplica a serie temporal.
+ */
+export async function registrarAmostrasPassivas(params: {
+  userId: string;
+  source: HealthSampleSource;
+  amostras: Array<{ metricType: HealthMetricType; value: number; unit: string; timestamp: string; device?: string }>;
+}): Promise<number> {
+  const validas = params.amostras.filter((a) => typeof a.value === 'number' && Number.isFinite(a.value) && a.value > 0);
+  await Promise.all(validas.map((a) => gravarAmostraSaude({
+    userId: params.userId,
+    source: params.source,
+    timestamp: a.timestamp,
+    device: a.device,
+    quality: 'sensor_verified',
+    metricType: a.metricType,
+    value: a.value,
+    unit: a.unit
+  })));
+  return validas.length;
+}
+
+/**
  * Le a serie temporal de UMA metrica para um usuario, num intervalo. Usado
  * pelos relatorios/baseline futuros (atras de FEATURE_FLAGS.healthReports /
  * healthBaseline) -- ainda sem UI conectada nesta fase, mas a leitura ja
@@ -209,7 +242,12 @@ export interface HealthAccessAuditEntry {
   reason: string;
 }
 
-/** O que esta camada realmente grava hoje (Fase 1) -- ver wearable-sync-service.ts. */
+/**
+ * O que esta camada realmente grava hoje:
+ * - Ligadas a atividade (wearable-sync-service.ts, via registrarAmostrasDeAtividade)
+ * - Vitais passivas #253 (api/_handlers/wearables.ts action 'sync-vitals', via registrarAmostrasPassivas)
+ */
 export const metricsGravadasHoje: HealthMetricType[] = [
-  'heart_rate_avg', 'heart_rate_max', 'calories_active', 'distance_km', 'duration_min'
+  'heart_rate_avg', 'heart_rate_max', 'calories_active', 'distance_km', 'duration_min',
+  'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg'
 ];

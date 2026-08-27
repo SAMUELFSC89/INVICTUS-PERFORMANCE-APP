@@ -1,7 +1,9 @@
+import { Capacitor } from '@capacitor/core';
 import { auth } from '../../firebase';
 import { AppleHealthProvider } from './AppleHealthProvider';
 import { HealthConnectProvider } from './HealthConnectProvider';
 import { StravaProvider } from './StravaProvider';
+import { HealthVitalsProvider } from './HealthVitalsProvider';
 import type { WearableConfig, WearableProvider, WearableSource, WearableSyncLog } from './types';
 
 const READ_HEALTH_PERMISSIONS = [
@@ -265,5 +267,42 @@ export class WearableManager {
       blockedCount: payload.blockedCount || 0,
       logs
     };
+  }
+
+  /**
+   * #253: sincroniza METRICAS PASSIVAS (FC repouso, HRV, sono, peso) via
+   * @capgo/capacitor-health -- pipeline totalmente separado de syncAll()
+   * acima. Vitais não passam pelo SecurityPipeline (não são uma alegação
+   * competitiva: não geram pontos, não entram em ranking); vão direto pra
+   * Health Data Layer com quality='sensor_verified'.
+   *
+   * Sem `lastVitalsSyncTime` persistido ainda de propósito -- essa sincronia
+   * ainda não tem nenhuma tela consumidora (tela "Saúde" fica pra depois,
+   * ver #53); adicionar rastreio de cursor no servidor agora seria expandir
+   * schema pra uma leitura que ninguém dispara automaticamente. Usa uma
+   * janela fixa de 30 dias por chamada -- reprocessar o mesmo período em
+   * chamadas futuras é seguro (grava com merge, doc id determinístico por
+   * timestamp, não duplica a série).
+   */
+  public async syncVitals(): Promise<{ savedCount: number }> {
+    const available = await HealthVitalsProvider.isAvailable();
+    if (!available) return { savedCount: 0 };
+
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const vitals = await HealthVitalsProvider.fetchVitals(since);
+    if (vitals.length === 0) return { savedCount: 0 };
+
+    const token = await this.getToken();
+    const source: WearableSource = Capacitor.getPlatform() === 'ios' ? 'apple_health' : 'health_connect';
+    const response = await fetch('/api/wearables', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync-vitals', source, vitals })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Não foi possível sincronizar os dados de saúde agora.');
+    }
+    return { savedCount: payload.savedCount || 0 };
   }
 }
