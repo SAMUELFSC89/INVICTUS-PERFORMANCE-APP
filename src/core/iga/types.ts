@@ -29,6 +29,14 @@ export interface TimeConfig {
   minWorkoutMinutes: number;  // Default: 30
   minCardioMinutes: number;   // Default: 20
   targetTimeMinutes: number;  // Default: 250 (e.g., 5 sessions x 50 min)
+  /**
+   * #239: teto de minutos CONTABILIZADOS por sessão (default 90).
+   * A sessão pode ter durado mais -- o excedente simplesmente não conta.
+   * Sem este teto, uma única sessão de 5 horas já levava Tn ao máximo
+   * sozinha (targetTimeMinutes = 250), transformando duração inflada no
+   * caminho mais barato para o topo do ranking.
+   */
+  maxCountedMinutesPerSession: number;
 }
 
 export interface IntensityConfig {
@@ -57,7 +65,10 @@ export interface AgeHandicapConfig {
 export interface IGASessionAudit {
   sessionId?: string;
   type: string;
+  /** Minutos que realmente contaram para T (já limitados pelo teto por sessão). */
   durationMinutes: number;
+  /** Duração informada pela sessão, antes do teto. Serve para auditoria. */
+  durationRealMinutes?: number;
   eligible: boolean;
   ineligibleReason?: string;
   avgHeartRate: number;

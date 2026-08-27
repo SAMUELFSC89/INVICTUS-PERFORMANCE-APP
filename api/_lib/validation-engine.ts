@@ -1,11 +1,21 @@
 import { SECURITY_CONFIG } from './security-config.js';
-import { resolveModality } from './modality-config.js';
+import { resolveModality, resolverPerfilValidacao, PerfilValidacaoId } from './modality-config.js';
 
 export interface ValidationResult {
   valid: boolean;
   reason?: string;
   warnings: string[];
   missingData: string[];
+  /** Perfil de modalidade usado nesta validacao (auditabilidade). */
+  profileId: PerfilValidacaoId;
+  /**
+   * Se a atividade atende ao MINIMO COMPETITIVO da modalidade (30 min para
+   * musculacao, 20 min para cardio). Diferente de `valid`: um treino de 25
+   * minutos e um treino real e legitimo -- ele so nao pontua. Nao rejeitamos
+   * a atividade por isso, apenas registramos que ela nao alimenta a competicao.
+   */
+  competitivelyEligible: boolean;
+  ineligibleReason?: string;
   details: {
     activityTypeValid: boolean;
     durationValid: boolean;
@@ -38,13 +48,30 @@ export class ValidationEngine {
       missingData.push('activityType');
     }
 
-    // 2. Duração Mínima e Máxima
+    // 2. Duração — agora por PERFIL DE MODALIDADE (#239), não mais um único
+    // par global 5..360 para tudo. Duas checagens distintas de propósito:
+    //
+    //   a) PLAUSIBILIDADE (durationValid): uma sessão de 8 horas não é crível
+    //      e continua sendo tratada como problema de integridade;
+    //   b) ELEGIBILIDADE COMPETITIVA: 30 min (musculação) / 20 min (cardio).
+    //      Ficar abaixo disso NÃO é fraude e não invalida a atividade -- ela é
+    //      registrada normalmente, apenas não alimenta a competição. Misturar
+    //      as duas coisas rejeitaria treinos curtos legítimos.
+    const perfil = resolverPerfilValidacao(activity);
     const durationMins = Number(activity.durationMins || activity.duration || (activity.durationSec ? activity.durationSec / 60 : 0));
-    const durationValid = durationMins >= cfg.minDurationMins && durationMins <= cfg.maxDurationMins;
-    if (durationMins < cfg.minDurationMins) {
-      warnings.push(`Duração de ${durationMins} min abaixo do mínimo exigido (${cfg.minDurationMins} min).`);
-    } else if (durationMins > cfg.maxDurationMins) {
-      warnings.push(`Duração de ${durationMins} min excede o limite máximo por sessão (${cfg.maxDurationMins} min).`);
+    const durationValid = durationMins >= cfg.minDurationMins && durationMins <= perfil.maxMinutosPlausiveis;
+    if (durationMins > perfil.maxMinutosPlausiveis) {
+      warnings.push(`Duração de ${durationMins} min não é plausível para ${perfil.rotulo} (limite ${perfil.maxMinutosPlausiveis} min).`);
+    } else if (durationMins < cfg.minDurationMins) {
+      warnings.push(`Duração de ${durationMins} min abaixo do mínimo registrável (${cfg.minDurationMins} min).`);
+    }
+
+    let competitivelyEligible = true;
+    let ineligibleReason: string | undefined;
+    if (perfil.minMinutosCompetitivos > 0 && durationMins < perfil.minMinutosCompetitivos) {
+      competitivelyEligible = false;
+      ineligibleReason = `${perfil.rotulo} precisa de pelo menos ${perfil.minMinutosCompetitivos} min para contar na competição (esta sessão teve ${Math.round(durationMins)} min).`;
+      warnings.push(ineligibleReason);
     }
 
     // 3. GPS presente quando necessário
@@ -149,6 +176,9 @@ export class ValidationEngine {
       reason,
       warnings,
       missingData,
+      profileId: perfil.id,
+      competitivelyEligible,
+      ineligibleReason,
       details: {
         activityTypeValid,
         durationValid,

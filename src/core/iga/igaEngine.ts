@@ -81,7 +81,11 @@ export function calculateWeeklyIGA(
 
   // 1. Filtrar sessões elegíveis segundo critérios de duração mínima
   const evaluatedSessions: IGASessionAudit[] = (sessions || []).map(sess => {
-    const duration = Math.max(0, Number(sess.durationMinutes) || 0);
+    const durationReal = Math.max(0, Number(sess.durationMinutes) || 0);
+    // #239: teto de minutos CONTABILIZADOS por sessão. A duração real continua
+    // sendo usada para checar o mínimo (uma sessão de 25 min não vira elegível
+    // por causa do teto), mas só até `maxCountedMinutesPerSession` entra em T.
+    const duration = Math.min(durationReal, timeCfg.maxCountedMinutesPerSession || durationReal);
     const typeLower = (sess.type || '').toLowerCase();
     let minMinutes = 15;
 
@@ -92,12 +96,12 @@ export function calculateWeeklyIGA(
     }
 
     const isExplicitlyValid = sess.isValid !== false;
-    const meetsDuration = duration >= minMinutes;
+    const meetsDuration = durationReal >= minMinutes;
     const isEligible = isExplicitlyValid && meetsDuration;
 
     let ineligibleReason = undefined;
     if (!isExplicitlyValid) ineligibleReason = 'Sessão reprovada na validação';
-    else if (!meetsDuration) ineligibleReason = `Tempo (${duration} min) abaixo do mínimo exigido (${minMinutes} min)`;
+    else if (!meetsDuration) ineligibleReason = `Tempo (${durationReal} min) abaixo do mínimo exigido (${minMinutes} min)`;
 
     // Estimar ou utilizar FC Média
     let avgHR = Number(sess.avgHeartRate) || 0;
@@ -112,7 +116,10 @@ export function calculateWeeklyIGA(
     }
 
     const relativeHR = avgHR / fcMax;
-    const expectedCal = calculateExpectedCalories(duration, sess.type, weightKg, calorieCfg);
+    // Plausibilidade calórica usa a duração REAL, não a limitada: quem treinou
+    // 120 min e gastou 900 kcal é coerente. Comparar 900 kcal contra as 90 min
+    // do teto criaria uma falsa suspeita de caloria inflada.
+    const expectedCal = calculateExpectedCalories(durationReal, sess.type, weightKg, calorieCfg);
     const informedCal = Number(sess.caloriesInformed) || 0;
     const gateResult = evaluateCalorieGate(informedCal, expectedCal, calorieCfg);
 
@@ -120,6 +127,7 @@ export function calculateWeeklyIGA(
       sessionId: sess.id,
       type: sess.type,
       durationMinutes: duration,
+      durationRealMinutes: durationReal,
       eligible: isEligible,
       ineligibleReason,
       avgHeartRate: avgHR,

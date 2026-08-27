@@ -16,6 +16,7 @@ export const DEFAULT_TIME_CONFIG: TimeConfig = {
   minWorkoutMinutes: 30,
   minCardioMinutes: 20,
   targetTimeMinutes: 250, // 5 sessões x 50 min
+  maxCountedMinutesPerSession: 90, // #239: teto pontuável por sessão
 };
 
 export const DEFAULT_INTENSITY_CONFIG: IntensityConfig = {
