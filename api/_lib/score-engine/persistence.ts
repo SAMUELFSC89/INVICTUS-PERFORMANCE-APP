@@ -1,6 +1,22 @@
 import { db, FieldValue } from '../common.js';
 import { ActivitySource } from '../score-config.js';
 
+/**
+ * #238 ATENCAO -- NAO RELIGAR SEM LER.
+ *
+ * persistScoreAtomic() escreve users.score e users.monthlyScore por incremento
+ * direto. Esses campos passaram a ser de responsabilidade EXCLUSIVA do IGA
+ * (api/_lib/igaService.ts, funcao recalculateAllUserScores), que os recalcula a
+ * partir das atividades ja aprovadas pelo antifraude. Um incremento paralelo
+ * aqui criaria uma segunda pontuacao concorrente e reabriria exatamente a
+ * divergencia entre as abas Semana/Mes/Temporada descrita em
+ * AUDITORIA-CORE-INVICTUS.md, secao 2.
+ *
+ * Verificado em 2026-08-27: esta classe nao possui NENHUM chamador em api/.
+ * Mantida por nao haver prova de que seja descartavel (o metodo tambem cuida de
+ * running_stats/run_sessions), mas nao deve voltar ao fluxo de pontuacao sem
+ * antes remover a escrita em score/monthlyScore.
+ */
 export class ScorePersistence {
   static async loadUserData(userId: string): Promise<any> {
     console.log(`[SCORE ENGINE] [PERSISTENCE] Carregando perfil do usuário ${userId}`);

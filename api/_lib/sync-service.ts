@@ -1,6 +1,8 @@
 import { db, FieldValue } from './common.js';
 import { ScoreEngine } from './score-engine.js';
 import { recalculateAllUserScores } from './igaService.js';
+import { SecurityPipeline } from './security-pipeline.js';
+import { buscarHistoricoRecente } from './user-activity-history.js';
 
 export class SyncService {
   static async processStravaActivity(userId: string, stravaActivity: any) {
@@ -74,7 +76,18 @@ export class SyncService {
       // ja registrada nas tasks pendentes) -- por ora Strava e a unica fonte
       // wearable que chega ate aqui.
       try {
-        await this.persistStravaWorkoutToHistory(userId, stravaActivity, activityType);
+        // #238: BLOQUEIO DE BYPASS DO ANTIFRAUDE.
+        //
+        // O Strava era o unico caminho que chegava ao `workouts` (e portanto ao
+        // IGA e ao ranking) SEM passar pelo SecurityPipeline -- passava apenas
+        // pela validacao leve do ScoreEngine (entrada manual + velocidade
+        // media). Os outros tres caminhos (treino manual, check-in de presenca,
+        // corrida GPS) ja rodavam o pipeline completo. Aqui a atividade passa
+        // pelos mesmos 10 sub-motores antes de poder alimentar a competicao.
+        const aprovado = await this.avaliarSegurancaStrava(userId, stravaActivity, activityType);
+        await this.persistStravaWorkoutToHistory(userId, stravaActivity, activityType, aprovado);
+        // Recalcular sempre: uma atividade reprovada tambem precisa que o
+        // ranking reflita o historico atual (ela entra como nao elegivel).
         await recalculateAllUserScores(userId);
       } catch (rankingErr: any) {
         console.error(`[SyncService] Failed to persist Strava activity to workouts / recalculate IGA for user ${userId}:`, rankingErr);
@@ -90,7 +103,77 @@ export class SyncService {
   // processStravaActivity. Idempotencia: usa o id da atividade do Strava como
   // ID do documento, entao um re-sync/webhook duplicado sobrescreve o mesmo
   // documento em vez de criar um segundo (nao duplica contribuicao ao IGA).
-  private static async persistStravaWorkoutToHistory(userId: string, stravaActivity: any, normalizedActivityType: string) {
+  /**
+   * Roda o SecurityPipeline completo sobre uma atividade do Strava.
+   *
+   * Normaliza o payload do Strava para o formato que os motores esperam. Um
+   * ponto importante: o Strava nao envia a lista de checkpoints, mas envia
+   * `start_latlng`. Sem mapear isso, o ValidationEngine trataria toda corrida
+   * como "sem GPS" e reprovaria atletas legitimos em massa -- por isso a
+   * coordenada inicial e repassada como latitude/longitude.
+   *
+   * Fail-closed, igual aos outros tres caminhos: se o pipeline falhar
+   * tecnicamente, a atividade NAO e aprovada para a competicao (ela continua
+   * salva no historico, apenas sem alimentar o IGA).
+   */
+  private static async avaliarSegurancaStrava(userId: string, stravaActivity: any, normalizedActivityType: string): Promise<boolean> {
+    const rawDistance = stravaActivity?.distance || 0;
+    const distanceKm = rawDistance > 100 ? rawDistance / 1000 : rawDistance;
+    const rawDurationSeconds = stravaActivity?.moving_time || stravaActivity?.elapsed_time || 0;
+    const inicio = Array.isArray(stravaActivity?.start_latlng) ? stravaActivity.start_latlng : null;
+
+    const tipo = normalizedActivityType.includes('run') ? 'RUNNING'
+      : normalizedActivityType.includes('walk') ? 'WALKING'
+      : normalizedActivityType.includes('ride') || normalizedActivityType.includes('cycl') ? 'CYCLING'
+      : 'CARDIO';
+
+    let perfil: any = {};
+    try {
+      if (db) {
+        const snap = await db.collection('users').doc(userId).get();
+        if (snap.exists) perfil = snap.data() || {};
+      }
+    } catch (err) {
+      console.warn('[SyncService] Falha ao carregar perfil para o SecurityPipeline:', err);
+    }
+
+    try {
+      const resultado = await SecurityPipeline.runPipeline(
+        {
+          id: `strava_${stravaActivity?.id}`,
+          activityType: tipo,
+          type: tipo,
+          durationMins: rawDurationSeconds > 0 ? rawDurationSeconds / 60 : 0,
+          distanceKm,
+          timestamp: stravaActivity?.start_date || stravaActivity?.start_date_local || new Date().toISOString(),
+          source: 'STRAVA',
+          dataSource: 'STRAVA',
+          latitude: inicio ? inicio[0] : undefined,
+          longitude: inicio ? inicio[1] : undefined,
+          avgHeartRate: stravaActivity?.average_heartrate,
+          maxHeartRate: stravaActivity?.max_heartrate,
+          calories: stravaActivity?.calories,
+          // O Strava e uma fonte de terceiros ja consolidada: nao ha telemetria
+          // de sensor/dispositivo do nosso app para enviar. Nao inventamos esses
+          // campos -- ausencia de dado nao pode virar dado valido.
+          manual: stravaActivity?.manual === true
+        },
+        userId,
+        perfil,
+        await buscarHistoricoRecente(userId)
+      );
+
+      if (!resultado.shouldScore) {
+        console.warn(`[SyncService] SecurityPipeline recusou a atividade Strava ${stravaActivity?.id} de ${userId}: ${resultado.decision}`);
+      }
+      return resultado.shouldScore;
+    } catch (err) {
+      console.error(`[SyncService] SecurityPipeline falhou na atividade Strava ${stravaActivity?.id}, bloqueando por seguranca (fail-closed):`, err);
+      return false;
+    }
+  }
+
+  private static async persistStravaWorkoutToHistory(userId: string, stravaActivity: any, normalizedActivityType: string, aprovadoPeloAntifraude: boolean) {
     const isRunType = normalizedActivityType.includes('run');
     const isCardioType = isRunType
       || normalizedActivityType.includes('walk')
@@ -118,8 +201,14 @@ export class SyncService {
       distance: distanceKm,
       calories: stravaActivity?.calories ?? undefined,
       avgHeartRate: stravaActivity?.average_heartrate ?? undefined,
-      status: 'completed',
-      validationStatus: 'validated',
+      // O status decide se a atividade alimenta o IGA (ver a lista branca em
+      // api/_lib/igaService.ts). Reprovada pelo antifraude fica registrada no
+      // historico -- a corrida aconteceu e o atleta deve poder ve-la -- mas
+      // como 'suspicious', que a lista branca nao aceita.
+      status: aprovadoPeloAntifraude ? 'completed' : 'suspicious',
+      validationStatus: aprovadoPeloAntifraude ? 'validated' : 'invalid',
+      securityBlocked: aprovadoPeloAntifraude ? undefined : true,
+      nonScoringReason: aprovadoPeloAntifraude ? undefined : 'SECURITY_PIPELINE_BLOCKED',
       points: 0,
       pointsEarned: 0,
       createdAt: activityDate
