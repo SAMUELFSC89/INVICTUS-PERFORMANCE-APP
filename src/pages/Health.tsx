@@ -267,7 +267,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
 
           <article className="health-overview" style={{ marginTop: '1rem' }}>
             <div className="health-section-line"><div><Activity /> TENDÊNCIAS (30 DIAS)</div></div>
-            {summary && summary.trends.calories_active.length ? (
+            {summary?.trends.calories_active?.length ? (
               <ChartBars points={trendPontos(summary.trends.calories_active)} />
             ) : <p className="health-empty">{loadingSummary ? 'Carregando tendências…' : 'Ainda não há histórico suficiente de calorias para mostrar tendência.'}</p>}
           </article>
@@ -296,13 +296,13 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
             <article className="health-trend-card">
               <div className="health-section-name">FC REPOUSO (30 DIAS) <Info /></div>
               <strong>{fcRepouso ? fcRepouso.value : '—'} <small>{fcRepouso ? 'bpm' : ''}</small></strong>
-              <p>{summary?.trends.heart_rate_resting.length ? 'Leituras sincronizadas do relógio/app de saúde' : 'Conecte um dispositivo compatível com FC de repouso'}</p>
+              <p>{summary?.trends.heart_rate_resting?.length ? 'Leituras sincronizadas do relógio/app de saúde' : 'Conecte um dispositivo compatível com FC de repouso'}</p>
               <ChartBars points={trendPontos(summary?.trends.heart_rate_resting || [])} color="violet" />
             </article>
           </div>
           <article className="health-overview" style={{ marginTop: '1rem' }}>
             <div className="health-section-line"><div><HeartPulse /> HRV (30 DIAS)</div></div>
-            {summary?.trends.hrv_rmssd.length ? <ChartBars points={trendPontos(summary.trends.hrv_rmssd)} /> : <p className="health-empty">Conecte um dispositivo compatível com HRV para ver esta tendência.</p>}
+            {summary?.trends.hrv_rmssd?.length ? <ChartBars points={trendPontos(summary.trends.hrv_rmssd)} /> : <p className="health-empty">Conecte um dispositivo compatível com HRV para ver esta tendência.</p>}
           </article>
         </>
       )}
@@ -316,7 +316,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
           </div>
           <div style={{ marginTop: '1rem' }}>
             <div className="health-section-line"><div>SONO (30 DIAS)</div></div>
-            {summary?.trends.sleep_duration_min.length ? <ChartBars points={trendPontos(summary.trends.sleep_duration_min.map((p) => ({ timestamp: p.timestamp, value: Math.round(p.value / 60 * 10) / 10 })))} color="violet" /> : <p className="health-empty">Conecte um dispositivo compatível com sono para ver esta tendência.</p>}
+            {summary?.trends.sleep_duration_min?.length ? <ChartBars points={trendPontos(summary.trends.sleep_duration_min.map((p) => ({ timestamp: p.timestamp, value: Math.round(p.value / 60 * 10) / 10 })))} color="violet" /> : <p className="health-empty">Conecte um dispositivo compatível com sono para ver esta tendência.</p>}
           </div>
         </section>
       )}
@@ -340,7 +340,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
           <EnergyBlock calories={calories} />
           <article className="health-overview" style={{ marginTop: '1rem' }}>
             <div className="health-section-line"><div>CALORIAS (30 DIAS)</div></div>
-            {summary?.trends.calories_active.length ? <ChartBars points={trendPontos(summary.trends.calories_active)} /> : <p className="health-empty">Ainda não há histórico suficiente para mostrar tendência.</p>}
+            {summary?.trends.calories_active?.length ? <ChartBars points={trendPontos(summary.trends.calories_active)} /> : <p className="health-empty">Ainda não há histórico suficiente para mostrar tendência.</p>}
           </article>
         </>
       )}
@@ -366,7 +366,6 @@ export function Health() {
   const [range, setRange] = useState<TimeRange>('7days');
   const { user, state, loading } = useHealthData(range);
   const { summary, loadingSummary } = useHealthSummary();
-  const [reportNotice, setReportNotice] = useState<string | null>(null);
 
   if (!user) return null;
   if (loading || !state) return <div className="health-screen health-loading">Preparando os seus dados de saúde…</div>;
@@ -384,10 +383,9 @@ export function Health() {
           state={state}
           summary={summary}
           loadingSummary={loadingSummary}
-          onGenerateReport={() => setReportNotice('O gerador de relatório em PDF está em preparação — em breve você poderá gerar aqui.')}
+          onGenerateReport={() => navigate('/health/report/full')}
           onOpenLegacyReport={() => navigate('/health/report')}
         />
-        {reportNotice && <p className="health-tab-note" role="status">{reportNotice}</p>}
       </div>
     </main>
   );

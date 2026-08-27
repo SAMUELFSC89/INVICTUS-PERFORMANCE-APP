@@ -27,6 +27,7 @@ import { ProProvider } from './ProContext';
 import { API_CONFIG } from './config';
 import { PowerLift } from './pages/PowerLift';
 import { Health, HealthReport } from './pages/Health';
+import { HealthFullReport } from './pages/HealthFullReport';
 import { League } from './pages/League';
 import { Notifications } from './pages/Notifications';
 import { ChampionshipsHub } from './pages/championships/ChampionshipsHub';
@@ -98,6 +99,7 @@ export default function App() {
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
                 <Route path="/health" element={<Health />} />
                 <Route path="/health/report" element={<HealthReport />} />
+                <Route path="/health/report/full" element={<HealthFullReport />} />
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
                 <Route path="/pagamento/pendente" element={<PaymentSuccess />} />
                 <Route path="/pagamento/falha" element={<PaymentSuccess />} />

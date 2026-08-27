@@ -630,6 +630,44 @@
 .health-tab-note { margin:1rem 0 0; padding:.85rem 1rem; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(18,17,20,.7); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:13px; }
 @media (max-width: 700px) { .health-metrics-grid-3 { grid-template-columns:1fr 1fr; } .health-report-cta { flex-direction:column; align-items:flex-start; } .health-report-cta button { width:100%; justify-content:center; } }
 
+/* #54: relatório "Saúde & Performance" -- 6 páginas geradas como PDF via
+   window.print() (mesmo padrão já usado em HealthReport/EXPORTAR). Reusa a
+   paleta .health-* -- só adiciona o necessário pra paginação e tabelas. */
+.health-report-full { max-width:820px; margin:0 auto; padding:1.25rem 1rem 3rem; }
+.health-report-full-toolbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; }
+.health-report-page { padding:1.5rem; margin-bottom:1.25rem; border:1px solid rgba(245,166,35,.25); border-radius:22px; background:linear-gradient(135deg,rgba(18,17,19,0.95),rgba(10,10,12,0.92) 80%); }
+.health-report-page-header { display:flex; align-items:center; gap:.85rem; margin-bottom:1.1rem; padding-bottom:1rem; border-bottom:1px solid rgba(255,255,255,.1); }
+.health-report-page-header img { width:42px; height:42px; }
+.health-report-page-header h1 { margin:0; color:#fff; font-family:Anton,sans-serif; font-size:19px; font-weight:400; text-transform:uppercase; }
+.health-report-page-header p { margin:.2rem 0 0; color:#c9c4bd; font-family:Barlow,sans-serif; font-size:13px; }
+.health-report-page-header span { margin-left:auto; padding:.3rem .6rem; border:1px solid rgba(255,174,0,.4); border-radius:8px; color:#e8c98a; font-family:Barlow,sans-serif; font-size:11px; white-space:nowrap; }
+.health-report-section-title { margin:0 0 .5rem; color:#f4f1ec; font-family:Anton,sans-serif; font-size:16px; font-weight:400; text-transform:uppercase; }
+.health-report-metric-mini { border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:.75rem; background:rgba(18,17,20,.7); }
+.health-report-metric-mini span { display:block; color:#a9a5a0; font-family:Anton,sans-serif; font-size:11px; text-transform:uppercase; }
+.health-report-metric-mini strong { display:block; margin:.35rem 0 .2rem; color:#fff; font-family:Anton,sans-serif; font-size:22px; font-weight:400; }
+.health-report-tag { display:inline-block; margin-top:.25rem; padding:.15rem .45rem; border-radius:6px; font-family:Barlow,sans-serif; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+.health-report-tag.is-up { background:rgba(75,201,118,.16); color:#4bc976; }
+.health-report-tag.is-down { background:rgba(255,77,89,.16); color:#ff6b74; }
+.health-report-tag.is-neutral { background:rgba(255,255,255,.08); color:#c9c4bd; }
+.health-report-explain { margin:1rem 0; padding:1rem; border:1px solid rgba(255,255,255,.08); border-radius:14px; background:rgba(255,255,255,.02); }
+.health-report-explain h3 { margin:0 0 .4rem; color:#ffad00; font-family:Anton,sans-serif; font-size:14px; font-weight:400; text-transform:uppercase; }
+.health-report-explain p { margin:0 0 .55rem; color:#d0cbc4; font-family:Barlow,sans-serif; font-size:13px; line-height:1.45; }
+.health-report-explain p:last-child { margin-bottom:0; }
+.health-report-table { width:100%; border-collapse:collapse; margin-top:.5rem; }
+.health-report-table th { padding:.5rem .4rem; color:#a9a5a0; font-family:Barlow,sans-serif; font-size:11px; text-align:left; text-transform:uppercase; border-bottom:1px solid rgba(255,255,255,.12); }
+.health-report-table td { padding:.6rem .4rem; color:#e6e1da; font-family:Barlow,sans-serif; font-size:13px; border-bottom:1px solid rgba(255,255,255,.06); }
+.health-report-table td:first-child, .health-report-table th:first-child { color:#f2eee9; font-weight:700; }
+.health-report-callout { display:flex; gap:.6rem; margin-top:1rem; padding:.85rem 1rem; border:1px solid rgba(255,174,0,.35); border-radius:14px; background:rgba(255,178,0,.06); color:#e8ddc8; font-family:Barlow,sans-serif; font-size:12.5px; line-height:1.4; }
+.health-report-callout svg { width:18px; flex:0 0 18px; margin-top:.1rem; color:#ffad00; }
+.health-report-list { margin:.5rem 0 0; padding-left:1.2rem; color:#d0cbc4; font-family:Barlow,sans-serif; font-size:13px; line-height:1.6; }
+@media print {
+  body * { visibility:hidden; }
+  .health-report-full, .health-report-full * { visibility:visible; }
+  .health-report-full { position:absolute; left:0; top:0; width:100%; max-width:none; padding:0; }
+  .health-report-full-toolbar { display:none; }
+  .health-report-page { page-break-after:always; border:0; border-radius:0; background:#0a0a0c; }
+}
+
 @layer components {
   .glass-card {
     background: rgba(22, 18, 12, 0.88);

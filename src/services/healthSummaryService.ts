@@ -1,11 +1,13 @@
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
 
-// #253: leitura da Health Data Layer (health_samples) pra tela "Saúde"
-// (RESUMO). Puramente leitura -- nenhuma relação com IGA/ranking/pontuação,
-// nenhuma escrita. Ver api/_handlers/health-summary.ts.
+// #253/#54: leitura da Health Data Layer (health_samples) pra tela "Saúde"
+// (RESUMO) e pro relatório "Saúde & Performance". Puramente leitura --
+// nenhuma relação com IGA/ranking/pontuação, nenhuma escrita.
+// Ver api/_handlers/health-summary.ts.
 
 export type ResumoMetricType = 'heart_rate_resting' | 'hrv_rmssd' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg';
+export type TendenciaMetricType = 'calories_active' | 'hrv_rmssd' | 'heart_rate_resting' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg';
 
 export interface UltimoValorMetrica {
   value: number;
@@ -13,48 +15,76 @@ export interface UltimoValorMetrica {
   timestamp: string;
 }
 
-export interface HealthSummaryResponse {
-  latest: Partial<Record<ResumoMetricType, UltimoValorMetrica | null>>;
-  trends: {
-    calories_active: Array<{ timestamp: string; value: number }>;
-    hrv_rmssd: Array<{ timestamp: string; value: number }>;
-    heart_rate_resting: Array<{ timestamp: string; value: number }>;
-    sleep_duration_min: Array<{ timestamp: string; value: number }>;
-  };
+export interface PontoTendencia {
+  timestamp: string;
+  value: number;
+  source: string;
 }
 
-const EMPTY_RESPONSE: HealthSummaryResponse = {
-  latest: {},
-  trends: { calories_active: [], hrv_rmssd: [], heart_rate_resting: [], sleep_duration_min: [] }
-};
+export interface HealthSummaryResponse {
+  windowDays: number;
+  latest: Partial<Record<ResumoMetricType, UltimoValorMetrica | null>>;
+  trends: Partial<Record<TendenciaMetricType, PontoTendencia[]>>;
+}
+
+function respostaVazia(dias: number): HealthSummaryResponse {
+  return { windowDays: dias, latest: {}, trends: {} };
+}
 
 export const healthSummaryService = {
-  async fetchSummary(): Promise<HealthSummaryResponse> {
+  async fetchSummary(days = 30): Promise<HealthSummaryResponse> {
     const user = auth.currentUser;
-    if (!user) return EMPTY_RESPONSE;
+    if (!user) return respostaVazia(days);
     try {
       const idToken = await user.getIdToken();
       const base = API_CONFIG.baseUrl || '';
-      const res = await fetch(`${base}/api/health-summary`, {
+      const res = await fetch(`${base}/api/health-summary?days=${days}`, {
         headers: { Authorization: `Bearer ${idToken}` }
       });
       if (!res.ok) {
         console.warn('[healthSummaryService] Falha ao carregar resumo de saúde:', res.status);
-        return EMPTY_RESPONSE;
+        return respostaVazia(days);
       }
       const data = await res.json();
       return {
+        windowDays: Number(data?.windowDays) || days,
         latest: data?.latest || {},
-        trends: {
-          calories_active: Array.isArray(data?.trends?.calories_active) ? data.trends.calories_active : [],
-          hrv_rmssd: Array.isArray(data?.trends?.hrv_rmssd) ? data.trends.hrv_rmssd : [],
-          heart_rate_resting: Array.isArray(data?.trends?.heart_rate_resting) ? data.trends.heart_rate_resting : [],
-          sleep_duration_min: Array.isArray(data?.trends?.sleep_duration_min) ? data.trends.sleep_duration_min : []
-        }
+        trends: data?.trends || {}
       };
     } catch (error) {
       console.warn('[healthSummaryService] Erro de rede ao carregar resumo de saúde:', error);
-      return EMPTY_RESPONSE;
+      return respostaVazia(days);
     }
   }
 };
+
+// #54: divide uma série temporal ao meio (cronologicamente) e retorna a
+// média de cada metade -- usado nas comparações "antes → depois" do
+// relatório (ex.: "FC repouso 67 → 61 bpm"). Retorna null quando não há
+// pontos suficientes pra uma comparação minimamente honesta (menos de 2 em
+// cada metade), em vez de inventar uma tendência a partir de amostra
+// insuficiente.
+export function mediaAntesDepois(pontos: PontoTendencia[]): { antes: number; depois: number } | null {
+  if (pontos.length < 4) return null;
+  const meio = Math.floor(pontos.length / 2);
+  const primeira = pontos.slice(0, meio);
+  const segunda = pontos.slice(meio);
+  if (primeira.length < 2 || segunda.length < 2) return null;
+  const media = (lista: PontoTendencia[]) => lista.reduce((soma, p) => soma + p.value, 0) / lista.length;
+  return { antes: media(primeira), depois: media(segunda) };
+}
+
+// #54: % de dias do período com pelo menos uma amostra, por fonte --
+// usado na página "Origem e cobertura" do relatório.
+export function coberturaPorFonte(pontos: PontoTendencia[], windowDays: number): Array<{ source: string; percent: number }> {
+  if (pontos.length === 0 || windowDays <= 0) return [];
+  const diasPorFonte = new Map<string, Set<string>>();
+  for (const ponto of pontos) {
+    const dia = ponto.timestamp.slice(0, 10);
+    if (!diasPorFonte.has(ponto.source)) diasPorFonte.set(ponto.source, new Set());
+    diasPorFonte.get(ponto.source)!.add(dia);
+  }
+  return Array.from(diasPorFonte.entries())
+    .map(([source, dias]) => ({ source, percent: Math.min(100, Math.round((dias.size / windowDays) * 100)) }))
+    .sort((a, b) => b.percent - a.percent);
+}
