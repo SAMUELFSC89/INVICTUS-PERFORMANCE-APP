@@ -191,14 +191,79 @@ export class WearableManager {
   }
 
   /**
-   * A leitura de Health/Apple permanece local, porém o endpoint seguro de
-   * ingestão ainda não existe. Antes este método escrevia atividades,
-   * biometria, score e desafios diretamente no Firestore; isso permitia que
-   * o cliente homologasse dados. Falhamos de forma explícita até a API de
-   * ingestão validada estar disponível.
+   * #248: agora existe ingestão real no servidor (api/_handlers/wearables.ts,
+   * action "sync" -> api/_lib/wearable-sync-service.ts). Este método só LÊ do
+   * HealthKit/Health Connect (dado local) e manda pro servidor -- quem decide
+   * se aquilo pontua é o SecurityPipeline lá, nunca o cliente. Isso preserva a
+   * garantia que já existia: uma permissão local não concede pontuação
+   * sozinha.
+   *
+   * O Strava não entra aqui -- ele já tem sincronização própria via OAuth
+   * server-side (/api/strava/sync, StravaService.sync()).
    */
-  public async syncAll(): Promise<{ syncedCount: number; duplicatesSkipped: number; logs: WearableSyncLog[] }> {
-    await this.getToken();
-    throw new Error('A sincronização de dispositivos está aguardando a ingestão segura no servidor. Nenhuma atividade ou pontuação foi criada localmente.');
+  public async syncAll(): Promise<{ syncedCount: number; duplicatesSkipped: number; blockedCount: number; logs: WearableSyncLog[] }> {
+    const token = await this.getToken();
+    const config = this.config || (await this.loadConfig());
+
+    const since = config.lastSyncTime
+      ? new Date(config.lastSyncTime)
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // primeira sincronização: últimos 30 dias
+
+    const fontesConectadas: WearableSource[] = [
+      ...(config.appleHealthConnected ? (['apple_health'] as const) : []),
+      ...(config.healthConnectConnected ? (['health_connect'] as const) : [])
+    ];
+
+    if (fontesConectadas.length === 0) {
+      throw new Error('Conecte o Apple Health ou o Health Connect para sincronizar.');
+    }
+
+    const atividades = [];
+    for (const fonte of fontesConectadas) {
+      const provider = this.getProvider(fonte);
+      if (!provider) continue;
+      try {
+        const lidas = await provider.fetchActivities(since);
+        atividades.push(...lidas);
+      } catch (err) {
+        console.warn(`[WearableManager] Falha ao ler atividades de ${fonte}:`, err);
+      }
+    }
+
+    if (atividades.length === 0) {
+      return { syncedCount: 0, duplicatesSkipped: 0, blockedCount: 0, logs: [] };
+    }
+
+    const response = await fetch('/api/wearables', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync', activities: atividades })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Não foi possível sincronizar as atividades agora.');
+    }
+
+    if (this.config) this.config.lastSyncTime = payload.lastSyncTime || new Date().toISOString();
+
+    const logs: WearableSyncLog[] = Array.isArray(payload.logs)
+      ? payload.logs.map((log: any) => ({
+          id: log.sourceActivityId,
+          userId: config.userId,
+          provider: (atividades.find((a) => a.sourceActivityId === log.sourceActivityId)?.source || 'apple_health') as WearableSource,
+          status: log.status === 'approved' ? 'success' : 'error',
+          syncedCount: log.status === 'approved' ? 1 : 0,
+          duplicatesSkipped: log.status === 'duplicate' ? 1 : 0,
+          errorMessage: log.status !== 'approved' ? log.detalhe : undefined,
+          timestamp: new Date().toISOString()
+        }))
+      : [];
+
+    return {
+      syncedCount: payload.syncedCount || 0,
+      duplicatesSkipped: payload.duplicatesSkipped || 0,
+      blockedCount: payload.blockedCount || 0,
+      logs
+    };
   }
 }

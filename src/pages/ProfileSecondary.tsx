@@ -162,19 +162,38 @@ export function ProfileSecondary() {
     setSearchParams(proximos, { replace: true });
     void connectProvider(alvo);
   }, [page, searchParams, setSearchParams, connectProvider]);
-  // A ingestao segura de HealthKit/Health Connect ainda nao existe no servidor
-  // (WearableManager.syncAll lanca de proposito, para nao criar atividade nem
-  // pontuacao a partir do cliente). O Strava, sim, tem sync real via
-  // /api/strava/sync. Antes o botao chamava so syncAll e portanto SEMPRE falhava.
+  // #248: a ingestao segura de HealthKit/Health Connect agora existe no
+  // servidor (api/_handlers/wearables.ts, action "sync"). Sincroniza cada
+  // fonte conectada e junta os resultados numa unica mensagem -- o usuario
+  // tem um botao so, nao um por provedor.
   const syncNow = async () => {
     if (syncing) return;
     try {
       setSyncing(true);
+      const partes: string[] = [];
+
       if (wearables?.stravaConnected) {
-        const resultado = await stravaService.sync();
-        message(`Strava sincronizado: ${resultado.syncCount ?? 0} atividade(s) processada(s).`);
+        try {
+          const resultado = await stravaService.sync();
+          partes.push(`Strava: ${resultado.syncCount ?? 0} atividade(s).`);
+        } catch (e: any) {
+          partes.push(`Strava: ${e?.message || 'falhou ao sincronizar'}.`);
+        }
+      }
+
+      if (wearables?.appleHealthConnected || wearables?.healthConnectConnected) {
+        try {
+          const resultado = await manager.syncAll();
+          partes.push(`Health: ${resultado.syncedCount} nova(s), ${resultado.duplicatesSkipped} duplicata(s), ${resultado.blockedCount} não aprovada(s).`);
+        } catch (e: any) {
+          partes.push(`Health: ${e?.message || 'falhou ao sincronizar'}.`);
+        }
+      }
+
+      if (partes.length === 0) {
+        message('Conecte pelo menos um provedor para sincronizar.');
       } else {
-        message('Conecte o Strava para sincronizar. A leitura direta de Apple Health / Health Connect ainda está sendo liberada no servidor e não gera pontuação pelo aparelho.');
+        message(partes.join(' '));
       }
       await loadWearables();
     } catch (e: any) { message(e?.message || 'Não foi possível sincronizar agora.'); } finally { setSyncing(false); }
@@ -223,8 +242,10 @@ export function ProfileSecondary() {
           right: <span className={estado === 'connected' ? 'profile-flow-status is-active' : 'profile-flow-status'}>{rotulo}</span>
         };
       });
-      const podeSincronizar = Boolean(config?.stravaConnected);
-      return <><p className="profile-flow-section-label">CONEXÕES</p>{rows(linhas)}<button className="profile-flow-primary" disabled={loading || syncing || !podeSincronizar} onClick={syncNow}><RefreshCw /> {syncing ? 'SINCRONIZANDO…' : 'SINCRONIZAR AGORA'}</button>{!podeSincronizar && <p className="profile-flow-muted">A sincronização automática de treinos hoje acontece pelo Strava. A leitura direta do Apple Health / Health Connect está sendo liberada no servidor — enquanto isso, ela não gera pontuação a partir do aparelho.</p>}<p className="profile-flow-section-label">SINCRONIZAÇÃO E PERMISSÕES</p>{rows([{ icon:<Wifi/>, label:'Sincronização automática', detail:autoSync ? 'Ativada' : 'Desativada', action:toggleAutoSync, right:<span className={autoSync ? 'profile-flow-toggle is-on' : 'profile-flow-toggle'}><i /></span> }, { icon:<ShieldCheck/>, label:'Status de permissões', detail:'Cada permissão é pedida ao usar o recurso', action:inspectPermissions }])}</>;
+      // #248: qualquer provedor conectado (Strava, Apple Health ou Health
+      // Connect) já sincroniza de verdade -- antes só o Strava contava aqui.
+      const podeSincronizar = Boolean(config?.stravaConnected || config?.appleHealthConnected || config?.healthConnectConnected);
+      return <><p className="profile-flow-section-label">CONEXÕES</p>{rows(linhas)}<button className="profile-flow-primary" disabled={loading || syncing || !podeSincronizar} onClick={syncNow}><RefreshCw /> {syncing ? 'SINCRONIZANDO…' : 'SINCRONIZAR AGORA'}</button>{!podeSincronizar && <p className="profile-flow-muted">Conecte pelo menos um provedor acima para sincronizar seus treinos.</p>}<p className="profile-flow-section-label">SINCRONIZAÇÃO E PERMISSÕES</p>{rows([{ icon:<Wifi/>, label:'Sincronização automática', detail:autoSync ? 'Ativada' : 'Desativada', action:toggleAutoSync, right:<span className={autoSync ? 'profile-flow-toggle is-on' : 'profile-flow-toggle'}><i /></span> }, { icon:<ShieldCheck/>, label:'Status de permissões', detail:'Cada permissão é pedida ao usar o recurso', action:inspectPermissions }])}</>;
     }
     if (page === 'wallet') return <><section className="profile-flow-card profile-flow-balance"><small>SALDO DISPONÍVEL</small><b>R$ {Number(wallet?.redeemableBalance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b><span>Saldo proveniente de movimentações reais</span></section><p className="profile-flow-section-label">EXTRATO RECENTE</p>{rows(transactions.slice(0, 8).map(tx => ({ icon:<WalletCards/>, label:tx.description || tx.type || 'Movimentação', detail:`${tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('pt-BR') : 'Data indisponível'} · ${tx.status || 'processando'}` })))}{!transactions.length && <p className="profile-flow-muted">Ainda não há movimentações registradas.</p>}<p className="profile-flow-section-label">SOLICITAR SAQUE</p><form className="profile-flow-form" onSubmit={requestWithdrawal}><input inputMode="decimal" value={withdrawAmount} onChange={e=>setWithdrawAmount(e.target.value)} placeholder="Valor em R$" /><input value={pixKey} onChange={e=>setPixKey(e.target.value)} placeholder="Chave PIX" /><button className="profile-flow-primary" disabled={loading}>SOLICITAR SAQUE</button></form>{withdrawals.length > 0 && <><p className="profile-flow-section-label">SAQUES</p>{rows(withdrawals.slice(0, 5).map(w => ({ icon:<CircleDollarSign/>, label:`R$ ${Number(w.amount || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, detail:w.status || 'Em análise' })))}</>}</>;
     if (page === 'goals') return <><p className="profile-flow-muted">Defina objetivos que serão usados para organizar o seu plano de treino.</p><section className="profile-flow-form"><label>OBJETIVO PRINCIPAL<input value={goal} onChange={e=>setGoal(e.target.value)} placeholder="Ex.: ganho de força" /></label><label>FREQUÊNCIA SEMANAL<input value={frequency} onChange={e=>setFrequency(e.target.value)} placeholder="Ex.: 4 treinos por semana" /></label></section><button className="profile-flow-primary" disabled={loading} onClick={saveGoals}><Target /> SALVAR METAS</button></>;
