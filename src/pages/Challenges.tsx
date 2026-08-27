@@ -131,6 +131,17 @@ export function Challenges() {
   // perderiamos a informacao de que a origem foi a Home, e ao concluir o treino
   // o usuario cairia na lista de Desafios em vez de voltar para a Home.
   const openedFromHomeRef = useRef<boolean>(Boolean(deepLinkChallenge));
+  // #250: trava contra o efeito abaixo silenciosamente descartar o deep link.
+  // Guarda qual valor de `type` ja foi processado -- ao contrario do antigo
+  // guard `!flowScreen`, nao depende do estado da tela no instante em que o
+  // efeito roda (que na pratica variava: reproduzido ao vivo, o clique na Home
+  // as vezes chegava com o componente ja tendo passado por um flowScreen nao
+  // nulo por uma fracao de segundo, o efeito via a condicao falsa, apagava
+  // `type` da URL do mesmo jeito e a musculacao/cardio nunca abria -- usuario
+  // caia direto na lista de Desafios). Com a ref, o mesmo valor de `type` so e
+  // consumido uma vez, mas SEMPRE abre a tela quando chega pela primeira vez,
+  // independente do que `flowScreen` estava valendo naquele instante.
+  const consumedDeepLinkRef = useRef<string | null>(deepLinkChallenge ? deepLinkType : null);
   const [pendingChallenge, setPendingChallenge] = useState<CoreChallenge | null>(deepLinkChallenge);
   const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(
     initialActive
@@ -316,14 +327,20 @@ export function Challenges() {
   useEffect(() => {
     const requestedType = searchParams.get('type');
     if (requestedType !== 'workout' && requestedType !== 'cardio') return;
-    const challenge = CORE_CHALLENGES.find((item) => item.id === requestedType);
-    // Na primeira renderizacao o fluxo ja nasce aberto (useState acima). Este
-    // ramo cobre o caso do parametro mudar com a tela ja montada.
-    if (challenge && !flowScreen) { openedFromHomeRef.current = true; handleOpenChallenge(challenge); }
+    // #250: so pula se ESTE MESMO valor de type ja foi aberto por este efeito
+    // (ou pelo useState inicial) -- nao depende de flowScreen (ver comentario
+    // na ref acima). Isso garante que o deep link sempre abre a tela certa na
+    // primeira vez que aparece, mesmo se o componente ja tiver montado com
+    // algum flowScreen setado por outro motivo.
+    if (consumedDeepLinkRef.current !== requestedType) {
+      consumedDeepLinkRef.current = requestedType;
+      const challenge = CORE_CHALLENGES.find((item) => item.id === requestedType);
+      if (challenge) { openedFromHomeRef.current = true; handleOpenChallenge(challenge); }
+    }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('type');
     setSearchParams(nextParams, { replace: true });
-  }, [searchParams, flowScreen, setSearchParams]);
+  }, [searchParams, setSearchParams]);
 
   // Fechar o fluxo deve devolver o usuario para ONDE ELE VEIO. Quem entrou pela
   // Home volta para a Home; quem abriu pela propria tela de Desafios continua
