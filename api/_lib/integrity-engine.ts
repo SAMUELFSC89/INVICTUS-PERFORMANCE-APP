@@ -1,5 +1,5 @@
 import { SECURITY_CONFIG } from './security-config.js';
-import { resolveModality } from './modality-config.js';
+import { resolverPerfilValidacao } from './modality-config.js';
 
 export interface IntegrityResult {
   integrityScore: number; // 0 - 100
@@ -21,9 +21,21 @@ export class IntegrityEngine {
    */
   static calculate(activity: any): IntegrityResult {
     const warnings: string[] = [];
-    const weights = SECURITY_CONFIG.integrityWeights;
-    const modality = resolveModality(activity);
-    const requiresGps = modality ? modality.requiresGps : (activity.requiresGpsDistance ?? true);
+    // #247: pesos por perfil de validacao (STRENGTH/CARDIO tem conjunto
+    // proprio; POWERLIFT e qualquer coisa nao mapeada usa o fallback plano).
+    const perfil = resolverPerfilValidacao(activity);
+    const weights = SECURITY_CONFIG.integrityWeightsByProfile[perfil.id] || SECURITY_CONFIG.integrityWeights;
+    // #247: antes, quando resolveModality nao reconhecia o tipo (ex.: "workout"
+    // de musculacao nao esta na lista de modalidades de cardio), o fallback
+    // era `activity.requiresGpsDistance ?? true` -- ou seja, exigia GPS por
+    // padrao pra qualquer atividade que o cliente nao marcasse explicitamente
+    // como `requiresGpsDistance:false`. Um treino de musculacao sem esse
+    // campo acabava sendo avaliado como se precisasse de GPS, gerando aviso
+    // de "sinal GPS com baixa precisao" pra sessao que nunca usou GPS.
+    // usaEvidenciaDeDeslocamento do perfil de validacao ja resolve isso
+    // corretamente pra STRENGTH/CARDIO/POWERLIFT sem depender do cliente
+    // mandar a flag certa.
+    const requiresGps = perfil.usaEvidenciaDeDeslocamento;
 
     // 1. GPS Integrity (20%)
     let gpsIntegrityScore = 100;

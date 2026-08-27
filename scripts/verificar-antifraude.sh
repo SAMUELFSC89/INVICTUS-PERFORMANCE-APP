@@ -39,4 +39,11 @@ npx --yes esbuild "$TRABALHO/entry.ts" \
 node "$RAIZ/tests/deduplicacao-entre-fontes.mjs" "$TRABALHO/dedup.mjs"
 
 echo
+echo "==> Pesos de integridade por modalidade (#247)"
+npx --yes esbuild "$RAIZ/api/_lib/integrity-engine.ts" \
+  --bundle --platform=node --format=esm \
+  --outfile="$TRABALHO/integrity.mjs" --log-level=error
+node "$RAIZ/tests/pesos-por-modalidade-integridade.mjs" "$TRABALHO/integrity.mjs"
+
+echo
 echo "Verificacao concluida."
