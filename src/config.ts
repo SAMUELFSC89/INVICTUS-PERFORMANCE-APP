@@ -53,6 +53,23 @@ export const CHAMPIONSHIP_CONFIG = {
   NET_ELIGIBLE_REVENUE_DEFINITION: 'Receita Líquida Elegível corresponde à soma dos valores efetivamente recebidos e confirmados das inscrições do campeonato, deduzidos exclusivamente os tributos incidentes sobre a operação, taxas do meio de pagamento/Asaas, estornos, chargebacks, reembolsos e pagamentos cancelados ou não liquidados. Não serão deduzidos custos operacionais internos da Invictus, salvo se expressamente previstos no regulamento da edição.'
 };
 
+// #251: espelho client-side de api/_lib/health-feature-flags.ts. Nao ha
+// import compartilhado entre src/ e api/ neste projeto (bundles separados),
+// por isso os dois arquivos precisam ser mantidos em sincronia manualmente --
+// qualquer mudanca aqui deve ser replicada la e vice-versa. Ainda sem
+// nenhuma tela lendo isso (Fase 1 e so a camada de dados no servidor); existe
+// aqui para o dia em que Health.tsx precisar decidir o que mostrar sem
+// duplicar a decisao de novo.
+export const HEALTH_FEATURE_FLAGS = {
+  healthReports: true,
+  healthBaseline: true,
+  healthInsights: true,
+  professionalSharing: false,
+  professionalDashboard: false,
+  clinicalIntegrations: false,
+  hospitalPortal: false
+} as const;
+
 console.log('[API_CONFIG] baseUrl:', API_CONFIG.baseUrl || '(relativo)');
 if (typeof window !== 'undefined') {
   console.log('[API_CONFIG] origin:', window.location.origin);

@@ -3,6 +3,7 @@ import { SecurityPipeline } from './security-pipeline.js';
 import { buscarHistoricoRecente } from './user-activity-history.js';
 import { encontrarAtividadeDuplicada } from './activity-dedup.js';
 import { recalculateAllUserScores } from './igaService.js';
+import { registrarAmostrasDeAtividade } from './health-data-layer.js';
 
 /**
  * INGESTAO DE HEALTHKIT / HEALTH CONNECT (#248).
@@ -156,6 +157,29 @@ export async function processarAtividadeWearable(
       pointsEarned: 0,
       createdAt: new Date().toISOString()
     }, { merge: true });
+
+    // Health Data Layer (Fase 1, #251): registro ADITIVO -- alem de decidir se
+    // isto pontua no IGA (acima), tambem alimenta a serie temporal de saude
+    // independente da competicao. Nao influencia `aprovado`/pontuacao e uma
+    // falha aqui nunca derruba a ingestao principal (ver comentario no
+    // proprio modulo sobre separacao IGA/saude).
+    try {
+      await registrarAmostrasDeAtividade({
+        userId,
+        source: activity.source,
+        sourceActivityId: docId,
+        timestamp: activity.startTime || new Date().toISOString(),
+        aprovadoPeloAntifraude: aprovado,
+        pularDuplicata: Boolean(duplicata),
+        avgHeartRate: activity.averageHeartRate,
+        maxHeartRate: activity.maxHeartRate,
+        calories: activity.calories,
+        distanceKm: distanceKm > 0 ? distanceKm : undefined,
+        durationMin: durationMins > 0 ? durationMins : undefined
+      });
+    } catch (healthLayerErr) {
+      console.error(`[WearableSync] Health Data Layer falhou para ${docId} (nao-fatal, nao afeta pontuacao):`, healthLayerErr);
+    }
 
     return {
       sourceActivityId: activity.sourceActivityId,
