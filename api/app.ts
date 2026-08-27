@@ -54,6 +54,7 @@ import sponsorsHandler from './_handlers/sponsors.js';
 import storeHandler from './_handlers/store.js';
 import activityMapHandler from './activity-map.js';
 import wearablesHandler from './_handlers/wearables.js';
+import healthSummaryHandler from './_handlers/health-summary.js';
 import powerLiftHandler from './_handlers/powerlift.js';
 import {
   acceptChampionshipRegulationHandler,
@@ -142,6 +143,7 @@ assertHandler('whatsappHandler', whatsappHandler);
 assertHandler('auditFraudHandler', auditFraudHandler);
 assertHandler('envCheckHandler', envCheckHandler);
 assertHandler('wearablesHandler', wearablesHandler);
+assertHandler('healthSummaryHandler', healthSummaryHandler);
 assertHandler('powerLiftHandler', powerLiftHandler);
 assertHandler('paymentsVerifyPurchaseHandler', paymentsVerifyPurchaseHandler);
 assertHandler('revenuecatWebhookHandler', revenuecatWebhookHandler);
@@ -254,6 +256,9 @@ router.all('/wallet/redeem', wrap(walletRedeemHandler));
 
 console.log('[ROUTE] /wearables', typeof wearablesHandler);
 router.all('/wearables', wrap(wearablesHandler));
+
+console.log('[ROUTE] /health-summary', typeof healthSummaryHandler);
+router.all('/health-summary', wrap(healthSummaryHandler));
 
 console.log('[ROUTE] /powerlift', typeof powerLiftHandler);
 router.all('/powerlift', wrap(powerLiftHandler));

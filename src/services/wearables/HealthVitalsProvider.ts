@@ -20,7 +20,7 @@ import { Health as CapgoHealth } from '@capgo/capacitor-health';
 // Health Data Layer (health_samples) via action 'sync-vitals'. Ver
 // api/_lib/health-data-layer.ts::registrarAmostrasPassivas.
 
-export type VitalMetricType = 'heart_rate_resting' | 'hrv_rmssd' | 'sleep_duration_min' | 'weight_kg';
+export type VitalMetricType = 'heart_rate_resting' | 'hrv_rmssd' | 'sleep_duration_min' | 'weight_kg' | 'steps_daily';
 
 export interface VitalSample {
   metricType: VitalMetricType;
@@ -30,7 +30,7 @@ export interface VitalSample {
   device?: string;
 }
 
-const READ_TYPES = ['restingHeartRate', 'heartRateVariability', 'sleep', 'weight'] as const;
+const READ_TYPES = ['restingHeartRate', 'heartRateVariability', 'sleep', 'weight', 'steps'] as const;
 
 function isSupportedPlatform(): boolean {
   const plataforma = Capacitor.getPlatform();
@@ -147,6 +147,20 @@ export const HealthVitalsProvider = {
       amostras.push(...agruparSonoPorNoite(samples || []));
     } catch (error) {
       console.warn('[HealthVitalsProvider] Falha ao ler sleep:', error);
+    }
+
+    // Passos: usamos queryAggregated (bucket=day, sum) em vez de somar
+    // amostras cruas -- e o metodo que o proprio plugin recomenda pra volume
+    // alto de dados (steps gera muitas amostras por dia) e evita duplicar
+    // contagem se duas fontes reportarem o mesmo intervalo.
+    try {
+      const { samples } = await CapgoHealth.queryAggregated({ dataType: 'steps', startDate, endDate, bucket: 'day', aggregation: 'sum' });
+      for (const s of samples || []) {
+        if (!valorValido(s.value)) continue;
+        amostras.push({ metricType: 'steps_daily', value: Math.round(s.value), unit: 'passos', timestamp: s.endDate });
+      }
+    } catch (error) {
+      console.warn('[HealthVitalsProvider] Falha ao ler steps agregados:', error);
     }
 
     return amostras;

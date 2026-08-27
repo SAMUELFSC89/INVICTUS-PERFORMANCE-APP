@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, Flame, Footprints, Heart, Info, MapPin, SlidersHorizontal } from 'lucide-react';
+import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, SlidersHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -8,6 +8,7 @@ import { RawWorkoutSession, processUserPerformance, UserPerformanceState } from 
 import { TimeRange } from '../core/performance/metricCatalog';
 import { cn } from '../lib/utils';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { healthSummaryService, HealthSummaryResponse } from '../services/healthSummaryService';
 
 const ranges: { id: TimeRange; label: string }[] = [
   { id: 'today', label: 'Hoje' },
@@ -24,6 +25,40 @@ function formatDuration(minutes: number) {
 
 function metricNumber(state: UserPerformanceState, key: string) {
   return Number(state.computedMetrics[key]?.currentValue || 0);
+}
+
+function formatUltimaLeitura(timestamp?: string | null): string {
+  if (!timestamp) return '';
+  const data = new Date(timestamp);
+  if (Number.isNaN(data.getTime())) return '';
+  return data.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function trendPontos(entradas: Array<{ timestamp: string; value: number }>, maxPontos = 14): { value: number; label: string }[] {
+  return entradas.slice(-maxPontos).map((item) => {
+    const data = new Date(item.timestamp);
+    const label = Number.isNaN(data.getTime()) ? '' : data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    return { value: item.value, label };
+  });
+}
+
+// #253: leitura da Health Data Layer (health_samples) -- FC repouso, HRV,
+// sono e passos. Puramente leitura, atualiza sozinho depois do primeiro
+// carregamento, sem bloquear a tela (o RESUMO já mostra o que vier de
+// `workouts`/performanceEngine enquanto isso).
+function useHealthSummary() {
+  const [summary, setSummary] = useState<HealthSummaryResponse | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    healthSummaryService.fetchSummary().then((data) => {
+      if (active) { setSummary(data); setLoadingSummary(false); }
+    });
+    return () => { active = false; };
+  }, []);
+
+  return { summary, loadingSummary };
 }
 
 function useHealthData(range: TimeRange) {
@@ -86,8 +121,18 @@ function PeriodControl({ value, onChange, compact = false }: { value: TimeRange;
   return <button className="health-period-picker" onClick={() => onChange(value === '7days' ? '30days' : '7days')}><CalendarDays />{selected.label.toUpperCase()}<ChevronDown /></button>;
 }
 
-function MetricCard({ icon, label, value, unit, detail, tone = 'gold', progress }: { icon: React.ReactNode; label: string; value: string | number; unit?: string; detail: string; tone?: 'gold' | 'red'; progress?: number }) {
-  return <article className="health-metric"><div className={cn('health-metric-icon', tone === 'red' && 'is-red')}>{icon}</div><span>{label}</span><strong>{value}<small>{unit}</small></strong><p>{detail}</p>{progress !== undefined && <div className="health-small-progress"><b style={{ width: `${Math.min(100, progress)}%` }} /></div>}</article>;
+function MetricCard({ icon, label, value, unit, detail, tone = 'gold', progress, onTap }: { icon: React.ReactNode; label: string; value: string | number; unit?: string; detail: string; tone?: 'gold' | 'red'; progress?: number; onTap?: () => void }) {
+  const conteudo = <>
+    <div className={cn('health-metric-icon', tone === 'red' && 'is-red')}>{icon}</div>
+    <span>{label}</span>
+    <strong>{value}<small>{unit}</small></strong>
+    <p>{detail}</p>
+    {progress !== undefined && <div className="health-small-progress"><b style={{ width: `${Math.min(100, progress)}%` }} /></div>}
+  </>;
+  if (onTap) {
+    return <article role="button" tabIndex={0} onClick={onTap} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(); } }} className="health-metric is-tappable">{conteudo}</article>;
+  }
+  return <article className="health-metric">{conteudo}</article>;
 }
 
 function ChartBars({ points, color = 'gold' }: { points: { value: number; label: string }[]; color?: 'gold' | 'violet' }) {
@@ -129,65 +174,189 @@ function LatestWorkouts({ state, expanded, onToggle }: { state: UserPerformanceS
   return <article id="health-activities" className="health-latest"><div className="health-section-line"><div>ÚLTIMOS TREINOS</div><button type="button" onClick={onToggle}>{expanded ? 'MOSTRAR MENOS' : 'VER TODOS'}</button></div>{workouts.length ? workouts.map((workout) => { const isRun = /corrida|run/i.test(workout.workoutType || ''); return <div className="health-workout" key={workout.id}><span className={cn('health-workout-icon', isRun && 'is-run')}>{isRun ? <Footprints /> : <Dumbbell />}</span><div><b>{workout.workoutName}</b><small>{new Date(workout.timestamp).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</small></div><span><Clock3 />{formatDuration(workout.durationMinutes)}</span><span><Flame />{Math.round(workout.caloriesBurned || 0)} kcal</span><span><Heart />{workout.avgHeartRate || '—'} bpm</span><ChevronRight /></div>; }) : <p className="health-empty">Quando seu próximo treino for validado, ele aparecerá aqui.</p>}</article>;
 }
 
-function HealthSummaryContent({ state, onReport }: { state: UserPerformanceState; onReport: () => void }) {
-  const [activeTab, setActiveTab] = useState<'summary' | 'report'>('summary');
+type SaudeTab = 'resumo' | 'coracao' | 'recuperacao' | 'atividade' | 'energia' | 'performance';
+
+const SAUDE_TABS: { id: SaudeTab; label: string }[] = [
+  { id: 'resumo', label: 'RESUMO' },
+  { id: 'coracao', label: 'CORAÇÃO' },
+  { id: 'recuperacao', label: 'RECUPERAÇÃO' },
+  { id: 'atividade', label: 'ATIVIDADE' },
+  { id: 'energia', label: 'ENERGIA' },
+  { id: 'performance', label: 'PERFORMANCE' }
+];
+
+// #253/#53: bloco de Gasto Energético -- SEMPRE com o disclaimer. Regra
+// explícita do usuário: nunca chamar isso de "kg perdidos". É só uma
+// equivalência energética (1kg de gordura ≈ 7700kcal), não uma medida real
+// de emagrecimento (que depende de ingestão, hidratação, sono, hormônios...).
+const KCAL_POR_KG_GORDURA = 7700;
+
+function EnergyBlock({ calories }: { calories: number }) {
+  const kgEquivalente = calories > 0 ? calories / KCAL_POR_KG_GORDURA : 0;
+  return (
+    <article className="health-overview health-energy-card">
+      <div className="health-section-line"><div><Flame /> GASTO ENERGÉTICO</div></div>
+      <div className="health-energy-value"><strong>{calories.toLocaleString('pt-BR')}</strong><span>kcal no período</span></div>
+      <p style={{ margin: 0, color: '#c6c1bb', fontFamily: 'Barlow,sans-serif', fontSize: 13 }}>
+        {calories > 0
+          ? `Equivalente a ${kgEquivalente.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg de gordura, se esse gasto se sustentasse isoladamente (1 kg ≈ ${KCAL_POR_KG_GORDURA.toLocaleString('pt-BR')} kcal).`
+          : 'Sem calorias registradas no período.'}
+      </p>
+      <div className="health-energy-disclaimer">
+        <AlertCircle />
+        <span>Isso é uma equivalência energética, não peso realmente perdido. O peso corporal depende de ingestão calórica, hidratação, sono, hormônios e muito mais — não use este número como resultado de emagrecimento.</span>
+      </div>
+    </article>
+  );
+}
+
+function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport, onOpenLegacyReport }: {
+  state: UserPerformanceState;
+  summary: HealthSummaryResponse | null;
+  loadingSummary: boolean;
+  onGenerateReport: () => void;
+  onOpenLegacyReport: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<SaudeTab>('resumo');
   const [activitiesExpanded, setActivitiesExpanded] = useState(false);
+
   const calories = metricNumber(state, 'total_calories_burned');
   const minutes = metricNumber(state, 'total_volume_time');
   const workouts = metricNumber(state, 'workout_count');
-  const heartRate = metricNumber(state, 'avg_heart_rate');
-  const lastWorkout = [...state.timeframeWorkouts].sort((a, b) => b.timestamp - a.timestamp)[0];
-  const lastUpdate = lastWorkout ? new Date(lastWorkout.timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : null;
+  const heartRateAvg = metricNumber(state, 'avg_heart_rate');
+
+  const fcRepouso = summary?.latest.heart_rate_resting || null;
+  const hrv = summary?.latest.hrv_rmssd || null;
+  const sono = summary?.latest.sleep_duration_min || null;
+  const passos = summary?.latest.steps_daily || null;
+
+  const semDado = loadingSummary ? 'Carregando…' : 'Sem dados sincronizados';
 
   return (
     <>
       <div className="health-tabs">
-        <button className={activeTab === 'summary' ? 'is-active' : ''} onClick={() => setActiveTab('summary')}>
-          RESUMO
-        </button>
-        <button className={activeTab === 'report' ? 'is-active' : ''} onClick={() => { setActiveTab('report'); onReport(); }}>
-          RELATÓRIOS
-        </button>
+        {SAUDE_TABS.map((tab) => (
+          <button key={tab.id} className={activeTab === tab.id ? 'is-active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
+        ))}
       </div>
 
-      <section id="health-overview" className="health-overview">
-        <div className="health-section-line">
-          <div><Activity /> VISÃO GERAL</div>
-          <small>{lastUpdate ? `Última atividade: ${lastUpdate}` : 'Nenhuma atividade sincronizada'} <span>●</span></small>
-        </div>
-        <div className="health-metrics-grid">
-          <MetricCard 
-            icon={<Flame />} 
-            label="CALORIAS" 
-            value={calories.toLocaleString('pt-BR')} 
-            unit="kcal" 
-            detail={state.computedMetrics.total_calories_burned?.hasEnoughData ? `Média por sessão: ${workouts ? Math.round(calories / workouts) : 0} kcal` : 'Sem calorias registradas'} 
-          />
-          <MetricCard 
-            icon={<Clock3 />} 
-            label="TEMPO ATIVO" 
-            value={formatDuration(minutes)} 
-            detail={workouts ? `Média por sessão: ${formatDuration(minutes / workouts)}` : 'Sem sessões homologadas'} 
-          />
-          <MetricCard 
-            icon={<Dumbbell />} 
-            label="TREINOS" 
-            value={workouts} 
-            detail="Sessões homologadas no período" 
-            progress={workouts ? Math.min(100, Number(state.computedMetrics.weekly_active_days?.currentValue || 0) * 20) : 0} 
-          />
-          <MetricCard 
-            icon={<Heart />} 
-            label="FC MÉDIA" 
-            value={heartRate || '—'} 
-            unit={heartRate ? 'bpm' : ''} 
-            detail={heartRate ? 'Dados reais do sensor' : 'Conecte o relógio'} 
-            tone="red" 
-          />
-        </div>
-      </section>
+      {activeTab === 'resumo' && (
+        <>
+          {/* #53: banner "Estado de Hoje" -- asset oficial ainda não enviado
+              pelo usuário. Por regra explícita, nunca recriamos/geramos um no
+              lugar dele: este espaço fica reservado e claramente marcado até
+              o arquivo real chegar. */}
+          <div className="health-banner-pending" role="status">
+            <strong>Estado de Hoje</strong>
+            <span>Banner oficial ainda não enviado — espaço reservado, sem substituto improvisado.</span>
+          </div>
 
-      <LatestWorkouts state={state} expanded={activitiesExpanded} onToggle={() => setActivitiesExpanded(value => !value)} />
+          <section id="health-overview" className="health-overview">
+            <div className="health-section-line"><div><Activity /> RESUMO DE HOJE</div></div>
+            <div className="health-metrics-grid-3">
+              <MetricCard icon={<Heart />} label="FC REPOUSO" value={fcRepouso ? fcRepouso.value : '—'} unit={fcRepouso ? 'bpm' : ''} detail={fcRepouso ? `Última leitura: ${formatUltimaLeitura(fcRepouso.timestamp)}` : semDado} tone="red" onTap={() => setActiveTab('coracao')} />
+              <MetricCard icon={<HeartPulse />} label="HRV" value={hrv ? hrv.value : '—'} unit={hrv ? 'ms' : ''} detail={hrv ? `Última leitura: ${formatUltimaLeitura(hrv.timestamp)}` : semDado} onTap={() => setActiveTab('coracao')} />
+              <MetricCard icon={<Moon />} label="SONO" value={sono ? formatDuration(sono.value) : '—'} detail={sono ? `Última noite: ${formatUltimaLeitura(sono.timestamp)}` : semDado} onTap={() => setActiveTab('recuperacao')} />
+              <MetricCard icon={<Footprints />} label="PASSOS" value={passos ? passos.value.toLocaleString('pt-BR') : '—'} detail={passos ? `Registrado: ${formatUltimaLeitura(passos.timestamp)}` : semDado} onTap={() => setActiveTab('atividade')} />
+              <MetricCard icon={<Clock3 />} label="EXERCÍCIO" value={formatDuration(minutes)} detail={workouts ? `${workouts} sessão(ões) homologada(s) no período` : 'Sem sessões homologadas'} onTap={() => setActiveTab('atividade')} />
+              <MetricCard icon={<Flame />} label="CALORIAS" value={calories.toLocaleString('pt-BR')} unit="kcal" detail="Total do período" onTap={() => setActiveTab('energia')} />
+            </div>
+          </section>
+
+          <EnergyBlock calories={calories} />
+
+          <article className="health-overview" style={{ marginTop: '1rem' }}>
+            <div className="health-section-line"><div><Activity /> TENDÊNCIAS (30 DIAS)</div></div>
+            {summary && summary.trends.calories_active.length ? (
+              <ChartBars points={trendPontos(summary.trends.calories_active)} />
+            ) : <p className="health-empty">{loadingSummary ? 'Carregando tendências…' : 'Ainda não há histórico suficiente de calorias para mostrar tendência.'}</p>}
+          </article>
+
+          <div className="health-report-cta">
+            <div><strong>Relatório Saúde &amp; Performance</strong><p>Gere um PDF completo com seus dados de saúde e desempenho.</p></div>
+            <button onClick={onGenerateReport}><FileDown /> GERAR RELATÓRIO</button>
+          </div>
+
+          <LatestWorkouts state={state} expanded={activitiesExpanded} onToggle={() => setActivitiesExpanded(value => !value)} />
+        </>
+      )}
+
+      {activeTab === 'coracao' && (
+        <>
+          <section className="health-overview">
+            <div className="health-section-line"><div><Heart /> CORAÇÃO</div></div>
+            <div className="health-metrics-grid">
+              <MetricCard icon={<Heart />} label="FC REPOUSO" value={fcRepouso ? fcRepouso.value : '—'} unit={fcRepouso ? 'bpm' : ''} detail={fcRepouso ? `Última leitura: ${formatUltimaLeitura(fcRepouso.timestamp)}` : semDado} tone="red" />
+              <MetricCard icon={<HeartPulse />} label="HRV" value={hrv ? hrv.value : '—'} unit={hrv ? 'ms' : ''} detail={hrv ? `Última leitura: ${formatUltimaLeitura(hrv.timestamp)}` : semDado} />
+              <MetricCard icon={<Heart />} label="FC MÉDIA" value={heartRateAvg || '—'} unit={heartRateAvg ? 'bpm' : ''} detail={heartRateAvg ? 'Média dos treinos do período' : 'Conecte um sensor cardíaco'} tone="red" />
+            </div>
+          </section>
+          <div className="health-dual">
+            <ZoneChart state={state} />
+            <article className="health-trend-card">
+              <div className="health-section-name">FC REPOUSO (30 DIAS) <Info /></div>
+              <strong>{fcRepouso ? fcRepouso.value : '—'} <small>{fcRepouso ? 'bpm' : ''}</small></strong>
+              <p>{summary?.trends.heart_rate_resting.length ? 'Leituras sincronizadas do relógio/app de saúde' : 'Conecte um dispositivo compatível com FC de repouso'}</p>
+              <ChartBars points={trendPontos(summary?.trends.heart_rate_resting || [])} color="violet" />
+            </article>
+          </div>
+          <article className="health-overview" style={{ marginTop: '1rem' }}>
+            <div className="health-section-line"><div><HeartPulse /> HRV (30 DIAS)</div></div>
+            {summary?.trends.hrv_rmssd.length ? <ChartBars points={trendPontos(summary.trends.hrv_rmssd)} /> : <p className="health-empty">Conecte um dispositivo compatível com HRV para ver esta tendência.</p>}
+          </article>
+        </>
+      )}
+
+      {activeTab === 'recuperacao' && (
+        <section className="health-overview">
+          <div className="health-section-line"><div><Moon /> RECUPERAÇÃO</div></div>
+          <div className="health-metrics-grid">
+            <MetricCard icon={<Moon />} label="SONO" value={sono ? formatDuration(sono.value) : '—'} detail={sono ? `Última noite: ${formatUltimaLeitura(sono.timestamp)}` : semDado} />
+            <MetricCard icon={<Activity />} label="ÍNDICE DE RECUPERAÇÃO" value={state.computedMetrics.recovery_index?.hasEnoughData ? `${metricNumber(state, 'recovery_index')}%` : '—'} detail={state.computedMetrics.recovery_index?.hasEnoughData ? (state.readinessStatus || '') : 'Requer dados recentes de treino'} />
+          </div>
+          <div style={{ marginTop: '1rem' }}>
+            <div className="health-section-line"><div>SONO (30 DIAS)</div></div>
+            {summary?.trends.sleep_duration_min.length ? <ChartBars points={trendPontos(summary.trends.sleep_duration_min.map((p) => ({ timestamp: p.timestamp, value: Math.round(p.value / 60 * 10) / 10 })))} color="violet" /> : <p className="health-empty">Conecte um dispositivo compatível com sono para ver esta tendência.</p>}
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'atividade' && (
+        <>
+          <section className="health-overview">
+            <div className="health-section-line"><div><Footprints /> ATIVIDADE</div></div>
+            <div className="health-metrics-grid">
+              <MetricCard icon={<Footprints />} label="PASSOS" value={passos ? passos.value.toLocaleString('pt-BR') : '—'} detail={passos ? `Registrado: ${formatUltimaLeitura(passos.timestamp)}` : semDado} />
+              <MetricCard icon={<Dumbbell />} label="TREINOS" value={workouts} detail="Sessões homologadas no período" progress={workouts ? Math.min(100, Number(state.computedMetrics.weekly_active_days?.currentValue || 0) * 20) : 0} />
+              <MetricCard icon={<Clock3 />} label="TEMPO ATIVO" value={formatDuration(minutes)} detail={workouts ? `Média por sessão: ${formatDuration(minutes / workouts)}` : 'Sem sessões homologadas'} />
+            </div>
+          </section>
+          <LatestWorkouts state={state} expanded={activitiesExpanded} onToggle={() => setActivitiesExpanded(value => !value)} />
+        </>
+      )}
+
+      {activeTab === 'energia' && (
+        <>
+          <EnergyBlock calories={calories} />
+          <article className="health-overview" style={{ marginTop: '1rem' }}>
+            <div className="health-section-line"><div>CALORIAS (30 DIAS)</div></div>
+            {summary?.trends.calories_active.length ? <ChartBars points={trendPontos(summary.trends.calories_active)} /> : <p className="health-empty">Ainda não há histórico suficiente para mostrar tendência.</p>}
+          </article>
+        </>
+      )}
+
+      {activeTab === 'performance' && (
+        <section className="health-advanced">
+          <div className="health-section-name">MÉTRICAS AVANÇADAS <Info /></div>
+          <div>
+            <span>VO₂ MÁX. ESTIMADO <b>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? metricNumber(state, 'vo2max_estimate').toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}</b><small>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? 'ml/kg/min (estimado)' : (state.computedMetrics.vo2max_estimate?.statusMessage || 'Requer corrida/caminhada com GPS + FC')}</small></span>
+            <span>CARGA DE TREINO <b>{state.computedMetrics.acute_chronic_workload_ratio?.hasEnoughData ? metricNumber(state, 'acute_chronic_workload_ratio') : '—'}</b><small>{state.computedMetrics.acute_chronic_workload_ratio?.statusMessage || 'Requer carga registrada'}</small></span>
+            <span>RECUPERAÇÃO <b>{state.computedMetrics.recovery_index?.hasEnoughData ? `${metricNumber(state, 'recovery_index')}%` : '—'}</b><small>{state.readinessStatus}</small></span>
+            <span>ÍNDICE DE CONSISTÊNCIA <b>{state.computedMetrics.consistency_index?.hasEnoughData ? `${metricNumber(state, 'consistency_index')}%` : '—'}</b><small>{state.computedMetrics.consistency_index?.hasEnoughData ? 'da meta de 5 dias/semana' : (state.computedMetrics.consistency_index?.statusMessage || 'Requer métrica auditada')}</small></span>
+          </div>
+          <button onClick={onOpenLegacyReport} className="health-tab-note" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: '1rem', color: '#ffad00', fontFamily: 'Anton,sans-serif', fontSize: 14, fontStyle: 'italic', cursor: 'pointer' }}>VER RELATÓRIO DETALHADO EM TELA <ChevronRight /></button>
+        </section>
+      )}
     </>
   );
 }
@@ -196,21 +365,29 @@ export function Health() {
   const navigate = useNavigate();
   const [range, setRange] = useState<TimeRange>('7days');
   const { user, state, loading } = useHealthData(range);
+  const { summary, loadingSummary } = useHealthSummary();
+  const [reportNotice, setReportNotice] = useState<string | null>(null);
+
   if (!user) return null;
   if (loading || !state) return <div className="health-screen health-loading">Preparando os seus dados de saúde…</div>;
+
   return (
     <main className="health-screen">
       <div className="health-content">
-        <HealthHeader 
-          title="SAÚDE" 
-          subtitle="Sua saúde. Seus dados. Seu desempenho." 
-          onBack={() => navigate('/profile')} 
-          right={<PeriodControl value={range} onChange={setRange} />} 
+        <HealthHeader
+          title="SAÚDE"
+          subtitle="Sua saúde. Seus dados. Seu desempenho."
+          onBack={() => navigate('/profile')}
+          right={<PeriodControl value={range} onChange={setRange} />}
         />
-        <HealthSummaryContent 
-          state={state} 
-          onReport={() => navigate('/health/report')} 
+        <HealthSummaryContent
+          state={state}
+          summary={summary}
+          loadingSummary={loadingSummary}
+          onGenerateReport={() => setReportNotice('O gerador de relatório em PDF está em preparação — em breve você poderá gerar aqui.')}
+          onOpenLegacyReport={() => navigate('/health/report')}
         />
+        {reportNotice && <p className="health-tab-note" role="status">{reportNotice}</p>}
       </div>
     </main>
   );

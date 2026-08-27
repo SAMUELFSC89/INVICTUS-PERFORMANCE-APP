@@ -79,7 +79,7 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
 // #253: metricas passivas (FC repouso, HRV, sono, peso) lidas via
 // @capgo/capacitor-health (HealthVitalsProvider) -- distinto do payload de
 // atividades acima, que continua vindo do "capacitor-health" (mley).
-const VITAL_METRIC_TYPES = new Set(['heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg']);
+const VITAL_METRIC_TYPES = new Set(['heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily']);
 // Ate ~4 metricas x historico de varios meses cabe folgado; mesmo raciocinio
 // de MAX_ATIVIDADES_POR_SYNC -- protecao contra payload abusivo, nao limite
 // de produto (cliente pode sincronizar de novo).

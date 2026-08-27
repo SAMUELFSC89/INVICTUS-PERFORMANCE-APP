@@ -604,6 +604,32 @@
 .health-advanced { margin-top:1rem; padding:1rem; }.health-advanced > div:last-child { display:grid; grid-template-columns:repeat(4,1fr); margin-top:1rem; }.health-advanced > div:last-child span { display:grid; gap:.35rem; padding:.25rem .85rem; border-left:1px solid rgba(255,255,255,.11); color:#ddd7d0; font-family:Anton,sans-serif; font-size:13px; text-align:center; }.health-advanced > div:last-child span:first-child { border-left:0; }.health-advanced b { color:#fff; font-size:30px; font-weight:400; }.health-advanced small { color:#ccc5be; font-family:Barlow,sans-serif; font-size:12px; }
 @media (max-width: 700px) { .health-content { max-width:100%; padding:1.15rem 0.85rem; }.health-header { margin-bottom:1.4rem; }.health-back { width:48px; height:48px; flex-basis:48px; }.health-heading h1 { font-size:28px; }.health-heading p { font-size:13px; }.health-period-picker { min-height:47px; padding:0 .55rem; font-size:14px; }.health-tabs { gap:1.45rem; padding:0 .25rem; }.health-tabs button { font-size:14px; }.health-metrics-grid { grid-template-columns:1fr 1fr; gap:.55rem; }.health-metric strong { font-size:29px; }.health-dual { grid-template-columns:1fr; }.health-zone-card,.health-trend-card { min-height:350px; }.health-zone-body { gap:.7rem; }.health-donut { width:150px; height:150px; flex-basis:150px; }.health-donut > div { width:108px; height:108px; }.health-donut strong { font-size:21px; }.health-zone-list > div { font-size:11px; }.health-heart-layout { grid-template-columns:62px 1fr; }.health-heart-graph { grid-column:1 / -1; }.health-heart-graph .health-chart-bars { height:70px; }.health-heart-minmax { grid-column:1 / -1; }.health-workout { grid-template-columns:48px minmax(80px,1fr) 18px; gap:.5rem; }.health-workout > span:not(.health-workout-icon) { display:none; }.health-report .health-header { align-items:flex-start; }.health-report-actions button { min-height:48px; font-size:10px; }.health-period-bar { margin-right:0; margin-left:0; }.health-report-metrics { grid-template-columns:1fr 1fr; gap:.2rem; }.health-report-metrics .health-metric { border:0; }.health-report-chart { grid-template-columns:1fr; min-height:0; }.health-report-chart .health-chart-bars { height:150px; }.health-advanced > div:last-child { grid-template-columns:1fr 1fr; gap:.7rem; }.health-advanced > div:last-child span { border:0; border-top:1px solid rgba(255,255,255,.1); padding-top:.75rem; }.health-advanced > div:last-child span:nth-child(-n+2) { border-top:0; } }
 
+/* #253/#53: tela Saúde (RESUMO) -- grid de 6 cards, bloco de gasto
+   energético e placeholder do banner "Estado de Hoje" (asset ainda não
+   enviado pelo usuário). Reaproveita a linguagem visual .health-* já
+   existente (cores, fontes, tratamento de card) em vez de criar um sistema
+   visual paralelo. */
+.health-metrics-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem; }
+.health-metric.is-tappable { cursor:pointer; text-align:left; background:rgba(18,17,20,.85); transition:border-color .15s ease, transform .1s ease; }
+.health-metric.is-tappable:hover { border-color:rgba(255,174,0,.4); }
+.health-metric.is-tappable:active { transform:scale(.98); }
+.health-metric.is-tappable:focus-visible { outline:2px solid #ffad00; outline-offset:2px; }
+.health-banner-pending { display:grid; place-items:center; gap:.4rem; min-height:132px; margin-bottom:1rem; padding:1rem; border:1px dashed rgba(255,174,0,.35); border-radius:20px; background:rgba(18,17,20,.55); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:13px; text-align:center; }
+.health-banner-pending strong { color:#e8c98a; font-family:Anton,sans-serif; font-size:14px; font-weight:400; letter-spacing:.02em; text-transform:uppercase; }
+.health-energy-card { margin-top:1rem; padding:1.1rem 1rem; }
+.health-energy-value { display:flex; align-items:baseline; gap:.5rem; margin:.6rem 0 .3rem; }
+.health-energy-value strong { color:#fff; font-family:Anton,sans-serif; font-size:34px; font-weight:400; line-height:.9; }
+.health-energy-value span { color:#e4ded7; font-family:Barlow,sans-serif; font-size:15px; }
+.health-energy-disclaimer { display:flex; gap:.5rem; margin-top:.7rem; padding:.7rem .8rem; border:1px solid rgba(255,255,255,.1); border-radius:12px; background:rgba(255,255,255,.03); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:12.5px; line-height:1.35; }
+.health-energy-disclaimer svg { width:17px; flex:0 0 17px; margin-top:.1rem; color:#ffad00; }
+.health-report-cta { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-top:1rem; padding:1.1rem 1.2rem; border:1px solid rgba(245,166,35,.4); border-radius:20px; background:linear-gradient(135deg,rgba(255,178,0,.14),rgba(10,10,12,.92) 70%); }
+.health-report-cta > div strong { display:block; color:#fff; font-family:Anton,sans-serif; font-size:16px; font-weight:400; text-transform:uppercase; }
+.health-report-cta > div p { margin:.3rem 0 0; color:#d0cbc4; font-family:Barlow,sans-serif; font-size:13px; }
+.health-report-cta button { display:flex; flex:0 0 auto; align-items:center; gap:.4rem; min-height:50px; padding:0 1.1rem; border:0; border-radius:13px; background:#ffb000; color:#191108; font-family:Anton,sans-serif; font-size:14px; font-style:italic; white-space:nowrap; }
+.health-report-cta button svg { width:19px; }
+.health-tab-note { margin:1rem 0 0; padding:.85rem 1rem; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(18,17,20,.7); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:13px; }
+@media (max-width: 700px) { .health-metrics-grid-3 { grid-template-columns:1fr 1fr; } .health-report-cta { flex-direction:column; align-items:flex-start; } .health-report-cta button { width:100%; justify-content:center; } }
+
 @layer components {
   .glass-card {
     background: rgba(22, 18, 12, 0.88);

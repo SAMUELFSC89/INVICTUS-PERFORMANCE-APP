@@ -43,6 +43,7 @@ export type HealthMetricType =
   | 'vo2max_estimate'      // calculado no cliente (performanceEngine.ts), nao no servidor -- integracao futura
   | 'sleep_duration_min'   // #253: idem (agregado por noite a partir dos segmentos de estagio)
   | 'weight_kg'            // #253: idem
+  | 'steps_daily'          // #253: total de passos do dia, via queryAggregated (bucket=day, sum) -- HealthVitalsProvider
   | 'calories_active'
   | 'distance_km'
   | 'duration_min';
@@ -249,5 +250,5 @@ export interface HealthAccessAuditEntry {
  */
 export const metricsGravadasHoje: HealthMetricType[] = [
   'heart_rate_avg', 'heart_rate_max', 'calories_active', 'distance_km', 'duration_min',
-  'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg'
+  'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily'
 ];
