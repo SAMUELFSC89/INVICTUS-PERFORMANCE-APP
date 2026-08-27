@@ -242,13 +242,14 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
 
       {activeTab === 'resumo' && (
         <>
-          {/* #53: banner "Estado de Hoje" -- asset oficial ainda não enviado
-              pelo usuário. Por regra explícita, nunca recriamos/geramos um no
-              lugar dele: este espaço fica reservado e claramente marcado até
-              o arquivo real chegar. */}
-          <div className="health-banner-pending" role="status">
-            <strong>Estado de Hoje</strong>
-            <span>Banner oficial ainda não enviado — espaço reservado, sem substituto improvisado.</span>
+          {/* #53: banner "Estado de Hoje" -- arte oficial enviada pelo
+              usuário (public/estado-de-hoje.webp), usada exatamente como
+              recebida, sem recorte/recriação. Fundo preto aplicado aqui via
+              CSS (radial-gradient), como o próprio usuário pediu. */}
+          <div className="health-banner-hoje">
+            <span className="health-banner-hoje-label">Estado de Hoje</span>
+            <img src="/estado-de-hoje.webp" alt="Invictus — Estado de Hoje" />
+            <span className="health-banner-hoje-status">Acompanhe seus indicadores de hoje abaixo</span>
           </div>
 
           <section id="health-overview" className="health-overview">

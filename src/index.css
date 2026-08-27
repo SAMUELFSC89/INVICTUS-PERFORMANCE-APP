@@ -616,6 +616,11 @@
 .health-metric.is-tappable:focus-visible { outline:2px solid #ffad00; outline-offset:2px; }
 .health-banner-pending { display:grid; place-items:center; gap:.4rem; min-height:132px; margin-bottom:1rem; padding:1rem; border:1px dashed rgba(255,174,0,.35); border-radius:20px; background:rgba(18,17,20,.55); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:13px; text-align:center; }
 .health-banner-pending strong { color:#e8c98a; font-family:Anton,sans-serif; font-size:14px; font-weight:400; letter-spacing:.02em; text-transform:uppercase; }
+.health-banner-hoje { position:relative; overflow:hidden; margin-bottom:1rem; border:1px solid rgba(245,166,35,.3); border-radius:20px; background:radial-gradient(120% 140% at 50% 15%, #1a1108 0%, #0a0705 55%, #000 100%); }
+.health-banner-hoje-label { position:absolute; top:.9rem; left:1rem; z-index:1; color:#f4f1ec; font-family:Anton,sans-serif; font-size:14px; font-weight:400; letter-spacing:.04em; text-transform:uppercase; text-shadow:0 2px 8px rgba(0,0,0,.8); }
+.health-banner-hoje img { display:block; width:100%; height:auto; max-height:280px; margin:0 auto; object-fit:contain; }
+.health-banner-hoje-status { position:absolute; right:1rem; bottom:.85rem; left:1rem; z-index:1; color:#ddd7d0; font-family:Barlow,sans-serif; font-size:12.5px; text-align:right; text-shadow:0 2px 8px rgba(0,0,0,.9); }
+@media (max-width: 700px) { .health-banner-hoje img { max-height:220px; } }
 .health-energy-card { margin-top:1rem; padding:1.1rem 1rem; }
 .health-energy-value { display:flex; align-items:baseline; gap:.5rem; margin:.6rem 0 .3rem; }
 .health-energy-value strong { color:#fff; font-family:Anton,sans-serif; font-size:34px; font-weight:400; line-height:.9; }
