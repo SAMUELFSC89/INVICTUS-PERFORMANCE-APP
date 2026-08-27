@@ -238,20 +238,33 @@ export const MyChampionshipDetail: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div
-                    className={`w-7 h-7 rounded-full text-[11px] font-bold flex items-center justify-center font-bebas ${
-                      row.rank === 1
-                        ? 'bg-amber-400 text-black shadow-md'
-                        : row.rank === 2
-                        ? 'bg-zinc-300 text-black'
-                        : row.rank === 3
-                        ? 'bg-amber-700 text-white'
-                        : row.isUser
-                        ? 'bg-amber-500 text-black font-extrabold'
-                        : 'bg-zinc-800 text-zinc-400'
-                    }`}
-                  >
-                    {row.rank}º
+                  <div className="relative w-7 h-7 shrink-0 flex items-center justify-center">
+                    {/* Coroa dourada/prata/bronze pro Top 3 -- mesma arte usada
+                        no ranking geral, so que aqui contornando o numero em
+                        vez do avatar (essa tela nao mostra foto do atleta). */}
+                    {row.rank <= 3 && (
+                      <img
+                        src={`/ranking-frame-${row.rank === 1 ? 'gold' : row.rank === 2 ? 'silver' : 'bronze'}-reference.png`}
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute w-12 h-12 object-contain pointer-events-none"
+                      />
+                    )}
+                    <div
+                      className={`relative w-7 h-7 rounded-full text-[11px] font-bold flex items-center justify-center font-bebas ${
+                        row.rank === 1
+                          ? 'bg-amber-400 text-black shadow-md'
+                          : row.rank === 2
+                          ? 'bg-zinc-300 text-black'
+                          : row.rank === 3
+                          ? 'bg-amber-700 text-white'
+                          : row.isUser
+                          ? 'bg-amber-500 text-black font-extrabold'
+                          : 'bg-zinc-800 text-zinc-400'
+                      }`}
+                    >
+                      {row.rank}º
+                    </div>
                   </div>
                   <div>
                     <span className={`text-[13px] font-bold block ${row.isUser ? 'text-amber-400' : 'text-white'}`}>
