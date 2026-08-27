@@ -506,6 +506,12 @@
   text-transform: uppercase;
   letter-spacing: 0.01em;
   line-height: 1.15;
+  /* #47: posicao/tamanho ja corrigidos antes, mas o texto continuava sobre a
+     arte do banner (fundo variavel, nao uma cor solida) sem nenhuma sombra --
+     em trechos mais claros da arte o branco lavava e ficava ilegivel. Sombra
+     escura dupla (contato + halo) garante contraste minimo em qualquer
+     regiao da imagem por baixo, sem depender de onde a arte for mais clara. */
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
 }
 
 .iv-liga-banner__rec p {
@@ -517,6 +523,7 @@
   font-family: 'Barlow', sans-serif;
   font-size: max(11.5px, 2.7cqw);
   line-height: 1.25;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
 }
 
 .iv-liga-banner__rec--1 { left: 47.1%; width: 20%; }
@@ -640,6 +647,9 @@
   font-size: 2.2cqw;
   letter-spacing: 0.3em;
   text-transform: uppercase;
+  /* #47: dourado sobre a arte do banner (fundo variavel) sem sombra lavava em
+     trechos mais claros. Mesma sombra dupla usada no banner Liga Invictus. */
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
 }
 
 .iv-camp-banner__titulo {
@@ -655,7 +665,10 @@
 
 .iv-camp-banner__titulo span { display: block; }
 
-.iv-camp-banner__titulo .l1 { color: #FFFFFF; }
+.iv-camp-banner__titulo .l1 {
+  color: #FFFFFF;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+}
 
 .iv-camp-banner__titulo .l2 {
   background: linear-gradient(180deg, var(--dourado-claro) 20%, var(--dourado-escuro) 100%);
@@ -663,6 +676,9 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
+  /* text-shadow funciona independente do preenchimento em gradiente/clip --
+     continua dando contraste contra a arte do banner por baixo. */
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.35);
 }
 
 .iv-camp-banner__faixa {
@@ -834,6 +850,7 @@
   font-family: 'Barlow', sans-serif;
   font-size: 2.5cqw;
   line-height: 1.35;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
 }
 
 .iv-camp-cta__botao {
