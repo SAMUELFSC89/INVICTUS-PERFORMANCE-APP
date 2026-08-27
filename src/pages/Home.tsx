@@ -366,17 +366,22 @@ export function Home() {
               <span className="l2">Corra para vencer.</span>
             </div>
 
+            {/* #235: descricoes encurtadas de proposito. Cada coluna tem ~70px
+                de largura real no celular; com as frases anteriores (35+
+                caracteres) o texto so cabia em fonte de ~10px, ilegivel. A
+                regra acordada e priorizar LEGIBILIDADE sobre quantidade de
+                texto -- por isso menos palavras, em corpo maior. */}
             <div className="iv-liga-banner__rec iv-liga-banner__rec--1">
               <b>Pote real</b>
-              <p>Prêmios de verdade para os melhores.</p>
+              <p>Prêmios de verdade.</p>
             </div>
             <div className="iv-liga-banner__rec iv-liga-banner__rec--2">
               <b>Competição justa</b>
-              <p>Sistema antifraude avançado.</p>
+              <p>Antifraude avançado.</p>
             </div>
             <div className="iv-liga-banner__rec iv-liga-banner__rec--3">
               <b>Evolução constante</b>
-              <p>Cada treino te aproxima do topo.</p>
+              <p>Cada treino conta.</p>
             </div>
 
             {/* Faixa inferior: contador ao vivo de verdade, atualizado a cada

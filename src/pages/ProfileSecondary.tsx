@@ -25,6 +25,7 @@ export function ProfileSecondary() {
   const navigate = useNavigate(); const location = useLocation(); const { section } = useParams(); const { user, refreshUser } = useUser();
   const page = pageFromPath(location.pathname); const manager = useMemo(() => WearableManager.getInstance(), []);
   const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [query, setQuery] = useState(''); const [gyms, setGyms] = useState<any[]>([]); const [selectedGym, setSelectedGym] = useState<any>(location.state?.gym ?? null);
+  const [gymError, setGymError] = useState(''); const [geo, setGeo] = useState<{ lat: number; lng: number; neighborhood?: string; city?: string } | null>(null);
   const [wearables, setWearables] = useState<WearableConfig | null>(null); const [syncing, setSyncing] = useState(false);
   const [wallet, setWallet] = useState<any>(null); const [transactions, setTransactions] = useState<any[]>([]); const [withdrawals, setWithdrawals] = useState<any[]>([]); const [withdrawAmount, setWithdrawAmount] = useState(''); const [pixKey, setPixKey] = useState('');
   const [goal, setGoal] = useState(String((user as any)?.objective || '')); const [frequency, setFrequency] = useState(String((user as any)?.weeklyFrequency || ''));
@@ -35,10 +36,62 @@ export function ProfileSecondary() {
   const message = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 5000); };
   const loadWearables = useCallback(async () => { try { const config = await manager.loadConfig(); setWearables(config); setAutoSync(Boolean(config.autoSync)); } catch { message('Não foi possível carregar o estado das conexões.'); } }, [manager]);
   const loadWallet = useCallback(async () => { try { const token = await auth.currentUser?.getIdToken(); const headers = token ? { Authorization: `Bearer ${token}` } : {}; const [summary, tx, withdrawal] = await Promise.all([fetch('/api/financial?action=summary', { headers }), fetch('/api/financial?action=transactions', { headers }), fetch('/api/financial?action=withdrawals', { headers })]); const [s, t, w] = await Promise.all([summary.json(), tx.json(), withdrawal.json()]); setWallet(s.success ? s.wallet : null); setTransactions(t.success ? t.transactions || [] : []); setWithdrawals(w.success ? w.withdrawals || [] : []); } catch { message('Não foi possível carregar os dados financeiros agora.'); } }, []);
-  useEffect(() => { if (page === 'academy-search' && !query) { setLoading(true); getCurrentLocation(true).then(p => gymService.searchNearbyGyms(p.lat, p.lng)).then(setGyms).catch((e: any) => message(e.message || 'Não foi possível localizar academias próximas.')).finally(() => setLoading(false)); } }, [page, query]);
+  // #233: contexto de bairro/cidade da busca de academias.
+  //
+  // O backend (api/_handlers/gyms.ts) tem 3 fallbacks encadeados que SO disparam
+  // quando recebem `neighborhood`/`city` -- é o que salva a busca em regiões onde
+  // o "nearby" do Google volta vazio. A tela antiga (GymSelector, removida no
+  // commit 17db65d) fazia esse reverse-geocoding e passava os dois campos; a tela
+  // nova passava apenas lat/lng, então esses fallbacks ficaram mortos e a busca
+  // voltava "Nenhuma academia encontrada" mesmo com GPS funcionando.
+  const resolveGeoContext = useCallback(async () => {
+    const point = await getCurrentLocation(true);
+    let neighborhood: string | undefined; let city: string | undefined;
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.lat}&lon=${point.lng}&zoom=18&addressdetails=1`);
+      const address = (await response.json())?.address || {};
+      neighborhood = address.suburb || address.neighbourhood || address.district || address.city_district || undefined;
+      city = address.city || address.town || address.village || address.municipality || undefined;
+    } catch { /* reverse geocoding é opcional: a busca ainda funciona só com lat/lng */ }
+    const context = { lat: point.lat, lng: point.lng, neighborhood, city };
+    setGeo(context);
+    return context;
+  }, []);
+  // Último ponto conhecido quando o GPS não responde: evita que o usuário fique
+  // sem NENHUMA forma de trocar de academia (antes, GPS negado = tela travada).
+  const fallbackPoint = useCallback(() => {
+    if (geo) return geo;
+    const saved = (user as any)?.gymLocation;
+    if (saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lng)) return { lat: saved.lat, lng: saved.lng, neighborhood: undefined, city: undefined };
+    return null;
+  }, [geo, user]);
+  const loadNearbyGyms = useCallback(async () => {
+    setLoading(true); setGymError('');
+    try {
+      const context = await resolveGeoContext();
+      setGyms(await gymService.searchNearbyGyms(context.lat, context.lng, context.neighborhood, context.city));
+    } catch (e: any) {
+      setGymError(e?.message || 'Não foi possível localizar academias próximas.');
+    } finally { setLoading(false); }
+  }, [resolveGeoContext]);
+  useEffect(() => { if (page === 'academy-search') void loadNearbyGyms(); }, [page, loadNearbyGyms]);
   useEffect(() => { if (page === 'wearables') void loadWearables(); if (page === 'wallet') void loadWallet(); }, [page, loadWallet, loadWearables]);
-  const searchGym = async (event: React.FormEvent) => { event.preventDefault(); if (!query.trim()) return; setLoading(true); try { const p = await getCurrentLocation(true); setGyms(await gymService.searchGymsByText(query, p.lat, p.lng)); } catch (e: any) { message(e.message || 'Busca indisponível.'); } finally { setLoading(false); } };
-  const confirmGym = async () => { if (!selectedGym) return; setLoading(true); try { const point = selectedGym.geometry?.location || {}; await gymService.joinGym({ place_id: selectedGym.place_id || selectedGym.id, name: selectedGym.name, latitude: typeof point.lat === 'function' ? point.lat() : point.lat ?? selectedGym.lat, longitude: typeof point.lng === 'function' ? point.lng() : point.lng ?? selectedGym.lng, photo_url: selectedGym.photoUrl, address: selectedGym.vicinity || selectedGym.address }); await refreshUser?.(); navigate('/profile'); } catch (e: any) { message(e.message || 'Não foi possível atualizar sua academia.'); } finally { setLoading(false); } };
+  // A busca por NOME não pode depender do GPS. Antes, se a permissão estivesse
+  // negada ou o sinal indisponível, getCurrentLocation() lançava e a busca por
+  // texto morria junto -- deixando o usuário sem saída para trocar de academia.
+  const searchGym = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!query.trim() || loading) return;
+    setLoading(true); setGymError('');
+    try {
+      let context: { lat: number; lng: number; neighborhood?: string; city?: string } | null = geo;
+      if (!context) { try { context = await resolveGeoContext(); } catch { context = fallbackPoint(); } }
+      if (!context) { setGymError('Precisamos da sua localização para buscar academias. Ative o GPS e toque em TENTAR NOVAMENTE.'); return; }
+      setGyms(await gymService.searchGymsByText(query, context.lat, context.lng));
+    } catch (e: any) { setGymError(e?.message || 'Busca indisponível no momento.'); } finally { setLoading(false); }
+  };
+  // `loading` tambem serve de guarda contra clique duplo: dois toques rapidos em
+  // "DEFINIR COMO MINHA ACADEMIA" nao podem disparar dois joinGym.
+  const confirmGym = async () => { if (!selectedGym || loading) return; setLoading(true); try { const point = selectedGym.geometry?.location || {}; await gymService.joinGym({ place_id: selectedGym.place_id || selectedGym.id, name: selectedGym.name, latitude: typeof point.lat === 'function' ? point.lat() : point.lat ?? selectedGym.lat, longitude: typeof point.lng === 'function' ? point.lng() : point.lng ?? selectedGym.lng, photo_url: selectedGym.photoUrl, address: selectedGym.vicinity || selectedGym.address }); await refreshUser?.(); navigate('/profile'); } catch (e: any) { message(e.message || 'Não foi possível atualizar sua academia.'); } finally { setLoading(false); } };
   const connectProvider = async (provider: WearableSource) => { try { setLoading(true); if (provider === 'strava') { const url = await stravaService.authorize('/profile/wearables'); window.location.assign(url); return; } const connected = await manager.connectProvider(provider); message(connected ? `${providerName[provider]} conectado com sucesso.` : 'Conexão cancelada pelo usuário.'); await loadWearables(); } catch (e: any) { message(e.message || `Não foi possível conectar ${providerName[provider]}.`); } finally { setLoading(false); } };
   const disconnectProvider = async (provider: WearableSource) => { try { setLoading(true); await manager.disconnectProvider(provider); await loadWearables(); message(`${providerName[provider]} desconectado.`); } catch (e: any) { message(e.message || 'Não foi possível desconectar.'); } finally { setLoading(false); } };
   const syncNow = async () => { try { setSyncing(true); const result = await manager.syncAll(); message(`Sincronização concluída: ${result.syncedCount} atividades novas e ${result.duplicatesSkipped} duplicadas ignoradas.`); await loadWearables(); } catch (e: any) { message(e.message || 'Não foi possível sincronizar agora.'); } finally { setSyncing(false); } };
@@ -58,7 +111,7 @@ export function ProfileSecondary() {
     if (page === 'preferences' && section && gameViews[section]) return gameViews[section];
     if (page === 'preferences' && section === 'game') return <><p className="profile-flow-section-label">ENTENDA O JOGO</p>{rows([{ icon:<Target/>, label:'Como funciona a pontuação', action:()=>go('/profile/preferences/scoring') }, { icon:<ShieldCheck/>, label:'Regras da temporada', action:()=>go('/profile/preferences/rules') }, { icon:<ShieldCheck/>, label:'Transparência e validação', action:()=>go('/profile/preferences/antifraud') }, { icon:<Target/>, label:'Sobre a Invictus IA', action:()=>go('/profile/preferences/ai') }, { icon:<FileText/>, label:'Perguntas frequentes', action:()=>go('/profile/preferences/faq') }])}</>;
     if (page === 'academy') return <><p className="profile-flow-section-label">ACADEMIA ATUAL</p><section className="profile-flow-card profile-flow-gym-current"><Building2 /><div><b>{user?.gymName || 'Nenhuma academia vinculada'}</b><small>{(user as any)?.gymAddress || (user as any)?.city || 'Informações disponíveis no perfil'}</small><em>ATIVA</em></div></section><p className="profile-flow-section-label">INFORMAÇÕES</p>{rows([{ icon:<MapPin/>, label:'Endereço', detail:(user as any)?.gymAddress || 'Não informado' }, { icon:<Target/>, label:'Distância até você', detail:'Calculada quando a localização for permitida' }, { icon:<ShieldCheck/>, label:'Vínculo', detail:'Academia associada ao seu perfil' }])}<button className="profile-flow-primary" onClick={()=>go('/profile/academy/search')}>ALTERAR ACADEMIA</button></>;
-    if (page === 'academy-search') return <><form className="profile-flow-search" onSubmit={searchGym}><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar academia por nome" /><button aria-label="Buscar"><Search /></button></form><p className="profile-flow-section-label">{query ? 'RESULTADOS' : 'ACADEMIAS PRÓXIMAS'}</p>{loading && <p className="profile-flow-muted">Buscando com sua localização atual…</p>}{rows(gyms.map(g => ({ icon:<Building2/>, label:g.name, detail:`${g.vicinity || g.address || 'Endereço não informado'}${g.distance ? ` · ${g.distance}` : ''}`, action:()=>{ setSelectedGym(g); go('/profile/academy/confirm', { gym:g }); } })))}{!loading && !gyms.length && <p className="profile-flow-muted">Nenhuma academia encontrada nesta área.</p>}</>;
+    if (page === 'academy-search') return <><form className="profile-flow-search" onSubmit={searchGym}><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar academia por nome" /><button aria-label="Buscar"><Search /></button></form><p className="profile-flow-section-label">{query ? 'RESULTADOS' : 'ACADEMIAS PRÓXIMAS'}</p>{loading && <p className="profile-flow-muted">Buscando com sua localização atual…</p>}{!loading && gymError && <><p className="profile-flow-notice"><X />{gymError}</p><button className="profile-flow-primary" onClick={()=>void loadNearbyGyms()}><RefreshCw /> TENTAR NOVAMENTE</button></>}{rows(gyms.map(g => ({ icon:<Building2/>, label:g.name, detail:`${g.vicinity || g.address || 'Endereço não informado'}${g.distance ? ` · ${g.distance}` : ''}`, action:()=>{ setSelectedGym(g); go('/profile/academy/confirm', { gym:g }); } })))}{!loading && !gymError && !gyms.length && <p className="profile-flow-muted">Nenhuma academia encontrada nesta área. Tente buscar pelo nome.</p>}</>;
     if (page === 'academy-confirm') return <section className="profile-flow-confirm"><span><Building2 /></span><Check className="profile-flow-confirm-check" /><p>Academia selecionada!</p><h2>{selectedGym?.name || 'Academia'}</h2><small>{selectedGym?.vicinity || selectedGym?.address || 'Localização informada pela busca'}</small><button className="profile-flow-primary" disabled={loading} onClick={confirmGym}>DEFINIR COMO MINHA ACADEMIA</button><button className="profile-flow-text" onClick={()=>navigate(-1)}>CANCELAR</button></section>;
     if (page === 'wearables') { const config = wearables; const providers: WearableSource[] = ['apple_health', 'health_connect', 'strava']; return <><p className="profile-flow-section-label">CONEXÕES</p>{rows(providers.map(provider => { const connected = provider === 'apple_health' ? Boolean(config?.appleHealthConnected) : provider === 'health_connect' ? Boolean(config?.healthConnectConnected) : Boolean(config?.stravaConnected); return { icon:<Watch/>, label:providerName[provider], detail:connected ? 'Conectado' : 'Não conectado', action:()=>connected ? disconnectProvider(provider) : connectProvider(provider), right:<span className={connected ? 'profile-flow-status is-active' : 'profile-flow-status'}>{connected ? 'DESCONECTAR' : 'CONECTAR'}</span> }; }))}<button className="profile-flow-primary" disabled={loading || syncing} onClick={syncNow}><RefreshCw /> {syncing ? 'SINCRONIZANDO…' : 'SINCRONIZAR AGORA'}</button><p className="profile-flow-section-label">SINCRONIZAÇÃO E PERMISSÕES</p>{rows([{ icon:<Wifi/>, label:'Sincronização automática', detail:autoSync ? 'Ativada' : 'Desativada', action:toggleAutoSync, right:<span className={autoSync ? 'profile-flow-toggle is-on' : 'profile-flow-toggle'}><i /></span> }, { icon:<ShieldCheck/>, label:'Status de permissões', detail:'Cada permissão é pedida ao usar o recurso', action:inspectPermissions }])}</> }
     if (page === 'wallet') return <><section className="profile-flow-card profile-flow-balance"><small>SALDO DISPONÍVEL</small><b>R$ {Number(wallet?.redeemableBalance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b><span>Saldo proveniente de movimentações reais</span></section><p className="profile-flow-section-label">EXTRATO RECENTE</p>{rows(transactions.slice(0, 8).map(tx => ({ icon:<WalletCards/>, label:tx.description || tx.type || 'Movimentação', detail:`${tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('pt-BR') : 'Data indisponível'} · ${tx.status || 'processando'}` })))}{!transactions.length && <p className="profile-flow-muted">Ainda não há movimentações registradas.</p>}<p className="profile-flow-section-label">SOLICITAR SAQUE</p><form className="profile-flow-form" onSubmit={requestWithdrawal}><input inputMode="decimal" value={withdrawAmount} onChange={e=>setWithdrawAmount(e.target.value)} placeholder="Valor em R$" /><input value={pixKey} onChange={e=>setPixKey(e.target.value)} placeholder="Chave PIX" /><button className="profile-flow-primary" disabled={loading}>SOLICITAR SAQUE</button></form>{withdrawals.length > 0 && <><p className="profile-flow-section-label">SAQUES</p>{rows(withdrawals.slice(0, 5).map(w => ({ icon:<CircleDollarSign/>, label:`R$ ${Number(w.amount || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, detail:w.status || 'Em análise' })))}</>}</>;

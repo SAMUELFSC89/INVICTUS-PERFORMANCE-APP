@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Bell, Building2, CalendarDays, ChevronDown, ChevronRight, CircleDot, MapPin, ShieldCheck, TrendingUp, Trophy } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, ChevronDown, ChevronRight, CircleDot, MapPin, ShieldCheck, TrendingUp, Trophy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { rankingService } from '../services/rankingService';
 import { useUser } from '../UserContext';
@@ -55,14 +55,19 @@ export function Rankings() {
   if (!user) return null;
 
   if (showTop50) return <section className="ranking-flow">
-    <header className="ranking-flow-header"><button onClick={() => setShowTop50(false)} aria-label="Voltar"><ArrowLeft /></button><div><h1>TOP 50 – {scope === 'gym' ? 'SUA ACADEMIA' : scopeLabels[scope]}</h1><p>{period === 'weekly' ? 'Semana atual' : periodLabels[period]}</p></div><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button></header>
+    <header className="ranking-flow-header"><button onClick={() => setShowTop50(false)} aria-label="Voltar"><ArrowLeft /></button><div><h1>TOP 50 – {scope === 'gym' ? 'SUA ACADEMIA' : scopeLabels[scope]}</h1><p>{period === 'weekly' ? 'Semana atual' : periodLabels[period]}</p></div></header>
     <div className="rank-selectors"><div className="rank-select-wrap"><button onClick={() => setShowPeriodPicker(!showPeriodPicker)}><CalendarDays />{selectedWeek.toUpperCase()}<ChevronDown /></button>{showPeriodPicker && <div className="rank-options">{periodOptions.map((option) => <button key={option.value} onClick={() => { setSelectedWeek(option.label); setPeriod(option.value); setShowPeriodPicker(false); }}><span>{option.label}</span>{option.label === selectedWeek && <span>✓</span>}</button>)}</div>}</div><div className="rank-select-wrap"><button onClick={() => setShowGymPicker(!showGymPicker)}><Building2 />{selectedGymName}<ChevronDown /></button>{showGymPicker && <div className="rank-options rank-options--right">{academyOptions.map((option) => <button key={option.id || option.label} onClick={() => { setSelectedGymId(option.id); setSelectedGymName(option.label.toUpperCase()); setShowGymPicker(false); }}><span>{option.label}</span>{option.label.toUpperCase() === selectedGymName && <span>✓</span>}</button>)}</div>}</div></div>
     <div className="rank-table-head"><span>POSIÇÃO</span><span>ATLETA</span><span>IGA (PONTUAÇÃO)</span></div><div className="rank-list">{loading ? <p className="rank-loading">ATUALIZANDO RANKING…</p> : athletes.slice(0, 50).map((entry, index) => <RankingRow key={entry.uid} entry={entry} rank={index + 1} current={entry.uid === user.uid} />)}</div>
     {myRank > 0 && !athletes.slice(0, 50).some((entry) => entry.uid === user.uid) && <RankingRow entry={myEntry} rank={myRank} current />}<button className="rank-position-button" onClick={() => document.querySelector('.rank-row--current')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}><CircleDot /> VER MINHA POSIÇÃO</button>
   </section>;
 
   return <section className="ranking-flow ranking-flow--overview">
-    <header className="ranking-overview-header"><div><h1>RANKING</h1><p>COMPITA. EVOLUA. SEJA INVICTUS.</p></div><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button></header>
+    {/* O sino de notificacoes e GLOBAL (Layout.tsx, position:fixed no topo direito).
+        Esta tela desenhava um segundo sino no proprio header, entao apareciam DOIS
+        sinos sobrepostos so no Ranking. A 3a coluna do grid continua reservada
+        (grid-template-columns: 2.5rem 1fr 2.5rem) justamente para o sino global
+        pousar ali sem cobrir o titulo. */}
+    <header className="ranking-overview-header"><div><h1>RANKING</h1><p>COMPITA. EVOLUA. SEJA INVICTUS.</p></div></header>
     
     <nav className="rank-scope-tabs">{(['gym', 'city', 'global'] as RankScope[]).map((item) => <button key={item} onClick={() => setScope(item)} className={scope === item ? 'is-active' : ''}>{item === 'gym' ? <Building2 /> : item === 'city' ? <MapPin /> : <ShieldCheck />}{scopeLabels[item]}</button>)}</nav>
     <article className="rank-summary-card"><div><small>SUA POSIÇÃO</small><b>{myRank ? `${myRank}º` : '—'}</b><span>de {athletes.length || 0}</span></div><span className="rank-summary-emblem"><img src="/ranking-emblem-user-provided.png" alt="Emblema de posição Invictus" /></span><div><small>SUA PONTUAÇÃO (IGA)</small><b className="rank-gold">{Number(myEntry.score || 0).toLocaleString('pt-BR')}</b><span>Atualizado às {formatUpdatedAt(ranking?.updatedAt)}</span></div></article>

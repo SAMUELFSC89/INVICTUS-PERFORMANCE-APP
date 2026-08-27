@@ -21,11 +21,20 @@ import { getNextSeasonCountdown } from '../../lib/seasonUtils';
 // temporada. Se isso mudar, e so trocar por uma rota interna.
 const INSCRICAO_URL = 'https://www.invictusperformance.app.br/';
 
+// #235: cada uma destas 4 colunas ocupa ~48px de largura REAL num celular
+// (o banner inteiro tem ~358px e as 4 colunas dividem pouco mais da metade
+// dele). Nesse espaco, o rotulo de duas palavras + a descricao so cabiam em
+// fonte de ~7px renderizados -- ilegivel, exatamente a reclamacao registrada.
+//
+// Por isso cada item ganhou uma versao `curta`: no celular aparece so ela,
+// num corpo que da para ler; em telas largas o rotulo completo e a descricao
+// continuam aparecendo. A troca e feita no CSS (.iv-camp-banner__rec-*), sem
+// remover informacao -- os 4 icones da arte seguem comunicando o conceito.
 const RECURSOS = [
-  { Icon: Target, className: 'iv-camp-banner__rec--1', label: ['TREINE COM', 'PROPÓSITO'], desc: 'Cada treino conta pontos.' },
-  { Icon: TrendingUp, className: 'iv-camp-banner__rec--2', label: ['COMPITA DE', 'VERDADE'], desc: 'Ranking com seu nível.' },
-  { Icon: Trophy, className: 'iv-camp-banner__rec--3', label: ['PREMIAÇÕES', 'REAIS'], desc: 'Os melhores são premiados.' },
-  { Icon: Users, className: 'iv-camp-banner__rec--4', label: ['COMUNIDADE', 'ÉLITE'], desc: 'Só quem é consistente.' }
+  { Icon: Target, className: 'iv-camp-banner__rec--1', label: ['TREINE COM', 'PROPÓSITO'], curta: 'PONTOS', desc: 'Cada treino conta pontos.' },
+  { Icon: TrendingUp, className: 'iv-camp-banner__rec--2', label: ['COMPITA DE', 'VERDADE'], curta: 'RANKING', desc: 'Ranking com seu nível.' },
+  { Icon: Trophy, className: 'iv-camp-banner__rec--3', label: ['PREMIAÇÕES', 'REAIS'], curta: 'PRÊMIOS', desc: 'Os melhores são premiados.' },
+  { Icon: Users, className: 'iv-camp-banner__rec--4', label: ['COMUNIDADE', 'ÉLITE'], curta: 'ELITE', desc: 'Só quem é consistente.' }
 ] as const;
 
 export const ChampionshipsHub: React.FC = () => {
@@ -118,9 +127,9 @@ export const ChampionshipsHub: React.FC = () => {
                 <span className="l2">Esforço em premiações reais.</span>
               </div>
 
-              {RECURSOS.map(({ Icon, className, label, desc }) => (
+              {RECURSOS.map(({ Icon, className, label, curta, desc }) => (
                 <div key={className} className={`iv-camp-banner__rec ${className}`}>
-                  <b>
+                  <b className="iv-camp-banner__rec-longo">
                     {label.map((line) => (
                       <React.Fragment key={line}>
                         {line}
@@ -128,6 +137,7 @@ export const ChampionshipsHub: React.FC = () => {
                       </React.Fragment>
                     ))}
                   </b>
+                  <b className="iv-camp-banner__rec-curto">{curta}</b>
                   <p>{desc}</p>
                 </div>
               ))}

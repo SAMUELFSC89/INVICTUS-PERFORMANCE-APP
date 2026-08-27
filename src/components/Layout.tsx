@@ -87,7 +87,13 @@ export function Layout() {
       />
 
       {/* Notification Bell Only */}
-      {location.pathname !== '/notifications' && <div className="fixed top-3.5 right-4 z-50 pointer-events-auto">
+      {/* O topo e calculado a partir da safe area (notch/Dynamic Island) em vez de
+          um valor fixo: no iPhone o sino subia demais e encostava no relogio do
+          sistema, e na web ficava colado na borda. env() vale 0px onde nao ha
+          notch, entao na web o sino simplesmente desce para 1.5rem. */}
+      {location.pathname !== '/notifications' && <div
+        className="fixed right-4 z-50 pointer-events-auto"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.5rem)' }}>
         <button 
           id="notification-bell-btn"
           onClick={() => navigate('/notifications')}

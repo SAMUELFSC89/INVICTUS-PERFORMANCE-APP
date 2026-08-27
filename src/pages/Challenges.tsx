@@ -104,8 +104,31 @@ export function Challenges() {
   const [submissions, setSubmissions] = useState<Record<string, any>>({});
 
   // Modals & Pending Operations
-  const [pendingChallenge, setPendingChallenge] = useState<CoreChallenge | null>(null);
-  const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(initialActive ? 'active' : null);
+  // #234: HOME -> MUSCULACAO / CARDIO SEM ETAPA INTERMEDIARIA.
+  //
+  // A Home navega para /challenges?type=workout|cardio. Ate agora o fluxo era
+  // aberto apenas pelo useEffect mais abaixo, que roda DEPOIS da primeira
+  // pintura: a lista de Desafios aparecia por um instante antes do overlay
+  // subir, dando a impressao de ter sido jogado numa tela intermediaria e de
+  // precisar procurar a atividade de novo. Resolvendo no proprio useState o
+  // fluxo ja nasce aberto -- a lista nunca chega a ser vista.
+  const deepLinkType = searchParams.get('type');
+  const deepLinkChallenge = (deepLinkType === 'workout' || deepLinkType === 'cardio')
+    ? CORE_CHALLENGES.find((item) => item.id === deepLinkType) || null
+    : null;
+  // Guardado numa ref porque o parametro `type` e apagado da URL logo apos a
+  // abertura (para fechar a tela nao reabrir o fluxo em loop). Sem a ref
+  // perderiamos a informacao de que a origem foi a Home, e ao concluir o treino
+  // o usuario cairia na lista de Desafios em vez de voltar para a Home.
+  const openedFromHomeRef = useRef<boolean>(Boolean(deepLinkChallenge));
+  const [pendingChallenge, setPendingChallenge] = useState<CoreChallenge | null>(deepLinkChallenge);
+  const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(
+    initialActive
+      ? 'active'
+      : deepLinkChallenge
+        ? (deepLinkChallenge.id === 'workout' ? 'workout-details' : 'cardio-picker')
+        : null
+  );
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState(initialActive?.muscleGroup || 'Pernas');
   const [selectedCardioOption, setSelectedCardioOption] = useState<CardioOption>(
     (initialActive?.cardioType && CARDIO_OPTIONS.find(o => o.id === initialActive.cardioType)) || CARDIO_OPTIONS[0]
@@ -261,14 +284,23 @@ export function Challenges() {
   // a abertura para que fechar a tela não a reabra em loop.
   useEffect(() => {
     const requestedType = searchParams.get('type');
-    if (flowScreen || (requestedType !== 'workout' && requestedType !== 'cardio')) return;
+    if (requestedType !== 'workout' && requestedType !== 'cardio') return;
     const challenge = CORE_CHALLENGES.find((item) => item.id === requestedType);
-    if (!challenge) return;
-    handleOpenChallenge(challenge);
+    // Na primeira renderizacao o fluxo ja nasce aberto (useState acima). Este
+    // ramo cobre o caso do parametro mudar com a tela ja montada.
+    if (challenge && !flowScreen) { openedFromHomeRef.current = true; handleOpenChallenge(challenge); }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('type');
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, flowScreen, setSearchParams]);
+
+  // Fechar o fluxo deve devolver o usuario para ONDE ELE VEIO. Quem entrou pela
+  // Home volta para a Home; quem abriu pela propria tela de Desafios continua
+  // nela. Antes, todo mundo caia na lista de Desafios.
+  const closeFlow = () => {
+    setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); setCompletion(null);
+    if (openedFromHomeRef.current) { openedFromHomeRef.current = false; navigate('/'); }
+  };
 
   // Start Session (Workout / Cardio)
   const handleStartActivity = async (type: 'workout' | 'cardio') => {
@@ -480,7 +512,7 @@ export function Challenges() {
 
   const handleFlowBack = () => {
     if (flowScreen === 'workout-checkin') setFlowScreen('workout-details');
-    else { setFlowScreen(null); setPendingChallenge(null); }
+    else closeFlow();
   };
 
   return (
@@ -770,7 +802,7 @@ export function Challenges() {
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
           onSummary={() => setFlowScreen(flowScreen === 'cardio-complete' ? 'cardio-summary' : 'day-progress')}
-          onDone={() => { setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); setCompletion(null); }}
+          onDone={closeFlow}
           onCancel={handleCancelActivity}
           onShare={finishedActivityItem ? () => setShareCardData(buildShareableFromItem(finishedActivityItem)) : undefined}
         />
