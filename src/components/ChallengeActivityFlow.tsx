@@ -1,6 +1,7 @@
 import { ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { ActivityMapView } from './ActivityMapView';
+import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
 
 export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'cardio-complete' | 'cardio-summary' | 'day-progress';
@@ -38,6 +39,10 @@ export function ChallengeActivityFlow({
   elapsed,
   distance,
   trajectory,
+  liveCheckpoints,
+  gpsAccuracy = null,
+  gpsSignal = 'SEARCHING',
+  gpsPermissionDenied = false,
   gymName,
   completedChallengeIds,
   completion,
@@ -61,6 +66,10 @@ export function ChallengeActivityFlow({
   elapsed: number;
   distance: number;
   trajectory?: Array<{ lat: number; lng: number }>;
+  liveCheckpoints?: Array<{ location: { lat: number; lng: number; accuracy?: number } }>;
+  gpsAccuracy?: number | null;
+  gpsSignal?: 'SEARCHING' | 'WEAK' | 'STRONG';
+  gpsPermissionDenied?: boolean;
   gymName: string;
   completedChallengeIds: string[];
   completion?: ActivityCompletion | null;
@@ -215,6 +224,17 @@ export function ChallengeActivityFlow({
           <span className="challenge-flow-gps">
             <Zap /> {session?.requiresGpsDistance ? 'GPS CONECTADO' : (session?.type === 'cardio' ? 'CARDIO INDOOR' : 'ATIVIDADE EM ANDAMENTO')}
           </span>
+          {session?.requiresGpsDistance && (
+            <>
+              <LiveTrackingMap
+                points={(liveCheckpoints || []).map(cp => ({ lat: cp.location.lat, lng: cp.location.lng, accuracy: (cp.location as any).accuracy }))}
+                gpsAccuracy={gpsAccuracy}
+                gpsSignal={gpsSignal}
+                permissionDenied={gpsPermissionDenied}
+              />
+              <GpsSignalIndicator accuracy={gpsAccuracy} signal={gpsSignal} />
+            </>
+          )}
           <article className="challenge-flow-clock">
             <strong>{time(elapsed)}</strong>
             <small>Tempo decorrido</small>

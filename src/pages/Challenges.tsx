@@ -89,6 +89,16 @@ export function Challenges() {
   const gpsWatchIdRef = useRef<number | null>(null);
   const lastCheckpointTimeRef = useRef<number>(0);
 
+  // #44: estado do sinal de GPS e wake lock para o mapa ao vivo (LiveTrackingMap).
+  // Antes a tela so mostrava numeros; agora tambem mostra o trajeto real sendo
+  // percorrido, igual o RunTracker.tsx (que ficava orfao) fazia -- mas
+  // continuando a alimentar activityService.addCheckpoint(), sem trocar o
+  // caminho de envio ja unificado (ver auditoria da task #44).
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [gpsSignal, setGpsSignal] = useState<'SEARCHING' | 'WEAK' | 'STRONG'>('SEARCHING');
+  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
+  const wakeLockRef = useRef<any>(null);
+
   // #217: tela de detalhe estilo Strava mostrada IMEDIATAMENTE ao finalizar uma
   // atividade (cardio ou treino) -- antes so aparecia depois, no Historico >
   // Ver Detalhes. Reaproveita o mesmo componente exportado de
@@ -235,9 +245,25 @@ export function Challenges() {
 
     setLiveDistanceKm(activityService.calculateSessionDistance(activeSession));
     lastCheckpointTimeRef.current = 0;
+    setGpsAccuracy(null);
+    setGpsSignal('SEARCHING');
+    setGpsPermissionDenied(false);
+
+    // Tela ligada durante o cardio ao ar livre -- sem isto o celular apaga a
+    // tela no bolso e o atleta perde o mapa/cronometro no meio da corrida.
+    // Falha aqui (API indisponivel/negada) nunca deve travar o tracking.
+    if ('wakeLock' in navigator) {
+      (navigator as any).wakeLock.request('screen')
+        .then((lock: any) => { wakeLockRef.current = lock; })
+        .catch((err: any) => console.warn('[Challenges] Wake Lock request failed:', err));
+    }
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
+        const { accuracy } = position.coords;
+        setGpsAccuracy(accuracy);
+        setGpsSignal(accuracy < 20 ? 'STRONG' : accuracy < 50 ? 'WEAK' : 'SEARCHING');
+
         const now = Date.now();
         // Limita a no maximo 1 checkpoint a cada ~10s para nao sobrecarregar
         // Firestore/localStorage durante a sessao.
@@ -247,7 +273,7 @@ export function Challenges() {
         activityService.addCheckpoint({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
-          accuracy: position.coords.accuracy
+          accuracy
         });
 
         const current = activityService.getCurrentSession();
@@ -257,6 +283,7 @@ export function Challenges() {
       },
       (err) => {
         console.warn('[Challenges] GPS watchPosition error during cardio session:', err);
+        if (err.code === 1) setGpsPermissionDenied(true);
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
@@ -266,6 +293,10 @@ export function Challenges() {
       if (gpsWatchIdRef.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(gpsWatchIdRef.current);
         gpsWatchIdRef.current = null;
+      }
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
       }
     };
   }, [activeSession?.id, activeSession?.requiresGpsDistance]);
@@ -793,6 +824,10 @@ export function Challenges() {
           elapsed={elapsedTime}
           distance={liveDistanceKm}
           trajectory={finishedActivityItem?.trajectory}
+          liveCheckpoints={activeSession?.checkpoints}
+          gpsAccuracy={gpsAccuracy}
+          gpsSignal={gpsSignal}
+          gpsPermissionDenied={gpsPermissionDenied}
           gymName={profile?.gymName || 'Sua academia'}
           completedChallengeIds={Object.keys(submissions)}
           completion={completion}
