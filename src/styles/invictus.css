@@ -577,7 +577,11 @@
 @container (max-width: 430px) {
   /* 7cqw = 29px em card de 414px: "COMPITA TREINANDO." cabe em UMA linha. */
   .iv-liga-banner__titulo { left: 39%; top: 16%; font-size: 7cqw; }
-  .iv-liga-banner__rec { top: 59%; }
+  /* #242: top:59% media medido em cima do circulo dos icones -- na arte-fonte
+     (banner_liga_base) os icones ocupam ~51% a ~61% da altura, entao o texto
+     "encostava" neles. Subiu para 63%: fica ~5px abaixo do icone e ainda
+     sobra ~19px de folga ate a faixa do contador (medido no navegador). */
+  .iv-liga-banner__rec { top: 63%; }
   .iv-liga-banner__rec b { font-size: max(12.5px, 3.1cqw); }
   /* A descrição sai no celular. Em ~75px de largura ela só caberia em corpo
      ilegível e ainda colidia com a faixa do contador. O rótulo sozinho, legível,
@@ -750,8 +754,13 @@
  *    faixa e no kicker;
  *  - o kicker precisava subir para não ficar atrás do título. */
 @container (max-width: 430px) {
-  .iv-camp-banner__kicker { font-size: max(10.5px, 2.6cqw); top: 5%; letter-spacing: 0.16em; }
-  .iv-camp-banner__titulo { font-size: 5.2cqw; top: 14%; right: 10%; }
+  /* #242: na arte-fonte (banner_campeonato_base) ha uma linha dourada fina
+     em ~10% da altura (medido por analise de pixel); top:14% deixava so
+     ~4pp de folga e o titulo parecia "em cima" dela. kicker e titulo desceram
+     um pouco (5%->6% e 14%->17%) mantendo 2 linhas e folga positiva ate a
+     faixa (~8,5px, medido no navegador com a fonte Anton real). */
+  .iv-camp-banner__kicker { font-size: max(10.5px, 2.6cqw); top: 6%; letter-spacing: 0.16em; }
+  .iv-camp-banner__titulo { font-size: 5.2cqw; top: 17%; right: 10%; }
   .iv-camp-banner__faixa span { font-size: max(11.5px, 2.5cqw); }
   /* No celular a descricao some e entra o rotulo curto: e a unica forma de o
      texto dessas 4 colunas (~53px reais cada) ficar legivel sem invadir a
