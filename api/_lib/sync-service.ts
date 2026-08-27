@@ -1,5 +1,6 @@
 import { db, FieldValue } from './common.js';
 import { ScoreEngine } from './score-engine.js';
+import { recalculateAllUserScores } from './igaService.js';
 
 export class SyncService {
   static async processStravaActivity(userId: string, stravaActivity: any) {
@@ -60,9 +61,69 @@ export class SyncService {
           console.error(`[SyncService] Failed to update running_stats for Strava activity ${stravaActivity?.id}:`, statsErr);
         }
       }
+
+      // #229: alem de running_stats/run_sessions (ranking especifico de corrida)
+      // e do XP legado (ScoreEngine -> users.totalScore -- campo que NENHUMA tela
+      // de ranking real le, ver AUDITORIA-CORE-INVICTUS.md), atividades do Strava
+      // precisavam ser gravadas em `workouts` para se tornarem elegiveis ao IGA
+      // (fonte unica de weeklyScore/monthlyScore/score). Ate 2026-08 o Strava
+      // nunca escrevia em `workouts` -- ou seja, treinos sincronizados do Strava
+      // eram INVISIVEIS para o ranking competitivo real, mesmo apos "pontuar"
+      // via ScoreEngine. NOTA: isto ainda nao inclui deduplicacao entre Strava e
+      // HealthKit/Health Connect (essa parte fica para a Fase 3 do antifraude,
+      // ja registrada nas tasks pendentes) -- por ora Strava e a unica fonte
+      // wearable que chega ate aqui.
+      try {
+        await this.persistStravaWorkoutToHistory(userId, stravaActivity, activityType);
+        await recalculateAllUserScores(userId);
+      } catch (rankingErr: any) {
+        console.error(`[SyncService] Failed to persist Strava activity to workouts / recalculate IGA for user ${userId}:`, rankingErr);
+      }
     }
 
     return earnedPoints > 0;
+  }
+
+  // Grava uma atividade do Strava ja aprovada pelo ScoreEngine em `workouts`,
+  // no mesmo formato que api/_lib/igaService.ts espera (status/type/duration/
+  // calories/avgHeartRate/createdAt) -- ver comentario acima em
+  // processStravaActivity. Idempotencia: usa o id da atividade do Strava como
+  // ID do documento, entao um re-sync/webhook duplicado sobrescreve o mesmo
+  // documento em vez de criar um segundo (nao duplica contribuicao ao IGA).
+  private static async persistStravaWorkoutToHistory(userId: string, stravaActivity: any, normalizedActivityType: string) {
+    const isRunType = normalizedActivityType.includes('run');
+    const isCardioType = isRunType
+      || normalizedActivityType.includes('walk')
+      || normalizedActivityType.includes('ride')
+      || normalizedActivityType.includes('swim')
+      || normalizedActivityType.includes('hike');
+
+    const rawDurationSeconds = stravaActivity?.moving_time || stravaActivity?.elapsed_time || 0;
+    const durationMins = rawDurationSeconds > 0 ? Math.ceil(rawDurationSeconds / 60) : 0;
+    const rawDistance = stravaActivity?.distance || 0;
+    const distanceKm = rawDistance > 100 ? rawDistance / 1000 : rawDistance;
+    const rawDate = stravaActivity?.start_date || stravaActivity?.start_date_local || stravaActivity?.created_at;
+    const activityDate = rawDate ? new Date(rawDate).toISOString() : new Date().toISOString();
+    const docId = `strava_${stravaActivity?.id}`;
+
+    await db.collection('workouts').doc(docId).set({
+      id: docId,
+      userId,
+      type: isCardioType ? 'cardio' : 'workout',
+      cardioType: isRunType ? 'corrida' : undefined,
+      source: 'strava',
+      stravaActivityId: stravaActivity?.id?.toString(),
+      timestamp: activityDate,
+      duration: durationMins,
+      distance: distanceKm,
+      calories: stravaActivity?.calories ?? undefined,
+      avgHeartRate: stravaActivity?.average_heartrate ?? undefined,
+      status: 'completed',
+      validationStatus: 'validated',
+      points: 0,
+      pointsEarned: 0,
+      createdAt: activityDate
+    }, { merge: true });
   }
 
   private static async logStravaActivity(userId: string, stravaActivity: any, status: string, reason: string) {

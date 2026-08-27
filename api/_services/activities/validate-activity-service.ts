@@ -5,7 +5,7 @@ import { AuditRepository } from '../../_repositories/audit-repository.js';
 import { NotificationService } from '../notification-service.js';
 import { AppError } from '../../_middleware/error.js';
 import { SecurityPipeline } from '../../_lib/security-pipeline.js';
-import { calculateRankingPoints } from '../../_lib/ranking-points.js';
+import { recalculateAllUserScores } from '../../_lib/igaService.js';
 import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 
 export class ValidateActivityService {
@@ -46,16 +46,6 @@ export class ValidateActivityService {
       totalScore = Math.min(totalScore, 100);
     }
     return Math.max(totalScore, 10);
-  }
-
-  // Normaliza o "type" livre desta rota legada (workout, cardio, power_video,
-  // recovery, diet, etc.) para as 3 categorias que a formula de pontos de
-  // ranking (calculateRankingPoints, espelhada de seasonUtils.ts) entende.
-  private normalizeRankingType(rawType: string): 'workout' | 'cardio' | 'diet' {
-    const t = (rawType || '').toLowerCase();
-    if (t.includes('diet')) return 'diet';
-    if (t.includes('cardio') || t.includes('run') || t.includes('corrida') || t.includes('caminhada')) return 'cardio';
-    return 'workout';
   }
 
   private detectFraud(data: ValidateActivityRequest['activityData']): { isFraud: boolean; reason?: string } {
@@ -250,49 +240,15 @@ export class ValidateActivityService {
     console.log(`[ValidateActivityService] [${traceId}] Pontuacao calculada: +${scoreAwarded} XP`);
 
     // PONTOS DE RANKING (competicao) -- distinto do XP acima. Ate 2026-08 este
-    // endpoint so concedia XP e nunca tocava no campo "score" que alimenta o
-    // ranking/leaderboard real (api/_handlers/ranking.ts). Calculamos aqui com a
-    // mesma formula do frontend (seasonUtils.calculatePoints, espelhada em
-    // api/_lib/ranking-points.ts) e aplicamos o teto diario de 100 pontos
-    // (janela movel de 24h, mesmo padrao ja usado por findRecentByUser em
-    // outros pontos deste arquivo).
-    let rankingPointsEarned = 0;
-    let newRankingScore: number | undefined;
-    try {
-      const rankingType = this.normalizeRankingType(request.activityData.type);
-      const todaysActivities = await this.activityRepository.findRecentByUser(request.userId, 24);
-      const todaysRankingPoints = todaysActivities
-        .filter(a => a.status === 'completed')
-        .reduce((sum, a) => sum + (Number((a as any).rankingPointsEarned) || 0), 0);
-      const isFirstActionToday = todaysRankingPoints === 0;
-
-      const rankingResult = calculateRankingPoints(
-        rankingType,
-        Number((user as any).streak) || 0,
-        isFirstActionToday,
-        {
-          duration: Number(rawActivity.durationMins ?? request.activityData.duration) || 0,
-          hasPhoto: !!rawActivity.photoBase64,
-          subscriptionTier: (user as any).subscriptionTier === 'performance' ? 'performance' : 'open',
-          weight: (user as any).weight,
-          age: (user as any).age,
-          smartwatchData: rawActivity.smartwatchData
-        }
-      );
-
-      rankingPointsEarned = rankingResult.earned;
-      if (todaysRankingPoints + rankingPointsEarned > 100) {
-        rankingPointsEarned = Math.max(0, 100 - todaysRankingPoints);
-      }
-
-      if (rankingPointsEarned > 0) {
-        const rankingUpdate = await this.userRepository.addRankingScore(request.userId, rankingPointsEarned);
-        newRankingScore = rankingUpdate.newScore;
-      }
-      console.log(`[ValidateActivityService] [${traceId}] Pontos de ranking calculados: +${rankingPointsEarned} (score total: ${newRankingScore ?? 'n/a'})`);
-    } catch (rankingErr) {
-      console.error(`[ValidateActivityService] [${traceId}] Falha ao calcular/creditar pontos de ranking, prosseguindo apenas com XP:`, rankingErr);
-    }
+    // endpoint calculava pontos de ranking com uma formula propria (calculateRankingPoints)
+    // e gravava direto em users.score via addRankingScore -- uma das 5 formulas
+    // independentes de pontuacao identificadas em AUDITORIA-CORE-INVICTUS.md (secao 1).
+    // Agora o ranking (semana/mes/temporada) e recalculado pela FONTE UNICA (IGA,
+    // api/_lib/igaService.ts) logo apos a atividade ser persistida -- ver abaixo.
+    // "rankingPointsEarned" no documento da atividade fica 0: nao existe mais um
+    // "delta" de pontos por atividade, o IGA recalcula a pontuacao inteira da janela
+    // a partir das atividades validas do usuario.
+    const rankingPointsEarned = 0;
 
     // NOTA: alem de pointsEarned/scoreAwarded (campos "oficiais" de XP usados pelo
     // restante do backend), tambem gravamos "points" aqui -- e o nome de campo que
@@ -338,33 +294,45 @@ export class ValidateActivityService {
     const { newXP, newLevel } = await this.userRepository.addXP(request.userId, scoreAwarded);
     console.log(`[ValidateActivityService] [${traceId}] XP do usuario atualizado para ${newXP} (Nivel ${newLevel})`);
 
+    // Recalcula weeklyScore/monthlyScore/score (temporada) a partir da FONTE UNICA
+    // (IGA) agora que a atividade ja esta persistida no Firestore -- a query interna
+    // de recalculateAllUserScores ja vai encontrar este workout. Roda DEPOIS do
+    // create() de proposito: rodar antes contaria a atividade duas vezes (uma pela
+    // query, outra por extraSession).
+    let weeklyIgaScore = 0;
+    let newRankingScore: number | undefined;
+    try {
+      const recalculated = await recalculateAllUserScores(request.userId);
+      weeklyIgaScore = recalculated.weekly.igaRanking;
+      newRankingScore = recalculated.season.average;
+      console.log(`[ValidateActivityService] [${traceId}] Pontuacao IGA recalculada: semana=${recalculated.weekly.igaRanking} mes=${recalculated.monthly.average} temporada=${recalculated.season.average}`);
+    } catch (rankingErr) {
+      console.error(`[ValidateActivityService] [${traceId}] Falha ao recalcular pontuacao IGA, atividade permanece salva mas ranking pode ficar desatualizado:`, rankingErr);
+    }
+
     await this.auditRepository.log({
       traceId,
       userId: request.userId,
       action: 'VALIDATE_ACTIVITY_SUCCESS',
-      details: { activityId: savedActivity.id, scoreAwarded, rankingPointsEarned, newXP, newLevel },
+      details: { activityId: savedActivity.id, scoreAwarded, weeklyIgaScore, newXP, newLevel },
       result: 'SUCCESS'
     });
 
-    const successUserMessage = rankingPointsEarned > 0
-      ? `Atividade homologada com sucesso! Voce ganhou +${rankingPointsEarned} pontos de ranking (+${scoreAwarded} XP).`
-      : `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP. (Limite diario de pontos de ranking atingido)`;
+    const successUserMessage = `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP. Seu IGA da semana agora e ${weeklyIgaScore}.`;
 
     await this.notificationService.send({
       userId: request.userId,
       title: 'Atividade Validada!',
-      body: rankingPointsEarned > 0
-        ? `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${rankingPointsEarned} pontos de ranking e +${scoreAwarded} XP!`
-        : `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${scoreAwarded} XP!`,
+      body: `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${scoreAwarded} XP! Seu IGA da semana agora e ${weeklyIgaScore}.`,
       type: 'activity_validated',
-      data: { activityId: savedActivity.id, scoreAwarded, rankingPointsEarned, traceId }
+      data: { activityId: savedActivity.id, scoreAwarded, weeklyIgaScore, traceId }
     });
 
     return {
       success: true,
       activityId: savedActivity.id || '',
       scoreAwarded,
-      rankingPointsEarned,
+      rankingPointsEarned: weeklyIgaScore,
       newRankingScore,
       level: newLevel,
       message: successUserMessage,
@@ -373,7 +341,7 @@ export class ValidateActivityService {
       workout: {
         id: savedActivity.id,
         points: scoreAwarded,
-        rankingPointsEarned,
+        rankingPointsEarned: weeklyIgaScore,
         level: newLevel,
         status: 'valid',
         type: request.activityData.type,

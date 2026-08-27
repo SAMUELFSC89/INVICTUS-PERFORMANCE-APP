@@ -6,6 +6,7 @@ import NodeCache from 'node-cache';
 import { GPSValidator } from '../../_lib/fraud-detection/gps-validator.js';
 import { SecurityPipeline } from '../../_lib/security-pipeline.js';
 import { db } from '../../_lib/common.js';
+import { recalculateAllUserScores } from '../../_lib/igaService.js';
 
 const cache = new NodeCache({ stdTTL: 300 });
 
@@ -417,6 +418,14 @@ export class RunningService {
       validationReason: userMsg,
       nonScoringReason: txResult.nonScoringReason || undefined
     });
+
+    // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA
+    // (IGA) agora que o workout ja esta persistido em `workouts` (acima).
+    try {
+      await recalculateAllUserScores(userId);
+    } catch (rankingErr) {
+      console.error(`[RunningService] Falha ao recalcular pontuacao IGA para userId=${userId}, corrida permanece salva:`, rankingErr);
+    }
 
     return {
       ...updatedData,

@@ -123,7 +123,13 @@ export class RunningRepository extends BaseRepository<any> {
         updatedAt: FieldValue.serverTimestamp()
       };
 
-      userUpdates.score = (userData.score || 0) + finalXpAwarded;
+      // #228: "score" (ranking de temporada) nao e mais incrementado aqui --
+      // era mais uma fonte ad-hoc de pontuacao (7a identificada), somando XP
+      // direto em users.score sem passar pelo IGA. RunningService.addRun chama
+      // recalculateAllUserScores() logo apos este commit + a gravacao do
+      // workout em persistCardioToHistory, recalculando score/monthlyScore/
+      // weeklyScore pela FONTE UNICA a partir do historico real em `workouts`.
+      // finalXpAwarded continua sendo gravado no documento do treino como XP.
       userUpdates.lastCheckIn = nowIso;
 
       const lastCheckInDay = userData.lastCheckIn ? userData.lastCheckIn.split('T')[0] : '';

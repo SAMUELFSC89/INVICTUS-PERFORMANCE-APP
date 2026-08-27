@@ -1,6 +1,7 @@
 import { BaseRepository } from './base-repository.js';
 import { db } from '../_lib/common.js';
 import { FieldValue } from 'firebase-admin/firestore';
+import { recalculateAllUserScores } from '../_lib/igaService.js';
 
 export class AdminRepository extends BaseRepository<any> {
   constructor() {
@@ -59,13 +60,16 @@ export class AdminRepository extends BaseRepository<any> {
       const athleteSnap = await transaction.get(athleteRef);
       const athleteData = athleteSnap.exists ? athleteSnap.data() || {} : {};
 
-      const ptsDifference = adjustedPoints - previousPoints;
+      // #228: score/weeklyScore NAO sao mais ajustados aqui por delta manual --
+      // era mais uma fonte de escrita direta e paralela ao IGA (o motivo real
+      // de um workout mudar de status na revisao do admin e justamente o que
+      // controla se ele conta ou nao para o IGA: ver isApprovedStatus em
+      // api/_lib/igaService.ts, que aceita status 'valid'). Agora que a
+      // transacao abaixo grava o novo status do workout, chamamos
+      // recalculateAllUserScores(athleteId) apos o commit para que score/
+      // weeklyScore/monthlyScore reflitam o historico real recalculado, em vez
+      // de um delta aplicado a mao (que podia divergir do valor real do IGA).
       const updates: any = {};
-
-      if (ptsDifference !== 0) {
-        updates.score = Math.max(0, (athleteData.score || 0) + ptsDifference);
-        updates.weeklyScore = Math.max(0, (athleteData.weeklyScore || 0) + ptsDifference);
-      }
 
       if (status === 'invalid' && previousPoints > 0) {
         updates.streak = Math.max(0, (athleteData.streak || 1) - 1);
@@ -114,6 +118,15 @@ export class AdminRepository extends BaseRepository<any> {
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
     });
+
+    // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA
+    // (IGA) agora que o status do workout revisado ja esta commitado -- fora
+    // da transaction acima pelo mesmo motivo dos outros pontos de entrada.
+    try {
+      await recalculateAllUserScores(athleteId);
+    } catch (rankingErr) {
+      console.error(`[AdminRepository] Falha ao recalcular pontuacao IGA para athleteId=${athleteId} apos revisao de workout ${workoutId}:`, rankingErr);
+    }
   }
 
   async getWithdrawals(status?: string): Promise<any[]> {

@@ -7,8 +7,8 @@ import {
 } from '../_lib/common.js';
 import { logEvent } from '../_lib/observability.js';
 import { GoogleGenAI } from "@google/genai";
-import { calculateWeeklyIGA, IGASession } from '../../src/core/iga/index.js';
 import { readActiveHabitGoal, applyHabitProgressWithGoal } from '../_lib/habit-integration.js';
+import { recalculateAllUserScores } from '../_lib/igaService.js';
 import { SCORE_CONFIG } from '../_lib/score-config.js';
 import { GPSValidator } from '../_lib/fraud-detection/gps-validator.js';
 import { SecurityPipeline } from '../_lib/security-pipeline.js';
@@ -502,40 +502,18 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
       updatedAt: stValue
     };
 
+    // #228: score/monthlyScore/weeklyScore/igaAudit NAO sao mais gravados aqui.
+    // Ate 2026-08 este bloco calculava um IGA proprio (a partir de uma lista
+    // incompleta reconstruida de userData.igaAudit.topSessions -- nem a mesma
+    // fonte de dados que api/_lib/igaService.ts usa) e incrementava score/
+    // monthlyScore diretamente, em paralelo ao IGA "oficial" que so alimentava
+    // weeklyScore. Essa era uma das 5 formulas independentes de pontuacao
+    // identificadas em AUDITORIA-CORE-INVICTUS.md (secao 1, item 4). A partir de
+    // agora, a FONTE UNICA (recalculateAllUserScores, chamada apos este
+    // transaction.commit ao final da funcao) recalcula as tres janelas de
+    // ranking direto do historico real em `workouts`. pointsEarned continua
+    // gravado no documento do treino (abaixo) como XP/gamificacao -- XP != IGA.
     if (true) { // Active for all subscription tiers (Performance and Open)
-      updates.score = (userData.score || 0) + pointsEarned;
-      updates.monthlyScore = (userData.monthlyScore || 0) + pointsEarned;
-
-      let previousSessions: IGASession[] = [];
-      if (userData.igaAudit && Array.isArray(userData.igaAudit.topSessions)) {
-        previousSessions = userData.igaAudit.topSessions.map((s: any) => ({
-          id: s.sessionId,
-          type: s.type,
-          durationMinutes: s.durationMinutes,
-          avgHeartRate: s.avgHeartRate,
-          caloriesInformed: s.informedCalories,
-          isValid: s.eligible
-        }));
-      }
-
-      const presenceSession: IGASession = {
-        type: 'workout',
-        durationMinutes: Number(durationMins) || 45,
-        isValid: finalDecision === 'approved'
-      };
-
-      const igaResult = calculateWeeklyIGA(
-        [...previousSessions, presenceSession],
-        {
-          age: Number(userData.age) || 30,
-          weightKg: Number(userData.weight) || Number(userData.weightKg) || 70,
-          maxHeartRate: Number(userData.maxHeartRate) || undefined
-        }
-      );
-
-      updates.weeklyScore = igaResult.igaRanking;
-      updates.igaAudit = igaResult;
-
       if (finalDecision === 'approved') {
         const lastCheckIn = userData.lastCheckIn ? new Date(userData.lastCheckIn) : null;
         let newStreak = userData.streak || 0;
@@ -618,6 +596,16 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
     transaction.set(workoutRef, workoutObj);
     transaction.update(userRef, updates);
   });
+
+  // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA (IGA)
+  // agora que o workout ja esta commitado -- roda FORA da transaction acima de
+  // proposito (recalculateAllUserScores faz suas proprias leituras/escritas no
+  // Firestore, que nao podem acontecer dentro de uma transaction alheia).
+  try {
+    await recalculateAllUserScores(userId);
+  } catch (rankingErr) {
+    console.error(`[commitWorkoutSession] Falha ao recalcular pontuacao IGA para userId=${userId}, treino permanece salvo:`, rankingErr);
+  }
 }
 
 // TRANSACTIONALLY COMMIT RUNNING PAYLOADS
@@ -803,7 +791,13 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
     };
 
     if (userData) {
-      userUpdates.score = (userData.score || 0) + xpAwarded;
+      // #228: "score" (ranking de temporada) nao e mais incrementado aqui --
+      // era uma 6a fonte de pontuacao ad-hoc, nem sequer listada na auditoria
+      // original, que somava xpAwarded direto em users.score sem passar pelo
+      // IGA. Agora recalculateAllUserScores() (chamado apos este transaction
+      // commitar, no final da funcao) recalcula score/monthlyScore/weeklyScore
+      // pela FONTE UNICA a partir do historico real em `workouts`. xpAwarded
+      // continua sendo gravado no documento do treino como XP -- XP != IGA.
       userUpdates.lastCheckIn = nowIso;
 
       const lastCheckInDay = userData.lastCheckIn ? userData.lastCheckIn.split('T')[0] : '';
@@ -875,4 +869,12 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
       }
     }
   });
+
+  // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA (IGA),
+  // fora da transaction acima pelo mesmo motivo de commitWorkoutSession.
+  try {
+    await recalculateAllUserScores(userId);
+  } catch (rankingErr) {
+    console.error(`[commitRunningSession] Falha ao recalcular pontuacao IGA para userId=${userId}, corrida permanece salva:`, rankingErr);
+  }
 }
