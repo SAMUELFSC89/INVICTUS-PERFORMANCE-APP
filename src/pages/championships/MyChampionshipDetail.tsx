@@ -42,11 +42,19 @@ export const MyChampionshipDetail: React.FC = () => {
   const isGold = champ.accentColor === 'gold';
   const themeColor = isGold ? '#ffb000' : '#14b8a6';
 
+  // #246: /running e /workout nunca existiram como rotas (conferido no
+  // historico do App.tsx) -- o botao "iniciar tentativa oficial" sempre
+  // caiu em tela em branco. O fluxo real que a Home ja usa pra abrir
+  // musculacao/cardio direto e /challenges com o parametro `type`
+  // (Challenges.tsx trata o deep link e abre a tela certa). Nao existe hoje
+  // nenhum vinculo entre a sessao iniciada e o campeonato/tentativa
+  // especifico (nenhuma das duas rotas antigas recebia esse contexto
+  // tambem) -- so estou levando pra um fluxo que efetivamente funciona.
   const handleStartOfficialAttempt = () => {
     if (champ.type === 'run_elite_corrida') {
-      navigate('/running');
+      navigate('/challenges?type=cardio');
     } else {
-      navigate('/workout');
+      navigate('/challenges?type=workout');
     }
   };
 
