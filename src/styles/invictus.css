@@ -561,17 +561,31 @@
 
 /* Celular estreito: a arte reflui -- titulo sobe/aumenta e os recursos
    ganham mais respiro relativo. Medido contra card de 358px e 320px. */
+/* #241: valores MEDIDOS no navegador (produção, card real de 414px), não
+ * estimados. A tentativa anterior aumentou as fontes sem conferir o layout e
+ * quebrou o banner: "COMPETIÇÃO" invadia "EVOLUÇÃO", as descrições batiam na
+ * faixa do contador e o título quebrava em 4 linhas em cima dos ícones.
+ *
+ * Restrições reais deste banner, com o card em 414px:
+ *  - os centros das 3 colunas ficam a 18,9pp de distância (medidos na arte),
+ *    então largura de coluna PRECISA ser < 18,9% ou elas se sobrepõem;
+ *  - cada coluna tem ~75px reais: não cabe rótulo de 2 linhas + descrição
+ *    em corpo legível;
+ *  - o título tem ~235px de caixa: acima de ~7cqw a primeira linha estoura e
+ *    ele passa a ocupar 4 linhas, invadindo a área dos ícones.
+ */
 @container (max-width: 430px) {
-  .iv-liga-banner__titulo { left: 41%; top: 17%; font-size: 8.2cqw; }
+  /* 7cqw = 29px em card de 414px: "COMPITA TREINANDO." cabe em UMA linha. */
+  .iv-liga-banner__titulo { left: 39%; top: 16%; font-size: 7cqw; }
   .iv-liga-banner__rec { top: 59%; }
-  /* Colunas 1pp mais largas que antes: as fontes subiram e "COMPETIÇÃO"
-     encostava na borda da caixa de 19%. Os centros continuam nos mesmos
-     pontos medidos na arte, entao o alinhamento com os icones nao muda. */
-  .iv-liga-banner__rec b { font-size: max(13px, 3.9cqw); }
-  .iv-liga-banner__rec p { font-size: max(12px, 3.5cqw); }
-  .iv-liga-banner__rec--1 { left: 47.1%; width: 20%; }
-  .iv-liga-banner__rec--2 { left: 66.0%; width: 20%; }
-  .iv-liga-banner__rec--3 { left: 85.5%; width: 22%; }
+  .iv-liga-banner__rec b { font-size: max(12.5px, 3.1cqw); }
+  /* A descrição sai no celular. Em ~75px de largura ela só caberia em corpo
+     ilegível e ainda colidia com a faixa do contador. O rótulo sozinho, legível,
+     comunica o mesmo -- legibilidade acima de quantidade de texto. */
+  .iv-liga-banner__rec p { display: none; }
+  .iv-liga-banner__rec--1 { left: 47.1%; width: 18%; }
+  .iv-liga-banner__rec--2 { left: 66.0%; width: 18%; }
+  .iv-liga-banner__rec--3 { left: 85.5%; width: 18%; }
   .iv-liga-banner__kicker { font-size: max(11px, 3.1cqw); top: 9%; }
   .iv-liga-banner__faixa .em { font-size: max(13.5px, 4cqw); }
   .iv-liga-banner__faixa .msg { font-size: max(12px, 3.4cqw); }
@@ -697,8 +711,15 @@
 }
 
 /* Rotulo longo (2 palavras) so em telas largas; no celular entra o curto.
-   Ver comentario em RECURSOS (ChampionshipsHub.tsx). */
-.iv-camp-banner__rec-curto { display: none; }
+   Ver comentario em RECURSOS (ChampionshipsHub.tsx).
+ *
+ * #241 -- O SELETOR PRECISA INCLUIR O `b`. A regra `.iv-camp-banner__rec b`
+ * acima tem especificidade (0,1,1) e vencia um `.iv-camp-banner__rec-curto`
+ * simples (0,1,0): o `display:none` nunca era aplicado e os DOIS rotulos
+ * apareciam sobrepostos no banner ("TREINE COM PROPÓSITO" por cima de
+ * "PONTOS"). Isso passou por compilacao e por typecheck sem nenhum aviso --
+ * so aparece abrindo a tela. */
+.iv-camp-banner__rec b.iv-camp-banner__rec-curto { display: none; }
 
 .iv-camp-banner__rec--1 { left: 46.1%; }
 .iv-camp-banner__rec--2 { left: 60.0%; }
@@ -722,19 +743,26 @@
 
 /* Celular estreito: sobe o titulo/faixa e da mais respiro relativo aos
    textos pequenos -- mesma logica do banner Liga. */
+/* #241: medido no navegador com o card real de 406px. Restrições encontradas:
+ *  - os 4 centros de coluna ficam a 13,9pp entre si -> largura < 13,9%;
+ *  - a caixa do título é estreita (fica ao lado do troféu): acima de ~5,2cqw
+ *    "SE TORNA RECOMPENSA." quebra e o título vira 3 linhas, encostando na
+ *    faixa e no kicker;
+ *  - o kicker precisava subir para não ficar atrás do título. */
 @container (max-width: 430px) {
-  .iv-camp-banner__kicker { font-size: max(10.5px, 2.6cqw); top: 6.5%; letter-spacing: 0.16em; }
-  .iv-camp-banner__titulo { font-size: 6.0cqw; top: 10%; }
+  .iv-camp-banner__kicker { font-size: max(10.5px, 2.6cqw); top: 5%; letter-spacing: 0.16em; }
+  .iv-camp-banner__titulo { font-size: 5.2cqw; top: 14%; right: 10%; }
   .iv-camp-banner__faixa span { font-size: max(11.5px, 2.5cqw); }
   /* No celular a descricao some e entra o rotulo curto: e a unica forma de o
-     texto dessas 4 colunas (~48px reais cada) ficar legivel sem invadir a
-     coluna vizinha. Regra acordada: legibilidade acima de quantidade de texto. */
-  .iv-camp-banner__rec-longo { display: none; }
-  .iv-camp-banner__rec-curto { display: block; }
+     texto dessas 4 colunas (~53px reais cada) ficar legivel sem invadir a
+     coluna vizinha. Regra acordada: legibilidade acima de quantidade de texto.
+     O `b` no seletor e obrigatorio -- ver comentario de especificidade acima. */
+  .iv-camp-banner__rec b.iv-camp-banner__rec-longo { display: none; }
+  .iv-camp-banner__rec b.iv-camp-banner__rec-curto { display: block; }
   .iv-camp-banner__rec p { display: none; }
-  .iv-camp-banner__rec { top: 70%; width: 13.6%; }
+  .iv-camp-banner__rec { top: 70%; width: 13%; }
   .iv-camp-banner__rec b { font-size: max(11px, 3.1cqw); letter-spacing: -0.01em; }
-  .iv-camp-banner__cta { font-size: max(11.5px, 2.5cqw); }
+  .iv-camp-banner__cta { font-size: max(10.5px, 2.3cqw); top: 87%; }
 }
 
 /* 8) Card "Pronto para fazer parte" (card_inscricao_base): celular com o
