@@ -616,24 +616,56 @@
 .health-metric.is-tappable:focus-visible { outline:2px solid #ffad00; outline-offset:2px; }
 .health-banner-pending { display:grid; place-items:center; gap:.4rem; min-height:132px; margin-bottom:1rem; padding:1rem; border:1px dashed rgba(255,174,0,.35); border-radius:20px; background:rgba(18,17,20,.55); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:13px; text-align:center; }
 .health-banner-pending strong { color:#e8c98a; font-family:Anton,sans-serif; font-size:14px; font-weight:400; letter-spacing:.02em; text-transform:uppercase; }
-.health-banner-hoje { position:relative; overflow:hidden; margin-bottom:1rem; border:1px solid rgba(245,166,35,.3); border-radius:20px; background:radial-gradient(120% 140% at 50% 15%, #1a1108 0%, #0a0705 55%, #000 100%); }
-.health-banner-hoje-label { position:absolute; top:.9rem; left:1rem; z-index:1; color:#f4f1ec; font-family:Anton,sans-serif; font-size:14px; font-weight:400; letter-spacing:.04em; text-transform:uppercase; text-shadow:0 2px 8px rgba(0,0,0,.8); }
-.health-banner-hoje img { display:block; width:100%; height:auto; max-height:280px; margin:0 auto; object-fit:contain; }
-.health-banner-hoje-status { position:absolute; right:1rem; bottom:.85rem; left:1rem; z-index:1; color:#ddd7d0; font-family:Barlow,sans-serif; font-size:12.5px; text-align:right; text-shadow:0 2px 8px rgba(0,0,0,.9); }
-@media (max-width: 700px) { .health-banner-hoje img { max-height:220px; } }
+/* #69: card "Estado de Hoje" -- status calculado (heurística não-clínica,
+   ver calcularEstadoDeHoje em Health.tsx) ao lado da arte oficial enviada
+   pelo usuário, substituindo o banner-imagem anterior pra bater com a
+   referência real recebida. */
+.health-hoje-card { display:flex; align-items:center; gap:1rem; overflow:hidden; margin-bottom:1rem; padding:1.1rem 1.2rem; border:1px solid rgba(245,166,35,.3); border-radius:20px; background:radial-gradient(120% 140% at 0% 15%, #1a1108 0%, #0a0705 55%, #000 100%); }
+.health-hoje-text { flex:1 1 auto; min-width:0; }
+.health-hoje-label { display:block; color:#e8c98a; font-family:Anton,sans-serif; font-size:12px; font-weight:400; letter-spacing:.06em; text-transform:uppercase; }
+.health-hoje-status { display:flex; align-items:center; gap:.4rem; margin:.35rem 0 .5rem; font-family:Anton,sans-serif; font-size:24px; font-weight:400; letter-spacing:.01em; text-transform:uppercase; }
+.health-hoje-status svg { width:22px; height:22px; flex:0 0 22px; }
+.health-hoje-text p { margin:0; color:#c6c1bb; font-family:Barlow,sans-serif; font-size:13px; line-height:1.35; }
+.health-hoje-updated { display:block; margin-top:.5rem; color:#8a8580; font-family:Barlow,sans-serif; font-size:11.5px; }
+.health-hoje-art { flex:0 0 auto; width:104px; height:auto; max-height:150px; object-fit:contain; }
+@media (max-width: 700px) { .health-hoje-card { padding:1rem; } .health-hoje-status { font-size:20px; } .health-hoje-art { width:80px; max-height:120px; } }
+
+.health-metric-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:.4rem; }
+.health-metric-icon { margin-bottom:0; }
+.health-metric-chevron { width:16px; height:16px; color:#65605a; }
+.health-metric-delta { margin-top:.25rem; font-family:Barlow,sans-serif; font-size:12px; font-weight:600; }
+.health-metric-spark { display:block; width:100%; height:28px; margin-top:.4rem; opacity:.85; }
+.health-tap-hint { margin:.55rem 0 0; color:#8a8580; font-family:Barlow,sans-serif; font-size:11.5px; text-align:center; }
+
 .health-energy-card { margin-top:1rem; padding:1.1rem 1rem; }
-.health-energy-value { display:flex; align-items:baseline; gap:.5rem; margin:.6rem 0 .3rem; }
-.health-energy-value strong { color:#fff; font-family:Anton,sans-serif; font-size:34px; font-weight:400; line-height:.9; }
-.health-energy-value span { color:#e4ded7; font-family:Barlow,sans-serif; font-size:15px; }
+.health-energy-row { display:flex; align-items:center; gap:.85rem; margin-top:.5rem; }
+.health-energy-icon { display:grid; flex:0 0 auto; place-items:center; width:52px; height:52px; border:2px solid rgba(255,174,0,.4); border-radius:50%; color:#ffb000; }
+.health-energy-icon svg { width:24px; height:24px; }
+.health-energy-values { display:flex; flex-wrap:wrap; align-items:baseline; gap:.35rem .9rem; }
+.health-energy-value { display:flex; align-items:baseline; gap:.4rem; }
+.health-energy-value strong { color:#fff; font-family:Anton,sans-serif; font-size:30px; font-weight:400; line-height:.9; }
+.health-energy-value span { color:#e4ded7; font-family:Barlow,sans-serif; font-size:14px; }
+.health-energy-kg { color:#c6c1bb; font-family:Barlow,sans-serif; font-size:13px; }
 .health-energy-disclaimer { display:flex; gap:.5rem; margin-top:.7rem; padding:.7rem .8rem; border:1px solid rgba(255,255,255,.1); border-radius:12px; background:rgba(255,255,255,.03); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:12.5px; line-height:1.35; }
 .health-energy-disclaimer svg { width:17px; flex:0 0 17px; margin-top:.1rem; color:#ffad00; }
+
+.health-trends-compact { padding:1.1rem 1.1rem 1rem; }
+.health-trend-cols { display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; margin-top:.6rem; }
+.health-trend-cols > div { display:grid; gap:.3rem; padding:.15rem 0; border-left:1px solid rgba(255,255,255,.09); text-align:center; }
+.health-trend-cols > div:first-child { border-left:0; }
+.health-trend-cols span { color:#a8a29a; font-family:Anton,sans-serif; font-size:10.5px; font-weight:400; letter-spacing:.02em; text-transform:uppercase; }
+.health-trend-cols b { font-family:Anton,sans-serif; font-size:15px; font-weight:400; }
+.health-trend-cols em { color:#8a8580; font-family:Barlow,sans-serif; font-size:11px; font-style:normal; }
+.health-trend-link { display:flex; align-items:center; justify-content:center; gap:.3rem; width:100%; margin-top:.85rem; padding:.6rem 0; border:0; border-top:1px solid rgba(255,255,255,.08); background:none; color:#ffad00; font-family:Anton,sans-serif; font-size:12.5px; font-style:italic; letter-spacing:.02em; text-transform:uppercase; cursor:pointer; }
+.health-trend-link svg { width:15px; }
+
 .health-report-cta { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-top:1rem; padding:1.1rem 1.2rem; border:1px solid rgba(245,166,35,.4); border-radius:20px; background:linear-gradient(135deg,rgba(255,178,0,.14),rgba(10,10,12,.92) 70%); }
 .health-report-cta > div strong { display:block; color:#fff; font-family:Anton,sans-serif; font-size:16px; font-weight:400; text-transform:uppercase; }
 .health-report-cta > div p { margin:.3rem 0 0; color:#d0cbc4; font-family:Barlow,sans-serif; font-size:13px; }
 .health-report-cta button { display:flex; flex:0 0 auto; align-items:center; gap:.4rem; min-height:50px; padding:0 1.1rem; border:0; border-radius:13px; background:#ffb000; color:#191108; font-family:Anton,sans-serif; font-size:14px; font-style:italic; white-space:nowrap; }
 .health-report-cta button svg { width:19px; }
 .health-tab-note { margin:1rem 0 0; padding:.85rem 1rem; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(18,17,20,.7); color:#c9c4bd; font-family:Barlow,sans-serif; font-size:13px; }
-@media (max-width: 700px) { .health-metrics-grid-3 { grid-template-columns:1fr 1fr; } .health-report-cta { flex-direction:column; align-items:flex-start; } .health-report-cta button { width:100%; justify-content:center; } }
+@media (max-width: 700px) { .health-metrics-grid-3 { grid-template-columns:1fr 1fr; } .health-report-cta { flex-direction:column; align-items:flex-start; } .health-report-cta button { width:100%; justify-content:center; } .health-hoje-card { flex-direction:column; align-items:flex-start; } .health-hoje-art { align-self:center; } .health-trend-cols { grid-template-columns:1fr 1fr; row-gap:.75rem; } .health-trend-cols > div:nth-child(3) { border-left:0; } }
 
 /* #54: relatório "Saúde & Performance" -- 6 páginas geradas como PDF via
    window.print() (mesmo padrão já usado em HealthReport/EXPORTAR). Reusa a

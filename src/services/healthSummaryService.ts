@@ -7,7 +7,7 @@ import { API_CONFIG } from '../config';
 // Ver api/_handlers/health-summary.ts.
 
 export type ResumoMetricType = 'heart_rate_resting' | 'hrv_rmssd' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg';
-export type TendenciaMetricType = 'calories_active' | 'hrv_rmssd' | 'heart_rate_resting' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg';
+export type TendenciaMetricType = 'calories_active' | 'hrv_rmssd' | 'heart_rate_resting' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg' | 'duration_min';
 
 export interface UltimoValorMetrica {
   value: number;

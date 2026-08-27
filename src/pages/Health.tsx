@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, SlidersHorizontal } from 'lucide-react';
+import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -40,6 +40,105 @@ function trendPontos(entradas: Array<{ timestamp: string; value: number }>, maxP
     const label = Number.isNaN(data.getTime()) ? '' : data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     return { value: item.value, label };
   });
+}
+
+// #69: comparação simples "valor mais recente vs média dos 7 dias
+// anteriores", usada nos cards e no bloco de tendências. Exige pelo menos
+// 2 pontos ANTES da janela dos últimos 7 dias -- sem isso, retorna null em
+// vez de inventar uma comparação a partir de amostra insuficiente (mesma
+// filosofia de mediaAntesDepois() em healthSummaryService.ts).
+interface DeltaInfo { direction: 'up' | 'down' | 'neutral'; diff: number; media: number; }
+
+function deltaVs7Dias(pontos: Array<{ timestamp: string; value: number }> | undefined, valorAtual: number | null): DeltaInfo | null {
+  if (!pontos || pontos.length < 3 || valorAtual === null || !Number.isFinite(valorAtual)) return null;
+  const seteDiasAtras = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const anteriores = pontos.filter((p) => {
+    const t = new Date(p.timestamp).getTime();
+    return Number.isFinite(t) && t < seteDiasAtras;
+  });
+  if (anteriores.length < 2) return null;
+  const media = anteriores.reduce((soma, p) => soma + p.value, 0) / anteriores.length;
+  if (!Number.isFinite(media) || media === 0) return null;
+  const diff = valorAtual - media;
+  const direction = Math.abs(diff) < media * 0.01 ? 'neutral' : diff > 0 ? 'up' : 'down';
+  return { direction, diff, media };
+}
+
+function formatDeltaCurto(delta: DeltaInfo, unidade: string, casasDecimais = 0): string {
+  const seta = delta.direction === 'up' ? '↑' : delta.direction === 'down' ? '↓' : '→';
+  const valorAbs = Math.abs(delta.diff).toLocaleString('pt-BR', { maximumFractionDigits: casasDecimais });
+  return `${seta} ${valorAbs}${unidade ? ` ${unidade}` : ''}`;
+}
+
+// #69: "Melhorando/Estável/Observar" -- rótulo textual do bloco de
+// Tendências. `direcaoBoa` indica qual direção do delta é considerada
+// favorável para aquela métrica especificamente (ex.: FC repouso menor é
+// tipicamente favorável, então direcaoBoa='down'; HRV e sono maiores são
+// tipicamente favoráveis, então direcaoBoa='up'). Isso é só um rótulo
+// visual de referência rápida, não uma avaliação clínica.
+function statusPalavra(delta: DeltaInfo | null, direcaoBoa: 'up' | 'down'): string {
+  if (!delta) return 'Sem dados';
+  if (delta.direction === 'neutral') return 'Estável';
+  return delta.direction === direcaoBoa ? 'Melhorando' : 'Observar';
+}
+
+function formatRelativo(timestamp?: string | null): string {
+  if (!timestamp) return '';
+  const data = new Date(timestamp);
+  if (Number.isNaN(data.getTime())) return '';
+  const diffMin = Math.floor((Date.now() - data.getTime()) / 60000);
+  if (diffMin < 2) return 'agora há pouco';
+  if (diffMin < 60) return `há ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `há ${diffH}h`;
+  const diffDias = Math.floor(diffH / 24);
+  return diffDias === 1 ? 'há 1 dia' : `há ${diffDias} dias`;
+}
+
+interface EstadoHojeResultado { status: string; descricao: string; cor: string; }
+
+// #69: heurística simples e NÃO-CLÍNICA para resumir o "estado de hoje" a
+// partir de 3 sinais que já temos (FC repouso, HRV, sono), comparando o
+// valor mais recente com a média dos 7 dias anteriores. NÃO é diagnóstico
+// nem substitui orientação profissional -- é só um resumo visual rápido,
+// e a própria tela deixa isso explícito. Com menos de 2 sinais disponíveis,
+// mostra "sem dados suficientes" em vez de inventar um status.
+function calcularEstadoDeHoje(fcDelta: DeltaInfo | null, hrvDelta: DeltaInfo | null, sonoDelta: DeltaInfo | null): EstadoHojeResultado {
+  const sinaisDisponiveis = [fcDelta, hrvDelta, sonoDelta].filter((d) => d !== null).length;
+  if (sinaisDisponiveis < 2) {
+    return {
+      status: 'SEM DADOS SUFICIENTES',
+      descricao: 'Sincronize mais alguns dias de FC de repouso, HRV ou sono para ver um resumo do seu estado de hoje.',
+      cor: '#8a8580'
+    };
+  }
+  let pontos = 0;
+  if (fcDelta) pontos += fcDelta.direction === 'down' ? 1 : fcDelta.direction === 'up' ? -1 : 0;
+  if (hrvDelta) pontos += hrvDelta.direction === 'up' ? 1 : hrvDelta.direction === 'down' ? -1 : 0;
+  if (sonoDelta) pontos += sonoDelta.direction === 'up' ? 1 : sonoDelta.direction === 'down' ? -1 : 0;
+
+  if (pontos >= 2) return { status: 'MUITO BOM', descricao: 'Seus sinais recentes de FC de repouso, HRV e sono estão melhores do que a sua média dos últimos dias.', cor: '#46d47b' };
+  if (pontos === 1) return { status: 'BOM', descricao: 'A maioria dos seus sinais recentes está estável ou melhorando em relação à sua média dos últimos dias.', cor: '#8fd47b' };
+  if (pontos === 0) return { status: 'ESTÁVEL', descricao: 'Seus sinais recentes estão próximos da sua média dos últimos dias, sem grandes variações.', cor: '#ffb000' };
+  return { status: 'ATENÇÃO', descricao: 'Alguns sinais recentes (FC de repouso, HRV ou sono) estão piores do que a sua média dos últimos dias. Considere priorizar recuperação.', cor: '#ff8a5b' };
+}
+
+function MiniSparkline({ points, color = '#ffb000' }: { points: number[]; color?: string }) {
+  if (!points || points.length < 2) return null;
+  const min = Math.min(...points);
+  const max = Math.max(...points, min + 1);
+  const largura = 100;
+  const altura = 28;
+  const coords = points.map((valor, indice) => {
+    const x = (indice / (points.length - 1)) * largura;
+    const y = altura - ((valor - min) / (max - min || 1)) * (altura - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  return (
+    <svg className="health-metric-spark" viewBox={`0 0 ${largura} ${altura}`} preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={coords.join(' ')} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 // #253: leitura da Health Data Layer (health_samples) -- FC repouso, HRV,
@@ -121,13 +220,31 @@ function PeriodControl({ value, onChange, compact = false }: { value: TimeRange;
   return <button className="health-period-picker" onClick={() => onChange(value === '7days' ? '30days' : '7days')}><CalendarDays />{selected.label.toUpperCase()}<ChevronDown /></button>;
 }
 
-function MetricCard({ icon, label, value, unit, detail, tone = 'gold', progress, onTap }: { icon: React.ReactNode; label: string; value: string | number; unit?: string; detail: string; tone?: 'gold' | 'red'; progress?: number; onTap?: () => void }) {
+const CORES_POR_TOM: Record<string, string> = { gold: '#ffb000', red: '#ff515b', violet: '#b98bff', blue: '#4d9fff', green: '#46d47b' };
+
+function MetricCard({
+  icon, label, value, unit, detail, tone = 'gold', progress, onTap, delta, deltaUnit = '', deltaDecimais = 0, sparklinePoints
+}: {
+  icon: React.ReactNode; label: string; value: string | number; unit?: string; detail: string;
+  tone?: 'gold' | 'red' | 'violet' | 'blue' | 'green'; progress?: number; onTap?: () => void;
+  delta?: DeltaInfo | null; deltaUnit?: string; deltaDecimais?: number; sparklinePoints?: number[];
+}) {
+  const cor = CORES_POR_TOM[tone] || CORES_POR_TOM.gold;
   const conteudo = <>
-    <div className={cn('health-metric-icon', tone === 'red' && 'is-red')}>{icon}</div>
+    <div className="health-metric-top">
+      <div className={cn('health-metric-icon', tone === 'red' && 'is-red')} style={{ color: cor }}>{icon}</div>
+      {onTap && <ChevronRight className="health-metric-chevron" aria-hidden="true" />}
+    </div>
     <span>{label}</span>
     <strong>{value}<small>{unit}</small></strong>
     <p>{detail}</p>
+    {delta && (
+      <div className="health-metric-delta" style={{ color: cor }}>
+        {formatDeltaCurto(delta, deltaUnit, deltaDecimais)} vs média 7 dias
+      </div>
+    )}
     {progress !== undefined && <div className="health-small-progress"><b style={{ width: `${Math.min(100, progress)}%` }} /></div>}
+    {sparklinePoints && sparklinePoints.length >= 2 && <MiniSparkline points={sparklinePoints} color={cor} />}
   </>;
   if (onTap) {
     return <article role="button" tabIndex={0} onClick={onTap} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(); } }} className="health-metric is-tappable">{conteudo}</article>;
@@ -196,16 +313,43 @@ function EnergyBlock({ calories }: { calories: number }) {
   return (
     <article className="health-overview health-energy-card">
       <div className="health-section-line"><div><Flame /> GASTO ENERGÉTICO</div></div>
-      <div className="health-energy-value"><strong>{calories.toLocaleString('pt-BR')}</strong><span>kcal no período</span></div>
-      <p style={{ margin: 0, color: '#c6c1bb', fontFamily: 'Barlow,sans-serif', fontSize: 13 }}>
-        {calories > 0
-          ? `Equivalente a ${kgEquivalente.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg de gordura, se esse gasto se sustentasse isoladamente (1 kg ≈ ${KCAL_POR_KG_GORDURA.toLocaleString('pt-BR')} kcal).`
-          : 'Sem calorias registradas no período.'}
-      </p>
+      <div className="health-energy-row">
+        <div className="health-energy-icon"><Flame /></div>
+        <div className="health-energy-values">
+          <div className="health-energy-value"><strong>{calories.toLocaleString('pt-BR')}</strong><span>kcal no período</span></div>
+          {calories > 0
+            ? <div className="health-energy-kg">≈ {kgEquivalente.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg de gordura*</div>
+            : <div className="health-energy-kg">Sem calorias registradas no período.</div>}
+        </div>
+      </div>
       <div className="health-energy-disclaimer">
         <AlertCircle />
-        <span>Isso é uma equivalência energética, não peso realmente perdido. O peso corporal depende de ingestão calórica, hidratação, sono, hormônios e muito mais — não use este número como resultado de emagrecimento.</span>
+        <span>*Equivalência energética, não peso realmente perdido — depende de ingestão, hidratação, sono e hormônios.</span>
       </div>
+    </article>
+  );
+}
+
+// #69: bloco "Estado de Hoje" -- combina o status calculado (ver
+// calcularEstadoDeHoje, heurística simples e não-clínica) com a arte
+// oficial enviada pelo usuário (public/estado-de-hoje.webp), posicionada ao
+// lado do texto em vez de como imagem de topo isolada.
+function EstadoDeHojeCard({ fcDelta, hrvDelta, sonoDelta, ultimaAtualizacao }: {
+  fcDelta: DeltaInfo | null; hrvDelta: DeltaInfo | null; sonoDelta: DeltaInfo | null; ultimaAtualizacao: string | null;
+}) {
+  const resultado = calcularEstadoDeHoje(fcDelta, hrvDelta, sonoDelta);
+  const relativo = formatRelativo(ultimaAtualizacao);
+  return (
+    <article className="health-hoje-card">
+      <div className="health-hoje-text">
+        <span className="health-hoje-label">ESTADO DE HOJE</span>
+        <div className="health-hoje-status" style={{ color: resultado.cor }}>
+          <ShieldCheck aria-hidden="true" /> {resultado.status}
+        </div>
+        <p>{resultado.descricao}</p>
+        {relativo && <span className="health-hoje-updated">Atualizado {relativo}</span>}
+      </div>
+      <img src="/estado-de-hoje.webp" alt="Invictus" className="health-hoje-art" />
     </article>
   );
 }
@@ -232,6 +376,31 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
 
   const semDado = loadingSummary ? 'Carregando…' : 'Sem dados sincronizados';
 
+  // #69: séries de tendência (health_samples) usadas para os deltas "vs
+  // média 7 dias" e as mini-sparklines dos cards, além do bloco de
+  // Tendências. Cada uma vem direto de /api/health-summary -- nenhum valor
+  // é inventado aqui, só comparado.
+  const fcTrend = summary?.trends.heart_rate_resting || [];
+  const hrvTrend = summary?.trends.hrv_rmssd || [];
+  const sonoTrend = summary?.trends.sleep_duration_min || [];
+  const passosTrend = summary?.trends.steps_daily || [];
+  const exercicioTrend = summary?.trends.duration_min || [];
+
+  const fcDelta = deltaVs7Dias(fcTrend, fcRepouso ? fcRepouso.value : null);
+  const hrvDelta = deltaVs7Dias(hrvTrend, hrv ? hrv.value : null);
+  const sonoDelta = deltaVs7Dias(sonoTrend, sono ? sono.value : null);
+  const passosDelta = deltaVs7Dias(passosTrend, passos ? passos.value : null);
+  // Exercício: usa o próprio último ponto da série de tendência como
+  // "atual" (não o total do período do performanceEngine, que é uma janela
+  // diferente) -- assim a comparação fica dentro da mesma fonte de dado.
+  const exercicioUltimoPonto = exercicioTrend.length ? exercicioTrend[exercicioTrend.length - 1].value : null;
+  const exercicioDelta = deltaVs7Dias(exercicioTrend, exercicioUltimoPonto);
+
+  const ultimaAtualizacaoHoje = [fcRepouso?.timestamp, hrv?.timestamp, sono?.timestamp]
+    .filter((t): t is string => Boolean(t))
+    .sort()
+    .pop() || null;
+
   return (
     <>
       <div className="health-tabs">
@@ -242,39 +411,52 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
 
       {activeTab === 'resumo' && (
         <>
-          {/* #53: banner "Estado de Hoje" -- arte oficial enviada pelo
-              usuário (public/estado-de-hoje.webp), usada exatamente como
-              recebida, sem recorte/recriação. Fundo preto aplicado aqui via
-              CSS (radial-gradient), como o próprio usuário pediu. */}
-          <div className="health-banner-hoje">
-            <span className="health-banner-hoje-label">Estado de Hoje</span>
-            <img src="/estado-de-hoje.webp" alt="Invictus — Estado de Hoje" />
-            <span className="health-banner-hoje-status">Acompanhe seus indicadores de hoje abaixo</span>
-          </div>
+          <EstadoDeHojeCard fcDelta={fcDelta} hrvDelta={hrvDelta} sonoDelta={sonoDelta} ultimaAtualizacao={ultimaAtualizacaoHoje} />
 
           <section id="health-overview" className="health-overview">
             <div className="health-section-line"><div><Activity /> RESUMO DE HOJE</div></div>
             <div className="health-metrics-grid-3">
-              <MetricCard icon={<Heart />} label="FC REPOUSO" value={fcRepouso ? fcRepouso.value : '—'} unit={fcRepouso ? 'bpm' : ''} detail={fcRepouso ? `Última leitura: ${formatUltimaLeitura(fcRepouso.timestamp)}` : semDado} tone="red" onTap={() => setActiveTab('coracao')} />
-              <MetricCard icon={<HeartPulse />} label="HRV" value={hrv ? hrv.value : '—'} unit={hrv ? 'ms' : ''} detail={hrv ? `Última leitura: ${formatUltimaLeitura(hrv.timestamp)}` : semDado} onTap={() => setActiveTab('coracao')} />
-              <MetricCard icon={<Moon />} label="SONO" value={sono ? formatDuration(sono.value) : '—'} detail={sono ? `Última noite: ${formatUltimaLeitura(sono.timestamp)}` : semDado} onTap={() => setActiveTab('recuperacao')} />
-              <MetricCard icon={<Footprints />} label="PASSOS" value={passos ? passos.value.toLocaleString('pt-BR') : '—'} detail={passos ? `Registrado: ${formatUltimaLeitura(passos.timestamp)}` : semDado} onTap={() => setActiveTab('atividade')} />
-              <MetricCard icon={<Clock3 />} label="EXERCÍCIO" value={formatDuration(minutes)} detail={workouts ? `${workouts} sessão(ões) homologada(s) no período` : 'Sem sessões homologadas'} onTap={() => setActiveTab('atividade')} />
+              <MetricCard icon={<Heart />} label="FC REPOUSO" value={fcRepouso ? fcRepouso.value : '—'} unit={fcRepouso ? 'bpm' : ''} detail={fcRepouso ? `Última leitura: ${formatUltimaLeitura(fcRepouso.timestamp)}` : semDado} tone="red" onTap={() => setActiveTab('coracao')} delta={fcDelta} deltaUnit="bpm" sparklinePoints={fcTrend.map((p) => p.value)} />
+              <MetricCard icon={<HeartPulse />} label="HRV" value={hrv ? hrv.value : '—'} unit={hrv ? 'ms' : ''} detail={hrv ? `Última leitura: ${formatUltimaLeitura(hrv.timestamp)}` : semDado} tone="violet" onTap={() => setActiveTab('coracao')} delta={hrvDelta} deltaUnit="ms" sparklinePoints={hrvTrend.map((p) => p.value)} />
+              <MetricCard icon={<Moon />} label="SONO" value={sono ? formatDuration(sono.value) : '—'} detail={sono ? `Última noite: ${formatUltimaLeitura(sono.timestamp)}` : semDado} tone="blue" onTap={() => setActiveTab('recuperacao')} delta={sonoDelta} deltaUnit="min" sparklinePoints={sonoTrend.map((p) => p.value)} />
+              <MetricCard icon={<Footprints />} label="PASSOS" value={passos ? passos.value.toLocaleString('pt-BR') : '—'} detail={passos ? `Registrado: ${formatUltimaLeitura(passos.timestamp)}` : semDado} tone="green" onTap={() => setActiveTab('atividade')} delta={passosDelta} sparklinePoints={passosTrend.map((p) => p.value)} />
+              <MetricCard icon={<Clock3 />} label="EXERCÍCIO" value={formatDuration(minutes)} detail={workouts ? `${workouts} sessão(ões) homologada(s) no período` : 'Sem sessões homologadas'} onTap={() => setActiveTab('atividade')} delta={exercicioDelta} deltaUnit="min" sparklinePoints={exercicioTrend.map((p) => p.value)} />
               <MetricCard icon={<Flame />} label="CALORIAS" value={calories.toLocaleString('pt-BR')} unit="kcal" detail="Total do período" onTap={() => setActiveTab('energia')} />
             </div>
+            <p className="health-tap-hint">Toque em um card para ver mais detalhes</p>
           </section>
 
           <EnergyBlock calories={calories} />
 
-          <article className="health-overview" style={{ marginTop: '1rem' }}>
-            <div className="health-section-line"><div><Activity /> TENDÊNCIAS (30 DIAS)</div></div>
-            {summary?.trends.calories_active?.length ? (
-              <ChartBars points={trendPontos(summary.trends.calories_active)} />
-            ) : <p className="health-empty">{loadingSummary ? 'Carregando tendências…' : 'Ainda não há histórico suficiente de calorias para mostrar tendência.'}</p>}
+          <article className="health-overview health-trends-compact" style={{ marginTop: '1rem' }}>
+            <div className="health-section-line"><div><Activity /> TENDÊNCIAS DOS ÚLTIMOS 30 DIAS</div></div>
+            <div className="health-trend-cols">
+              <div>
+                <span>FC REPOUSO</span>
+                <b style={{ color: fcDelta ? CORES_POR_TOM.red : '#65605a' }}>{fcDelta ? formatDeltaCurto(fcDelta, 'bpm') : '—'}</b>
+                <em>{statusPalavra(fcDelta, 'down')}</em>
+              </div>
+              <div>
+                <span>HRV</span>
+                <b style={{ color: hrvDelta ? CORES_POR_TOM.violet : '#65605a' }}>{hrvDelta ? formatDeltaCurto(hrvDelta, 'ms') : '—'}</b>
+                <em>{statusPalavra(hrvDelta, 'up')}</em>
+              </div>
+              <div>
+                <span>SONO</span>
+                <b style={{ color: sonoDelta ? CORES_POR_TOM.blue : '#65605a' }}>{sonoDelta ? formatDeltaCurto(sonoDelta, 'min') : '—'}</b>
+                <em>{statusPalavra(sonoDelta, 'up')}</em>
+              </div>
+              <div>
+                <span>EXERCÍCIO</span>
+                <b style={{ color: exercicioDelta ? CORES_POR_TOM.gold : '#65605a' }}>{exercicioDelta ? formatDeltaCurto(exercicioDelta, 'min') : '—'}</b>
+                <em>{statusPalavra(exercicioDelta, 'up')}</em>
+              </div>
+            </div>
+            <button type="button" onClick={onGenerateReport} className="health-trend-link">VER ANÁLISE COMPLETA <ChevronRight /></button>
           </article>
 
           <div className="health-report-cta">
-            <div><strong>Relatório Saúde &amp; Performance</strong><p>Gere um PDF completo com seus dados de saúde e desempenho.</p></div>
+            <div><strong>Relatório Saúde &amp; Performance</strong><p>7, 30, 90 dias ou personalizado.</p></div>
             <button onClick={onGenerateReport}><FileDown /> GERAR RELATÓRIO</button>
           </div>
 

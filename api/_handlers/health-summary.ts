@@ -12,7 +12,7 @@ const METRICAS_RESUMO: HealthMetricType[] = [
   'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'steps_daily', 'weight_kg'
 ];
 const METRICAS_TENDENCIA: HealthMetricType[] = [
-  'calories_active', 'hrv_rmssd', 'heart_rate_resting', 'sleep_duration_min', 'steps_daily', 'weight_kg'
+  'calories_active', 'hrv_rmssd', 'heart_rate_resting', 'sleep_duration_min', 'steps_daily', 'weight_kg', 'duration_min'
 ];
 // Um valor "atual" pode ter sido lido em qualquer sincronização recente --
 // não exigimos leitura de hoje (o usuário pode não ter aberto o app desde
