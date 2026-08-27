@@ -294,6 +294,79 @@ export function processUserPerformance(
         break;
       }
 
+      case 'vo2max_estimate': {
+        // #45: so estima com dados reais de uma corrida/caminhada ao ar livre
+        // de verdade -- distancia+duracao (ritmo real, nao inventado), FC
+        // media real da sessao, e FC Maxima REAL cadastrada no perfil (nunca
+        // 220-idade estimado, mesmo padrao ja usado pelas zonas cardiacas
+        // abaixo). Combina a equacao metabolica submaxima do ACSM com
+        // extrapolacao pela razao FC Max/FC sessao (metodo padrao usado por
+        // relogios/apps de fitness). Sem QUALQUER um desses dados reais, a
+        // metrica permanece indisponivel.
+        const qualifying = timeframeWorkouts.filter(w => {
+          const distanceKm = w.distanceKm || 0;
+          const durationMinutes = w.durationMinutes || 0;
+          const avgHR = w.avgHeartRate || 0;
+          if (distanceKm < 0.5 || durationMinutes < 10) return false;
+          if (!avgHR || !userMaxHR || avgHR >= userMaxHR) return false;
+          const speedKmh = distanceKm / (durationMinutes / 60);
+          // Faixa plausivel de corrida/caminhada -- fora disso e mais
+          // provavel bike/erro de dado do que passada real.
+          return speedKmh >= 3 && speedKmh <= 20;
+        });
+        hasEnoughData = qualifying.length > 0;
+        if (hasEnoughData) {
+          const recentQualifying = qualifying.slice(-3);
+          const estimates = recentQualifying.map(w => {
+            const speedMetersPerMin = ((w.distanceKm || 0) * 1000) / (w.durationMinutes || 1);
+            // ACSM: formula de corrida acima de ~134 m/min (~8km/h), senao caminhada.
+            const vo2Submax = speedMetersPerMin >= 134
+              ? 3.5 + 0.2 * speedMetersPerMin
+              : 3.5 + 0.1 * speedMetersPerMin;
+            return vo2Submax * (userMaxHR / (w.avgHeartRate || 1));
+          });
+          const avgEstimate = estimates.reduce((a, b) => a + b, 0) / estimates.length;
+          currentValue = Number(avgEstimate.toFixed(1));
+          bestVal = Number(Math.max(...estimates).toFixed(1));
+          avgVal = currentValue;
+          reliability = 'media'; // estimativa, nao teste laboratorial
+          historyPoints = recentQualifying.map((w, idx) => ({
+            label: w.workoutName || `Sessão ${idx + 1}`,
+            value: estimates[idx],
+            date: new Date(w.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          }));
+        } else {
+          currentValue = '—';
+          statusMessage = 'Requer corrida/caminhada ao ar livre com GPS, FC média e FC Máxima cadastrada no perfil.';
+        }
+        break;
+      }
+
+      case 'consistency_index': {
+        // #45: usa so dias com treino validado de verdade, contra a meta REAL
+        // de ate 5 dias/semana ja usada pelo IGA (mesmo teto de weekly_active_days
+        // abaixo) -- nao inventa um novo alvo.
+        const rangeDaysMap: Record<TimeRange, number> = {
+          today: 1, yesterday: 1, '7days': 7, '30days': 30, '90days': 90, '1year': 365,
+          all: validAllWorkouts.length > 0
+            ? Math.max(1, Math.ceil((Date.now() - validAllWorkouts[0].timestamp) / (24 * 60 * 60 * 1000)))
+            : 0
+        };
+        const windowDays = rangeDaysMap[selectedRange] || 0;
+        hasEnoughData = windowDays >= 7 && timeframeWorkouts.length > 0;
+        if (hasEnoughData) {
+          const activeDays = new Set(timeframeWorkouts.map(w => new Date(w.timestamp).toDateString())).size;
+          const weeksInWindow = windowDays / 7;
+          const targetDays = weeksInWindow * 5;
+          currentValue = Math.min(100, Math.round((activeDays / targetDays) * 100));
+          avgVal = Number(currentValue);
+        } else {
+          currentValue = '—';
+          statusMessage = 'Selecione um período de ao menos 7 dias com treinos para calcular a consistência.';
+        }
+        break;
+      }
+
       case 'hr_zones_distribution': {
         const hrWorkouts = timeframeWorkouts.filter(w => w.avgHeartRate && w.avgHeartRate > 0);
         hasEnoughData = hrWorkouts.length > 0;

@@ -143,6 +143,25 @@ export const METRIC_CATALOG: PerformanceMetricDef[] = [
     insufficientDataBehavior: 'Mostra "Aguardando Monitor Cardíaco".'
   },
   {
+    id: 'vo2max_estimate',
+    category: 'cardiovascular',
+    name: 'VO₂ Máx. Estimado',
+    objective: 'Estimar a capacidade cardiorrespiratória máxima do atleta a partir de corridas/caminhadas reais com GPS e frequência cardíaca.',
+    simpleDescription: 'Estimativa do quanto seu corpo consegue usar oxigênio no esforço máximo, calculada a partir das suas corridas/caminhadas reais.',
+    technicalDescription: 'Combina a equação metabólica submáxima do ACSM (VO2 a partir do ritmo real da corrida, em piso plano) com extrapolação pela razão entre a FC Máxima do perfil e a FC média real da sessão. Usa a média das últimas sessões de corrida/caminhada ao ar livre elegíveis (ritmo entre 3 e 20 km/h) com FC média abaixo da FC Máxima cadastrada.',
+    formula: 'VO_{2sub} = 3.5 + 0.2v \\;(corrida) \\text{ ou } 3.5 + 0.1v \\;(caminhada);\\quad VO_{2max} \\approx VO_{2sub} \\times \\frac{HR_{max}}{HR_{sessão}}',
+    unit: 'ml/kg/min',
+    dataSources: ['Banco Invictus (Workouts)', 'Frequência Cardíaca (Sensor)', 'Health Connect', 'Apple Health', 'Strava'],
+    howObtained: 'Calculado a partir de sessões reais de corrida/caminhada ao ar livre com distância, duração e FC média válidas, mais a FC Máxima cadastrada no perfil.',
+    deviceTypes: ['Smartwatch com GPS', 'Cinta Cardíaca', 'Smartphone (GPS)'],
+    updateFrequency: 'Diária',
+    minConditions: 'Ao menos 1 corrida/caminhada ao ar livre com GPS, FC média registrada e FC Máxima informada no perfil.',
+    storageAndHistory: 'Calculado dinamicamente sobre as sessões válidas do período.',
+    displayMethod: 'Card Metric + Badge',
+    aiUsage: 'A IA usa a tendência do VO2 estimado para avaliar evolução cardiorrespiratória ao longo do tempo.',
+    insufficientDataBehavior: 'Exibe "Requer corrida/caminhada com GPS + FC + FC Máxima cadastrada" sem estimar sem esses dados.'
+  },
+  {
     id: 'hr_zones_distribution',
     category: 'cardiovascular',
     name: 'Distribuição por Zonas Cardíacas (Z1 a Z5)',
@@ -299,6 +318,26 @@ export const METRIC_CATALOG: PerformanceMetricDef[] = [
     displayMethod: 'Card Metric + Badge',
     aiUsage: 'Identifica atletas hiper-engajados para premiar ou alertar se o risco de burnout subir.',
     insufficientDataBehavior: 'Exibe 0 dias com convite a iniciar sua sequência hoje.'
+  },
+
+  {
+    id: 'consistency_index',
+    category: 'consistency',
+    name: 'Índice de Consistência',
+    objective: 'Medir o quanto o atleta se manteve ativo no período em relação à meta de dias elegíveis do IGA.',
+    simpleDescription: 'Percentual de dias ativos que você teve no período, comparado à meta de até 5 dias/semana que vale pontos no ranking.',
+    technicalDescription: 'Razão entre o número de dias distintos com ao menos 1 treino validado no período e a meta de dias elegíveis (5 dias/semana, o mesmo teto usado pela Frequência (Fn) do IGA), limitada a 100%.',
+    formula: 'Consistência = \\min\\left(100, \\frac{DiasAtivos}{Semanas_{periodo} \\times 5} \\times 100\\right)',
+    unit: '%',
+    dataSources: ['Banco Invictus (Workouts)', 'Check-in de Presença (GPS/Gym)'],
+    howObtained: 'Contagem de dias distintos com treino validado no período selecionado, dividida pela meta de 5 dias/semana do IGA.',
+    deviceTypes: ['App Mobile Invictus'],
+    updateFrequency: 'Diária',
+    minConditions: 'Período selecionado de ao menos 7 dias com pelo menos 1 treino validado.',
+    storageAndHistory: 'Calculado dinamicamente sobre o histórico validado do período.',
+    displayMethod: 'Progress Bar',
+    aiUsage: 'A IA usa este índice para identificar quedas de hábito antes que afetem a pontuação semanal.',
+    insufficientDataBehavior: 'Exibe "Selecione um período de ao menos 7 dias com treinos" sem números fictícios.'
   },
 
   // 6. RECORDS & EVOLUTION

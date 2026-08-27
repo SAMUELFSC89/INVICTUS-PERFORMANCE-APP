@@ -84,4 +84,11 @@ npx --yes esbuild "$TRABALHO/wearable/entry.ts" \
 node "$RAIZ/tests/ingestao-wearable.mjs" "$TRABALHO/wearable.mjs"
 
 echo
+echo "==> Metricas de saude: VO2 max e Indice de Consistencia (#45)"
+npx --yes esbuild "$RAIZ/src/core/performance/performanceEngine.ts" \
+  --bundle --platform=node --format=esm --packages=external \
+  --outfile="$TRABALHO/perfengine.mjs" --log-level=error
+node "$RAIZ/tests/metricas-saude-performance.mjs" "$TRABALHO/perfengine.mjs"
+
+echo
 echo "Verificacao concluida."
