@@ -561,3 +561,239 @@
   .iv-liga-banner__faixa .em { font-size: 3.6cqw; }
   .iv-liga-banner__faixa .msg { font-size: 3.1cqw; }
 }
+
+/* 7) Banner da tela Campeonatos ("NA INVICTUS, SUA DISCIPLINA...").
+ *
+ * Mesma tecnica do banner Liga (arte sem texto + HTML por cima com container
+ * queries), medida na arte-fonte banner_campeonato_base (1536x1024):
+ * divisorias entre os 4 icones em 52.99% / 67.06% / 80.79% da largura,
+ * faixa final comeca em 82.8% da altura. Aprovado com o usuario incluindo
+ * o ajuste de tamanho da descricao pequena (ficava ilegivel no celular).
+ */
+.iv-camp-banner {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1536 / 1024;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--card-borda);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), var(--card-brilho);
+}
+
+.iv-camp-banner img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.iv-camp-banner__texto {
+  position: absolute;
+  inset: 0;
+}
+
+.iv-camp-banner__kicker {
+  position: absolute;
+  left: 39.5%;
+  width: 47%;
+  top: 8%;
+  text-align: center;
+  color: var(--dourado);
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 2.2cqw;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.iv-camp-banner__titulo {
+  position: absolute;
+  left: 44%;
+  right: 21%;
+  top: 12%;
+  font-family: 'Anton', sans-serif;
+  text-transform: uppercase;
+  font-size: 5.4cqw;
+  line-height: 1.08;
+}
+
+.iv-camp-banner__titulo span { display: block; }
+
+.iv-camp-banner__titulo .l1 { color: #FFFFFF; }
+
+.iv-camp-banner__titulo .l2 {
+  background: linear-gradient(180deg, var(--dourado-claro) 20%, var(--dourado-escuro) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.iv-camp-banner__faixa {
+  position: absolute;
+  left: 50.5%;
+  right: 6.5%;
+  top: 37%;
+  bottom: 51%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.iv-camp-banner__faixa span {
+  display: block;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 2.1cqw;
+  line-height: 1.3;
+}
+
+.iv-camp-banner__faixa .l1 { color: #FFFFFF; }
+.iv-camp-banner__faixa .l2 { color: var(--dourado); }
+
+.iv-camp-banner__rec {
+  position: absolute;
+  top: 68%;
+  width: 12.8%;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.iv-camp-banner__rec b {
+  display: block;
+  color: #FFFFFF;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 1.85cqw;
+  text-transform: uppercase;
+  line-height: 1.15;
+}
+
+.iv-camp-banner__rec p {
+  display: block;
+  margin-top: 0.5em;
+  color: #CDC8C1;
+  font-family: 'Barlow', sans-serif;
+  font-size: 1.6cqw;
+  line-height: 1.3;
+}
+
+.iv-camp-banner__rec--1 { left: 46.1%; }
+.iv-camp-banner__rec--2 { left: 60.0%; }
+.iv-camp-banner__rec--3 { left: 73.9%; }
+.iv-camp-banner__rec--4 { left: 87.7%; }
+
+.iv-camp-banner__cta {
+  position: absolute;
+  left: 19%;
+  right: 14%;
+  top: 88%;
+  transform: translateY(-50%);
+  text-align: center;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 2.1cqw;
+  color: #FFFFFF;
+}
+
+.iv-camp-banner__cta b { color: var(--dourado); font-weight: 700; }
+
+/* Celular estreito: sobe o titulo/faixa e da mais respiro relativo aos
+   textos pequenos -- mesma logica do banner Liga. */
+@container (max-width: 430px) {
+  .iv-camp-banner__kicker { font-size: 2.6cqw; top: 6.5%; }
+  .iv-camp-banner__titulo { font-size: 6.0cqw; top: 10%; }
+  .iv-camp-banner__faixa span { font-size: 2.5cqw; }
+  .iv-camp-banner__rec b { font-size: 2.15cqw; }
+  .iv-camp-banner__rec p { font-size: 1.9cqw; }
+  .iv-camp-banner__cta { font-size: 2.5cqw; }
+}
+
+/* 8) Card "Pronto para fazer parte" (card_inscricao_base): celular com o
+ * logo + fundo dourado, texto e botao reais por cima. Medido na arte-fonte
+ * (1774x887): botao ocupa 47.9%-88.8% da largura e 73.0%-89.4% da altura.
+ */
+.iv-camp-cta {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1774 / 887;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--card-borda);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), var(--card-brilho);
+}
+
+.iv-camp-cta img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.iv-camp-cta__titulo {
+  position: absolute;
+  left: 41%;
+  right: 5%;
+  top: 10%;
+  font-family: 'Anton', sans-serif;
+  text-transform: uppercase;
+  line-height: 1.05;
+  font-size: 6.6cqw;
+}
+
+.iv-camp-cta__titulo span { display: block; }
+.iv-camp-cta__titulo .l1 { color: #FFFFFF; }
+.iv-camp-cta__titulo .l2 {
+  background: linear-gradient(180deg, var(--dourado-claro) 20%, var(--dourado-escuro) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.iv-camp-cta__texto {
+  position: absolute;
+  left: 41%;
+  right: 5%;
+  top: 38%;
+  color: #D8D2C9;
+  font-family: 'Barlow', sans-serif;
+  font-size: 2.5cqw;
+  line-height: 1.35;
+}
+
+.iv-camp-cta__botao {
+  position: absolute;
+  left: 47.9%;
+  width: 40.9%;
+  top: 73.0%;
+  height: 16.4%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  color: #2A1703;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: 2.9cqw;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.iv-camp-cta__botao svg {
+  width: 1.4em;
+  height: 1.4em;
+}
+
+@container (max-width: 430px) {
+  .iv-camp-cta__titulo { font-size: 7.6cqw; }
+  .iv-camp-cta__texto { font-size: 3.0cqw; top: 42%; }
+  .iv-camp-cta__botao { font-size: 3.4cqw; }
+}

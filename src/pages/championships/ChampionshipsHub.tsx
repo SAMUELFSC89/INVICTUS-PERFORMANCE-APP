@@ -1,224 +1,226 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Trophy, Users, Award, ChevronRight, Dumbbell, Activity } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  Target,
+  TrendingUp,
+  Trophy,
+  Users,
+  Calendar,
+  ShieldCheck,
+  ExternalLink
+} from 'lucide-react';
 import { championshipService } from '../../services/championshipService';
 import { useUser } from '../../UserContext';
-import { AthleteIllustration } from './AthleteIllustration';
+import { getNextSeasonCountdown } from '../../lib/seasonUtils';
+
+// As inscricoes da Liga Invictus sao feitas no site oficial, fora do app --
+// nao existe (ainda) um fluxo de checkout dentro do proprio app pra essa
+// temporada. Se isso mudar, e so trocar por uma rota interna.
+const INSCRICAO_URL = 'https://www.invictusperformance.app.br/';
+
+const RECURSOS = [
+  { Icon: Target, className: 'iv-camp-banner__rec--1', label: ['TREINE COM', 'PROPÓSITO'], desc: 'Cada treino conta pontos.' },
+  { Icon: TrendingUp, className: 'iv-camp-banner__rec--2', label: ['COMPITA DE', 'VERDADE'], desc: 'Ranking com seu nível.' },
+  { Icon: Trophy, className: 'iv-camp-banner__rec--3', label: ['PREMIAÇÕES', 'REAIS'], desc: 'Os melhores são premiados.' },
+  { Icon: Users, className: 'iv-camp-banner__rec--4', label: ['COMUNIDADE', 'ÉLITE'], desc: 'Só quem é consistente.' }
+] as const;
 
 export const ChampionshipsHub: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useUser();
-  const championships = championshipService.getChampionships();
+  const [tab, setTab] = useState<'liga' | 'meus'>('liga');
+  const [countdown, setCountdown] = useState(getNextSeasonCountdown());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCountdown(getNextSeasonCountdown()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const userRegistrations = championshipService.getUserRegistrations(user?.uid);
-  const hasActiveRegistrations = userRegistrations.some(r => r.status === 'ACTIVE');
+  const hasActiveRegistrations = userRegistrations.some((r) => r.status === 'ACTIVE');
 
   return (
     <div className="w-full min-h-screen bg-transparent text-white pb-28 pt-3 px-3.5 sm:px-5 max-w-md mx-auto select-none">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
-        <button
-          onClick={() => navigate('/')}
-          className="w-9 h-9 rounded-full bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white active:scale-95 transition-all cursor-pointer"
-          aria-label="Voltar para Início"
-        >
-          <ChevronLeft size={20} />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold tracking-wider font-bebas text-white uppercase m-0 leading-tight">
+      {/* Cabecalho */}
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={() => navigate('/')}
+            className="w-9 h-9 rounded-full bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white active:scale-95 transition-all cursor-pointer shrink-0"
+            aria-label="Voltar para Início"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <h1 className="text-xl font-bold tracking-wider font-bebas text-white uppercase m-0 leading-tight truncate">
             CAMPEONATOS
           </h1>
-          <p className="text-[11px] text-zinc-400 font-sans tracking-tight">
-            Compita com atletas reais e dispute o Top 5 oficial.
-          </p>
         </div>
+
+        {/* Leva pro site oficial -- ainda nao existe uma pagina de regras
+            geral dentro do app pra Liga Invictus (as unicas paginas de
+            regulamento hoje pedem o id de um campeonato especifico). */}
+        <a
+          href={INSCRICAO_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="w-9 h-9 rounded-full bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white active:scale-95 transition-all cursor-pointer shrink-0"
+          aria-label="Saiba mais"
+        >
+          <Info size={18} />
+        </a>
       </div>
 
-      {/* Section: CAMPEONATOS ATIVOS */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-3 px-0.5">
-          <span className="text-[12px] font-bold tracking-wider uppercase font-bebas text-[#ffb000]">
-            CAMPEONATOS ATIVOS
-          </span>
-        </div>
+      {/* Abas */}
+      <div className="iv-abas mb-5">
+        <button
+          className={tab === 'liga' ? 'iv-aba--ativa' : 'iv-aba--inativa'}
+          onClick={() => setTab('liga')}
+        >
+          LIGA INVICTUS
+        </button>
+        <button
+          className={tab === 'meus' ? 'iv-aba--ativa' : 'iv-aba--inativa'}
+          onClick={() => setTab('meus')}
+        >
+          MEUS CAMPEONATOS
+        </button>
+      </div>
 
-        <div className="space-y-4">
-          {championships.map((champ) => {
-            const isGold = champ.accentColor === 'gold';
-            const borderColor = isGold ? 'border-amber-500/30' : 'border-teal-500/30';
-            const btnBg = isGold
-              ? 'bg-[#ffb000] text-black hover:bg-amber-400'
-              : 'bg-[#14b8a6] text-black hover:bg-teal-400';
-            const statHighlight = isGold ? 'text-amber-400' : 'text-teal-400';
+      {tab === 'liga' ? (
+        <div className="flex flex-col gap-4">
+          {/* Banner: arte sem texto (banner_campeonato_base) + escrita real
+              em HTML por cima. Medidas e comentarios em invictus.css. */}
+          <section className="iv-camp-banner">
+            <img
+              src="/assets/championships/banner_campeonato_base.webp"
+              alt="Na Invictus, sua disciplina se torna recompensa"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (!target.src.endsWith('.png')) {
+                  target.src = '/assets/championships/banner_campeonato_base.png';
+                }
+              }}
+            />
+            <div className="iv-camp-banner__texto">
+              <span className="iv-camp-banner__kicker">Na Invictus,</span>
 
-            return (
-              <div
-                key={champ.id}
-                className={`relative overflow-hidden rounded-[20px] bg-[#121113]/90 backdrop-blur-md border ${borderColor} p-3.5 sm:p-4 shadow-xl transition-all`}
-              >
-                {/* Background Ambient Glow */}
-                <div
-                  className={`absolute -top-12 -right-12 w-44 h-44 rounded-full blur-3xl pointer-events-none opacity-20 ${
-                    isGold ? 'bg-amber-500' : 'bg-teal-500'
-                  }`}
-                />
-
-                {/* Card Content */}
-                {champ.id === 'invictus_arena_30d' ? (
-                  /* ARENA 30D OFFICIAL BANNER PRESENTATION */
-                  <div className="space-y-3">
-                    {/* Official Responsive Visual Banner Container */}
-                    <div
-                      onClick={() => navigate(`/championships/${champ.id}`)}
-                      className="relative w-full aspect-[16/9.2] rounded-[16px] overflow-hidden bg-black/80 border border-amber-500/40 shadow-inner group cursor-pointer"
-                    >
-                      <img
-                        src="/assets/championships/arena_30d_banner.webp"
-                        alt="INVICTUS ARENA 30D"
-                        className="w-full h-full object-cover object-center group-hover:scale-[1.02] transition-transform duration-300"
-                        referrerPolicy="no-referrer"
-                      />
-                      {/* Top Corner Metadata Badges */}
-                      <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10 pointer-events-none">
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-amber-500/40 text-amber-300 uppercase tracking-wider">
-                          {champ.durationDays} DIAS
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ) : champ.id === 'invictus_run_elite_30d' ? (
-                  /* RUN ELITE 30D OFFICIAL BANNER PRESENTATION */
-                  <div className="space-y-3">
-                    {/* Official Responsive Visual Banner Container */}
-                    <div
-                      onClick={() => navigate(`/championships/${champ.id}`)}
-                      className="relative w-full aspect-[16/9.2] rounded-[16px] overflow-hidden bg-black/80 border border-teal-500/40 shadow-inner group cursor-pointer"
-                    >
-                      <img
-                        src="/assets/championships/run_elite_30d_banner.webp"
-                        alt="INVICTUS RUN ELITE 30D"
-                        className="w-full h-full object-cover object-center group-hover:scale-[1.02] transition-transform duration-300"
-                        referrerPolicy="no-referrer"
-                      />
-                      {/* Top Corner Metadata Badges */}
-                      <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10 pointer-events-none">
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-teal-500/40 text-teal-300 uppercase tracking-wider">
-                          {champ.durationDays} DIAS
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  /* DEFAULT CARD TOP */
-                  <div className="flex items-start justify-between relative z-10">
-                    <div className="space-y-1.5 max-w-[62%]">
-                      {/* Badge + Subtitle */}
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center border ${
-                            isGold
-                              ? 'bg-amber-950/60 border-amber-500/40 text-[#ffb000]'
-                              : 'bg-teal-950/60 border-teal-500/40 text-[#14b8a6]'
-                          }`}
-                        >
-                          {isGold ? <Dumbbell size={15} /> : <Activity size={15} />}
-                        </div>
-                        <div>
-                          <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-400 block leading-none">
-                            INVICTUS
-                          </span>
-                          <h2 className="text-[17px] font-extrabold tracking-wide font-bebas text-white leading-none uppercase">
-                            {champ.title.replace('INVICTUS ', '')}
-                          </h2>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 font-sans leading-tight">
-                        {champ.subtitle}
-                      </p>
-
-                      {/* Metadata Pills */}
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-zinc-900/90 border border-zinc-800 text-zinc-300 uppercase tracking-wider">
-                          {champ.durationDays} DIAS
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Athlete Illustration */}
-                    <div className="w-24 h-24 sm:w-28 sm:h-28 -mt-1 -mr-1 shrink-0">
-                      <AthleteIllustration type={isGold ? 'arena' : 'run_elite'} className="w-full h-full" />
-                    </div>
-                  </div>
-                )}
-
-                {/* Stats 3-Column Strip */}
-                <div className="grid grid-cols-3 gap-1.5 py-2.5 px-2 my-3 rounded-xl bg-zinc-950/70 border border-zinc-800/80 relative z-10 text-center">
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-zinc-400 text-[10px]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                      <span className="font-bold text-amber-400 text-[11px]">Em breve</span>
-                    </div>
-                    <span className="text-[8.5px] uppercase tracking-wider text-zinc-400 block mt-0.5">
-                      LANÇAMENTO
-                    </span>
-                  </div>
-
-                  <div className="border-x border-zinc-800/80">
-                    <div className="flex items-center justify-center gap-1 text-zinc-400 text-[10px]">
-                      <Award size={11} className={statHighlight} />
-                      <span className="font-bold text-white text-[12px]">Top 5</span>
-                    </div>
-                    <span className="text-[8.5px] uppercase tracking-wider text-zinc-400 block mt-0.5">
-                      PREMIADOS
-                    </span>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-zinc-400 text-[10px]">
-                      <img src="/trofeu.webp" alt="Troféu" className="w-3.5 h-4 object-contain" />
-                      <span className={`font-bold text-[11px] ${statHighlight}`}>
-                        Em breve
-                      </span>
-                    </div>
-                    <span className="text-[8.5px] uppercase tracking-wider text-zinc-400 block mt-0.5">
-                      PREMIAÇÃO
-                    </span>
-                  </div>
-                </div>
-
-                {/* CTA Button */}
-                <button
-                  onClick={() => navigate(`/championships/${champ.id}`)}
-                  className={`w-full py-2.5 rounded-xl font-bebas text-[14px] font-bold tracking-wider flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98] transition-all cursor-pointer ${btnBg}`}
-                >
-                  <span>VER DETALHES</span>
-                  <ChevronRight size={15} />
-                </button>
+              <div className="iv-camp-banner__titulo">
+                <span className="l1">Sua disciplina</span>
+                <span className="l2">Se torna recompensa.</span>
               </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Section: MEUS CAMPEONATOS */}
-      <div>
-        <div className="flex items-center justify-between mb-2.5 px-0.5">
-          <span className="text-[12px] font-bold tracking-wider uppercase font-bebas text-zinc-400">
-            MEUS CAMPEONATOS
-          </span>
-          <button
-            onClick={() => navigate('/championships/my')}
-            className="text-[11px] text-[#ffb000] hover:underline font-bold font-sans flex items-center gap-0.5 cursor-pointer"
+              <div className="iv-camp-banner__faixa">
+                <span className="l1">Um campeonato que transforma</span>
+                <span className="l2">Esforço em premiações reais.</span>
+              </div>
+
+              {RECURSOS.map(({ Icon, className, label, desc }) => (
+                <div key={className} className={`iv-camp-banner__rec ${className}`}>
+                  <b>
+                    {label.map((line) => (
+                      <React.Fragment key={line}>
+                        {line}
+                        <br />
+                      </React.Fragment>
+                    ))}
+                  </b>
+                  <p>{desc}</p>
+                </div>
+              ))}
+
+              <div className="iv-camp-banner__cta">
+                Não é só treinar. <b>É superar. É evoluir.</b> É ser reconhecido.
+              </div>
+            </div>
+          </section>
+
+          {/* A temporada ainda nao comecou -- contador real, mesma fonte
+              (getNextSeasonCountdown) que ja alimenta o banner da Home. */}
+          <section className="iv-card flex items-center gap-3 !p-3.5">
+            <div className="iv-icone-circulo">
+              <Calendar size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="iv-titulo text-[14px] leading-tight">
+                A TEMPORADA AINDA NÃO COMEÇOU!
+              </p>
+              <p className="iv-texto text-[12px] mt-1">
+                Faltam {countdown.time.days}d {countdown.time.hours}h. Prepare-se e conecte seus dispositivos.
+              </p>
+            </div>
+            <span className="iv-chip shrink-0 text-center leading-tight whitespace-normal">
+              EM BREVE
+              <br />
+              NOVA TEMPORADA
+            </span>
+          </section>
+
+          {/* Pronto para fazer parte: arte sem texto (card_inscricao_base)
+              + texto e botao reais por cima. A inscricao e feita no site
+              oficial (MobileBridge.tsx abre links externos no navegador
+              nativo automaticamente). */}
+          <a
+            href={INSCRICAO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="iv-camp-cta block cursor-pointer active:scale-[0.98] transition-transform"
           >
-            Ver todos <ChevronRight size={12} />
-          </button>
-        </div>
+            <img
+              src="/assets/championships/card_inscricao_base.webp"
+              alt="Pronto para fazer parte?"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (!target.src.endsWith('.png')) {
+                  target.src = '/assets/championships/card_inscricao_base.png';
+                }
+              }}
+            />
+            <div className="iv-camp-cta__titulo">
+              <span className="l1">Pronto para</span>
+              <span className="l2">Fazer parte?</span>
+            </div>
+            <p className="iv-camp-cta__texto">
+              As inscrições são feitas pelo site. Garanta sua participação e esteja entre os que treinam com propósito.
+            </p>
+            <span className="iv-camp-cta__botao">
+              FAZER INSCRIÇÃO
+              <ExternalLink />
+            </span>
+          </a>
 
+          {/* Justo, transparente e seguro */}
+          <a
+            href={INSCRICAO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="iv-card flex items-center gap-3 !p-3.5"
+          >
+            <div className="iv-icone-circulo">
+              <ShieldCheck size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="iv-titulo text-[14px] leading-tight">
+                JUSTO, TRANSPARENTE E SEGURO
+              </p>
+              <p className="iv-texto text-[12px] mt-1 line-clamp-2">
+                Todos os treinos passam por validações rigorosas para garantir uma competição limpa e justa.
+              </p>
+            </div>
+            <ChevronRight size={18} className="text-[var(--dourado)] shrink-0" />
+          </a>
+        </div>
+      ) : (
         <div className="rounded-[18px] bg-[#121113] border border-zinc-800/80 p-3.5 flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-400 shrink-0">
               <Trophy size={18} />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] text-zinc-300 font-sans leading-tight">
                 {hasActiveRegistrations
                   ? 'Você possui inscrições ativas em andamento.'
@@ -234,7 +236,7 @@ export const ChampionshipsHub: React.FC = () => {
             {hasActiveRegistrations ? 'MEUS ATIVOS' : 'VER ATIVOS'}
           </button>
         </div>
-      </div>
+      )}
     </div>
   );
 };
