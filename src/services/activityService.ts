@@ -443,6 +443,37 @@ export const activityService = {
   },
 
   /**
+   * #98: registra uma leitura de velocidade INSTANTANEA do GPS
+   * (position.coords.speed, m/s -> aqui ja convertido pro chamador em km/h --
+   * ver Challenges.tsx). Diferente de addCheckpoint(), roda em TODO fix de GPS
+   * recebido durante a sessao (nao so nos ~1 a cada poucos segundos que viram
+   * checkpoint gravado) -- e por isso que resolve a diluicao: mesmo que nenhum
+   * checkpoint tenha sido salvo exatamente no instante do pico de velocidade
+   * (ex: um onibus acelerando entre dois semaforos), a amostra instantanea
+   * ainda foi vista e o maximo fica registrado. So mantemos o local
+   * (localStorage) -- nao ha necessidade de sincronizar cada amostra com o
+   * Firestore, so o maximo final importa e ele viaja no payload do
+   * endSession().
+   */
+  recordGpsSpeedSample(speedKmH: number, accuracyMeters?: number) {
+    const session = this.getCurrentSession();
+    if (!session || session.isPaused) return;
+    if (!Number.isFinite(speedKmH) || speedKmH < 0) return;
+    // Mesmo teto de precisao usado pra aceitar um checkpoint -- uma leitura de
+    // velocidade vinda de um GPS com sinal ruim nao e mais confiavel que a
+    // posicao que ele reportaria.
+    if (typeof accuracyMeters === 'number' && accuracyMeters > 50) return;
+    // Teto de sanidade: acima disso e quase certamente ruido/erro do sensor
+    // (nenhum veiculo terrestre legitimo do contexto do app chega a 300km/h),
+    // nao um pico real que valha a pena propagar.
+    if (speedKmH > 300) return;
+
+    session.gpsSpeedSampleCount = (session.gpsSpeedSampleCount || 0) + 1;
+    session.maxObservedSpeedKmH = Math.max(session.maxObservedSpeedKmH || 0, speedKmH);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  },
+
+  /**
    * #324: pausa a sessao ativa (semaforo, cadarco, banheiro). O tempo em
    * pausa NAO conta pra duracao final nem gera checkpoints -- ver endSession()
    * e addCheckpoint(). Retorna a sessao atualizada pro chamador manter o
@@ -698,6 +729,12 @@ export const activityService = {
           checkpoints: session.checkpoints,
           hasExercises: !!session.hasExercises,
           checkInId: session.checkInId,
+          // #98: velocidade instantanea maxima (Doppler do GPS) vista durante
+          // TODA a sessao -- ver recordGpsSpeedSample(). Complementa (nao
+          // substitui) o calculo por distancia/tempo entre checkpoints que o
+          // servidor ja faz; api/_lib/gps-engine.ts usa o maior dos dois.
+          maxObservedSpeedKmH: session.maxObservedSpeedKmH,
+          gpsSpeedSampleCount: session.gpsSpeedSampleCount || 0,
           isMockLocation: isMockLoc,
           isEmulator: isEmu,
           isRooted: isRoot,

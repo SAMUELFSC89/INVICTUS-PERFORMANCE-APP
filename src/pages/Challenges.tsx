@@ -297,13 +297,26 @@ export function Challenges() {
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
-        const { accuracy } = position.coords;
+        const { accuracy, speed } = position.coords;
         setGpsAccuracy(accuracy);
         setGpsSignal(accuracy < 20 ? 'STRONG' : accuracy < 50 ? 'WEAK' : 'SEARCHING');
 
+        // #98: amostra a velocidade INSTANTANEA (Doppler do chip de GPS -- o
+        // mesmo dado que Strava/Garmin usam pro pace ao vivo) em TODO fix
+        // recebido, independente do throttle de checkpoints abaixo. Um pico
+        // real de velocidade (ex: 60-70km/h dentro de um onibus) podia nunca
+        // aparecer no calculo por distancia/tempo entre dois checkpoints
+        // espaçados de ~10s, que naturalmente suaviza picos curtos.
+        // `speed` vem em m/s e pode ser null (nem todo dispositivo/navegador
+        // reporta); so propaga quando e um numero valido.
+        if (typeof speed === 'number' && Number.isFinite(speed) && speed >= 0) {
+          activityService.recordGpsSpeedSample(speed * 3.6, accuracy);
+        }
+
         const now = Date.now();
         // Limita a no maximo 1 checkpoint a cada ~10s para nao sobrecarregar
-        // Firestore/localStorage durante a sessao.
+        // Firestore/localStorage durante a sessao. A velocidade instantanea
+        // acima ja nao depende mais deste throttle.
         if (now - lastCheckpointTimeRef.current < 10000) return;
         lastCheckpointTimeRef.current = now;
 

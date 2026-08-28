@@ -325,6 +325,17 @@ export interface ActivitySession {
   pausedMs?: number;
   /** Timestamp ISO de quando a pausa atual comecou; null quando nao pausado. */
   pauseStartedAt?: string | null;
+  // #98: velocidade instantanea real do chip de GPS (position.coords.speed,
+  // derivada do desvio Doppler do sinal -- o mesmo dado que Strava/Garmin usam
+  // para o pace ao vivo), amostrada em TODO fix de GPS recebido durante a
+  // sessao, nao so nos que viram checkpoint gravado (throttlados a ~1 a cada
+  // poucos segundos). Corrige a diluicao de velocidade: um pico real de
+  // 60-70km/h (ex: dentro de um onibus) podia ficar mascarado ao calcular
+  // velocidade so pela distancia/tempo entre dois checkpoints espaçados,
+  // que suaviza picos curtos para uma media bem mais baixa.
+  maxObservedSpeedKmH?: number;
+  /** Quantas amostras de velocidade instantanea validas alimentaram maxObservedSpeedKmH (0 = sem GPS com campo speed disponivel neste dispositivo/navegador). */
+  gpsSpeedSampleCount?: number;
 }
 
 export interface Workout {

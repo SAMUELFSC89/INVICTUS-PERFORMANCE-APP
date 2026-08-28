@@ -136,6 +136,20 @@ export class FraudEngine {
         weightPenalty: 30
       });
     }
+    // #98: gap real de sinal (>45s entre checkpoints aceitos) e sozinho um
+    // sinal fraco -- perda de sinal em tunel/garagem e comum em atividades
+    // legitimas -- entao entra com peso baixo, so contribuindo pro escore
+    // agregado de risco em conjunto com outras evidencias, sem empurrar
+    // sozinho uma atividade normal para UNDER_REVIEW/BLOCKED.
+    if (gpsReport.hasDataGap) {
+      evidences.push({
+        code: 'GPS_DATA_GAP',
+        category: 'GPS',
+        severity: 'LOW',
+        description: 'Intervalo maior que o esperado entre checkpoints de GPS aceitos durante a atividade (possível perda de sinal).',
+        weightPenalty: 10
+      });
+    }
 
     // 3. Sensor Analysis
     const sensorReport = SensorEngine.evaluate(activity);
