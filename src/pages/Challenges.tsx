@@ -155,6 +155,14 @@ export function Challenges() {
     (initialActive?.cardioType && CARDIO_OPTIONS.find(o => o.id === initialActive.cardioType)) || CARDIO_OPTIONS[0]
   );
   const [loading, setLoading] = useState(false);
+  // #323: feedback visual imediato ao tocar em "INICIAR" -- startSession() faz
+  // 2 idas ao Firestore + (pra cardio ao ar livre) uma leitura de GPS antes de
+  // devolver, e sem isto o botao ficava parecendo travado por alguns segundos.
+  const [startingActivity, setStartingActivity] = useState(false);
+  // #323: permite abortar o fetch de /api/validate-activity que ficou pendurado
+  // (ex: conexao instavel dentro de um veiculo em movimento) tocando em
+  // "Descartar" durante a finalizacao, em vez de travar o atleta na tela.
+  const endActivityAbortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
   const [presenceCheckRequired, setPresenceCheckRequired] = useState(false);
@@ -354,6 +362,7 @@ export function Challenges() {
   const handleStartActivity = async (type: 'workout' | 'cardio') => {
     setStartActivityError(null);
     setError(null);
+    setStartingActivity(true);
     try {
       await activityService.requestMotionPermission();
       const session = await activityService.startSession(
@@ -380,6 +389,8 @@ export function Challenges() {
         }
       }
       setStartActivityError(rawMsg);
+    } finally {
+      setStartingActivity(false);
     }
   };
 
@@ -429,8 +440,14 @@ export function Challenges() {
     // para poder montar a rota real da tela de detalhe/card premium depois.
     const sessionBeforeEnd = activityService.getCurrentSession() || activeSession;
 
+    // #323: guardado numa ref pra handleCancelActivity poder abortar este
+    // fetch se o atleta tocar em "Descartar" enquanto a finalizacao ainda
+    // esta pendurada (ex: sem sinal dentro de um onibus).
+    const controller = new AbortController();
+    endActivityAbortRef.current = controller;
+
     try {
-      const res = await activityService.endSession();
+      const res = await activityService.endSession(undefined, controller.signal);
       if (res.presenceCheckRequired) {
         if (!res.presenceCheckId) {
           throw new Error('A validação de presença foi solicitada sem um identificador válido. Tente finalizar novamente.');
@@ -519,23 +536,40 @@ export function Challenges() {
       await refreshUser();
       await loadSubmissions();
     } catch (err: any) {
+      // #323: cancelamento explicito (tocou em "Descartar" durante a
+      // finalizacao) ja e tratado por handleCancelActivity -- aqui so evita
+      // mostrar um erro de "falha" por cima de uma acao que o proprio atleta
+      // escolheu.
+      if (err?.userCancelled) return;
       console.error('Error ending activity:', err);
       // Não descarta a sessão automaticamente: o usuário pode repetir o envio
       // quando houver falha temporária de rede ou do serviço de validação.
       setError(err.message || 'Falha ao encerrar atividade.');
     } finally {
+      if (endActivityAbortRef.current === controller) endActivityAbortRef.current = null;
       setLoading(false);
     }
   };
 
   // Cancel/Discard Workout/Cardio Session
   const handleCancelActivity = async () => {
-    if (confirm('Deseja realmente descartar e cancelar a sessão em andamento? Nenhum ponto será salvo.')) {
+    // #323: se houver um envio de finalizacao pendurado (loading=true, ex:
+    // sem sinal dentro de um veiculo em movimento), descartar precisa
+    // primeiro abortar esse fetch -- sem isso o atleta nao tinha NENHUMA
+    // saida na tela quando a finalizacao travava, so fechando o app na forca.
+    const pendingFinalize = Boolean(loading && endActivityAbortRef.current);
+    const confirmMsg = pendingFinalize
+      ? 'A finalização está demorando. Deseja cancelar o envio e descartar esta atividade? Nenhum ponto será salvo.'
+      : 'Deseja realmente descartar e cancelar a sessão em andamento? Nenhum ponto será salvo.';
+    if (confirm(confirmMsg)) {
+      endActivityAbortRef.current?.abort();
+      endActivityAbortRef.current = null;
       activityService.cancelSession();
       setActiveSession(null);
       setFlowScreen(null);
       setPendingChallenge(null);
       setError(null);
+      setLoading(false);
       triggerXPToast(0, 'Sessão descartada.');
     }
   };
@@ -850,6 +884,7 @@ export function Challenges() {
           completion={completion}
           startError={startActivityError}
           loading={loading}
+          startingActivity={startingActivity}
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}

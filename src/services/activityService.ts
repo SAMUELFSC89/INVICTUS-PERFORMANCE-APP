@@ -77,6 +77,17 @@ export const activityService = {
     const existing = this.getCurrentSession();
     if (existing) throw new Error('Já existe uma atividade em andamento.');
 
+    // #323: a checagem de sessao ativa no servidor e a leitura do perfil do
+    // usuario (userSnap, logo abaixo) sao independentes uma da outra -- antes
+    // rodavam em serie (await, await), somando duas idas e voltas de rede
+    // inteiras antes mesmo do GPS entrar em cena. Essa espera serial, oculta
+    // atras do botao "INICIAR" sem nenhum feedback visual, era a causa raiz
+    // do atraso de alguns segundos sentido ao tocar em iniciar o cardio.
+    // Disparadas juntas agora; o catch abaixo so cobre a query de sessao ativa.
+    const userRef = doc(db, 'users', user.uid);
+    const userSnapPromise = getDoc(userRef);
+    userSnapPromise.catch(() => {}); // evita unhandled rejection se descartada no caminho de sessao ja ativa
+
     try {
       const activeSessionsQuery = query(
         collection(db, 'active_sessions'),
@@ -125,8 +136,7 @@ export const activityService = {
       console.warn('[ActivityService] Server check for active sessions failed, proceeding locally:', checkErr);
     }
 
-    const userRef = doc(db, 'users', user.uid);
-    const userSnap = await getDoc(userRef);
+    const userSnap = await userSnapPromise;
     if (!userSnap.exists()) throw new Error('Perfil de usuário não encontrado');
     const userData = userSnap.data() as UserProfile;
 
@@ -430,7 +440,7 @@ export const activityService = {
     return distanceKm;
   },
 
-  async endSession(photoBase64?: string): Promise<EndSessionResult> {
+  async endSession(photoBase64?: string, externalSignal?: AbortSignal): Promise<EndSessionResult> {
     const session = this.getCurrentSession();
     if (!session) throw new Error('Nenhuma atividade em andamento.');
 
@@ -571,41 +581,74 @@ export const activityService = {
       steps: pedometerSteps,
     };
 
-    const response = await fetch('/api/validate-activity', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`
-      },
-      body: JSON.stringify({
-        type: session.type,
-        muscleGroup: session.muscleGroup,
-        cardioType: session.cardioType,
-        cardioTypeLabel: session.cardioTypeLabel,
-        isIndoorCardio: session.isIndoorCardio,
-        requiresGpsDistance: session.requiresGpsDistance,
-        smartwatchData,
-        healthTelemetry: collectedHealth.healthTelemetry,
-        metricSources: collectedHealth.metricSources,
-        durationMins,
-        distanceKm,
-        startLocation: session.startLocation,
-        endLocation,
-        photoBase64: finalPhoto,
-        checkpoints: session.checkpoints,
-        hasExercises: !!session.hasExercises,
-        checkInId: session.checkInId,
-        isMockLocation: isMockLoc,
-        isEmulator: isEmu,
-        isRooted: isRoot,
-        isDeveloperMode: isDev,
-        hasSensorOscillation: hasOscillation,
-        sensorStatus,
-        pedometerSteps,
-        sensorTelemetry,
-        avgHeartRate
-      })
-    });
+    // #323: esta chamada nao tinha NENHUM timeout -- em conexao instavel (ex:
+    // celular dentro de um onibus em movimento) o fetch podia ficar pendurado
+    // por tempo indefinido, sem nunca resolver nem rejeitar. Como o botao
+    // "Descartar e cancelar sessao" ficava desabilitado enquanto `loading` era
+    // verdadeiro (ChallengeActivityFlow.tsx), o atleta ficava sem nenhuma saida
+    // na tela -- so fechando o app na forca. Timeout defensivo de 25s some com
+    // o travamento; `externalSignal` deixa a propria UI abortar antes disso se
+    // o usuario tocar em descartar durante a finalizacao.
+    const internalController = new AbortController();
+    const timeoutId = setTimeout(() => internalController.abort(), 25000);
+    const onExternalAbort = () => internalController.abort();
+    if (externalSignal) {
+      if (externalSignal.aborted) internalController.abort();
+      else externalSignal.addEventListener('abort', onExternalAbort);
+    }
+
+    let response: Response;
+    try {
+      response = await fetch('/api/validate-activity', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          type: session.type,
+          muscleGroup: session.muscleGroup,
+          cardioType: session.cardioType,
+          cardioTypeLabel: session.cardioTypeLabel,
+          isIndoorCardio: session.isIndoorCardio,
+          requiresGpsDistance: session.requiresGpsDistance,
+          smartwatchData,
+          healthTelemetry: collectedHealth.healthTelemetry,
+          metricSources: collectedHealth.metricSources,
+          durationMins,
+          distanceKm,
+          startLocation: session.startLocation,
+          endLocation,
+          photoBase64: finalPhoto,
+          checkpoints: session.checkpoints,
+          hasExercises: !!session.hasExercises,
+          checkInId: session.checkInId,
+          isMockLocation: isMockLoc,
+          isEmulator: isEmu,
+          isRooted: isRoot,
+          isDeveloperMode: isDev,
+          hasSensorOscillation: hasOscillation,
+          sensorStatus,
+          pedometerSteps,
+          sensorTelemetry,
+          avgHeartRate
+        }),
+        signal: internalController.signal
+      });
+    } catch (fetchErr: any) {
+      if (fetchErr?.name === 'AbortError') {
+        if (externalSignal?.aborted) {
+          const cancelledErr = new Error('Envio cancelado pelo atleta.');
+          (cancelledErr as any).userCancelled = true;
+          throw cancelledErr;
+        }
+        throw new Error('A validação demorou demais e foi cancelada por segurança. Verifique sua conexão e tente finalizar novamente -- a atividade continua salva.');
+      }
+      throw new Error('Falha de conexão ao enviar a atividade para validação. A atividade continua salva; tente finalizar novamente.');
+    } finally {
+      clearTimeout(timeoutId);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));

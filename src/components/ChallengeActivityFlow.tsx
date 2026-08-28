@@ -48,6 +48,7 @@ export function ChallengeActivityFlow({
   completion,
   startError,
   loading = false,
+  startingActivity = false,
   onBack,
   onStart,
   onEnd,
@@ -75,6 +76,7 @@ export function ChallengeActivityFlow({
   completion?: ActivityCompletion | null;
   startError?: string | null;
   loading?: boolean;
+  startingActivity?: boolean;
   onBack: () => void;
   onStart: (type: 'workout' | 'cardio') => void;
   onEnd: () => void;
@@ -167,9 +169,9 @@ export function ChallengeActivityFlow({
           <button
             className="challenge-flow-primary"
             onClick={() => onStart('workout')}
-            disabled={workoutCompleted}
+            disabled={workoutCompleted || startingActivity}
           >
-            <Play />{workoutCompleted ? 'TREINO JÁ VALIDADO' : 'INICIAR TREINO'}
+            <Play />{workoutCompleted ? 'TREINO JÁ VALIDADO' : startingActivity ? 'INICIANDO...' : 'INICIAR TREINO'}
           </button>
         </section>
       )}
@@ -193,8 +195,8 @@ export function ChallengeActivityFlow({
           <p className="challenge-flow-note">
             <Navigation /> Corrida, caminhada e bike ao ar livre usam GPS.
           </p>
-          <button className="challenge-flow-primary" onClick={() => onStart('cardio')}>
-            <Play />INICIAR CARDIO
+          <button className="challenge-flow-primary" onClick={() => onStart('cardio')} disabled={startingActivity}>
+            <Play />{startingActivity ? 'INICIANDO...' : 'INICIAR CARDIO'}
           </button>
         </section>
       )}
@@ -210,8 +212,8 @@ export function ChallengeActivityFlow({
             <p>{startError || 'Toque abaixo para validar sua localização antes de iniciar.'}</p>
             {startError ? <MapPin /> : <Check />}
           </article>
-          <button className="challenge-flow-primary" onClick={() => onStart('workout')}>
-            <Check />{startError ? 'TENTAR NOVAMENTE' : 'VALIDAR E INICIAR'}
+          <button className="challenge-flow-primary" onClick={() => onStart('workout')} disabled={startingActivity}>
+            <Check />{startingActivity ? 'VALIDANDO...' : startError ? 'TENTAR NOVAMENTE' : 'VALIDAR E INICIAR'}
           </button>
         </section>
       )}
@@ -278,14 +280,18 @@ export function ChallengeActivityFlow({
             {loading ? 'FINALIZANDO...' : (session?.type === 'cardio' ? 'FINALIZAR ATIVIDADE' : 'FINALIZAR TREINO')}
           </button>
           {onCancel && (
+            // #323: fica habilitado mesmo com `loading` true de proposito -- se o
+            // envio de finalizacao ficar pendurado (sem sinal, ex: dentro de um
+            // veiculo em movimento), este e o unico jeito do atleta sair da tela
+            // sem forcar o fechamento do app. onCancel (handleCancelActivity)
+            // aborta o envio pendente antes de descartar a sessao.
             <button
               type="button"
               className="challenge-flow-secondary mt-2 flex items-center justify-center gap-1 text-rose-400 hover:text-rose-300 transition-colors"
               onClick={onCancel}
-              disabled={loading}
             >
               <XCircle size={14} />
-              <span>Descartar e cancelar sessão</span>
+              <span>{loading ? 'Cancelar envio e descartar' : 'Descartar e cancelar sessão'}</span>
             </button>
           )}
         </section>

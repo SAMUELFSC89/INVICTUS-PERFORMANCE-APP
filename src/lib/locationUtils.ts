@@ -183,10 +183,16 @@ if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
  * Enforces: enableHighAccuracy: true, maximumAge: 0, timeout: 15000
  */
 export async function getCurrentLocation(
-  highAccuracy = true, 
+  highAccuracy = true,
   timeout = 15000
 ): Promise<{ lat: number; lng: number; accuracy?: number }> {
   console.log('[Location] getCurrentLocation called with strictly high accuracy, maximumAge=0', { highAccuracy, timeout });
+  // #323: o `timeout` recebido por parametro era ignorado -- a chamada real ao
+  // getCurrentPosition abaixo tinha "timeout: 15000" fixo no literal, entao
+  // quem pedia um limite menor (ex: endSession() pedindo 4000ms pra nao segurar
+  // o encerramento da corrida esperando uma localizacao de fechamento) na
+  // pratica esperava os 15s inteiros do jeito mesmo. Contribuia pro atraso
+  // sentido ao tocar em "FINALIZAR ATIVIDADE".
   
   if (!navigator.geolocation) {
     throw new Error('Geolocalização não suportada neste navegador.');
@@ -224,13 +230,13 @@ export async function getCurrentLocation(
         } else if (err.code === 2) {
           msg = 'Sinal de GPS indisponível ou inacessível. Vá para uma área aberta e tente novamente.';
         } else if (err.code === 3) {
-          msg = 'Tempo limite esgotado ao tentar obter sua localização de alta precisão (15s). Tente novamente em local aberto.';
+          msg = `Tempo limite esgotado ao tentar obter sua localização de alta precisão (${Math.round(timeout / 1000)}s). Tente novamente em local aberto.`;
         }
         reject(new Error(msg));
       },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 15000, 
+      {
+        enableHighAccuracy: true,
+        timeout, // #323: respeita o limite pedido pelo chamador (era 15000 fixo)
         maximumAge: 0 // STRICT REQUIREMENT: Never use cached locations
       }
     );
