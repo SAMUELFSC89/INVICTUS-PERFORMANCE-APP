@@ -1,5 +1,19 @@
 import { Capacitor } from '@capacitor/core';
-import { Health as CapgoHealth } from '@capgo/capacitor-health';
+// #12: importado via alias npm 'capgo-health-vitals' (aponta pro mesmo
+// pacote @capgo/capacitor-health), NAO pelo nome real do pacote. Motivo:
+// o build iOS no Codemagic falhava no passo de resolucao do Swift Package
+// Manager com "Conflicting identity for capacitor-health" -- confirmado
+// comparando os dois Package.swift reais (mley e Capgo): apesar de terem
+// nomes internos diferentes ("CapacitorHealth" vs "CapgoCapacitorHealth"),
+// o SPM usa o ULTIMO SEGMENTO DO CAMINHO local (node_modules/<pasta>) como
+// identidade de pacote quando referenciado por path -- e o npm instala
+// "@capgo/capacitor-health" numa pasta cujo ultimo segmento tambem e
+// literalmente "capacitor-health", igual ao pacote do mley. O alias npm
+// (`"capgo-health-vitals": "npm:@capgo/capacitor-health@..."` no
+// package.json) instala o mesmo pacote numa pasta com outro nome
+// (node_modules/capgo-health-vitals), o que resolve a colisao sem afetar
+// em nada a API do plugin em si.
+import { Health as CapgoHealth } from 'capgo-health-vitals';
 
 // #253: leitura de METRICAS PASSIVAS (FC repouso, HRV, sono, peso) via
 // @capgo/capacitor-health -- plugin DIFERENTE do "capacitor-health" (mley)
