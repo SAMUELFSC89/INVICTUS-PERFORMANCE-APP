@@ -29,6 +29,7 @@ import { PowerLift } from './pages/PowerLift';
 import { Health, HealthReport } from './pages/Health';
 import { HealthFullReport } from './pages/HealthFullReport';
 import { League } from './pages/League';
+import { SeasonInscription } from './pages/SeasonInscription';
 import { Notifications } from './pages/Notifications';
 import { ChampionshipsHub } from './pages/championships/ChampionshipsHub';
 import { ChampionshipDetails } from './pages/championships/ChampionshipDetails';
@@ -69,6 +70,7 @@ export default function App() {
                 <Route path="/invite" element={<Home />} />
                 <Route path="/rankings" element={<Rankings />} />
                 <Route path="/league" element={<League />} />
+                <Route path="/league/inscricao" element={<SeasonInscription />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/gym" element={<Navigate to="/profile/academy" replace />} />
                 <Route path="/challenges" element={<Challenges />} />

@@ -42,6 +42,13 @@ export function League() {
         <button onClick={() => navigate('/rankings')}>VER RANKING <ChevronRight /></button>
       </section>
 
+      {/* #109/#110: entrada para a inscricao paga da temporada -- antes disso
+          o backend de cobranca PIX existia sem nenhuma tela que o chamasse. */}
+      <button className="league-inscription-cta" onClick={() => navigate('/league/inscricao')}>
+        <span>INSCREVER-SE NA TEMPORADA</span>
+        <ChevronRight />
+      </button>
+
       <section className="league-rules">
         <h2>COMO FUNCIONA</h2>
         <div><Trophy /><p><b>Competição semanal de performance</b><span>Pontue com treinos e desafios validados para acompanhar sua posição.</span></p></div>

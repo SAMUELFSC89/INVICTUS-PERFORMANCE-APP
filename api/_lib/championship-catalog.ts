@@ -29,7 +29,12 @@ export const CHAMPIONSHIPS: Championship[] = [
     durationDays: 30,
     startAt: '2026-09-01T00:00:00.000Z',
     endAt: '2026-09-30T23:59:59.000Z',
-    registrationPrice: 49.90,
+    // #109: padronizado para R$1 a pedido do usuario, para testar o fluxo
+    // completo de inscricao (checkout -> PIX -> webhook -> confirmacao) com
+    // dinheiro real de baixo valor. O ambiente Asaas hoje esta configurado
+    // para PRODUCAO (nao sandbox) -- este R$1 e cobrado de verdade. Voltar
+    // para 49.90 antes de considerar os campeonatos "no ar" para o publico.
+    registrationPrice: 1,
     participantCount: 0,
     grossRevenue: 0,
     netEligibleRevenue: 0,
@@ -63,7 +68,12 @@ export const CHAMPIONSHIPS: Championship[] = [
     durationDays: 30,
     startAt: '2026-09-01T00:00:00.000Z',
     endAt: '2026-09-30T23:59:59.000Z',
-    registrationPrice: 49.90,
+    // #109: padronizado para R$1 a pedido do usuario, para testar o fluxo
+    // completo de inscricao (checkout -> PIX -> webhook -> confirmacao) com
+    // dinheiro real de baixo valor. O ambiente Asaas hoje esta configurado
+    // para PRODUCAO (nao sandbox) -- este R$1 e cobrado de verdade. Voltar
+    // para 49.90 antes de considerar os campeonatos "no ar" para o publico.
+    registrationPrice: 1,
     participantCount: 0,
     grossRevenue: 0,
     netEligibleRevenue: 0,
