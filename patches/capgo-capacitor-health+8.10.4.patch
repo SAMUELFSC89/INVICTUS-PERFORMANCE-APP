@@ -1,3 +1,49 @@
+diff --git a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt
+index 422fd74..60d1ade 100644
+--- a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt
++++ b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt
+@@ -1,6 +1,5 @@
+ package app.capgo.plugin.health
+
+-import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
+ import androidx.health.connect.client.permission.HealthPermission
+ import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+ import androidx.health.connect.client.records.BasalBodyTemperatureRecord
+@@ -28,7 +27,11 @@ import androidx.health.connect.client.records.Vo2MaxRecord
+ import androidx.health.connect.client.records.WeightRecord
+ import kotlin.reflect.KClass
+
+-@OptIn(ExperimentalMindfulnessSessionApi::class)
++// #322: connect-client:1.1.0 graduou MindfulnessSessionRecord para API estavel
++// e REMOVEU a classe ExperimentalMindfulnessSessionApi. O pacote capgo-capacitor-health
++// ainda trazia o @OptIn de uma versao beta anterior, quebrando a compilacao Kotlin
++// no Android ("Unresolved reference: ExperimentalMindfulnessSessionApi"). Anotacao
++// removida -- MindfulnessSessionRecord continua usado normalmente, sem opt-in.
+ enum class HealthDataType(
+     val identifier: String,
+     val recordClass: KClass<out Record>,
+diff --git a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
+index fde25d1..3c3c2c7 100644
+--- a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
++++ b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
+@@ -3,7 +3,6 @@ package app.capgo.plugin.health
+ import androidx.health.connect.client.HealthConnectClient
+ import androidx.health.connect.client.HealthConnectFeatures
+ import androidx.health.connect.client.aggregate.AggregationResult
+-import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
+ import androidx.health.connect.client.permission.HealthPermission
+ import androidx.health.connect.client.request.AggregateGroupByDurationRequest
+ import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+@@ -55,7 +54,8 @@ import kotlin.collections.buildSet
+ import kotlin.math.min
+ import kotlinx.coroutines.CancellationException
+
+-@OptIn(ExperimentalMindfulnessSessionApi::class)
++// #322: mesma correcao de HealthDataType.kt -- ExperimentalMindfulnessSessionApi
++// nao existe mais em connect-client:1.1.0 (MindfulnessSessionRecord ja e estavel).
+ class HealthManager {
+
+     private val formatter: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
 diff --git a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
 index 4e4904b..51a6a5d 100644
 --- a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
