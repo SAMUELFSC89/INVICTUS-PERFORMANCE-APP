@@ -1,0 +1,39 @@
+diff --git a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
+index 4e4904b..51a6a5d 100644
+--- a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
++++ b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
+@@ -1,10 +1,31 @@
+ import Foundation
+ import Capacitor
+
+-@objc(HealthPlugin)
+-public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
++// #71b (patch-package): renomeado de "HealthPlugin" para "CapgoHealthPlugin".
++// Motivo: Codemagic build #29 falhou no LINKER com
++// "duplicate symbol '_OBJC_CLASS_$_HealthPlugin'" entre este plugin (Capgo)
++// e o plugin "capacitor-health" do mley (HealthPluginPlugin.o) -- os dois
++// declaravam, de forma totalmente independente, uma classe Swift/ObjC
++// chamada literalmente "HealthPlugin" (confirmado comparando o
++// HealthPlugin.swift de cada um). ObjC nao tem namespace real de classes,
++// entao dois .o com o mesmo simbolo @objc colidem no link mesmo com os
++// pacotes SPM resolvendo certinho.
++//
++// So o NOME DA CLASSE muda aqui. `jsName = "Health"` continua igual --
++// e por esse nome que o wrapper JS do pacote npm resolve
++// `Capacitor.Plugins.Health` em tempo de execucao, entao a API publica
++// (HealthVitalsProvider.ts) nao precisa de nenhuma mudanca. `identifier`
++// tambem foi ajustado por seguranca (evitar qualquer colisao de string em
++// runtime), mas quem importa de verdade pro linker e o `@objc(...)`.
++//
++// Este patch e aplicado automaticamente a cada `npm ci`/`npm install` via
++// patch-package (ver patches/capgo-capacitor-health+8.10.4.patch e
++// "postinstall" em package.json) -- nao editar node_modules manualmente
++// de novo, editar o patch.
++@objc(CapgoHealthPlugin)
++public class CapgoHealthPlugin: CAPPlugin, CAPBridgedPlugin {
+     private let pluginVersion: String = "8.10.4"
+-    public let identifier = "HealthPlugin"
++    public let identifier = "CapgoHealthPlugin"
+     public let jsName = "Health"
+     public let pluginMethods: [CAPPluginMethod] = [
+         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),

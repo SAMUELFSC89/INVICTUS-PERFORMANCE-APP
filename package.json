@@ -17,6 +17,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "postinstall": "patch-package",
     "cap:sync": "npm run build && npx cap copy && npx cap sync",
     "cap:assets": "npx @capacitor/assets generate --android",
     "cap:open:ios": "npx cap open ios",
@@ -101,6 +102,7 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^10.3.0",
     "jest": "^30.4.2",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^4.1.14",
     "ts-jest": "^29.4.12"
   },
