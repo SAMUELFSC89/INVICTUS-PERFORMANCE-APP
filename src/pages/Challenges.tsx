@@ -8,6 +8,7 @@ import {
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { activityService } from '../services/activityService';
+import { activityNotificationService } from '../services/activityNotificationService';
 import { userService } from '../services/userService';
 import { stravaService } from '../services/stravaService';
 import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
@@ -86,6 +87,11 @@ export function Challenges() {
 
   // Live GPS tracking state (distância/pace em tempo real durante cardio ao ar livre)
   const [liveDistanceKm, setLiveDistanceKm] = useState(0);
+  // #328: espelha liveDistanceKm p/ o tick de 1s da notificação Android poder
+  // ler o valor mais recente sem precisar re-executar o efeito do GPS a cada
+  // atualização de distância.
+  const liveDistanceKmRef = useRef(0);
+  useEffect(() => { liveDistanceKmRef.current = liveDistanceKm; }, [liveDistanceKm]);
   const gpsWatchIdRef = useRef<number | null>(null);
   const lastCheckpointTimeRef = useRef<number>(0);
 
@@ -234,6 +240,10 @@ export function Challenges() {
         const pausedMs = (current.pausedMs || 0) + Math.max(0, pausaCorrente);
         const duration = Math.max(0, Math.floor((now - startTimeMs - pausedMs) / 1000));
         setElapsedTime(duration);
+        // #328: mantém a notificação persistente (Android) viva com o
+        // cronômetro/distância atuais -- update() já se auto-throttla, então
+        // pode ser chamado a cada tick sem sobrecarregar o sistema.
+        activityNotificationService.update(current, duration, liveDistanceKmRef.current);
         if (!flowScreen) {
           setFlowScreen('active');
           if (current.cardioType) {
@@ -383,6 +393,10 @@ export function Challenges() {
       setPendingChallenge(null);
       setCompletion(null);
       setFlowScreen('active');
+      // #328: sobe a notificação persistente Android assim que a sessão
+      // realmente começa -- é best-effort e nunca bloqueia o fluxo (ver
+      // implementação do service).
+      activityNotificationService.start(session, 0, 0);
     } catch (err: any) {
       console.error('Error starting activity:', err);
       let rawMsg = err.message || 'Falha ao iniciar atividade.';
@@ -465,6 +479,11 @@ export function Challenges() {
         setNotice(res.userMessage || 'Uma confirmação de presença é necessária antes da validação da atividade.');
         return;
       }
+
+      // #328: a sessão deixou de estar "ativa" nesse ponto (validada, pendente
+      // ou rejeitada) -- a notificação persistente não faz mais sentido em
+      // nenhum desses desfechos.
+      activityNotificationService.stop();
 
       const status = normalizeActivityValidationStatus(
         res.validation?.status ?? res.workout?.status
@@ -571,6 +590,7 @@ export function Challenges() {
       endActivityAbortRef.current?.abort();
       endActivityAbortRef.current = null;
       activityService.cancelSession();
+      activityNotificationService.stop();
       setActiveSession(null);
       setFlowScreen(null);
       setPendingChallenge(null);
@@ -586,8 +606,28 @@ export function Challenges() {
     const updated = activeSession?.isPaused
       ? activityService.resumeSession()
       : activityService.pauseSession();
-    if (updated) setActiveSession(updated);
+    if (updated) {
+      setActiveSession(updated);
+      // #328: mudança de estado (pausar/retomar) atualiza a notificação na
+      // hora -- não espera o próximo tick de 5s do throttle normal.
+      activityNotificationService.update(updated, elapsedTime, liveDistanceKmRef.current, true);
+    }
   };
+
+  // #328: registra o listener dos botões da notificação persistente (Pausar/
+  // Retomar e Finalizar) uma única vez. Usa refs para sempre chamar a versão
+  // mais recente dos handlers -- sem isso o listener (registrado com []) ficaria
+  // preso na closure da primeira renderização, com estado desatualizado.
+  const handleTogglePauseRef = useRef(handleTogglePause);
+  handleTogglePauseRef.current = handleTogglePause;
+  const handleEndActivityRef = useRef(handleEndActivity);
+  handleEndActivityRef.current = handleEndActivity;
+  useEffect(() => {
+    activityNotificationService.registerButtonListener(
+      () => handleTogglePauseRef.current(),
+      () => handleEndActivityRef.current()
+    );
+  }, []);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
