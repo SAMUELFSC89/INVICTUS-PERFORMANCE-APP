@@ -56,35 +56,11 @@ export interface AdvancedRunStats {
   photoProof?: string;
 }
 
-export interface RunningStatsBase {
-  userId: string;
-  best_run_km_month: number;
-  best_run_km_week: number;
-  last_run_date: string;
-  is_paid_running: boolean;
-  sessionId?: string;
-  last_run_stats?: AdvancedRunStats;
-  validation?: {
-    score: number;
-    status: 'VALID' | 'SUSPICIOUS' | 'INVALID';
-    reasons: string[];
-  };
-}
-
-export interface RankingEntry {
-  userId: string;
-  displayName: string;
-  photoURL: string | null;
-  km: number;
-  is_paid_running: boolean;
-}
-
-export interface RankingResponse {
-  ranking: RankingEntry[];
-  totalPool: number;
-  potentialOfficialRank?: number | null;
-  officialPreview?: { displayName: string; km: number }[] | null;
-}
+// #96: RunningStatsBase, RankingEntry e RankingResponse foram removidos junto
+// com getMyStats()/addRun()/getRanking() abaixo -- eram usados so por esses
+// tres metodos, que eram a 5a formula de pontuacao paralela (ou dependiam
+// dela via RunTracker.tsx, orfao). getHistory() continua servindo dados
+// historicos legados -- por isso fica.
 
 // Cache for running stats and ranking
 const serviceCache: Record<string, { data: any, timestamp: number }> = {};
@@ -116,120 +92,6 @@ function setCache(key: string, data: any) {
 }
 
 export const runningService = {
-  async getMyStats(): Promise<RunningStatsBase | null> {
-    const user = auth.currentUser;
-    if (!user) return null;
-    
-    const cacheKey = `stats_${user.uid}`;
-    const cached = getCached(cacheKey);
-    if (cached) return cached;
-
-    const API_BASE = getApiBase();
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch(`${API_BASE}?action=me&userId=${user.uid}`, {
-        headers: { 'Authorization': `Bearer ${idToken}` }
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        console.error('Relatório de erro (getMyStats):', text);
-        if (isQuotaError(text)) throw new QuotaExhaustedError('Servidor em alta carga. Tente novamente em instantes.');
-        throw new Error(`Erro ${res.status}: ${text}`);
-      }
-      const data = await res.json();
-      setCache(cacheKey, data);
-      return data;
-    } catch (err: any) {
-      // If we have ANY cached data (even from localStorage and very old), return it on quota error
-      const anyCached = getCached(cacheKey, true);
-      if ((err instanceof QuotaExhaustedError || isQuotaError(err?.message)) && anyCached) {
-        console.warn('[RunningService] Using persistent cached data due to quota limits');
-        return anyCached;
-      }
-      console.error('RunningService.getMyStats Error:', err);
-      // Return a minimal fallback object instead of throwing if we have to
-      return getCached(cacheKey, true) || null;
-    }
-  },
-
-  async addRun(stats: Partial<AdvancedRunStats>): Promise<RunningStatsBase | null> {
-    const user = auth.currentUser;
-    if (!user) return null;
-
-    const API_BASE = getApiBase();
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch(`${API_BASE}?action=add`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ userId: user.uid, ...stats })
-      });
-      if (!res.ok) {
-        const rawText = await res.text();
-        let errMsg = 'Não conseguimos validar esta atividade no momento. Tente novamente seguindo as regras do desafio.';
-        try {
-          const jsonErr = JSON.parse(rawText);
-          errMsg = jsonErr.userMessage || jsonErr.error || errMsg;
-        } catch (_) {
-          if (rawText && !rawText.includes('<!DOCTYPE') && rawText.length < 200) errMsg = rawText;
-        }
-        if (isQuotaError(rawText) || isQuotaError(errMsg)) {
-          throw new QuotaExhaustedError('Servidor ocupado. Tente novamente.');
-        }
-        throw new Error(errMsg);
-      }
-      
-      // Invalidate cache
-      delete serviceCache[`stats_${user.uid}`];
-      delete serviceCache['ranking_month_official'];
-      delete serviceCache['ranking_week_official'];
-
-      const respData = await res.json();
-      return respData;
-    } catch (err: any) {
-      console.error('RunningService.addRun Error:', err);
-      throw err;
-    }
-  },
-
-  async getRanking(period: 'month' | 'week', mode: 'official' | 'demo' = 'official'): Promise<RankingResponse> {
-    const user = auth.currentUser;
-    const userIdParam = user ? `&userId=${user.uid}` : '';
-    const API_BASE = getApiBase();
-    
-    const cacheKey = `ranking_${period}_${mode}_${user?.uid || 'guest'}`;
-    const cached = getCached(cacheKey);
-    if (cached) return cached;
-
-    try {
-      let headers: HeadersInit = {};
-      if (user) {
-        const idToken = await user.getIdToken();
-        headers['Authorization'] = `Bearer ${idToken}`;
-      }
-      
-      const res = await fetch(`${API_BASE}?action=ranking&period=${period}&mode=${mode}${userIdParam}`, {
-        headers
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        console.error('Relatório de erro (getRanking):', text);
-        if (isQuotaError(text)) throw new QuotaExhaustedError('Ranking em atualização. Tente novamente em instantes.');
-        throw new Error(`Erro ${res.status}: ${text}`);
-      }
-      const data = await res.json();
-      setCache(cacheKey, data);
-      return data;
-    } catch (err: any) {
-      if ((err instanceof QuotaExhaustedError || isQuotaError(err?.message)) && cached) return cached;
-      console.error('RunningService.getRanking Error:', err);
-      throw err;
-    }
-  },
-  
   async getHistory(userId: string): Promise<{ history: RunSession[] }> {
     const user = auth.currentUser;
     const API_BASE = getApiBase();

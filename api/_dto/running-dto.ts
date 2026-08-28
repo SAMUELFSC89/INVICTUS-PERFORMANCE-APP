@@ -1,39 +1,5 @@
-export interface AddRunRequest {
-  userId: string;
-  km: number;
-  timeSeconds?: number;
-  pace?: string;
-  calories?: number;
-  elevationGain?: number;
-  steps?: number;
-  trajectory?: any[];
-  date?: string;
-  session?: Record<string, any>;
-  isMockLocation?: boolean;
-  isEmulator?: boolean;
-  isRooted?: boolean;
-  isDeveloperMode?: boolean;
-  hasSensorOscillation?: boolean;
-  sensorStatus?: string;
-  avgHeartRate?: number;
-  sensorTelemetry?: { accelVariance?: number; gyroVariance?: number };
-}
-
-export interface AddRunResponse {
-  success: boolean;
-  status: string;
-  isScoringEligible?: boolean;
-  nonScoringReason?: string | null;
-  pointsEarned?: number;
-  pointsAwarded?: number;
-  userMessage?: string;
-  message?: string;
-  presenceCheckRequired?: boolean;
-  presenceCheckId?: string;
-  livenessPrompt?: string;
-  sessionId?: string | null;
-  [key: string]: any;
-}
+// #96: AddRunRequest e AddRunResponse foram removidos junto com
+// RunningService.addRun() -- ver running-service.ts e running-repository.ts.
 
 export interface GetRankingResponse {
   ranking: Array<{

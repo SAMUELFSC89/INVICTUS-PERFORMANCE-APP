@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config({ override: true });
 import express from 'express';
 import helmet from 'helmet';
-import { globalLimiter, activityLimiter } from './_lib/rate-limit.js';
+import { globalLimiter } from './_lib/rate-limit.js';
 import { RequestLogger } from './_lib/logger.js';
 import { initSentry, captureException } from './_lib/sentry.js';
 import { VercelRequest, VercelResponse } from '@vercel/node';
@@ -23,7 +23,7 @@ import gymsHandler from './_handlers/gyms.js';
 import gymsJoinHandler from './_handlers/gyms_join.js';
 import gymsCheckinHandler from './_handlers/gyms_checkin.js';
 import gymsPhotoHandler from './_handlers/gyms_photo.js';
-import runningHandler, { handleRunActivity } from './_handlers/running.js';
+import runningHandler from './_handlers/running.js';
 import habitsHandler from './_handlers/habits.js';
 import validateActivityHandler from './_handlers/validate-activity.js';
 import validatePresenceHandler from './_handlers/validate-presence.js';
@@ -195,8 +195,9 @@ router.all('/gyms/photo', wrap(gymsPhotoHandler));
 console.log('[ROUTE] /running', typeof runningHandler);
 router.all('/running', wrap(runningHandler));
 
-console.log('[ROUTE] /activities/running', typeof handleRunActivity);
-router.post('/activities/running', activityLimiter, wrap(handleRunActivity));
+// #96: /activities/running (e a acao 'add' que ela forcava) foi removida --
+// era uma 5a formula de pontuacao paralela, sem nenhum chamador vivo no app.
+// Ver api/_handlers/running.ts.
 
 console.log('[ROUTE] /activity-map', typeof activityMapHandler);
 router.all('/activity-map', wrap(activityMapHandler));

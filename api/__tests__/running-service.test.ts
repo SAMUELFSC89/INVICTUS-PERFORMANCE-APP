@@ -9,18 +9,6 @@ describe('RunningService', () => {
     jest.spyOn(Math, 'random').mockReturnValue(0.99);
     mockRunningRepo = {
       getUserStats: jest.fn().mockResolvedValue(null),
-      setUserStats: jest.fn().mockResolvedValue(undefined),
-      addRunSession: jest.fn().mockResolvedValue('session123'),
-      getUserTrustScore: jest.fn().mockResolvedValue(100),
-      createPendingPresenceCheck: jest.fn().mockResolvedValue({
-        presenceCheckId: 'check123',
-        expiredAt: '2026-12-31T23:59:59.000Z'
-      }),
-      processRunTransaction: jest.fn().mockResolvedValue({
-        isScoringEligible: true,
-        nonScoringReason: null,
-        finalXpAwarded: 45
-      }),
       getRanking: jest.fn().mockResolvedValue([
         { userId: 'u1', displayName: 'Atleta 1', km: 12.5 }
       ]),
@@ -40,37 +28,9 @@ describe('RunningService', () => {
     expect(stats.best_run_km_month).toBe(0);
   });
 
-  test('addRun should reject stationary/zero movement (< 0.1km)', async () => {
-    const res = await runningService.addRun({
-      userId: 'user123',
-      km: 0
-    });
-
-    expect(res.success).toBe(false);
-    expect(res.reasonCode).toBe('NO_MOVEMENT_DETECTED');
-    expect(res.pointsEarned).toBe(0);
-  });
-
-  test('addRun should process transaction and award points when valid', async () => {
-    const now = Date.now();
-    const res = await runningService.addRun({
-      userId: 'user123',
-      km: 5.0,
-      timeSeconds: 1800,
-      steps: 5200,
-      sensorTelemetry: { accelVariance: 1.5, gyroVariance: 0.9 },
-      trajectory: [
-        { latitude: -23.55052, longitude: -46.633308, timestamp: new Date(now - 1800000).toISOString() },
-        { latitude: -23.56052, longitude: -46.643308, timestamp: new Date(now - 900000).toISOString() },
-        { latitude: -23.57052, longitude: -46.653308, timestamp: new Date(now).toISOString() }
-      ]
-    });
-
-    expect(res.success).toBe(true);
-    expect(res.status).toBe('approved');
-    expect(res.pointsEarned).toBe(45);
-    expect(mockRunningRepo.processRunTransaction).toHaveBeenCalled();
-  });
+  // #96: os dois testes de addRun() foram removidos junto com o metodo --
+  // era a 5a formula de pontuacao paralela, sem chamador vivo no app. Ver
+  // running-service.ts e running-repository.ts.
 
   test('getRanking should return cached or fetched ranking list', async () => {
     const res = await runningService.getRanking('month', 'official');

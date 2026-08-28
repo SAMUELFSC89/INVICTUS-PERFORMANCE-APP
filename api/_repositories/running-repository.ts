@@ -1,7 +1,13 @@
 import { BaseRepository } from './base-repository.js';
 import { db } from '../_lib/common.js';
-import { FieldValue, FieldPath } from 'firebase-admin/firestore';
+import { FieldPath } from 'firebase-admin/firestore';
 
+// #96: setUserStats, addRunSession, getUserTrustScore, createPendingPresenceCheck
+// e processRunTransaction foram removidos -- eram usados exclusivamente por
+// RunningService.addRun() (a 5a formula de pontuacao paralela removida junto,
+// ver running-service.ts). Sem chamador vivo no app. getUserStats/getRanking/
+// getRunHistory abaixo continuam servindo dados historicos legados das
+// colecoes `running_stats`/`run_sessions` -- por isso ficam.
 export class RunningRepository extends BaseRepository<any> {
   constructor() {
     super('running_stats');
@@ -11,142 +17,6 @@ export class RunningRepository extends BaseRepository<any> {
     const snap = await db.collection('running_stats').doc(userId).get();
     if (!snap.exists) return null;
     return snap.data();
-  }
-
-  async setUserStats(userId: string, data: Record<string, any>): Promise<void> {
-    await db.collection('running_stats').doc(userId).set(data, { merge: true });
-  }
-
-  async addRunSession(sessionData: Record<string, any>): Promise<string> {
-    const sessionRef = db.collection('run_sessions').doc();
-    const id = sessionRef.id;
-    await sessionRef.set({
-      ...sessionData,
-      id,
-      createdAt: FieldValue.serverTimestamp()
-    });
-    return id;
-  }
-
-  async getUserTrustScore(userId: string): Promise<number> {
-    try {
-      const trustProfileSnap = await db.collection('user_trust_profiles').doc(userId).get();
-      if (trustProfileSnap.exists) {
-        return trustProfileSnap.data()?.trustScore ?? 100;
-      }
-      const userSnap = await db.collection('users').doc(userId).get();
-      if (userSnap.exists && userSnap.data()?.createdAt) {
-        const ageMs = Date.now() - new Date(userSnap.data().createdAt).getTime();
-        return (ageMs / (1000 * 60 * 60 * 24)) > 30 ? 95 : 70;
-      }
-    } catch (_) {}
-    return 70;
-  }
-
-  async createPendingPresenceCheck(payload: {
-    userId: string;
-    presenceRiskScore: number;
-    livenessPrompt: string;
-    workoutPayload: any;
-  }): Promise<{ presenceCheckId: string; expiredAt: string }> {
-    const dbCollection = db.collection('pending_presence_checks');
-    const presenceCheckId = dbCollection.doc().id;
-    const nowTime = new Date();
-    const expiredAt = new Date(nowTime.getTime() + 15 * 60 * 1000).toISOString();
-
-    await dbCollection.doc(presenceCheckId).set({
-      id: presenceCheckId,
-      userId: payload.userId,
-      type: 'running',
-      livenessPrompt: payload.livenessPrompt,
-      riskScore: payload.presenceRiskScore,
-      createdAt: nowTime.toISOString(),
-      expiredAt,
-      workoutPayload: payload.workoutPayload,
-      status: 'pending'
-    });
-
-    return { presenceCheckId, expiredAt };
-  }
-
-  async processRunTransaction(
-    userId: string,
-    currentKm: number,
-    weekId: string,
-    todayISO: string,
-    nowIso: string
-  ): Promise<{ isScoringEligible: boolean; nonScoringReason: string | null; finalXpAwarded: number }> {
-    const userRef = db.collection('users').doc(userId);
-    const weeklyStatsRef = db.collection('users').doc(userId).collection('weeklyStats').doc(weekId);
-
-    let isScoringEligible = false;
-    let nonScoringReason: string | null = null;
-    let finalXpAwarded = 0;
-
-    await db.runTransaction(async (transaction: any) => {
-      const userSnap = await transaction.get(userRef);
-      if (!userSnap.exists) return;
-      const userData = userSnap.data() || {};
-
-      const xpAwarded = 20 + Math.floor(currentKm * 5);
-      const weeklyStatsSnap = await transaction.get(weeklyStatsRef);
-      const weeklyStatsData = weeklyStatsSnap.exists ? weeklyStatsSnap.data() : {
-        weekId,
-        scoredDays: [],
-        totalScoredDays: 0,
-        totalPoints: 0
-      };
-
-      const scoredDays: string[] = weeklyStatsData.scoredDays || [];
-      const isDayAlreadyScored = scoredDays.includes(todayISO);
-
-      if (xpAwarded > 0) {
-        if (isDayAlreadyScored) {
-          isScoringEligible = true;
-          finalXpAwarded = xpAwarded;
-        } else if (scoredDays.length < 5) {
-          isScoringEligible = true;
-          finalXpAwarded = xpAwarded;
-          scoredDays.push(todayISO);
-          weeklyStatsData.scoredDays = scoredDays;
-          weeklyStatsData.totalScoredDays = scoredDays.length;
-        } else {
-          isScoringEligible = false;
-          nonScoringReason = 'WEEKLY_SCORING_LIMIT_REACHED';
-          finalXpAwarded = 0;
-        }
-      } else {
-        isScoringEligible = true;
-      }
-
-      const userUpdates: any = {
-        updatedAt: FieldValue.serverTimestamp()
-      };
-
-      // #228: "score" (ranking de temporada) nao e mais incrementado aqui --
-      // era mais uma fonte ad-hoc de pontuacao (7a identificada), somando XP
-      // direto em users.score sem passar pelo IGA. RunningService.addRun chama
-      // recalculateAllUserScores() logo apos este commit + a gravacao do
-      // workout em persistCardioToHistory, recalculando score/monthlyScore/
-      // weeklyScore pela FONTE UNICA a partir do historico real em `workouts`.
-      // finalXpAwarded continua sendo gravado no documento do treino como XP.
-      userUpdates.lastCheckIn = nowIso;
-
-      const lastCheckInDay = userData.lastCheckIn ? userData.lastCheckIn.split('T')[0] : '';
-      if (todayISO !== lastCheckInDay) {
-        userUpdates.totalActiveDays = (userData.totalActiveDays || 0) + 1;
-      }
-
-      if (finalXpAwarded > 0) {
-        weeklyStatsData.totalPoints = (weeklyStatsData.totalPoints || 0) + finalXpAwarded;
-        weeklyStatsData.updatedAt = FieldValue.serverTimestamp();
-        transaction.set(weeklyStatsRef, weeklyStatsData);
-      }
-
-      transaction.update(userRef, userUpdates);
-    });
-
-    return { isScoringEligible, nonScoringReason, finalXpAwarded };
   }
 
   async getRanking(period: 'month' | 'week', mode: 'official' | 'demo', startDateISO: string): Promise<any[]> {
