@@ -10,6 +10,16 @@ import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
 import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 import { registrarAmostrasDeAtividade, HealthSampleSource } from '../../_lib/health-data-layer.js';
 
+// #71: request.activityData.startTime e tipado como `Date | string` (DTO),
+// mas registrarAmostrasDeAtividade exige `timestamp: string`. O padrao
+// `startTime || new Date().toISOString()` ja usado neste arquivo pra outros
+// campos (que aceitam Date|string) nao tipa como string aqui -- o TS reclama
+// (CI: "Lint & Type Check" pegou, esbuild nao, por nao fazer typecheck real).
+function normalizarTimestamp(valor: Date | string | undefined | null): string {
+  if (!valor) return new Date().toISOString();
+  return typeof valor === 'string' ? valor : valor.toISOString();
+}
+
 export class ValidateActivityService {
   constructor(
     private activityRepository: ActivityRepository,
@@ -244,7 +254,7 @@ export class ValidateActivityService {
             userId: request.userId,
             source: healthSampleSource,
             sourceActivityId: rejectedActivity.id!,
-            timestamp: request.activityData.startTime || new Date().toISOString(),
+            timestamp: normalizarTimestamp(request.activityData.startTime),
             aprovadoPeloAntifraude: false,
             pularDuplicata: false,
             avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
@@ -336,7 +346,7 @@ export class ValidateActivityService {
         userId: request.userId,
         source: healthSampleSource,
         sourceActivityId: savedActivity.id!,
-        timestamp: request.activityData.startTime || new Date().toISOString(),
+        timestamp: normalizarTimestamp(request.activityData.startTime),
         aprovadoPeloAntifraude: true,
         pularDuplicata: false,
         avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
