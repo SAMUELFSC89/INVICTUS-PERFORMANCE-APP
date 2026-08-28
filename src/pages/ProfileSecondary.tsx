@@ -224,7 +224,41 @@ export function ProfileSecondary() {
   // (a mesma ordem em que o arquivo fonte já organiza os 100 itens).
   const faqCategoryOrder: FAQItem['category'][] = ['Geral', 'Conta & Perfil', 'Pontuação & IGA', 'Assinaturas PRO', 'Campeonatos Oficiais', 'Health & Wearables', 'Desafios Privados', 'Saques & PIX', 'Antifraude & Auditoria', 'Privacidade & LGPD'];
   const faqView = () => <section className="profile-flow-document profile-flow-faq"><h2>PERGUNTAS FREQUENTES</h2><p className="profile-flow-faq-intro">{LEGAL_FAQ_100.length} perguntas reais sobre o Invictus, agrupadas por assunto.</p>{faqCategoryOrder.map(category => <div key={category} className="profile-flow-faq-group"><h3>{category.toUpperCase()}</h3>{LEGAL_FAQ_100.filter(item => item.category === category).map(item => <details key={item.id} className="profile-flow-faq-item"><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div>)}</section>;
-  const gameViews: Record<string, React.ReactNode> = { scoring: <section className="profile-flow-document"><h2>PONTUAÇÃO IGA</h2><p>A pontuação é calculada a partir de atividades realmente sincronizadas: frequência, intensidade, tempo, gasto calórico e consistência.</p><h3>ATUALIZAÇÃO</h3><p>O ranking é recalculado após o processamento de uma atividade válida.</p></section>, rules: <section className="profile-flow-document"><h2>REGRAS DA TEMPORADA</h2><p>Somente atividades concluídas e validadas entram na classificação. Cada modalidade pode exigir GPS, sensores, presença ou vídeo.</p><h3>INTEGRIDADE</h3><p>Registros duplicados, inconsistentes ou manipulados podem ser desconsiderados pela auditoria.</p></section>, ai: <section className="profile-flow-document"><h2>INVICTUS IA</h2><p>A análise automática auxilia a validação de registros e a identificação de inconsistências. Ela não substitui revisão humana quando há contestação.</p></section>, faq: faqView() };
+  // #300: "Entenda o jogo -> Como funciona a pontuação" so tinha uma frase
+  // generica ("frequencia, intensidade, tempo, gasto calorico e consistencia")
+  // que nem batia com o motor real -- caloria NUNCA entra na formula do IGA,
+  // so funciona como um portao de coerencia (calorieGate.ts) que pode reduzir
+  // (nunca zerar) a pontuacao de UMA sessao suspeita. Texto reescrito direto
+  // a partir do motor real (src/core/iga/igaEngine.ts + normalizers.ts +
+  // calorieGate.ts), sem inventar nenhum numero. Nome canonico "Indice de
+  // Ganhos de Atividade" usado aqui pra bater com o Regulamento (clausula 4.3)
+  // e o FAQ #25 -- os comentarios do proprio motor usam "Indice Global de
+  // Atividade", inconsistencia pre-existente que nao mexemos aqui.
+  //
+  // Deliberadamente NAO mencionamos: (1) age handicap -- existe no codigo mas
+  // enabled:false, citar so confundiria; (2) teto diario de pontos, bonus de
+  // altimetria, diferenciacao esteira/rua -- esses aparecem no FAQ (#28/#31/#32)
+  // mas NAO existem no motor real. Nao repetimos aqui, e o FAQ deveria ser
+  // corrigido separadamente (fora do escopo desta tela).
+  const gameViews: Record<string, React.ReactNode> = { scoring: <section className="profile-flow-document">
+    <h2>PONTUAÇÃO IGA</h2>
+    <p>O IGA (Índice de Ganhos de Atividade) é a fórmula que transforma seus treinos reais em pontos de ranking. É idêntica para todo mundo, Free ou Pro — a assinatura não muda, bonifica nem penaliza sua pontuação.</p>
+    <h3>A FÓRMULA</h3>
+    <p>IGA = 100 × ∛(Frequência × Tempo × Intensidade)</p>
+    <p>Os três fatores vão de 0 a 1 e são multiplicados entre si antes da raiz cúbica — treinar bastante mas sem intensidade (ou o contrário) rende menos do que equilibrar os três.</p>
+    <h3>FREQUÊNCIA</h3>
+    <p>Conta suas sessões válidas na semana, até um máximo de 5. Fez 5 ou mais? Frequência conta 100%. Fez 3? Conta 60%.</p>
+    <h3>TEMPO</h3>
+    <p>Soma os minutos das suas melhores sessões da semana (até 5), com um teto de 90 minutos contados por sessão — treinar 3h não rende mais do que 90 min contados, pra evitar pontuação artificial. A meta é 250 minutos na semana (5 treinos de 50 min); atingir ou passar disso conta 100% em Tempo.</p>
+    <h3>INTENSIDADE</h3>
+    <p>Calculada pela sua frequência cardíaca média em relação à sua FC máxima estimada. Abaixo de 50% da FC máxima não pontua em Intensidade; a partir de 85% pontua o máximo, e no meio cresce proporcionalmente. Sem monitor de frequência cardíaca conectado, o app estima com segurança pra cada tipo de treino.</p>
+    <h3>O QUE CONTA COMO SESSÃO VÁLIDA</h3>
+    <p>Musculação e força: pelo menos 30 minutos. Corrida e cardio: pelo menos 20 minutos. Toda sessão também precisa passar pela validação antifraude — quem for reprovado não entra na conta.</p>
+    <h3>COERÊNCIA CALÓRICA</h3>
+    <p>Se as calorias informadas destoarem muito do esperado pro seu peso, tempo e intensidade, aquela sessão perde 20% da pontuação por inconsistência — mas nunca é descartada, e não informar calorias não penaliza.</p>
+    <h3>ATUALIZAÇÃO</h3>
+    <p>O ranking é recalculado automaticamente após cada atividade válida ser processada.</p>
+  </section>, rules: <section className="profile-flow-document"><h2>REGRAS DA TEMPORADA</h2><p>Somente atividades concluídas e validadas entram na classificação. Cada modalidade pode exigir GPS, sensores, presença ou vídeo.</p><h3>INTEGRIDADE</h3><p>Registros duplicados, inconsistentes ou manipulados podem ser desconsiderados pela auditoria.</p></section>, ai: <section className="profile-flow-document"><h2>INVICTUS IA</h2><p>A análise automática auxilia a validação de registros e a identificação de inconsistências. Ela não substitui revisão humana quando há contestação.</p></section>, faq: faqView() };
   const gameViewTitles: Record<string, string> = { scoring: 'PONTUAÇÃO IGA', rules: 'REGRAS DA TEMPORADA', ai: 'INVICTUS IA', faq: 'PERGUNTAS FREQUENTES' };
   // #49: sub-telas de "Entenda o jogo" (scoring/rules/ai/faq) sao um SEGUNDO
   // nivel dentro de Configuracoes -- section != null nos dois niveis. Sem este
