@@ -11,6 +11,7 @@ import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 import { registrarAmostrasDeAtividade, HealthSampleSource } from '../../_lib/health-data-layer.js';
 import { submitActivityToActiveChampionships } from '../../_lib/championship-scoring-service.js';
 import { criarPresenceCheck } from '../../_lib/presence-check-service.js';
+import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from '../../_lib/geofence-engine.js';
 
 // #71: request.activityData.startTime e tipado como `Date | string` (DTO),
 // mas registrarAmostrasDeAtividade exige `timestamp: string`. O padrao
@@ -153,6 +154,84 @@ export class ValidateActivityService {
     const healthSampleSource: HealthSampleSource = (Number(rawActivity.distanceKm) > 0 || Array.isArray(rawActivity.checkpoints) && rawActivity.checkpoints.length > 0)
       ? 'invictus_gps'
       : 'invictus_manual';
+
+    // Geofence de academia -- RE-VALIDACAO NO SERVIDOR.
+    //
+    // Ate agora a unica checagem de "o atleta esta mesmo na academia" para
+    // musculacao rodava so no cliente (src/services/activityService.ts,
+    // startSession) usando uma copia local do motor de geofence. O motor de
+    // verdade, testado (api/_lib/geofence-engine.ts, 10/10 em
+    // geofenceEngine.test.ts), so era chamado por api/_handlers/gyms_checkin.ts
+    // -- um endpoint que NENHUM fluxo real do app invoca (checkInId nunca e
+    // preenchido por handleStartActivity em Challenges.tsx). Ou seja: nada
+    // impedia uma chamada direta a este endpoint (fora do app, sem passar pelo
+    // client) com `startLocation` fabricado ou ausente de creditar pontos de
+    // musculacao sem o atleta jamais ter estado na academia. Nunca confiar no
+    // cliente para uma checagem antifraude que o proprio cliente decide se
+    // roda -- reaproveita aqui o mesmo motor/limites (80m raio, 30m precisao)
+    // ja usado no check-in.
+    if (request.activityData.type === 'workout' && !rawActivity.checkInId) {
+      const gymId = (user as any).gymId;
+      const gymLocation = (user as any).gymLocation;
+      const geofenceResult = validateGeofenceCheckin(
+        gymId ? {
+          id: gymId,
+          name: (user as any).gymName || 'Sua Academia',
+          latitude: gymLocation?.lat,
+          longitude: gymLocation?.lng
+        } : null,
+        rawActivity.startLocation ? {
+          latitude: rawActivity.startLocation.lat,
+          longitude: rawActivity.startLocation.lng,
+          accuracy: rawActivity.startLocation.accuracy,
+          isMock: !!rawActivity.isMockLocation
+        } : null,
+        MAX_GEOFENCE_RADIUS_METERS,
+        MAX_GPS_ACCURACY_METERS
+      );
+
+      if (!geofenceResult.approved) {
+        console.warn(`[ValidateActivityService] [${traceId}] Geofence de academia recusada: ${geofenceResult.reason}`);
+
+        try {
+          await this.activityRepository.create({
+            userId: request.userId,
+            type: request.activityData.type,
+            muscleGroup: rawActivity.muscleGroup,
+            duration: durationForMetrics,
+            intensity: request.activityData.intensity || 'moderate',
+            startTime: request.activityData.startTime || new Date().toISOString(),
+            endTime: request.activityData.endTime || new Date().toISOString(),
+            points: 0,
+            pointsEarned: 0,
+            scoreAwarded: 0,
+            rankingPointsEarned: 0,
+            status: 'rejected',
+            validationStatus: 'invalid',
+            nonScoringReason: 'GEOFENCE_' + geofenceResult.status.toUpperCase(),
+            rejectionReason: geofenceResult.userFacingMessage,
+            userMessage: geofenceResult.userFacingMessage,
+            evidence: request.activityData.evidence || {},
+            traceId
+          });
+        } catch (persistErr) {
+          console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade rejeitada por geofence:`, persistErr);
+        }
+
+        await this.auditRepository.log({
+          traceId,
+          userId: request.userId,
+          action: 'VALIDATE_ACTIVITY_GEOFENCE_BLOCKED',
+          details: { activityData: request.activityData, reason: geofenceResult.reason, status: geofenceResult.status },
+          result: 'FLAGGED'
+        });
+
+        throw new AppError(geofenceResult.userFacingMessage, 422, {
+          reasonCode: 'GEOFENCE_' + geofenceResult.status.toUpperCase(),
+          canRetry: true
+        } as any);
+      }
+    }
 
     let securityBlocked = false;
     let securityReason: string | null = null;
