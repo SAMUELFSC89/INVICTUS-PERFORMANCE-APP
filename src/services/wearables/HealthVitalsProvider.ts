@@ -1,19 +1,30 @@
 import { Capacitor } from '@capacitor/core';
-// #12: importado via alias npm 'capgo-health-vitals' (aponta pro mesmo
-// pacote @capgo/capacitor-health), NAO pelo nome real do pacote. Motivo:
-// o build iOS no Codemagic falhava no passo de resolucao do Swift Package
-// Manager com "Conflicting identity for capacitor-health" -- confirmado
-// comparando os dois Package.swift reais (mley e Capgo): apesar de terem
-// nomes internos diferentes ("CapacitorHealth" vs "CapgoCapacitorHealth"),
-// o SPM usa o ULTIMO SEGMENTO DO CAMINHO local (node_modules/<pasta>) como
-// identidade de pacote quando referenciado por path -- e o npm instala
-// "@capgo/capacitor-health" numa pasta cujo ultimo segmento tambem e
-// literalmente "capacitor-health", igual ao pacote do mley. O alias npm
-// (`"capgo-health-vitals": "npm:@capgo/capacitor-health@..."` no
-// package.json) instala o mesmo pacote numa pasta com outro nome
-// (node_modules/capgo-health-vitals), o que resolve a colisao sem afetar
-// em nada a API do plugin em si.
-import { Health as CapgoHealth } from 'capgo-health-vitals';
+// #12: importado via alias npm 'capgo-capacitor-health' (aponta pro mesmo
+// pacote @capgo/capacitor-health), NAO pelo nome real do pacote. Motivo,
+// em 2 rodadas de erro real no Codemagic:
+//
+// 1ª falha: "Conflicting identity for capacitor-health" -- o SPM usa o
+// ULTIMO SEGMENTO DO CAMINHO local (node_modules/<pasta>) como identidade
+// de pacote quando referenciado por path, e o npm instala
+// "@capgo/capacitor-health" numa pasta cujo ultimo segmento e literalmente
+// "capacitor-health", igual a pasta do plugin do mley. Tentativa 1 usou o
+// alias 'capgo-health-vitals' pra resolver isso.
+//
+// 2ª falha (causada pela tentativa 1): "product 'CapgoHealthVitals' ...
+// not found in package 'CapgoHealthVitals'". O `cap sync ios` do Capacitor
+// gera o Package.swift agregador (CapApp-SPM) assumindo, por CONVENCAO,
+// que o nome do "product" de cada plugin e o PascalCase do nome da
+// dependencia local no package.json -- ele nao le o Package.swift real do
+// plugin pra descobrir o nome verdadeiro. 'capgo-health-vitals' virou
+// "CapgoHealthVitals", mas o product real dentro do pacote da Capgo se
+// chama "CapgoCapacitorHealth" (conferido no Package.swift oficial,
+// Cap-go/capacitor-health) -- descasou.
+//
+// Fix: o alias tem que ser o PascalCase EXATO do product real, então usei
+// 'capgo-capacitor-health' (-> "CapgoCapacitorHealth"), que também
+// continua com ultimo segmento diferente de "capacitor-health" (resolve a
+// 1ª falha) e agora bate com o nome real do product (resolve a 2ª).
+import { Health as CapgoHealth } from 'capgo-capacitor-health';
 
 // #253: leitura de METRICAS PASSIVAS (FC repouso, HRV, sono, peso) via
 // @capgo/capacitor-health -- plugin DIFERENTE do "capacitor-health" (mley)
