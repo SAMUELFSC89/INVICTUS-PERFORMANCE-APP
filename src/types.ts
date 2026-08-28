@@ -414,6 +414,8 @@ export interface RankingEntry {
   rank: number;
   referralCount?: number;
   isSubscribed: boolean;
+  /** #104-107: badge visual de plano no ranking unificado -- Free e Pro competem na mesma lista. */
+  subscriptionTier?: string;
   isBot?: boolean;
   seasonBoost?: number;
   entryStatus?: 'early' | 'late';

@@ -22,7 +22,10 @@ function TopAvatar({ entry, rank }: { entry: any; rank: number }) {
 }
 
 function RankingRow({ entry, rank, current }: { entry: any; rank: number; current?: boolean }) {
-  return <div className={`rank-row ${current ? 'rank-row--current' : ''}`}><b className={`rank-number rank-number--${rank}`}>{rank}</b><TopAvatar entry={entry} rank={rank} /><span className="rank-row-name"><strong>{name(entry)}</strong><small>{gym(entry)}</small></span><span className="rank-score"><small>IGA</small><b>{Number(entry.score || 0).toLocaleString('pt-BR')}</b></span></div>;
+  // #104-107: Free e Pro competem no mesmo ranking, sem filtro por plano.
+  // subscriptionTier fica so como badge visual (nao afeta ordenacao/lista).
+  const isPro = entry.subscriptionTier === 'performance' || entry.subscriptionTier === 'pro';
+  return <div className={`rank-row ${current ? 'rank-row--current' : ''}`}><b className={`rank-number rank-number--${rank}`}>{rank}</b><TopAvatar entry={entry} rank={rank} /><span className="rank-row-name"><strong>{name(entry)}{isPro && <span className="rank-plan-badge">PRO</span>}</strong><small>{gym(entry)}</small></span><span className="rank-score"><small>IGA</small><b>{Number(entry.score || 0).toLocaleString('pt-BR')}</b></span></div>;
 }
 
 export function Rankings() {
@@ -44,9 +47,11 @@ export function Rankings() {
     let cancelled = false;
     setLoading(true);
     const levelId = scope === 'gym' ? selectedGymId || user.gymId || '' : scope === 'city' ? user.city || '' : '';
-    rankingService.getRanking(scope, levelId, period, user.subscriptionTier === 'performance' ? 'performance' : 'open').then((data) => { if (!cancelled) setRanking(data); }).catch((error) => console.error('Falha ao carregar ranking:', error)).finally(() => { if (!cancelled) setLoading(false); });
+    // #104-107: ranking unificado -- Free e Pro competem na mesma lista, entao
+    // nao ha mais parametro de tier separando quem busca.
+    rankingService.getRanking(scope, levelId, period).then((data) => { if (!cancelled) setRanking(data); }).catch((error) => console.error('Falha ao carregar ranking:', error)).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [scope, period, selectedGymId, user?.uid, user?.gymId, user?.city, user?.subscriptionTier]);
+  }, [scope, period, selectedGymId, user?.uid, user?.gymId, user?.city]);
 
   const athletes = ranking?.topUsers || [];
   const myRank = athletes.findIndex((entry) => entry.uid === user?.uid) + 1 || user?.positions?.[scope === 'global' ? 'national' : scope] || 0;

@@ -1,5 +1,6 @@
 import { db, handleFirestoreError, OperationType, auth } from '../firebase';
 import { collection, query, where, getDocs, orderBy, limit, doc, getDoc, getCountFromServer } from 'firebase/firestore';
+import { startOfMonth, addMonths, format } from 'date-fns';
 import { RankingSnapshot, RankingEntry, UserProfile } from '../types';
 import { QuotaExhaustedError, isQuotaError } from './errors';
 import { redisService } from './redisService';
@@ -64,9 +65,11 @@ async function getSystemStats() {
 }
 
 export const rankingService = {
-  async getRanking(level: 'league' | 'referral' | 'gym' | 'city' | 'global', levelId: string = '', period: 'all' | 'weekly' | 'monthly' = 'all', tier: 'open' | 'performance' = 'performance') {
+  // #104-107: ranking unificado -- Free e Pro competem na mesma lista, sem
+  // parametro de tier separando a busca. Ver api/_handlers/ranking.ts.
+  async getRanking(level: 'league' | 'referral' | 'gym' | 'city' | 'global', levelId: string = '', period: 'all' | 'weekly' | 'monthly' = 'all') {
     const season = this.getSeasonStatus();
-    const cacheKey = `ranking_${level}_${levelId}_${period}_${season.id}_${tier}`;
+    const cacheKey = `ranking_${level}_${levelId}_${period}_${season.id}`;
 
     // Utilize the professional Redis-like SWR (Stale-While-Revalidate) pattern
     return redisService.staleWhileRevalidate<RankingSnapshot>(cacheKey, async () => {
@@ -81,7 +84,7 @@ export const rankingService = {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const response = await fetch(`/api/ranking?level=${level}&levelId=${levelId}&period=${period}&tier=${tier}`, { headers });
+        const response = await fetch(`/api/ranking?level=${level}&levelId=${levelId}&period=${period}`, { headers });
         
         const text = await response.text();
 
@@ -143,6 +146,7 @@ export const rankingService = {
                   streak: data.streak || 0,
                   rank: i + 1,
                   isSubscribed: data.isSubscribed || false,
+                  subscriptionTier: data.subscriptionTier || 'open',
                   city: data.city || '',
                   gymId: data.gymId || '',
                   positions: data.positions || {}
@@ -226,27 +230,22 @@ export const rankingService = {
     }
   },
 
+  // Temporada = mes calendario (dia 1 ate o dia 1 do mes seguinte), mesma
+  // regra do backend (api/_lib/season-prize-engine.ts) e de
+  // src/lib/seasonUtils.ts. So usado aqui como parte da chave de cache do
+  // ranking, para que o cache rode junto com a temporada real em vez de
+  // expirar numa janela de 7 dias arbitraria (o antigo 'TEST_SEASON_7D').
   getSeasonStatus() {
     const now = new Date();
-    const dayOfWeek = now.getDay();
-    const daysUntilNextMonday = (1 + 7 - dayOfWeek) % 7;
-    
-    const startDate = new Date(now);
-    if (daysUntilNextMonday > 0) {
-      startDate.setDate(now.getDate() + daysUntilNextMonday);
-    }
-    startDate.setHours(0, 0, 0, 0);
-
-    const endDate = new Date(startDate);
-    endDate.setDate(startDate.getDate() + 7);
-    endDate.setHours(23, 59, 59, 999);
+    const startDate = startOfMonth(now);
+    const endDate = startOfMonth(addMonths(startDate, 1));
 
     const diffTime = endDate.getTime() - now.getTime();
     const daysRemaining = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
     return {
-      id: 'TEST_SEASON_7D',
-      status: 'active' as const, // Active status for testing rank
+      id: `season_${format(startDate, 'yyyy-MM')}`,
+      status: 'active' as const,
       daysRemaining,
       endDate,
       nextSeasonStart: startDate

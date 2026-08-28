@@ -1,4 +1,4 @@
-import { format } from 'date-fns';
+import { format, startOfMonth, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export type SeasonStatus = 'EARLY' | 'NEXT_SEASON';
@@ -13,27 +13,27 @@ export interface SeasonInfo {
   canParticipateNow: boolean;
 }
 
+/**
+ * Temporada = mes calendario: dia 1 00:00 ate o dia 1 00:00 do mes seguinte
+ * (intervalo meio-aberto). Mesma regra usada pelo backend real em
+ * api/_lib/season-prize-engine.ts (seasonWindowForMonth) -- ver comentario
+ * la para o historico da migracao a partir da ancora antiga "proxima
+ * segunda-feira + 30 dias corridos".
+ */
 export function getTestSeasonDates(from: Date = new Date()) {
-  const dayOfWeek = from.getDay(); // 0 is Sun, 1 is Mon...
-  const daysUntilNextMonday = (1 + 7 - dayOfWeek) % 7;
-  
-  const startDate = new Date(from);
-  if (daysUntilNextMonday > 0) {
-    startDate.setDate(from.getDate() + daysUntilNextMonday);
-  }
-  startDate.setHours(0, 0, 0, 0);
-
-  const endDate = new Date(startDate);
-  endDate.setDate(startDate.getDate() + 30); // Temporada Oficial Invictus: 30 dias
-  endDate.setHours(23, 59, 59, 999);
-
+  const startDate = startOfMonth(from);
+  const endDate = startOfMonth(addMonths(startDate, 1));
   return { startDate, endDate };
 }
 
 export const getSeasonStatus = (date: Date = new Date()): SeasonInfo => {
   const { startDate, endDate } = getTestSeasonDates(date);
+  // endDate e o dia 1 00:00 do mes seguinte (intervalo meio-aberto, usado nos
+  // calculos) -- para o rotulo visual mostramos o ultimo dia real da
+  // temporada, 1ms antes disso.
+  const lastDayOfSeason = new Date(endDate.getTime() - 1);
   const startStr = format(startDate, "dd/MM", { locale: ptBR });
-  const endStr = format(endDate, "dd/MM", { locale: ptBR });
+  const endStr = format(lastDayOfSeason, "dd/MM", { locale: ptBR });
   const seasonLabel = `Temporada Oficial Invictus (${startStr} a ${endStr})`;
 
   return {

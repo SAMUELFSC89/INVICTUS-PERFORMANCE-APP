@@ -14,14 +14,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const level = (req.query.level as string) || 'global';
   const levelId = (req.query.levelId as string) || '';
   const period = (req.query.period as string) || 'all';
-  const tier = (req.query.tier as string) || 'performance';
-  
+  // #104-107: ranking unificado -- Free e Pro competem na mesma lista, um
+  // unico criterio de pontuacao (ver src/lib/seasonUtils.ts). O parametro
+  // `tier` ainda pode chegar de clientes antigos em cache, mas nao filtra
+  // mais nada -- plano vira badge visual no card do usuario, nao um corte de
+  // lista. Ver api/_lib/aggregation.ts::updateRankings, que ja gerava o
+  // snapshot pre-calculado sem filtro de subscriptionTier.
   const scoreField = period === 'weekly' ? 'weeklyScore' : period === 'monthly' ? 'monthlyScore' : 'score';
-  const cacheKey = `${level}_${levelId}_${period}_${scoreField}_${tier}`;
+  const cacheKey = `${level}_${levelId}_${period}_${scoreField}`;
   const now = Date.now();
 
   try {
-    console.log(`[Ranking API] Query: level=${level}, levelId=${levelId}, period=${period}, tier=${tier}`);
+    console.log(`[Ranking API] Query: level=${level}, levelId=${levelId}, period=${period}`);
     
     if (!db) {
       console.error('[Ranking API] Database not initialized');
@@ -35,8 +39,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ topUsers: cached.topUsers, cached: true });
     }
 
-    // 2. Attempt to fetch pre-calculated snapshot for global levels (Performance only)
-    if (tier === 'performance' && (level === 'global' || level === 'league')) {
+    // 2. Attempt to fetch pre-calculated snapshot for global levels (lista unificada, todos os planos)
+    if (level === 'global' || level === 'league') {
       const snapshotId = `${level === 'league' ? 'global' : level}_${period}`;
       const snapshotRef = db.collection('aggregated_rankings').doc(snapshotId);
       const snapshotSnap = await snapshotRef.get();
@@ -69,17 +73,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const snap = await query.orderBy(scoreField, 'desc').limit(500).get();
     console.log(`[Ranking API] Query finished. Found ${snap.size} users.`);
 
-    let filteredDocs = snap.docs;
-    if (tier === 'performance') {
-      filteredDocs = snap.docs.filter((d: any) => d.data().subscriptionTier === 'performance');
-    } else {
-      filteredDocs = snap.docs.filter((d: any) => d.data().subscriptionTier === 'open' || !d.data().subscriptionTier);
-    }
-
-    // Limit of 50 removed for mobile testing - show all participants
-    const slicedDocs = filteredDocs;
-
-    const topUsers = slicedDocs.map((d: any, i: number) => {
+    // Ranking unificado: todos os usuarios da query entram na mesma lista,
+    // independente de plano (Free/Pro). Sem limite de 50 -- mostra todos os
+    // participantes.
+    const topUsers = snap.docs.map((d: any, i: number) => {
       const data = d.data();
       return {
         uid: d.id,
@@ -89,6 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         streak: data.streak || 0,
         rank: i + 1,
         isSubscribed: data.isSubscribed || false,
+        subscriptionTier: data.subscriptionTier || 'open',
         city: data.city || '',
         gymId: data.gymId || '',
         positions: data.positions || {}

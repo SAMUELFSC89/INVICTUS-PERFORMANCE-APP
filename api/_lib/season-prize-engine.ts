@@ -1,3 +1,4 @@
+import { startOfMonth, addMonths } from 'date-fns';
 import { db, FieldValue } from './common.js';
 import { RewardsEngine } from './rewards-engine.js';
 import { lerConfiguracaoInscricao } from './season-settings.js';
@@ -28,15 +29,19 @@ import {
  *   >= 150 inscritos         -> top 5
  * Nunca mais vencedores do que participantes.
  *
- * A janela de temporada (inicio/fim, 30 dias) e controlada por um documento
- * de ancora em system_config/season_tracker, para garantir janelas continuas
- * e sem sobreposicao entre temporadas -- diferente da funcao de exibicao do
- * frontend (getSeasonStatus em src/lib/seasonUtils.ts), que recalcula 'proxima
- * segunda-feira' a cada chamada e serve apenas para o rotulo visual da tela
- * de Ranking.
+ * TEMPORADA = MES CALENDARIO (dia 1 00:00 ate o dia 1 00:00 do mes seguinte,
+ * intervalo meio-aberto). Ate 2026-08 a janela era ancorada em "proxima
+ * segunda-feira" + 30 dias corridos (system_config/season_tracker). Migrado
+ * para mes calendario a pedido do usuario: toda temporada comeca no dia 1 e
+ * dura o mes inteiro (28 a 31 dias, sem desvio acumulado). A ancora em
+ * system_config/season_tracker continua existindo, para as temporadas ja
+ * criadas sob o sistema antigo terminarem normalmente (pagando quem ja
+ * competia) antes de a primeira temporada no novo formato comecar -- ver
+ * seasonWindowForMonth() e advanceToNextSeasonWindow() abaixo. Nao ha mais
+ * uma funcao de exibicao paralela no frontend calculando isso por conta
+ * propria -- ver src/lib/seasonUtils.ts, que agora usa a mesma regra de mes
+ * calendario.
  */
-
-const SEASON_LENGTH_DAYS = 30;
 
 export interface SeasonWindow {
   seasonId: string;
@@ -77,23 +82,19 @@ export interface SeasonPayoutResult {
   academias: ResultadoAcademia[];
 }
 
-function nextMonday(from: Date): Date {
-  const d = new Date(from);
-  const dayOfWeek = d.getDay(); // 0 = Sun, 1 = Mon...
-  const daysUntilMonday = (1 + 7 - dayOfWeek) % 7;
-  d.setDate(d.getDate() + daysUntilMonday);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
 function seasonIdFor(startDate: Date): string {
-  return `season_${startDate.toISOString().slice(0, 10)}`;
+  return `season_${startDate.toISOString().slice(0, 7)}`; // ex: season_2026-09
+}
+
+/** Janela de mes calendario que CONTEM a data de referencia: dia 1 00:00 ate o dia 1 00:00 do mes seguinte. */
+function seasonWindowForMonth(reference: Date): SeasonWindow {
+  const startDate = startOfMonth(reference);
+  const endDate = startOfMonth(addMonths(startDate, 1));
+  return { seasonId: seasonIdFor(startDate), startDate, endDate };
+}
+
+function isAlignedToFirstOfMonth(d: Date): boolean {
+  return d.getDate() === 1 && d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
 }
 
 /**
@@ -102,17 +103,27 @@ function seasonIdFor(startDate: Date): string {
  * Existe separada de advanceToNextSeasonWindow porque aquela AVANCA a ancora
  * global em system_config -- chamar aquela a partir do fluxo de pagamento
  * empurraria a temporada de todos os usuarios.
+ *
+ * Em regime (endDate ja alinhado ao dia 1, o normal apos a migracao para mes
+ * calendario), a proxima temporada comeca exatamente onde a anterior terminou
+ * -- sem lacuna, mes seguinte imediato. Na transicao unica do sistema antigo
+ * (endDate no meio do mes, herdado da ancora "proxima segunda-feira"), a
+ * proxima temporada pula para o dia 1 do mes seguinte -- o restante do mes
+ * corrente fica sem temporada ativa, uma unica vez, por decisao explicita de
+ * nao realinhar retroativamente a temporada ja em andamento (que fecha e paga
+ * normalmente com as datas antigas).
  */
 export function calcularProximaJanela(atual: SeasonWindow): SeasonWindow {
-  const startDate = atual.endDate;
-  const endDate = addDays(startDate, SEASON_LENGTH_DAYS);
-  return { seasonId: seasonIdFor(startDate), startDate, endDate };
+  const referencia = isAlignedToFirstOfMonth(atual.endDate)
+    ? atual.endDate
+    : startOfMonth(addMonths(atual.endDate, 1));
+  return seasonWindowForMonth(referencia);
 }
 
 /**
  * Le (ou inicializa, no primeiro uso) a janela de temporada atual a partir de
- * system_config/season_tracker. Garante que temporadas sejam continuas: a
- * proxima sempre comeca exatamente onde a anterior terminou.
+ * system_config/season_tracker. No primeiro uso (documento ainda nao existe),
+ * a temporada inicial e o mes calendario corrente.
  */
 export async function getOrInitCurrentSeasonWindow(): Promise<SeasonWindow> {
   const ref = db.collection('system_config').doc('season_tracker');
@@ -127,9 +138,7 @@ export async function getOrInitCurrentSeasonWindow(): Promise<SeasonWindow> {
     };
   }
 
-  const startDate = nextMonday(new Date());
-  const endDate = addDays(startDate, SEASON_LENGTH_DAYS);
-  const seasonId = seasonIdFor(startDate);
+  const { seasonId, startDate, endDate } = seasonWindowForMonth(new Date());
 
   await ref.set({
     seasonId,
@@ -142,9 +151,7 @@ export async function getOrInitCurrentSeasonWindow(): Promise<SeasonWindow> {
 }
 
 async function advanceToNextSeasonWindow(previous: SeasonWindow): Promise<SeasonWindow> {
-  const startDate = previous.endDate;
-  const endDate = addDays(startDate, SEASON_LENGTH_DAYS);
-  const seasonId = seasonIdFor(startDate);
+  const { seasonId, startDate, endDate } = calcularProximaJanela(previous);
 
   const ref = db.collection('system_config').doc('season_tracker');
   await ref.set({
