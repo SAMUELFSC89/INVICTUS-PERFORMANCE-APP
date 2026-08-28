@@ -1,12 +1,26 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Check, Dumbbell, Activity } from 'lucide-react';
 import { championshipService } from '../../services/championshipService';
+import { Championship } from '../../types/championships';
+
+function formatarDataCurta(iso: string) {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 export const ChampionshipConfirmation: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const champ = championshipService.getChampionshipById(id || 'invictus_arena_30d');
+  const [champ, setChamp] = useState<Championship | undefined>(undefined);
+
+  useEffect(() => {
+    let ativo = true;
+    championshipService.getChampionshipById(id || 'invictus_arena_30d').then((c) => {
+      if (ativo) setChamp(c);
+    });
+    return () => { ativo = false; };
+  }, [id]);
 
   const isGold = champ?.accentColor === 'gold';
   const themeColor = isGold ? '#ffb000' : '#14b8a6';
@@ -66,7 +80,9 @@ export const ChampionshipConfirmation: React.FC = () => {
 
           <div className="flex items-center justify-between text-[12px]">
             <span className="text-zinc-400">Período</span>
-            <span className="font-bold text-white">01/07 a 30/07</span>
+            <span className="font-bold text-white">
+              {champ ? `${formatarDataCurta(champ.startAt)} a ${formatarDataCurta(champ.endAt)}` : '—'}
+            </span>
           </div>
 
           <div className="flex items-center justify-between text-[12px]">

@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Check, Lock, Dumbbell, Activity, ShieldCheck, ChevronRight, AlertTriangle } from 'lucide-react';
 import { championshipService } from '../../services/championshipService';
+import { Championship } from '../../types/championships';
 import { useUser } from '../../UserContext';
 import { AthleteIllustration } from './AthleteIllustration';
 import { CHAMPIONSHIP_CONFIG } from '../../config';
 import { Capacitor } from '@capacitor/core';
+import { VerifiedPresenceModal } from '../../components/VerifiedPresenceModal';
 
 export const ChampionshipRegistration: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -13,9 +15,22 @@ export const ChampionshipRegistration: React.FC = () => {
   const accId = searchParams.get('accId');
   const navigate = useNavigate();
   const { user } = useUser();
-  const champ = championshipService.getChampionshipById(id || 'invictus_arena_30d');
+  const [champ, setChamp] = useState<Championship | undefined | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [presenceCheck, setPresenceCheck] = useState<{ presenceCheckId: string; livenessPrompt: string; userMessage: string } | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    championshipService.getChampionshipById(id || 'invictus_arena_30d').then((c) => {
+      if (ativo) setChamp(c || undefined);
+    });
+    return () => { ativo = false; };
+  }, [id]);
+
+  if (champ === null) {
+    return <div className="w-full min-h-screen bg-transparent" />;
+  }
 
   if (!champ) {
     return (
@@ -52,41 +67,43 @@ export const ChampionshipRegistration: React.FC = () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      // 1. Call backend endpoint to initiate payment charge with acceptanceId
-      const response = await fetch('/api/championships/payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          championshipId: champ.id,
-          userId: user.uid,
-          userName: user.name,
-          userEmail: user.email,
-          paymentMethod: 'PIX',
-          acceptanceId: accId
-        })
+      // Antes de emitir a cobranca PIX real (dinheiro real em disputa), o
+      // servidor exige confirmacao de presenca por selfie -- ver
+      // api/_handlers/championships.ts e api/_lib/presence-check-service.ts.
+      // O QR code so chega depois, no onSuccess do modal abaixo.
+      const resultado = await championshipService.createPayment(champ.id, accId);
+      setPresenceCheck({
+        presenceCheckId: resultado.presenceCheckId,
+        livenessPrompt: resultado.livenessPrompt,
+        userMessage: resultado.userMessage,
       });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        if (data.error === 'REGULATION_ACCEPTANCE_REQUIRED' || data.error === 'OUTDATED_REGULATION_ACCEPTANCE') {
-          navigate(`/championships/${champ.id}/rules`);
-          return;
-        }
-        throw new Error(data.message || 'Erro ao preparar checkout.');
-      }
-      
-      // 2. Create pending registration in client service
-      championshipService.createPendingRegistration(champ, user.uid, user.name);
-
-      // Navigate to Asaas Checkout Redirect page
-      navigate(`/championships/${champ.id}/checkout-redirect?extRef=${encodeURIComponent(data.externalReference || '')}&accId=${encodeURIComponent(accId)}`);
     } catch (e: any) {
       console.error('Error initiating registration payment', e);
+      if (/regulamento/i.test(e.message || '')) {
+        navigate(`/championships/${champ.id}/rules`);
+        return;
+      }
       setErrorMessage(e.message || 'Não foi possível conectar com o gateway de pagamento. Tente novamente.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePresenceSuccess = (result: { status: string; userMessage: string; commitResult?: any }) => {
+    setPresenceCheck(null);
+
+    if (result.status === 'approved' && result.commitResult) {
+      // commitResult aqui e o mesmo formato { valor, qrCode, jaExistia } que
+      // antes vinha direto de createPayment -- ver actionType
+      // 'championship_registration' em api/_handlers/validate-presence.ts.
+      navigate(`/championships/${champ!.id}/checkout-redirect`, { state: { pagamento: result.commitResult } });
+      return;
+    }
+
+    // 'pending' ou qualquer outro caso sem commitResult: inscricao de
+    // campeonato so avanca com presenca 'approved' (dinheiro real). Sem
+    // aprovacao total, nao ha cobranca -- devolve o atleta pra tela com um aviso.
+    setErrorMessage(result.userMessage || 'Não foi possível confirmar sua presença com confiança suficiente para emitir a cobrança. Tente novamente.');
   };
 
   return (
@@ -269,6 +286,17 @@ export const ChampionshipRegistration: React.FC = () => {
         <span>{loading ? 'PROCESSANDO...' : 'PROSSEGUIR PARA PAGAMENTO'}</span>
         <ChevronRight size={16} />
       </button>
+
+      {presenceCheck && (
+        <VerifiedPresenceModal
+          isOpen={!!presenceCheck}
+          presenceCheckId={presenceCheck.presenceCheckId}
+          livenessPrompt={presenceCheck.livenessPrompt}
+          userMessage={presenceCheck.userMessage}
+          onClose={() => setPresenceCheck(null)}
+          onSuccess={handlePresenceSuccess}
+        />
+      )}
     </div>
   );
 };

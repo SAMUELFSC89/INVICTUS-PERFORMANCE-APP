@@ -9,6 +9,8 @@ import { recalculateAllUserScores } from '../../_lib/igaService.js';
 import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
 import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 import { registrarAmostrasDeAtividade, HealthSampleSource } from '../../_lib/health-data-layer.js';
+import { submitActivityToActiveChampionships } from '../../_lib/championship-scoring-service.js';
+import { criarPresenceCheck } from '../../_lib/presence-check-service.js';
 
 // #71: request.activityData.startTime e tipado como `Date | string` (DTO),
 // mas registrarAmostrasDeAtividade exige `timestamp: string`. O padrao
@@ -156,6 +158,10 @@ export class ValidateActivityService {
     let securityReason: string | null = null;
     let securityUserMessage: string | null = null;
     let securityCanRetry = true;
+    // Guardado a parte de securityReason (que ja vem prefixado 'SECURITY_PIPELINE_')
+    // para decidir, logo abaixo, se este e o caso especifico UNDER_REVIEW que
+    // oferece uma segunda chance via selfie em vez de bloquear direto.
+    let securityDecision: string | null = null;
     // #237: historico real do atleta -- sem ele, BehaviorEngine e
     // ReputationEngine ficam no ramo neutro e nunca comparam o atleta com ele
     // mesmo. Ver api/_lib/user-activity-history.ts.
@@ -190,6 +196,7 @@ export class ValidateActivityService {
       );
       if (!securityResult.shouldScore) {
         securityBlocked = true;
+        securityDecision = securityResult.decision;
         securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
         securityCanRetry = securityResult.decision !== 'BLOCKED';
         securityUserMessage = this.buildSecurityUserMessage(
@@ -205,6 +212,55 @@ export class ValidateActivityService {
       securityCanRetry = true;
       securityUserMessage = 'Nao foi possivel validar esta atividade agora (falha tecnica no motor antifraude). Tente novamente em instantes.';
       console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):`, secErr);
+    }
+
+    // Segunda chance por selfie: UNDER_REVIEW significa confianca baixa mas
+    // NAO um sinal de fraude definitivo (isso e BLOCKED -- mock location,
+    // teleporte, etc., onde uma selfie nao resolve nada porque o problema e
+    // no dispositivo/GPS, nao na identidade). Em vez de recusar a atividade
+    // direto, oferece ao atleta confirmar presenca ao vivo -- mesmo mecanismo
+    // ja usado no check-in de academia (ver api/_lib/presence-check-service.ts).
+    // A atividade so e de fato persistida depois, em
+    // api/_handlers/validate-presence.ts (actionType 'activity_under_review'),
+    // apos a selfie ser avaliada.
+    if (securityBlocked && securityDecision === 'UNDER_REVIEW') {
+      try {
+        const { presenceCheckId, livenessPrompt } = await criarPresenceCheck({
+          userId: request.userId,
+          actionType: 'activity_under_review',
+          payload: {
+            ...rawActivity,
+            type: request.activityData.type,
+            duration: durationForMetrics,
+            intensity: request.activityData.intensity || 'moderate',
+            startTime: request.activityData.startTime || new Date().toISOString(),
+            endTime: request.activityData.endTime || new Date().toISOString(),
+            evidence: request.activityData.evidence || {},
+          },
+        });
+
+        await this.auditRepository.log({
+          traceId,
+          userId: request.userId,
+          action: 'VALIDATE_ACTIVITY_SECURITY_PIPELINE_UNDER_REVIEW_PRESENCE_CHECK',
+          details: { activityData: request.activityData, reason: securityReason, presenceCheckId },
+          result: 'FLAGGED'
+        });
+
+        return {
+          success: false,
+          presenceCheckRequired: true,
+          presenceCheckId,
+          livenessPrompt,
+          message: securityUserMessage || 'Confirme sua presenca por selfie para validar esta atividade.',
+          userMessage: securityUserMessage || 'Confirme sua presenca por selfie para validar esta atividade.',
+          traceId
+        } as any;
+      } catch (presenceErr) {
+        // Se a criacao do presence check falhar por algum motivo tecnico, cai
+        // para o bloqueio padrao abaixo em vez de deixar o atleta sem resposta.
+        console.error(`[ValidateActivityService] [${traceId}] Falha ao criar presence check para UNDER_REVIEW, aplicando bloqueio padrao:`, presenceErr);
+      }
     }
 
     if (securityBlocked) {
@@ -375,6 +431,28 @@ export class ValidateActivityService {
       console.log(`[ValidateActivityService] [${traceId}] Pontuacao IGA recalculada: semana=${recalculated.weekly.igaRanking} mes=${recalculated.monthly.average} temporada=${recalculated.season.average}`);
     } catch (rankingErr) {
       console.error(`[ValidateActivityService] [${traceId}] Falha ao recalcular pontuacao IGA, atividade permanece salva mas ranking pode ficar desatualizado:`, rankingErr);
+    }
+
+    // Submissao automatica a campeonatos (Arena/Run Elite) em que o usuario
+    // tenha inscricao PAGA e ativa -- ver championship-scoring-service.ts.
+    // E um no-op de custo minimo (uma leitura por campeonato compativel, e
+    // so 2 campeonatos existem hoje) para quem nao esta inscrito em nenhum,
+    // e nunca pode derrubar a resposta principal da atividade.
+    try {
+      await submitActivityToActiveChampionships({
+        userId: request.userId,
+        userName: user.name || user.displayName,
+        userGymName: user.gymName,
+        activityId: savedActivity.id || '',
+        activityType: request.activityData.type,
+        isIndoorCardio: rawActivity.isIndoorCardio,
+        durationMinutes: durationForMetrics,
+        distanceKm: Number(rawActivity.distanceKm) || 0,
+        score: scoreAwarded,
+        when: new Date(request.activityData.endTime || request.activityData.startTime || Date.now()),
+      });
+    } catch (championshipErr) {
+      console.error(`[ValidateActivityService] [${traceId}] Falha ao submeter atividade a campeonatos (nao-fatal):`, championshipErr);
     }
 
     await this.auditRepository.log({

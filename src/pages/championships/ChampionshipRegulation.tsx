@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -21,6 +21,7 @@ import {
   FileText
 } from 'lucide-react';
 import { championshipService, getRegulationSections } from '../../services/championshipService';
+import { Championship } from '../../types/championships';
 import { useUser } from '../../UserContext';
 import { CHAMPIONSHIP_CONFIG } from '../../config';
 
@@ -28,13 +29,25 @@ export const ChampionshipRegulation: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useUser();
-  const champ = championshipService.getChampionshipById(id || 'invictus_arena_30d');
+  const [champ, setChamp] = useState<Championship | undefined | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    championshipService.getChampionshipById(id || 'invictus_arena_30d').then((c) => {
+      if (ativo) setChamp(c || undefined);
+    });
+    return () => { ativo = false; };
+  }, [id]);
 
   const [activeTab, setActiveTab] = useState<'rules' | 'prizes'>('rules');
   const [openSectionId, setOpenSectionId] = useState<number | null>(1);
   const [accepted, setAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  if (champ === null) {
+    return <div className="w-full min-h-screen bg-transparent" />;
+  }
 
   if (!champ) {
     return (
@@ -65,27 +78,10 @@ export const ChampionshipRegulation: React.FC = () => {
     setErrorMsg(null);
 
     try {
-      // Server-side audit trail recording
-      const response = await fetch('/api/championships/accept-regulation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          championshipId: champ.id,
-          userId: user.uid,
-          regulationVersion: champ.regulationVersion,
-          regulationHash: champ.regulationHash,
-          locale: navigator.language || 'pt-BR',
-          platform: 'web'
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Falha ao registrar aceite do regulamento no servidor.');
-      }
-
-      // Store acceptance locally for client flow consistency
-      championshipService.createPendingRegistration(champ, user.uid, user.name);
+      // Aceite auditado gravado direto no Firestore (championship_acceptances),
+      // com o servidor conferindo versao/hash contra o catalogo oficial --
+      // ver api/_lib/championship-inscription-service.ts.
+      const data = await championshipService.acceptRegulation(champ.id, champ.regulationVersion, champ.regulationHash);
 
       // Navigate to registration checkout passing audit acceptance ID
       navigate(`/championships/${champ.id}/register?accId=${encodeURIComponent(data.acceptanceId)}`);

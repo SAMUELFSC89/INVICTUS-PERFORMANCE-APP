@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -10,23 +10,51 @@ import {
   Clock,
   Flame,
   CheckCircle2,
+  XCircle,
   Play,
   Award,
   ShieldCheck,
   ChevronRight
 } from 'lucide-react';
 import { championshipService } from '../../services/championshipService';
+import { Championship, UserChampionshipProgress } from '../../types/championships';
 import { useUser } from '../../UserContext';
 
 export const MyChampionshipDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useUser();
-  const champ = championshipService.getChampionshipById(id || 'invictus_arena_30d');
-  const progress = championshipService.getUserProgress(champ?.id || 'invictus_arena_30d', user?.uid || '');
-  const leaderboard = championshipService.getLeaderboard(champ?.id || 'invictus_arena_30d');
+  const [champ, setChamp] = useState<Championship | undefined | null>(null);
+  const [progress, setProgress] = useState<UserChampionshipProgress | null>(null);
+  const [leaderboard, setLeaderboard] = useState<Array<{ rank: number; name: string; gym: string; score: number; isUser?: boolean }>>([]);
+  const [activities, setActivities] = useState<Array<{ activityId: string; activityType: string; score: number; validationStatus: string; durationMinutes: number; distanceKm: number; createdAt: string }>>([]);
 
   const [activeTab, setActiveTab] = useState<'summary' | 'ranking' | 'activities'>('summary');
+
+  useEffect(() => {
+    let ativo = true;
+    const championshipId = id || 'invictus_arena_30d';
+    (async () => {
+      const c = await championshipService.getChampionshipById(championshipId);
+      if (!ativo) return;
+      setChamp(c || undefined);
+      if (!c) return;
+      const [p, l, a] = await Promise.all([
+        championshipService.getUserProgress(c.id),
+        championshipService.getLeaderboard(c.id),
+        championshipService.getMyActivities(c.id),
+      ]);
+      if (!ativo) return;
+      setProgress(p);
+      setLeaderboard(l);
+      setActivities(a);
+    })();
+    return () => { ativo = false; };
+  }, [id]);
+
+  if (champ === null) {
+    return <div className="w-full min-h-screen bg-transparent" />;
+  }
 
   if (!champ) {
     return (
@@ -124,35 +152,35 @@ export const MyChampionshipDetail: React.FC = () => {
               <span className="text-[12px] font-bold uppercase tracking-wider font-bebas text-zinc-300">
                 SEU DESEMPENHO
               </span>
-              <span className="text-[10px] text-zinc-500 font-sans">{progress.lastUpdated}</span>
+              <span className="text-[10px] text-zinc-500 font-sans">{progress ? progress.lastUpdated : 'Carregando...'}</span>
             </div>
 
             {/* 4 Metric Boxes */}
             <div className="grid grid-cols-4 gap-2 text-center">
               <div className="bg-zinc-950/70 p-2.5 rounded-xl border border-zinc-800/80">
                 <span className="text-[18px] font-extrabold font-bebas text-white block leading-none">
-                  {progress.currentRank}º
+                  {progress ? `${progress.currentRank}º` : '—'}
                 </span>
                 <span className="text-[9px] text-zinc-400 font-sans block mt-1">Posição</span>
               </div>
 
               <div className="bg-zinc-950/70 p-2.5 rounded-xl border border-zinc-800/80">
                 <span className="text-[18px] font-extrabold font-bebas text-[#ffb000] block leading-none">
-                  {progress.totalScore.toLocaleString('pt-BR')}
+                  {(progress?.totalScore ?? 0).toLocaleString('pt-BR')}
                 </span>
                 <span className="text-[9px] text-zinc-400 font-sans block mt-1">Pontos</span>
               </div>
 
               <div className="bg-zinc-950/70 p-2.5 rounded-xl border border-zinc-800/80">
                 <span className="text-[18px] font-extrabold font-bebas text-white block leading-none">
-                  {progress.validSessionsCount}
+                  {progress?.validSessionsCount ?? 0}
                 </span>
                 <span className="text-[9px] text-zinc-400 font-sans block mt-1">Treinos</span>
               </div>
 
               <div className="bg-zinc-950/70 p-2.5 rounded-xl border border-zinc-800/80">
                 <span className="text-[18px] font-extrabold font-bebas text-white block leading-none">
-                  {Math.round(progress.totalTimeMinutes / 60)}h
+                  {Math.round((progress?.totalTimeMinutes ?? 0) / 60)}h
                 </span>
                 <span className="text-[9px] text-zinc-400 font-sans block mt-1">Tempo total</span>
               </div>
@@ -174,12 +202,12 @@ export const MyChampionshipDetail: React.FC = () => {
             <div className="w-full h-3 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden relative my-2">
               <div
                 className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
-                style={{ width: `${progress.progressPercentage}%` }}
+                style={{ width: `${progress?.progressPercentage ?? 0}%` }}
               />
             </div>
             <div className="flex justify-between items-center text-[10px] text-zinc-400 font-sans">
               <span>Início da jornada</span>
-              <span className="font-bold text-amber-400">{progress.progressPercentage}% concluído</span>
+              <span className="font-bold text-amber-400">{progress?.progressPercentage ?? 0}% concluído</span>
             </div>
           </div>
 
@@ -307,27 +335,35 @@ export const MyChampionshipDetail: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            {[
-              { title: 'Treino de Peito & Tríceps', date: 'Hoje às 10:30', pts: 650, time: '52 min', gym: 'Invictus Pro HQ', status: 'Homologado' },
-              { title: 'Treino de Costas & Bíceps', date: 'Ontem às 18:15', pts: 650, time: '48 min', gym: 'Invictus Pro HQ', status: 'Homologado' },
-              { title: 'Treino de Pernas Completo', date: '22/07 às 09:00', pts: 650, time: '60 min', gym: 'Invictus Pro HQ', status: 'Homologado' }
-            ].map((act, i) => (
-              <div key={i} className="p-3 rounded-xl bg-[#121113] border border-zinc-800/80 flex items-center justify-between font-sans">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-amber-400 flex items-center justify-center">
-                    <CheckCircle2 size={16} className="text-emerald-400" />
-                  </div>
-                  <div>
-                    <span className="text-[12px] font-bold text-white block">{act.title}</span>
-                    <span className="text-[10px] text-zinc-400 block">{act.date} · {act.gym}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[13px] font-bold text-amber-400 font-bebas block">+{act.pts} pts</span>
-                  <span className="text-[9px] text-emerald-400 font-bold block">{act.status}</span>
-                </div>
+            {activities.length === 0 && (
+              <div className="text-center text-zinc-500 text-[12px] font-sans py-8">
+                Nenhuma atividade homologada neste campeonato ainda.
               </div>
-            ))}
+            )}
+            {activities.map((act) => {
+              const validada = act.validationStatus === 'VALIDATED';
+              const dataLabel = new Date(act.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+              const tituloAtividade = act.activityType === 'workout' ? 'Treino de musculação' : 'Corrida ao ar livre';
+              return (
+                <div key={`${act.activityId}`} className="p-3 rounded-xl bg-[#121113] border border-zinc-800/80 flex items-center justify-between font-sans">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-amber-400 flex items-center justify-center">
+                      {validada ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-red-400" />}
+                    </div>
+                    <div>
+                      <span className="text-[12px] font-bold text-white block">{tituloAtividade}</span>
+                      <span className="text-[10px] text-zinc-400 block">{dataLabel} · {act.durationMinutes} min</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[13px] font-bold text-amber-400 font-bebas block">+{act.score} pts</span>
+                    <span className={`text-[9px] font-bold block ${validada ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {validada ? 'Homologado' : 'Fora do perfil do campeonato'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <button

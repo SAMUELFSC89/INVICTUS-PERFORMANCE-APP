@@ -14,6 +14,9 @@ import { SCORE_CONFIG } from '../_lib/score-config.js';
 import { GPSValidator } from '../_lib/fraud-detection/gps-validator.js';
 import { SecurityPipeline } from '../_lib/security-pipeline.js';
 import { estimateCalories, formatPace } from '../_lib/activity-metrics.js';
+import { commitActivityAfterPresenceCheck } from '../_lib/activity-commit-service.js';
+import { criarInscricaoChampionship } from '../_lib/championship-inscription-service.js';
+import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -277,17 +280,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const workoutPayload = checkData.workoutPayload || {};
+    const actionType: string = checkData.actionType || 'workout_commit';
 
-    // 4. APPROVED PATH: Let's execute standard workout or running points commit
-    if (finalDecision === 'approved' || finalDecision === 'pending') {
-      const isRunning = checkData.workoutPayload?.km !== undefined || (checkData.type === 'running');
+    // 4. APPROVED PATH: cada actionType tem seu proprio commit -- ver
+    // api/_lib/presence-check-service.ts (criarPresenceCheck) para onde cada
+    // um e disparado.
+    let pointsAwarded = 0;
+    let commitResult: any = undefined;
 
-      if (isRunning) {
-        // Submit run tracking session to db
-        await commitRunningSession(userId, workoutPayload, finalDecision);
-      } else {
-        // Submit standard gym workout/cardio to db
-        await commitWorkoutSession(userId, workoutPayload, finalDecision, cleanSelfieBase64);
+    if (actionType === 'activity_under_review') {
+      // Gatilho: SecurityPipeline marcou a atividade UNDER_REVIEW (confianca
+      // baixa) em validate-activity-service.ts. So comita se a decisao nao
+      // foi rejeitada.
+      if (finalDecision === 'approved' || finalDecision === 'pending') {
+        const resultado = await commitActivityAfterPresenceCheck({
+          userId,
+          rawActivity: workoutPayload,
+          presenceOutcome: finalDecision,
+          presenceSelfieBase64: cleanSelfieBase64,
+        });
+        pointsAwarded = resultado.pointsAwarded;
+        commitResult = resultado;
+      }
+    } else if (actionType === 'championship_registration') {
+      // Dinheiro real em disputa: so emite a cobranca PIX se a presenca foi
+      // efetivamente APROVADA (nao 'pending') -- confianca media nao e
+      // suficiente pra autorizar uma inscricao paga.
+      if (finalDecision === 'approved') {
+        try {
+          const { championshipId, acceptanceId } = workoutPayload;
+          commitResult = await criarInscricaoChampionship(userId, championshipId, acceptanceId);
+        } catch (regErr: any) {
+          console.error('[Presence Verification] Falha ao criar inscricao de campeonato pos-selfie:', regErr);
+          return res.status(400).json({
+            success: false,
+            userMessage: regErr?.message || 'Presenca confirmada, mas nao foi possivel emitir a cobranca da inscricao. Tente novamente.'
+          });
+        }
+      }
+    } else if (actionType === 'withdrawal') {
+      // Dinheiro real saindo: mesmo criterio -- so 'approved' processa o saque.
+      if (finalDecision === 'approved') {
+        try {
+          commitResult = await WithdrawalEngine.requestWithdrawal({ userId, ...workoutPayload });
+        } catch (wErr: any) {
+          console.error('[Presence Verification] Falha ao solicitar saque pos-selfie:', wErr);
+          return res.status(400).json({
+            success: false,
+            userMessage: wErr?.message || 'Presenca confirmada, mas nao foi possivel registrar o saque. Tente novamente.'
+          });
+        }
+      }
+    } else {
+      // Legado (workout_commit): mantido por compatibilidade, caso algum
+      // caller antigo ainda use o payload original.
+      if (finalDecision === 'approved' || finalDecision === 'pending') {
+        const isRunning = checkData.workoutPayload?.km !== undefined || (checkData.type === 'running');
+        if (isRunning) {
+          await commitRunningSession(userId, workoutPayload, finalDecision);
+        } else {
+          pointsAwarded = await commitWorkoutSession(userId, workoutPayload, finalDecision, cleanSelfieBase64);
+        }
       }
     }
 
@@ -329,7 +382,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       identityConfidence,
       livenessConfidence,
       userMessage: friendlyResultMessage,
-      reason: aiReason
+      reason: aiReason,
+      pointsAwarded,
+      commitResult
     });
 
   } catch (error: any) {
@@ -355,10 +410,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 // TRANSACTIONALLY COMMIT STANDARD PLAYLOADS FOR WORKOUTS
-async function commitWorkoutSession(userId: string, payload: any, finalDecision: 'approved' | 'pending', presenceSelfie: string) {
+async function commitWorkoutSession(userId: string, payload: any, finalDecision: 'approved' | 'pending', presenceSelfie: string): Promise<number> {
   const { type, durationMins, distanceKm, photoBase64, checkpoints, hasExercises, aiResult, focus, description, quizAnswers } = payload;
   const nowLocalDate = new Date();
   const todayISO = nowLocalDate.toISOString().split('T')[0];
+  // Capturado de dentro da transaction abaixo (transaction callbacks nao podem
+  // definir o retorno da funcao externa diretamente) para devolver ao caller
+  // (validate-presence.ts) quanto XP foi efetivamente concedido.
+  let pointsEarnedResult = 0;
 
   const userRef = db.collection('users').doc(userId);
   const workoutRef = db.collection('workouts').doc();
@@ -599,6 +658,7 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
 
     transaction.set(workoutRef, workoutObj);
     transaction.update(userRef, updates);
+    pointsEarnedResult = pointsEarned;
   });
 
   // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA (IGA)
@@ -610,6 +670,8 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
   } catch (rankingErr) {
     console.error(`[commitWorkoutSession] Falha ao recalcular pontuacao IGA para userId=${userId}, treino permanece salvo:`, rankingErr);
   }
+
+  return pointsEarnedResult;
 }
 
 // TRANSACTIONALLY COMMIT RUNNING PAYLOADS

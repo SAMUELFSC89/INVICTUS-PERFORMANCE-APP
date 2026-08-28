@@ -29,8 +29,15 @@ export const ChampionshipsHub: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const userRegistrations = championshipService.getUserRegistrations(user?.uid);
-  const hasActiveRegistrations = userRegistrations.some((r) => r.status === 'ACTIVE');
+  const [hasActiveRegistrations, setHasActiveRegistrations] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    let ativo = true;
+    championshipService.getUserRegistrations().then((regs) => {
+      if (ativo) setHasActiveRegistrations(regs.some((r) => r.status === 'ACTIVE'));
+    });
+    return () => { ativo = false; };
+  }, [user]);
 
   return (
     <div className="w-full min-h-screen bg-transparent text-white pb-28 pt-3 px-3.5 sm:px-5 max-w-md mx-auto select-none">

@@ -60,7 +60,12 @@ import {
   acceptChampionshipRegulationHandler,
   createChampionshipPaymentHandler,
   asaasChampionshipWebhookHandler,
-  submitActivityToChampionshipHandler
+  submitActivityToChampionshipHandler,
+  listChampionshipsHandler,
+  getMyRegistrationsHandler,
+  getChampionshipProgressHandler,
+  getChampionshipLeaderboardHandler,
+  getMyChampionshipActivitiesHandler
 } from './_handlers/championships.js';
 
 
@@ -262,6 +267,21 @@ router.all('/health-summary', wrap(healthSummaryHandler));
 
 console.log('[ROUTE] /powerlift', typeof powerLiftHandler);
 router.all('/powerlift', wrap(powerLiftHandler));
+
+console.log('[ROUTE] /championships (GET)', typeof listChampionshipsHandler);
+router.get('/championships', wrap(listChampionshipsHandler));
+
+console.log('[ROUTE] /championships/my-registrations', typeof getMyRegistrationsHandler);
+router.get('/championships/my-registrations', wrap(getMyRegistrationsHandler));
+
+console.log('[ROUTE] /championships/progress', typeof getChampionshipProgressHandler);
+router.get('/championships/progress', wrap(getChampionshipProgressHandler));
+
+console.log('[ROUTE] /championships/leaderboard', typeof getChampionshipLeaderboardHandler);
+router.get('/championships/leaderboard', wrap(getChampionshipLeaderboardHandler));
+
+console.log('[ROUTE] /championships/my-activities', typeof getMyChampionshipActivitiesHandler);
+router.get('/championships/my-activities', wrap(getMyChampionshipActivitiesHandler));
 
 console.log('[ROUTE] /championships/accept-regulation', typeof acceptChampionshipRegulationHandler);
 router.post('/championships/accept-regulation', wrap(acceptChampionshipRegulationHandler));

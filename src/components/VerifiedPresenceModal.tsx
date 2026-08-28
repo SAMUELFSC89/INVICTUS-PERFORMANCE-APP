@@ -19,7 +19,8 @@ interface VerifiedPresenceModalProps {
   livenessPrompt: string;
   userMessage?: string;
   onClose: () => void;
-  onSuccess: (result: { status: string; userMessage: string; pointsAwarded?: number }) => void;
+  /** commitResult: payload especifico do actionType (ex.: QR code PIX da inscricao de campeonato, ou o registro de saque) -- ver commitResult em api/_handlers/validate-presence.ts. */
+  onSuccess: (result: { status: string; userMessage: string; pointsAwarded?: number; commitResult?: any }) => void;
 }
 
 export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
@@ -174,7 +175,8 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
       onSuccess({
         status: result.status,
         userMessage: result.userMessage,
-        pointsAwarded: result.pointsAwarded
+        pointsAwarded: result.pointsAwarded,
+        commitResult: result.commitResult
       });
 
     } catch (err: any) {

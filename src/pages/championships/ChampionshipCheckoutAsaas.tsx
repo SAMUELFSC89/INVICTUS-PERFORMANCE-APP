@@ -1,66 +1,92 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, QrCode, Copy, Check, CreditCard, ShieldCheck, ArrowLeft, RefreshCw } from 'lucide-react';
-import { championshipService } from '../../services/championshipService';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Lock, QrCode, Copy, Check, ShieldCheck, ArrowLeft, RefreshCw } from 'lucide-react';
+import { championshipService, QrCodePix } from '../../services/championshipService';
+import { Championship } from '../../types/championships';
 import { useUser } from '../../UserContext';
 
+/**
+ * Ate 2026-08 esta tela era 100% decorativa: QR code fixo desenhado em SVG,
+ * codigo copia-e-cola hardcoded, e um botao "Simular Pagamento Aprovado" que
+ * so chamava o webhook diretamente -- nenhum dinheiro real trafegava, mas a
+ * tela parecia uma cobranca real de producao (inclusive alcancavel por
+ * usuarios reais via "Meus Campeonatos" -> card fixo -> Inscrever-se).
+ *
+ * Agora mostra o QR code e o copia-e-cola REAIS devolvidos pelo Asaas (a
+ * mesma cobranca criada em ChampionshipRegistration.tsx via
+ * championshipService.createPayment). A confirmacao so acontece pelo
+ * webhook oficial do Asaas quando o PIX realmente for pago -- por isso esta
+ * tela faz polling silencioso do status da inscricao em vez de ter qualquer
+ * botao de "aprovar".
+ */
 export const ChampionshipCheckoutAsaas: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { user } = useUser();
-  const champ = championshipService.getChampionshipById(id || 'invictus_arena_30d');
 
-  const [paymentType, setPaymentType] = useState<'pix' | 'card'>('pix');
+  const [champ, setChamp] = useState<Championship | undefined | null>(null);
+  const [qrCode, setQrCode] = useState<QrCodePix | null>((location.state as any)?.pagamento?.qrCode || null);
+  const [valor, setValor] = useState<number | null>((location.state as any)?.pagamento?.valor || null);
   const [copied, setCopied] = useState(false);
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const pixCode = '00020126580014BR.GOV.BCB.PIX0136123e4567-e89b-12d3-a456-426614174000520400005303986540549.905802BR5925INVICTUS FIT PARTICIPACOE6009SAO PAULO62070503***6304E8A2';
+  useEffect(() => {
+    let ativo = true;
+    championshipService.getChampionshipById(id || 'invictus_arena_30d').then((c) => {
+      if (ativo) setChamp(c || undefined);
+    });
+    return () => { ativo = false; };
+  }, [id]);
+
+  // Sem QR code no state (ex: usuario deu refresh nesta tela): desde que a
+  // emissao da cobranca passou a exigir confirmacao de presenca por selfie
+  // (ver ChampionshipRegistration.tsx), createPayment() nao devolve mais o QR
+  // code direto -- so devolve um novo presenceCheckRequired. Em vez de forcar
+  // outra selfie so pra reexibir um QR ja gerado, manda o atleta de volta pra
+  // tela de inscricao: se a cobranca ja existe, ele so confirma presenca de
+  // novo (o backend e idempotente -- nao gera cobranca duplicada) e volta pra
+  // cá com o QR no state.
+  useEffect(() => {
+    if (qrCode || !champ || !user) return;
+    const accId = new URLSearchParams(location.search).get('accId');
+    navigate(`/championships/${champ.id}/register${accId ? `?accId=${accId}` : ''}`, { replace: true });
+  }, [qrCode, champ, user, location.search, navigate]);
+
+  // Poll discreto: assim que o webhook do Asaas confirmar o pagamento, a
+  // inscricao muda pra 'paga' no Firestore e o app leva o atleta pra
+  // confirmacao automaticamente -- sem precisar de nenhum botao manual.
+  useEffect(() => {
+    if (!champ) return;
+    const interval = setInterval(async () => {
+      setChecking(true);
+      try {
+        const reg = await championshipService.getRegistration(champ.id);
+        if (reg?.status === 'ACTIVE') {
+          navigate(`/championships/${champ.id}/confirmed`);
+        }
+      } finally {
+        setChecking(false);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [champ, navigate]);
 
   const handleCopyPix = () => {
-    navigator.clipboard.writeText(pixCode);
+    if (!qrCode) return;
+    navigator.clipboard.writeText(qrCode.payload);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
 
-  const handleSimulatePaymentApproval = async () => {
-    if (!champ || !user) return;
-    setIsSimulating(true);
-
-    try {
-      // 1. Trigger server-side webhook simulation
-      await fetch('/api/championships/webhook-asaas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          event: 'PAYMENT_CONFIRMED',
-          payment: {
-            id: `pay_asaas_live_${Date.now()}`,
-            externalReference: `CHAMPIONSHIP_REGISTRATION:${user.uid}:${champ.id}`,
-            value: champ.registrationPrice,
-            status: 'RECEIVED'
-          }
-        })
-      });
-
-      // 2. Activate registration in client storage
-      championshipService.confirmPaymentMock(champ.id, user.uid);
-
-      // 3. Navigate to Confirmation Screen
-      navigate(`/championships/${champ.id}/confirmed`);
-    } catch (e) {
-      console.error('Error simulating approval', e);
-      championshipService.confirmPaymentMock(champ.id, user.uid);
-      navigate(`/championships/${champ.id}/confirmed`);
-    } finally {
-      setIsSimulating(false);
-    }
-  };
+  if (champ === null) {
+    return <div className="w-full min-h-screen bg-[#07090e]" />;
+  }
 
   return (
     <div className="w-full min-h-screen bg-[#07090e] text-white pb-20 max-w-md mx-auto select-none flex flex-col justify-between">
       <div>
-        {/* Browser Mock Header */}
         <div className="bg-[#0f1422] border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between text-zinc-400 text-[11px] font-sans">
           <button onClick={() => navigate(`/championships/${id}/register`)} className="text-zinc-400 hover:text-white flex items-center gap-1">
             <ArrowLeft size={14} />
@@ -72,7 +98,6 @@ export const ChampionshipCheckoutAsaas: React.FC = () => {
           <div className="w-4" />
         </div>
 
-        {/* Asaas Brand Header */}
         <div className="p-5 text-center border-b border-zinc-800/80 bg-gradient-to-b from-[#0e172e] to-[#07090e]">
           <div className="inline-flex items-center justify-center mb-3">
             <span className="text-[26px] font-black tracking-tight text-[#004bf7] font-sans">
@@ -81,94 +106,34 @@ export const ChampionshipCheckoutAsaas: React.FC = () => {
           </div>
 
           <h1 className="text-[17px] font-bold font-sans text-white">
-            {champ?.title || 'Invictus Arena 30D'}
+            {champ?.title || 'Campeonato Invictus'}
           </h1>
           <p className="text-[11px] text-zinc-400 font-sans mt-0.5">
             Inscrição oficial no campeonato
           </p>
 
           <div className="text-[24px] font-extrabold font-bebas tracking-wide text-white mt-2">
-            R$ {champ?.registrationPrice.toFixed(2).replace('.', ',') || '49,90'}
+            R$ {(valor ?? champ?.registrationPrice ?? 0).toFixed(2).replace('.', ',')}
           </div>
         </div>
 
-        {/* Payment Tabs: PIX / CARTÃO */}
         <div className="px-5 pt-4">
-          <div className="grid grid-cols-2 gap-2 p-1 bg-[#121624] border border-zinc-800 rounded-xl mb-4">
-            <button
-              onClick={() => setPaymentType('pix')}
-              className={`py-2 rounded-lg text-[12px] font-bold font-sans flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                paymentType === 'pix'
-                  ? 'bg-[#004bf7] text-white shadow-md'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <QrCode size={14} />
-              <span>Pix</span>
-            </button>
-            <button
-              onClick={() => setPaymentType('card')}
-              className={`py-2 rounded-lg text-[12px] font-bold font-sans flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                paymentType === 'card'
-                  ? 'bg-[#004bf7] text-white shadow-md'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <CreditCard size={14} />
-              <span>Cartão</span>
-            </button>
-          </div>
+          {loadError && (
+            <div className="p-3 mb-4 rounded-xl bg-red-950/80 border border-red-500/50 text-red-300 text-[11px] font-sans">
+              {loadError}
+            </div>
+          )}
 
-          {/* PIX CONTENT */}
-          {paymentType === 'pix' && (
+          {qrCode ? (
             <div className="bg-[#121624] border border-zinc-800 rounded-2xl p-5 text-center space-y-4 shadow-xl">
-              {/* QR Code Container */}
-              <div className="w-48 h-48 mx-auto bg-white rounded-xl p-3 flex flex-col items-center justify-center shadow-lg">
-                <svg viewBox="0 0 100 100" className="w-full h-full text-black">
-                  {/* Stylized QR Code Matrix */}
-                  <rect width="100" height="100" fill="white" />
-                  {/* Position squares */}
-                  <rect x="5" y="5" width="28" height="28" fill="black" />
-                  <rect x="9" y="9" width="20" height="20" fill="white" />
-                  <rect x="13" y="13" width="12" height="12" fill="black" />
-
-                  <rect x="67" y="5" width="28" height="28" fill="black" />
-                  <rect x="71" y="9" width="20" height="20" fill="white" />
-                  <rect x="75" y="13" width="12" height="12" fill="black" />
-
-                  <rect x="5" y="67" width="28" height="28" fill="black" />
-                  <rect x="9" y="71" width="20" height="20" fill="white" />
-                  <rect x="13" y="75" width="12" height="12" fill="black" />
-
-                  {/* QR Data Dots */}
-                  <rect x="38" y="8" width="6" height="6" fill="black" />
-                  <rect x="48" y="14" width="6" height="6" fill="black" />
-                  <rect x="40" y="24" width="8" height="8" fill="black" />
-                  <rect x="54" y="22" width="6" height="6" fill="black" />
-
-                  <rect x="8" y="38" width="8" height="8" fill="black" />
-                  <rect x="22" y="44" width="6" height="6" fill="black" />
-                  <rect x="36" y="38" width="12" height="12" fill="black" />
-                  <rect x="52" y="42" width="8" height="8" fill="black" />
-                  <rect x="66" y="38" width="8" height="8" fill="black" />
-                  <rect x="80" y="44" width="10" height="10" fill="black" />
-
-                  <rect x="38" y="56" width="8" height="8" fill="black" />
-                  <rect x="50" y="54" width="10" height="10" fill="black" />
-                  <rect x="68" y="58" width="6" height="6" fill="black" />
-                  <rect x="82" y="66" width="8" height="8" fill="black" />
-
-                  <rect x="38" y="72" width="10" height="10" fill="black" />
-                  <rect x="52" y="76" width="8" height="8" fill="black" />
-                  <rect x="66" y="74" width="10" height="10" fill="black" />
-                  <rect x="80" y="82" width="8" height="8" fill="black" />
-                </svg>
-                <span className="text-[9px] font-extrabold font-sans text-zinc-900 tracking-wider mt-1 block">
-                  PAGUE COM PIX
-                </span>
+              <div className="w-48 h-48 mx-auto bg-white rounded-xl p-3 flex flex-col items-center justify-center shadow-lg overflow-hidden">
+                <img
+                  src={`data:image/png;base64,${qrCode.encodedImage}`}
+                  alt="QR Code PIX"
+                  className="w-full h-full object-contain"
+                />
               </div>
 
-              {/* Copy Pix Button */}
               <button
                 onClick={handleCopyPix}
                 className="w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-[12px] font-bold font-sans flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
@@ -177,53 +142,25 @@ export const ChampionshipCheckoutAsaas: React.FC = () => {
                 <span>{copied ? 'Código Pix Copiado!' : 'Copiar código Pix'}</span>
               </button>
 
-              <p className="text-[11px] text-zinc-400 font-sans">
-                O pagamento será processado e homologado pelo Asaas.
+              <p className="text-[11px] text-zinc-400 font-sans flex items-center justify-center gap-1.5">
+                {checking && <RefreshCw size={11} className="animate-spin" />}
+                Assim que o Pix for pago, a confirmação é automática.
               </p>
             </div>
-          )}
-
-          {/* CARD CONTENT */}
-          {paymentType === 'card' && (
-            <div className="bg-[#121624] border border-zinc-800 rounded-2xl p-4 text-center space-y-3 shadow-xl">
-              <p className="text-[12px] text-zinc-300 font-sans">
-                Checkout de Cartão Seguro Asaas (Sem armazenamento local de dados).
-              </p>
-              <div className="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800 text-left space-y-2 text-[11px] text-zinc-400 font-sans">
-                <div>• Número do Cartão: **** **** **** 4022</div>
-                <div>• Validade: 12/28</div>
-                <div>• Titular: {user?.name || 'Atleta Invictus'}</div>
-              </div>
+          ) : (
+            <div className="bg-[#121624] border border-zinc-800 rounded-2xl p-8 text-center space-y-3 shadow-xl">
+              <RefreshCw size={22} className="animate-spin mx-auto text-zinc-500" />
+              <p className="text-[12px] text-zinc-400 font-sans">Gerando cobrança Pix...</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Footer Safety & Sandbox Confirmation Action */}
       <div className="p-5 space-y-3 bg-[#07090e] border-t border-zinc-800/80">
         <div className="flex items-center justify-center gap-1.5 text-emerald-400 text-[11px] font-sans">
           <ShieldCheck size={14} />
           <span>Asaas · Ambiente 100% seguro</span>
         </div>
-
-        {/* Sandbox Test Trigger to simulate Webhook Confirmation */}
-        <button
-          onClick={handleSimulatePaymentApproval}
-          disabled={isSimulating}
-          className="w-full py-3 rounded-xl bg-[#004bf7] hover:bg-blue-600 text-white font-sans text-[13px] font-bold flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all cursor-pointer"
-        >
-          {isSimulating ? (
-            <>
-              <RefreshCw size={15} className="animate-spin" />
-              <span>Confirmando via Webhook Asaas...</span>
-            </>
-          ) : (
-            <>
-              <Check size={16} />
-              <span>Simular Pagamento Aprovado (Asaas)</span>
-            </>
-          )}
-        </button>
       </div>
     </div>
   );

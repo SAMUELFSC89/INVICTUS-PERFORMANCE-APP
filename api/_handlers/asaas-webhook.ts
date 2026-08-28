@@ -3,6 +3,10 @@ import { timingSafeEqual } from 'crypto';
 import { cors } from '../_lib/common.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 import { confirmarInscricaoPorPagamento } from '../_lib/inscricao-service.js';
+import {
+  confirmarInscricaoChampionshipPorPagamento,
+  marcarInscricaoChampionshipComoReembolsada,
+} from '../_lib/championship-inscription-service.js';
 
 /**
  * Webhook do Asaas: recebe eventos de transferência PIX (TRANSFER_DONE,
@@ -56,12 +60,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.log('[Asaas Webhook] Evento de cobrança: ' + event + ' para pagamento ' + payment.id + ' (status: ' + payment.status + ')');
 
       if (confirmado) {
-        const resultado = await confirmarInscricaoPorPagamento(payment.id, payment.value);
-        return res.status(200).json({ received: true, inscricao: resultado });
+        // Uma cobranca so pode ser de UMA das duas coisas (inscricao de
+        // temporada OU inscricao de campeonato) -- externalReference nunca
+        // colide entre os dois, mas a Asaas manda so o payment.id no
+        // webhook, entao tentamos temporada primeiro e so caimos pra
+        // campeonato se a temporada nao reconhecer esse pagamento.
+        const resultadoTemporada = await confirmarInscricaoPorPagamento(payment.id, payment.value);
+        if (resultadoTemporada.encontrada) {
+          return res.status(200).json({ received: true, inscricao: resultadoTemporada });
+        }
+        const resultadoChampionship = await confirmarInscricaoChampionshipPorPagamento(payment.id, payment.value);
+        return res.status(200).json({ received: true, inscricao: resultadoChampionship });
       }
 
-      // Outros eventos de cobrança (vencida, estornada) não mudam inscrição
-      // paga -- ficam registrados no log para investigação.
+      if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_CHARGEBACK_REQUESTED') {
+        // Idem: tenta campeonato (temporada nao tem fluxo de reembolso
+        // automatizado ainda -- fica so registrado no log abaixo se nao
+        // reconhecido).
+        const resultadoChampionship = await marcarInscricaoChampionshipComoReembolsada(payment.id);
+        if (resultadoChampionship.encontrada) {
+          return res.status(200).json({ received: true, inscricao: resultadoChampionship });
+        }
+      }
+
+      // Outros eventos de cobrança (vencida, estornada não reconhecida)
+      // não mudam inscrição paga -- ficam registrados no log para investigação.
       return res.status(200).json({ received: true, ignorado: event });
     }
 

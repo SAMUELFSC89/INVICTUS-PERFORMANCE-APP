@@ -2,33 +2,48 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Share2, Dumbbell, Activity, Trophy, FileText, Users, Clock } from 'lucide-react';
 import { championshipService } from '../../services/championshipService';
+import { Championship } from '../../types/championships';
 import { AthleteIllustration } from './AthleteIllustration';
+
+function calcularTempoRestante(endAt: string) {
+  const diffMs = Math.max(0, new Date(endAt).getTime() - Date.now());
+  const totalSeconds = Math.floor(diffMs / 1000);
+  return {
+    days: Math.floor(totalSeconds / 86400),
+    hours: Math.floor((totalSeconds % 86400) / 3600),
+    minutes: Math.floor((totalSeconds % 3600) / 60),
+    seconds: totalSeconds % 60,
+  };
+}
 
 export const ChampionshipDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const champ = championshipService.getChampionshipById(id || 'invictus_arena_30d');
-
-  // Countdown timer state
-  const [timeLeft, setTimeLeft] = useState({
-    days: 24,
-    hours: 8,
-    minutes: 37,
-    seconds: 12
-  });
+  const [champ, setChamp] = useState<Championship | undefined | null>(null);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 };
-        if (prev.minutes > 0) return { ...prev, minutes: prev.minutes - 1, seconds: 59 };
-        if (prev.hours > 0) return { ...prev, hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        if (prev.days > 0) return { ...prev, days: prev.days - 1, hours: 23, minutes: 59, seconds: 59 };
-        return prev;
-      });
-    }, 1000);
+    let ativo = true;
+    championshipService.getChampionshipById(id || 'invictus_arena_30d').then((c) => {
+      if (ativo) setChamp(c || undefined);
+    });
+    return () => { ativo = false; };
+  }, [id]);
+
+  // Countdown real ate o encerramento oficial do campeonato (champ.endAt) --
+  // ate 2026-08 era decorativo (comecava sempre em "24d 8h 37m 12s" e so
+  // descontava, sem nenhuma relacao com a data real da competicao).
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+  useEffect(() => {
+    if (!champ) return;
+    setTimeLeft(calcularTempoRestante(champ.endAt));
+    const timer = setInterval(() => setTimeLeft(calcularTempoRestante(champ.endAt)), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [champ]);
+
+  if (champ === null) {
+    return <div className="w-full min-h-screen bg-transparent" />;
+  }
 
   if (!champ) {
     return (

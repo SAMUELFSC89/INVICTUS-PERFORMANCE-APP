@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from '../_lib/common.js';
 import { WalletEngine } from '../_lib/wallet-engine.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
+import { criarPresenceCheck } from '../_lib/presence-check-service.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -38,21 +39,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 3. POST Request PIX Withdrawal (amount is in R$ / Reais directly)
+    //
+    // Dinheiro real saindo: antes de chamar WithdrawalEngine.requestWithdrawal,
+    // exige confirmacao de presenca por selfie -- mesmo mecanismo do check-in
+    // de academia e da inscricao de campeonatos (ver
+    // api/_lib/presence-check-service.ts). O saque so e de fato solicitado
+    // depois, em api/_handlers/validate-presence.ts (actionType 'withdrawal'),
+    // apos a selfie ser aprovada.
     if (req.method === 'POST' && (action === 'withdraw' || req.url.includes('/withdraw'))) {
       const { amount, pixKey, pixKeyType, deviceId, requestId } = req.body;
-      const withdrawal = await WithdrawalEngine.requestWithdrawal({
+
+      const { presenceCheckId, livenessPrompt } = await criarPresenceCheck({
         userId: auth.uid,
-        amount: Number(amount),
-        pixKey: typeof pixKey === 'string' ? pixKey : '',
-        pixKeyType: pixKeyType || 'cpf',
-        deviceId,
-        requestId: typeof requestId === 'string' ? requestId : undefined
+        actionType: 'withdrawal',
+        payload: {
+          amount: Number(amount),
+          pixKey: typeof pixKey === 'string' ? pixKey : '',
+          pixKeyType: pixKeyType || 'cpf',
+          deviceId,
+          requestId: typeof requestId === 'string' ? requestId : `wd_${auth.uid}_${Date.now()}`
+        },
       });
 
       return res.status(200).json({
         success: true,
-        message: 'Solicitação de saque via PIX enviada com sucesso! O valor foi retido em segurança durante a análise.',
-        withdrawal
+        presenceCheckRequired: true,
+        presenceCheckId,
+        livenessPrompt,
+        message: 'Confirme sua presença por selfie para concluir a solicitação de saque via PIX.'
       });
     }
 
