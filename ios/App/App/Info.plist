@@ -46,6 +46,8 @@
 	<string>O INVICTUS usa sua localização ao buscar academias, validar treinos presenciais e registrar rotas de cardio ao ar livre enquanto o app está em uso.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>O INVICTUS lê sensores de movimento durante uma atividade para registrar a telemetria do exercício.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>O INVICTUS acessa sua biblioteca apenas quando você escolher anexar um comprovante ou vídeo.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

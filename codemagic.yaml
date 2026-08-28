@@ -127,9 +127,24 @@ workflows:
           # todos os builds reusem o MESMO certificado. Gerar chave nova a cada
           # build criaria um certificado novo toda vez, e a Apple limita a
           # poucos certificados de distribuicao por conta.
+          # #328: com a Widget Extension (InvictusActivityWidget) para a Live
+          # Activity, agora existem DOIS bundle IDs no projeto -- o do app
+          # ($BUNDLE_ID) e o da extension ($BUNDLE_ID.InvictusActivityWidget).
+          # Cada target precisa do seu proprio perfil de provisionamento, e
+          # ambos os App IDs precisam existir no Apple Developer Portal com a
+          # capability "App Groups" habilitada e o grupo
+          # group.com.desafiosemdesculpa.app.activity associado -- isso e
+          # feito uma vez manualmente no portal (fetch-signing-files --create
+          # cria o App ID e o perfil quando possivel, mas a capability de App
+          # Groups costuma precisar ser habilitada a mao antes da primeira vez).
+          WIDGET_BUNDLE_ID="$BUNDLE_ID.InvictusActivityWidget"
           if [ -n "$CERTIFICATE_PRIVATE_KEY" ]; then
             echo "Usando chave privada persistida (CERTIFICATE_PRIVATE_KEY)."
             app-store-connect fetch-signing-files "$BUNDLE_ID" \
+              --type IOS_APP_STORE \
+              --certificate-key="@env:CERTIFICATE_PRIVATE_KEY" \
+              --create
+            app-store-connect fetch-signing-files "$WIDGET_BUNDLE_ID" \
               --type IOS_APP_STORE \
               --certificate-key="@env:CERTIFICATE_PRIVATE_KEY" \
               --create
@@ -138,6 +153,10 @@ workflows:
             echo "temporaria. Isso cria um certificado NOVO a cada build."
             ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/signing_key -q -N ""
             app-store-connect fetch-signing-files "$BUNDLE_ID" \
+              --type IOS_APP_STORE \
+              --certificate-key=@file:/tmp/signing_key \
+              --create
+            app-store-connect fetch-signing-files "$WIDGET_BUNDLE_ID" \
               --type IOS_APP_STORE \
               --certificate-key=@file:/tmp/signing_key \
               --create

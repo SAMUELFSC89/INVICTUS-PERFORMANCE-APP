@@ -9,6 +9,7 @@ import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom
 import { motion, AnimatePresence } from 'motion/react';
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
+import { activityLiveActivityService } from '../services/activityLiveActivityService';
 import { userService } from '../services/userService';
 import { stravaService } from '../services/stravaService';
 import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
@@ -244,6 +245,7 @@ export function Challenges() {
         // cronômetro/distância atuais -- update() já se auto-throttla, então
         // pode ser chamado a cada tick sem sobrecarregar o sistema.
         activityNotificationService.update(current, duration, liveDistanceKmRef.current);
+        activityLiveActivityService.update(current, duration, liveDistanceKmRef.current);
         if (!flowScreen) {
           setFlowScreen('active');
           if (current.cardioType) {
@@ -397,6 +399,7 @@ export function Challenges() {
       // realmente começa -- é best-effort e nunca bloqueia o fluxo (ver
       // implementação do service).
       activityNotificationService.start(session, 0, 0);
+      activityLiveActivityService.start(session, 0, 0);
     } catch (err: any) {
       console.error('Error starting activity:', err);
       let rawMsg = err.message || 'Falha ao iniciar atividade.';
@@ -484,6 +487,7 @@ export function Challenges() {
       // ou rejeitada) -- a notificação persistente não faz mais sentido em
       // nenhum desses desfechos.
       activityNotificationService.stop();
+      activityLiveActivityService.stop();
 
       const status = normalizeActivityValidationStatus(
         res.validation?.status ?? res.workout?.status
@@ -591,6 +595,7 @@ export function Challenges() {
       endActivityAbortRef.current = null;
       activityService.cancelSession();
       activityNotificationService.stop();
+      activityLiveActivityService.stop();
       setActiveSession(null);
       setFlowScreen(null);
       setPendingChallenge(null);
@@ -611,6 +616,7 @@ export function Challenges() {
       // #328: mudança de estado (pausar/retomar) atualiza a notificação na
       // hora -- não espera o próximo tick de 5s do throttle normal.
       activityNotificationService.update(updated, elapsedTime, liveDistanceKmRef.current, true);
+      activityLiveActivityService.update(updated, elapsedTime, liveDistanceKmRef.current, true);
     }
   };
 
@@ -624,6 +630,10 @@ export function Challenges() {
   handleEndActivityRef.current = handleEndActivity;
   useEffect(() => {
     activityNotificationService.registerButtonListener(
+      () => handleTogglePauseRef.current(),
+      () => handleEndActivityRef.current()
+    );
+    activityLiveActivityService.registerButtonListener(
       () => handleTogglePauseRef.current(),
       () => handleEndActivityRef.current()
     );

@@ -15,7 +15,38 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		94437AFF789B032EB84C2AA7 /* InvictusActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */; };
+		31B212FA3C7D8F9E093F73B2 /* InvictusActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0E5B569400740EC0C5741A /* InvictusActivityPlugin.swift */; };
+		EE51785F4C7BFDDB632AAA0B /* InvictusActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */; };
+		4D3AF0CEB5FAAB5306177083 /* InvictusActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9CAF07388650EC3347EB65 /* InvictusActivityWidgetBundle.swift */; };
+		5DBA1CA4E785731A2185BD97 /* InvictusActivityLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98552E9CC7C6A0DCB3DC7E2 /* InvictusActivityLiveActivityWidget.swift */; };
+		A400ACFC38AABA34D67F01E2 /* InvictusActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4265369A0FD40E943B92A0AC /* InvictusActivityIntents.swift */; };
+		7C989D6620DA9C81171FD0E4 /* InvictusActivityWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8AD5D6700F84F4F4032CB337 /* InvictusActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1E7340D3D073EA875BE583DD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2EA3A36070AABC1D485598B1;
+			remoteInfo = InvictusActivityWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2397A606E8045A420F0ECDA9 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7C989D6620DA9C81171FD0E4 /* InvictusActivityWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -28,6 +59,14 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityAttributes.swift; sourceTree = "<group>"; };
+		BD0E5B569400740EC0C5741A /* InvictusActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityPlugin.swift; sourceTree = "<group>"; };
+		8C9CAF07388650EC3347EB65 /* InvictusActivityWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityWidgetBundle.swift; sourceTree = "<group>"; };
+		A98552E9CC7C6A0DCB3DC7E2 /* InvictusActivityLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityLiveActivityWidget.swift; sourceTree = "<group>"; };
+		4265369A0FD40E943B92A0AC /* InvictusActivityIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityIntents.swift; sourceTree = "<group>"; };
+		396BCF2FFEB646628FAD49DC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CD7FACC1218E5E7C448DD843 /* InvictusActivityWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = InvictusActivityWidget.entitlements; sourceTree = "<group>"; };
+		8AD5D6700F84F4F4032CB337 /* InvictusActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InvictusActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -39,6 +78,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E6D1D1CF208999940C4862FC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -47,6 +93,7 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				B27575B0B570AE8E8E6BCB08 /* InvictusActivityWidget */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -55,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				8AD5D6700F84F4F4032CB337 /* InvictusActivityWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,6 +112,8 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */,
+				BD0E5B569400740EC0C5741A /* InvictusActivityPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -72,6 +122,18 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		B27575B0B570AE8E8E6BCB08 /* InvictusActivityWidget */ = {
+			isa = PBXGroup;
+			children = (
+				8C9CAF07388650EC3347EB65 /* InvictusActivityWidgetBundle.swift */,
+				A98552E9CC7C6A0DCB3DC7E2 /* InvictusActivityLiveActivityWidget.swift */,
+				4265369A0FD40E943B92A0AC /* InvictusActivityIntents.swift */,
+				396BCF2FFEB646628FAD49DC /* Info.plist */,
+				CD7FACC1218E5E7C448DD843 /* InvictusActivityWidget.entitlements */,
+			);
+			path = InvictusActivityWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -84,10 +146,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				2397A606E8045A420F0ECDA9 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B17469CDDCB7BCCE3297DC23 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -96,6 +160,23 @@
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		2EA3A36070AABC1D485598B1 /* InvictusActivityWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FCF2902A1DE94AE8B9D59EAA /* Build configuration list for PBXNativeTarget "InvictusActivityWidget" */;
+			buildPhases = (
+				8B307717422EBC46BF85E569 /* Sources */,
+				E6D1D1CF208999940C4862FC /* Frameworks */,
+				FFD911920C0D5E506D9677E3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InvictusActivityWidget;
+			productName = InvictusActivityWidget;
+			productReference = 8AD5D6700F84F4F4032CB337 /* InvictusActivityWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -109,6 +190,10 @@
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
+						ProvisioningStyle = Automatic;
+					};
+					2EA3A36070AABC1D485598B1 = {
+						CreatedOnToolsVersion = 15.0;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -130,6 +215,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				2EA3A36070AABC1D485598B1 /* InvictusActivityWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -148,6 +234,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FFD911920C0D5E506D9677E3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -156,10 +249,31 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				94437AFF789B032EB84C2AA7 /* InvictusActivityAttributes.swift in Sources */,
+				31B212FA3C7D8F9E093F73B2 /* InvictusActivityPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B307717422EBC46BF85E569 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EE51785F4C7BFDDB632AAA0B /* InvictusActivityAttributes.swift in Sources */,
+				4D3AF0CEB5FAAB5306177083 /* InvictusActivityWidgetBundle.swift in Sources */,
+				5DBA1CA4E785731A2185BD97 /* InvictusActivityLiveActivityWidget.swift in Sources */,
+				A400ACFC38AABA34D67F01E2 /* InvictusActivityIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B17469CDDCB7BCCE3297DC23 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2EA3A36070AABC1D485598B1 /* InvictusActivityWidget */;
+			targetProxy = 1E7340D3D073EA875BE583DD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -336,6 +450,59 @@
 			};
 			name = Release;
 		};
+		3CAF4837040FF847808AF97C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = InvictusActivityWidget/InvictusActivityWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InvictusActivityWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.desafiosemdesculpa.app.InvictusActivityWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B012E3E914E5DC9A8E0A55A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = InvictusActivityWidget/InvictusActivityWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InvictusActivityWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.desafiosemdesculpa.app.InvictusActivityWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -353,6 +520,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FCF2902A1DE94AE8B9D59EAA /* Build configuration list for PBXNativeTarget "InvictusActivityWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3CAF4837040FF847808AF97C /* Debug */,
+				B012E3E914E5DC9A8E0A55A0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
