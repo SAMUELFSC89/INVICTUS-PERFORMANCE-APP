@@ -67,7 +67,14 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func isSupported(_ call: CAPPluginCall) {
-        if #available(iOS 16.1, *) {
+        // #328 fix: o resto do plugin usa a API baseada em ActivityContent
+        // (request/update/end com .init(state:staleDate:)), que só existe a
+        // partir do iOS 16.2 -- iOS 16.1 tinha só a API antiga com
+        // ContentState puro. Reportar "supported" com base em 16.1 faria o JS
+        // achar que dá pra chamar start()/update() num 16.1 real, onde o
+        // build nem compilaria essas chamadas. Por isso o gate aqui também é
+        // 16.2, para bater com o que o resto do arquivo realmente usa.
+        if #available(iOS 16.2, *) {
             call.resolve(["supported": ActivityAuthorizationInfo().areActivitiesEnabled])
         } else {
             call.resolve(["supported": false])
@@ -75,7 +82,7 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func start(_ call: CAPPluginCall) {
-        guard #available(iOS 16.1, *) else {
+        guard #available(iOS 16.2, *) else {
             call.resolve()
             return
         }
@@ -116,7 +123,7 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func update(_ call: CAPPluginCall) {
-        guard #available(iOS 16.1, *) else {
+        guard #available(iOS 16.2, *) else {
             call.resolve()
             return
         }
@@ -143,7 +150,7 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func end(_ call: CAPPluginCall) {
-        guard #available(iOS 16.1, *) else {
+        guard #available(iOS 16.2, *) else {
             call.resolve()
             return
         }
