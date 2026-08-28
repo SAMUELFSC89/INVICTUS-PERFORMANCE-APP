@@ -8,6 +8,7 @@ import { SecurityPipeline } from '../../_lib/security-pipeline.js';
 import { recalculateAllUserScores } from '../../_lib/igaService.js';
 import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
 import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
+import { registrarAmostrasDeAtividade, HealthSampleSource } from '../../_lib/health-data-layer.js';
 
 export class ValidateActivityService {
   constructor(
@@ -133,6 +134,13 @@ export class ValidateActivityService {
     const finalCalories = (rawActivity.healthTelemetry && typeof rawActivity.healthTelemetry.calories === 'number' && rawActivity.healthTelemetry.calories > 0)
       ? rawActivity.healthTelemetry.calories
       : estimatedCalories;
+    // #71: Health Data Layer -- fonte 'invictus_gps' quando ha percurso real
+    // (distancia/checkpoints), 'invictus_manual' quando nao ha (musculacao,
+    // cardio indoor sem GPS). So decide a FONTE da amostra de saude, nao
+    // influencia pontuacao/IGA.
+    const healthSampleSource: HealthSampleSource = (Number(rawActivity.distanceKm) > 0 || Array.isArray(rawActivity.checkpoints) && rawActivity.checkpoints.length > 0)
+      ? 'invictus_gps'
+      : 'invictus_manual';
 
     let securityBlocked = false;
     let securityReason: string | null = null;
@@ -193,7 +201,7 @@ export class ValidateActivityService {
       console.warn(`[ValidateActivityService] [${traceId}] SecurityPipeline recusou pontuacao: ${securityReason}`);
 
       try {
-        await this.activityRepository.create({
+        const rejectedActivity = await this.activityRepository.create({
           userId: request.userId,
           type: request.activityData.type,
           muscleGroup: rawActivity.muscleGroup,
@@ -224,6 +232,29 @@ export class ValidateActivityService {
           evidence: request.activityData.evidence || {},
           traceId
         });
+
+        // #71: Health Data Layer -- ADITIVO. Uma atividade bloqueada pelo
+        // antifraude ainda pode ter uma leitura biometrica REAL por baixo
+        // (o sensor nao mentiu so porque o GPS/padrao de movimento pareceu
+        // suspeito) -- por isso quality='sensor_flagged' em vez de
+        // descartar a leitura. Nunca afeta pontuacao/IGA; falha aqui nunca
+        // derruba a resposta principal (ja lancada acima).
+        try {
+          await registrarAmostrasDeAtividade({
+            userId: request.userId,
+            source: healthSampleSource,
+            sourceActivityId: rejectedActivity.id!,
+            timestamp: request.activityData.startTime || new Date().toISOString(),
+            aprovadoPeloAntifraude: false,
+            pularDuplicata: false,
+            avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+            calories: finalCalories,
+            distanceKm: Number(rawActivity.distanceKm) > 0 ? Number(rawActivity.distanceKm) : undefined,
+            durationMin: durationForMetrics > 0 ? durationForMetrics : undefined
+          });
+        } catch (healthLayerErr) {
+          console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
+        }
       } catch (persistErr) {
         console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade rejeitada no historico:`, persistErr);
       }
@@ -295,6 +326,27 @@ export class ValidateActivityService {
       traceId
     });
     console.log(`[ValidateActivityService] [${traceId}] Atividade registrada no repositorio (ID: ${savedActivity.id})`);
+
+    // #71: Health Data Layer -- registro ADITIVO, alem da pontuacao acima.
+    // Alimenta a serie temporal de saude independente da competicao; nunca
+    // influencia XP/ranking e uma falha aqui nunca derruba a resposta
+    // principal (ja calculada).
+    try {
+      await registrarAmostrasDeAtividade({
+        userId: request.userId,
+        source: healthSampleSource,
+        sourceActivityId: savedActivity.id!,
+        timestamp: request.activityData.startTime || new Date().toISOString(),
+        aprovadoPeloAntifraude: true,
+        pularDuplicata: false,
+        avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+        calories: finalCalories,
+        distanceKm: Number(rawActivity.distanceKm) > 0 ? Number(rawActivity.distanceKm) : undefined,
+        durationMin: durationForMetrics > 0 ? durationForMetrics : undefined
+      });
+    } catch (healthLayerErr) {
+      console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
+    }
 
     const { newXP, newLevel } = await this.userRepository.addXP(request.userId, scoreAwarded);
     console.log(`[ValidateActivityService] [${traceId}] XP do usuario atualizado para ${newXP} (Nivel ${newLevel})`);

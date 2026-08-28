@@ -8,6 +8,7 @@ import { SecurityPipeline } from '../../_lib/security-pipeline.js';
 import { db } from '../../_lib/common.js';
 import { recalculateAllUserScores } from '../../_lib/igaService.js';
 import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
+import { registrarAmostrasDeAtividade } from '../../_lib/health-data-layer.js';
 
 const cache = new NodeCache({ stdTTL: 300 });
 
@@ -66,6 +67,33 @@ async function persistCardioToHistory(userId: string, params: {
       },
       createdAt: new Date().toISOString()
     });
+
+    // #71: Health Data Layer -- toda tentativa de "Corrida Invictus oficial"
+    // (aprovada ou rejeitada pelo antifraude) tambem vira uma amostra em
+    // health_samples, fonte 'invictus_gps' (este fluxo e exclusivamente
+    // GPS). Ponto unico de gravacao: persistCardioToHistory e chamada nos 5
+    // desfechos possiveis de addRun (zero-movimento, fraude de GPS, bloqueio
+    // do SecurityPipeline, erro tecnico do SecurityPipeline e sucesso), entao
+    // colocar a chamada aqui cobre todos eles sem duplicar logica. Try/catch
+    // proprio: uma falha aqui NUNCA pode derrubar a gravacao do historico
+    // (workoutRef.set acima), nem pontuacao/IGA -- so decide a fonte da
+    // amostra de saude.
+    try {
+      await registrarAmostrasDeAtividade({
+        userId,
+        source: 'invictus_gps',
+        sourceActivityId: workoutRef.id,
+        timestamp: params.timestamp,
+        aprovadoPeloAntifraude: params.status === 'valid',
+        pularDuplicata: false,
+        avgHeartRate: params.avgHeartRate ?? undefined,
+        calories: params.calories ?? undefined,
+        distanceKm: params.distanceKm > 0 ? params.distanceKm : undefined,
+        durationMin: params.durationMins > 0 ? params.durationMins : undefined
+      });
+    } catch (healthLayerErr) {
+      console.error('[RunningService] Health Data Layer falhou (nao-fatal):', healthLayerErr);
+    }
   } catch (err) {
     console.error('[RunningService] Falha ao persistir corrida em workouts (historico):', err);
   }

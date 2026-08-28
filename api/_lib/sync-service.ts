@@ -4,6 +4,7 @@ import { recalculateAllUserScores } from './igaService.js';
 import { SecurityPipeline } from './security-pipeline.js';
 import { buscarHistoricoRecente } from './user-activity-history.js';
 import { encontrarAtividadeDuplicada } from './activity-dedup.js';
+import { registrarAmostrasDeAtividade } from './health-data-layer.js';
 
 export class SyncService {
   static async processStravaActivity(userId: string, stravaActivity: any) {
@@ -235,6 +236,29 @@ export class SyncService {
       pointsEarned: 0,
       createdAt: activityDate
     }, { merge: true });
+
+    // #71: Health Data Layer -- fonte 'strava' (terceiro, ja consolidado).
+    // Mesmo desfecho reprovado pelo antifraude/duplicata continua sendo uma
+    // leitura biometrica real e vai pra health_samples como
+    // 'sensor_flagged' -- so decide a fonte/qualidade da amostra, nunca
+    // pontuacao/IGA. Try/catch proprio: falha aqui nao pode derrubar a
+    // gravacao em workouts (acima) nem o restante do sync.
+    try {
+      await registrarAmostrasDeAtividade({
+        userId,
+        source: 'strava',
+        sourceActivityId: docId,
+        timestamp: activityDate,
+        aprovadoPeloAntifraude,
+        pularDuplicata: false,
+        avgHeartRate: stravaActivity?.average_heartrate,
+        calories: stravaActivity?.calories,
+        distanceKm: distanceKm > 0 ? distanceKm : undefined,
+        durationMin: durationMins > 0 ? durationMins : undefined
+      });
+    } catch (healthLayerErr) {
+      console.error('[SyncService] Health Data Layer falhou (nao-fatal):', healthLayerErr);
+    }
   }
 
   private static async logStravaActivity(userId: string, stravaActivity: any, status: string, reason: string) {
