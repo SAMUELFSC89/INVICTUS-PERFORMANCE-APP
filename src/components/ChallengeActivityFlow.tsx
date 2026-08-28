@@ -1,4 +1,4 @@
-import { ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { ActivityMapView } from './ActivityMapView';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
@@ -52,6 +52,7 @@ export function ChallengeActivityFlow({
   onBack,
   onStart,
   onEnd,
+  onTogglePause,
   onSummary,
   onDone,
   onCancel,
@@ -80,6 +81,7 @@ export function ChallengeActivityFlow({
   onBack: () => void;
   onStart: (type: 'workout' | 'cardio') => void;
   onEnd: () => void;
+  onTogglePause?: () => void;
   onSummary: () => void;
   onDone: () => void;
   onCancel?: () => void;
@@ -224,7 +226,7 @@ export function ChallengeActivityFlow({
             {activeTitle}<ChevronDown />
           </button>
           <span className="challenge-flow-gps">
-            <Zap /> {session?.requiresGpsDistance ? 'GPS CONECTADO' : (session?.type === 'cardio' ? 'CARDIO INDOOR' : 'ATIVIDADE EM ANDAMENTO')}
+            <Zap /> {session?.isPaused ? 'EM PAUSA' : session?.requiresGpsDistance ? 'GPS CONECTADO' : (session?.type === 'cardio' ? 'CARDIO INDOOR' : 'ATIVIDADE EM ANDAMENTO')}
           </span>
           {session?.requiresGpsDistance && (
             <>
@@ -271,6 +273,20 @@ export function ChallengeActivityFlow({
               <div><i /><i /><i /><i /></div>
               <p>Dados exibidos somente quando houver sensor conectado.</p>
             </article>
+          )}
+          {onTogglePause && (
+            // #324: semaforo, cadarco, banheiro -- sem pausa, a unica opcao
+            // ate aqui era encerrar de verdade ou aceitar que o pace/tempo
+            // continuassem correndo parado.
+            <button
+              type="button"
+              className="challenge-flow-secondary mb-2 flex items-center justify-center gap-1"
+              onClick={onTogglePause}
+              disabled={loading}
+            >
+              {session?.isPaused ? <Play size={16} className="fill-current" /> : <Pause size={16} className="fill-current" />}
+              <span>{session?.isPaused ? 'RETOMAR' : 'PAUSAR'}</span>
+            </button>
           )}
           <button
             className="challenge-flow-primary"

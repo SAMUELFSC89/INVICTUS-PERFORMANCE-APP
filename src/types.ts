@@ -315,6 +315,16 @@ export interface ActivitySession {
     timestamp: string;
     location: { lat: number; lng: number; accuracy?: number };
   }[];
+  // #324: pausa real da sessao ativa (semaforo, cadarco, banheiro). O fluxo em
+  // producao (Challenges.tsx/ChallengeActivityFlow.tsx) nao tinha pausa --
+  // so o componente RunTracker.tsx, que ficou orfao, tinha essa logica. Sem
+  // isso o cronometro/GPS de duracao corriam mesmo parado, prejudicando o
+  // pace/pontuacao de quem precisava interromper por um instante.
+  isPaused?: boolean;
+  /** Soma de todos os intervalos de pausa ja fechados, em milissegundos. */
+  pausedMs?: number;
+  /** Timestamp ISO de quando a pausa atual comecou; null quando nao pausado. */
+  pauseStartedAt?: string | null;
 }
 
 export interface Workout {

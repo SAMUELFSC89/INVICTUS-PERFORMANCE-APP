@@ -226,7 +226,13 @@ export function Challenges() {
         const startTimeMs = typeof current.startTime === 'number'
           ? current.startTime
           : new Date(current.startTime).getTime();
-        const duration = Math.floor((Date.now() - startTimeMs) / 1000);
+        // #324: tempo em pausa (inclusive a pausa que ainda esta correndo
+        // agora) some do cronometro exibido -- senao ele continuava andando
+        // parado, como se a pausa nao existisse na tela.
+        const now = Date.now();
+        const pausaCorrente = current.pauseStartedAt ? now - new Date(current.pauseStartedAt).getTime() : 0;
+        const pausedMs = (current.pausedMs || 0) + Math.max(0, pausaCorrente);
+        const duration = Math.max(0, Math.floor((now - startTimeMs - pausedMs) / 1000));
         setElapsedTime(duration);
         if (!flowScreen) {
           setFlowScreen('active');
@@ -574,6 +580,15 @@ export function Challenges() {
     }
   };
 
+  // #324: pausa/retoma a sessao ativa. So existia no componente orfao
+  // RunTracker.tsx antes -- o fluxo de verdade nao tinha essa acao.
+  const handleTogglePause = () => {
+    const updated = activeSession?.isPaused
+      ? activityService.resumeSession()
+      : activityService.pauseSession();
+    if (updated) setActiveSession(updated);
+  };
+
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -888,6 +903,7 @@ export function Challenges() {
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
+          onTogglePause={handleTogglePause}
           onSummary={() => setFlowScreen(flowScreen === 'cardio-complete' ? 'cardio-summary' : 'day-progress')}
           onDone={closeFlow}
           onCancel={handleCancelActivity}

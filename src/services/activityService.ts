@@ -123,7 +123,10 @@ export const activityService = {
             startLocation: sessData.startLocation || undefined,
             status: 'active',
             checkInId: sessData.checkInId || undefined,
-            checkpoints: sessData.checkpoints || []
+            checkpoints: sessData.checkpoints || [],
+            isPaused: !!sessData.isPaused,
+            pausedMs: Number(sessData.pausedMs) || 0,
+            pauseStartedAt: sessData.pauseStartedAt || null
           };
           localStorage.setItem(SESSION_KEY, JSON.stringify(restoredSession));
           throw new Error('Você já possui uma atividade ativa em andamento! Recuperamos sua sessão ativa do servidor.');
@@ -280,7 +283,10 @@ export const activityService = {
       startLocation,
       status: 'active',
       checkInId,
-      checkpoints: startLocation ? [{ timestamp: new Date().toISOString(), location: startLocation }] : []
+      checkpoints: startLocation ? [{ timestamp: new Date().toISOString(), location: startLocation }] : [],
+      isPaused: false,
+      pausedMs: 0,
+      pauseStartedAt: null
     };
 
     if (typeof window !== 'undefined') {
@@ -358,6 +364,9 @@ export const activityService = {
       status: 'active',
       checkInId: session.checkInId || null,
       checkpoints: session.checkpoints || [],
+      isPaused: false,
+      pausedMs: 0,
+      pauseStartedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }).catch(err => console.warn('[ActivityService] Failed to write active session registry to Firestore:', err));
@@ -374,7 +383,13 @@ export const activityService = {
 
       const startTime = new Date(session.startTime).getTime();
       const now = new Date().getTime();
-      const diffMins = (now - startTime) / (1000 * 60);
+      // #324: tempo em pausa nao deve contar pro limite de expiracao -- sem
+      // isto, uma pausa real e longa (ex: parou pra almocar no meio de uma
+      // caminhada) podia derrubar a sessao sozinha mesmo com pouquissimo
+      // tempo de atividade de fato decorrido.
+      const pausaCorrente = session.pauseStartedAt ? now - new Date(session.pauseStartedAt).getTime() : 0;
+      const pausedMs = (session.pausedMs || 0) + Math.max(0, pausaCorrente);
+      const diffMins = (now - startTime - pausedMs) / (1000 * 60);
 
       if (diffMins > 90) {
         console.log('[ActivityService] Session older than 90m expired, clearing stale state');
@@ -392,6 +407,10 @@ export const activityService = {
   addCheckpoint(location: { lat: number; lng: number; accuracy?: number }) {
     const session = this.getCurrentSession();
     if (!session) return;
+    // #324: em pausa nao registramos deslocamento -- senao o trecho parado
+    // vira "distancia zero" no meio da rota real, ou pior, um pequeno drift de
+    // GPS parado vira pontos falsos de movimento contando pro pace.
+    if (session.isPaused) return;
 
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return;
     if (typeof location.accuracy === 'number' && location.accuracy > 50) {
@@ -421,6 +440,50 @@ export const activityService = {
       checkpoints: session.checkpoints,
       updatedAt: new Date().toISOString()
     }).catch(err => console.warn('[ActivityService] Failed to sync checkpoint to Firestore:', err));
+  },
+
+  /**
+   * #324: pausa a sessao ativa (semaforo, cadarco, banheiro). O tempo em
+   * pausa NAO conta pra duracao final nem gera checkpoints -- ver endSession()
+   * e addCheckpoint(). Retorna a sessao atualizada pro chamador manter o
+   * estado da UI em sincronia sem precisar reler getCurrentSession().
+   */
+  pauseSession(): ActivitySession | null {
+    const session = this.getCurrentSession();
+    if (!session || session.isPaused) return session;
+
+    session.isPaused = true;
+    session.pauseStartedAt = new Date().toISOString();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+
+    updateDoc(doc(db, 'active_sessions', session.id), {
+      isPaused: true,
+      pauseStartedAt: session.pauseStartedAt,
+      updatedAt: new Date().toISOString()
+    }).catch(err => console.warn('[ActivityService] Failed to sync pause to Firestore:', err));
+
+    return session;
+  },
+
+  /** Retoma a sessao pausada, fechando o intervalo de pausa no acumulado. */
+  resumeSession(): ActivitySession | null {
+    const session = this.getCurrentSession();
+    if (!session || !session.isPaused) return session;
+
+    const pauseStarted = session.pauseStartedAt ? new Date(session.pauseStartedAt).getTime() : Date.now();
+    session.pausedMs = (session.pausedMs || 0) + Math.max(0, Date.now() - pauseStarted);
+    session.isPaused = false;
+    session.pauseStartedAt = null;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+
+    updateDoc(doc(db, 'active_sessions', session.id), {
+      isPaused: false,
+      pausedMs: session.pausedMs,
+      pauseStartedAt: null,
+      updatedAt: new Date().toISOString()
+    }).catch(err => console.warn('[ActivityService] Failed to sync resume to Firestore:', err));
+
+    return session;
   },
 
   setHasExercises(has: boolean) {
@@ -469,8 +532,20 @@ export const activityService = {
 
     const startTime = new Date(session.startTime);
     const endTime = new Date();
-    const rawDurationMins = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
-    const durationMins = Math.min(90, rawDurationMins);
+    // #324: se por algum motivo chegar aqui ainda pausada (o normal e a UI
+    // exigir retomar antes de finalizar), fecha o intervalo de pausa em
+    // aberto antes de calcular a duracao -- senao esse trecho parado nem
+    // entra em pausedMs nem sai da duracao.
+    if (session.isPaused && session.pauseStartedAt) {
+      session.pausedMs = (session.pausedMs || 0) + Math.max(0, endTime.getTime() - new Date(session.pauseStartedAt).getTime());
+    }
+    const pausedMs = session.pausedMs || 0;
+    // #324: tempo em pausa nao conta pra duracao da atividade -- sem isto,
+    // pausar pra atravessar a rua ou amarrar o cadarco inflava a duracao
+    // reportada sem esforco/deslocamento correspondente, prejudicando o
+    // pace medio e os fatores de tempo/intensidade que alimentam o IGA.
+    const rawDurationMins = Math.floor((endTime.getTime() - startTime.getTime() - pausedMs) / 60000);
+    const durationMins = Math.min(90, Math.max(0, rawDurationMins));
 
     const distanceKm = this.calculateSessionDistance(session);
 
