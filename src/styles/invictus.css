@@ -490,9 +490,15 @@
   color: transparent;
 }
 
+/* #46: altura fixa (percentual da altura do card, que e definida via
+   aspect-ratio) + overflow:hidden -- trava ESTRUTURAL contra o texto
+   invadir a faixa do contador abaixo (top:80.5%), nao importa o tamanho
+   da fonte ou a largura real do card. */
 .iv-liga-banner__rec {
   position: absolute;
   top: 64%;
+  height: 15%;
+  overflow: hidden;
   text-align: center;
   transform: translateX(-50%);
 }
@@ -502,27 +508,22 @@
   color: #FFFFFF;
   font-family: 'Barlow', sans-serif;
   font-weight: 700;
-  font-size: max(12.5px, 3cqw);
+  /* #46: uma palavra so por coluna (ver Home.tsx) -- sem a segunda palavra
+     nem a descricao, sobra espaco pra fonte maior. */
+  font-size: max(14px, 3.8cqw);
   text-transform: uppercase;
   letter-spacing: 0.01em;
   line-height: 1.15;
+  /* Trava contra quebra/estouro: mesmo numa largura de coluna anormalmente
+     estreita, o texto nunca quebra linha nem invade a coluna vizinha -- no
+     pior caso ele e cortado com reticencias, nunca sobreposto. */
+  white-space: nowrap;
+  text-overflow: ellipsis;
   /* #47: posicao/tamanho ja corrigidos antes, mas o texto continuava sobre a
      arte do banner (fundo variavel, nao uma cor solida) sem nenhuma sombra --
      em trechos mais claros da arte o branco lavava e ficava ilegivel. Sombra
      escura dupla (contato + halo) garante contraste minimo em qualquer
      regiao da imagem por baixo, sem depender de onde a arte for mais clara. */
-  text-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
-}
-
-.iv-liga-banner__rec p {
-  display: block;
-  margin-top: 0.35em;
-  /* Era #CBBFE0 (lilas claro) sobre fundo roxo: contraste baixo justamente no
-     texto menor da tela. Branco levemente acinzentado le muito melhor. */
-  color: #EFEAF7;
-  font-family: 'Barlow', sans-serif;
-  font-size: max(11.5px, 2.7cqw);
-  line-height: 1.25;
   text-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
 }
 
@@ -589,11 +590,7 @@
      "encostava" neles. Subiu para 63%: fica ~5px abaixo do icone e ainda
      sobra ~19px de folga ate a faixa do contador (medido no navegador). */
   .iv-liga-banner__rec { top: 63%; }
-  .iv-liga-banner__rec b { font-size: max(12.5px, 3.1cqw); }
-  /* A descrição sai no celular. Em ~75px de largura ela só caberia em corpo
-     ilegível e ainda colidia com a faixa do contador. O rótulo sozinho, legível,
-     comunica o mesmo -- legibilidade acima de quantidade de texto. */
-  .iv-liga-banner__rec p { display: none; }
+  .iv-liga-banner__rec b { font-size: max(13px, 3.4cqw); }
   .iv-liga-banner__rec--1 { left: 47.1%; width: 18%; }
   .iv-liga-banner__rec--2 { left: 66.0%; width: 18%; }
   .iv-liga-banner__rec--3 { left: 85.5%; width: 18%; }
@@ -703,10 +700,18 @@
 .iv-camp-banner__faixa .l1 { color: #FFFFFF; }
 .iv-camp-banner__faixa .l2 { color: var(--dourado); }
 
+/* #46: os 4 centros de coluna ficam so 13,9pp um do outro (medido na arte) --
+   sem overflow:hidden, qualquer palavra um pouco mais larga que a coluna
+   (13% = pouco menos que os 13,9pp de gap) vaza visualmente por cima da
+   coluna vizinha em vez de quebrar linha contida na propria caixa. Isso
+   e o que causava as 4 palavras (PONTOS/RANKING/PRÊMIOS/ELITE) aparecerem
+   coladas/sobrepostas em telas realmente estreitas. */
 .iv-camp-banner__rec {
   position: absolute;
   top: 68%;
   width: 12.8%;
+  height: 16%;
+  overflow: hidden;
   text-align: center;
   transform: translateX(-50%);
 }
@@ -719,6 +724,9 @@
   font-size: max(11px, 1.85cqw);
   text-transform: uppercase;
   line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .iv-camp-banner__rec p {

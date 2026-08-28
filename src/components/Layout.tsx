@@ -135,14 +135,23 @@ export function Layout() {
           <motion.div
             key={location.pathname}
             initial={{ opacity: 0, scale: 0.98, filter: 'blur(10px)' }}
-            // NOTE: 'transitionEnd' clears the filter to 'none' once the page-enter
-            // animation settles. Leaving 'filter: blur(0px)' as a lingering inline
+            // NOTE: 'transitionEnd' clears filter AND transform to 'none' once the
+            // page-enter animation settles. Leaving either as a lingering inline
             // style (Framer Motion's default behavior) creates a new CSS containing
             // block for every position:fixed descendant on the page - including every
             // modal - silently pinning them to this div's box instead of the real
             // viewport. That's the root cause behind modals opening off-screen /
             // needing a scroll to reach (e.g. the 'Qual seu treino de hoje?' modal).
-            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', transitionEnd: { filter: 'none' } }}
+            // #46: o filter ja era limpo, mas 'scale' continuava animado via
+            // transform -- framer-motion mantem o transform inline mesmo em
+            // scale:1 (nao volta pra 'none' sozinho). Isso prendia o overlay de
+            // tela cheia do ChallengeActivityFlow (position:fixed) dentro da caixa
+            // deste motion.div em vez do viewport real sempre que ele nascia
+            // aberto (deep link Home -> Musculacao/Cardio): o card renderizava
+            // deslocado/cortado e, dependendo do timing, o usuario caia de volta
+            // na lista de Desafios. Limpar o transform tambem resolve na raiz,
+            // sem depender de timing.
+            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', transitionEnd: { filter: 'none', transform: 'none' } }}
             exit={{ opacity: 0, scale: 1.02, filter: 'blur(10px)' }}
             transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
           >

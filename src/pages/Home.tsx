@@ -366,22 +366,25 @@ export function Home() {
               <span className="l2">Corra para vencer.</span>
             </div>
 
-            {/* #235: descricoes encurtadas de proposito. Cada coluna tem ~70px
-                de largura real no celular; com as frases anteriores (35+
-                caracteres) o texto so cabia em fonte de ~10px, ilegivel. A
-                regra acordada e priorizar LEGIBILIDADE sobre quantidade de
-                texto -- por isso menos palavras, em corpo maior. */}
+            {/* #46: mesmo com #235 (frases curtas) e #241/#242 (posicoes
+                medidas em card de 414px), o card real dentro do layout da
+                Home e mais estreito que isso -- em telas pequenas cada coluna
+                tem so ~40px reais, e "Competição"/"Evolução constante"
+                sozinhas ja quebravam em 2-3 linhas e invadiam a faixa do
+                contador abaixo (sobreposicao visual real, reportada pelo
+                usuario). Removida a descricao (<p>) e reduzido cada rotulo a
+                UMA palavra -- menos linhas de texto, elementos maiores e sem
+                risco de invadir a faixa. .iv-liga-banner__rec agora tem
+                altura fixa + overflow:hidden como trava estrutural contra
+                qualquer overflow futuro, independente do texto. */}
             <div className="iv-liga-banner__rec iv-liga-banner__rec--1">
-              <b>Pote real</b>
-              <p>Prêmios de verdade.</p>
+              <b>Pote</b>
             </div>
             <div className="iv-liga-banner__rec iv-liga-banner__rec--2">
-              <b>Competição justa</b>
-              <p>Antifraude avançado.</p>
+              <b>Justa</b>
             </div>
             <div className="iv-liga-banner__rec iv-liga-banner__rec--3">
-              <b>Evolução constante</b>
-              <p>Cada treino conta.</p>
+              <b>Evolução</b>
             </div>
 
             {/* Faixa inferior: contador ao vivo de verdade, atualizado a cada
