@@ -335,12 +335,18 @@ export function Home() {
 
         {/* 3) BANNER LIGA INVICTUS.
             A arte (banner_liga_base) nao tem texto gravado -- e escrita real
-            em HTML/CSS por cima, aprovada com o usuario via previa estatica
-            antes de entrar aqui. Isso e o que permite o contador funcionar
+            em HTML/CSS por cima. Isso e o que permite o contador funcionar
             (nao daria pra animar segundo a segundo dentro de um PNG) e o
             texto ficar legivel tanto no celular quanto em telas maiores:
             o CSS em .iv-liga-banner* escala com container queries, nao com
-            o tamanho fixo da imagem. Medidas e comentarios em invictus.css. */}
+            o tamanho fixo da imagem. Medidas e comentarios em invictus.css.
+
+            #322: arte trocada (trofeu + coroa de louros + capacete espartano)
+            e texto reescrito para o tema "algo novo em breve" -- pedido
+            explicito do usuario porque as frases anteriores ("Compita
+            treinando"/colunas Pote-Justa-Evolucao) nao tinham mais onde se
+            ancorar na nova composicao (ela nao tem icones gravados, so uma
+            area aberta a direita do trofeu). */}
         <section
           id="home-league-banner-card"
           onClick={() => navigate('/championships')}
@@ -348,7 +354,7 @@ export function Home() {
         >
           <img
             src="/assets/championships/banner_liga_base.webp"
-            alt="Liga Invictus — compita treinando, corra para vencer"
+            alt="Liga Invictus — algo novo está chegando"
             referrerPolicy="no-referrer"
             onError={(e) => {
               const target = e.currentTarget;
@@ -362,35 +368,17 @@ export function Home() {
             <span className="iv-liga-banner__kicker">Liga Invictus</span>
 
             <div className="iv-liga-banner__titulo">
-              <span className="l1">Compita treinando.</span>
-              <span className="l2">Corra para vencer.</span>
+              <span className="l1">Algo novo</span>
+              <span className="l2">está chegando.</span>
             </div>
 
-            {/* #46: mesmo com #235 (frases curtas) e #241/#242 (posicoes
-                medidas em card de 414px), o card real dentro do layout da
-                Home e mais estreito que isso -- em telas pequenas cada coluna
-                tem so ~40px reais, e "Competição"/"Evolução constante"
-                sozinhas ja quebravam em 2-3 linhas e invadiam a faixa do
-                contador abaixo (sobreposicao visual real, reportada pelo
-                usuario). Removida a descricao (<p>) e reduzido cada rotulo a
-                UMA palavra -- menos linhas de texto, elementos maiores e sem
-                risco de invadir a faixa. .iv-liga-banner__rec agora tem
-                altura fixa + overflow:hidden como trava estrutural contra
-                qualquer overflow futuro, independente do texto. */}
-            <div className="iv-liga-banner__rec iv-liga-banner__rec--1">
-              <b>Pote</b>
-            </div>
-            <div className="iv-liga-banner__rec iv-liga-banner__rec--2">
-              <b>Justa</b>
-            </div>
-            <div className="iv-liga-banner__rec iv-liga-banner__rec--3">
-              <b>Evolução</b>
-            </div>
+            <p className="iv-liga-banner__msg-sub">
+              Uma temporada completamente diferente está a caminho.
+            </p>
 
             {/* Faixa inferior: contador ao vivo de verdade, atualizado a cada
                 segundo pelo mesmo estado `countdown` que ja existia no
-                componente (getNextSeasonCountdown), so que agora aparece
-                na tela. */}
+                componente (getNextSeasonCountdown). */}
             <div className="iv-liga-banner__faixa">
               <span className="em">
                 {countdown.time.days > 0

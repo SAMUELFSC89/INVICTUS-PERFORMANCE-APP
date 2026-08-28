@@ -4,10 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
-  Target,
-  TrendingUp,
   Trophy,
-  Users,
   Calendar,
   ShieldCheck,
   ExternalLink
@@ -20,22 +17,6 @@ import { getNextSeasonCountdown } from '../../lib/seasonUtils';
 // nao existe (ainda) um fluxo de checkout dentro do proprio app pra essa
 // temporada. Se isso mudar, e so trocar por uma rota interna.
 const INSCRICAO_URL = 'https://www.invictusperformance.app.br/';
-
-// #235: cada uma destas 4 colunas ocupa ~48px de largura REAL num celular
-// (o banner inteiro tem ~358px e as 4 colunas dividem pouco mais da metade
-// dele). Nesse espaco, o rotulo de duas palavras + a descricao so cabiam em
-// fonte de ~7px renderizados -- ilegivel, exatamente a reclamacao registrada.
-//
-// Por isso cada item ganhou uma versao `curta`: no celular aparece so ela,
-// num corpo que da para ler; em telas largas o rotulo completo e a descricao
-// continuam aparecendo. A troca e feita no CSS (.iv-camp-banner__rec-*), sem
-// remover informacao -- os 4 icones da arte seguem comunicando o conceito.
-const RECURSOS = [
-  { Icon: Target, className: 'iv-camp-banner__rec--1', label: ['TREINE COM', 'PROPÓSITO'], curta: 'PONTOS', desc: 'Cada treino conta pontos.' },
-  { Icon: TrendingUp, className: 'iv-camp-banner__rec--2', label: ['COMPITA DE', 'VERDADE'], curta: 'RANKING', desc: 'Ranking com seu nível.' },
-  { Icon: Trophy, className: 'iv-camp-banner__rec--3', label: ['PREMIAÇÕES', 'REAIS'], curta: 'PRÊMIOS', desc: 'Os melhores são premiados.' },
-  { Icon: Users, className: 'iv-camp-banner__rec--4', label: ['COMUNIDADE', 'ÉLITE'], curta: 'ELITE', desc: 'Só quem é consistente.' }
-] as const;
 
 export const ChampionshipsHub: React.FC = () => {
   const navigate = useNavigate();
@@ -101,11 +82,18 @@ export const ChampionshipsHub: React.FC = () => {
       {tab === 'liga' ? (
         <div className="flex flex-col gap-4">
           {/* Banner: arte sem texto (banner_campeonato_base) + escrita real
-              em HTML por cima. Medidas e comentarios em invictus.css. */}
+              em HTML por cima. Medidas e comentarios em invictus.css.
+
+              #322: arte trocada (trofeu + coroa + capacete espartano dourado)
+              e texto reescrito para "algo novo em breve" -- mesma proposta e
+              mesma coluna de texto (47%-95%) usada no banner da Home, pra
+              manter as duas telas consistentes. As 4 colunas de recursos
+              (PONTOS/RANKING/PRÊMIOS/ELITE) saíram porque a arte nova nao tem
+              mais 4 icones pra ancora-las. */}
           <section className="iv-camp-banner">
             <img
               src="/assets/championships/banner_campeonato_base.webp"
-              alt="Na Invictus, sua disciplina se torna recompensa"
+              alt="Campeonatos Invictus — algo novo está chegando"
               referrerPolicy="no-referrer"
               onError={(e) => {
                 const target = e.currentTarget;
@@ -115,35 +103,19 @@ export const ChampionshipsHub: React.FC = () => {
               }}
             />
             <div className="iv-camp-banner__texto">
-              <span className="iv-camp-banner__kicker">Na Invictus,</span>
+              <span className="iv-camp-banner__kicker">Campeonatos Invictus</span>
 
               <div className="iv-camp-banner__titulo">
-                <span className="l1">Sua disciplina</span>
-                <span className="l2">Se torna recompensa.</span>
+                <span className="l1">Algo novo</span>
+                <span className="l2">Está chegando.</span>
               </div>
 
-              <div className="iv-camp-banner__faixa">
-                <span className="l1">Um campeonato que transforma</span>
-                <span className="l2">Esforço em premiações reais.</span>
-              </div>
-
-              {RECURSOS.map(({ Icon, className, label, curta, desc }) => (
-                <div key={className} className={`iv-camp-banner__rec ${className}`}>
-                  <b className="iv-camp-banner__rec-longo">
-                    {label.map((line) => (
-                      <React.Fragment key={line}>
-                        {line}
-                        <br />
-                      </React.Fragment>
-                    ))}
-                  </b>
-                  <b className="iv-camp-banner__rec-curto">{curta}</b>
-                  <p>{desc}</p>
-                </div>
-              ))}
+              <p className="iv-camp-banner__msg-sub">
+                Uma forma completamente nova de competir está a caminho.
+              </p>
 
               <div className="iv-camp-banner__cta">
-                Não é só treinar. <b>É superar. É evoluir.</b> É ser reconhecido.
+                Fique de olho: <b>sua disciplina</b> está prestes a valer mais.
               </div>
             </div>
           </section>
