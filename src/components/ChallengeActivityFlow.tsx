@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { ActivityMapView } from './ActivityMapView';
@@ -122,7 +123,20 @@ export function ChallengeActivityFlow({
     ? completion.pointsAwarded
     : null;
 
-  return (
+  // #116: .challenge-flow-screen e position:fixed;inset:0;z-index:70 pensado
+  // pra cobrir a tela INTEIRA por cima de tudo, inclusive o menu inferior
+  // (#bottom-nav, z-index:30). Mas antes este componente renderizava inline,
+  // como filho de <main className="... relative z-[2] ...."> em Layout.tsx.
+  // Um elemento position:relative + z-index cria seu proprio contexto de
+  // empilhamento: o z-index:70 daqui so competia DENTRO desse <main>, que por
+  // fora participava do empilhamento do documento com z-index:2 -- menor que
+  // o z-index:30 do nav, que e irmao de <main>, nao filho. Resultado: o nav
+  // sempre pintava por cima da parte de baixo desta tela (ex: o botao
+  // "FINALIZAR ATIVIDADE" ficava coberto, existindo no DOM mas invisivel e
+  // impossivel de tocar). Renderizar via portal direto em document.body tira
+  // este componente de dentro do contexto de empilhamento do <main> e resolve
+  // na raiz, sem depender de ajustar z-index em cascata.
+  return createPortal(
     <main className="challenge-flow-screen">
       <header className="challenge-flow-header">
         <button aria-label="Voltar" onClick={onBack}>
@@ -407,7 +421,8 @@ export function ChallengeActivityFlow({
           </button>
         </section>
       )}
-    </main>
+    </main>,
+    document.body
   );
 }
 

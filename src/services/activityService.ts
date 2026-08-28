@@ -157,15 +157,23 @@ export const activityService = {
       other: { label: 'Outros', isIndoor: true, requiresGps: false }
     };
     const cardioMapEntry = cardioType ? CARDIO_TYPES_MAP[cardioType] : undefined;
-    const needsLocationAtStart = type === 'workout' || (type === 'cardio' && Boolean(cardioMapEntry?.requiresGps));
+    // #117: so o TREINO NA ACADEMIA precisa do fix de GPS ANTES de devolver a
+    // sessao -- e o unico caso que valida geofence (esta perto da academia?)
+    // antes de liberar o inicio. Cardio ao ar livre (corrida/caminhada/bike)
+    // nunca precisou dessa espera: nada aqui usa startLocation pra aprovar ou
+    // bloquear o inicio, so alimenta o primeiro ponto da rota -- e o
+    // watchPosition que ja roda assim que activeSession existe (Challenges.tsx)
+    // preenche os checkpoints reais conforme o GPS vai travando. Antes disto,
+    // getCurrentLocation(true) (enableHighAccuracy, maximumAge:0) podia levar
+    // ate 15s num sinal fraco/frio, e o atleta ficava parado no botao
+    // "INICIANDO..." esse tempo todo antes do cronometro sequer comecar --
+    // essa espera sincrona, nao o Firestore, era a causa raiz do atraso.
+    const blocksStartOnLocation = type === 'workout';
 
     let startLocation = providedLocation;
 
-    if (!startLocation && needsLocationAtStart) {
+    if (!startLocation && blocksStartOnLocation) {
       try {
-        // Tanto o treino na academia quanto o cardio externo dependem de
-        // coordenadas confiáveis. O cardio interno não chega a este bloco e,
-        // portanto, nunca dispara GPS.
         startLocation = await getCurrentLocation(true);
       } catch (error: any) {
         console.warn('Location capture failed for startSession', error);
