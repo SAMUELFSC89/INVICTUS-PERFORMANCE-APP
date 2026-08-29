@@ -81,7 +81,17 @@ export const activityService = {
     }
     if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
       try {
-        const permissionState = await (DeviceMotionEvent as any).requestPermission();
+        // #118: mesma logica do timeout do Firestore acima -- em alguns
+        // WebViews nativos essa API do iOS pode nunca resolver a Promise
+        // (nem aceitar, nem recusar), travando o atleta em "INICIANDO..."
+        // antes mesmo do startSession() ser chamado. 8s e mais que suficiente
+        // pro prompt nativo real; se nao voltou nada nesse tempo, seguimos
+        // sem sensor em vez de travar o inicio da atividade por causa dele.
+        const permissionState = await withTimeout(
+          (DeviceMotionEvent as any).requestPermission(),
+          8000,
+          'Tempo limite ao solicitar permissão de movimento.'
+        );
         localStorage.setItem('sensor_status', permissionState === 'granted' ? 'granted' : 'denied');
         return permissionState === 'granted' ? 'granted' : 'denied';
       } catch (e) {
@@ -109,7 +119,10 @@ export const activityService = {
     // do atraso de alguns segundos sentido ao tocar em iniciar o cardio.
     // Disparadas juntas agora; o catch abaixo so cobre a query de sessao ativa.
     const userRef = doc(db, 'users', user.uid);
-    const userSnapPromise = getDoc(userRef);
+    // #118: 12s de teto -- generoso o bastante pra rede movel ruim, mas finito.
+    // Sem isto, uma conexao que trava (nem fecha, nem abre) deixava esta
+    // Promise pendurada pra sempre.
+    const userSnapPromise = withTimeout(getDoc(userRef), 12000, 'Não conseguimos conectar ao servidor para carregar seu perfil. Verifique sua conexão e tente novamente.');
     userSnapPromise.catch(() => {}); // evita unhandled rejection se descartada no caminho de sessao ja ativa
 
     try {
@@ -118,7 +131,7 @@ export const activityService = {
         where('userId', '==', user.uid),
         where('status', '==', 'active')
       );
-      const activeSessionsSnap = await getDocs(activeSessionsQuery);
+      const activeSessionsSnap = await withTimeout(getDocs(activeSessionsQuery), 12000, 'Tempo limite ao verificar sessões ativas no servidor.');
 
       for (const docSnap of activeSessionsSnap.docs) {
         const sessData = docSnap.data();
