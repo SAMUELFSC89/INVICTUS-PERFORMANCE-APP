@@ -57,6 +57,11 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         return res.status(200).json(result);
       }
 
+      case 'list-flagged-activities': {
+        const limit = Number(req.query.limit || 50);
+        return res.status(200).json(await adminService.listFlaggedActivities(limit));
+      }
+
       case 'list-withdrawals': {
         const status = req.query.status as string;
         return res.status(200).json(await adminService.listWithdrawals(status));

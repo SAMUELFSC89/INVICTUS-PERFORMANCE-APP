@@ -94,6 +94,17 @@ export class AdminService {
     };
   }
 
+  // #325: fila de revisao manual -- lista atividades que o cliente ja
+  // finalizou automaticamente como "pendente" (antifraude/geofence/falha
+  // tecnica) e que ainda nao tiveram o status alterado por um admin. Usa o
+  // mesmo `reviewActivity` acima (action 'review-activity') pra decidir o
+  // status final -- essa listagem so resolve o "como o admin encontra o
+  // ID pra revisar", que antes nao existia.
+  async listFlaggedActivities(limit = 50) {
+    const activities = await this.adminRepository.listFlaggedActivities(limit);
+    return { activities, count: activities.length };
+  }
+
   async listWithdrawals(status?: string) {
     return await this.adminRepository.getWithdrawals(status);
   }

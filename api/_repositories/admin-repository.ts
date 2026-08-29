@@ -43,6 +43,22 @@ export class AdminRepository extends BaseRepository<any> {
     return { id: doc.id, ...doc.data() };
   }
 
+  // #325: fila de atividades que finalizaram automaticamente como
+  // "pendente de revisao" (antifraude BLOCKED, geofence de academia, ou
+  // falha tecnica do motor de seguranca) em vez de travar o atleta numa tela
+  // de erro. Sem esta consulta nao havia como o admin descobrir quais
+  // atividades precisam de revisao manual -- so dava pra revisar por ID
+  // (review-activity), que exige ja saber o ID de antemao.
+  async listFlaggedActivities(limitNum = 50): Promise<any[]> {
+    const snapshot = await db.collection('workouts')
+      .where('pendingReview', '==', true)
+      .orderBy('createdAt', 'desc')
+      .limit(Math.min(200, Math.max(1, limitNum)))
+      .get();
+
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
   async reviewWorkoutTransaction(
     workoutId: string,
     athleteId: string,
@@ -81,7 +97,11 @@ export class AdminRepository extends BaseRepository<any> {
         'validation.status': status,
         'validation.reviewerId': reviewerId,
         'validation.reviewedAt': new Date().toISOString(),
-        'validation.resolution': resolution
+        'validation.resolution': resolution,
+        // #325: tira da fila de revisao (listFlaggedActivities) assim que um
+        // admin decide o status -- sem isso a atividade ficava pendente pra
+        // sempre mesmo depois de revisada.
+        pendingReview: false
       });
 
       if (Object.keys(updates).length > 0) {

@@ -76,20 +76,29 @@ export class ValidateActivityService {
     return { isFraud: false };
   }
 
-  private buildSecurityUserMessage(decision: string, explanationSummary?: string, primaryRiskDriver?: string): string {
-    const decisionLabel = decision === 'BLOCKED'
-      ? 'nao foi homologada'
-      : decision === 'UNDER_REVIEW'
-        ? 'ficou pendente de analise manual'
-        : 'foi sinalizada como parcialmente aprovada';
+  // #325 (pedido do usuario): o atleta precisa de uma mensagem SIMPLES e
+  // amigavel, nunca do relatorio tecnico interno (score de risco, trust,
+  // reputacao, nome do driver em ingles etc). O detalhe tecnico completo
+  // continua indo pro audit log e pro campo `rejectionReason` salvo no
+  // documento da atividade -- so nao vai mais para a tela do usuario.
+  private buildSecurityUserMessage(decision: string): string {
+    if (decision === 'UNDER_REVIEW') {
+      return 'Quase lá! Precisamos confirmar sua presença com uma selfie rápida para validar esta atividade.';
+    }
+    // BLOCKED (e qualquer outro motivo tecnico que caia aqui): a atividade
+    // NAO trava mais o atleta numa tela de erro pedindo pra tentar de novo.
+    // Ela e recebida, fica pendente de revisao, e o status muda depois que a
+    // checagem terminar (resposta passa a ser 200/pending, nao mais 422).
+    return 'Recebemos sua atividade! Estamos concluindo a verificação de segurança e você será avisado assim que ela for confirmada.';
+  }
 
-    if (explanationSummary) {
-      return `Sua atividade ${decisionLabel} pela auditoria antifraude. Motivo: ${explanationSummary}`;
-    }
-    if (primaryRiskDriver) {
-      return `Sua atividade ${decisionLabel} pela auditoria antifraude. Principal fator de risco: ${primaryRiskDriver}.`;
-    }
-    return `Sua atividade ${decisionLabel} pela auditoria antifraude. Nossos sistemas detectaram inconsistencias entre o GPS, os sensores do aparelho e o tipo de atividade declarado.`;
+  // Motivo tecnico completo (score, driver, decisao) -- so para uso interno
+  // (audit log, rejectionReason no documento, fila de revisao do admin).
+  // Nunca deve ser exibido diretamente ao atleta.
+  private buildInternalSecurityReason(decision: string, explanationSummary?: string, primaryRiskDriver?: string): string {
+    if (explanationSummary) return `Decisão ${decision}: ${explanationSummary}`;
+    if (primaryRiskDriver) return `Decisão ${decision}. Principal fator de risco: ${primaryRiskDriver}.`;
+    return `Decisão ${decision}. Inconsistências entre GPS, sensores do aparelho e o tipo de atividade declarado.`;
   }
 
   async execute(request: ValidateActivityRequest): Promise<ValidateActivityResponse> {
@@ -193,8 +202,14 @@ export class ValidateActivityService {
       if (!geofenceResult.approved) {
         console.warn(`[ValidateActivityService] [${traceId}] Geofence de academia recusada: ${geofenceResult.reason}`);
 
+        // #325 (pedido do usuario): mesmo tratamento do bloqueio do
+        // SecurityPipeline abaixo -- a musculacao tambem nao trava mais numa
+        // tela de erro. Fecha a sessao normalmente, sem pontos, com status
+        // pending_review (fica na fila de revisao do admin).
+        const geofenceReasonCode = 'GEOFENCE_' + geofenceResult.status.toUpperCase();
+        let pendingActivityId: string | undefined;
         try {
-          await this.activityRepository.create({
+          const pendingActivity = await this.activityRepository.create({
             userId: request.userId,
             type: request.activityData.type,
             muscleGroup: rawActivity.muscleGroup,
@@ -206,36 +221,50 @@ export class ValidateActivityService {
             pointsEarned: 0,
             scoreAwarded: 0,
             rankingPointsEarned: 0,
-            status: 'rejected',
-            validationStatus: 'invalid',
-            nonScoringReason: 'GEOFENCE_' + geofenceResult.status.toUpperCase(),
-            rejectionReason: geofenceResult.userFacingMessage,
+            status: 'pending_review',
+            validationStatus: 'pending_review',
+            pendingReview: true,
+            nonScoringReason: geofenceReasonCode,
+            rejectionReason: geofenceResult.reason,
             userMessage: geofenceResult.userFacingMessage,
             evidence: request.activityData.evidence || {},
             traceId
           });
+          pendingActivityId = pendingActivity.id;
         } catch (persistErr) {
-          console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade rejeitada por geofence:`, persistErr);
+          console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade de musculacao pendente de revisao:`, persistErr);
         }
 
         await this.auditRepository.log({
           traceId,
           userId: request.userId,
-          action: 'VALIDATE_ACTIVITY_GEOFENCE_BLOCKED',
-          details: { activityData: request.activityData, reason: geofenceResult.reason, status: geofenceResult.status },
+          action: 'VALIDATE_ACTIVITY_GEOFENCE_PENDING_REVIEW',
+          details: { activityData: request.activityData, reason: geofenceResult.reason, status: geofenceResult.status, activityId: pendingActivityId },
           result: 'FLAGGED'
         });
 
-        throw new AppError(geofenceResult.userFacingMessage, 422, {
-          reasonCode: 'GEOFENCE_' + geofenceResult.status.toUpperCase(),
-          canRetry: true
-        } as any);
+        return {
+          success: true,
+          pending: true,
+          status: 'pending_review',
+          activityId: pendingActivityId,
+          message: geofenceResult.userFacingMessage,
+          userMessage: geofenceResult.userFacingMessage,
+          isScoringEligible: false,
+          nonScoringReason: geofenceReasonCode,
+          reasonCode: geofenceReasonCode,
+          canRetry: true,
+          traceId
+        } as any;
       }
     }
 
     let securityBlocked = false;
     let securityReason: string | null = null;
     let securityUserMessage: string | null = null;
+    // Detalhe tecnico (score/driver/decisao) -- so pro audit log e pra fila
+    // de revisao do admin, nunca mostrado ao atleta (ver buildSecurityUserMessage).
+    let securityInternalReason: string | null = null;
     let securityCanRetry = true;
     // Guardado a parte de securityReason (que ja vem prefixado 'SECURITY_PIPELINE_')
     // para decidir, logo abaixo, se este e o caso especifico UNDER_REVIEW que
@@ -278,18 +307,25 @@ export class ValidateActivityService {
         securityDecision = securityResult.decision;
         securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
         securityCanRetry = securityResult.decision !== 'BLOCKED';
-        securityUserMessage = this.buildSecurityUserMessage(
+        securityUserMessage = this.buildSecurityUserMessage(securityResult.decision);
+        securityInternalReason = this.buildInternalSecurityReason(
           securityResult.decision,
           securityResult.report?.explanation?.summaryText,
           securityResult.report?.explanation?.primaryRiskDriver
         );
       }
     } catch (secErr) {
-      // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, a atividade NAO e aprovada.
+      // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, a
+      // atividade NAO e aprovada automaticamente -- mas tambem nao trava mais
+      // o atleta numa tela de erro. Cai no mesmo fluxo "pendente de revisao"
+      // do BLOCKED (ver #325): a sessao fecha normalmente, sem pontos, e o
+      // status muda depois que alguem revisar manualmente.
       securityBlocked = true;
+      securityDecision = 'BLOCKED';
       securityReason = 'SECURITY_PIPELINE_ERROR';
       securityCanRetry = true;
-      securityUserMessage = 'Nao foi possivel validar esta atividade agora (falha tecnica no motor antifraude). Tente novamente em instantes.';
+      securityUserMessage = this.buildSecurityUserMessage('BLOCKED');
+      securityInternalReason = 'Falha tecnica no motor antifraude (fail-closed): ' + (secErr instanceof Error ? secErr.message : String(secErr));
       console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):`, secErr);
     }
 
@@ -343,10 +379,22 @@ export class ValidateActivityService {
     }
 
     if (securityBlocked) {
-      console.warn(`[ValidateActivityService] [${traceId}] SecurityPipeline recusou pontuacao: ${securityReason}`);
+      console.warn(`[ValidateActivityService] [${traceId}] SecurityPipeline recusou pontuacao automatica: ${securityReason}`);
 
+      // #325 (pedido do usuario, cardio E musculacao): a atividade NAO fica
+      // mais travada numa tela de erro pedindo retry -- ela e recebida e
+      // encerrada normalmente do lado do atleta, com status "pendente de
+      // revisao" (pending_review). O antifraude continua rodando exatamente
+      // igual (nada foi enfraquecido); so muda O QUE o atleta ve na hora: uma
+      // mensagem simples de "em analise" em vez do relatorio tecnico, e a
+      // sessao fecha (nao precisa mais tentar de novo). Zero pontos ate a
+      // revisao mudar o status -- ver `pendingReview: true`, consumido pela
+      // fila de revisao do admin (api/_handlers/admin.ts, action
+      // 'list-flagged-activities') e pelo endpoint ja existente
+      // 'review-activity', que flipa o status manualmente depois.
+      let pendingActivityId: string | undefined;
       try {
-        const rejectedActivity = await this.activityRepository.create({
+        const pendingActivity = await this.activityRepository.create({
           userId: request.userId,
           type: request.activityData.type,
           muscleGroup: rawActivity.muscleGroup,
@@ -369,26 +417,28 @@ export class ValidateActivityService {
           pointsEarned: 0,
           scoreAwarded: 0,
           rankingPointsEarned: 0,
-          status: 'rejected',
-          validationStatus: 'invalid',
+          status: 'pending_review',
+          validationStatus: 'pending_review',
+          pendingReview: true,
           nonScoringReason: securityReason,
-          rejectionReason: securityUserMessage,
+          rejectionReason: securityInternalReason,
           userMessage: securityUserMessage,
           evidence: request.activityData.evidence || {},
           traceId
         });
+        pendingActivityId = pendingActivity.id;
 
-        // #71: Health Data Layer -- ADITIVO. Uma atividade bloqueada pelo
-        // antifraude ainda pode ter uma leitura biometrica REAL por baixo
-        // (o sensor nao mentiu so porque o GPS/padrao de movimento pareceu
-        // suspeito) -- por isso quality='sensor_flagged' em vez de
-        // descartar a leitura. Nunca afeta pontuacao/IGA; falha aqui nunca
-        // derruba a resposta principal (ja lancada acima).
+        // #71: Health Data Layer -- ADITIVO. Uma atividade pendente de revisao
+        // ainda pode ter uma leitura biometrica REAL por baixo (o sensor nao
+        // mentiu so porque o GPS/padrao de movimento pareceu suspeito) --
+        // por isso quality='sensor_flagged' em vez de descartar a leitura.
+        // Nunca afeta pontuacao/IGA; falha aqui nunca derruba a resposta
+        // principal (ja calculada abaixo).
         try {
           await registrarAmostrasDeAtividade({
             userId: request.userId,
             source: healthSampleSource,
-            sourceActivityId: rejectedActivity.id!,
+            sourceActivityId: pendingActivity.id!,
             timestamp: normalizarTimestamp(request.activityData.startTime),
             aprovadoPeloAntifraude: false,
             pularDuplicata: false,
@@ -401,20 +451,30 @@ export class ValidateActivityService {
           console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
         }
       } catch (persistErr) {
-        console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade rejeitada no historico:`, persistErr);
+        console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade pendente de revisao:`, persistErr);
       }
 
       await this.auditRepository.log({
         traceId,
         userId: request.userId,
-        action: 'VALIDATE_ACTIVITY_SECURITY_PIPELINE_BLOCKED',
-        details: { activityData: request.activityData, reason: securityReason },
+        action: 'VALIDATE_ACTIVITY_SECURITY_PIPELINE_PENDING_REVIEW',
+        details: { activityData: request.activityData, reason: securityReason, internalReason: securityInternalReason, activityId: pendingActivityId },
         result: 'FLAGGED'
       });
-      throw new AppError(securityUserMessage || `Atividade recusada pela auditoria antifraude (${securityReason}).`, 422, {
+
+      return {
+        success: true,
+        pending: true,
+        status: 'pending_review',
+        activityId: pendingActivityId,
+        message: securityUserMessage,
+        userMessage: securityUserMessage,
+        isScoringEligible: false,
+        nonScoringReason: securityReason,
         reasonCode: securityReason,
-        canRetry: securityCanRetry
-      } as any);
+        canRetry: securityCanRetry,
+        traceId
+      } as any;
     }
 
     const scoreAwarded = this.calculateScore(request.activityData);
