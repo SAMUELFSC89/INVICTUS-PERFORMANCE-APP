@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Camera, 
   ShieldCheck, 
@@ -187,8 +188,20 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div id="verified-presence-backdrop" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+  // #121: mesmo bug do #116 (ver ChallengeActivityFlow.tsx) -- este modal
+  // renderizava como filho normal de Challenges.tsx, dentro de <main
+  // className="relative z-[2] ..."> em Layout.tsx, que cria seu proprio
+  // contexto de empilhamento. O z-50 daqui so competia com outros elementos
+  // DENTRO desse <main>; nunca conseguia vencer nada fora dele por fora.
+  // Confirmado ao vivo: a checagem de presenca (prova de vida) e disparada
+  // ao finalizar uma corrida, mas o modal inteiro ficava invisivel atras da
+  // tela cheia "CARDIO EM ANDAMENTO" (ChallengeActivityFlow, agora portalada
+  // pro document.body com z-index:70) -- o atleta nunca via o pedido de
+  // gesto, a atividade nunca finalizava, e nao havia NENHUM indicio na tela
+  // do que estava faltando. Portalado pro document.body tambem, com z-index
+  // acima do da tela de atividade (que pode estar aberta ao mesmo tempo).
+  return createPortal(
+    <div id="verified-presence-backdrop" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
       <motion.div 
         id="verified-presence-card"
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -432,6 +445,7 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
           <canvas ref={canvasRef} className="hidden" />
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 };
