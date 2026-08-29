@@ -32,6 +32,7 @@ import notificationsHandler from './_handlers/notifications.js';
 import auditFraudHandler from './_handlers/audit-fraud.js';
 import stravaHandler from './_handlers/strava.js';
 import migrateResetHandler from './_handlers/migrate-reset.js';
+import migrateLegacyPrivateChallengesHandler from './_handlers/migrate-legacy-private-challenges.js';
 import envCheckHandler from './_handlers/env-check.js';
 import walletRedeemHandler from './_handlers/wallet-redeem.js';
 import adminHandler from './_handlers/admin.js';
@@ -156,6 +157,7 @@ assertHandler('paymentsConfigHandler', paymentsConfigHandler);
 assertHandler('paymentsStatusHandler', paymentsStatusHandler);
 assertHandler('walletRedeemHandler', walletRedeemHandler);
 assertHandler('migrateResetHandler', migrateResetHandler);
+assertHandler('migrateLegacyPrivateChallengesHandler', migrateLegacyPrivateChallengesHandler);
 assertHandler('adminHandler', adminHandler);
 assertHandler('denounceHandler', denounceHandler);
 assertHandler('privateChallengesHandler', privateChallengesHandler);
@@ -299,6 +301,9 @@ router.post('/championships/submit-activity', wrap(submitActivityToChampionshipH
 console.log('[ROUTE] /migrate-reset', typeof migrateResetHandler);
 router.all('/migrate-reset', wrap(migrateResetHandler));
 
+console.log('[ROUTE] /migrate-legacy-private-challenges', typeof migrateLegacyPrivateChallengesHandler);
+router.all('/migrate-legacy-private-challenges', wrap(migrateLegacyPrivateChallengesHandler));
+
 console.log('[ROUTE] /admin', typeof adminHandler);
 router.all('/admin', wrap(adminHandler));
 
@@ -359,6 +364,7 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'payments-config': return await paymentsConfigHandler(req as any, res as any);
     case 'payments-status': return await paymentsStatusHandler(req as any, res as any);
     case 'migrate-reset': return await migrateResetHandler(req as any, res as any);
+    case 'migrate-legacy-private-challenges': return await migrateLegacyPrivateChallengesHandler(req as any, res as any);
     case 'admin': return await adminHandler(req as any, res as any);
     case 'private-challenges': return await privateChallengesHandler(req as any, res as any);
     case 'performance-dashboard': return await performanceDashboardHandler(req as any, res as any);
