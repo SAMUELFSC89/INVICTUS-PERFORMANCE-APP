@@ -49,6 +49,30 @@ function createStructuredError(title: string, message: string): Error {
   return err;
 }
 
+/**
+ * #118: o SDK web do Firestore (getDoc/getDocs) nao tem timeout embutido --
+ * se a conexao nunca fechar nem abrir de verdade (ex: WKWebView do app nativo
+ * iOS bloqueando/engasgando o transporte long-polling do Firestore, sem
+ * cair pra erro nenhum), a Promise fica pendurada PARA SEMPRE: nunca resolve,
+ * nunca rejeita. Isso trava startSession() num "await" que nunca retorna --
+ * na tela, o botao fica preso em "INICIANDO..." indefinidamente, sem
+ * NENHUMA mensagem de erro (relatado por usuario testando em iPhone: "fica
+ * tentando comecar so"). Mesma categoria de bug que o #323 ja corrigiu do
+ * lado do endSession() (fetch sem timeout) -- aqui aplicamos o mesmo remedio
+ * do lado do startSession(): se o Firestore nao responder em tempo
+ * razoavel, desistimos com um erro claro em vez de travar o atleta numa
+ * tela que nunca sai do lugar.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 export const activityService = {
   async requestMotionPermission(): Promise<'granted' | 'denied' | 'unavailable' | 'not_supported' | 'error'> {
     if (typeof window === 'undefined' || !('DeviceMotionEvent' in window)) {
