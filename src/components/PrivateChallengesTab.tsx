@@ -1,15 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Dumbbell, X, Check, Award, Trophy, Users, Clock, Calendar, 
-  Wallet, RefreshCw, Plus, CheckCircle, TrendingUp, AlertCircle, 
-  Copy, ClipboardCheck, Lock, ShieldAlert 
+import {
+  Check, Trophy, RefreshCw, Plus, CheckCircle, AlertCircle,
+  Copy, ShieldAlert, Crown, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { useUser } from '../UserContext';
 
+// #325/#124 (pedido do usuario): Desafios Privados deixou de ser uma disputa
+// com dinheiro real (taxa de entrada, pool, premio em R$) e virou um
+// beneficio exclusivo do plano PRO -- sem nenhum valor monetario envolvido.
+// So o TOP 1 leva reconhecimento (destaque/badge). Usuarios Free nao tem
+// acesso ao recurso (nem visualizam desafios de terceiros), so a tela de
+// upsell abaixo.
 export function PrivateChallengesTab() {
   const { user: profile, refreshUser } = useUser();
+  const navigate = useNavigate();
+  const isPro = profile?.subscriptionTier === 'performance';
+
   const [activeSubTab, setActiveSubTab] = useState<'ativos' | 'criar' | 'entrar'>('ativos');
 
   // List states
@@ -21,7 +30,6 @@ export function PrivateChallengesTab() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [durationDays, setDurationDays] = useState<7 | 15 | 30>(7);
-  const [entryFee, setEntryFee] = useState<number>(30);
   const [isCreating, setIsCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
@@ -57,8 +65,8 @@ export function PrivateChallengesTab() {
   };
 
   useEffect(() => {
-    fetchChallenges();
-  }, []);
+    if (isPro) fetchChallenges();
+  }, [isPro]);
 
   const handleCreateChallenge = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,12 +85,7 @@ export function PrivateChallengesTab() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${idToken}`
         },
-        body: JSON.stringify({
-          title,
-          description,
-          durationDays,
-          entryFee
-        })
+        body: JSON.stringify({ title, description, durationDays })
       });
 
       const data = await response.json();
@@ -148,38 +151,66 @@ export function PrivateChallengesTab() {
     }, 2500);
   };
 
+  // Free: recurso totalmente bloqueado -- nao mostra nem a lista de desafios
+  // de terceiros. Mesmo padrao visual de gate ja usado em Performance.tsx.
+  if (!isPro) {
+    return (
+      <div className="bg-surface-container-low border border-outline-variant/35 rounded-[32px] p-10 text-center max-w-lg mx-auto space-y-5">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mx-auto">
+          <Lock size={28} />
+        </div>
+        <div className="space-y-2">
+          <h3 className="font-headline italic font-black text-2xl uppercase tracking-tight text-on-surface">Benefício Exclusivo PRO</h3>
+          <p className="text-on-surface-variant font-label text-[10px] uppercase tracking-wider leading-relaxed max-w-sm mx-auto">
+            Desafios Privados são para assinantes do plano PRO: crie ou entre em disputas com seus parceiros de treino usando um código de convite, sem nenhum custo por desafio. Apenas reconhecimento para quem terminar em 1º lugar.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/profile')}
+          className="bg-primary text-black font-label font-black text-[10px] uppercase tracking-wider px-6 py-3.5 rounded-xl shadow-lg hover:brightness-110 active:scale-95 transition-all inline-flex items-center gap-2"
+        >
+          <Crown size={14} />
+          Assinar Invictus PRO
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 pb-12">
       {/* Top action header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-container-low p-6 rounded-[24px] border border-outline-variant/35 shadow-xl">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-            <Wallet size={24} />
+            <Trophy size={24} />
           </div>
           <div>
-            <span className="font-label text-[9px] font-black text-on-surface-variant uppercase tracking-[0.25em]">SALDO DISPONÍVEL</span>
-            <h4 className="font-headline italic font-black text-2xl text-on-surface leading-none">
-              R$ {(profile?.walletBalance !== undefined ? Number(profile.walletBalance) : 0).toFixed(2)}
+            <span className="font-label text-[9px] font-black text-on-surface-variant uppercase tracking-[0.25em] flex items-center gap-1.5">
+              <Crown size={11} className="text-primary" /> BENEFÍCIO PRO
+            </span>
+            <h4 className="font-headline italic font-black text-xl text-on-surface leading-tight">
+              Desafios Privados
             </h4>
           </div>
         </div>
 
         <div className="flex bg-surface-container-high p-1 rounded-xl gap-1 shrink-0">
-          <button 
+          <button
             type="button"
             onClick={() => setActiveSubTab('ativos')}
             className={`px-4 py-2 text-[10px] font-black font-label rounded-lg transition-all uppercase tracking-wider ${activeSubTab === 'ativos' ? 'bg-primary text-black' : 'text-on-surface-variant hover:text-on-surface'}`}
           >
             DESAFIOS ATIVOS
           </button>
-          <button 
+          <button
             type="button"
             onClick={() => setActiveSubTab('criar')}
             className={`px-4 py-2 text-[10px] font-black font-label rounded-lg transition-all uppercase tracking-wider ${activeSubTab === 'criar' ? 'bg-primary text-black' : 'text-on-surface-variant hover:text-on-surface'}`}
           >
             CRIAR NOVO
           </button>
-          <button 
+          <button
             type="button"
             onClick={() => setActiveSubTab('entrar')}
             className={`px-4 py-2 text-[10px] font-black font-label rounded-lg transition-all uppercase tracking-wider ${activeSubTab === 'entrar' ? 'bg-primary text-black' : 'text-on-surface-variant hover:text-on-surface'}`}
@@ -214,7 +245,7 @@ export function PrivateChallengesTab() {
       <AnimatePresence mode="wait">
         {/* TAB 1: ACTIVE CHALLENGES LIST */}
         {activeSubTab === 'ativos' && (
-          <motion.div 
+          <motion.div
             key="list"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
@@ -226,7 +257,7 @@ export function PrivateChallengesTab() {
                 <Trophy size={18} className="text-primary" />
                 DESAFIOS DISPONÍVEIS
               </h3>
-              <button 
+              <button
                 type="button"
                 onClick={fetchChallenges}
                 className="w-10 h-10 rounded-xl bg-surface-container-high text-on-surface flex items-center justify-center border border-outline-variant/20 hover:text-primary transition-all"
@@ -246,9 +277,9 @@ export function PrivateChallengesTab() {
                 <Trophy size={48} className="mx-auto mb-4 text-on-surface-variant opacity-25" />
                 <h4 className="font-headline italic font-black text-lg text-on-surface uppercase mb-1">Nenhum Desafio Encontrado</h4>
                 <p className="text-on-surface-variant font-label text-[9px] uppercase tracking-wider max-w-sm mx-auto mb-6 leading-relaxed">
-                  Crie seu próprio desafio e convide amigos para começar a disputarem o prêmio!
+                  Crie seu próprio desafio e convide amigos para disputar o topo do ranking!
                 </p>
-                <button 
+                <button
                   type="button"
                   onClick={() => setActiveSubTab('criar')}
                   className="bg-primary text-black font-label font-black text-[10px] uppercase tracking-wider px-6 py-3 rounded-xl shadow-lg hover:brightness-110 active:scale-95 transition-all"
@@ -260,9 +291,14 @@ export function PrivateChallengesTab() {
               <div className="grid grid-cols-1 gap-6">
                 {challenges.map((challenge) => {
                   const neededToMin = 2 - challenge.participantsCount;
+                  // Desafios criados antes da migracao pra modelo PRO sem
+                  // dinheiro (ver #325) ainda podem existir no historico com
+                  // entryFee/netPrizePool reais -- exibidos como registro
+                  // fiel do que aconteceu, nunca inventado.
+                  const isLegacyMoney = challenge.isLegacyMoneyChallenge && typeof challenge.entryFee === 'number' && challenge.entryFee > 0;
 
                   return (
-                    <motion.div 
+                    <motion.div
                       key={challenge.id}
                       className="bg-surface-container-low border border-outline-variant/35 rounded-[32px] p-6 space-y-6 shadow-xl relative overflow-hidden"
                     >
@@ -277,7 +313,7 @@ export function PrivateChallengesTab() {
                           <div className="flex flex-wrap items-center gap-2">
                             {challenge.status === 'forming' && (
                               <span className="bg-alert-orange/15 text-alert-orange border border-alert-orange/20 px-2.5 py-0.5 rounded-full font-label font-bold text-[8px] uppercase tracking-wider animate-pulse">
-                                COMPETIÇÃO ENTRE AMIGOS
+                                AGUARDANDO ADVERSÁRIOS
                               </span>
                             )}
                             {challenge.status === 'active' && (
@@ -324,7 +360,7 @@ export function PrivateChallengesTab() {
 
                         {/* Copy invite code container */}
                         {['forming', 'active'].includes(challenge.status) && (
-                          <button 
+                          <button
                             type="button"
                             onClick={() => handleCopyCode(challenge.inviteCode)}
                             className="bg-surface-container-high border border-outline-variant/30 px-3.5 py-2.5 rounded-2xl flex items-center justify-between gap-3 text-on-surface-variant hover:text-primary transition-all shrink-0 w-full sm:w-auto"
@@ -340,17 +376,27 @@ export function PrivateChallengesTab() {
                         )}
                       </div>
 
-                      {/* Info grid row */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1">
-                        <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
-                          <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">RECONHECIMENTO AO CAMPEÃO</span>
-                          <span className="font-headline italic font-black text-lg text-primary">R$ {(challenge.netPrizePool || 0).toFixed(2)}</span>
-                        </div>
-
-                        <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
-                          <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">VALOR DA COMPETIÇÃO</span>
-                          <span className="font-headline italic font-black text-lg text-on-surface">R$ {(challenge.entryFee || 0).toFixed(2)}</span>
-                        </div>
+                      {/* Info grid row -- sem valores em dinheiro no modelo novo;
+                          desafios legados (com dinheiro real) mostram os campos
+                          originais como registro historico. */}
+                      <div className={`grid grid-cols-2 ${isLegacyMoney ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4 pt-1`}>
+                        {isLegacyMoney ? (
+                          <>
+                            <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
+                              <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">PRÊMIO (LEGADO)</span>
+                              <span className="font-headline italic font-black text-lg text-primary">R$ {(challenge.netPrizePool || 0).toFixed(2)}</span>
+                            </div>
+                            <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
+                              <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">TAXA (LEGADO)</span>
+                              <span className="font-headline italic font-black text-lg text-on-surface">R$ {(challenge.entryFee || 0).toFixed(2)}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
+                            <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">PRÊMIO</span>
+                            <span className="font-headline italic font-black text-sm text-primary flex items-center gap-1"><Trophy size={13} /> TOP 1 leva o troféu</span>
+                          </div>
+                        )}
 
                         <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
                           <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">PARTICIPANTES CONFIRMADOS</span>
@@ -370,9 +416,9 @@ export function PrivateChallengesTab() {
                         <div className="bg-alert-orange/10 border border-alert-orange/20 p-4 rounded-2xl flex items-start gap-3">
                           <ShieldAlert size={16} className="text-alert-orange shrink-0 mt-0.5" />
                           <p className="text-alert-orange font-bold text-[9px] uppercase tracking-wider leading-relaxed">
-                            {neededToMin > 0 
-                              ? `Atenção: Falta ${neededToMin} participante para ativar este desafio privado. Caso o prazo expire sem atingir o mínimo de 2 participantes confirmados, o valor da competição será 100% estornado.`
-                              : `Duelo de Titãs ativo! A competição começará oficialmente em breve.`}
+                            {neededToMin > 0
+                              ? `Falta ${neededToMin} participante para ativar este desafio privado.`
+                              : `Desafio ativo! A disputa começará oficialmente em breve.`}
                           </p>
                         </div>
                       )}
@@ -392,10 +438,12 @@ export function PrivateChallengesTab() {
                               <span className="font-headline italic font-black text-md text-purple-400 uppercase">{challenge.winnerName}</span>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <span className="block font-label text-[7px] uppercase tracking-widest text-on-surface-variant opacity-50 mb-0.5">Faturamento de prêmio</span>
-                            <span className="font-headline italic font-black text-lg text-primary">R$ {(challenge.netPrizePool || 0).toFixed(2)}</span>
-                          </div>
+                          {isLegacyMoney && (
+                            <div className="text-right">
+                              <span className="block font-label text-[7px] uppercase tracking-widest text-on-surface-variant opacity-50 mb-0.5">Prêmio (legado)</span>
+                              <span className="font-headline italic font-black text-lg text-primary">R$ {(challenge.netPrizePool || 0).toFixed(2)}</span>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -404,7 +452,7 @@ export function PrivateChallengesTab() {
                         <span className="block font-label text-[8px] uppercase tracking-widest text-on-surface-variant opacity-45 font-black">
                           CLASSICAÇÃO / RANKING DO DESAFIO
                         </span>
-                        
+
                         <div className="space-y-2 bg-surface-container-high/30 p-2.5 rounded-2xl border border-outline-variant/15">
                           {challenge.members?.length === 0 ? (
                             <span className="text-[8px] font-bold text-on-surface-variant uppercase p-2 block text-center">Nenhum membro inscrito</span>
@@ -412,11 +460,11 @@ export function PrivateChallengesTab() {
                             challenge.members.map((member: any, index: number) => {
                               const isMe = member.userId === auth.currentUser?.uid;
                               return (
-                                <div 
+                                <div
                                   key={member.userId}
                                   className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border transition-all ${
-                                    isMe 
-                                      ? 'bg-primary/10 border-primary/35' 
+                                    isMe
+                                      ? 'bg-primary/10 border-primary/35'
                                       : 'bg-surface-container-low border-outline-variant/15'
                                   }`}
                                 >
@@ -464,7 +512,7 @@ export function PrivateChallengesTab() {
 
         {/* TAB 2: CREATE CHALLENGE */}
         {activeSubTab === 'criar' && (
-          <motion.div 
+          <motion.div
             key="create"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
@@ -474,7 +522,7 @@ export function PrivateChallengesTab() {
             <div>
               <h3 className="font-headline italic font-black text-2xl uppercase tracking-tight text-on-surface">CRIAR DESAFIO PRIVADO</h3>
               <p className="text-on-surface-variant font-label text-[9px] uppercase tracking-wider leading-relaxed">
-                Desafie seus parceiros de treino e dispute um prêmio acumulado com base no rendimento físico real verificado!
+                Desafie seus parceiros de treino e dispute o topo do ranking com base no rendimento físico real verificado — sem nenhum custo.
               </p>
             </div>
 
@@ -483,7 +531,7 @@ export function PrivateChallengesTab() {
                 <label className="block font-label font-black text-[9px] text-on-surface-variant uppercase tracking-widest leading-none">
                   TÍTULO DO DESAFIO
                 </label>
-                <input 
+                <input
                   type="text"
                   required
                   placeholder="EX: DESAFIO DE RESISTÊNCIA DOS PARCEIROS"
@@ -497,7 +545,7 @@ export function PrivateChallengesTab() {
                 <label className="block font-label font-black text-[9px] text-on-surface-variant uppercase tracking-widest leading-none">
                   DESCRIÇÃO DO DESAFIO (OPCIONAL)
                 </label>
-                <textarea 
+                <textarea
                   rows={2}
                   placeholder="EX: QUEM SOMAR MAIS PONTOS DE CARDIO EM 15 DIAS LEVA O RECONHECIMENTO."
                   value={description}
@@ -513,13 +561,13 @@ export function PrivateChallengesTab() {
                   </label>
                 </div>
                 {([7, 15, 30] as const).map((days) => (
-                  <button 
+                  <button
                     key={days}
                     type="button"
                     onClick={() => setDurationDays(days)}
                     className={`py-3.5 rounded-2xl font-headline italic font-black text-sm uppercase tracking-wider border-2 transition-all ${
-                      durationDays === days 
-                        ? 'bg-primary/10 border-primary text-primary' 
+                      durationDays === days
+                        ? 'bg-primary/10 border-primary text-primary'
                         : 'bg-surface-container-high border-outline-variant/20 text-on-surface-variant hover:text-on-surface'
                     }`}
                   >
@@ -528,38 +576,17 @@ export function PrivateChallengesTab() {
                 ))}
               </div>
 
-              <div className="space-y-2">
-                <label className="block font-label font-black text-[9px] text-on-surface-variant uppercase tracking-widest leading-none">
-                  VALOR DA COMPETIÇÃO (R$)
-                </label>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {[30, 50, 100, 200, 500, 1000].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setEntryFee(val)}
-                      className={`py-3 rounded-xl font-headline italic font-black text-xs uppercase tracking-wider border-2 transition-all ${
-                        entryFee === val
-                          ? 'bg-primary border-primary text-black font-extrabold'
-                          : 'bg-surface-container-high border-outline-variant/20 text-on-surface-variant hover:text-on-surface'
-                      }`}
-                    >
-                      R$ {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Clean user summary metrics card without platform percentages or internal formulas */}
+              {/* Resumo limpo, sem taxa nem formulas internas -- o desafio e
+                  100% gratis, so exige plano PRO pra criar/entrar. */}
               <div className="bg-surface-container-high p-5 rounded-2xl border border-outline-variant/15 space-y-3 font-label text-[10px] text-on-surface-variant">
                 <div className="flex justify-between items-center pb-1 border-b border-outline-variant/10 font-bold">
-                  <span className="uppercase text-on-surface font-black">RESUMO DA COMPETIÇÃO</span>
-                  <span className="text-primary uppercase tracking-widest font-black">CONFIRMAÇÃO</span>
+                  <span className="uppercase text-on-surface font-black">RESUMO DO DESAFIO</span>
+                  <span className="text-primary uppercase tracking-widest font-black flex items-center gap-1"><Crown size={11} /> PRO</span>
                 </div>
-                
+
                 <div className="flex justify-between">
-                  <span className="uppercase tracking-wider">VALOR DA COMPETIÇÃO:</span>
-                  <span className="font-bold text-on-surface">R$ {Number(entryFee).toFixed(2)} por participante</span>
+                  <span className="uppercase tracking-wider">CUSTO:</span>
+                  <span className="font-bold text-primary">Gratuito (benefício PRO)</span>
                 </div>
 
                 <div className="flex justify-between">
@@ -568,22 +595,22 @@ export function PrivateChallengesTab() {
                 </div>
 
                 <div className="flex justify-between">
-                  <span className="uppercase tracking-wider font-bold">GANHADOR MÁXIMO:</span>
-                  <span className="font-black text-primary">Apenas o TOP 1 recebe o Reconhecimento ao Campeão</span>
+                  <span className="uppercase tracking-wider font-bold">GANHADOR:</span>
+                  <span className="font-black text-primary">TOP 1 leva o reconhecimento de campeão</span>
                 </div>
 
                 <p className="opacity-55 leading-relaxed text-[8px] uppercase tracking-wide border-t border-outline-variant/10 pt-2">
-                  *Este desafio é uma competição entre amigos. Para que o desafio seja ativado, é necessário um mínimo de 2 participantes confirmados (inclusive você). Caso o prazo final expire sem atingir o mínimo de participantes, o saldo debitado será inteiramente estornado e devolvido à carteira correspondente.
+                  *Para que o desafio seja ativado, é necessário um mínimo de 2 participantes confirmados (inclusive você). Caso o prazo final expire sem atingir o mínimo, o desafio é cancelado — sem qualquer custo envolvido.
                 </p>
               </div>
 
-              <button 
+              <button
                 type="submit"
                 disabled={isCreating}
                 className="w-full bg-primary text-black hover:brightness-110 active:scale-98 text-xs font-black font-label py-4 rounded-2xl uppercase tracking-widst shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-2"
               >
                 {isCreating ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-                CRIAR E PAGAR TAXA DE R$ {Number(entryFee).toFixed(2)}
+                CRIAR DESAFIO
               </button>
             </form>
           </motion.div>
@@ -591,7 +618,7 @@ export function PrivateChallengesTab() {
 
         {/* TAB 3: JOIN CHALLENGE */}
         {activeSubTab === 'entrar' && (
-          <motion.div 
+          <motion.div
             key="join"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
@@ -607,7 +634,7 @@ export function PrivateChallengesTab() {
 
             <form onSubmit={handleJoinChallenge} className="space-y-6">
               <div className="space-y-2 text-center">
-                <input 
+                <input
                   type="text"
                   required
                   maxLength={6}
@@ -618,7 +645,7 @@ export function PrivateChallengesTab() {
                 />
               </div>
 
-              <button 
+              <button
                 type="submit"
                 disabled={isJoining}
                 className="w-full bg-primary text-black hover:brightness-110 active:scale-98 text-xs font-black font-label py-4 rounded-2xl uppercase tracking-widst shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-2"
