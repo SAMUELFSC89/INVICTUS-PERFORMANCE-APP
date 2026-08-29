@@ -809,10 +809,15 @@ export const activityService = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      // Uma falha transitória de rede/servidor não é um cancelamento escolhido
-      // pelo usuário. Mantemos a sessão local para permitir tentar encerrar de
-      // novo, sem perder evidências de GPS/sensores.
-      throw new Error(errorData.userMessage || errorData.error || 'Não conseguimos validar esta atividade no momento.');
+      // BUG CONFIRMADO (achado ao vivo via Chrome): api/_middleware/error.ts
+      // (errorHandler) devolve o motivo especifico do bloqueio (antifraude,
+      // geofence, GPS instavel etc.) no campo `message` -- nunca em `error`
+      // nem `userMessage`. Como este trecho so lia `userMessage`/`error`, TODO
+      // erro de finalizacao (qualquer motivo real) caia sempre na mensagem
+      // generica abaixo, escondendo do atleta a razao verdadeira e acionavel
+      // (ex.: "GPS instavel, va para um local mais aberto"). Adicionado
+      // fallback para `message`, que e o campo que a API de fato envia.
+      throw new Error(errorData.userMessage || errorData.error || errorData.message || 'Não conseguimos validar esta atividade no momento.');
     }
 
     try {
