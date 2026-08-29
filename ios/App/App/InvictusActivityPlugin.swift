@@ -1,5 +1,6 @@
 import ActivityKit
 import Capacitor
+import CoreLocation
 import Foundation
 
 // #328: plugin Capacitor local (não é um pacote separado -- vive direto no
@@ -16,17 +17,27 @@ import Foundation
 // plugin escuta essa notification (registrado em load()) e repassa pro JS
 // via notifyListeners.
 @objc(InvictusActivityPlugin)
-public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin {
+public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate {
     public let identifier = "InvictusActivityPlugin"
     public let jsName = "InvictusActivity"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startLocationTracking", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getTrackedLocations", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopLocationTracking", returnType: CAPPluginReturnPromise)
     ]
 
+    private var locationManager: CLLocationManager?
+    private var trackedLocations: [[String: Any]] = []
+    private let trackedLocationsKey = "invictus.background.locations"
+
     override public func load() {
+        if let saved = UserDefaults(suiteName: InvictusActivityIPC.appGroupId)?.array(forKey: trackedLocationsKey) as? [[String: Any]] {
+            trackedLocations = saved
+        }
         // #328: observer de baixo nível (Darwin notification center) --
         // funciona entre processos diferentes (app <-> widget extension),
         // ao contrário do NotificationCenter.default comum.
@@ -42,6 +53,63 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             nil,
             .deliverImmediately
         )
+    }
+
+    @objc func startLocationTracking(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { call.resolve(); return }
+            self.trackedLocations = []
+            self.persistTrackedLocations()
+            let manager = self.locationManager ?? CLLocationManager()
+            self.locationManager = manager
+            manager.delegate = self
+            manager.desiredAccuracy = kCLLocationAccuracyBest
+            manager.distanceFilter = 5
+            manager.activityType = .fitness
+            manager.pausesLocationUpdatesAutomatically = false
+            manager.allowsBackgroundLocationUpdates = true
+            if #available(iOS 11.0, *) { manager.showsBackgroundLocationIndicator = true }
+            if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
+            manager.startUpdatingLocation()
+            call.resolve()
+        }
+    }
+
+    @objc func getTrackedLocations(_ call: CAPPluginCall) {
+        call.resolve(["locations": trackedLocations])
+    }
+
+    @objc func stopLocationTracking(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.locationManager?.stopUpdatingLocation()
+            call.resolve(["locations": self?.trackedLocations ?? []])
+        }
+    }
+
+    public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        for location in locations where location.horizontalAccuracy >= 0 && location.horizontalAccuracy <= 100 {
+            var point: [String: Any] = [
+                "lat": location.coordinate.latitude,
+                "lng": location.coordinate.longitude,
+                "accuracy": location.horizontalAccuracy,
+                "timestamp": ISO8601DateFormatter().string(from: location.timestamp),
+                "speedKmH": max(0, location.speed * 3.6)
+            ]
+            if #available(iOS 15.0, *) {
+                point["isSimulated"] = location.sourceInformation?.isSimulatedBySoftware ?? false
+            }
+            trackedLocations.append(point)
+        }
+        if trackedLocations.count > 5000 { trackedLocations.removeFirst(trackedLocations.count - 5000) }
+        persistTrackedLocations()
+    }
+
+    public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("[InvictusActivityPlugin] background location falhou: \(error)")
+    }
+
+    private func persistTrackedLocations() {
+        UserDefaults(suiteName: InvictusActivityIPC.appGroupId)?.set(trackedLocations, forKey: trackedLocationsKey)
     }
 
     deinit {

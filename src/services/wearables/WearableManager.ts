@@ -8,10 +8,14 @@ import type { WearableConfig, WearableProvider, WearableSource, WearableSyncLog 
 
 const READ_HEALTH_PERMISSIONS = [
   'read_heart_rate',
+  'read_resting_heart_rate',
+  'read_heart_rate_variability',
   'read_steps',
   'read_distance',
   'read_calories',
-  'read_workouts'
+  'read_workouts',
+  'read_sleep',
+  'read_weight'
 ];
 
 type ServerWearableConfig = Partial<WearableConfig>;
@@ -160,6 +164,14 @@ export class WearableManager {
     const authorized = await provider.requestPermissions();
     if (!authorized) return false;
 
+    // O provedor de atividades cobre treinos/rota/FC por sessão. O provedor
+    // de vitais cobre sono, passos diários, FC de repouso, HRV e peso. Ambos
+    // precisam ser autorizados no mesmo gesto explícito de conexão do usuário.
+    let vitalsAuthorized = true;
+    if (providerId === 'apple_health' || providerId === 'health_connect') {
+      vitalsAuthorized = await HealthVitalsProvider.requestPermissions();
+    }
+
     if (providerId === 'health_connect') {
       await this.updateConfig({
         healthConnectConnected: true,
@@ -170,6 +182,12 @@ export class WearableManager {
         appleHealthConnected: true,
         appleHealthPermissions: READ_HEALTH_PERMISSIONS
       });
+    }
+
+    if (vitalsAuthorized && (providerId === 'apple_health' || providerId === 'health_connect')) {
+      // Primeira leitura logo após o consentimento: confirma acesso real e
+      // evita uma conexão que aparece ativa mas nunca traz sono/passos/vitais.
+      await this.syncVitals().catch((error) => console.warn('[WearableManager] Conectado, mas a primeira sincronização de vitais falhou:', error));
     }
 
     // Strava conclui o vínculo no callback OAuth do servidor. Não declaramos

@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from '../_lib/common.js';
 import { lerSerieTemporalMetrica, HealthMetricType } from '../_lib/health-data-layer.js';
+import { selectDailyHealthSource } from '../_lib/health-source-priority.js';
 
 // #253: leitura para a tela "Saúde" (RESUMO) e o relatório "Saúde &
 // Performance" (#54). Só lê -- nenhuma escrita aqui, nenhuma relação com
@@ -34,6 +35,7 @@ interface PontoTendencia {
   source: string;
 }
 
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
@@ -54,12 +56,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const [ultimosPares, tendenciaPares] = await Promise.all([
       Promise.all(METRICAS_RESUMO.map(async (tipo): Promise<[HealthMetricType, UltimoValor | null]> => {
-        const amostras = await lerSerieTemporalMetrica(auth.uid, tipo, desdeUltimo, agora);
+        const amostras = selectDailyHealthSource(tipo, await lerSerieTemporalMetrica(auth.uid, tipo, desdeUltimo, agora));
         const ultima = amostras[amostras.length - 1];
         return [tipo, ultima ? { value: ultima.value, unit: ultima.unit, timestamp: ultima.timestamp } : null];
       })),
       Promise.all(METRICAS_TENDENCIA.map(async (tipo): Promise<[HealthMetricType, PontoTendencia[]]> => {
-        const amostras = await lerSerieTemporalMetrica(auth.uid, tipo, desdeTendencia, agora);
+        const amostras = selectDailyHealthSource(tipo, await lerSerieTemporalMetrica(auth.uid, tipo, desdeTendencia, agora));
         return [tipo, amostras.map((a) => ({ timestamp: a.timestamp, value: a.value, source: a.source }))];
       }))
     ]);

@@ -12,6 +12,7 @@ import { registrarAmostrasDeAtividade, HealthSampleSource } from '../../_lib/hea
 import { submitActivityToActiveChampionships } from '../../_lib/championship-scoring-service.js';
 import { criarPresenceCheck } from '../../_lib/presence-check-service.js';
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from '../../_lib/geofence-engine.js';
+import { resolverPerfilValidacao } from '../../_lib/modality-config.js';
 
 // #71: request.activityData.startTime e tipado como `Date | string` (DTO),
 // mas registrarAmostrasDeAtividade exige `timestamp: string`. O padrao
@@ -52,7 +53,11 @@ export class ValidateActivityService {
   }
 
   private calculateScore(data: ValidateActivityRequest['activityData']): number {
-    const duration = data.duration || 30;
+    const profile = resolverPerfilValidacao(data);
+    const rawDuration = Number((data as any).duration ?? (data as any).durationMins) || 0;
+    const duration = profile.maxMinutosContabilizados > 0
+      ? Math.min(rawDuration, profile.maxMinutosContabilizados)
+      : rawDuration;
     const basePointsPerMinute = data.type === 'power_video' ? 10 : 2;
     const intensityMultiplier = data.intensity === 'high' ? 1.5 : data.intensity === 'moderate' ? 1.2 : 1.0;
 
@@ -141,7 +146,7 @@ export class ValidateActivityService {
     }
 
     const rawActivity: any = request.activityData || {};
-    const durationForMetrics = request.activityData.duration || rawActivity.durationMins || 30;
+    const durationForMetrics = Number(request.activityData.duration ?? rawActivity.durationMins) || 0;
     const userWeightKg = (user as any).weight || (user as any).weightKg;
     // #204: calorias/ritmo nao sao enviados pelo cliente nesta rota legada -- estimamos
     // server-side (MET x peso x tempo) para que o historico sempre tenha algo util,
@@ -266,6 +271,8 @@ export class ValidateActivityService {
     // de revisao do admin, nunca mostrado ao atleta (ver buildSecurityUserMessage).
     let securityInternalReason: string | null = null;
     let securityCanRetry = true;
+    let competitivelyEligible = true;
+    let competitiveIneligibleReason: string | null = null;
     // Guardado a parte de securityReason (que ja vem prefixado 'SECURITY_PIPELINE_')
     // para decidir, logo abaixo, se este e o caso especifico UNDER_REVIEW que
     // oferece uma segunda chance via selfie em vez de bloquear direto.
@@ -302,6 +309,8 @@ export class ValidateActivityService {
         user || {},
         userHistory
       );
+      competitivelyEligible = securityResult.report.validation.competitivelyEligible;
+      competitiveIneligibleReason = securityResult.report.validation.ineligibleReason || null;
       if (!securityResult.shouldScore) {
         securityBlocked = true;
         securityDecision = securityResult.decision;
@@ -477,7 +486,7 @@ export class ValidateActivityService {
       } as any;
     }
 
-    const scoreAwarded = this.calculateScore(request.activityData);
+    const scoreAwarded = competitivelyEligible ? this.calculateScore(request.activityData) : 0;
     console.log(`[ValidateActivityService] [${traceId}] Pontuacao calculada: +${scoreAwarded} XP`);
 
     // PONTOS DE RANKING (competicao) -- distinto do XP acima. Ate 2026-08 este
@@ -526,7 +535,10 @@ export class ValidateActivityService {
       scoreAwarded,
       rankingPointsEarned,
       status: 'completed',
-      validationStatus: 'validated',
+      validationStatus: competitivelyEligible ? 'validated' : 'not_eligible',
+      isScoringEligible: competitivelyEligible,
+      nonScoringReason: competitivelyEligible ? null : competitiveIneligibleReason,
+      userMessage: competitivelyEligible ? null : competitiveIneligibleReason,
       evidence: request.activityData.evidence || {},
       traceId
     });
@@ -551,6 +563,55 @@ export class ValidateActivityService {
       });
     } catch (healthLayerErr) {
       console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
+    }
+
+    // Uma sessao curta pode ser perfeitamente real e passar pelo antifraude,
+    // mas nao deve gerar XP, IGA ou inscricao automatica em campeonato. Ela
+    // permanece no historico para saude/consulta, sem prejudicar a reputacao
+    // do atleta e com uma explicacao simples do requisito nao atendido.
+    if (!competitivelyEligible) {
+      const message = competitiveIneligibleReason
+        || 'Atividade concluida, mas sem pontuacao porque nao atingiu o tempo minimo da modalidade.';
+      await this.auditRepository.log({
+        traceId,
+        userId: request.userId,
+        action: 'VALIDATE_ACTIVITY_NOT_COMPETITIVELY_ELIGIBLE',
+        details: { activityId: savedActivity.id, reason: message, duration: durationForMetrics },
+        result: 'SUCCESS'
+      });
+      return {
+        success: true,
+        activityId: savedActivity.id || '',
+        scoreAwarded: 0,
+        rankingPointsEarned: 0,
+        message,
+        userMessage: message,
+        traceId,
+        workout: {
+          id: savedActivity.id,
+          points: 0,
+          rankingPointsEarned: 0,
+          status: 'not_eligible',
+          type: request.activityData.type,
+          muscleGroup: rawActivity.muscleGroup,
+          cardioType: rawActivity.cardioType,
+          cardioTypeLabel: rawActivity.cardioTypeLabel,
+          distance: Number(rawActivity.distanceKm) || 0,
+          duration: durationForMetrics,
+          calories: finalCalories,
+          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
+          timestamp: savedActivity.createdAt || new Date().toISOString()
+        },
+        validation: {
+          success: true,
+          status: 'not_eligible',
+          score: 100,
+          reasonCode: 'MINIMUM_COMPETITIVE_DURATION_NOT_MET'
+        },
+        isScoringEligible: false,
+        nonScoringReason: message
+      } as any;
     }
 
     const { newXP, newLevel } = await this.userRepository.addXP(request.userId, scoreAwarded);

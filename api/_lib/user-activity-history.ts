@@ -48,7 +48,11 @@ function traduzirDecisao(dados: any): HistoricoAtividade['securityDecision'] {
   const status = String(dados.status || '').toLowerCase();
   const validacao = String(dados.validationStatus || '').toLowerCase();
 
-  if (status === 'rejected' || status === 'invalid' || validacao === 'rejected' || validacao === 'invalid' || validacao === 'not_eligible') return 'BLOCKED';
+  if (status === 'rejected' || status === 'invalid' || validacao === 'rejected' || validacao === 'invalid') return 'BLOCKED';
+  // `not_eligible` significa atividade legitima abaixo do minimo competitivo,
+  // nao fraude. Ela serve ao baseline comportamental sem contaminar a
+  // reputacao do atleta e continua excluida de XP/IGA por outros filtros.
+  if (validacao === 'not_eligible') return 'APPROVED';
   if (status === 'suspicious') return 'UNDER_REVIEW';
   if (status === 'pending_review') return 'UNDER_REVIEW';
   if (status === 'completed' || status === 'valid' || validacao === 'validated') return 'APPROVED';

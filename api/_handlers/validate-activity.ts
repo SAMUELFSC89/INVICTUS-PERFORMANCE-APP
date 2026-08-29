@@ -27,7 +27,7 @@ const validateActivityService = new ValidateActivityService(
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const POWER_EXERCISES = new Set(['supino', 'agachamento', 'terra']);
-const MAX_POWER_FRAMES = 3;
+const MAX_POWER_FRAMES = 8;
 const MAX_POWER_FRAME_BASE64_LENGTH = 1_500_000;
 
 type PowerDecision = 'approved' | 'manual_review' | 'rejected';
@@ -146,7 +146,7 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
         analysis: 'Vídeo encaminhado para auditoria manual. A homologação só ocorre após a validação segura.'
       });
 
-      if (!ai || frames.length === 0) {
+      if (!ai || frames.length < 6) {
         return res.status(200).json(await manual('Não foi possível concluir a auditoria automática do vídeo.'));
       }
 
@@ -162,7 +162,7 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
         const promptText = `# AUDITORIA TÉCNICA OFICIAL POWER LIFT INVICTUS IA
 
 Você é o auditor biomecânico e antifraude oficial do Invictus Power Lift.
-Analise os frames de um vídeo de levantamento. O resultado é apenas uma etapa; a homologação final também exige o vídeo do próprio atleta no armazenamento seguro.
+Analise os 8 frames cronológicos, distribuídos por todo o vídeo de levantamento. O resultado é apenas uma etapa; a homologação final também exige o vídeo completo do próprio atleta no armazenamento seguro.
 
 DADOS DECLARADOS:
 - Exercício: ${exerciseName}
@@ -173,7 +173,8 @@ REGRAS:
 1. A primeira anilha e a carga precisam estar visíveis no início.
 2. O movimento precisa ser contínuo, sem cortes, edições ou gravação de tela.
 3. O ambiente deve ser uma academia real; a técnica precisa ter amplitude completa.
-4. Suspeita de edição, deepfake, peso incompatível ou imagem insuficiente deve resultar em AUDITORIA_MANUAL ou REPROVADO.
+4. Só retorne VALIDADO quando os frames demonstrarem, em sequência coerente, preparação, fase excêntrica, amplitude exigida, fase concêntrica e finalização completa.
+5. Qualquer dúvida, frame ausente/inconsistente, mudança brusca de câmera/cenário, suspeita de edição, deepfake, peso incompatível ou imagem insuficiente deve resultar em AUDITORIA_MANUAL ou REPROVADO. Nunca presuma que uma etapa não visível aconteceu.
 
 Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isValid, confidence (0-100), estimatedWeight, motivos e analysis.`;
 
@@ -209,7 +210,7 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
           ? parsed.analysis.trim().slice(0, 2000)
           : 'Auditoria automática concluída.';
         const weightConsistent = Math.abs(estimatedWeight - declaredWeight) <= Math.max(5, declaredWeight * 0.10);
-        const approved = parsed.isValid === true && status !== 'REPROVADO' && status !== 'AUDITORIA_MANUAL' && confidence >= 95 && weightConsistent;
+        const approved = parsed.isValid === true && status === 'VALIDADO' && confidence >= 98 && weightConsistent && frames.length >= 8;
         const decision: PowerDecision = approved
           ? 'approved'
           : status === 'REPROVADO' || (!weightConsistent && confidence < 80)

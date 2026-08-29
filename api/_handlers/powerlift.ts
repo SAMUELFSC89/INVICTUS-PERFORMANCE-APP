@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { cors, db, app, verifyAuth } from '../_lib/common.js';
+import { resolvePowerLiftAuditStatus } from '../_lib/powerlift-audit.js';
 
 const EXERCISES = new Set(['supino', 'agachamento', 'terra']);
 const MAX_RANKING_RESULTS = 100;
@@ -197,11 +198,7 @@ async function handleSubmit(req: any, res: any, userId: string) {
         // campos decision/confidence/analysis/motives enviados pelo aparelho
         // são deliberadamente ignorados. Aprovação exige confiança alta
         // segundo a política antifraude atual.
-        if (validation.decision === 'approved' && confidence >= 95) {
-          effectiveDecision = 'approved';
-        } else if (validation.decision === 'rejected') {
-          effectiveDecision = 'rejected';
-        }
+        effectiveDecision = resolvePowerLiftAuditStatus(validation.decision, confidence);
       }
 
       const profile = profileSnap.data() || {};
@@ -337,6 +334,99 @@ async function handleMyRecords(req: any, res: any, userId: string) {
   }
 }
 
+async function handleVideo(req: any, res: any, userId: string) {
+  const recordId = safeText(req.query.id, 160);
+  if (!recordId) return res.status(400).json({ error: 'Vídeo não informado.' });
+
+  try {
+    const snap = await db.collection('power_records').doc(recordId).get();
+    if (!snap.exists) return res.status(404).json({ error: 'Vídeo não encontrado.' });
+    const record = snap.data() || {};
+    const canWatch = record.videoStatus === 'approved' || record.userId === userId;
+    if (!canWatch) return res.status(403).json({ error: 'Este vídeo ainda não está homologado.' });
+
+    const storagePath = safeText(record.storagePath, 512);
+    if (!storagePath || !storagePath.startsWith(`power_records/${record.userId}/`)) {
+      return res.status(409).json({ error: 'O arquivo seguro deste vídeo não está disponível.' });
+    }
+
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+    const [url] = await getStorage(app).bucket().file(storagePath).getSignedUrl({
+      action: 'read',
+      expires: expiresAt
+    });
+    return res.status(200).json({ success: true, url, expiresAt: new Date(expiresAt).toISOString() });
+  } catch (error: any) {
+    console.error('[PowerLift] Falha ao gerar reprodução segura:', error?.message || error);
+    return res.status(500).json({ error: 'Não foi possível abrir este vídeo agora.' });
+  }
+}
+
+async function handleFinalizeAudit(req: any, res: any, userId: string) {
+  const recordId = safeText(req.body?.recordId, 160);
+  const validationId = safeText(req.body?.validationId, 128);
+  if (!recordId || !/^[A-Za-z0-9_-]{8,128}$/.test(validationId)) {
+    return res.status(400).json({ error: 'Auditoria inválida.' });
+  }
+
+  const recordRef = db.collection('power_records').doc(recordId);
+  const validationRef = db.collection('power_validation_sessions').doc(validationId);
+  const auditRef = db.collection('power_audit_logs').doc(`audit_${recordId}`);
+  try {
+    const result = await db.runTransaction(async (transaction: any) => {
+      const [recordSnap, validationSnap] = await Promise.all([
+        transaction.get(recordRef),
+        transaction.get(validationRef)
+      ]);
+      if (!recordSnap.exists || !validationSnap.exists) throw new Error('Registro ou auditoria não encontrado.');
+      const record = recordSnap.data() || {};
+      const validation = validationSnap.data() as StoredValidation;
+      if (record.userId !== userId || validation.userId !== userId) throw new Error('Auditoria não pertence ao atleta.');
+      if (record.exercise !== validation.exercise || Number(record.weight) !== Number(validation.weight)) {
+        throw new Error('Auditoria não corresponde ao levantamento.');
+      }
+      if (validation.consumedAt || validation.recordId) throw new Error('Auditoria já utilizada.');
+      if (new Date(validation.expiresAt).getTime() <= Date.now()) throw new Error('Auditoria expirada.');
+
+      const confidence = Math.max(0, Math.min(100, Number(validation.confidence) || 0));
+      const status = resolvePowerLiftAuditStatus(validation.decision, confidence);
+      const now = new Date().toISOString();
+      const updates = {
+        videoStatus: status,
+        confidence,
+        userMessage: safeText(validation.analysis, 2000),
+        motives: safeMotives(validation.motives),
+        updatedAt: now,
+        ...(status === 'approved' ? { approvedAt: now, approvalSource: 'server_validation_session' } : {}),
+        ...(status === 'rejected' ? { rejectedAt: now, rejectionReason: safeMotives(validation.motives)[0] || 'O vídeo não atendeu aos critérios.' } : {})
+      };
+      transaction.update(recordRef, updates);
+      transaction.update(validationRef, { consumedAt: now, recordId, effectiveDecision: status });
+      transaction.set(auditRef, {
+        recordId,
+        userId,
+        exercise: record.exercise,
+        declaredWeight: Number(record.weight) || 0,
+        estimatedWeight: parseWeight(validation.estimatedWeight) ?? (Number(record.weight) || 0),
+        confidence,
+        result: status === 'approved' ? 'VALIDADO' : status === 'rejected' ? 'REPROVADO' : 'AUDITORIA_MANUAL',
+        motivos: safeMotives(validation.motives),
+        analysis: safeText(validation.analysis, 2000),
+        videoUrl: record.videoUrl || '',
+        storagePath: record.storagePath || '',
+        timestamp: now,
+        aiVersion: 'Invictus Audit Server v2',
+        validationId
+      }, { merge: true });
+      return { id: recordId, ...record, ...updates };
+    });
+    return res.status(200).json({ success: true, decision: result.videoStatus, record: publicRecord(result, true) });
+  } catch (error: any) {
+    console.warn('[PowerLift] Não foi possível finalizar auditoria assíncrona:', error?.message || error);
+    return res.status(409).json({ error: 'O vídeo permanece em análise e poderá ser revisado manualmente.' });
+  }
+}
+
 export default async function handler(req: any, res: any) {
   if (cors(req, res)) return;
   const auth = await verifyAuth(req);
@@ -344,7 +434,9 @@ export default async function handler(req: any, res: any) {
 
   const action = safeText(req.query.action || req.body?.action || (req.method === 'GET' ? 'ranking' : ''), 32);
   if (req.method === 'POST' && action === 'submit') return handleSubmit(req, res, auth.uid);
+  if (req.method === 'POST' && action === 'finalize-audit') return handleFinalizeAudit(req, res, auth.uid);
   if (req.method === 'GET' && action === 'ranking') return handleRanking(req, res);
   if (req.method === 'GET' && action === 'me') return handleMyRecords(req, res, auth.uid);
+  if (req.method === 'GET' && action === 'video') return handleVideo(req, res, auth.uid);
   return res.status(405).json({ error: 'Ação Power Lift não suportada.' });
 }

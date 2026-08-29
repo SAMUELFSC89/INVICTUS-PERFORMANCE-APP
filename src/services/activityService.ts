@@ -5,9 +5,15 @@ import { validationService } from "./validationService";
 import { getCurrentLocation } from "../lib/locationUtils";
 import { compressBase64Image } from "../lib/imageCompression";
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from "./geofenceEngine";
-import { HealthDataCollector } from "./healthDataCollector";
+import { HealthDataCollector, type CollectedHealthMetrics } from "./healthDataCollector";
+import { getModalityConfig } from "../config/cardioConfig";
+import { nativeBackgroundLocationService } from "./nativeBackgroundLocationService";
 
 const SESSION_KEY = 'current_activity_session';
+const MAX_SESSION_MINUTES = {
+  workout: 240,
+  cardio: 360,
+} as const;
 
 /**
  * Resultado devolvido pela validação da atividade. A sessão pode exigir uma
@@ -138,13 +144,16 @@ export const activityService = {
         const startTimeMs = new Date(sessData.startTime).getTime();
         const diffMs = Date.now() - startTimeMs;
 
-        if (diffMs > 4 * 60 * 60 * 1000) {
-          await updateDoc(docSnap.ref, {
+        const serverSessionLimitMinutes = sessData.type === 'cardio'
+          ? MAX_SESSION_MINUTES.cardio
+          : MAX_SESSION_MINUTES.workout;
+        if (diffMs > serverSessionLimitMinutes * 60 * 1000) {
+          await withTimeout(updateDoc(docSnap.ref, {
             status: 'abandoned',
-            abandonedReason: 'Sessão abandonada (tempo limite de 4 horas excedido)',
+            abandonedReason: `Sessão abandonada (tempo limite de ${serverSessionLimitMinutes} minutos excedido)`,
             endTime: new Date().toISOString(),
             updatedAt: new Date().toISOString()
-          }).catch(e => console.warn('[ActivityService] Could not update abandoned session:', e));
+          }), 8000, 'Tempo limite ao encerrar sessão antiga.').catch(e => console.warn('[ActivityService] Could not update abandoned session:', e));
         } else {
           const restoredSession: ActivitySession = {
             id: sessData.id,
@@ -180,20 +189,10 @@ export const activityService = {
     if (!userSnap.exists()) throw new Error('Perfil de usuário não encontrado');
     const userData = userSnap.data() as UserProfile;
 
-    const CARDIO_TYPES_MAP: Record<string, { label: string; isIndoor: boolean; requiresGps: boolean }> = {
-      running: { label: 'Corrida', isIndoor: false, requiresGps: true },
-      walking: { label: 'Caminhada', isIndoor: false, requiresGps: true },
-      bike: { label: 'Bike', isIndoor: false, requiresGps: true },
-      treadmill: { label: 'Esteira', isIndoor: true, requiresGps: false },
-      stationary_bike: { label: 'Bicicleta ergométrica', isIndoor: true, requiresGps: false },
-      elliptical: { label: 'Elíptico', isIndoor: true, requiresGps: false },
-      stair_climber: { label: 'Escada', isIndoor: true, requiresGps: false },
-      rowing: { label: 'Remo', isIndoor: true, requiresGps: false },
-      swimming: { label: 'Natação', isIndoor: true, requiresGps: false },
-      hiit: { label: 'HIIT / Funcional', isIndoor: true, requiresGps: false },
-      other: { label: 'Outros', isIndoor: true, requiresGps: false }
-    };
-    const cardioMapEntry = cardioType ? CARDIO_TYPES_MAP[cardioType] : undefined;
+    const cardioMapEntry = getModalityConfig(cardioType);
+    if (type === 'cardio' && !cardioMapEntry) {
+      throw new Error('Modalidade de cardio inválida ou não suportada. Selecione novamente antes de iniciar.');
+    }
     // #117: so o TREINO NA ACADEMIA precisa do fix de GPS ANTES de devolver a
     // sessao -- e o unico caso que valida geofence (esta perto da academia?)
     // antes de liberar o inicio. Cardio ao ar livre (corrida/caminhada/bike)
@@ -252,7 +251,7 @@ export const activityService = {
         if (!isGymLocationValid && userData.gymId) {
           try {
             const gymDocRef = doc(db, 'gyms', userData.gymId);
-            const gymDocSnap = await getDoc(gymDocRef);
+            const gymDocSnap = await withTimeout(getDoc(gymDocRef), 10000, 'Tempo limite ao consultar a localização da academia.');
             if (gymDocSnap.exists()) {
               const gymData = gymDocSnap.data();
               const gLat = gymData?.latitude ?? gymData?.lat;
@@ -262,7 +261,7 @@ export const activityService = {
                 isGymLocationValid = true;
                 try {
                   const userRef = doc(db, 'users', user.uid);
-                  await updateDoc(userRef, { gymLocation: gymLoc });
+                  await withTimeout(updateDoc(userRef, { gymLocation: gymLoc }), 8000, 'Tempo limite ao atualizar a academia.');
                 } catch (e) {
                   console.warn('Failed syncing gymLocation to user profile:', e);
                 }
@@ -321,7 +320,7 @@ export const activityService = {
       cardioType,
       cardioTypeLabel: cardioMapEntry?.label,
       muscleGroup,
-      isIndoorCardio: cardioMapEntry?.isIndoor,
+      isIndoorCardio: cardioMapEntry ? cardioMapEntry.category !== 'outdoor' : undefined,
       requiresGpsDistance: cardioMapEntry?.requiresGps,
       smartwatchData,
       startTime: new Date().toISOString(),
@@ -394,6 +393,14 @@ export const activityService = {
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
+    if (session.requiresGpsDistance) {
+      await withTimeout(
+        nativeBackgroundLocationService.start(),
+        2500,
+        'Tempo limite ao iniciar rastreamento nativo.'
+      ).catch((error) => console.warn('[ActivityService] Rastreamento nativo em segundo plano indisponível; mantendo GPS da tela:', error));
+    }
+
     setDoc(doc(db, 'active_sessions', session.id), {
       id: session.id,
       userId: session.userId,
@@ -436,8 +443,11 @@ export const activityService = {
       const pausedMs = (session.pausedMs || 0) + Math.max(0, pausaCorrente);
       const diffMins = (now - startTime - pausedMs) / (1000 * 60);
 
-      if (diffMins > 90) {
-        console.log('[ActivityService] Session older than 90m expired, clearing stale state');
+      const maxSessionMinutes = session.type === 'cardio'
+        ? MAX_SESSION_MINUTES.cardio
+        : MAX_SESSION_MINUTES.workout;
+      if (diffMins > maxSessionMinutes) {
+        console.log(`[ActivityService] Session older than ${maxSessionMinutes}m expired, clearing stale state`);
         this.cancelSession();
         return null;
       }
@@ -475,7 +485,11 @@ export const activityService = {
 
     session.checkpoints.push({
       timestamp: new Date().toISOString(),
-      location: { lat: location.lat, lng: location.lng }
+      location: {
+        lat: location.lat,
+        lng: location.lng,
+        ...(typeof location.accuracy === 'number' ? { accuracy: location.accuracy } : {})
+      }
     });
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -586,7 +600,33 @@ export const activityService = {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
 
-    let endLocation: { lat: number; lng: number } | undefined;
+    let nativeMockDetected = false;
+    if (session.requiresGpsDistance) {
+      const nativePoints = await withTimeout(
+        nativeBackgroundLocationService.collectAndStop(),
+        3500,
+        'Tempo limite ao recuperar rota em segundo plano.'
+      ).catch((error) => {
+        console.warn('[ActivityService] Não foi possível recuperar pontos nativos; usando checkpoints da tela:', error);
+        return [];
+      });
+      nativeMockDetected = nativePoints.some((point) => point.isSimulated === true);
+      const existingTimestamps = new Set(session.checkpoints.map((point) => point.timestamp));
+      for (const point of nativePoints) {
+        if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng) || existingTimestamps.has(point.timestamp)) continue;
+        session.checkpoints.push({
+          timestamp: point.timestamp,
+          location: { lat: point.lat, lng: point.lng, accuracy: point.accuracy }
+        });
+        if (typeof point.speedKmH === 'number') {
+          session.gpsSpeedSampleCount = (session.gpsSpeedSampleCount || 0) + 1;
+          session.maxObservedSpeedKmH = Math.max(session.maxObservedSpeedKmH || 0, point.speedKmH);
+        }
+      }
+      session.checkpoints.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    }
+
+    let endLocation: { lat: number; lng: number; accuracy?: number } | undefined;
     try {
       const needsLocationAtEnd = session.type === 'workout' || Boolean(session.requiresGpsDistance);
       if (needsLocationAtEnd) {
@@ -621,13 +661,20 @@ export const activityService = {
     // reportada sem esforco/deslocamento correspondente, prejudicando o
     // pace medio e os fatores de tempo/intensidade que alimentam o IGA.
     const rawDurationMins = Math.floor((endTime.getTime() - startTime.getTime() - pausedMs) / 60000);
-    const durationMins = Math.min(90, Math.max(0, rawDurationMins));
+    // Preserva a duração real no histórico e na análise antifraude. O teto de
+    // minutos que pontua é aplicado no servidor; truncar aqui escondia cardio
+    // legítimo acima de 90 minutos e distorcia distância, ritmo e calorias.
+    const durationMins = Math.max(0, rawDurationMins);
 
     const distanceKm = this.calculateSessionDistance(session);
 
     const userRef = doc(db, 'users', user.uid);
 
-    const userSnap = await getDoc(userRef);
+    const userSnap = await withTimeout(
+      getDoc(userRef),
+      12000,
+      'Não conseguimos carregar seu perfil para finalizar. Sua atividade continua salva; tente novamente.'
+    );
     if (!userSnap.exists()) throw new Error("Usuário não encontrado.");
     const userData = userSnap.data() as UserProfile;
 
@@ -641,13 +688,18 @@ export const activityService = {
       }
     }
 
-    const idToken = await user.getIdToken();
+    const idToken = await withTimeout(
+      user.getIdToken(),
+      12000,
+      'Sua autenticação demorou demais. Sua atividade continua salva; verifique a conexão e tente novamente.'
+    );
 
     let isDev = false;
     if (typeof window !== 'undefined') {
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const hasDevtools = (window.outerWidth - window.innerWidth > 160) || (window.outerHeight - window.innerHeight > 160);
-      isDev = isLocalhost || hasDevtools || !!(window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      // DevTools/React DevTools podem existir no aparelho de um usuário real e
+      // não são prova de adulteração. Só o ambiente local explícito é marcado.
+      isDev = isLocalhost;
     }
 
     let isEmu = typeof window !== 'undefined' && /headless|chrome-lighthouse|bot|crawl|emulator|android sdk/i.test(navigator.userAgent || '');
@@ -679,7 +731,7 @@ export const activityService = {
       isRoot = hasRootSignatures;
     }
 
-    let isMockLoc = false;
+    let isMockLoc = nativeMockDetected;
     if (session.startLocation) {
       const accuracy = (session.startLocation as any).accuracy || 0;
       if (accuracy < 1 && accuracy > 0) {
@@ -712,12 +764,29 @@ export const activityService = {
       : undefined;
 
     // Coleta telemetria e biometria unificada de saúde (Apple Health / Health Connect / Sensores)
-    const collectedHealth = await HealthDataCollector.collectForSession(
-      session.startTime,
-      endTime.toISOString(),
-      initialPedometerSteps,
-      hasOscillation || sensorTelemetry !== undefined
-    );
+    const collectedHealth = await withTimeout(
+      HealthDataCollector.collectForSession(
+        session.startTime,
+        endTime.toISOString(),
+        initialPedometerSteps,
+        hasOscillation || sensorTelemetry !== undefined
+      ),
+      6000,
+      'Tempo limite ao consultar dados de saúde.'
+    ).catch((error) => {
+      console.warn('[activityService] Dados de saúde indisponíveis na finalização; seguindo com sensores locais:', error);
+      return {
+        metricSources: {
+          motion: hasOscillation || sensorTelemetry !== undefined ? 'device_motion_sensors' : undefined,
+          steps: initialPedometerSteps !== undefined ? 'device_pedometer' : undefined,
+          calories: 'server_estimated'
+        },
+        ...(initialPedometerSteps !== undefined ? {
+          healthTelemetry: { steps: initialPedometerSteps, source: 'none' as const },
+          smartwatchData: { steps: initialPedometerSteps, dataSource: 'none', hasWearableSync: false }
+        } : {})
+      } as CollectedHealthMetrics;
+    });
 
     const pedometerSteps = collectedHealth.healthTelemetry?.steps ?? initialPedometerSteps;
     const avgHeartRate = collectedHealth.healthTelemetry?.avgHeartRate ??
@@ -820,19 +889,23 @@ export const activityService = {
       throw new Error(errorData.userMessage || errorData.error || errorData.message || 'Não conseguimos validar esta atividade no momento.');
     }
 
+    let respData: any;
     try {
-      const respData = await response.json();
+      respData = await response.json();
+    } catch {
+      throw new Error('O servidor respondeu em formato inválido. Sua atividade continua salva; tente finalizar novamente.');
+    }
 
-      if (respData.presenceCheckRequired) {
-        return {
-          presenceCheckRequired: true,
-          presenceCheckId: respData.presenceCheckId,
-          livenessPrompt: respData.livenessPrompt,
-          userMessage: respData.userMessage
-        };
-      }
+    if (respData.presenceCheckRequired) {
+      return {
+        presenceCheckRequired: true,
+        presenceCheckId: respData.presenceCheckId,
+        livenessPrompt: respData.livenessPrompt,
+        userMessage: respData.userMessage
+      };
+    }
 
-      const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned } = respData;
+    const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned } = respData;
 
       // #230: fechar a sessao no SERVIDOR antes de limpar o estado local, e
         // esperar a confirmacao.
@@ -866,7 +939,7 @@ export const activityService = {
         // porque ele dispararia status 'cancelled' por cima do 'completed'.
         this.limparEstadoLocal();
 
-      const finalUserMessage = userMessage || message || 'Não conseguimos validar esta atividade no momento. Tente novamente seguindo as regras do desafio.';
+    const finalUserMessage = userMessage || message || 'Não conseguimos validar esta atividade no momento. Tente novamente seguindo as regras do desafio.';
 
       const enrichedValidation = {
         ...(validation || workout?.validation || {}),
@@ -877,17 +950,14 @@ export const activityService = {
         canRetry: canRetry !== undefined ? canRetry : false
       };
 
-      return {
-        workout,
-        validation: enrichedValidation,
-        message: finalUserMessage,
-        isScoringEligible,
-        nonScoringReason,
-        rankingPointsEarned
-      };
-    } catch (e) {
-      throw new Error('Falha ao processar resposta do servidor. Sua atividade ainda está salva localmente.');
-    }
+    return {
+      workout,
+      validation: enrichedValidation,
+      message: finalUserMessage,
+      isScoringEligible,
+      nonScoringReason,
+      rankingPointsEarned
+    };
   },
 
   async submitDiet(photoBase64: string): Promise<{ workout: Workout; validation: any }> {
@@ -986,5 +1056,9 @@ export const activityService = {
     localStorage.removeItem('kmfatal_start_time');
     localStorage.removeItem('kmfatal_total_distance');
     localStorage.removeItem('kmfatal_run_points');
+    localStorage.removeItem('has_sensor_oscillation');
+    localStorage.removeItem('sensor_status');
+    sensorSamples = { accel: [], gyro: [] };
+    void nativeBackgroundLocationService.stop().catch(() => {});
   }
 };

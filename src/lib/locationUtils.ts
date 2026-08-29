@@ -5,6 +5,7 @@ import { Geolocation } from '@capacitor/geolocation';
 // Active native watches map: maps numeric browser IDs to native string IDs
 let nextWatchId = 1;
 const watchMap = new Map<number, string>();
+const cancelledWatchIds = new Set<number>();
 
 /**
  * Robust check and request of native geolocation permissions for Android / iOS
@@ -136,6 +137,10 @@ if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
               }
             }
           );
+          if (cancelledWatchIds.delete(browserId)) {
+            await Geolocation.clearWatch({ id: nativeId }).catch(() => {});
+            return;
+          }
           watchMap.set(browserId, nativeId);
         } catch (err: any) {
           console.error('[Location Polyfill] watchPosition setup error:', err);
@@ -161,6 +166,11 @@ if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
           console.error('[Location Polyfill] clearWatch error', e)
         );
         watchMap.delete(id);
+      } else {
+        // A autorização/configuração nativa é assíncrona. Se o componente for
+        // desmontado antes de ela terminar, guardamos o cancelamento para não
+        // deixar um GPS órfão consumindo bateria e registrando pontos.
+        cancelledWatchIds.add(id);
       }
     }
   };
@@ -269,4 +279,3 @@ export function watchLocation(
     { enableHighAccuracy: highAccuracy }
   );
 }
-
