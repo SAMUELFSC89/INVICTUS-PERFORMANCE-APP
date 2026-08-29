@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, cors, verifyAuth, FieldValue } from '../_lib/common.js';
+import { db, cors, verifyAuth } from '../_lib/common.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -30,7 +30,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 /**
+ * Checa se o usuário tem plano PRO (subscriptionTier === 'performance').
+ * Esta é a MESMA checagem usada no restante do app (Home.tsx, Performance.tsx,
+ * Profile.tsx) — não inventamos um novo critério de entitlement aqui.
+ * Nota: unificar essa lógica em um único lugar é o objetivo da tarefa #128
+ * (Política canônica de entitlement PRO/Free), ainda pendente.
+ */
+function isProUser(userData: any): boolean {
+  const tier = (userData?.subscriptionTier || '').toString().toLowerCase();
+  return tier === 'performance' || tier === 'pro';
+}
+
+/**
  * Lists challenges, updating any that have completed or expired.
+ *
+ * FIX DE PRIVACIDADE (achado da auditoria): antes, esta função devolvia TODOS
+ * os desafios privados de TODOS os usuários — incluindo o inviteCode — para
+ * qualquer chamador autenticado. Agora só retorna desafios em que o usuário
+ * é o criador ou já é membro.
  */
 async function handleListChallenges(req: VercelRequest, res: VercelResponse, userId: string) {
   const challengesRef = db.collection('private_challenges');
@@ -50,13 +67,17 @@ async function handleListChallenges(req: VercelRequest, res: VercelResponse, use
     }
   }
 
-  // Now reload all private challenges for the response
+  // Now reload all private challenges to filter down to the ones this user can see
   const allChallengesSnap = await challengesRef.orderBy('createdAt', 'desc').get();
   const challengesList: any[] = [];
 
   for (const challengeDoc of allChallengesSnap.docs) {
     const cData = challengeDoc.data();
     const challengeId = challengeDoc.id;
+
+    // Visibilidade: só o criador ou quem já é membro pode ver o desafio.
+    // (checagem rápida antes de carregar membros, para não vazar nada)
+    const isCreator = cData.creatorId === userId;
 
     // Load members of this challenge to build custom ranking
     const membersSnap = await db.collection('private_challenge_members')
@@ -75,8 +96,12 @@ async function handleListChallenges(req: VercelRequest, res: VercelResponse, use
       };
     }).sort((a, b) => b.points - a.points); // Sort by highest score/points
 
-    // Check if the current user is a member
     const isCurrentUserMember = members.some(m => m.userId === userId);
+
+    // Só inclui na resposta se o usuário puder ver este desafio.
+    if (!isCreator && !isCurrentUserMember) {
+      continue;
+    }
 
     challengesList.push({
       id: challengeId,
@@ -87,20 +112,23 @@ async function handleListChallenges(req: VercelRequest, res: VercelResponse, use
       creatorPhoto: cData.creatorPhoto,
       inviteCode: cData.inviteCode,
       durationDays: cData.durationDays,
-      entryFee: cData.entryFee,
       status: cData.status,
       createdAt: cData.createdAt,
       startDate: cData.startDate,
       endDate: cData.endDate,
-      totalPool: cData.totalPool,
-      netPrizePool: cData.netPrizePool,
-      platformFee: cData.platformFee,
       participantsCount: members.length,
       winnerId: cData.winnerId || null,
       winnerName: cData.winnerName || null,
       winnerPhoto: cData.winnerPhoto || null,
       isMember: isCurrentUserMember,
-      members
+      members,
+      // Campos legados (só existem em desafios criados antes da migração
+      // que removeu dinheiro do recurso; ver tarefa #125). Mantidos apenas
+      // para exibir o histórico real de quem participou desses desafios —
+      // não são usados por nenhum desafio novo.
+      isLegacyMoneyChallenge: typeof cData.entryFee === 'number' && cData.entryFee > 0,
+      entryFee: cData.entryFee,
+      netPrizePool: cData.netPrizePool
     });
   }
 
@@ -109,12 +137,16 @@ async function handleListChallenges(req: VercelRequest, res: VercelResponse, use
 
 /**
  * Creates a new private challenge.
+ *
+ * Desafios privados agora são um BENEFÍCIO DO PLANO PRO, sem nenhum valor em
+ * dinheiro envolvido: sem taxa de entrada, sem pool, sem prêmio em R$. Apenas
+ * reconhecimento (badge/destaque) para quem terminar em 1º lugar.
  */
 async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, userId: string) {
-  const { title, durationDays, entryFee, description } = req.body;
+  const { title, durationDays, description } = req.body;
 
-  if (!title || !durationDays || entryFee === undefined) {
-    return res.status(400).json({ error: 'Parâmetros título, duração e taxa de entrada são obrigatórios.' });
+  if (!title || !durationDays) {
+    return res.status(400).json({ error: 'Parâmetros título e duração são obrigatórios.' });
   }
 
   const durationNum = Number(durationDays);
@@ -122,12 +154,7 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
     return res.status(400).json({ error: 'Duração aceita apenas 7, 15 ou 30 dias.' });
   }
 
-  const feeNum = Number(entryFee);
-  if (feeNum < 30 || feeNum > 1000) {
-    return res.status(400).json({ error: 'O valor do desafio deve ser entre R$ 30 e R$ 1.000.' });
-  }
-
-  // Get user profile for creator details and wallet deduction
+  // Get user profile for creator details + checagem de plano PRO
   const userRef = db.collection('users').doc(userId);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
@@ -135,11 +162,10 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
   }
 
   const userData = userSnap.data() || {};
-  const currentBalance = userData.walletBalance !== undefined ? Number(userData.walletBalance) : 0;
 
-  if (currentBalance < feeNum) {
-    return res.status(400).json({
-      error: `Saldo insuficiente para criar o desafio e pagar a taxa de R$ ${feeNum.toFixed(2)}. Saldo disponível: R$ ${currentBalance.toFixed(2)}.`
+  if (!isProUser(userData)) {
+    return res.status(403).json({
+      error: 'Desafios privados são exclusivos para assinantes PRO. Assine o Invictus PRO para criar um desafio.'
     });
   }
 
@@ -151,38 +177,7 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
 
   const challengeId = db.collection('private_challenges').doc().id;
 
-  // Perform transactional creation & wallet balance deduction
   await db.runTransaction(async (transaction) => {
-    // 1. Deduct Creator's entry fee
-    transaction.update(userRef, {
-      walletBalance: FieldValue.increment(-feeNum)
-    });
-
-    // 2. Record transaction log if entryFee was positive
-    if (feeNum > 0) {
-      const txRef = db.collection('walletTransactions').doc();
-      transaction.set(txRef, {
-        id: txRef.id,
-        userId,
-        type: 'challenge_entry',
-        amount: feeNum,
-        previousBalance: currentBalance,
-        newBalance: currentBalance - feeNum,
-        createdAt: now.toISOString(),
-        status: 'approved',
-        description: `Taxa de entrada: ${title}`
-      });
-    }
-
-    // 3. Create Challenge
-    const totalPool = feeNum;
-    const netPrizePool = totalPool * 0.70;
-    const platformFee = totalPool * 0.30;
-    
-    // Status is 'forming' initially. Once netPrizePool >= 100, we mark status as 'active'!
-    const isMinPrizeMet = netPrizePool >= 100;
-    const status = isMinPrizeMet ? 'active' : 'forming';
-
     const challengeRef = db.collection('private_challenges').doc(challengeId);
     transaction.set(challengeRef, {
       title,
@@ -192,18 +187,14 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
       creatorPhoto: userData.photoURL || '',
       inviteCode,
       durationDays: durationNum,
-      entryFee: feeNum,
-      status, 
+      status: 'forming', // vira 'active' assim que o 2º participante entrar
       createdAt: now.toISOString(),
       startDate: now.toISOString(),
       endDate: endDate.toISOString(),
-      totalPool,
-      netPrizePool,
-      platformFee,
       updatedAt: now.toISOString()
     });
 
-    // 4. Enroll Creator as the first member
+    // Enroll Creator as the first member
     const memberRef = db.collection('private_challenge_members').doc(`${userId}_${challengeId}`);
     transaction.set(memberRef, {
       userId,
@@ -249,6 +240,15 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
     return res.status(400).json({ error: 'Este desafio privado já foi finalizado ou cancelado.' });
   }
 
+  // Defesa extra: se por algum motivo este ainda for um desafio legado com
+  // dinheiro (antes da migração da tarefa #125), bloqueia a entrada em vez
+  // de cobrar taxa — o modelo com dinheiro foi descontinuado.
+  if (typeof cData.entryFee === 'number' && cData.entryFee > 0) {
+    return res.status(400).json({
+      error: 'Este desafio usa o modelo antigo (com taxa em dinheiro) e está sendo encerrado. Peça ao criador para abrir um novo desafio PRO, sem custo.'
+    });
+  }
+
   // Check if they are already enrolled
   const memberRef = db.collection('private_challenge_members').doc(`${userId}_${challengeId}`);
   const memberSnap = await memberRef.get();
@@ -256,7 +256,7 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
     return res.status(400).json({ error: 'Você já faz parte deste desafio privado!' });
   }
 
-  // Get user profile details for fee payment
+  // Get user profile details + checagem de plano PRO
   const userRef = db.collection('users').doc(userId);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
@@ -264,57 +264,22 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
   }
 
   const userData = userSnap.data() || {};
-  const currentBalance = userData.walletBalance !== undefined ? Number(userData.walletBalance) : 0;
-  const entryFee = Number(cData.entryFee);
 
-  if (currentBalance < entryFee) {
-    return res.status(400).json({
-      error: `Saldo insuficiente para pagar a taxa de entrada de R$ ${entryFee.toFixed(2)}. Saldo disponível: R$ ${currentBalance.toFixed(2)}.`
+  if (!isProUser(userData)) {
+    return res.status(403).json({
+      error: 'Desafios privados são exclusivos para assinantes PRO. Assine o Invictus PRO para participar.'
     });
   }
 
   const now = new Date();
 
-  // Join in a secure transaction
   await db.runTransaction(async (transaction) => {
-    // 1. Deduct athlete balance
-    transaction.update(userRef, {
-      walletBalance: FieldValue.increment(-entryFee)
-    });
-
-    // 2. Add transaction history if entryFee was positive
-    if (entryFee > 0) {
-      const txRef = db.collection('walletTransactions').doc();
-      transaction.set(txRef, {
-        id: txRef.id,
-        userId,
-        type: 'challenge_entry',
-        amount: entryFee,
-        previousBalance: currentBalance,
-        newBalance: currentBalance - entryFee,
-        createdAt: now.toISOString(),
-        status: 'approved',
-        description: `Taxa de entrada: ${cData.title}`
-      });
-    }
-
-    // 3. Update Challenge stats details
-    const newTotalPool = (cData.totalPool || 0) + entryFee;
-    const newNetPrizePool = newTotalPool * 0.70;
-    const newPlatformFee = newTotalPool * 0.30;
-    
-    // Status is 'active' as soon as at least 2 participants are joined
-    const newStatus = 'active';
-
+    // Status é 'active' assim que houver pelo menos 2 participantes
     transaction.update(challengeDoc.ref, {
-      totalPool: newTotalPool,
-      netPrizePool: newNetPrizePool,
-      platformFee: newPlatformFee,
-      status: newStatus,
+      status: 'active',
       updatedAt: now.toISOString()
     });
 
-    // 4. Register new member
     transaction.set(memberRef, {
       userId,
       userName: userData.displayName || 'Atleta',
@@ -326,7 +291,7 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
       updatedAt: now.toISOString()
     });
 
-    // 5. Place entry on public elite feed to stimulate friendly banter
+    // Entrada no feed público, sem qualquer menção a dinheiro
     const feedRef = db.collection('elite_feed').doc();
     transaction.set(feedRef, {
       userId,
@@ -343,6 +308,13 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
 
 /**
  * Handles expiration and completion/cancellation of a challenge.
+ *
+ * Desafios criados a partir da migração da tarefa #125 nunca têm entryFee,
+ * então sempre caem no ramo "sem dinheiro" abaixo. O ramo legado é mantido
+ * apenas como rede de segurança para qualquer documento antigo que ainda não
+ * tenha passado pela migração de estorno (não apagamos nem alteramos essa
+ * lógica financeira até a migração confirmar que não há mais consumidores —
+ * regra #5 do usuário).
  */
 async function processChallengeExpiration(challengeId: string) {
   const challengeRef = db.collection('private_challenges').doc(challengeId);
@@ -353,58 +325,46 @@ async function processChallengeExpiration(challengeId: string) {
   if (['completed', 'cancelled'].includes(challenge.status)) return;
 
   const now = new Date();
+  const isLegacyMoneyChallenge = typeof challenge.entryFee === 'number' && challenge.entryFee > 0;
 
-  // Load all challenge members
   const membersSnap = await db.collection('private_challenge_members')
     .where('challengeId', '==', challengeId)
     .get();
 
   const members = membersSnap.docs.map(mDoc => mDoc.data());
-
-  // Determine if minimum participants requirement was met (Minimum: 2 participants)
-  const entryFee = challenge.entryFee || 0;
-  const netPrizePool = challenge.netPrizePool || 0;
   const isMinParticipantsMet = members.length >= 2;
 
-  if (!isMinParticipantsMet) {
-    // ---- CANCEL AND REFUND EVERYONE ----
-    console.log(`[Private Challenges] Cancelling challenge ${challengeId} because participants count ${members.length} is below 2.`);
-    
-    await db.runTransaction(async (transaction) => {
-      // 1. All reads first
-      const userSnapsMap = new Map<string, any>();
-      for (const member of members) {
-        const uRef = db.collection('users').doc(member.userId);
-        const uSnap = await transaction.get(uRef);
-        if (uSnap.exists) {
-          userSnapsMap.set(member.userId, uSnap.data());
+  if (isLegacyMoneyChallenge) {
+    // ---- RAMO LEGADO: preserva o comportamento financeiro original ----
+    // (FieldValue precisa ser importado localmente aqui pois o restante do
+    // arquivo não usa mais operações monetárias)
+    const { FieldValue } = await import('../_lib/common.js');
+    const entryFee = challenge.entryFee || 0;
+    const netPrizePool = challenge.netPrizePool || 0;
+
+    if (!isMinParticipantsMet) {
+      console.log(`[Private Challenges][LEGACY] Cancelling challenge ${challengeId} (below 2 participants).`);
+      await db.runTransaction(async (transaction) => {
+        const userSnapsMap = new Map<string, any>();
+        for (const member of members) {
+          const uRef = db.collection('users').doc(member.userId);
+          const uSnap = await transaction.get(uRef);
+          if (uSnap.exists) userSnapsMap.set(member.userId, uSnap.data());
         }
-      }
 
-      // 2. All writes after
-      transaction.update(challengeRef, {
-        status: 'cancelled',
-        updatedAt: now.toISOString()
-      });
+        transaction.update(challengeRef, { status: 'cancelled', updatedAt: now.toISOString() });
 
-      for (const member of members) {
-        const uId = member.userId;
-        const uData = userSnapsMap.get(uId);
-        
-        if (uData) {
-          const uRef = db.collection('users').doc(uId);
+        for (const member of members) {
+          const uData = userSnapsMap.get(member.userId);
+          if (!uData) continue;
+          const uRef = db.collection('users').doc(member.userId);
           const oldBalance = uData.walletBalance !== undefined ? Number(uData.walletBalance) : 0;
-          
-          transaction.update(uRef, {
-            walletBalance: FieldValue.increment(entryFee)
-          });
-
-          // Write refund log
+          transaction.update(uRef, { walletBalance: FieldValue.increment(entryFee) });
           if (entryFee > 0) {
             const txRef = db.collection('walletTransactions').doc();
             transaction.set(txRef, {
               id: txRef.id,
-              userId: uId,
+              userId: member.userId,
               type: 'challenge_refund',
               amount: entryFee,
               previousBalance: oldBalance,
@@ -415,72 +375,92 @@ async function processChallengeExpiration(challengeId: string) {
             });
           }
         }
+      });
+    } else {
+      const sortedMembers = [...members].sort((a, b) => (b.points || 0) - (a.points || 0));
+      if (sortedMembers.length === 0) {
+        await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
+        return;
       }
-    });
+      const winner = sortedMembers[0];
+      console.log(`[Private Challenges][LEGACY] Completing challenge ${challengeId}. Distributing R$ ${netPrizePool} to TOP 1.`);
+      await db.runTransaction(async (transaction) => {
+        const winnerUserRef = db.collection('users').doc(winner.userId);
+        const winnerUserSnap = await transaction.get(winnerUserRef);
 
-  } else {
-    // ---- COMPLETE AND AWARD TOP 1 ----
-    console.log(`[Private Challenges] Completing challenge ${challengeId}. Distributing R$ ${netPrizePool} to TOP 1.`);
+        transaction.update(challengeRef, {
+          status: 'completed',
+          winnerId: winner.userId,
+          winnerName: winner.userName || 'Atleta',
+          winnerPhoto: winner.userPhoto || '',
+          updatedAt: now.toISOString()
+        });
 
-    // Sort members to find the absolute CHAMPION (highest points)
-    const sortedMembers = [...members].sort((a, b) => (b.points || 0) - (a.points || 0));
-    
-    if (sortedMembers.length === 0) {
-      // No participants? Cancel it
-      await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
-      return;
+        if (winnerUserSnap.exists) {
+          const wData = winnerUserSnap.data()!;
+          const oldBalance = wData.walletBalance !== undefined ? Number(wData.walletBalance) : 0;
+          transaction.update(winnerUserRef, { walletBalance: FieldValue.increment(netPrizePool) });
+          const txRef = db.collection('walletTransactions').doc();
+          transaction.set(txRef, {
+            id: txRef.id,
+            userId: winner.userId,
+            type: 'challenge_prize',
+            amount: netPrizePool,
+            previousBalance: oldBalance,
+            newBalance: oldBalance + netPrizePool,
+            createdAt: now.toISOString(),
+            status: 'approved',
+            description: `Premiação 1º Lugar: ${challenge.title}`
+          });
+        }
+
+        const feedRef = db.collection('elite_feed').doc();
+        transaction.set(feedRef, {
+          userId: winner.userId,
+          userName: winner.userName || 'Atleta',
+          userPhoto: winner.userPhoto || '',
+          text: `venceu o desafio privado "${challenge.title}" e faturou R$ ${netPrizePool.toFixed(2)}!! 🏆💥`,
+          type: 'join',
+          timestamp: now.toISOString()
+        });
+      });
     }
-
-    const winner = sortedMembers[0];
-    const winnerId = winner.userId;
-
-    await db.runTransaction(async (transaction) => {
-      // 1. All reads first
-      const winnerUserRef = db.collection('users').doc(winnerId);
-      const winnerUserSnap = await transaction.get(winnerUserRef);
-
-      // 2. All writes after
-      transaction.update(challengeRef, {
-        status: 'completed',
-        winnerId: winnerId,
-        winnerName: winner.userName || 'Atleta',
-        winnerPhoto: winner.userPhoto || '',
-        updatedAt: now.toISOString()
-      });
-
-      if (winnerUserSnap.exists) {
-        const wData = winnerUserSnap.data()!;
-        const oldBalance = wData.walletBalance !== undefined ? Number(wData.walletBalance) : 0;
-
-        transaction.update(winnerUserRef, {
-          walletBalance: FieldValue.increment(netPrizePool)
-        });
-
-        // Write winner prize transaction log
-        const txRef = db.collection('walletTransactions').doc();
-        transaction.set(txRef, {
-          id: txRef.id,
-          userId: winnerId,
-          type: 'challenge_prize',
-          amount: netPrizePool,
-          previousBalance: oldBalance,
-          newBalance: oldBalance + netPrizePool,
-          createdAt: now.toISOString(),
-          status: 'approved',
-          description: `Premiação 1º Lugar: ${challenge.title}`
-        });
-      }
-
-      // 3. Make post in the general social feed to announce the victory
-      const feedRef = db.collection('elite_feed').doc();
-      transaction.set(feedRef, {
-        userId: winnerId,
-        userName: winner.userName || 'Atleta',
-        userPhoto: winner.userPhoto || '',
-        text: `venceu o desafio privado "${challenge.title}" e faturou R$ ${netPrizePool.toFixed(2)}!! 🏆💥`,
-        type: 'join', // triggers celebratory styling
-        timestamp: now.toISOString()
-      });
-    });
+    return;
   }
+
+  // ---- RAMO NOVO: sem dinheiro, só reconhecimento ----
+  if (!isMinParticipantsMet) {
+    console.log(`[Private Challenges] Cancelling challenge ${challengeId} (below 2 participants, no money involved).`);
+    await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
+    return;
+  }
+
+  const sortedMembers = [...members].sort((a, b) => (b.points || 0) - (a.points || 0));
+  if (sortedMembers.length === 0) {
+    await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
+    return;
+  }
+
+  const winner = sortedMembers[0];
+  console.log(`[Private Challenges] Completing challenge ${challengeId}. Champion: ${winner.userId}.`);
+
+  await db.runTransaction(async (transaction) => {
+    transaction.update(challengeRef, {
+      status: 'completed',
+      winnerId: winner.userId,
+      winnerName: winner.userName || 'Atleta',
+      winnerPhoto: winner.userPhoto || '',
+      updatedAt: now.toISOString()
+    });
+
+    const feedRef = db.collection('elite_feed').doc();
+    transaction.set(feedRef, {
+      userId: winner.userId,
+      userName: winner.userName || 'Atleta',
+      userPhoto: winner.userPhoto || '',
+      text: `venceu o desafio privado "${challenge.title}"! 🏆💥`,
+      type: 'join',
+      timestamp: now.toISOString()
+    });
+  });
 }
