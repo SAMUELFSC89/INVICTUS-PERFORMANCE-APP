@@ -961,6 +961,7 @@ export function Challenges() {
           completedChallengeIds={Object.keys(submissions)}
           completion={completion}
           startError={startActivityError}
+          endError={error}
           loading={loading}
           startingActivity={startingActivity}
           onBack={handleFlowBack}

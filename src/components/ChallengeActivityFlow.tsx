@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { ActivityMapView } from './ActivityMapView';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
@@ -48,6 +48,7 @@ export function ChallengeActivityFlow({
   completedChallengeIds,
   completion,
   startError,
+  endError,
   loading = false,
   startingActivity = false,
   onBack,
@@ -77,6 +78,7 @@ export function ChallengeActivityFlow({
   completedChallengeIds: string[];
   completion?: ActivityCompletion | null;
   startError?: string | null;
+  endError?: string | null;
   loading?: boolean;
   startingActivity?: boolean;
   onBack: () => void;
@@ -242,6 +244,19 @@ export function ChallengeActivityFlow({
           <span className="challenge-flow-gps">
             <Zap /> {session?.isPaused ? 'EM PAUSA' : session?.requiresGpsDistance ? 'GPS CONECTADO' : (session?.type === 'cardio' ? 'CARDIO INDOOR' : 'ATIVIDADE EM ANDAMENTO')}
           </span>
+          {/* #120: handleEndActivity() mantem a sessao ativa em caso de falha
+              (rede/servidor) pra permitir tentar de novo, mas o erro (`error`
+              em Challenges.tsx) rendeirava numa banner por tras deste overlay
+              de tela cheia -- o atleta so via o botao voltar pra
+              "FINALIZAR ATIVIDADE" sem NENHUMA explicacao do que deu errado,
+              parecendo que nada tinha acontecido. Mostrando aqui, dentro da
+              propria tela ativa, onde o atleta de fato consegue ver. */}
+          {endError && (
+            <div className="challenge-flow-end-error">
+              <AlertCircle size={16} />
+              <span>{endError}</span>
+            </div>
+          )}
           {session?.requiresGpsDistance && (
             <>
               <LiveTrackingMap
