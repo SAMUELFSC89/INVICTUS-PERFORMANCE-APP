@@ -18,11 +18,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (sessionData) {
           workout = {
             userId: sessionData.userId,
-            type: 'workout',
-            timestamp: sessionData.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-            duration: Math.floor((new Date(sessionData.endTime).getTime() - new Date(sessionData.startTime).getTime()) / 60000),
-            distance: sessionData.totalDistance / 1000,
-            points: Math.floor((sessionData.totalDistance / 1000) * 10),
+            type: 'cardio',
+            timestamp: sessionData.createdAt?.toDate?.()?.toISOString() || sessionData.startTime,
+            duration: sessionData.startTime && sessionData.endTime
+              ? Math.floor((new Date(sessionData.endTime).getTime() - new Date(sessionData.startTime).getTime()) / 60000)
+              : undefined,
+            distance: Number.isFinite(Number(sessionData.totalDistance)) ? Number(sessionData.totalDistance) / 1000 : undefined,
+            points: Number.isFinite(Number(sessionData.pointsEarned)) ? Number(sessionData.pointsEarned) : 0,
+            status: sessionData.validationStatus,
             photoUrl: sessionData.photoProof || null
           };
         }
@@ -84,8 +87,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     image.print(fontLabel, 60, 130, `@${user.displayName.toLowerCase().replace(/\s+/g, '')}`);
 
     // 5. Draw Main Stats (XP)
-    const points = workout.points || (workout.distance ? Math.floor(workout.distance * 10) : 0);
-    const xpText = `+${points} XP`;
+    const rawStatus = String(workout.status || workout.validationStatus || '').toLowerCase();
+    const approved = ['valid', 'validated', 'approved', 'homologada'].includes(rawStatus);
+    const rejected = ['invalid', 'rejected', 'not_eligible', 'rejeitada', 'suspicious'].includes(rawStatus);
+    const points = approved && Number.isFinite(Number(workout.points)) ? Number(workout.points) : 0;
+    const xpText = approved ? (points > 0 ? `+${points} XP` : 'APROVADA') : rejected ? 'NAO PONTUOU' : 'EM ANALISE';
     // Background for XP badge (using moove green #00E676)
     const xpBg = new Jimp(200, 60, '#00E676');
     image.composite(xpBg, 60, height - 120);

@@ -119,6 +119,7 @@ export function Challenges() {
 
   // Today's completed submissions
   const [submissions, setSubmissions] = useState<Record<string, any>>({});
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   // Modals & Pending Operations
   // #234: HOME -> MUSCULACAO / CARDIO SEM ETAPA INTERMEDIARIA.
@@ -461,6 +462,8 @@ export function Challenges() {
     timestamp: new Date(item.rawTimestamp).toISOString(),
     rankingPointsEarned: item.rankingPointsEarned,
     points: item.points,
+    status: item.status,
+    photoUrl: item.photoUrl,
   });
 
   // End Workout/Cardio Session
@@ -510,6 +513,59 @@ export function Challenges() {
         ? res.workout.points
         : undefined;
 
+      // O registro retornado pelo servidor entra imediatamente no historico,
+      // inclusive enquanto aguarda a decisao antifraude. Nenhum valor e
+      // inventado no cliente e pontos so aparecem quando o servidor aprova.
+      const timestampMs = res.workout?.timestamp ? Date.parse(res.workout.timestamp) : Number.NaN;
+      if (res.workout?.id && Number.isFinite(timestampMs) && ['validated', 'pending', 'rejected', 'not_eligible'].includes(status)) {
+        const completedAt = new Date(timestampMs);
+        const dateStr = completedAt.toLocaleDateString('pt-BR');
+        const timeStr = completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const cardioTypeLabels: Record<string, string> = Object.fromEntries(CARDIO_OPTIONS.map((option) => [option.id, option.label]));
+        const serverDistance = typeof res.workout.distance === 'number' && Number.isFinite(res.workout.distance) ? res.workout.distance : undefined;
+        const serverDuration = typeof res.workout.duration === 'number' && Number.isFinite(res.workout.duration) ? res.workout.duration : undefined;
+        const rawCalories = (res.workout as any).calories;
+        const calories = typeof rawCalories === 'number' && Number.isFinite(rawCalories) ? rawCalories : undefined;
+        const rawTrajectory = (sessionBeforeEnd.checkpoints || [])
+          .filter((cp: any) => cp.location)
+          .map((cp: any) => ({ lat: cp.location.lat, lng: cp.location.lng }));
+        const trajectory = rawTrajectory.length >= 2 ? rawTrajectory : undefined;
+        const timeSeconds = serverDuration !== undefined ? serverDuration * 60 : undefined;
+        const pace = sessionType === 'cardio' && serverDistance !== undefined && timeSeconds !== undefined
+          ? calculatePace(serverDistance * 1000, timeSeconds)
+          : undefined;
+        const muscleGroup = (res.workout as any)?.muscleGroup || sessionBeforeEnd.muscleGroup || selectedMuscleGroup;
+        const workoutTitle = muscleGroup ? `Treino de ${muscleGroup}` : 'Treino de Musculação';
+        const historyStatus: ActivityHistoryItem['status'] = status === 'validated'
+          ? 'homologada'
+          : status === 'pending'
+            ? 'pendente'
+            : 'rejeitada';
+
+        setFinishedActivityItem({
+          id: res.workout.id,
+          source: 'workout',
+          type: sessionType === 'cardio' ? 'cardio' : 'workout',
+          typeLabel: sessionType === 'cardio' ? 'Cardio' : 'Treino',
+          title: sessionType === 'cardio' ? (cardioTypeLabels[res.workout.cardioType || selectedCardioType] || 'Cardio') : workoutTitle,
+          dateStr,
+          timeStr,
+          rawTimestamp: timestampMs,
+          status: historyStatus,
+          statusRaw: status,
+          points: historyStatus === 'homologada' ? (points || 0) : 0,
+          rankingPointsEarned: historyStatus === 'homologada' && typeof rankingPoints === 'number' ? rankingPoints : undefined,
+          durationMins: serverDuration,
+          distanceKm: serverDistance,
+          calories,
+          avgHeartRate: typeof (res.workout as any).avgHeartRate === 'number' ? (res.workout as any).avgHeartRate : undefined,
+          pace,
+          trajectory,
+          photoUrl: (res.workout as any).photoUrl || (res.workout as any).verificationPhotoUrl,
+        });
+        setHistoryRefreshKey((key) => key + 1);
+      }
+
       if (status === 'validated') {
         setActiveSession(null);
         setCompletion({ status: 'approved', message: res.message, pointsAwarded: points });
@@ -517,50 +573,6 @@ export function Challenges() {
           triggerXPToast(points, 'Atividade validada.', rankingPoints);
         }
 
-        // A tela de detalhe é montada somente a partir de um registro retornado
-        // pelo servidor. Não criamos IDs, timestamps ou pontuações locais.
-        const timestampMs = res.workout?.timestamp ? Date.parse(res.workout.timestamp) : Number.NaN;
-        if (res.workout?.id && Number.isFinite(timestampMs)) {
-          const completedAt = new Date(timestampMs);
-          const dateStr = completedAt.toLocaleDateString('pt-BR');
-          const timeStr = completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          const cardioTypeLabels: Record<string, string> = Object.fromEntries(CARDIO_OPTIONS.map((option) => [option.id, option.label]));
-          const serverDistance = typeof res.workout.distance === 'number' && Number.isFinite(res.workout.distance) ? res.workout.distance : undefined;
-          const serverDuration = typeof res.workout.duration === 'number' && Number.isFinite(res.workout.duration) ? res.workout.duration : undefined;
-          const rawCalories = (res.workout as any).calories;
-          const calories = typeof rawCalories === 'number' && Number.isFinite(rawCalories) ? rawCalories : undefined;
-          const rawTrajectory = (sessionBeforeEnd.checkpoints || [])
-            .filter((cp: any) => cp.location)
-            .map((cp: any) => ({ lat: cp.location.lat, lng: cp.location.lng }));
-          const trajectory = rawTrajectory.length >= 2 ? rawTrajectory : undefined;
-          const timeSeconds = serverDuration !== undefined ? serverDuration * 60 : undefined;
-          const pace = sessionType === 'cardio' && serverDistance !== undefined && timeSeconds !== undefined
-            ? calculatePace(serverDistance * 1000, timeSeconds)
-            : undefined;
-
-          const muscleGroup = (res.workout as any)?.muscleGroup || sessionBeforeEnd.muscleGroup || selectedMuscleGroup;
-          const workoutTitle = muscleGroup ? `Treino de ${muscleGroup}` : 'Treino de Musculação';
-
-          setFinishedActivityItem({
-            id: res.workout.id,
-            source: 'workout',
-            type: sessionType === 'cardio' ? 'cardio' : 'workout',
-            typeLabel: sessionType === 'cardio' ? 'Cardio' : 'Treino',
-            title: sessionType === 'cardio' ? (cardioTypeLabels[res.workout.cardioType || selectedCardioType] || 'Cardio') : workoutTitle,
-            dateStr,
-            timeStr,
-            rawTimestamp: timestampMs,
-            status: 'homologada',
-            statusRaw: 'valid',
-            points,
-            rankingPointsEarned: typeof rankingPoints === 'number' ? rankingPoints : undefined,
-            durationMins: serverDuration,
-            distanceKm: serverDistance,
-            calories,
-            pace,
-            trajectory,
-          });
-        }
         setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
       } else if (status === 'pending') {
         setActiveSession(null);
@@ -569,6 +581,7 @@ export function Challenges() {
         setNotice(res.message || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
       } else if (status === 'rejected' || status === 'not_eligible') {
         setActiveSession(null);
+        setFlowScreen(null);
         setError(res.message || 'A atividade não foi validada. Nenhuma pontuação foi concedida.');
       } else {
         // Sem decisão explícita do servidor, falhamos de forma segura: não
@@ -794,7 +807,7 @@ export function Challenges() {
         </div>
       ) : (
         /* 5. DEFAULT CHALLENGES CATALOGUE VIEW */
-        <div className="challenge-catalogue flex flex-col gap-8">
+        <div className="challenge-catalogue flex flex-col gap-4">
 
           {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
           {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
@@ -833,11 +846,6 @@ export function Challenges() {
 
                   return (
                     <React.Fragment key={ch.id}>
-                      {ch.id === 'cardio' && (
-                        <div className="mt-2 border-t border-white/[.07] pt-5 md:col-span-3">
-                          <h2 className="font-headline text-[16px] leading-none uppercase tracking-wide text-white">Outros desafios diários</h2>
-                        </div>
-                      )}
                     <div
                       key={ch.id}
                       className={cn(
@@ -879,6 +887,12 @@ export function Challenges() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {selectedCategory === 'all' && (
+            <div className="order-3 mt-2">
+              <ActivityHistorySection refreshKey={historyRefreshKey} />
             </div>
           )}
         </div>

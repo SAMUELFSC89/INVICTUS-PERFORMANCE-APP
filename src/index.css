@@ -845,6 +845,19 @@ html.app-nativo body {
   overscroll-behavior: none;
 }
 
+/* iOS amplia automaticamente a pagina quando um campo focado tem menos de
+   16px. O mesmo comportamento ocorre no Safari comum, nao apenas no WKWebView.
+   Mantemos a acessibilidade do zoom por gesto e evitamos somente o zoom
+   involuntario de foco, em todos os formularios do app. */
+@media (max-width: 700px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
+
 /* Saúde — tela Resumo aprovada */
 .health-screen { padding-bottom:8rem; }
 .health-content { max-width:440px; padding:1.1rem .85rem 1.5rem; }

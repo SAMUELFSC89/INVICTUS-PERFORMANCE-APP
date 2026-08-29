@@ -4,7 +4,6 @@ import {
   FaFire,
   FaStar,
   FaDumbbell,
-  FaPersonRunning,
   FaArrowRight,
   FaTrophy
 } from 'react-icons/fa6';
@@ -94,16 +93,12 @@ export function Home() {
       xp: 100,
       icon: FaDumbbell,
       path: '/challenges?type=workout'
-    },
-    {
-      id: 'cardio',
-      title: 'CARDIO AERÓBICO',
-      description: 'Corrida ou caminhada ao ar livre via GPS',
-      xp: 80,
-      icon: FaPersonRunning,
-      path: '/challenges?type=cardio'
     }
   ];
+
+  // A Home destaca somente o treino de musculacao. O contador representa as
+  // tres modalidades disponiveis na area completa: musculacao, cardio e Power Lift.
+  const availableChallengesCount = 3;
 
   return (
     <div
@@ -405,7 +400,7 @@ export function Home() {
               id="home-challenges-counter-chip"
               className="iv-chip"
             >
-              {dailyChallenges.length} DISPONÍVEIS
+              {availableChallengesCount} DISPONÍVEIS
             </span>
           </div>
 
@@ -462,7 +457,7 @@ export function Home() {
             <span
               className="font-barlow font-bold text-[13px] uppercase tracking-wider text-[var(--dourado)] group-hover:underline"
             >
-              VER TODOS OS DESAFIOS
+              ACESSAR ÁREA DE DESAFIOS
             </span>
             <FaArrowRight
               size={16}

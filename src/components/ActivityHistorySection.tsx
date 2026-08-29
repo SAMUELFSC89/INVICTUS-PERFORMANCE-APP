@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   History, CheckCircle2, XCircle, AlertCircle, Clock, Dumbbell,
   TrendingUp, MapPin, Flame, Trophy, RefreshCw, Search, Filter,
-  Calendar, Award, Eye, X, ShieldAlert, Sparkles, Zap, ChevronRight,
+  Calendar, Award, Eye, X, ShieldAlert, Sparkles, ChevronRight,
   Info, Check, AlertOctagon, Scale, ShieldCheck, Image as ImageIcon,
   Share2, ChevronLeft, Heart, Gauge, Mountain, Route as RouteIcon,
   Lock, ThumbsUp
@@ -156,6 +156,7 @@ function elevationTier(m?: number) {
 export function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistoryItem; onClose: () => void; onShare: () => void }) {
   const isHomologada = item.status === 'homologada';
   const isRejeitada = item.status === 'rejeitada';
+  const isPendente = item.status === 'pendente';
   const cadence = (item.steps && item.durationMins) ? Math.round(item.steps / item.durationMins) : undefined;
   const pace = item.pace || computePace(item.distanceKm, item.durationMins);
   const hasMap = Array.isArray(item.trajectory) && item.trajectory.length >= 2;
@@ -278,12 +279,22 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         {hasMap && <ActivityMapView trajectory={item.trajectory} heightPx={220} onLocation={setLocationLabel} />}
 
         {/* Callout: resultado real (pontos de ranking + percentil REAL, ou motivo de rejeicao) */}
-        {isRejeitada && item.rejectionReason ? (
+        {isRejeitada ? (
           <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-start gap-3">
             <AlertOctagon size={18} className="text-rose-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-rose-400 font-bold text-[10px] uppercase tracking-wider mb-1">Esta atividade não pontuou</p>
-              <p className="text-rose-200/90 text-xs leading-relaxed">{item.rejectionReason}</p>
+              <p className="text-rose-200/90 text-xs leading-relaxed">O registro continua disponível no seu histórico, mas não gerou pontos.</p>
+            </div>
+          </div>
+        ) : isPendente ? (
+          <div className="border border-amber-500/30 bg-amber-500/5 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0">
+              <Clock className="text-amber-400" size={17} />
+            </div>
+            <div>
+              <p className="text-white font-bold text-xs">Atividade em análise</p>
+              <p className="text-amber-300/80 text-[10px] font-mono">A pontuação será exibida somente após a validação.</p>
             </div>
           </div>
         ) : (
@@ -303,7 +314,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         )}
 
         {/* Desempenho */}
-        <div>
+        {isHomologada && <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-white font-bold text-sm flex items-center gap-1.5"><Info size={13} className="text-white/40" /> Desempenho</h3>
           </div>
@@ -343,10 +354,10 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
               Sem dados adicionais de sensores para esta atividade.
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Ver análise completa -- expande verificacoes reais feitas pelo antifraude, nao dados inventados */}
-        <div>
+        {isHomologada && <div>
           <button
             onClick={() => setShowFullAnalysis(v => !v)}
             className="w-full flex items-center justify-center gap-1.5 text-primary text-xs font-bold py-1.5 cursor-pointer"
@@ -373,7 +384,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
               )}
             </div>
           )}
-        </div>
+        </div>}
 
         {item.photoUrl && (
           <div className="space-y-2">
@@ -389,7 +400,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         )}>
           {isHomologada ? <ShieldCheck className="text-primary shrink-0" size={16} /> : <ShieldAlert className={cn("shrink-0", isRejeitada ? "text-rose-400" : "text-amber-400")} size={16} />}
           <p className="text-white text-[11px] font-bold flex-1">
-            {isHomologada ? 'Atividade verificada -- GPS + Antifraude Invictus' : isRejeitada ? 'Atividade não homologada pela auditoria' : 'Atividade em análise'}
+            {isHomologada ? 'Atividade verificada pelo Invictus' : isRejeitada ? 'Esta atividade não gerou pontos' : 'Atividade em análise'}
           </p>
           <Lock size={13} className="text-white/25 shrink-0" />
           <button onClick={onShare} className="text-white/40 hover:text-primary transition-colors cursor-pointer shrink-0">
@@ -400,7 +411,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
 
       {/* Bottom action bar -- Parabéns (real, persistido) + Compartilhar (real) */}
       <div className="sticky bottom-0 bg-black/95 backdrop-blur-md border-t border-white/10 p-4 flex items-center gap-3">
-        <button
+        {isHomologada && <button
           onClick={handleCongrats}
           disabled={savingCongrats}
           className={cn(
@@ -410,7 +421,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         >
           <ThumbsUp size={15} className={congratulated ? "fill-current" : ""} />
           {congratulated ? 'Parabéns! 🎉' : 'Parabéns'}
-        </button>
+        </button>}
         <button onClick={onShare} className="flex-1 bg-primary text-black py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer">
           <Share2 size={15} /> Compartilhar
         </button>
@@ -419,7 +430,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
   );
 }
 
-export function ActivityHistorySection() {
+export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number }) {
   const [activities, setActivities] = useState<ActivityHistoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -572,7 +583,7 @@ export function ActivityHistorySection() {
             rawTimestamp: rawMs,
             status: mappedStatus,
             statusRaw: rawSt,
-            points: mappedStatus === 'homologada' ? 20 : 0,
+            points: mappedStatus === 'homologada' && Number.isFinite(Number(data.points)) ? Number(data.points) : 0,
             gymName: data.gymName,
             rejectionReason: mappedStatus === 'rejeitada' ? (data.error || 'Check-in fora do raio da academia.') : undefined,
             congratulated: !!data.congratulated,
@@ -616,7 +627,7 @@ export function ActivityHistorySection() {
             rawTimestamp: rawMs,
             status: mappedStatus,
             statusRaw: rawSt,
-            points: mappedStatus === 'homologada' ? 100 : 0,
+            points: mappedStatus === 'homologada' && Number.isFinite(Number(data.points)) ? Number(data.points) : 0,
             weightKg: data.weight ? Number(data.weight) : undefined,
             exerciseName: exName,
             photoUrl: data.videoUrl,
@@ -642,7 +653,7 @@ export function ActivityHistorySection() {
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [refreshKey]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -685,16 +696,15 @@ export function ActivityHistorySection() {
     const homologadas = activities.filter(a => a.status === 'homologada').length;
     const rejeitadas = activities.filter(a => a.status === 'rejeitada').length;
     const pendentes = activities.filter(a => a.status === 'pendente').length;
-    const totalXp = activities.reduce((acc, curr) => acc + (curr.points || 0), 0);
     const rate = total > 0 ? Math.round((homologadas / total) * 100) : 0;
 
-    return { total, homologadas, rejeitadas, pendentes, totalXp, rate };
+    return { total, homologadas, rejeitadas, pendentes, rate };
   }, [activities]);
 
   const visibleItems = filteredActivities.slice(0, visibleCount);
 
   return (
-    <div id="activity-history-section" className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-6 shadow-2xl relative overflow-hidden">
+    <div id="activity-history-section" className="bg-surface-card border border-white/10 rounded-[22px] sm:rounded-[28px] p-4 sm:p-6 space-y-5 sm:space-y-6 shadow-2xl relative overflow-hidden">
       <div className="absolute top-0 right-0 w-80 h-80 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
@@ -703,7 +713,7 @@ export function ActivityHistorySection() {
             <History size={24} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-mono font-black text-primary uppercase tracking-widest block">
                 HISTÓRICO DE ATIVIDADES
               </span>
@@ -724,7 +734,7 @@ export function ActivityHistorySection() {
         <button
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="px-4 py-2.5 bg-surface-container hover:bg-surface-container-high border border-white/10 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 self-start md:self-auto cursor-pointer"
+          className="w-full md:w-auto px-4 py-2.5 bg-surface-container hover:bg-surface-container-high border border-white/10 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shrink-0 self-start md:self-auto cursor-pointer"
         >
           <RefreshCw size={15} className={cn(refreshing && "animate-spin text-primary")} />
           <span>{refreshing ? 'Atualizando...' : 'Atualizar Histórico'}</span>
@@ -742,7 +752,7 @@ export function ActivityHistorySection() {
 
         <div className="bg-emerald-500/10 border border-emerald-500/20 p-3.5 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between text-emerald-400">
-            <span className="text-[10px] font-mono uppercase font-bold">Homologadas</span>
+            <span className="text-[10px] font-mono uppercase font-bold">Aprovadas</span>
             <CheckCircle2 size={14} />
           </div>
           <div className="flex items-baseline gap-1.5 mt-1">
@@ -753,7 +763,7 @@ export function ActivityHistorySection() {
 
         <div className="bg-rose-500/10 border border-rose-500/20 p-3.5 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between text-rose-400">
-            <span className="text-[10px] font-mono uppercase font-bold">Rejeitadas</span>
+            <span className="text-[10px] font-mono uppercase font-bold">Não pontuaram</span>
             <XCircle size={14} />
           </div>
           <div className="flex items-baseline gap-1.5 mt-1">
@@ -762,14 +772,14 @@ export function ActivityHistorySection() {
           </div>
         </div>
 
-        <div className="bg-primary/10 border border-primary/20 p-3.5 rounded-2xl flex flex-col justify-between">
-          <div className="flex items-center justify-between text-primary">
-            <span className="text-[10px] font-mono uppercase font-bold">XP Conquistado</span>
-            <Zap size={14} />
+        <div className="bg-amber-500/10 border border-amber-500/20 p-3.5 rounded-2xl flex flex-col justify-between">
+          <div className="flex items-center justify-between text-amber-400">
+            <span className="text-[10px] font-mono uppercase font-bold">Em análise</span>
+            <Clock size={14} />
           </div>
           <div className="flex items-baseline gap-1.5 mt-1">
-            <span className="text-xl font-headline italic font-black text-primary">+{stats.totalXp}</span>
-            <span className="text-[10px] text-primary/80">XP acumulado</span>
+            <span className="text-xl font-headline italic font-black text-amber-400">{stats.pendentes}</span>
+            <span className="text-[10px] text-amber-300/80">aguardando</span>
           </div>
         </div>
       </div>
@@ -783,7 +793,7 @@ export function ActivityHistorySection() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar por tipo, data (DD/MM/AAAA), horário, academia..."
-              className="w-full bg-surface-container/80 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary transition-all"
+              className="w-full bg-surface-container/80 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-base sm:text-xs text-white placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary transition-all"
             />
             {searchQuery && (
               <button
@@ -865,7 +875,7 @@ export function ActivityHistorySection() {
           <p className="text-xs text-on-surface-variant max-w-md mx-auto">
             {searchQuery || statusFilter !== 'all' || typeFilter !== 'all'
               ? 'Nenhuma atividade corresponde aos filtros selecionados. Tente limpar a busca ou os filtros.'
-              : 'Você ainda não possui atividades registradas. Inicie um treino, cardio ou check-in para começar seu histórico!'}
+              : 'Você ainda não possui atividades registradas. Inicie um treino, cardio ou Power Lift para começar seu histórico!'}
           </p>
           {(searchQuery || statusFilter !== 'all' || typeFilter !== 'all') && (
             <button
@@ -931,7 +941,7 @@ export function ActivityHistorySection() {
                           {isHomologada && <CheckCircle2 size={12} />}
                           {isRejeitada && <XCircle size={12} />}
                           {isPendente && <Clock size={12} />}
-                          <span>{isHomologada ? 'HOMOLOGADA' : isRejeitada ? 'REJEITADA' : 'EM AUDITORIA'}</span>
+                          <span>{isHomologada ? 'APROVADA' : isRejeitada ? 'NÃO PONTUOU' : 'EM ANÁLISE'}</span>
                         </span>
                       </div>
 
@@ -990,20 +1000,20 @@ export function ActivityHistorySection() {
                         : "bg-zinc-800 border-zinc-700 text-zinc-400"
                     )}>
                       <Award size={14} />
-                      <span>{isHomologada ? `+${act.points} XP` : '0 XP'}</span>
+                      <span>{isHomologada ? `+${act.points} XP` : isRejeitada ? 'Não pontuou' : 'Aguardando'}</span>
                     </div>
                   </div>
                 </div>
 
-                {isRejeitada && act.rejectionReason && (
+                {isRejeitada && (
                   <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-xl flex items-start gap-2.5 text-xs text-rose-300 font-sans">
                     <AlertOctagon size={16} className="text-rose-400 shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
                       <p className="font-bold text-rose-400 uppercase tracking-wider text-[10px]">
-                        PARECER DE REJEIÇÃO / INDEFERIMENTO ANTIFRAUDE:
+                        Esta atividade não gerou pontos
                       </p>
                       <p className="leading-relaxed text-[11.5px] text-rose-200/90">
-                        {act.rejectionReason}
+                        O registro permanece disponível no seu histórico para consulta.
                       </p>
                     </div>
                   </div>
@@ -1093,6 +1103,8 @@ export function ActivityHistorySection() {
             timestamp: new Date(shareItem.rawTimestamp).toISOString(),
             rankingPointsEarned: shareItem.rankingPointsEarned,
             points: shareItem.points,
+            status: shareItem.status,
+            photoUrl: shareItem.photoUrl,
           } as any}
           onClose={() => setShareItem(null)}
         />

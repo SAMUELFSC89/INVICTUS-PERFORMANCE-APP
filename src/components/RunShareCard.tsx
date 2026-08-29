@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { Share2, Download, X, ShieldCheck, Flame, Heart, Gauge, Mountain, Trophy, EyeOff, RefreshCw } from 'lucide-react';
+import { Share2, Download, X, ShieldCheck, ShieldAlert, Clock, Flame, Heart, Gauge, Mountain, Trophy, EyeOff, RefreshCw, Image as ImageIcon, Map, Sparkles, Upload } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { RunSession, AdvancedRunStats } from '../services/runningService';
 import { formatDuration } from '../lib/runUtils';
@@ -38,6 +38,8 @@ export interface ShareableSession {
   points?: number;
   rankingPointsEarned?: number;
   photoProof?: string;
+  photoUrl?: string;
+  status?: string;
 }
 
 interface RunShareCardProps {
@@ -121,6 +123,16 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   // fallback de session.points, que e XP, e exibia como se fosse ranking).
   const rankingPointsEarned = Number(session.rankingPointsEarned || 0);
   const xpPoints = Number(session.points || 0);
+  const rawStatus = String(session.status || session.validationStatus || '').toLowerCase();
+  const validationState: 'approved' | 'pending' | 'rejected' = ['validated', 'valid', 'approved', 'homologada'].includes(rawStatus)
+    ? 'approved'
+    : ['rejected', 'invalid', 'not_eligible', 'rejeitada', 'suspicious'].includes(rawStatus)
+      ? 'rejected'
+      : 'pending';
+  const existingPhoto = session.photoProof || session.photoUrl || null;
+  const hasRoute = trajectory.filter(hasValidLatLng).length >= 2;
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto);
+  const [backgroundMode, setBackgroundMode] = useState<'map' | 'photo' | 'brand'>(() => hasRoute ? 'map' : existingPhoto ? 'photo' : 'brand');
 
   const isBike = title.toLowerCase().includes('bike') || session.cardioType === 'bike';
   const isIndoor = session.isIndoorCardio || title.toLowerCase().includes('indoor') || title.toLowerCase().includes('esteira') || title.toLowerCase().includes('ergométrica') || title.toLowerCase().includes('hiit') || title.toLowerCase().includes('musculação') || title.toLowerCase().includes('treino de');
@@ -142,6 +154,23 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   }, [activityDate]);
 
   const [locationLabel, setLocationLabel] = useState<string | null>(session.locationLabel || null);
+
+  const handlePhotoSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Selecione uma imagem válida.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setSelectedPhoto(reader.result);
+        setBackgroundMode('photo');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Busca a imagem do mapa ANTES de permitir exportar -- o html-to-image so
   // captura o que ja esta renderizado no DOM, entao buscamos o data URL
@@ -195,7 +224,9 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://www.invictusperformance.app.br');
     const shareUrl = `${baseUrl.replace(/\/$/, '')}/share/${session.id}`;
     const shareTitle = 'Atividade concluída no INVICTUS! 🔥';
-    const shareText = `Vem ver meu treino de ${distanceKm.toFixed(2)}km! ${randomPhrase}. #INVICTUS`;
+    const activitySummary = hasDistance ? `${distanceKm.toFixed(2)} km` : title;
+    const statusText = validationState === 'approved' ? randomPhrase : validationState === 'pending' ? 'Atividade em análise' : 'Atividade registrada';
+    const shareText = `${activitySummary} no INVICTUS. ${statusText}. #INVICTUS`;
     try {
       if (navigator.share) {
         await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
@@ -226,7 +257,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           const blob = await (await fetch(dataUrl)).blob();
           const file = new File([blob], 'invictus-atividade.png', { type: 'image/png' });
           if ((navigator as any).canShare && (navigator as any).canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: 'Invictus Performance', text: `Atividade de ${distanceKm.toFixed(2)}km no INVICTUS!` });
+            await navigator.share({ files: [file], title: 'Invictus Performance', text: `${hasDistance ? `${distanceKm.toFixed(2)} km` : title} no INVICTUS!` });
             return;
           }
         } catch (shareErr) {
@@ -235,7 +266,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       }
 
       const link = document.createElement('a');
-      link.download = `invictus-atividade-${distanceKm.toFixed(2)}km.png`;
+      link.download = `invictus-atividade-${session.id || 'compartilhamento'}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
@@ -253,6 +284,46 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       </div>
 
       <div className="flex-1 flex flex-col items-center gap-6 pb-6">
+        <div className="w-full max-w-[380px] rounded-2xl border border-white/10 bg-white/[.04] p-3">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[.18em] text-white/55">Visual do card</p>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => hasRoute && setBackgroundMode('map')}
+              disabled={!hasRoute}
+              className={cn(
+                'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border text-[10px] font-black uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-35',
+                backgroundMode === 'map' ? 'border-primary bg-primary/15 text-primary' : 'border-white/10 bg-black/30 text-white/65'
+              )}
+            >
+              <Map size={14} /> Mapa
+            </button>
+            <label className={cn(
+              'flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl border text-[10px] font-black uppercase transition-colors',
+              backgroundMode === 'photo' ? 'border-primary bg-primary/15 text-primary' : 'border-white/10 bg-black/30 text-white/65'
+            )}>
+              {selectedPhoto ? <ImageIcon size={14} /> : <Upload size={14} />}
+              {selectedPhoto ? 'Foto' : 'Adicionar'}
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelection} />
+            </label>
+            <button
+              type="button"
+              onClick={() => setBackgroundMode('brand')}
+              className={cn(
+                'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border text-[10px] font-black uppercase transition-colors',
+                backgroundMode === 'brand' ? 'border-primary bg-primary/15 text-primary' : 'border-white/10 bg-black/30 text-white/65'
+              )}
+            >
+              <Sparkles size={14} /> Invictus
+            </button>
+          </div>
+          {selectedPhoto && backgroundMode !== 'photo' && (
+            <button type="button" onClick={() => setBackgroundMode('photo')} className="mt-2 w-full text-center text-[10px] font-bold text-primary">
+              Usar foto selecionada
+            </button>
+          )}
+        </div>
+
         {/* Card exportavel -- estilo Strava (referencia visual fornecida pelo usuario) */}
         <div
           ref={cardRef}
@@ -275,7 +346,11 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <p className="text-white font-bold text-sm truncate">{title}</p>
-                <ShieldCheck size={14} className="text-primary shrink-0" />
+                {validationState === 'approved'
+                  ? <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
+                  : validationState === 'pending'
+                    ? <Clock size={14} className="text-amber-400 shrink-0" />
+                    : <ShieldAlert size={14} className="text-rose-400 shrink-0" />}
               </div>
               <p className="text-white/50 text-[11px] font-mono truncate">
                 {dateLabel}{locationLabel ? ` · ${locationLabel}` : ''}
@@ -315,14 +390,19 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
                 </div>
                 <div>
                   <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Status</p>
-                  <p className="text-primary font-black text-xl">Validado</p>
+                  <p className={cn(
+                    'font-black text-base',
+                    validationState === 'approved' ? 'text-emerald-400' : validationState === 'pending' ? 'text-amber-400' : 'text-rose-400'
+                  )}>
+                    {validationState === 'approved' ? 'Aprovada' : validationState === 'pending' ? 'Em análise' : 'Não pontuou'}
+                  </p>
                 </div>
               </>
             )}
           </div>
 
-          {/* Map */}
-          {trajectory.length >= 2 && (
+          {/* Mídia escolhida pelo atleta: rota real, foto ou arte oficial. */}
+          {backgroundMode === 'map' && hasRoute && (
             <div className="relative w-full h-40 rounded-2xl overflow-hidden border border-white/10 bg-surface-container-low">
               {mapImageDataUrl ? (
                 <img src={mapImageDataUrl} alt="Rota percorrida" className="w-full h-full object-cover" crossOrigin="anonymous" />
@@ -341,21 +421,60 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
               )}
             </div>
           )}
+          {backgroundMode === 'photo' && selectedPhoto && (
+            <div className="relative h-52 w-full overflow-hidden rounded-2xl border border-white/10 bg-black">
+              <img src={selectedPhoto} alt="Foto escolhida para o compartilhamento" className="h-full w-full object-cover" />
+              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 to-transparent" />
+            </div>
+          )}
+          {backgroundMode === 'brand' && (
+            <div className="relative h-52 w-full overflow-hidden rounded-2xl border border-primary/20 bg-black">
+              <img src="/fundo-home.webp" alt="Arte oficial Invictus" className="h-full w-full object-cover object-[center_22%]" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20" />
+            </div>
+          )}
 
           {/* Callout */}
-          <div className="border border-primary/30 bg-primary/5 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
-              <Gauge className="text-primary" size={16} />
+          <div className={cn(
+            'rounded-2xl border px-4 py-3 flex items-center gap-3',
+            validationState === 'approved'
+              ? 'border-emerald-500/30 bg-emerald-500/5'
+              : validationState === 'pending'
+                ? 'border-amber-500/30 bg-amber-500/5'
+                : 'border-rose-500/30 bg-rose-500/5'
+          )}>
+            <div className={cn(
+              'w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+              validationState === 'approved' ? 'bg-emerald-500/15' : validationState === 'pending' ? 'bg-amber-500/15' : 'bg-rose-500/15'
+            )}>
+              {validationState === 'approved'
+                ? <ShieldCheck className="text-emerald-400" size={16} />
+                : validationState === 'pending'
+                  ? <Clock className="text-amber-400" size={16} />
+                  : <ShieldAlert className="text-rose-400" size={16} />}
             </div>
             <div className="min-w-0">
               <p className="text-white font-bold text-xs leading-tight">
-                {rankingPointsEarned > 0
+                {validationState === 'pending'
+                  ? 'Atividade em análise'
+                  : validationState === 'rejected'
+                    ? 'Esta atividade não gerou pontos'
+                    : rankingPointsEarned > 0
                   ? `Você ganhou +${rankingPointsEarned} pontos de ranking!`
                   : xpPoints > 0
-                    ? `Atividade homologada -- +${xpPoints} XP`
-                    : 'Ótimo trabalho nessa atividade!'}
+                    ? `Atividade aprovada -- +${xpPoints} XP`
+                    : 'Atividade aprovada'}
               </p>
-              <p className="text-primary text-[10px] font-mono">Continue assim para subir no ranking.</p>
+              <p className={cn(
+                'text-[10px] font-mono',
+                validationState === 'approved' ? 'text-emerald-300' : validationState === 'pending' ? 'text-amber-300' : 'text-rose-300'
+              )}>
+                {validationState === 'approved'
+                  ? 'Resultado confirmado pelo servidor.'
+                  : validationState === 'pending'
+                    ? 'A pontuação será exibida após a validação.'
+                    : 'O registro permanece disponível no histórico.'}
+              </p>
             </div>
           </div>
 
@@ -395,8 +514,14 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
           {/* Verificado */}
           <div className="flex items-center gap-2 border border-white/10 rounded-2xl px-4 py-3">
-            <ShieldCheck className="text-primary shrink-0" size={16} />
-            <p className="text-white text-[11px] font-bold">Verificado por GPS + Antifraude Invictus</p>
+            {validationState === 'approved'
+              ? <ShieldCheck className="text-emerald-400 shrink-0" size={16} />
+              : validationState === 'pending'
+                ? <Clock className="text-amber-400 shrink-0" size={16} />
+                : <ShieldAlert className="text-rose-400 shrink-0" size={16} />}
+            <p className="text-white text-[11px] font-bold">
+              {validationState === 'approved' ? 'Atividade verificada pelo Invictus' : validationState === 'pending' ? 'Validação em andamento' : 'Atividade registrada sem pontuação'}
+            </p>
           </div>
 
           {/* Banner motivacional */}

@@ -28,11 +28,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (sessionData) {
           workout = {
             userId: sessionData.userId,
-            type: 'workout',
-            timestamp: sessionData.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-            duration: Math.floor((new Date(sessionData.endTime).getTime() - new Date(sessionData.startTime).getTime()) / 60000),
-            distance: sessionData.totalDistance / 1000,
-            points: Math.floor((sessionData.totalDistance / 1000) * 10), // Estimativa de pontos
+            type: 'cardio',
+            timestamp: sessionData.createdAt?.toDate?.()?.toISOString() || sessionData.startTime,
+            duration: sessionData.startTime && sessionData.endTime
+              ? Math.floor((new Date(sessionData.endTime).getTime() - new Date(sessionData.startTime).getTime()) / 60000)
+              : undefined,
+            distance: Number.isFinite(Number(sessionData.totalDistance)) ? Number(sessionData.totalDistance) / 1000 : undefined,
+            points: Number.isFinite(Number(sessionData.pointsEarned)) ? Number(sessionData.pointsEarned) : 0,
+            status: sessionData.validationStatus,
             photoUrl: sessionData.photoProof || null
           };
         }
@@ -54,13 +57,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                      workout.type === 'cardio' ? 'Corrida 🏃' : 
                      workout.type === 'diet' ? 'Dieta 🥗' : 'Atividade';
     
-    const details = workout.type === 'cardio' 
-      ? `${workout.distance?.toFixed(2)}km em ${workout.duration}min`
-      : `${workout.duration}min de intensidade`;
+    const details = [
+      Number.isFinite(Number(workout.distance)) ? `${Number(workout.distance).toFixed(2)} km` : null,
+      Number.isFinite(Number(workout.duration)) ? `${Number(workout.duration)} min` : null,
+    ].filter(Boolean).join(' em ');
 
-    const points = workout.points || (workout.distance ? Math.floor(workout.distance * 10) : 0);
+    const rawStatus = String(workout.status || workout.validationStatus || '').toLowerCase();
+    const approved = ['valid', 'validated', 'approved', 'homologada'].includes(rawStatus);
+    const rejected = ['invalid', 'rejected', 'not_eligible', 'rejeitada', 'suspicious'].includes(rawStatus);
+    const points = approved && Number.isFinite(Number(workout.points)) ? Number(workout.points) : 0;
     const title = `${user.displayName} concluiu um ${typeLabel}!`;
-    const description = `Vem ver minha evolução no INVICTUS! +${points} XP garantidos. ${details}. Aceite o desafio e suba no ranking!`;
+    const resultText = approved
+      ? (points > 0 ? `Atividade aprovada com +${points} XP.` : 'Atividade aprovada.')
+      : rejected
+        ? 'Atividade registrada sem pontuação.'
+        : 'Atividade em análise.';
+    const description = `Atividade no INVICTUS. ${resultText}${details ? ` ${details}.` : ''}`;
 
     const html = `
 <!DOCTYPE html>
@@ -228,19 +240,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 </div>
                 <div class="stat-item" style="text-align: right;">
                     <div class="stat-label">Recompensa</div>
-                    <div style="margin-top: 4px;"><span class="xp-badge">+${workout.points} XP</span></div>
+                    <div style="margin-top: 4px;"><span class="xp-badge">${approved ? (points > 0 ? `+${points} XP` : 'APROVADA') : rejected ? 'NÃO PONTUOU' : 'EM ANÁLISE'}</span></div>
                 </div>
             </div>
             
             <div class="stat-row" style="margin-bottom: 0;">
                 <div class="stat-item">
                     <div class="stat-label">Duração</div>
-                    <div class="stat-value">${workout.duration} min</div>
+                    <div class="stat-value">${Number.isFinite(Number(workout.duration)) ? `${Number(workout.duration)} min` : '—'}</div>
                 </div>
-                ${workout.distance ? `
+                ${Number.isFinite(Number(workout.distance)) && Number(workout.distance) > 0 ? `
                 <div class="stat-item" style="text-align: right;">
                     <div class="stat-label">Distância</div>
-                    <div class="stat-value">${workout.distance.toFixed(2)} km</div>
+                    <div class="stat-value">${Number(workout.distance).toFixed(2)} km</div>
                 </div>
                 ` : `
                 <div class="stat-item" style="text-align: right;">
