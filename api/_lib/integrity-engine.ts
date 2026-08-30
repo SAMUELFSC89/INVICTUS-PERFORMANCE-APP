@@ -51,7 +51,13 @@ export class IntegrityEngine {
       if (activity.checkpoints && Array.isArray(activity.checkpoints) && activity.checkpoints.length > 1) {
         // Check for static/frozen GPS checkpoints
         const uniqueCoords = new Set(
-          activity.checkpoints.map((c: any) => `${c.latitude?.toFixed(5) || c.lat?.toFixed(5)},${c.longitude?.toFixed(5) || c.lng?.toFixed(5)}`)
+          activity.checkpoints.map((c: any) => {
+            const lat = c.latitude ?? c.lat ?? c.location?.lat;
+            const lng = c.longitude ?? c.lng ?? c.location?.lng;
+            return Number.isFinite(lat) && Number.isFinite(lng)
+              ? `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`
+              : 'invalid';
+          })
         );
         if (uniqueCoords.size === 1 && activity.checkpoints.length > 5) {
           gpsIntegrityScore -= 60;

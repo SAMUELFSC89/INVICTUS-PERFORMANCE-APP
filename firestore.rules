@@ -147,6 +147,32 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Planos de musculação são escritos somente pelo backend, que valida
+    // exerciseIds e impede que a IA persista exercícios inventados.
+    match /training_plans/{planId} {
+      allow get: if isSignedIn() && isValidId(planId) && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /community_championship_enrollments/{enrollmentId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list, create, update, delete: if isAdmin();
+    }
+
+    // Loyalty currency is server-managed. It is completely separate from the
+    // real-money wallet and can never be changed by the client.
+    match /reward_coin_wallets/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /reward_coin_transactions/{transactionId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow write: if isAdmin();
+    }
+
     // Diets Collection
     match /diets/{dietId} {
       allow get: if isSignedIn() && isValidId(dietId) && (resource.data.userId == request.auth.uid || isAdmin());
@@ -225,6 +251,15 @@ service cloud.firestore {
     // Rankings Collection
     match /rankings/{rankingId} {
       allow read: if isSignedIn() && isValidId(rankingId);
+      allow write: if isAdmin();
+    }
+
+    // Adesão voluntária ao ranking motivacional da academia. A alteração
+    // passa pelo endpoint autenticado para manter versão e auditoria do
+    // consentimento; o cliente só enxerga o próprio registro.
+    match /gym_ranking_enrollments/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
       allow write: if isAdmin();
     }
 

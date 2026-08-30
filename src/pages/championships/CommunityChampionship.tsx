@@ -1,0 +1,18 @@
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, BarChart3, Check, Dumbbell, Footprints, ShieldCheck, Trophy, Users } from 'lucide-react';
+import { InvictusLogo } from '../../components/InvictusLogo';
+import { communityChampionshipService } from '../../services/communityChampionshipService';
+import './ChampionshipsNew.css';
+
+export function CommunityChampionship() {
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<{ enrolled: boolean; participantCount: number }>({ enrolled: false, participantCount: 0 });
+  const [accepted, setAccepted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { communityChampionshipService.status().then(result => setStatus({ enrolled: result.enrolled, participantCount: result.participantCount || 0 })).catch(err => setError(err.message)).finally(() => setLoading(false)); }, []);
+  const enroll = async () => { setLoading(true); setError(null); try { await communityChampionshipService.enroll(); setStatus(value => ({ ...value, enrolled: true, participantCount: value.participantCount + 1 })); } catch (err:any) { setError(err.message); } finally { setLoading(false); } };
+  return createPortal(<main className="ch-new-screen"><div className="ch-new-page ch-community"><header className="ch-detail-header"><button onClick={() => navigate('/championships')}><ArrowLeft /></button><div><InvictusLogo size={40} /><b>INVICTUS</b><small>PERFORMANCE</small></div><span /></header><section className="ch-community-hero"><Trophy /><small>PARTICIPAÇÃO GRATUITA</small><h1>CAMPEONATO ENTRE AMIGOS</h1><h2>MUSCULAÇÃO + CARDIO</h2><p>Compare sua consistência com amigos e outros participantes da comunidade Invictus, sem prêmio em dinheiro e sem vínculo com academias.</p></section><section className="ch-community-stats"><article><Users /><b>{status.participantCount || '—'}</b><span>participantes inscritos</span></article><article><Dumbbell /><b>MUSCULAÇÃO</b><span>sessões validadas</span></article><article><Footprints /><b>CARDIO</b><span>atividades validadas</span></article></section><h2 className="ch-new-title">COMO PONTUA</h2><section className="ch-community-rules"><article><BarChart3 /><span><b>EVOLUÇÃO E CONSISTÊNCIA</b>Somente atividades concluídas e aprovadas pelo sistema entram no acompanhamento.</span></article><article><ShieldCheck /><span><b>ANTIFRAUDE ATIVO</b>GPS, sensores e integridade da sessão são analisados conforme a modalidade.</span></article><article><Users /><span><b>AMBIENTE SOCIAL</b>A participação é opcional e não representa associação com sua academia.</span></article></section>{status.enrolled ? <section className="ch-enrolled"><Check /><h2>VOCÊ ESTÁ PARTICIPANDO</h2><p>Escolha uma atividade. Somente sessões concluídas e homologadas entram no campeonato.</p><div className="ch-enrolled-actions"><button onClick={() => navigate('/musculacao')}><Dumbbell /> INICIAR MUSCULAÇÃO <ArrowRight /></button><button onClick={() => navigate('/challenges?type=cardio')}><Footprints /> INICIAR CARDIO <ArrowRight /></button></div></section> : <section className="ch-consent"><label><input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Quero participar voluntariamente e autorizo a exibição dos meus resultados validados neste campeonato social.</span></label><button onClick={enroll} disabled={!accepted || loading}>{loading ? 'CONFIRMANDO…' : 'CONFIRMAR PARTICIPAÇÃO'} <ArrowRight /></button></section>}{error ? <p className="ch-community-error">{error}</p> : null}</div></main>, document.body);
+}

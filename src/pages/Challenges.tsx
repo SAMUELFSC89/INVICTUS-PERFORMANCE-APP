@@ -17,7 +17,7 @@ import { auth, db } from '../firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivitySession } from '../types';
 import { cn } from '../lib/utils';
-import { calculatePace } from '../lib/runUtils';
+import { calculateDistance, calculatePace } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection, ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
@@ -27,6 +27,8 @@ import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOptio
 import { getXPProgress } from '../lib/levelUtils';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 import { ACHIEVEMENTS } from '../achievements';
+import { ChallengesHubNew } from '../components/ChallengesHubNew';
+import { ActivityHistoryPageNew } from '../components/ActivityHistoryPageNew';
 
 export type ChallengeCategory =
   | 'all'
@@ -88,6 +90,7 @@ export function Challenges() {
 
   // Live GPS tracking state (distância/pace em tempo real durante cardio ao ar livre)
   const [liveDistanceKm, setLiveDistanceKm] = useState(0);
+  const [liveSpeedKmH, setLiveSpeedKmH] = useState<number | null>(null);
   // #328: espelha liveDistanceKm p/ o tick de 1s da notificação Android poder
   // ler o valor mais recente sem precisar re-executar o efeito do GPS a cada
   // atualização de distância.
@@ -95,6 +98,7 @@ export function Challenges() {
   useEffect(() => { liveDistanceKmRef.current = liveDistanceKm; }, [liveDistanceKm]);
   const gpsWatchIdRef = useRef<number | null>(null);
   const lastCheckpointTimeRef = useRef<number>(0);
+  const lastRawGpsRef = useRef<{ lat: number; lng: number; timestamp: number; accuracy: number } | null>(null);
 
   // #44: estado do sinal de GPS e wake lock para o mapa ao vivo (LiveTrackingMap).
   // Antes a tela so mostrava numeros; agora tambem mostra o trajeto real sendo
@@ -131,7 +135,7 @@ export function Challenges() {
   // precisar procurar a atividade de novo. Resolvendo no proprio useState o
   // fluxo ja nasce aberto -- a lista nunca chega a ser vista.
   const deepLinkType = searchParams.get('type');
-  const deepLinkChallenge = (deepLinkType === 'workout' || deepLinkType === 'cardio')
+  const deepLinkChallenge = deepLinkType === 'cardio'
     ? CORE_CHALLENGES.find((item) => item.id === deepLinkType) || null
     : null;
   // Guardado numa ref porque o parametro `type` e apagado da URL logo apos a
@@ -278,11 +282,13 @@ export function Challenges() {
   useEffect(() => {
     if (!activeSession || !activeSession.requiresGpsDistance || typeof navigator === 'undefined' || !navigator.geolocation) {
       setLiveDistanceKm(0);
+      setLiveSpeedKmH(null);
       return;
     }
 
     setLiveDistanceKm(activityService.calculateSessionDistance(activeSession));
     lastCheckpointTimeRef.current = 0;
+    lastRawGpsRef.current = null;
     setGpsAccuracy(null);
     setGpsSignal('SEARCHING');
     setGpsPermissionDenied(false);
@@ -310,22 +316,55 @@ export function Challenges() {
         // espaçados de ~10s, que naturalmente suaviza picos curtos.
         // `speed` vem em m/s e pode ser null (nem todo dispositivo/navegador
         // reporta); so propaga quando e um numero valido.
-        if (typeof speed === 'number' && Number.isFinite(speed) && speed >= 0) {
-          activityService.recordGpsSpeedSample(speed * 3.6, accuracy);
+        let instantSpeedKmH = typeof speed === 'number' && Number.isFinite(speed) && speed >= 0
+          ? speed * 3.6
+          : null;
+        // Alguns aparelhos Android não expõem coords.speed. Nesse caso,
+        // deriva a velocidade entre fixes consecutivos, preservando a leitura
+        // ao vivo em vez de cair na média da sessão inteira.
+        const currentRaw = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          timestamp: position.timestamp || Date.now(),
+          accuracy
+        };
+        const previousRaw = lastRawGpsRef.current;
+        // Alguns bridges Android informam `0` quando a velocidade Doppler não
+        // está disponível (em vez de `null`). Nesse caso o código antigo
+        // aceitava zero para sempre e nunca executava o fallback, reproduzindo
+        // exatamente a tela observada no teste de bike. Derivamos entre fixes
+        // quando a leitura veio ausente/zerada e o deslocamento supera o ruído
+        // compatível com a precisão dos dois pontos.
+        if ((instantSpeedKmH === null || instantSpeedKmH <= 0.5) && previousRaw && accuracy <= 30) {
+          const deltaSec = (currentRaw.timestamp - previousRaw.timestamp) / 1000;
+          if (deltaSec > 0 && deltaSec <= 15) {
+            const distanceMeters = calculateDistance(previousRaw.lat, previousRaw.lng, currentRaw.lat, currentRaw.lng);
+            const noiseFloorMeters = Math.max(2.5, Math.min(8, (previousRaw.accuracy + accuracy) * 0.12));
+            if (distanceMeters >= noiseFloorMeters) {
+              instantSpeedKmH = (distanceMeters / deltaSec) * 3.6;
+            }
+          }
+        }
+        if (accuracy <= 30) lastRawGpsRef.current = currentRaw;
+        if (instantSpeedKmH !== null) {
+          activityService.recordGpsSpeedSample(instantSpeedKmH, accuracy);
+          // Suavizacao curta apenas para leitura ao vivo. A auditoria recebe
+          // todas as amostras/checkpoints e nao confia neste valor visual.
+          setLiveSpeedKmH((previous) => previous === null ? instantSpeedKmH : previous * 0.65 + instantSpeedKmH * 0.35);
         }
 
         const now = Date.now();
-        // Limita a no maximo 1 checkpoint a cada ~10s para nao sobrecarregar
-        // Firestore/localStorage durante a sessao. A velocidade instantanea
-        // acima ja nao depende mais deste throttle.
-        if (now - lastCheckpointTimeRef.current < 10000) return;
+        // Dois segundos preservam curvas, aceleração e velocidade como um
+        // fluxo GPS esportivo. O servidor refaz distância e elimina outliers.
+        if (now - lastCheckpointTimeRef.current < 2000) return;
         lastCheckpointTimeRef.current = now;
 
         activityService.addCheckpoint({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
-          accuracy
-        });
+          accuracy,
+          ...(instantSpeedKmH !== null ? { speedKmH: instantSpeedKmH } : {})
+        }, position.timestamp);
 
         const current = activityService.getCurrentSession();
         if (current) {
@@ -336,7 +375,7 @@ export function Challenges() {
         console.warn('[Challenges] GPS watchPosition error during cardio session:', err);
         if (err.code === 1) setGpsPermissionDenied(true);
       },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
     );
     gpsWatchIdRef.current = watchId;
 
@@ -354,12 +393,16 @@ export function Challenges() {
 
   // Open Challenge Modal
   const handleOpenChallenge = (challenge: CoreChallenge) => {
+    if (challenge.id === 'workout') {
+      navigate('/musculacao');
+      return;
+    }
     setPendingChallenge(challenge);
     setStartActivityError(null);
     setError(null);
     setNotice(null);
     setCompletion(null);
-    setFlowScreen(challenge.id === 'workout' ? 'workout-details' : 'cardio-picker');
+    setFlowScreen('cardio-picker');
   };
 
   // A Home pode abrir diretamente o fluxo correto. Consumimos o parâmetro após
@@ -367,6 +410,10 @@ export function Challenges() {
   useEffect(() => {
     const requestedType = searchParams.get('type');
     if (requestedType !== 'workout' && requestedType !== 'cardio') return;
+    if (requestedType === 'workout') {
+      navigate('/musculacao', { replace: true });
+      return;
+    }
     // #250: so pula se ESTE MESMO valor de type ja foi aberto por este efeito
     // (ou pelo useState inicial) -- nao depende de flowScreen (ver comentario
     // na ref acima). Isso garante que o deep link sempre abre a tela certa na
@@ -380,7 +427,7 @@ export function Challenges() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('type');
     setSearchParams(nextParams, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [navigate, searchParams, setSearchParams]);
 
   // Fechar o fluxo deve devolver o usuario para ONDE ELE VEIO. Quem entrou pela
   // Home volta para a Home; quem abriu pela propria tela de Desafios continua
@@ -542,6 +589,8 @@ export function Challenges() {
             ? 'pendente'
             : 'rejeitada';
 
+        if (serverDistance !== undefined) setLiveDistanceKm(serverDistance);
+
         setFinishedActivityItem({
           id: res.workout.id,
           source: 'workout',
@@ -588,8 +637,10 @@ export function Challenges() {
         // marcamos a atividade como homologada e não concedemos XP.
         setError(res.message || 'O servidor não confirmou o status da atividade. Nenhuma pontuação foi liberada.');
       }
-      await refreshUser();
-      await loadSubmissions();
+      // Perfil e historico sao independentes. Em serie, duas leituras remotas
+      // prolongavam a tela de finalizacao mesmo depois de o servidor ja ter
+      // devolvido a decisao antifraude.
+      await Promise.allSettled([refreshUser(), loadSubmissions()]);
     } catch (err: any) {
       // #323: cancelamento explicito (tocou em "Descartar" durante a
       // finalizacao) ja e tratado por handleCancelActivity -- aqui so evita
@@ -687,6 +738,25 @@ export function Challenges() {
     if (flowScreen === 'workout-checkin') setFlowScreen('workout-details');
     else closeFlow();
   };
+
+  const showNewChallengesHub = !flowScreen
+    && !finishedActivityItem
+    && !shareCardData
+    && !presenceCheckRequired
+    && selectedCategory === 'all'
+    && searchParams.get('view') !== 'history';
+
+  if (!flowScreen && searchParams.get('view') === 'history') {
+    return <ActivityHistoryPageNew />;
+  }
+
+  if (showNewChallengesHub) {
+    const cardioChallenge = CORE_CHALLENGES.find(item => item.id === 'cardio');
+    return <ChallengesHubNew
+      onCardio={() => { if (cardioChallenge) handleOpenChallenge(cardioChallenge); }}
+      onHistory={() => setSearchParams({ view: 'history' })}
+    />;
+  }
 
   return (
     <div className="challenge-screen min-h-screen bg-transparent pb-28 text-on-surface pt-4 px-0 max-w-[430px] mx-auto space-y-5">
@@ -966,6 +1036,7 @@ export function Challenges() {
           session={activeSession}
           elapsed={elapsedTime}
           distance={liveDistanceKm}
+          currentSpeedKmH={liveSpeedKmH}
           trajectory={finishedActivityItem?.trajectory}
           liveCheckpoints={activeSession?.checkpoints}
           gpsAccuracy={gpsAccuracy}

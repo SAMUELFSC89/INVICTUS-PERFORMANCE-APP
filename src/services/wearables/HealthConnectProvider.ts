@@ -11,6 +11,25 @@ import type { WearableProvider, WearableActivity } from './types';
 // como "sem GPS" (perfil CARDIO exige evidencia de deslocamento).
 const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_ACTIVE_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE', 'READ_ROUTE'] as const;
 
+/**
+ * A tipagem publicada por `capacitor-health` declara `permissions` como
+ * array, mas a implementação Kotlin 8.x devolve um JSObject indexado pelo
+ * nome da permissão. Aceitamos ambos para não marcar a integração como
+ * desconectada depois de o usuário autorizar tudo no Android.
+ */
+export function hasAllReadPermissions(response: any): boolean {
+  const granted = response?.permissions;
+  if (Array.isArray(granted)) {
+    return READ_PERMISSIONS.every((permission) =>
+      granted.some((entry: Record<string, boolean>) => entry?.[permission] === true)
+    );
+  }
+  if (granted && typeof granted === 'object') {
+    return READ_PERMISSIONS.every((permission) => granted[permission] === true);
+  }
+  return false;
+}
+
 function mapWorkoutType(hcType: string): string {
   if (!hcType) return 'Cardio';
   const typeStr = String(hcType).toLowerCase();
@@ -38,10 +57,7 @@ export class HealthConnectProvider implements WearableProvider {
       // No Android o plugin permite consultar os grants reais. Não usamos
       // localStorage como prova de que o usuário ainda autorizou a leitura.
       const response = await Health.checkHealthPermissions({ permissions: [...READ_PERMISSIONS] as any });
-      const granted = response?.permissions || [];
-      return READ_PERMISSIONS.every((permission) =>
-        granted.some((entry: Record<string, boolean>) => entry?.[permission] === true)
-      );
+      return hasAllReadPermissions(response);
     } catch (error) {
       console.warn('[HealthConnectProvider] Não foi possível consultar permissões atuais:', error);
       return false;
@@ -60,10 +76,7 @@ export class HealthConnectProvider implements WearableProvider {
         return false;
       }
       const response = await Health.requestHealthPermissions({ permissions: [...READ_PERMISSIONS] as any });
-      const granted = response?.permissions || [];
-      return READ_PERMISSIONS.every((permission) =>
-        granted.some((entry: Record<string, boolean>) => entry?.[permission] === true)
-      );
+      return hasAllReadPermissions(response);
     } catch (error) {
       console.error('[HealthConnectProvider] Erro ao solicitar permissões do Health Connect:', error);
       return false;

@@ -1,16 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Award, CheckCircle2, ChevronRight, Dumbbell, FileVideo, ShieldCheck, Trophy, Upload, Users, Video, Camera, CircleX, Filter, Minus, Plus, Check, TrendingUp, Star } from 'lucide-react';
+import { ArrowLeft, Award, CheckCircle2, ChevronRight, Dumbbell, FileVideo, ShieldCheck, Trophy, Upload, Users, Video, Camera, CircleX, Filter, Minus, Plus, Check, TrendingUp, Star, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auth, storage } from '../firebase';
 import { deleteObject, getDownloadURL, ref, uploadBytesResumable, type StorageReference } from 'firebase/storage';
 import { useUser } from '../UserContext';
 import { validationService } from '../services/validationService';
 import { API_CONFIG } from '../config';
-import './PowerLift.css';
-import './PowerLiftFlow.css';
-import './PowerLiftFidelity.css';
-import './PowerLiftUpload.css';
-import './PowerLiftMobile.css';
+import { InvictusLogo } from '../components/InvictusLogo';
+import './PowerLiftNew.css';
 
 type Exercise = 'supino' | 'agachamento' | 'terra';
 type RecordRow = { id: string; userId: string; userName?: string; userPhoto?: string; gymId?: string; gymName?: string; exercise: Exercise; weight: number; videoStatus?: 'approved' | 'manual_review' | 'rejected' | string; videoUrl?: string; userMessage?: string; motives?: string[]; date?: string; createdAt?: string };
@@ -88,7 +85,7 @@ export function PowerLift() {
         const token = await firebaseUser.getIdToken();
         const headers = { Authorization: `Bearer ${token}` };
         const [rankingResponse, mineResponse] = await Promise.all([
-          fetch(`${API_CONFIG.baseUrl}/api/powerlift?action=ranking`, { headers }),
+          fetch(`${API_CONFIG.baseUrl}/api/powerlift?action=ranking&limit=100`, { headers }),
           fetch(`${API_CONFIG.baseUrl}/api/powerlift?action=me`, { headers })
         ]);
         const [rankingPayload, minePayload] = await Promise.all([
@@ -116,13 +113,31 @@ export function PowerLift() {
   }, [user?.uid]);
   const byExercise = (id: Exercise) => records.filter(row => row.exercise === id).sort((a,b) => b.weight-a.weight);
   const personalBest = (id: Exercise) => byExercise(id).find(row => row.userId === user?.uid)?.weight ?? null;
-  const top = useMemo(() => [...records].sort((a,b)=>b.weight-a.weight).slice(0,3), [records]);
+  // Ranking geral por atleta: soma somente a melhor marca homologada de cada
+  // modalidade. O código anterior ordenava vídeos isolados e permitia que a
+  // mesma pessoa ocupasse duas ou três posições do pódio.
+  const top = useMemo(() => {
+    const athletes = new Map<string, { row: RecordRow; best: Partial<Record<Exercise, number>> }>();
+    for (const record of records) {
+      const current = athletes.get(record.userId) || { row: record, best: {} };
+      current.best[record.exercise] = Math.max(current.best[record.exercise] || 0, Number(record.weight) || 0);
+      athletes.set(record.userId, current);
+    }
+    return [...athletes.values()]
+      .map(({ row, best }) => ({ ...row, weight: Object.values(best).reduce((sum, value) => sum + (value || 0), 0) }))
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 3);
+  }, [records]);
   const athleteCount = useMemo(() => new Set(records.map((row) => row.userId).filter(Boolean)).size, [records]);
   const approvedCount = useMemo(() => myRecords.filter(row => row.videoStatus === 'approved').length, [myRecords]);
   const approvalRate = useMemo(() => myRecords.length ? `${Math.round((approvedCount / myRecords.length) * 100)}%` : '—', [myRecords.length, approvedCount]);
-  const totalScore = useMemo(() => {
-    const pts = myRecords.filter(row => row.videoStatus === 'approved').reduce((acc, row) => acc + (row.weight || 0) * 10, 0);
-    return pts > 0 ? `${pts.toLocaleString('pt-BR')} pts` : '—';
+  const homologatedLoad = useMemo(() => {
+    const best = new Map<Exercise, number>();
+    for (const row of myRecords.filter(record => record.videoStatus === 'approved')) {
+      best.set(row.exercise, Math.max(best.get(row.exercise) || 0, Number(row.weight) || 0));
+    }
+    const totalKg = [...best.values()].reduce((sum, value) => sum + value, 0);
+    return totalKg > 0 ? `${totalKg.toLocaleString('pt-BR')} kg` : '—';
   }, [myRecords]);
 
   const stat = (label: string, icon: React.ReactNode, value: React.ReactNode, isHighlighted = false) => (
@@ -304,7 +319,7 @@ export function PowerLift() {
         {[1,0,2].map((rank, position) => {
           const row=top[rank];
           return <button key={rank} onClick={()=>{setSelected(row?.exercise || 'supino');setView('ranking')}} className={`power-podium-item pos-${position}`}>
-            {row?.userPhoto ? <img src={row.userPhoto} alt="" /> : <span className="power-avatar">{row?.userName?.slice(0,1) || '—'}</span>}
+            <span className="power-podium-avatar">{row?.userPhoto ? <img src={row.userPhoto} alt="" /> : <span className="power-avatar">{row?.userName?.slice(0,1) || '—'}</span>}<img className="power-podium-frame" src={`/ranking-frame-${rank === 0 ? 'gold' : rank === 1 ? 'silver' : 'bronze'}-reference.png`} alt="" aria-hidden="true" /></span>
             <i>{rank+1}</i>
             <b>{row?.userName || 'Sem registros'}</b>
             <strong>{row ? `${row.weight} kg` : '—'}</strong>
@@ -361,7 +376,7 @@ export function PowerLift() {
         {stat('DESAFIOS ENVIADOS', <Trophy />, myRecords.length)}
         {stat('DESAFIOS APROVADOS', <ShieldCheck />, approvedCount)}
         {stat('TAXA DE APROVAÇÃO', <TrendingUp />, approvalRate, approvalRate !== '—')}
-        {stat('PONTUAÇÃO TOTAL', <Star />, totalScore, totalScore !== '—')}
+        {stat('CARGA HOMOLOGADA', <Star />, homologatedLoad, homologatedLoad !== '—')}
       </div>
     </section>
 
@@ -381,6 +396,8 @@ export function PowerLift() {
         </span>
       </button>
     </section>
+
+    <nav className="power-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={22} /><small>INÍCIO</small></button><button onClick={() => navigate('/championships')}><Trophy /><small>CAMPEONATOS</small></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Abrir construção do treino"><Plus /></button><button className="is-active" onClick={() => navigate('/challenges')}><ShieldCheck /><small>DESAFIOS</small></button><button onClick={() => navigate('/profile')}><UserRound /><small>PERFIL</small></button></nav>
 
     {modal && <div className="power-overlay" onClick={()=>setModal(null)}>
       <section onClick={e=>e.stopPropagation()}>

@@ -32,7 +32,6 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
   onClose,
   onSuccess
 }) => {
-  const [streamState, setStreamState] = useState<MediaStream | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [useFallback, setUseFallback] = useState(false);
@@ -42,6 +41,7 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Start the camera-only stream used for presence validation.
   useEffect(() => {
@@ -71,7 +71,8 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
           audio: false
         });
         
-        setStreamState(stream);
+        streamRef.current?.getTracks().forEach(track => track.stop());
+        streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
@@ -87,10 +88,9 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
   };
 
   const shutdownCamera = () => {
-    if (streamState) {
-      streamState.getTracks().forEach(track => track.stop());
-      setStreamState(null);
-    }
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
   };
 
   // Countdown timer for automated snapshot capture
@@ -201,13 +201,13 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
   // do que estava faltando. Portalado pro document.body tambem, com z-index
   // acima do da tela de atividade (que pode estar aberta ao mesmo tempo).
   return createPortal(
-    <div id="verified-presence-backdrop" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+    <div id="verified-presence-backdrop" className="verified-presence-backdrop fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/80 backdrop-blur-md sm:items-center">
       <motion.div 
         id="verified-presence-card"
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="relative w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden text-zinc-100 flex flex-col"
+        className="verified-presence-card relative flex w-full max-w-lg flex-col overflow-y-auto rounded-3xl border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl"
       >
         {/* Guard Header */}
         <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-cyan-500 via-emerald-500 to-sky-500" />
@@ -241,7 +241,7 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
         </div>
 
         {/* Main interactive camera workflow */}
-        <div className="flex-1 p-6 flex flex-col items-center justify-center min-h-[380px]">
+        <div className="verified-presence-main flex min-h-[380px] flex-1 flex-col items-center justify-center p-6">
           {isAnalyzing ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="relative w-24 h-24 flex items-center justify-center">

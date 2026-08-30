@@ -40,6 +40,7 @@ export interface EndSessionResult {
 // derivado -- ver auditoria antifraude 2026-08).
 let sensorSamples: { accel: number[]; gyro: number[] } = { accel: [], gyro: [] };
 let activeMotionHandler: ((event: DeviceMotionEvent) => void) | null = null;
+let lastCheckpointRemoteSyncAt = 0;
 
 function computeVariance(samples: number[]): number | undefined {
   if (!samples || samples.length < 3) return undefined;
@@ -110,10 +111,9 @@ export const activityService = {
     return 'granted';
   },
 
-  async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string, muscleGroup?: string): Promise<ActivitySession> {
+  async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string, muscleGroup?: string, workoutContext?: Pick<ActivitySession, 'workoutPlanId' | 'workoutId' | 'plannedExercises'>): Promise<ActivitySession> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
-
     const existing = this.getCurrentSession();
     if (existing) throw new Error('Já existe uma atividade em andamento.');
 
@@ -162,6 +162,9 @@ export const activityService = {
             cardioType: sessData.cardioType || undefined,
             cardioTypeLabel: sessData.cardioTypeLabel || undefined,
             muscleGroup: sessData.muscleGroup || undefined,
+            workoutPlanId: sessData.workoutPlanId || undefined,
+            workoutId: sessData.workoutId || undefined,
+            plannedExercises: Array.isArray(sessData.plannedExercises) ? sessData.plannedExercises : undefined,
             isIndoorCardio: sessData.isIndoorCardio,
             requiresGpsDistance: sessData.requiresGpsDistance,
             smartwatchData: sessData.smartwatchData || undefined,
@@ -170,6 +173,8 @@ export const activityService = {
             status: 'active',
             checkInId: sessData.checkInId || undefined,
             checkpoints: sessData.checkpoints || [],
+            maxObservedSpeedKmH: Number(sessData.maxObservedSpeedKmH) || 0,
+            gpsSpeedSampleCount: Number(sessData.gpsSpeedSampleCount) || 0,
             isPaused: !!sessData.isPaused,
             pausedMs: Number(sessData.pausedMs) || 0,
             pauseStartedAt: sessData.pauseStartedAt || null
@@ -320,6 +325,9 @@ export const activityService = {
       cardioType,
       cardioTypeLabel: cardioMapEntry?.label,
       muscleGroup,
+      workoutPlanId: workoutContext?.workoutPlanId,
+      workoutId: workoutContext?.workoutId,
+      plannedExercises: workoutContext?.plannedExercises,
       isIndoorCardio: cardioMapEntry ? cardioMapEntry.category !== 'outdoor' : undefined,
       requiresGpsDistance: cardioMapEntry?.requiresGps,
       smartwatchData,
@@ -337,6 +345,7 @@ export const activityService = {
       localStorage.setItem('has_sensor_oscillation', 'false');
       localStorage.setItem('has_sensor_events', 'false');
       sensorSamples = { accel: [], gyro: [] };
+      lastCheckpointRemoteSyncAt = 0;
 
       const isSupported = 'DeviceMotionEvent' in window;
       if (!isSupported) {
@@ -408,6 +417,9 @@ export const activityService = {
       cardioType: session.cardioType || null,
       cardioTypeLabel: session.cardioTypeLabel || null,
       muscleGroup: session.muscleGroup || null,
+      workoutPlanId: session.workoutPlanId || null,
+      workoutId: session.workoutId || null,
+      plannedExercises: session.plannedExercises || [],
       isIndoorCardio: !!session.isIndoorCardio,
       requiresGpsDistance: !!session.requiresGpsDistance,
       smartwatchData: session.smartwatchData || null,
@@ -416,6 +428,8 @@ export const activityService = {
       status: 'active',
       checkInId: session.checkInId || null,
       checkpoints: session.checkpoints || [],
+      maxObservedSpeedKmH: 0,
+      gpsSpeedSampleCount: 0,
       isPaused: false,
       pausedMs: 0,
       pauseStartedAt: null,
@@ -459,7 +473,7 @@ export const activityService = {
     }
   },
 
-  addCheckpoint(location: { lat: number; lng: number; accuracy?: number }) {
+  addCheckpoint(location: { lat: number; lng: number; accuracy?: number; speedKmH?: number }, timestampMs?: number) {
     const session = this.getCurrentSession();
     if (!session) return;
     // #324: em pausa nao registramos deslocamento -- senao o trecho parado
@@ -468,7 +482,7 @@ export const activityService = {
     if (session.isPaused) return;
 
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return;
-    if (typeof location.accuracy === 'number' && location.accuracy > 50) {
+    if (typeof location.accuracy === 'number' && location.accuracy > 30) {
       console.warn('[ActivityService] Checkpoint skipped due to low accuracy:', location.accuracy);
       return;
     }
@@ -484,21 +498,30 @@ export const activityService = {
     }
 
     session.checkpoints.push({
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(Number.isFinite(timestampMs) ? timestampMs! : Date.now()).toISOString(),
       location: {
         lat: location.lat,
         lng: location.lng,
-        ...(typeof location.accuracy === 'number' ? { accuracy: location.accuracy } : {})
+        ...(typeof location.accuracy === 'number' ? { accuracy: location.accuracy } : {}),
+        ...(typeof location.speedKmH === 'number' && Number.isFinite(location.speedKmH) ? { speedKmH: location.speedKmH } : {})
       }
     });
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
-    const docRef = doc(db, 'active_sessions', session.id);
-    updateDoc(docRef, {
-      checkpoints: session.checkpoints,
-      updatedAt: new Date().toISOString()
-    }).catch(err => console.warn('[ActivityService] Failed to sync checkpoint to Firestore:', err));
+    // Mantém a trilha local densa, mas sincroniza a recuperação remota em
+    // lote para não regravar o array inteiro a cada amostra.
+    const now = Date.now();
+    if (now - lastCheckpointRemoteSyncAt >= 15000) {
+      lastCheckpointRemoteSyncAt = now;
+      const docRef = doc(db, 'active_sessions', session.id);
+      updateDoc(docRef, {
+        checkpoints: session.checkpoints,
+        maxObservedSpeedKmH: session.maxObservedSpeedKmH || 0,
+        gpsSpeedSampleCount: session.gpsSpeedSampleCount || 0,
+        updatedAt: new Date().toISOString()
+      }).catch(err => console.warn('[ActivityService] Failed to sync checkpoint to Firestore:', err));
+    }
   },
 
   /**
@@ -599,8 +622,13 @@ export const activityService = {
 
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
+    // O instante em que o atleta tocou em finalizar encerra o cronômetro. As
+    // leituras finais/consultas de saúde não podem inflar a duração enquanto
+    // aguardam GPS, HealthKit/Health Connect ou rede.
+    const endTime = new Date();
 
     let nativeMockDetected = false;
+    let recoveredNativePointCount = 0;
     if (session.requiresGpsDistance) {
       const nativePoints = await withTimeout(
         nativeBackgroundLocationService.collectAndStop(),
@@ -610,6 +638,7 @@ export const activityService = {
         console.warn('[ActivityService] Não foi possível recuperar pontos nativos; usando checkpoints da tela:', error);
         return [];
       });
+      recoveredNativePointCount = nativePoints.length;
       nativeMockDetected = nativePoints.some((point) => point.isSimulated === true);
       const existingTimestamps = new Set(session.checkpoints.map((point) => point.timestamp));
       for (const point of nativePoints) {
@@ -628,7 +657,12 @@ export const activityService = {
 
     let endLocation: { lat: number; lng: number; accuracy?: number } | undefined;
     try {
-      const needsLocationAtEnd = session.type === 'workout' || Boolean(session.requiresGpsDistance);
+      // No app nativo, collectAndStop() ja entrega o ultimo ponto registrado
+      // pelo servico em segundo plano. Pedir outra localizacao aqui acrescentava
+      // ate quatro segundos ao encerramento sem melhorar a rota. O navegador,
+      // que nao possui coletor nativo, continua capturando o ponto final.
+      const needsLocationAtEnd = session.type === 'workout'
+        || (Boolean(session.requiresGpsDistance) && recoveredNativePointCount === 0);
       if (needsLocationAtEnd) {
         // A rota de cardio externo também precisa de precisão alta para que o
         // último trecho não seja descartado. Sessões internas são ignoradas
@@ -641,13 +675,12 @@ export const activityService = {
 
     if (endLocation) {
       session.checkpoints.push({
-        timestamp: new Date().toISOString(),
+        timestamp: endTime.toISOString(),
         location: endLocation
       });
     }
 
     const startTime = new Date(session.startTime);
-    const endTime = new Date();
     // #324: se por algum motivo chegar aqui ainda pausada (o normal e a UI
     // exigir retomar antes de finalizar), fecha o intervalo de pausa em
     // aberto antes de calcular a duracao -- senao esse trecho parado nem
@@ -668,16 +701,6 @@ export const activityService = {
 
     const distanceKm = this.calculateSessionDistance(session);
 
-    const userRef = doc(db, 'users', user.uid);
-
-    const userSnap = await withTimeout(
-      getDoc(userRef),
-      12000,
-      'Não conseguimos carregar seu perfil para finalizar. Sua atividade continua salva; tente novamente.'
-    );
-    if (!userSnap.exists()) throw new Error("Usuário não encontrado.");
-    const userData = userSnap.data() as UserProfile;
-
     let finalPhoto = photoBase64;
     if (photoBase64) {
       try {
@@ -688,7 +711,7 @@ export const activityService = {
       }
     }
 
-    const idToken = await withTimeout(
+    const idTokenPromise = withTimeout(
       user.getIdToken(),
       12000,
       'Sua autenticação demorou demais. Sua atividade continua salva; verifique a conexão e tente novamente.'
@@ -764,7 +787,7 @@ export const activityService = {
       : undefined;
 
     // Coleta telemetria e biometria unificada de saúde (Apple Health / Health Connect / Sensores)
-    const collectedHealth = await withTimeout(
+    const collectedHealthPromise = withTimeout(
       HealthDataCollector.collectForSession(
         session.startTime,
         endTime.toISOString(),
@@ -787,6 +810,7 @@ export const activityService = {
         } : {})
       } as CollectedHealthMetrics;
     });
+    const [idToken, collectedHealth] = await Promise.all([idTokenPromise, collectedHealthPromise]);
 
     const pedometerSteps = collectedHealth.healthTelemetry?.steps ?? initialPedometerSteps;
     const avgHeartRate = collectedHealth.healthTelemetry?.avgHeartRate ??
@@ -1059,6 +1083,7 @@ export const activityService = {
     localStorage.removeItem('has_sensor_oscillation');
     localStorage.removeItem('sensor_status');
     sensorSamples = { accel: [], gyro: [] };
+    lastCheckpointRemoteSyncAt = 0;
     void nativeBackgroundLocationService.stop().catch(() => {});
   }
 };

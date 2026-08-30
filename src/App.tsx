@@ -6,7 +6,7 @@ import { Rankings } from './pages/Rankings';
 import { Achievements } from './pages/Achievements';
 import { Challenges } from './pages/Challenges';
 import { PublicProfile } from './pages/PublicProfile';
-import { Profile } from './pages/Profile';
+import { ProfileNew } from './pages/ProfileNew';
 import { ProfileSecondary } from './pages/ProfileSecondary';
 import { PaymentSuccess } from './pages/PaymentSuccess';
 import { AdminWorkouts } from './pages/AdminWorkouts';
@@ -28,17 +28,12 @@ import { API_CONFIG } from './config';
 import { PowerLift } from './pages/PowerLift';
 import { Health, HealthReport } from './pages/Health';
 import { HealthFullReport } from './pages/HealthFullReport';
-import { League } from './pages/League';
-import { SeasonInscription } from './pages/SeasonInscription';
 import { Notifications } from './pages/Notifications';
 import { ChampionshipsHub } from './pages/championships/ChampionshipsHub';
-import { ChampionshipDetails } from './pages/championships/ChampionshipDetails';
-import { ChampionshipRegulation } from './pages/championships/ChampionshipRegulation';
-import { ChampionshipRegistration } from './pages/championships/ChampionshipRegistration';
-import { ChampionshipCheckoutAsaas } from './pages/championships/ChampionshipCheckoutAsaas';
-import { ChampionshipConfirmation } from './pages/championships/ChampionshipConfirmation';
-import { MyChampionships } from './pages/championships/MyChampionships';
-import { MyChampionshipDetail } from './pages/championships/MyChampionshipDetail';
+import { CommunityChampionship } from './pages/championships/CommunityChampionship';
+import { ChampionshipPreview } from './pages/championships/ChampionshipPreview';
+import { Musculation } from './pages/Musculation';
+import { InvictusStore } from './pages/InvictusStore';
 import './styles/invictus.css';
 
 export default function App() {
@@ -69,11 +64,13 @@ export default function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/invite" element={<Home />} />
                 <Route path="/rankings" element={<Rankings />} />
-                <Route path="/league" element={<League />} />
-                <Route path="/league/inscricao" element={<SeasonInscription />} />
+                <Route path="/league" element={<Navigate to="/championships" replace />} />
+                <Route path="/league/inscricao" element={<Navigate to="/championships" replace />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/gym" element={<Navigate to="/profile/academy" replace />} />
                 <Route path="/challenges" element={<Challenges />} />
+                <Route path="/musculacao" element={<Musculation />} />
+                <Route path="/store" element={<InvictusStore />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />
                 <Route path="/profile/academy" element={<ProfileSecondary />} />
                 <Route path="/profile/academy/search" element={<ProfileSecondary />} />
@@ -84,15 +81,18 @@ export default function App() {
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences/:section" element={<ProfileSecondary />} />
-                <Route path="/profile" element={<Profile />} />
+                <Route path="/profile" element={<ProfileNew />} />
                 <Route path="/championships" element={<ChampionshipsHub />} />
-                <Route path="/championships/my" element={<MyChampionships />} />
-                <Route path="/championships/my/:id" element={<MyChampionshipDetail />} />
-                <Route path="/championships/:id" element={<ChampionshipDetails />} />
-                <Route path="/championships/:id/rules" element={<ChampionshipRegulation />} />
-                <Route path="/championships/:id/register" element={<ChampionshipRegistration />} />
-                <Route path="/championships/:id/checkout-redirect" element={<ChampionshipCheckoutAsaas />} />
-                <Route path="/championships/:id/confirmed" element={<ChampionshipConfirmation />} />
+                <Route path="/championships/community" element={<CommunityChampionship />} />
+                <Route path="/championships/preview/musculacao" element={<ChampionshipPreview modality="musculacao" />} />
+                <Route path="/championships/preview/cardio" element={<ChampionshipPreview modality="cardio" />} />
+                <Route path="/championships/my" element={<Navigate to="/championships/community" replace />} />
+                <Route path="/championships/my/:id" element={<Navigate to="/championships/community" replace />} />
+                <Route path="/championships/:id/rules" element={<Navigate to="/championships" replace />} />
+                <Route path="/championships/:id/register" element={<Navigate to="/championships" replace />} />
+                <Route path="/championships/:id/checkout-redirect" element={<Navigate to="/championships" replace />} />
+                <Route path="/championships/:id/confirmed" element={<Navigate to="/championships" replace />} />
+                <Route path="/championships/:id" element={<Navigate to="/championships" replace />} />
                 <Route path="/achievements" element={<Achievements />} />
                 <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
                 <Route path="/performance" element={<Performance />} />

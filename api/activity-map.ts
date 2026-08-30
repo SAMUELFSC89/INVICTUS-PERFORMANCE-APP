@@ -1,10 +1,9 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from './_lib/common.js';
 
-// #202/#204: endpoint server-side que gera a imagem do mapa da rota (Google Static
-// Maps) para a tela de detalhe do cardio e para o card de compartilhamento. A
-// chave GOOGLE_MAPS_API_KEY NUNCA e exposta ao cliente -- o frontend so recebe a
-// imagem ja pronta (base64), o rotulo de localizacao (cidade/UF) e o clima atual.
+// Endpoint server-side que gera a imagem do mapa da rota. Mapbox e o provedor
+// principal; Google permanece como fallback para builds antigos. O frontend
+// recebe somente a imagem pronta, nunca credenciais privadas.
 
 // Codificacao de polyline no formato do Google (Encoded Polyline Algorithm Format)
 // -- necessaria para o parametro "path" da Static Maps API sem estourar o limite
@@ -123,14 +122,15 @@ export default async function handler(req, res) {
     return res.status(401).json({ success: false, userMessage: 'Sessao expirada. Entre novamente.' });
   }
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) {
-    console.error('[activity-map] GOOGLE_MAPS_API_KEY nao configurada no ambiente.');
+  const mapboxToken = process.env.VITE_MAPBOX_WEB_TOKEN || process.env.VITE_MAPBOX_MOBILE_TOKEN || process.env.MAPBOX_ACCESS_TOKEN;
+  const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!mapboxToken && !googleApiKey) {
+    console.error('[activity-map] Nenhum provedor de mapa configurado.');
     return res.status(500).json({ success: false, userMessage: 'Mapa indisponivel no momento.' });
   }
 
   try {
-    const { trajectory, width, height } = req.body || {};
+    const { trajectory, width, height, mapType } = req.body || {};
     if (!Array.isArray(trajectory) || trajectory.length < 2) {
       return res.status(400).json({ success: false, userMessage: 'Rota GPS insuficiente para gerar o mapa desta atividade.' });
     }
@@ -141,23 +141,44 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, userMessage: 'Rota GPS invalida para esta atividade.' });
     }
 
-    points = decimatePoints(points, 300);
+    points = decimatePoints(points, mapboxToken ? 140 : 300);
 
     const w = Math.min(1280, Math.max(200, Number(width) || 640));
     const h = Math.min(1280, Math.max(200, Number(height) || 400));
-    const encoded = encodePolyline(points);
     const start = points[0];
     const end = points[points.length - 1];
+    const requestedMapType = mapType === 'satellite' ? 'satellite' : 'roadmap';
 
-    const styleParams = DARK_STYLE_RULES.map((s) => `style=${encodeURIComponent(s)}`).join('&');
+    let mapUrl;
+    if (mapboxToken) {
+      const styleId = requestedMapType === 'satellite' ? 'satellite-streets-v12' : 'dark-v11';
+      const buildMapboxUrl = (routePoints) => {
+        const overlay = {
+          type: 'FeatureCollection',
+          features: [
+            { type: 'Feature', properties: { stroke: '#ffad12', 'stroke-width': 6, 'stroke-opacity': 1 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } },
+            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffad12' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
+            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
+          ]
+        };
+        return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/auto/${w}x${h}@2x?padding=55&access_token=${encodeURIComponent(mapboxToken)}`;
+      };
 
-    const mapUrl =
-      `https://maps.googleapis.com/maps/api/staticmap?size=${w}x${h}&scale=2&maptype=roadmap` +
-      `&${styleParams}` +
-      `&path=color:0xFFA500FF|weight:4|enc:${encodeURIComponent(encoded)}` +
-      `&markers=color:0xFF7A00|size:mid|${start.lat},${start.lng}` +
-      `&markers=color:0x111111|size:mid|${end.lat},${end.lng}` +
-      `&key=${apiKey}`;
+      mapUrl = buildMapboxUrl(points);
+      // A Static Images API recebe a rota na própria URL. Em atividades
+      // longas, 140 coordenadas em GeoJSON escapado podem ultrapassar o
+      // limite aceito por proxies/CDNs e produzir mapa vazio. Reduzimos só a
+      // geometria visual até caber, preservando sempre início e fim; os dados
+      // completos da atividade continuam intactos no histórico/antifraude.
+      while (mapUrl.length > 7500 && points.length > 20) {
+        points = decimatePoints(points, Math.max(20, Math.floor(points.length * 0.7)));
+        mapUrl = buildMapboxUrl(points);
+      }
+    } else {
+      const encoded = encodePolyline(points);
+      const styleParams = requestedMapType === 'roadmap' ? `&${DARK_STYLE_RULES.map((s) => `style=${encodeURIComponent(s)}`).join('&')}` : '';
+      mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=${w}x${h}&scale=2&maptype=${requestedMapType}` + styleParams + `&path=color:0xFFAA00FF|weight:5|enc:${encodeURIComponent(encoded)}` + `&markers=color:0xFF7A00|size:mid|${start.lat},${start.lng}` + `&markers=color:0x111111|size:mid|${end.lat},${end.lng}` + `&key=${googleApiKey}`;
+    }
 
     const [mapRes, weather] = await Promise.all([
       fetch(mapUrl),
@@ -166,7 +187,7 @@ export default async function handler(req, res) {
 
     if (!mapRes.ok) {
       const errText = await mapRes.text().catch(() => '');
-      console.error('[activity-map] Google Static Maps error:', mapRes.status, errText);
+      console.error('[activity-map] Static map error:', mapRes.status, errText);
       return res.status(502).json({ success: false, userMessage: 'Nao foi possivel gerar a imagem do mapa agora.' });
     }
     const arrBuf = await mapRes.arrayBuffer();
@@ -177,7 +198,8 @@ export default async function handler(req, res) {
     // inicial da rota, usado no cabecalho da tela de detalhe/card de compartilhamento.
     let location = { label: null };
     try {
-      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${start.lat},${start.lng}&key=${apiKey}&language=pt-BR`;
+      if (!googleApiKey) throw new Error('Reverse geocoding Google nao configurado.');
+      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${start.lat},${start.lng}&key=${googleApiKey}&language=pt-BR`;
       const geoRes = await fetch(geoUrl);
       if (geoRes.ok) {
         const geoJson = await geoRes.json();

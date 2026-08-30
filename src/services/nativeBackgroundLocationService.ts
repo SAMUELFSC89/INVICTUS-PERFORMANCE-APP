@@ -18,7 +18,8 @@ interface NativeActivityLocationPlugin {
 const NativeActivityLocation = registerPlugin<NativeActivityLocationPlugin>('InvictusActivity');
 
 function supported(): boolean {
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
+  const platform = Capacitor.getPlatform();
+  return Capacitor.isNativePlatform() && (platform === 'ios' || platform === 'android');
 }
 
 export const nativeBackgroundLocationService = {

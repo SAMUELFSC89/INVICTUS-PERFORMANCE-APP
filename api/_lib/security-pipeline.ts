@@ -280,7 +280,10 @@ export class SecurityPipeline {
       console.error(`[SecurityPipeline] Error writing audit log:`, saveErr);
     }
 
-    const shouldScore = risk.automaticDecision === 'APPROVED' || risk.automaticDecision === 'PARTIALLY_APPROVED';
+    // Para um produto competitivo, "parcialmente aprovado" ainda significa
+    // que faltou evidência. Apenas APPROVED libera pontos automaticamente;
+    // qualquer dúvida permanece em análise, sem pontuar antecipadamente.
+    const shouldScore = risk.automaticDecision === 'APPROVED';
 
     return {
       decision: risk.automaticDecision,

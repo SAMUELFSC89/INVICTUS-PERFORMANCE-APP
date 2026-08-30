@@ -13,6 +13,14 @@ export interface GpsEngineReport {
   maxSpeedFromCheckpointsKmH: number;
   /** #98: maior leitura instantanea (Doppler do GPS) reportada pelo cliente durante toda a sessao, se disponivel. */
   maxReportedInstantSpeedKmH: number | null;
+  /** Distancia reconstruida no servidor a partir da trilha GPS aceita. */
+  verifiedDistanceKm: number;
+  /** Tempo efetivamente em movimento segundo os segmentos GPS aceitos. */
+  movingTimeSec: number;
+  averageMovingSpeedKmH: number;
+  validPointCount: number;
+  /** Sinal conservador de deslocamento motorizado em modalidade humana. */
+  suspectedMotorizedTransport: boolean;
   hasDataGap: boolean;
   gymGeofenceVerified: boolean;
   threats: string[];
@@ -47,7 +55,15 @@ export class GpsEngine {
       accuracy: c.accuracy ?? c.location?.accuracy,
       isMocked: c.isMocked ?? c.location?.isMocked,
       isMockLocation: c.isMockLocation ?? c.location?.isMockLocation
-    }));
+    })).filter((c: any) => {
+      const accuracyValue = Number(c.accuracy);
+      return Number.isFinite(c.latitude) && Number.isFinite(c.longitude)
+        && Math.abs(c.latitude) <= 90 && Math.abs(c.longitude) <= 180
+        && Boolean(c.timestamp) && Number.isFinite(new Date(c.timestamp).getTime())
+        // O Strava recomenda sinal abaixo de 30m no Android. Pontos piores
+        // continuam no registro bruto, mas nao entram na distancia oficial.
+        && (!Number.isFinite(accuracyValue) || accuracyValue <= 30);
+    }).sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     const accuracy = Number(activity.gpsAccuracy || activity.accuracy || 10);
     const activityType = (activity.activityType || activity.type || 'GYM').toString().toUpperCase();
     const cardioType = (activity.cardioType || '').toString().toUpperCase();
@@ -81,6 +97,10 @@ export class GpsEngine {
     let hasExcessiveSpeed = false;
     let maxSpeedKmH = 0;
     let hasDataGap = false;
+    let verifiedDistanceMeters = 0;
+    let movingTimeSec = 0;
+    let fastBikeTimeSec = 0;
+    let sustainedUrbanBikeSpeedSec = 0;
     // #237/#98: intervalo real entre checkpoints ACEITOS costuma ser maior do
     // que o passo de amostragem nominal (o cliente so grava um a cada ~10s, e
     // um ponto pode ser descartado por baixa precisao) -- 45s da folga
@@ -104,6 +124,20 @@ export class GpsEngine {
           if (timeSec > 0) {
             const speedKmH = (distMeters / timeSec) * 3.6;
             if (speedKmH > maxSpeedKmH) maxSpeedKmH = speedKmH;
+
+            // Reconstrucao pos-gravacao: o servidor, e nao o valor total
+            // informado pelo aparelho, passa a ser a fonte da distancia.
+            // Saltos >250 km/h sao outliers/teleporte e nao somam distancia.
+            if (timeSec <= MAX_PLAUSIBLE_GAP_SEC && speedKmH <= 250) {
+              const noiseFloor = Math.max(2.5, Math.min(8, ((Number(p1.accuracy) || 10) + (Number(p2.accuracy) || 10)) * 0.12));
+              if (distMeters >= noiseFloor) {
+                verifiedDistanceMeters += distMeters;
+                const movingThresholdKmH = cardioType.includes('BIKE') ? 1.5 : 0.8;
+                if (speedKmH >= movingThresholdKmH) movingTimeSec += timeSec;
+                if (cardioType.includes('BIKE') && speedKmH >= 42) fastBikeTimeSec += timeSec;
+                if (cardioType.includes('BIKE') && speedKmH >= 18) sustainedUrbanBikeSpeedSec += timeSec;
+              }
+            }
 
             // Teleportation: > 120 km/h for running/walking, or > 250 km/h overall
             if (speedKmH > 250 || (['RUNNING', 'WALKING'].includes(activityType) && speedKmH > 100)) {
@@ -162,6 +196,45 @@ export class GpsEngine {
       threats.push(`EXCESSIVE_SPEED_FOR_ACTIVITY (${Math.round(maxSpeedKmH)} km/h vs max ${maxAllowedSpeed} km/h)`);
     }
 
+    const verifiedDistanceKm = verifiedDistanceMeters / 1000;
+    const averageMovingSpeedKmH = movingTimeSec > 0
+      ? verifiedDistanceKm / (movingTimeSec / 3600)
+      : 0;
+    // GPS sozinho nao consegue provar se uma velocidade plausivel para bike
+    // veio de bicicleta ou de onibus. Em vez de aprovar no escuro, sinais de
+    // velocidade motorizada levam a revisao e exigem corroboracao adicional.
+    const avgHeartRate = Number(
+      activity.avgHeartRate
+      ?? activity.healthTelemetry?.avgHeartRate
+      ?? activity.smartwatchData?.avgHeartRate
+      ?? activity.smartwatchData?.heartRate
+    );
+    const cadence = Number(activity.cadence ?? activity.smartwatchData?.cadence);
+    const powerWatts = Number(activity.powerWatts ?? activity.smartwatchData?.powerWatts);
+    const hasEffortCorroboration = (
+      (Number.isFinite(avgHeartRate) && avgHeartRate >= 90)
+      || (Number.isFinite(cadence) && cadence >= 20)
+      || (Number.isFinite(powerWatts) && powerWatts >= 50)
+    );
+    const moderateSpeedWithoutEffortEvidence = sustainedUrbanBikeSpeedSec >= 60
+      && averageMovingSpeedKmH >= 18
+      && !hasEffortCorroboration;
+    const lowHeartRateAtVehicleLikeSpeed = sustainedUrbanBikeSpeedSec >= 60
+      && averageMovingSpeedKmH >= 22
+      && Number.isFinite(avgHeartRate)
+      && avgHeartRate > 0
+      && avgHeartRate < 85;
+    const suspectedMotorizedTransport = modality?.antiFraudProfile === 'CYCLING' && (
+      fastBikeTimeSec >= 12
+      || maxSpeedKmH >= 58
+      || averageMovingSpeedKmH >= 36
+      || moderateSpeedWithoutEffortEvidence
+      || lowHeartRateAtVehicleLikeSpeed
+    );
+    if (suspectedMotorizedTransport) {
+      threats.push('SUSPECTED_MOTORIZED_TRANSPORT');
+    }
+
     // 4. Gym Geofence / Location Persistence
     let gymGeofenceVerified = false;
     if (activity.gymLocation && activity.latitude && activity.longitude) {
@@ -202,6 +275,11 @@ export class GpsEngine {
       maxSpeedKmH,
       maxSpeedFromCheckpointsKmH,
       maxReportedInstantSpeedKmH,
+      verifiedDistanceKm,
+      movingTimeSec,
+      averageMovingSpeedKmH,
+      validPointCount: checkpoints.length,
+      suspectedMotorizedTransport,
       hasDataGap,
       gymGeofenceVerified,
       threats

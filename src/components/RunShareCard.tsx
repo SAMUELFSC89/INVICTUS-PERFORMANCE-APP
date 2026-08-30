@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { Share2, Download, X, ShieldCheck, ShieldAlert, Clock, Flame, Heart, Gauge, Mountain, Trophy, EyeOff, RefreshCw, Image as ImageIcon, Map, Sparkles, Upload } from 'lucide-react';
+import { Share2, Download, X, ShieldCheck, ShieldAlert, Clock, Flame, Gauge, RefreshCw, Image as ImageIcon, Map, Upload, MapPin, Timer } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { RunSession, AdvancedRunStats } from '../services/runningService';
 import { formatDuration } from '../lib/runUtils';
@@ -88,8 +88,10 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const cardRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSharingLink, setIsSharingLink] = useState(false);
-  const [mapImageDataUrl, setMapImageDataUrl] = useState<string | null>(null);
-  const [weather, setWeather] = useState<{ tempC: number; icon: string } | null>(null);
+  const [mapImages, setMapImages] = useState<{ satellite: string | null; roadmap: string | null }>({
+    satellite: null,
+    roadmap: null,
+  });
 
   const session: any = rawSession;
 
@@ -132,7 +134,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const existingPhoto = session.photoProof || session.photoUrl || null;
   const hasRoute = trajectory.filter(hasValidLatLng).length >= 2;
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto);
-  const [backgroundMode, setBackgroundMode] = useState<'map' | 'photo' | 'brand'>(() => hasRoute ? 'map' : existingPhoto ? 'photo' : 'brand');
+  const [backgroundMode, setBackgroundMode] = useState<'map' | 'photo'>(() => existingPhoto && !hasRoute ? 'photo' : 'map');
 
   const isBike = title.toLowerCase().includes('bike') || session.cardioType === 'bike';
   const isIndoor = session.isIndoorCardio || title.toLowerCase().includes('indoor') || title.toLowerCase().includes('esteira') || title.toLowerCase().includes('ergométrica') || title.toLowerCase().includes('hiit') || title.toLowerCase().includes('musculação') || title.toLowerCase().includes('treino de');
@@ -172,15 +174,16 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     reader.readAsDataURL(file);
   };
 
-  // Busca a imagem do mapa ANTES de permitir exportar -- o html-to-image so
-  // captura o que ja esta renderizado no DOM, entao buscamos o data URL
-  // diretamente aqui (em vez de depender do componente assincrono
-  // ActivityMapView) para garantir que a imagem ja esteja pronta na captura.
+  // Fallback temporario enquanto o Mapbox e configurado. A mesma interface de
+  // estado sera alimentada pelo renderer Mapbox; assim o layout aprovado nao
+  // precisa mudar quando os tokens forem adicionados.
   useEffect(() => {
     let cancelled = false;
     async function fetchMap() {
       const points = (trajectory || []).filter(hasValidLatLng);
       if (points.length < 2) return;
+      const variant = backgroundMode === 'photo' ? 'roadmap' : 'satellite';
+      if (mapImages[variant]) return;
       const authUser = auth.currentUser;
       if (!authUser) return;
       try {
@@ -188,13 +191,12 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         const res = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-          body: JSON.stringify({ trajectory: points, width: 640, height: 420 })
+          body: JSON.stringify({ trajectory: points, width: 640, height: 640, mapType: variant })
         });
         const json = await res.json();
         if (cancelled) return;
         if (json.success) {
-          setMapImageDataUrl(json.imageDataUrl);
-          setWeather(json.weather || null);
+          setMapImages(current => ({ ...current, [variant]: json.imageDataUrl }));
           if (!locationLabel) setLocationLabel(json.location?.label || null);
         }
       } catch (err) {
@@ -204,7 +206,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     fetchMap();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [backgroundMode, hasRoute, mapImages, trajectory, locationLabel]);
 
   const phrases = [
     "Mais um dia sem falhar",
@@ -276,6 +278,28 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
   };
 
+  const sharePace = String(pace)
+    .replace('/km', '')
+    .replace("'", ':')
+    .replace('"', '')
+    .trim();
+  const distanceLabel = distanceKm.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const speedLabel = speedKmH
+    ? Number(speedKmH).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    : '—';
+  // O selo aprovado usa a chama Invictus em todas as modalidades; o título e
+  // a terceira métrica já fazem a diferenciação entre corrida, bike e indoor.
+  const ActivityIcon = Flame;
+  const currentMapImage = backgroundMode === 'photo' ? mapImages.roadmap : mapImages.satellite;
+  const statusLabel = validationState === 'approved'
+    ? 'ATIVIDADE VALIDADA'
+    : validationState === 'pending'
+      ? 'ATIVIDADE EM ANÁLISE'
+      : 'ATIVIDADE NÃO PONTUOU';
+
   return (
     <div className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-xl flex flex-col p-4 sm:p-6 animate-in fade-in duration-300 overflow-y-auto">
       <div className="flex items-center justify-between mb-6 shrink-0">
@@ -286,7 +310,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       <div className="flex-1 flex flex-col items-center gap-6 pb-6">
         <div className="w-full max-w-[380px] rounded-2xl border border-white/10 bg-white/[.04] p-3">
           <p className="mb-2 text-[10px] font-bold uppercase tracking-[.18em] text-white/55">Visual do card</p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => hasRoute && setBackgroundMode('map')}
@@ -306,16 +330,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
               {selectedPhoto ? 'Foto' : 'Adicionar'}
               <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelection} />
             </label>
-            <button
-              type="button"
-              onClick={() => setBackgroundMode('brand')}
-              className={cn(
-                'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border text-[10px] font-black uppercase transition-colors',
-                backgroundMode === 'brand' ? 'border-primary bg-primary/15 text-primary' : 'border-white/10 bg-black/30 text-white/65'
-              )}
-            >
-              <Sparkles size={14} /> Invictus
-            </button>
           </div>
           {selectedPhoto && backgroundMode !== 'photo' && (
             <button type="button" onClick={() => setBackgroundMode('photo')} className="mt-2 w-full text-center text-[10px] font-bold text-primary">
@@ -324,220 +338,93 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           )}
         </div>
 
-        {/* Card exportavel -- estilo Strava (referencia visual fornecida pelo usuario) */}
+        {/* Card exportavel 9:16 -- duas composicoes aprovadas: mapa e foto. */}
         <div
           ref={cardRef}
-          className="w-full max-w-[380px] bg-black rounded-[28px] border border-primary/20 overflow-hidden p-6 flex flex-col gap-5"
+          className="relative aspect-[9/16] w-full max-w-[380px] overflow-hidden rounded-[22px] border border-white/25 bg-[#050505] shadow-[0_24px_80px_rgba(0,0,0,.7)]"
         >
-          {/* Header: wordmark + logo real */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white font-black italic text-lg leading-none tracking-tight">INVICTUS</p>
-              <p className="text-primary text-[9px] font-bold tracking-[0.3em] uppercase">Performance</p>
+          {backgroundMode === 'photo' && selectedPhoto ? (
+            <img src={selectedPhoto} alt="Foto do atleta" className="absolute inset-0 h-full w-full object-cover" />
+          ) : currentMapImage ? (
+            <img src={currentMapImage} alt="Mapa da atividade" className="absolute inset-0 h-full w-full object-cover brightness-[.58] saturate-[.8] contrast-[1.15]" crossOrigin="anonymous" />
+          ) : (
+            <img src="/fundo-home.webp" alt="Fundo Invictus" className="absolute inset-0 h-full w-full object-cover object-center" />
+          )}
+
+          {backgroundMode === 'photo' && selectedPhoto && hasRoute && (
+            <div
+              className="absolute inset-y-0 right-0 w-[61%] opacity-80"
+              style={{
+                WebkitMaskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,.22) 18%, black 54%)',
+                maskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,.22) 18%, black 54%)',
+              }}
+            >
+              {currentMapImage && <img src={currentMapImage} alt="Rota sobre a foto" className="h-full w-full object-cover" crossOrigin="anonymous" />}
             </div>
-            <InvictusLogo size={32} />
+          )}
+
+          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black" />
+          <div className="absolute inset-x-0 bottom-0 h-[49%] bg-gradient-to-b from-transparent via-black/88 to-black" />
+
+          <div className="absolute left-5 top-5 flex items-center gap-2.5">
+            <InvictusLogo size={34} />
+            <div className="leading-none">
+              <p className="font-headline text-[17px] font-black italic tracking-[.08em] text-white">INVICTUS</p>
+              <p className="mt-1 text-[6px] font-black tracking-[.42em] text-[#f6aa16]">PERFORMANCE</p>
+            </div>
           </div>
 
-          {/* Activity row */}
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shrink-0">
-              <Flame className="text-black" size={20} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className="text-white font-bold text-sm truncate">{title}</p>
-                {validationState === 'approved'
-                  ? <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
-                  : validationState === 'pending'
-                    ? <Clock size={14} className="text-amber-400 shrink-0" />
-                    : <ShieldAlert size={14} className="text-rose-400 shrink-0" />}
+          <div className="absolute inset-x-5 bottom-7">
+            <div className="flex items-center gap-3">
+              <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#ffc041] to-[#ee8d05] shadow-[0_0_24px_rgba(255,169,14,.22)]">
+                <ActivityIcon size={27} strokeWidth={2.4} className="text-black" />
               </div>
-              <p className="text-white/50 text-[11px] font-mono truncate">
-                {dateLabel}{locationLabel ? ` · ${locationLabel}` : ''}
-              </p>
+              <h3 className="min-w-0 font-headline text-[22px] font-black uppercase leading-none tracking-[.01em] text-white">
+                {title}
+              </h3>
+              {validationState === 'approved'
+                ? <ShieldCheck size={22} strokeWidth={2.2} className="shrink-0 text-emerald-400" />
+                : validationState === 'pending'
+                  ? <Clock size={21} className="shrink-0 text-amber-400" />
+                  : <ShieldAlert size={21} className="shrink-0 text-rose-400" />}
             </div>
-          </div>
 
-          {/* 3 stats */}
-          <div className="grid grid-cols-3 gap-2 border-y border-white/10 py-4">
-            {hasDistance ? (
-              <>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Distância</p>
-                  <p className="text-primary font-black text-xl">{distanceKm.toFixed(2)}<span className="text-[10px] ml-0.5 text-primary/70">km</span></p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Tempo</p>
-                  <p className="text-primary font-black text-xl">{duration}</p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">{isBike ? 'Velocidade' : 'Ritmo médio'}</p>
-                  <p className="text-primary font-black text-xl">
-                    {isBike ? (speedKmH || '—') : pace.replace('/km', '')}
-                    <span className="text-[10px] ml-0.5 text-primary/70">{isBike ? 'km/h' : '/km'}</span>
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Tempo</p>
-                  <p className="text-primary font-black text-xl">{duration}</p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Modalidade</p>
-                  <p className="text-primary font-black text-xl">{isIndoor ? 'Indoor' : 'Geral'}</p>
-                </div>
-                <div>
-                  <p className="text-white/40 text-[9px] font-bold uppercase tracking-widest mb-1">Status</p>
-                  <p className={cn(
-                    'font-black text-base',
-                    validationState === 'approved' ? 'text-emerald-400' : validationState === 'pending' ? 'text-amber-400' : 'text-rose-400'
-                  )}>
-                    {validationState === 'approved' ? 'Aprovada' : validationState === 'pending' ? 'Em análise' : 'Não pontuou'}
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
+            <div className="my-4 h-px bg-gradient-to-r from-[#e89b12]/70 via-[#e89b12]/20 to-transparent" />
 
-          {/* Mídia escolhida pelo atleta: rota real, foto ou arte oficial. */}
-          {backgroundMode === 'map' && hasRoute && (
-            <div className="relative w-full h-40 rounded-2xl overflow-hidden border border-white/10 bg-surface-container-low">
-              {mapImageDataUrl ? (
-                <img src={mapImageDataUrl} alt="Rota percorrida" className="w-full h-full object-cover" crossOrigin="anonymous" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <RefreshCw className="animate-spin text-primary/50" size={20} />
-                </div>
-              )}
-              <div className="absolute top-2 left-2 bg-black/70 rounded-full px-2 py-0.5 text-[8px] font-mono text-white flex items-center gap-1">
-                <EyeOff size={9} /> Início e fim ocultos
+            <div className="grid grid-cols-3">
+              <div className="border-r border-white/15 pr-3">
+                <MapPin size={19} className="mb-2 text-[#f6a816]" />
+                <p className="text-[10px] font-bold uppercase tracking-[.16em] text-white/55">Distância</p>
+                <p className="mt-1 whitespace-nowrap font-headline text-[27px] font-black text-white">
+                  {hasDistance ? distanceLabel : '—'} <span className="text-[11px] tracking-[.08em] text-[#f6a816]">KM</span>
+                </p>
               </div>
-              {weather && (
-                <div className="absolute top-2 right-2 bg-black/70 rounded-full px-2 py-0.5 text-[8px] font-mono text-white flex items-center gap-1">
-                  <span>{weather.tempC}°C</span><span>{weather.icon}</span>
-                </div>
-              )}
+              <div className="border-r border-white/15 px-3">
+                <Timer size={19} className="mb-2 text-[#f6a816]" />
+                <p className="text-[10px] font-bold uppercase tracking-[.16em] text-white/55">Tempo</p>
+                <p className="mt-1 whitespace-nowrap font-headline text-[27px] font-black text-white">{duration}</p>
+              </div>
+              <div className="pl-3">
+                <Gauge size={19} className="mb-2 text-[#f6a816]" />
+                <p className="text-[10px] font-bold uppercase tracking-[.12em] text-white/55">{isBike ? 'Velocidade' : 'Ritmo médio'}</p>
+                <p className="mt-1 whitespace-nowrap font-headline text-[27px] font-black text-white">
+                  {isBike ? speedLabel : sharePace}{' '}
+                  <span className="text-[10px] tracking-[.06em] text-[#f6a816]">{isBike ? 'KM/H' : '/KM'}</span>
+                </p>
+              </div>
             </div>
-          )}
-          {backgroundMode === 'photo' && selectedPhoto && (
-            <div className="relative h-52 w-full overflow-hidden rounded-2xl border border-white/10 bg-black">
-              <img src={selectedPhoto} alt="Foto escolhida para o compartilhamento" className="h-full w-full object-cover" />
-              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 to-transparent" />
-            </div>
-          )}
-          {backgroundMode === 'brand' && (
-            <div className="relative h-52 w-full overflow-hidden rounded-2xl border border-primary/20 bg-black">
-              <img src="/fundo-home.webp" alt="Arte oficial Invictus" className="h-full w-full object-cover object-[center_22%]" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20" />
-            </div>
-          )}
 
-          {/* Callout */}
-          <div className={cn(
-            'rounded-2xl border px-4 py-3 flex items-center gap-3',
-            validationState === 'approved'
-              ? 'border-emerald-500/30 bg-emerald-500/5'
-              : validationState === 'pending'
-                ? 'border-amber-500/30 bg-amber-500/5'
-                : 'border-rose-500/30 bg-rose-500/5'
-          )}>
             <div className={cn(
-              'w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
-              validationState === 'approved' ? 'bg-emerald-500/15' : validationState === 'pending' ? 'bg-amber-500/15' : 'bg-rose-500/15'
+              'mt-5 flex items-center gap-2 text-[11px] font-black uppercase tracking-[.19em]',
+              validationState === 'approved' ? 'text-emerald-400' : validationState === 'pending' ? 'text-amber-400' : 'text-rose-400'
             )}>
               {validationState === 'approved'
-                ? <ShieldCheck className="text-emerald-400" size={16} />
+                ? <ShieldCheck size={20} />
                 : validationState === 'pending'
-                  ? <Clock className="text-amber-400" size={16} />
-                  : <ShieldAlert className="text-rose-400" size={16} />}
+                  ? <Clock size={19} />
+                  : <ShieldAlert size={19} />}
+              <span>{statusLabel}</span>
             </div>
-            <div className="min-w-0">
-              <p className="text-white font-bold text-xs leading-tight">
-                {validationState === 'pending'
-                  ? 'Atividade em análise'
-                  : validationState === 'rejected'
-                    ? 'Esta atividade não gerou pontos'
-                    : rankingPointsEarned > 0
-                  ? `Você ganhou +${rankingPointsEarned} pontos de ranking!`
-                  : xpPoints > 0
-                    ? `Atividade aprovada -- +${xpPoints} XP`
-                    : 'Atividade aprovada'}
-              </p>
-              <p className={cn(
-                'text-[10px] font-mono',
-                validationState === 'approved' ? 'text-emerald-300' : validationState === 'pending' ? 'text-amber-300' : 'text-rose-300'
-              )}>
-                {validationState === 'approved'
-                  ? 'Resultado confirmado pelo servidor.'
-                  : validationState === 'pending'
-                    ? 'A pontuação será exibida após a validação.'
-                    : 'O registro permanece disponível no histórico.'}
-              </p>
-            </div>
-          </div>
-
-          {/* 4 stat icons in a row (so mostra as que tiverem dado real) */}
-          {(calories !== undefined || avgHeartRate !== undefined || cadence !== undefined || elevationGain !== undefined) && (
-            <div className="flex items-center justify-between gap-2">
-              {calories !== undefined && (
-                <div className="flex-1 flex flex-col items-center gap-1 text-center">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center"><Flame className="text-primary" size={15} /></div>
-                  <p className="text-white font-bold text-xs">{calories}<span className="text-[8px] text-white/40 ml-0.5">kcal</span></p>
-                  <p className="text-primary text-[8px] font-mono">{caloriesLabel(calories)}</p>
-                </div>
-              )}
-              {avgHeartRate !== undefined && (
-                <div className="flex-1 flex flex-col items-center gap-1 text-center">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center"><Heart className="text-primary" size={15} /></div>
-                  <p className="text-white font-bold text-xs">{avgHeartRate}<span className="text-[8px] text-white/40 ml-0.5">bpm</span></p>
-                  <p className="text-primary text-[8px] font-mono">{hrZoneLabel(avgHeartRate, user?.age)}</p>
-                </div>
-              )}
-              {cadence !== undefined && (
-                <div className="flex-1 flex flex-col items-center gap-1 text-center">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center"><Gauge className="text-primary" size={15} /></div>
-                  <p className="text-white font-bold text-xs">{cadence}<span className="text-[8px] text-white/40 ml-0.5">spm</span></p>
-                  <p className="text-primary text-[8px] font-mono">{cadenceLabel(cadence)}</p>
-                </div>
-              )}
-              {elevationGain !== undefined && (
-                <div className="flex-1 flex flex-col items-center gap-1 text-center">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center"><Mountain className="text-primary" size={15} /></div>
-                  <p className="text-white font-bold text-xs">{elevationGain}<span className="text-[8px] text-white/40 ml-0.5">m</span></p>
-                  <p className="text-primary text-[8px] font-mono">{elevationLabel(elevationGain)}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Verificado */}
-          <div className="flex items-center gap-2 border border-white/10 rounded-2xl px-4 py-3">
-            {validationState === 'approved'
-              ? <ShieldCheck className="text-emerald-400 shrink-0" size={16} />
-              : validationState === 'pending'
-                ? <Clock className="text-amber-400 shrink-0" size={16} />
-                : <ShieldAlert className="text-rose-400 shrink-0" size={16} />}
-            <p className="text-white text-[11px] font-bold">
-              {validationState === 'approved' ? 'Atividade verificada pelo Invictus' : validationState === 'pending' ? 'Validação em andamento' : 'Atividade registrada sem pontuação'}
-            </p>
-          </div>
-
-          {/* Banner motivacional */}
-          <div className="border border-primary/30 bg-primary/5 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <Trophy className="text-primary shrink-0" size={20} />
-            <div>
-              <p className="text-white font-black text-xs uppercase tracking-tight">Bora superar seus limites!</p>
-              <p className="text-primary text-[10px] font-bold uppercase tracking-wide">Consistência vence talento.</p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-2 pt-1 opacity-60">
-            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-black font-black text-[10px]">
-              {user?.displayName?.[0] || 'U'}
-            </div>
-            <p className="text-white text-[10px] font-bold uppercase tracking-wide">{user?.displayName || 'Atleta Invictus'}</p>
           </div>
         </div>
 

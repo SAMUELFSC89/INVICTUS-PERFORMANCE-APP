@@ -10,9 +10,9 @@ import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
 import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 import { registrarAmostrasDeAtividade, HealthSampleSource } from '../../_lib/health-data-layer.js';
 import { submitActivityToActiveChampionships } from '../../_lib/championship-scoring-service.js';
-import { criarPresenceCheck } from '../../_lib/presence-check-service.js';
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from '../../_lib/geofence-engine.js';
-import { resolverPerfilValidacao } from '../../_lib/modality-config.js';
+import { resolverPerfilValidacao, resolveModality } from '../../_lib/modality-config.js';
+import { GpsEngine } from '../../_lib/gps-engine.js';
 
 // #71: request.activityData.startTime e tipado como `Date | string` (DTO),
 // mas registrarAmostrasDeAtividade exige `timestamp: string`. O padrao
@@ -88,7 +88,7 @@ export class ValidateActivityService {
   // documento da atividade -- so nao vai mais para a tela do usuario.
   private buildSecurityUserMessage(decision: string): string {
     if (decision === 'UNDER_REVIEW') {
-      return 'Quase lá! Precisamos confirmar sua presença com uma selfie rápida para validar esta atividade.';
+      return 'Recebemos sua atividade. Ela está em análise de segurança e ainda não gerou pontos.';
     }
     // BLOCKED (e qualquer outro motivo tecnico que caia aqui): a atividade
     // NAO trava mais o atleta numa tela de erro pedindo pra tentar de novo.
@@ -147,6 +147,16 @@ export class ValidateActivityService {
 
     const rawActivity: any = request.activityData || {};
     const durationForMetrics = Number(request.activityData.duration ?? rawActivity.durationMins) || 0;
+    const modality = resolveModality(rawActivity);
+    // Para cardio externo, distancia/velocidade competitivas nunca sao
+    // aceitas diretamente do aparelho. O servidor refaz a trilha ponto a
+    // ponto, descartando baixa precisao e outliers, como processamento
+    // posterior de um arquivo GPS. O valor do cliente permanece apenas no
+    // payload bruto de auditoria.
+    const routeReport = modality?.requiresGps ? GpsEngine.evaluate(rawActivity) : null;
+    const effectiveDistanceKm = routeReport
+      ? routeReport.verifiedDistanceKm
+      : (Number(rawActivity.distanceKm) || 0);
     const userWeightKg = (user as any).weight || (user as any).weightKg;
     // #204: calorias/ritmo nao sao enviados pelo cliente nesta rota legada -- estimamos
     // server-side (MET x peso x tempo) para que o historico sempre tenha algo util,
@@ -157,7 +167,7 @@ export class ValidateActivityService {
       durationMins: durationForMetrics,
       weightKg: userWeightKg
     });
-    const estimatedPace = formatPace(rawActivity.distanceKm, durationForMetrics);
+    const estimatedPace = formatPace(effectiveDistanceKm, durationForMetrics);
     const finalCalories = (rawActivity.healthTelemetry && typeof rawActivity.healthTelemetry.calories === 'number' && rawActivity.healthTelemetry.calories > 0)
       ? rawActivity.healthTelemetry.calories
       : estimatedCalories;
@@ -165,7 +175,7 @@ export class ValidateActivityService {
     // (distancia/checkpoints), 'invictus_manual' quando nao ha (musculacao,
     // cardio indoor sem GPS). So decide a FONTE da amostra de saude, nao
     // influencia pontuacao/IGA.
-    const healthSampleSource: HealthSampleSource = (Number(rawActivity.distanceKm) > 0 || Array.isArray(rawActivity.checkpoints) && rawActivity.checkpoints.length > 0)
+    const healthSampleSource: HealthSampleSource = (effectiveDistanceKm > 0 || Array.isArray(rawActivity.checkpoints) && rawActivity.checkpoints.length > 0)
       ? 'invictus_gps'
       : 'invictus_manual';
 
@@ -213,6 +223,7 @@ export class ValidateActivityService {
         // pending_review (fica na fila de revisao do admin).
         const geofenceReasonCode = 'GEOFENCE_' + geofenceResult.status.toUpperCase();
         let pendingActivityId: string | undefined;
+        let pendingActivityTimestamp = request.activityData.endTime || new Date().toISOString();
         try {
           const pendingActivity = await this.activityRepository.create({
             userId: request.userId,
@@ -236,6 +247,7 @@ export class ValidateActivityService {
             traceId
           });
           pendingActivityId = pendingActivity.id;
+          pendingActivityTimestamp = pendingActivity.createdAt || pendingActivityTimestamp;
         } catch (persistErr) {
           console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade de musculacao pendente de revisao:`, persistErr);
         }
@@ -259,7 +271,27 @@ export class ValidateActivityService {
           nonScoringReason: geofenceReasonCode,
           reasonCode: geofenceReasonCode,
           canRetry: true,
-          traceId
+          traceId,
+          workout: pendingActivityId ? {
+            id: pendingActivityId,
+            points: 0,
+            rankingPointsEarned: 0,
+            status: 'pending_review',
+            type: request.activityData.type,
+            muscleGroup: rawActivity.muscleGroup,
+            distance: 0,
+            duration: durationForMetrics,
+            calories: finalCalories,
+            avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+            steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
+            timestamp: pendingActivityTimestamp
+          } : undefined,
+          validation: {
+            success: true,
+            status: 'pending_review',
+            score: 0,
+            reasonCode: geofenceReasonCode
+          }
         } as any;
       }
     }
@@ -284,12 +316,12 @@ export class ValidateActivityService {
     try {
       const securityResult = await SecurityPipeline.runPipeline(
         {
-          activityType: (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
+          activityType: modality?.antiFraudProfile || (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
           type: (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
           muscleGroup: rawActivity.muscleGroup,
           cardioType: rawActivity.cardioType,
           durationMins: Number(rawActivity.durationMins ?? rawActivity.duration) || 0,
-          distanceKm: Number(rawActivity.distanceKm) || 0,
+          distanceKm: effectiveDistanceKm,
           checkpoints: rawActivity.checkpoints,
           timestamp: rawActivity.startTime || new Date().toISOString(),
           source: 'UNIFIED_ACTIVITY_ENGINE',
@@ -338,55 +370,6 @@ export class ValidateActivityService {
       console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):`, secErr);
     }
 
-    // Segunda chance por selfie: UNDER_REVIEW significa confianca baixa mas
-    // NAO um sinal de fraude definitivo (isso e BLOCKED -- mock location,
-    // teleporte, etc., onde uma selfie nao resolve nada porque o problema e
-    // no dispositivo/GPS, nao na identidade). Em vez de recusar a atividade
-    // direto, oferece ao atleta confirmar presenca ao vivo -- mesmo mecanismo
-    // ja usado no check-in de academia (ver api/_lib/presence-check-service.ts).
-    // A atividade so e de fato persistida depois, em
-    // api/_handlers/validate-presence.ts (actionType 'activity_under_review'),
-    // apos a selfie ser avaliada.
-    if (securityBlocked && securityDecision === 'UNDER_REVIEW') {
-      try {
-        const { presenceCheckId, livenessPrompt } = await criarPresenceCheck({
-          userId: request.userId,
-          actionType: 'activity_under_review',
-          payload: {
-            ...rawActivity,
-            type: request.activityData.type,
-            duration: durationForMetrics,
-            intensity: request.activityData.intensity || 'moderate',
-            startTime: request.activityData.startTime || new Date().toISOString(),
-            endTime: request.activityData.endTime || new Date().toISOString(),
-            evidence: request.activityData.evidence || {},
-          },
-        });
-
-        await this.auditRepository.log({
-          traceId,
-          userId: request.userId,
-          action: 'VALIDATE_ACTIVITY_SECURITY_PIPELINE_UNDER_REVIEW_PRESENCE_CHECK',
-          details: { activityData: request.activityData, reason: securityReason, presenceCheckId },
-          result: 'FLAGGED'
-        });
-
-        return {
-          success: false,
-          presenceCheckRequired: true,
-          presenceCheckId,
-          livenessPrompt,
-          message: securityUserMessage || 'Confirme sua presenca por selfie para validar esta atividade.',
-          userMessage: securityUserMessage || 'Confirme sua presenca por selfie para validar esta atividade.',
-          traceId
-        } as any;
-      } catch (presenceErr) {
-        // Se a criacao do presence check falhar por algum motivo tecnico, cai
-        // para o bloqueio padrao abaixo em vez de deixar o atleta sem resposta.
-        console.error(`[ValidateActivityService] [${traceId}] Falha ao criar presence check para UNDER_REVIEW, aplicando bloqueio padrao:`, presenceErr);
-      }
-    }
-
     if (securityBlocked) {
       console.warn(`[ValidateActivityService] [${traceId}] SecurityPipeline recusou pontuacao automatica: ${securityReason}`);
 
@@ -402,6 +385,7 @@ export class ValidateActivityService {
       // 'list-flagged-activities') e pelo endpoint ja existente
       // 'review-activity', que flipa o status manualmente depois.
       let pendingActivityId: string | undefined;
+      let pendingActivityTimestamp = request.activityData.endTime || new Date().toISOString();
       try {
         const pendingActivity = await this.activityRepository.create({
           userId: request.userId,
@@ -410,7 +394,7 @@ export class ValidateActivityService {
           cardioType: rawActivity.cardioType,
           cardioTypeLabel: rawActivity.cardioTypeLabel,
           duration: durationForMetrics,
-          distance: Number(rawActivity.distanceKm) || 0,
+          distance: effectiveDistanceKm,
           trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
           avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate ?? undefined,
           steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps ?? undefined,
@@ -436,6 +420,7 @@ export class ValidateActivityService {
           traceId
         });
         pendingActivityId = pendingActivity.id;
+        pendingActivityTimestamp = pendingActivity.createdAt || pendingActivityTimestamp;
 
         // #71: Health Data Layer -- ADITIVO. Uma atividade pendente de revisao
         // ainda pode ter uma leitura biometrica REAL por baixo (o sensor nao
@@ -453,7 +438,7 @@ export class ValidateActivityService {
             pularDuplicata: false,
             avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
             calories: finalCalories,
-            distanceKm: Number(rawActivity.distanceKm) > 0 ? Number(rawActivity.distanceKm) : undefined,
+            distanceKm: effectiveDistanceKm > 0 ? effectiveDistanceKm : undefined,
             durationMin: durationForMetrics > 0 ? durationForMetrics : undefined
           });
         } catch (healthLayerErr) {
@@ -482,7 +467,29 @@ export class ValidateActivityService {
         nonScoringReason: securityReason,
         reasonCode: securityReason,
         canRetry: securityCanRetry,
-        traceId
+        traceId,
+        workout: pendingActivityId ? {
+          id: pendingActivityId,
+          points: 0,
+          rankingPointsEarned: 0,
+          status: 'pending_review',
+          type: request.activityData.type,
+          muscleGroup: rawActivity.muscleGroup,
+          cardioType: rawActivity.cardioType,
+          cardioTypeLabel: rawActivity.cardioTypeLabel,
+          distance: effectiveDistanceKm,
+          duration: durationForMetrics,
+          calories: finalCalories,
+          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
+          timestamp: pendingActivityTimestamp
+        } : undefined,
+        validation: {
+          success: true,
+          status: 'pending_review',
+          score: 0,
+          reasonCode: securityReason
+        }
       } as any;
     }
 
@@ -517,7 +524,7 @@ export class ValidateActivityService {
       isIndoorCardio: rawActivity.isIndoorCardio,
       requiresGpsDistance: rawActivity.requiresGpsDistance,
       duration: durationForMetrics,
-      distance: Number(rawActivity.distanceKm) || 0,
+      distance: effectiveDistanceKm,
       trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
       avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate ?? undefined,
       steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps ?? undefined,
@@ -548,8 +555,7 @@ export class ValidateActivityService {
     // Alimenta a serie temporal de saude independente da competicao; nunca
     // influencia XP/ranking e uma falha aqui nunca derruba a resposta
     // principal (ja calculada).
-    try {
-      await registrarAmostrasDeAtividade({
+    const healthRegistrationPromise = registrarAmostrasDeAtividade({
         userId: request.userId,
         source: healthSampleSource,
         sourceActivityId: savedActivity.id!,
@@ -558,12 +564,11 @@ export class ValidateActivityService {
         pularDuplicata: false,
         avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
         calories: finalCalories,
-        distanceKm: Number(rawActivity.distanceKm) > 0 ? Number(rawActivity.distanceKm) : undefined,
+        distanceKm: effectiveDistanceKm > 0 ? effectiveDistanceKm : undefined,
         durationMin: durationForMetrics > 0 ? durationForMetrics : undefined
-      });
-    } catch (healthLayerErr) {
+      }).catch((healthLayerErr) => {
       console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
-    }
+      });
 
     // Uma sessao curta pode ser perfeitamente real e passar pelo antifraude,
     // mas nao deve gerar XP, IGA ou inscricao automatica em campeonato. Ela
@@ -572,13 +577,13 @@ export class ValidateActivityService {
     if (!competitivelyEligible) {
       const message = competitiveIneligibleReason
         || 'Atividade concluida, mas sem pontuacao porque nao atingiu o tempo minimo da modalidade.';
-      await this.auditRepository.log({
+      await Promise.all([healthRegistrationPromise, this.auditRepository.log({
         traceId,
         userId: request.userId,
         action: 'VALIDATE_ACTIVITY_NOT_COMPETITIVELY_ELIGIBLE',
         details: { activityId: savedActivity.id, reason: message, duration: durationForMetrics },
         result: 'SUCCESS'
-      });
+      })]);
       return {
         success: true,
         activityId: savedActivity.id || '',
@@ -596,7 +601,7 @@ export class ValidateActivityService {
           muscleGroup: rawActivity.muscleGroup,
           cardioType: rawActivity.cardioType,
           cardioTypeLabel: rawActivity.cardioTypeLabel,
-          distance: Number(rawActivity.distanceKm) || 0,
+          distance: effectiveDistanceKm,
           duration: durationForMetrics,
           calories: finalCalories,
           avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
@@ -614,32 +619,24 @@ export class ValidateActivityService {
       } as any;
     }
 
-    const { newXP, newLevel } = await this.userRepository.addXP(request.userId, scoreAwarded);
-    console.log(`[ValidateActivityService] [${traceId}] XP do usuario atualizado para ${newXP} (Nivel ${newLevel})`);
+    const xpPromise = this.userRepository.addXP(request.userId, scoreAwarded);
 
     // Recalcula weeklyScore/monthlyScore/score (temporada) a partir da FONTE UNICA
     // (IGA) agora que a atividade ja esta persistida no Firestore -- a query interna
     // de recalculateAllUserScores ja vai encontrar este workout. Roda DEPOIS do
     // create() de proposito: rodar antes contaria a atividade duas vezes (uma pela
     // query, outra por extraSession).
-    let weeklyIgaScore = 0;
-    let newRankingScore: number | undefined;
-    try {
-      const recalculated = await recalculateAllUserScores(request.userId);
-      weeklyIgaScore = recalculated.weekly.igaRanking;
-      newRankingScore = recalculated.season.average;
-      console.log(`[ValidateActivityService] [${traceId}] Pontuacao IGA recalculada: semana=${recalculated.weekly.igaRanking} mes=${recalculated.monthly.average} temporada=${recalculated.season.average}`);
-    } catch (rankingErr) {
+    const rankingPromise = recalculateAllUserScores(request.userId).catch((rankingErr) => {
       console.error(`[ValidateActivityService] [${traceId}] Falha ao recalcular pontuacao IGA, atividade permanece salva mas ranking pode ficar desatualizado:`, rankingErr);
-    }
+      return null;
+    });
 
     // Submissao automatica a campeonatos (Arena/Run Elite) em que o usuario
     // tenha inscricao PAGA e ativa -- ver championship-scoring-service.ts.
     // E um no-op de custo minimo (uma leitura por campeonato compativel, e
     // so 2 campeonatos existem hoje) para quem nao esta inscrito em nenhum,
     // e nunca pode derrubar a resposta principal da atividade.
-    try {
-      await submitActivityToActiveChampionships({
+    const championshipPromise = submitActivityToActiveChampionships({
         userId: request.userId,
         userName: user.name || user.displayName,
         userGymName: user.gymName,
@@ -647,31 +644,44 @@ export class ValidateActivityService {
         activityType: request.activityData.type,
         isIndoorCardio: rawActivity.isIndoorCardio,
         durationMinutes: durationForMetrics,
-        distanceKm: Number(rawActivity.distanceKm) || 0,
+        distanceKm: effectiveDistanceKm,
         score: scoreAwarded,
         when: new Date(request.activityData.endTime || request.activityData.startTime || Date.now()),
-      });
-    } catch (championshipErr) {
+      }).catch((championshipErr) => {
       console.error(`[ValidateActivityService] [${traceId}] Falha ao submeter atividade a campeonatos (nao-fatal):`, championshipErr);
+      });
+
+    // As quatro tarefas dependem apenas da atividade já persistida e não umas
+    // das outras. Executá-las em série fazia o atleta esperar várias viagens
+    // ao Firestore depois de a decisão antifraude já estar pronta.
+    const [{ newXP, newLevel }, recalculated] = await Promise.all([
+      xpPromise,
+      rankingPromise,
+      championshipPromise,
+      healthRegistrationPromise
+    ]);
+    console.log(`[ValidateActivityService] [${traceId}] XP do usuario atualizado para ${newXP} (Nivel ${newLevel})`);
+    const weeklyIgaScore = recalculated?.weekly.igaRanking || 0;
+    const newRankingScore = recalculated?.season.average;
+    if (recalculated) {
+      console.log(`[ValidateActivityService] [${traceId}] Pontuacao IGA recalculada: semana=${recalculated.weekly.igaRanking} mes=${recalculated.monthly.average} temporada=${recalculated.season.average}`);
     }
 
-    await this.auditRepository.log({
+    const successUserMessage = `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP. Seu IGA da semana agora e ${weeklyIgaScore}.`;
+
+    await Promise.all([this.auditRepository.log({
       traceId,
       userId: request.userId,
       action: 'VALIDATE_ACTIVITY_SUCCESS',
       details: { activityId: savedActivity.id, scoreAwarded, weeklyIgaScore, newXP, newLevel },
       result: 'SUCCESS'
-    });
-
-    const successUserMessage = `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP. Seu IGA da semana agora e ${weeklyIgaScore}.`;
-
-    await this.notificationService.send({
+    }), this.notificationService.send({
       userId: request.userId,
       title: 'Atividade Validada!',
       body: `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${scoreAwarded} XP! Seu IGA da semana agora e ${weeklyIgaScore}.`,
       type: 'activity_validated',
       data: { activityId: savedActivity.id, scoreAwarded, weeklyIgaScore, traceId }
-    });
+    })]);
 
     return {
       success: true,
@@ -693,7 +703,7 @@ export class ValidateActivityService {
         muscleGroup: rawActivity.muscleGroup,
         cardioType: rawActivity.cardioType,
         cardioTypeLabel: rawActivity.cardioTypeLabel,
-        distance: Number(rawActivity.distanceKm) || 0,
+        distance: effectiveDistanceKm,
         duration: request.activityData.duration || rawActivity.durationMins || 30,
         calories: finalCalories,
         avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,

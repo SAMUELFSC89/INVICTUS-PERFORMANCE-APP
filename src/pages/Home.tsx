@@ -1,473 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import {
-  FaFire,
-  FaStar,
-  FaDumbbell,
-  FaArrowRight,
-  FaTrophy
-} from 'react-icons/fa6';
+import { ArrowRight, BarChart3, Bell, Brain, Dumbbell, Flame, HeartPulse, Plus, ShieldCheck, Target, Trophy, UserRound } from 'lucide-react';
+import { InvictusLogo } from '../components/InvictusLogo';
 import { useUser } from '../UserContext';
 import { workoutService } from '../services/workoutService';
-import { getXPProgress } from '../lib/levelUtils';
-import { getNextSeasonCountdown } from '../lib/seasonUtils';
-import { Workout } from '../types';
+import { workoutPlanService } from '../services/workoutPlanService';
+import type { Workout } from '../types';
+import type { WorkoutPlan } from '../types/workoutPlan';
 import './Home.css';
+
+const weekStart = () => { const d = new Date(); const day = d.getDay(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); return d.getTime(); };
 
 export function Home() {
   const navigate = useNavigate();
   const { user } = useUser();
+  const [activities, setActivities] = useState<Workout[]>([]);
+  const [plan, setPlan] = useState<WorkoutPlan | null>(null);
 
-  const [countdown, setCountdown] = useState(getNextSeasonCountdown());
-  const [recentActivities, setRecentActivities] = useState<Workout[]>([]);
-
-  // Update countdown every second
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown(getNextSeasonCountdown());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Fetch real activities to calculate XP earned today
-  useEffect(() => {
-    let isMounted = true;
-    if (user?.uid) {
-      workoutService
-        .getUserWorkouts(20)
-        .then((workouts) => {
-          if (isMounted) {
-            setRecentActivities(workouts || []);
-          }
-        })
-        .catch((err) => {
-          console.error('[Home] Error fetching user workouts:', err);
-        });
-    }
-    return () => {
-      isMounted = false;
-    };
+    let mounted = true;
+    Promise.all([workoutService.getUserWorkouts(100), workoutPlanService.list()]).then(([workouts, plans]) => {
+      if (!mounted) return;
+      setActivities(workouts);
+      setPlan(plans.find(item => item.status === 'active') || null);
+    }).catch(error => console.warn('[Home] Falha ao carregar resumo real:', error));
+    return () => { mounted = false; };
   }, [user?.uid]);
 
-  // Calculate real XP earned today from real workouts
-  const todayStr = new Date().toLocaleDateString('sv-SE');
-  const todayWorkouts = recentActivities.filter(
-    (w) =>
-      w.timestamp &&
-      new Date(w.timestamp).toLocaleDateString('sv-SE') === todayStr
-  );
-  const xpToday = todayWorkouts.reduce(
-    (sum, w) => sum + (Number(w.points) || (w as any).xp || 0),
-    0
-  );
+  const firstName = (user?.displayName || user?.name || 'Atleta').trim().split(/\s+/)[0];
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'BOM DIA' : hour < 18 ? 'BOA TARDE' : 'BOA NOITE';
+  const weekActivities = useMemo(() => activities.filter(item => Date.parse(item.timestamp) >= weekStart()), [activities]);
+  const weekDays = new Set(weekActivities.filter(item => item.type === 'workout').map(item => new Date(item.timestamp).getDay())).size;
+  const calories = weekActivities.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
+  const activeMinutes = weekActivities.reduce((sum, item) => sum + (Number(item.duration) || 0), 0);
+  const target = plan?.daysPerWeek || 0;
+  const targetPercent = target ? Math.min(100, Math.round((weekDays / target) * 100)) : null;
+  const today = new Date().getDay();
+  const nextWorkout = plan?.workouts.find(workout => workout.weekdays.includes(today)) || plan?.workouts[0] || null;
+  const gymPosition = Number(user?.positions?.gym);
+  const iga = Number(user?.score);
+  const paid = user?.subscriptionTier === 'performance' || user?.currentPlan === 'performance' || user?.isSubscribed === true || user?.premium === true;
 
-  // User details
-  const userXP = Number(user?.xp) || 0;
-  const xpProgress = getXPProgress(userXP);
-  const userLevel = xpProgress.currentLevel;
-
-  const isPaidUser =
-    user?.subscriptionTier === 'performance' ||
-    user?.currentPlan === 'performance' ||
-    user?.isSubscribed === true ||
-    user?.premium === true;
-
-  // First name extraction
-  const rawName = user?.displayName || user?.name || 'ATLETA';
-  const firstName = rawName.trim().split(' ')[0].toUpperCase();
-
-  // Dynamic greeting by hour with comma
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return 'BOM DIA,';
-    if (hour >= 12 && hour < 18) return 'BOA TARDE,';
-    return 'BOA NOITE,';
-  };
-
-  // Daily challenges configuration using verified app modules
-  const dailyChallenges = [
-    {
-      id: 'workout',
-      title: 'TREINO DE MUSCULAÇÃO',
-      description: 'Inicie o treino para validar sua presença na academia',
-      xp: 100,
-      icon: FaDumbbell,
-      path: '/challenges?type=workout'
-    }
-  ];
-
-  // A Home destaca somente o treino de musculacao. O contador representa as
-  // tres modalidades disponiveis na area completa: musculacao, cardio e Power Lift.
-  const availableChallengesCount = 3;
-
-  return (
-    <div
-      id="home-screen-root"
-      className="iv-fundo w-full text-white relative px-0 select-none overflow-x-hidden"
-    >
-      <div
-        id="home-content-wrapper"
-        className="iv-conteudo w-full max-w-md mx-auto flex flex-col gap-4"
-      >
-        {/* 0) CABEÇALHO — capacete e assinatura.
-            Na arte o capacete tem 52px de altura e o conteúdo só começa a
-            167px do topo. Esse vão é o que deixa o espartano do fundo
-            aparecer, mas 167px fixos empurrariam "DESAFIOS DE HOJE" para fora
-            da primeira dobra num celular pequeno. Por isso o respiro é
-            proporcional com teto e piso: acompanha a arte em tela grande e
-            protege a dobra em tela pequena. */}
-        <header
-          id="home-header"
-          className="w-full flex flex-col items-center shrink-0"
-          style={{
-            // A Home zera o padding do Layout, entao a area segura passa a ser
-            // responsabilidade daqui: sem isso o capacete entra embaixo do
-            // notch e da barra de status.
-            paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))',
-            marginBottom: 'clamp(12px, 7vh, 65px)'
-          }}
-        >
-          <img
-            src="/capacete.webp"
-            alt="Invictus"
-            width={30}
-            height={52}
-            className="h-[52px] w-auto select-none pointer-events-none"
-            style={{ filter: 'drop-shadow(0 0 18px rgba(241,190,34,0.35))' }}
-            onError={(e) => {
-              const target = e.currentTarget;
-              if (!target.src.endsWith('/capacete.png')) {
-                target.src = '/capacete.png';
-              }
-            }}
-          />
-          <p
-            className="font-barlow font-bold text-[13px] text-white uppercase mt-2 leading-none"
-            style={{ letterSpacing: '0.16em' }}
-          >
-            Invictus Performance
-          </p>
-        </header>
-
-        {/* 1) CARD DE SAUDAÇÃO (Retângulo Padrão) */}
-        <section
-          id="home-greeting-card"
-          className="iv-card w-full flex items-center gap-4 !p-4"
-        >
-          {/* Avatar circular + Badges Empilhados */}
-          <div className="flex flex-col items-center shrink-0 gap-2">
-            <button
-              id="home-avatar-btn"
-              onClick={() => navigate('/profile')}
-              aria-label="Ver perfil"
-              className="rounded-full shrink-0 flex items-center justify-center relative cursor-pointer active:scale-95 transition-transform"
-              style={{
-                // Anel de metal, nao cor chapada. Amostrado a cada 20 graus na
-                // arte: o brilho fica no TOPO e chega quase a branco (#FDFCC8),
-                // fechando em ambar escuro embaixo a direita (#D29603). Um
-                // box-shadow de cor unica nao tem como reproduzir isso -- era
-                // o que faltava de "vida".
-                // Diametro externo 74, anel 4, foto 66. Tudo medido.
-                width: '74px',
-                height: '74px',
-                borderRadius: '50%',
-                padding: '4px',
-                background: `conic-gradient(from 0deg,
-                  #FDD935 0deg, #FDFCC8 12deg, #FFF053 50deg, #FEDA33 70deg,
-                  #FFB11F 90deg, #F5A914 130deg, #D29603 152deg, #DBAA00 190deg,
-                  #E68800 210deg, #FDB820 230deg, #FA8406 250deg, #FDB11E 270deg,
-                  #FFDC2E 310deg, #FCD71D 330deg, #FDD935 360deg)`,
-                boxShadow: '0 0 14px rgba(253,217,53,0.50), 0 0 34px rgba(241,190,34,0.28)'
-              }}
-            >
-              <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
-                {user?.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt={rawName}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div
-                    className="w-full h-full flex items-center justify-center iv-titulo text-2xl text-black"
-                    style={{ background: 'var(--dourado)' }}
-                  >
-                    {firstName.charAt(0) || 'A'}
-                  </div>
-                )}
-              </div>
-            </button>
-
-            {/* Badges Empilhados: LVL X e PRO */}
-            <div className="flex flex-col items-center gap-1 w-full">
-              <span
-                id="home-level-badge"
-                className="iv-chip tracking-wider"
-              >
-                LVL {userLevel}
-              </span>
-
-              {isPaidUser && (
-                <span
-                  id="home-pro-badge"
-                  className="iv-chip tracking-wider"
-                >
-                  PRO
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Dados Textuais à Direita */}
-          <div className="flex flex-col flex-1 min-w-0 justify-center">
-            {/* Saudação por Horário */}
-            <span
-              id="home-greeting-text"
-              className="iv-titulo text-[20px] leading-none"
-            >
-              {getGreeting()}
-            </span>
-
-            {/* Primeiro Nome */}
-            <h1
-              id="home-user-name"
-              className="iv-titulo--branco truncate max-w-full my-1"
-              style={{
-                fontSize: 'clamp(32px, 9vw, 44px)',
-                lineHeight: 0.95
-              }}
-              title={firstName}
-            >
-              {firstName}
-            </h1>
-
-            {/* XP Atual / XP Necessário */}
-            <span
-              id="home-xp-summary"
-              className="font-barlow font-semibold text-[15px] text-white mt-0.5 mb-1.5"
-            >
-              {userXP.toLocaleString('pt-BR')} / {xpProgress.xpCeiling.toLocaleString('pt-BR')} XP
-            </span>
-
-            {/* Barra de Progresso + Porcentagem */}
-            <div className="flex items-center gap-2.5 w-full">
-              <div
-                id="home-xp-bar-track"
-                className="iv-barra flex-1"
-              >
-                <span
-                  id="home-xp-bar-fill"
-                  className="transition-all duration-700 ease-out"
-                  style={{
-                    width: `${Math.min(100, Math.max(0, xpProgress.percentage))}%`
-                  }}
-                />
-              </div>
-
-              <span
-                id="home-xp-percentage"
-                className="font-barlow font-bold text-[14px] shrink-0"
-                style={{ color: 'var(--dourado-claro)' }}
-              >
-                {Math.round(xpProgress.percentage)}%
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* 2) DUAS PÍLULAS (SEQUÊNCIA e XP HOJE) */}
-        <section
-          id="home-stat-pills"
-          className="grid grid-cols-2 gap-3 w-full"
-        >
-          {/* Pílula Esquerda: Sequência */}
-          <div
-            id="home-streak-pill"
-            className="iv-card !p-3.5 flex items-center gap-3"
-          >
-            {/* Círculo de 44px à esquerda */}
-            <div className="iv-icone-circulo">
-              <FaFire size={20} />
-            </div>
-            {/* Coluna alinhada à esquerda */}
-            <div className="flex flex-col items-start text-left min-w-0">
-              <span
-                id="home-streak-value"
-                className="iv-titulo text-[22px] leading-tight text-white"
-              >
-                {user?.streak ?? 0}
-              </span>
-              <span className="iv-rotulo leading-none">
-                SEQUÊNCIA
-              </span>
-            </div>
-          </div>
-
-          {/* Pílula Direita: XP Hoje */}
-          <div
-            id="home-today-xp-pill"
-            className="iv-card !p-3.5 flex items-center gap-3"
-          >
-            {/* Círculo de 44px à esquerda */}
-            <div className="iv-icone-circulo">
-              <FaStar size={20} />
-            </div>
-            {/* Coluna alinhada à esquerda */}
-            <div className="flex flex-col items-start text-left min-w-0">
-              <span
-                id="home-today-xp-value"
-                className="iv-titulo text-[22px] leading-tight text-white"
-              >
-                +{xpToday}
-              </span>
-              <span className="iv-rotulo leading-none">
-                XP HOJE
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* 3) BANNER LIGA INVICTUS.
-            A arte (banner_liga_base) nao tem texto gravado -- e escrita real
-            em HTML/CSS por cima. Isso e o que permite o contador funcionar
-            (nao daria pra animar segundo a segundo dentro de um PNG) e o
-            texto ficar legivel tanto no celular quanto em telas maiores:
-            o CSS em .iv-liga-banner* escala com container queries, nao com
-            o tamanho fixo da imagem. Medidas e comentarios em invictus.css.
-
-            #322: arte trocada (trofeu + coroa de louros + capacete espartano)
-            e texto reescrito para o tema "algo novo em breve" -- pedido
-            explicito do usuario porque as frases anteriores ("Compita
-            treinando"/colunas Pote-Justa-Evolucao) nao tinham mais onde se
-            ancorar na nova composicao (ela nao tem icones gravados, so uma
-            area aberta a direita do trofeu). */}
-        <section
-          id="home-league-banner-card"
-          onClick={() => navigate('/championships')}
-          className="iv-liga-banner w-full cursor-pointer active:scale-[0.98] transition-transform"
-        >
-          <img
-            src="/assets/championships/banner_liga_base.webp"
-            alt="Liga Invictus — algo novo está chegando"
-            referrerPolicy="no-referrer"
-            onError={(e) => {
-              const target = e.currentTarget;
-              if (!target.src.endsWith('.png')) {
-                target.src = '/assets/championships/banner_liga_base.png';
-              }
-            }}
-          />
-
-          <div className="iv-liga-banner__texto">
-            <span className="iv-liga-banner__kicker">Liga Invictus</span>
-
-            <div className="iv-liga-banner__titulo">
-              <span className="l1">Algo novo</span>
-              <span className="l2">está chegando.</span>
-            </div>
-
-            <p className="iv-liga-banner__msg-sub">
-              Uma temporada completamente diferente está a caminho.
-            </p>
-
-            {/* Faixa inferior: contador ao vivo de verdade, atualizado a cada
-                segundo pelo mesmo estado `countdown` que ja existia no
-                componente (getNextSeasonCountdown). */}
-            <div className="iv-liga-banner__faixa">
-              <span className="em">
-                {countdown.time.days > 0
-                  ? `${countdown.time.days}D ${countdown.time.hours}H`
-                  : `${countdown.time.hours}H ${String(countdown.time.minutes).padStart(2, '0')}MIN`}
-              </span>
-              <span className="sep" />
-              <span className="msg">Para a nova temporada começar</span>
-            </div>
-          </div>
-        </section>
-
-        {/* 4) SEÇÃO DESAFIOS DE HOJE */}
-        <section id="home-challenges-section" className="w-full flex flex-col gap-3">
-          {/* Cabeçalho da Seção */}
-          <div className="flex items-center justify-between">
-            <h3
-              className="iv-titulo text-[22px] tracking-wide"
-            >
-              DESAFIOS DE HOJE
-            </h3>
-
-            <span
-              id="home-challenges-counter-chip"
-              className="iv-chip"
-            >
-              {availableChallengesCount} DISPONÍVEIS
-            </span>
-          </div>
-
-          {/* Lista de Desafios */}
-          <div className="flex flex-col gap-3">
-            {dailyChallenges.map((challenge) => {
-              const IconComp = challenge.icon;
-              return (
-                <div
-                  key={challenge.id}
-                  id={`home-challenge-item-${challenge.id}`}
-                  onClick={() => navigate(challenge.path)}
-                  className="iv-card !p-3.5 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-transform"
-                >
-                  {/* Círculo de 46px à esquerda */}
-                  <div
-                    className="iv-icone-circulo !w-[46px] !h-[46px] !min-w-[46px] !max-w-[46px]"
-                  >
-                    <IconComp size={20} />
-                  </div>
-
-                  {/* Nome e Descrição Curta */}
-                  <div className="flex flex-col flex-1 min-w-0">
-                    <span
-                      className="font-barlow font-bold text-[15px] uppercase text-white truncate"
-                      title={challenge.title}
-                    >
-                      {challenge.title}
-                    </span>
-                    <span
-                      className="iv-texto line-clamp-1"
-                    >
-                      {challenge.description}
-                    </span>
-                  </div>
-
-                  {/* Chip de XP */}
-                  <div
-                    className="shrink-0 flex items-center justify-center font-barlow font-bold text-[14px] rounded-xl px-3.5 py-2 text-[var(--dourado-claro)] border border-[var(--dourado)]"
-                  >
-                    +{challenge.xp} XP
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Link Ver Todos os Desafios */}
-          <button
-            id="home-view-all-challenges"
-            onClick={() => navigate('/challenges')}
-            className="w-full flex items-center justify-center gap-2 py-3 mt-1 cursor-pointer group active:scale-95 transition-transform"
-          >
-            <span
-              className="font-barlow font-bold text-[13px] uppercase tracking-wider text-[var(--dourado)] group-hover:underline"
-            >
-              ACESSAR ÁREA DE DESAFIOS
-            </span>
-            <FaArrowRight
-              size={16}
-              className="text-[var(--dourado)] drop-shadow-[0_0_6px_rgba(241,190,34,0.55)] group-hover:translate-x-1 transition-transform"
-            />
-          </button>
-        </section>
-      </div>
-    </div>
-  );
+  return createPortal(<main className="nh-screen"><div className="nh-page">
+    <header className="nh-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell />{user?.notifications?.some(item => !item.read) ? <i /> : null}</button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="nh-avatar" onClick={() => navigate('/profile')} aria-label="Perfil">{user?.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
+    <section className="nh-greeting"><h1>{greeting}, {firstName.toUpperCase()}!</h1><p>Cada treino te aproxima da sua melhor versão.</p></section>
+    <section className="nh-season"><div><small>TEMPORADA INVICTUS</small><h2>TREINE. EVOLUA. SUPERE.</h2><p>Mostre sua força. Supere seus limites.</p><button onClick={() => navigate('/championships')}>VER MAIS <ArrowRight /></button></div></section><div className="nh-dots"><i /><i /><i /><i /></div>
+    <h2 className="nh-title">O QUE VOCÊ QUER FAZER?</h2><section className="nh-actions"><article><Dumbbell /><h3>MUSCULAÇÃO</h3><p>Seu plano, cargas e evolução.</p><button onClick={() => navigate('/musculacao')}>COMEÇAR <ArrowRight /></button></article><article><Flame /><h3>CARDIO</h3><p>Corrida, bike e atividades ao ar livre.</p><button onClick={() => navigate('/challenges?type=cardio')}>COMEÇAR <ArrowRight /></button></article></section>
+    <h2 className="nh-title">HOJE</h2><section className={`nh-next ${plan && nextWorkout ? '' : 'is-empty'}`}><span><Dumbbell /></span><div><small>SEU PRÓXIMO TREINO</small><h3>{nextWorkout?.focus || nextWorkout?.name || 'PLANO AINDA NÃO CRIADO'}</h3><p>{plan && nextWorkout ? `${nextWorkout.name} · ~${plan.durationMinutes} min · ${nextWorkout.exercises.length} exercícios` : 'Crie manualmente ou com a Invictus IA.'}</p></div><button onClick={() => navigate('/musculacao')}>{plan ? 'INICIAR TREINO' : 'CRIAR PLANO'} <ArrowRight /></button></section>
+    <section className="nh-progress-grid"><article className="nh-week"><h3>SUA SEMANA</h3><div className="nh-days">{['SEG','TER','QUA','QUI','SEX','SÁB','DOM'].map((label,index) => { const jsDay = index === 6 ? 0 : index + 1; const done = weekActivities.some(item => item.type === 'workout' && new Date(item.timestamp).getDay() === jsDay); return <span key={label}><b>{label}</b><i className={done ? 'is-done' : ''}>{done ? '✓' : ''}</i></span>; })}</div><p><b>{weekDays} treino{weekDays === 1 ? '' : 's'} realizado{weekDays === 1 ? '' : 's'}</b>{target ? `Meta: ${target} treinos` : 'Defina um plano para acompanhar a meta'}</p><strong>{targetPercent !== null ? `${targetPercent}%` : '—'}</strong><div className="nh-bar"><i style={{width:`${targetPercent || 0}%`}} /></div></article><article className="nh-rank"><h3>RANKING DA ACADEMIA</h3><Trophy /><strong>{Number.isFinite(gymPosition) && gymPosition > 0 ? `#${gymPosition}` : '—'}</strong><span>SUA POSIÇÃO</span><small>{Number.isFinite(iga) ? `${Math.round(iga)} IGA` : 'Entre no ranking para acompanhar'}</small><button onClick={() => navigate('/rankings')}>VER RANKING <ArrowRight /></button></article></section>
+    <section className="nh-metrics"><article><Flame /><b>{calories > 0 ? Math.round(calories).toLocaleString('pt-BR') : '—'}</b><span>KCAL GASTAS</span></article><article><HeartPulse /><b>{activeMinutes > 0 ? `${Math.floor(activeMinutes / 60)}h${String(Math.round(activeMinutes % 60)).padStart(2,'0')}` : '—'}</b><span>TEMPO ATIVO</span></article><article><Target /><b>{targetPercent !== null ? `${targetPercent}%` : '—'}</b><span>FOCO DA META</span></article></section>
+    <h2 className="nh-title">ACESSOS RÁPIDOS</h2><section className="nh-quick"><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/performance')}><BarChart3 /><span>Progresso</span></button><button onClick={() => navigate('/health')}><HeartPulse /><span>Saúde</span></button><button onClick={() => navigate('/performance')}><Brain /><span>Invictus IA</span></button></section>
+  </div><nav className="nh-footer"><button className="is-active"><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Abrir musculação"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav></main>, document.body);
 }
 
 export default Home;

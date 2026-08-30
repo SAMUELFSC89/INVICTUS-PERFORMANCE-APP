@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapPin, Award, TrendingUp, Medal, Star, Sun, Dumbbell, Flame, ChevronRight, Edit, LogOut, Bell, Camera, X, Check, BellOff, ShieldAlert, Share2, Copy, Utensils, Wallet, Calendar, Heart, Trophy, Building2, Globe, QrCode, Shield, Crown, RefreshCw, Activity as ActivityIcon, Settings as SettingsIcon, Trash2, Watch, Target, LockKeyhole, BarChart3, Landmark, Crosshair, CircleCheck, Mountain, BadgeCheck, HeartPulse } from 'lucide-react';
+import { MapPin, Award, TrendingUp, Medal, Star, Sun, Dumbbell, Flame, ChevronRight, Edit, LogOut, Bell, Camera, X, Check, BellOff, ShieldAlert, Share2, Copy, Utensils, Wallet, Calendar, Heart, Trophy, Building2, Globe, QrCode, Shield, Crown, RefreshCw, Activity as ActivityIcon, Settings as SettingsIcon, Trash2, Watch, Target, LockKeyhole, BarChart3, Landmark, Crosshair, CircleCheck, Mountain, BadgeCheck, HeartPulse, ShoppingBag } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth, db } from '../firebase';
@@ -403,6 +403,7 @@ function ProfileReference({
     { label: 'Saúde', detail: 'Dados, métricas e relatório de saúde', icon: <HeartPulse size={27} />, action: () => onNavigate('/health') },
     { label: 'Minha academia', detail: user.gymName || 'Vincule sua academia', icon: <Landmark size={27} />, action: () => onNavigate('/profile/academy') },
     { label: 'Carteira', detail: 'Meu saldo, histórico e saques', icon: <Wallet size={27} />, action: () => onNavigate('/profile/wallet') },
+    { label: 'Loja Invictus', detail: 'Troque Invictus Coins por recompensas', icon: <ShoppingBag size={27} />, action: () => onNavigate('/store') },
     { label: 'Metas', detail: 'Defina e acompanhe suas metas', icon: <Crosshair size={27} />, action: () => onNavigate('/profile/goals') },
     { label: 'Segurança e privacidade', detail: 'Dados, permissões e segurança da conta', icon: <LockKeyhole size={27} />, action: () => onNavigate('/profile/security') },
     { label: 'Configurações', detail: 'Preferências do app', icon: <SettingsIcon size={27} />, action: () => onNavigate('/profile/preferences') }

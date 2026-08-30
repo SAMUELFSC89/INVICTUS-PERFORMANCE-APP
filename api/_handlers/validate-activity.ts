@@ -10,6 +10,7 @@ import { NotificationService } from '../_services/notification-service.js';
 import { ValidateActivityService } from '../_services/activities/validate-activity-service.js';
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from '../_lib/common.js';
+import { resolveClientSampledFramesStatus } from '../_lib/powerlift-audit.js';
 
 // Instanciar repositórios e serviços (Injeção de Dependência)
 const activityRepository = new ActivityRepository();
@@ -55,6 +56,7 @@ async function createPowerValidationSession(input: {
   analysis: string;
   motives: string[];
   estimatedWeight: number;
+  modelDecision?: PowerDecision;
 }): Promise<string> {
   const ref = db.collection('power_validation_sessions').doc();
   const now = new Date();
@@ -62,7 +64,7 @@ async function createPowerValidationSession(input: {
     ...input,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
-    source: 'server_gemini_frames_v1'
+    source: 'client_sampled_frames_v1'
   });
   return ref.id;
 }
@@ -77,10 +79,11 @@ async function powerValidationResponse(input: {
   motives: string[];
   analysis: string;
 }) {
-  let finalDecision = input.decision;
+  const modelDecision = input.decision;
+  let finalDecision = resolveClientSampledFramesStatus(modelDecision);
   let validationId: string | undefined;
   try {
-    validationId = await createPowerValidationSession(input);
+    validationId = await createPowerValidationSession({ ...input, decision: finalDecision, modelDecision });
   } catch (error: any) {
     // Sem uma sessão imutável, o PowerLift não pode aplicar o resultado de IA
     // à gravação posterior. Em vez de aprovar no escuro, rebaixa a revisão.

@@ -1,9 +1,11 @@
 import { createPortal } from 'react-dom';
-import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Footprints, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Plus, Share2, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Plus, Share2, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { ActivityMapView } from './ActivityMapView';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
+import { InvictusLogo } from './InvictusLogo';
+import { WorkoutActiveScreen } from './WorkoutActiveScreen';
 
 export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'cardio-complete' | 'cardio-summary' | 'day-progress';
 
@@ -21,7 +23,13 @@ export const CARDIO_OPTIONS: CardioOption[] = [
   { id: 'hiit', label: 'HIIT / Funcional', icon: 'hiit', gps: false }
 ];
 const groups = ['Peito', 'Costas', 'Pernas', 'Ombros', 'Braços', 'Abdômen', 'Corpo todo'];
-const icon = (kind: CardioOption['icon'], size = 20) => kind === 'bike' ? <Bike size={size} /> : kind === 'swim' ? <Waves size={size} /> : kind === 'treadmill' ? <Gauge size={size} /> : kind === 'row' ? <Dumbbell size={size} /> : kind === 'stairs' ? <Navigation size={size} /> : kind === 'hiit' ? <Zap size={size} /> : kind === 'walk' ? <PersonStanding size={size} /> : <Footprints size={size} />;
+const RunningGlyph = ({ size = 20 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="15.5" cy="4.25" r="2.1" fill="currentColor" />
+    <path d="m12.25 7.15-2.6 3.2-3.35 1.12a1.25 1.25 0 0 0 .78 2.38l3.7-1.22c.24-.08.45-.23.61-.42l1.12-1.35 1.35 2.35-2.65 2.14c-.16.13-.29.3-.37.49l-1.7 4.25a1.3 1.3 0 0 0 2.41.97l1.58-3.93 2.55-1.9 1.05 1.65c.14.22.35.39.59.49l3.45 1.42a1.3 1.3 0 0 0 .99-2.4l-3.08-1.27-2.22-3.74 1.15-1.36 1.56 1.15c.21.16.47.24.74.24h2.27a1.2 1.2 0 1 0 0-2.4h-1.86l-2.92-2.15a2.65 2.65 0 0 0-3.62.43Z" fill="currentColor" />
+  </svg>
+);
+const icon = (kind: CardioOption['icon'], size = 20) => kind === 'bike' ? <Bike size={size} /> : kind === 'swim' ? <Waves size={size} /> : kind === 'treadmill' ? <Gauge size={size} /> : kind === 'row' ? <Dumbbell size={size} /> : kind === 'stairs' ? <Navigation size={size} /> : kind === 'hiit' ? <Zap size={size} /> : kind === 'walk' ? <PersonStanding size={size} /> : <RunningGlyph size={size} />;
 const time = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 
 export type ActivityCompletion = {
@@ -39,6 +47,7 @@ export function ChallengeActivityFlow({
   session,
   elapsed,
   distance,
+  currentSpeedKmH,
   trajectory,
   liveCheckpoints,
   gpsAccuracy = null,
@@ -69,6 +78,7 @@ export function ChallengeActivityFlow({
   session: ActivitySession | null;
   elapsed: number;
   distance: number;
+  currentSpeedKmH?: number | null;
   trajectory?: Array<{ lat: number; lng: number }>;
   liveCheckpoints?: Array<{ location: { lat: number; lng: number; accuracy?: number } }>;
   gpsAccuracy?: number | null;
@@ -99,7 +109,10 @@ export function ChallengeActivityFlow({
     ? effectiveCardioLabel
     : `Treino de ${effectiveMuscleGroup}`;
   const isBike = session?.cardioType === 'bike' || cardio.id === 'bike';
-  const speedKmH = distance > 0.01 && elapsed > 0 ? (distance / (elapsed / 3600)).toFixed(1) : '—';
+  const averageSpeedKmH = distance > 0.01 && elapsed > 0 ? (distance / (elapsed / 3600)).toFixed(1) : '—';
+  const liveBikeSpeed = typeof currentSpeedKmH === 'number' && Number.isFinite(currentSpeedKmH)
+    ? currentSpeedKmH.toFixed(1)
+    : averageSpeedKmH;
   const pace = distance > 0.01 && elapsed ? `${Math.floor((elapsed / 60) / distance)}'${String(Math.round((elapsed / 60 / distance % 1) * 60)).padStart(2, '0')}"` : '—';
   const hasDistanceMetric = Boolean(modalityCfg ? modalityCfg.hasDistance : (session?.requiresGpsDistance || cardio.gps));
   const hasPaceMetric = Boolean(modalityCfg ? modalityCfg.hasPace : !isBike);
@@ -139,7 +152,7 @@ export function ChallengeActivityFlow({
   // este componente de dentro do contexto de empilhamento do <main> e resolve
   // na raiz, sem depender de ajustar z-index em cascata.
   return createPortal(
-    <main className="challenge-flow-screen">
+    <main className={`challenge-flow-screen ${screen === 'active' && session?.type === 'cardio' && session?.requiresGpsDistance ? 'is-cardio-live' : ''} ${screen === 'active' && session?.type === 'workout' ? 'is-workout-live' : ''}`}>
       <header className="challenge-flow-header">
         <button aria-label="Voltar" onClick={onBack}>
           <ArrowLeft />
@@ -236,7 +249,66 @@ export function ChallengeActivityFlow({
         </section>
       )}
 
-      {screen === 'active' && (
+      {screen === 'active' && session?.type === 'cardio' && session?.requiresGpsDistance && (
+        <section className="challenge-cardio-live">
+          <div className="challenge-cardio-live-topbar">
+            <button type="button" onClick={onBack} aria-label="Voltar"><ChevronDown /></button>
+            <div><InvictusLogo size={29} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div>
+          </div>
+
+          <LiveTrackingMap
+            points={(liveCheckpoints || []).map(cp => ({ lat: cp.location.lat, lng: cp.location.lng, accuracy: cp.location.accuracy }))}
+            gpsAccuracy={gpsAccuracy}
+            gpsSignal={gpsSignal}
+            permissionDenied={gpsPermissionDenied}
+            heightPx={Math.max(350, Math.min(540, typeof window !== 'undefined' ? window.innerHeight * .59 : 460))}
+          />
+
+          <div className="challenge-cardio-live-content">
+            <article className="challenge-cardio-live-stats">
+              <header>
+                <span>{icon(cardio.icon, 24)}</span>
+                <strong>{activeTitle}</strong>
+                <ShieldCheck />
+              </header>
+              <div>
+                <article><Clock3 /><b>{time(elapsed)}</b><small>Tempo</small></article>
+                <article><Navigation /><b>{distance.toFixed(2)}</b><small>Distância (km)</small></article>
+                <article><Gauge /><b>{hasPaceMetric ? pace : liveBikeSpeed}</b><small>{hasPaceMetric ? 'Pace médio' : 'Velocidade (km/h)'}</small></article>
+              </div>
+            </article>
+
+            <div className="challenge-cardio-live-status">
+              <ShieldCheck />
+              <span><b>{session?.isPaused ? 'ATIVIDADE PAUSADA' : 'ATIVIDADE SENDO REGISTRADA...'}</b><small>Mantenha o GPS ativo para que o treino seja validado.</small></span>
+            </div>
+
+            {endError && <div className="challenge-flow-end-error"><AlertCircle size={16} /><span>{endError}</span></div>}
+
+            <div className="challenge-cardio-live-actions">
+              {onTogglePause && <button type="button" onClick={onTogglePause} disabled={loading}>{session?.isPaused ? <Play /> : <Pause />}<span>{session?.isPaused ? 'RETOMAR' : 'PAUSAR'}</span></button>}
+              <button type="button" className="is-finish" onClick={onEnd} disabled={loading}><Flag /><span>{loading ? 'FINALIZANDO...' : 'FINALIZAR'}</span></button>
+            </div>
+            {onCancel && <button type="button" className="challenge-cardio-live-cancel" onClick={onCancel}><XCircle /> Descartar atividade</button>}
+            <GpsSignalIndicator accuracy={gpsAccuracy} signal={gpsSignal} />
+          </div>
+        </section>
+      )}
+
+      {screen === 'active' && session?.type === 'workout' && (
+        <WorkoutActiveScreen
+          session={session}
+          elapsed={elapsed}
+          loading={loading}
+          endError={endError}
+          onBack={onBack}
+          onTogglePause={onTogglePause}
+          onEnd={onEnd}
+          onCancel={onCancel}
+        />
+      )}
+
+      {screen === 'active' && session?.type === 'cardio' && !session.requiresGpsDistance && (
         <section className="challenge-flow-active">
           <button className="challenge-flow-activity-type">
             {activeTitle}<ChevronDown />
@@ -277,7 +349,7 @@ export function ChallengeActivityFlow({
               hasDistanceMetric ? (
                 <>
                   <article><b>{distance.toFixed(2)}</b><span>Distância (km)</span></article>
-                  <article><b>{hasPaceMetric ? pace : `${speedKmH} km/h`}</b><span>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade'}</span></article>
+                <article><b>{hasPaceMetric ? pace : `${liveBikeSpeed} km/h`}</b><span>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade atual'}</span></article>
                   <article><b>—</b><span>Calorias (kcal)</span></article>
                 </>
               ) : (
@@ -388,7 +460,7 @@ export function ChallengeActivityFlow({
             {hasDistanceMetric ? (
               <>
                 <article><b>{distance.toFixed(2)} km</b><small>DISTÂNCIA</small></article>
-                <article><b>{hasPaceMetric ? pace : `${speedKmH} km/h`}</b><small>{hasPaceMetric ? 'PACE MÉDIO' : 'VELOCIDADE'}</small></article>
+                <article><b>{hasPaceMetric ? pace : `${averageSpeedKmH} km/h`}</b><small>{hasPaceMetric ? 'PACE MÉDIO' : 'VELOCIDADE MÉDIA'}</small></article>
               </>
             ) : (
               <>
@@ -440,4 +512,3 @@ export function ChallengeActivityFlow({
     document.body
   );
 }
-

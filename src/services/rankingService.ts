@@ -65,6 +65,40 @@ async function getSystemStats() {
 }
 
 export const rankingService = {
+  async getEnrollment(): Promise<{ enrolled: boolean; gymId: string; consentVersion?: string | null }> {
+    const user = auth.currentUser;
+    if (!user) return { enrolled: false, gymId: '' };
+    const token = await user.getIdToken();
+    const response = await fetch('/api/ranking-enrollment', { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error('Não foi possível consultar sua adesão ao ranking.');
+    return response.json();
+  },
+
+  async enroll(gymId?: string): Promise<{ enrolled: boolean; gymId: string }> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Autenticação necessária.');
+    const token = await user.getIdToken();
+    const response = await fetch('/api/ranking-enrollment', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gymId: gymId || undefined })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Não foi possível entrar no ranking.');
+    return result;
+  },
+
+  async withdraw(): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Autenticação necessária.');
+    const token = await user.getIdToken();
+    const response = await fetch('/api/ranking-enrollment', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Não foi possível sair do ranking.');
+  },
+
   // #104-107: ranking unificado -- Free e Pro competem na mesma lista, sem
   // parametro de tier separando a busca. Ver api/_handlers/ranking.ts.
   async getRanking(level: 'league' | 'referral' | 'gym' | 'city' | 'global', levelId: string = '', period: 'all' | 'weekly' | 'monthly' = 'all') {
@@ -126,43 +160,15 @@ export const rankingService = {
           } as RankingSnapshot;
         }
 
-        let topUsers = parsed?.topUsers || [];
-
-        // Direct client Firestore fallback if server API returned empty users list
-        if (topUsers.length === 0 && db) {
-          try {
-            const scoreField = period === 'weekly' ? 'weeklyScore' : period === 'monthly' ? 'monthlyScore' : 'score';
-            const usersRef = collection(db, 'users');
-            let q = query(usersRef, orderBy(scoreField, 'desc'), limit(50));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              topUsers = snap.docs.map((d, i) => {
-                const data = d.data();
-                return {
-                  uid: d.id,
-                  displayName: data.displayName || 'Atleta',
-                  photoURL: data.photoURL || '',
-                  score: data[scoreField] || 0,
-                  streak: data.streak || 0,
-                  rank: i + 1,
-                  isSubscribed: data.isSubscribed || false,
-                  subscriptionTier: data.subscriptionTier || 'open',
-                  city: data.city || '',
-                  gymId: data.gymId || '',
-                  positions: data.positions || {}
-                };
-              });
-            }
-          } catch (clientFallbackErr) {
-            console.warn('[Ranking Service] Client Firestore fallback warning:', clientFallbackErr);
-          }
-        }
+        const topUsers = parsed?.topUsers || [];
 
         return {
           id: `${level}_${levelId}`,
           level,
           levelId,
           topUsers,
+          enrolled: parsed?.enrolled === true,
+          gymId: parsed?.gymId || levelId,
           updatedAt: new Date().toISOString()
         } as RankingSnapshot;
       } catch (error: any) {

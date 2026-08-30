@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from '../_lib/common.js';
 import { StoreEngine } from '../_lib/store-engine.js';
+import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -14,13 +15,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (req.method === 'GET') {
-      const items = await StoreEngine.getStoreItems();
-      const inventory = await StoreEngine.getUserInventory(auth.uid);
+      const [items, inventory, coinWallet, coinTransactions] = await Promise.all([
+        StoreEngine.getStoreItems(),
+        StoreEngine.getUserInventory(auth.uid),
+        RewardCoinEngine.getWallet(auth.uid),
+        RewardCoinEngine.getTransactions(auth.uid),
+      ]);
 
       return res.status(200).json({
         success: true,
         items,
-        inventory
+        inventory,
+        coinWallet,
+        coinTransactions,
       });
     }
 

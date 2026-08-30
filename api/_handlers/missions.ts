@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from '../_lib/common.js';
 import { MissionEngine } from '../_lib/mission-engine.js';
+import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -14,13 +15,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (req.method === 'GET') {
+      await MissionEngine.syncUserProgressFromValidatedActivities(auth.uid);
       const missions = await MissionEngine.getMissions();
-      const userProgress = await MissionEngine.getUserMissionProgress(auth.uid);
+      const [userProgress, coinWallet] = await Promise.all([
+        MissionEngine.getUserMissionProgress(auth.uid),
+        RewardCoinEngine.getWallet(auth.uid),
+      ]);
 
       return res.status(200).json({
         success: true,
         missions,
-        userProgress
+        userProgress,
+        coinWallet,
       });
     }
 
@@ -31,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const result = await MissionEngine.claimMissionReward(auth.uid, String(missionId));
       return res.status(200).json({
         success: true,
-        message: `Recompensa resgatada com sucesso! +R$ ${result.rewardCoins} e +${result.rewardXP} XP adicionados!`,
+        message: `Recompensa resgatada: +${result.rewardCoins} Invictus Coins e +${result.rewardXP} XP.`,
         result
       });
     }

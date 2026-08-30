@@ -17,6 +17,9 @@ initSentry();
 import healthHandler from './_handlers/health.js';
 import profileHandler from './_handlers/profile.js';
 import rankingHandler from './_handlers/ranking.js';
+import rankingEnrollmentHandler from './_handlers/ranking-enrollment.js';
+import trainingPlansHandler from './_handlers/training-plans.js';
+import communityChampionshipHandler from './_handlers/community-championship.js';
 import shareHandler from './_handlers/share.js';
 import shareImageHandler from './_handlers/share-image.js';
 import gymsHandler from './_handlers/gyms.js';
@@ -135,6 +138,9 @@ assertHandler('seasonPrizeHandler', seasonPrizeHandler);
 assertHandler('seasonInscriptionHandler', seasonInscriptionHandler);
 assertHandler('profileHandler', profileHandler);
 assertHandler('rankingHandler', rankingHandler);
+assertHandler('rankingEnrollmentHandler', rankingEnrollmentHandler);
+assertHandler('trainingPlansHandler', trainingPlansHandler);
+assertHandler('communityChampionshipHandler', communityChampionshipHandler);
 assertHandler('shareHandler', shareHandler);
 assertHandler('shareImageHandler', shareImageHandler);
 assertHandler('gymsHandler', gymsHandler);
@@ -175,6 +181,15 @@ router.all('/profile', wrap(profileHandler));
 
 console.log('[ROUTE] /ranking', typeof rankingHandler);
 router.all('/ranking', wrap(rankingHandler));
+
+console.log('[ROUTE] /ranking-enrollment', typeof rankingEnrollmentHandler);
+router.all('/ranking-enrollment', wrap(rankingEnrollmentHandler));
+
+console.log('[ROUTE] /training-plans', typeof trainingPlansHandler);
+router.all('/training-plans', wrap(trainingPlansHandler));
+
+console.log('[ROUTE] /community-championship', typeof communityChampionshipHandler);
+router.all('/community-championship', wrap(communityChampionshipHandler));
 
 console.log('[ROUTE] /share', typeof shareHandler);
 router.all('/share', wrap(shareHandler));
@@ -346,6 +361,9 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'health': return await healthHandler(req as any, res as any);
     case 'profile': return await profileHandler(req as any, res as any);
     case 'ranking': return await rankingHandler(req as any, res as any);
+    case 'ranking-enrollment': return await rankingEnrollmentHandler(req as any, res as any);
+    case 'training-plans': return await trainingPlansHandler(req as any, res as any);
+    case 'community-championship': return await communityChampionshipHandler(req as any, res as any);
     case 'gyms': return await gymsHandler(req as any, res as any);
     case 'gyms-join': return await gymsJoinHandler(req as any, res as any);
     case 'gyms-checkin': return await gymsCheckinHandler(req as any, res as any);

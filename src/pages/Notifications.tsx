@@ -1,9 +1,12 @@
-import { Bell, CheckCheck, ChevronRight, Dumbbell, Gift, Info, Medal, Settings, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Bell, CheckCheck, ChevronLeft, Dumbbell, Gift, Info, Medal, Plus, ShieldCheck, TrendingUp, Trophy, UserRound } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { db } from '../firebase';
 import { useUser } from '../UserContext';
+import { InvictusLogo } from '../components/InvictusLogo';
+import './NotificationsNew.css';
 
 const notificationIcons = {
   ranking: TrendingUp,
@@ -50,13 +53,15 @@ export function Notifications() {
     }
   };
 
-  return (
-    <main className="notifications-screen">
+  return createPortal(
+    <main className="notifications-screen notifications-screen-new">
       <header className="notifications-header">
-        <button className="notifications-icon-button" onClick={() => navigate(-1)} aria-label="Voltar"><ChevronRight className="notifications-back" /></button>
-        <h1>NOTIFICAÇÕES</h1>
-        <button className="notifications-icon-button" onClick={() => navigate('/settings')} aria-label="Configurações"><Settings /></button>
+        <button className="notifications-icon-button" onClick={() => navigate(-1)} aria-label="Voltar"><ChevronLeft /></button>
+        <div><InvictusLogo size={42} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div>
+        <span />
       </header>
+
+      <section className="notifications-title"><Bell /><div><small>CENTRAL INVICTUS</small><h1>NOTIFICAÇÕES</h1><p>Acompanhe somente atualizações reais da sua conta e das suas atividades.</p></div></section>
 
       {error && <p className="notifications-data-note text-rose-300" role="alert"><Info /> {error}</p>}
 
@@ -81,6 +86,8 @@ export function Notifications() {
         </section>
       )}
       <p className="notifications-data-note"><Info /> Notificações só aparecem quando geradas por uma ação real no app.</p>
-    </main>
+      <nav className="notifications-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')}><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>
+    </main>,
+    document.body,
   );
 }

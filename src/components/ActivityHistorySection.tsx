@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   History, CheckCircle2, XCircle, AlertCircle, Clock, Dumbbell,
   TrendingUp, MapPin, Flame, Trophy, RefreshCw, Search, Filter,
@@ -445,7 +445,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
   const [shareItem, setShareItem] = useState<ActivityHistoryItem | null>(null);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     const user = auth.currentUser;
     if (!user) {
       setActivities([]);
@@ -649,11 +649,25 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchHistory();
-  }, [refreshKey]);
+    void fetchHistory();
+  }, [fetchHistory, refreshKey]);
+
+  const hasPendingActivity = activities.some((activity) => activity.status === 'pendente');
+  useEffect(() => {
+    if (!hasPendingActivity) return;
+
+    // Enquanto houver uma atividade em análise, atualiza discretamente o
+    // histórico. Assim a decisão de aprovação/recusa aparece sem exigir que o
+    // atleta feche a tela ou toque em "Atualizar". Não consulta quando não há
+    // pendências e interrompe o timer ao desmontar o componente.
+    const intervalId = window.setInterval(() => {
+      void fetchHistory();
+    }, 20_000);
+    return () => window.clearInterval(intervalId);
+  }, [fetchHistory, hasPendingActivity]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

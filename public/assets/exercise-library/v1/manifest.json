@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "assetMaster": "design/exercise-library/references/asset-master-female-v1.png",
+  "animationPolicy": "waiting_for_technical_reviewed_webm",
+  "exercises": [
+    { "id": "barbell_bench_press", "name": "Supino Reto com Barra", "thumb": "barbell_bench_press/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "dumbbell_bench_press", "name": "Supino Reto com Halteres", "thumb": "dumbbell_bench_press/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "incline_dumbbell_press", "name": "Supino Inclinado com Halteres", "thumb": "incline_dumbbell_press/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "standing_cable_fly", "name": "Crucifixo Reto no Cabo", "thumb": "standing_cable_fly/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "pec_deck_fly", "name": "Voador / Peck Deck", "thumb": "pec_deck_fly/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "classic_push_up", "name": "Flexão de Braços Clássica", "thumb": "classic_push_up/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "decline_push_up", "name": "Flexão de Braços Declinada", "thumb": "decline_push_up/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "incline_push_up", "name": "Flexões com Mãos no Banco", "thumb": "incline_push_up/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "barbell_bent_over_row", "name": "Remada Curvada com Barra", "thumb": "barbell_bent_over_row/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "t_bar_row", "name": "Remada Cavalinho Neutra", "thumb": "t_bar_row/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" }
+  ]
+}

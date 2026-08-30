@@ -150,6 +150,15 @@ export class FraudEngine {
         weightPenalty: 10
       });
     }
+    if (gpsReport.suspectedMotorizedTransport) {
+      evidences.push({
+        code: 'SUSPECTED_MOTORIZED_TRANSPORT',
+        category: 'GPS',
+        severity: 'HIGH',
+        description: `O padrão de velocidade (${gpsReport.averageMovingSpeedKmH.toFixed(1)} km/h de média em movimento; pico ${Math.round(gpsReport.maxSpeedKmH)} km/h) pode corresponder a veículo motorizado.`,
+        weightPenalty: 55
+      });
+    }
 
     // 3. Sensor Analysis
     const sensorReport = SensorEngine.evaluate(activity);

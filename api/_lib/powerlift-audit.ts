@@ -8,3 +8,10 @@ export function resolvePowerLiftAuditStatus(decision: unknown, confidence: unkno
   if (decision === 'rejected') return 'rejected';
   return 'manual_review';
 }
+
+/** Frames escolhidos/extráidos no cliente não possuem vínculo criptográfico
+ * com o vídeo que chegou ao Storage. Eles podem ajudar a reprovar ou priorizar
+ * uma revisão, mas nunca homologam um levantamento automaticamente. */
+export function resolveClientSampledFramesStatus(decision: unknown): PowerLiftAuditDecision {
+  return decision === 'rejected' ? 'rejected' : 'manual_review';
+}

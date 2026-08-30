@@ -82,7 +82,7 @@ export const MyChampionshipDetail: React.FC = () => {
     if (champ.type === 'run_elite_corrida') {
       navigate('/challenges?type=cardio');
     } else {
-      navigate('/challenges?type=workout');
+      navigate(`/musculacao?source=championship&championshipId=${encodeURIComponent(champ.id)}`);
     }
   };
 

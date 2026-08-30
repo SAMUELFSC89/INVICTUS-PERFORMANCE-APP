@@ -288,6 +288,9 @@ export interface ActivitySession {
   cardioType?: string;
   cardioTypeLabel?: string;
   muscleGroup?: string;
+  workoutPlanId?: string;
+  workoutId?: string;
+  plannedExercises?: import('./types/workoutPlan').PlannedExercise[];
   isIndoorCardio?: boolean;
   requiresGpsDistance?: boolean;
   smartwatchData?: any;
@@ -313,7 +316,7 @@ export interface ActivitySession {
   checkInId?: string;
   checkpoints: {
     timestamp: string;
-    location: { lat: number; lng: number; accuracy?: number };
+    location: { lat: number; lng: number; accuracy?: number; speedKmH?: number };
   }[];
   // #324: pausa real da sessao ativa (semaforo, cadarco, banheiro). O fluxo em
   // producao (Challenges.tsx/ChallengeActivityFlow.tsx) nao tinha pausa --
@@ -440,13 +443,15 @@ export interface Referral {
   reason?: string;
 }
 
-export interface RankingSnapshot {
-  id: string;
-  level: 'league' | 'referral';
-  levelId: string;
-  topUsers: RankingEntry[];
-  updatedAt: string;
-}
+  export interface RankingSnapshot {
+    id: string;
+    level: 'league' | 'referral' | 'gym' | 'city' | 'global';
+    levelId: string;
+    topUsers: RankingEntry[];
+    updatedAt: string;
+    enrolled?: boolean;
+    gymId?: string;
+  }
 
 export interface Gym {
   id: string;
@@ -581,6 +586,27 @@ export interface UserWallet {
   updatedAt: string;
 }
 
+// Loyalty currency used only inside the Invictus rewards ecosystem. It has no
+// cash value, cannot be withdrawn and is intentionally isolated from UserWallet.
+export interface RewardCoinWallet {
+  userId: string;
+  balance: number;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+  updatedAt: string;
+}
+
+export interface RewardCoinTransaction {
+  id: string;
+  userId: string;
+  amount: number;
+  type: 'credit' | 'debit';
+  origin: IVCoinTransactionOrigin;
+  description: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
 export interface WithdrawalConfig {
   minWithdrawalAmount: number; // Valor mínimo de saque em R$ (Reais). Default: 20
   maxDailyWithdrawalAmount: number; // Valor máximo de saque por dia em R$ (Reais). Default: 1000
@@ -682,4 +708,3 @@ export interface UserInventoryItem {
   itemCategory: string;
   purchasedAt: string;
 }
-

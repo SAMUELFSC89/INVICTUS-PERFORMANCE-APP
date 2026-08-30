@@ -1,142 +1,78 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, cors, verifyAuth } from '../_lib/common.js';
+import { cors, db, verifyAuth } from '../_lib/common.js';
 
-// Global Process-Level Caching for Scalability (3-minute TTL)
-const serverRankingCache = new Map<string, { topUsers: any[]; timestamp: number }>();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+type CachedRanking = { topUsers: any[]; timestamp: number };
+const serverRankingCache = new Map<string, CachedRanking>();
+const CACHE_TTL = 3 * 60 * 1000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Método não permitido.' });
 
   const auth = await verifyAuth(req);
-  // Auth is optional for public ranking views
+  if (!auth) return res.status(401).json({ error: 'Autenticação necessária.' });
+  if (!db) return res.status(500).json({ error: 'Banco de dados indisponível.' });
 
-  const level = (req.query.level as string) || 'global';
-  const levelId = (req.query.levelId as string) || '';
-  const period = (req.query.period as string) || 'all';
-  // #104-107: ranking unificado -- Free e Pro competem na mesma lista, um
-  // unico criterio de pontuacao (ver src/lib/seasonUtils.ts). O parametro
-  // `tier` ainda pode chegar de clientes antigos em cache, mas nao filtra
-  // mais nada -- plano vira badge visual no card do usuario, nao um corte de
-  // lista. Ver api/_lib/aggregation.ts::updateRankings, que ja gerava o
-  // snapshot pre-calculado sem filtro de subscriptionTier.
+  const period = req.query.period === 'monthly' ? 'monthly' : req.query.period === 'all' ? 'all' : 'weekly';
   const scoreField = period === 'weekly' ? 'weeklyScore' : period === 'monthly' ? 'monthlyScore' : 'score';
-  const cacheKey = `${level}_${levelId}_${period}_${scoreField}`;
-  const now = Date.now();
 
   try {
-    console.log(`[Ranking API] Query: level=${level}, levelId=${levelId}, period=${period}`);
-    
-    if (!db) {
-      console.error('[Ranking API] Database not initialized');
-      return res.status(500).json({ error: 'Falha na inicialização do banco de dados.' });
-    }
-
-    // 1. Check process-level cache first
-    const cached = serverRankingCache.get(cacheKey);
-    if (cached && (now - cached.timestamp < CACHE_TTL)) {
-      console.log(`[Ranking API] Serving from in-memory cache for ${cacheKey}`);
-      return res.status(200).json({ topUsers: cached.topUsers, cached: true });
-    }
-
-    // 2. Attempt to fetch pre-calculated snapshot for global levels (lista unificada, todos os planos)
-    if (level === 'global' || level === 'league') {
-      const snapshotId = `${level === 'league' ? 'global' : level}_${period}`;
-      const snapshotRef = db.collection('aggregated_rankings').doc(snapshotId);
-      const snapshotSnap = await snapshotRef.get();
-
-      if (snapshotSnap.exists) {
-        const snapshotData = snapshotSnap.data();
-        const updatedAt = snapshotData?.updatedAt;
-        const updatedAtDate = updatedAt ? new Date(updatedAt) : null;
-
-        if (updatedAtDate) {
-          console.log(`[Ranking API] Serving pre-calculated snapshot for ${snapshotId}`);
-          const topUsers = snapshotData?.topUsers || [];
-          serverRankingCache.set(cacheKey, { topUsers, timestamp: now });
-          return res.status(200).json({ topUsers });
-        }
-      }
-    }
-
-    let query: any = db.collection('users');
-
-    if (level === 'league' && levelId) {
-      query = query.where('league', '==', levelId);
-    } else if (level === 'gym' && levelId) {
-      query = query.where('gymId', '==', levelId);
-    } else if (level === 'city' && levelId) {
-      query = query.where('city', '==', levelId);
-    }
-
-    console.log('[Ranking API] Executing query...');
-    const snap = await query.orderBy(scoreField, 'desc').limit(500).get();
-    console.log(`[Ranking API] Query finished. Found ${snap.size} users.`);
-
-    // Ranking unificado: todos os usuarios da query entram na mesma lista,
-    // independente de plano (Free/Pro). Sem limite de 50 -- mostra todos os
-    // participantes.
-    const topUsers = snap.docs.map((d: any, i: number) => {
-      const data = d.data();
-      return {
-        uid: d.id,
-        displayName: data.displayName || 'Atleta',
-        photoURL: data.photoURL || '',
-        score: data[scoreField] || 0,
-        streak: data.streak || 0,
-        rank: i + 1,
-        isSubscribed: data.isSubscribed || false,
-        subscriptionTier: data.subscriptionTier || 'open',
-        city: data.city || '',
-        gymId: data.gymId || '',
-        positions: data.positions || {}
-      };
-    });
-
-    // Populate the memory cache
-    serverRankingCache.set(cacheKey, { topUsers, timestamp: now });
-
-    return res.status(200).json({ topUsers });
-  } catch (error: any) {
-    const errorMsg = error?.message || '';
-    const isQuotaError = errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('Quota limit exceeded');
-    const isPermissionError = errorMsg.includes('PERMISSION_DENIED') || error?.code === 7 || error?.code === 'permission-denied';
-    
-    // Safety Net: If Database has transient error, fallback to expired in-memory cache
-    const staleCached = serverRankingCache.get(cacheKey);
-    if (staleCached) {
-      console.warn(`[Ranking API] Serving expired cache for ${cacheKey} due to live db fetch error.`);
-      return res.status(200).json({ topUsers: staleCached.topUsers, stale: true });
-    }
-
-    if (isPermissionError) {
-      console.warn('[Ranking API] Permissão de servidor Firestore pendente de sincronização. Retornando resposta segura.');
+    const ownEnrollmentSnapshot = await db.collection('gym_ranking_enrollments').doc(auth.uid).get();
+    const ownEnrollment = ownEnrollmentSnapshot.exists ? ownEnrollmentSnapshot.data() : undefined;
+    if (ownEnrollment?.enrolled !== true) {
       return res.status(200).json({
         topUsers: [],
-        message: 'Ranking em atualização.'
+        enrolled: false,
+        message: 'Entre voluntariamente no ranking para comparar seu IGA com atletas da sua academia.'
       });
     }
 
-    if (isQuotaError) {
-       return res.status(429).json({
-         error: 'Limite de tráfego excedido temporariamente (Quota).',
-         code: 'QUOTA_EXHAUSTED',
-         fallback: true,
-         topUsers: []
-       });
+    const gymId = String(ownEnrollment.gymId || '').trim();
+    if (!gymId) return res.status(409).json({ topUsers: [], enrolled: false, error: 'Adesão sem academia vinculada.' });
+
+    const cacheKey = `${gymId}_${period}_${scoreField}`;
+    const now = Date.now();
+    const cached = serverRankingCache.get(cacheKey);
+    if (cached && now - cached.timestamp < CACHE_TTL && cached.topUsers.some((entry) => entry.uid === auth.uid)) {
+      return res.status(200).json({ topUsers: cached.topUsers, enrolled: true, gymId, cached: true });
     }
 
-    console.error('Ranking API Error:', error);
+    const enrollments = await db.collection('gym_ranking_enrollments')
+      .where('gymId', '==', gymId)
+      .limit(500)
+      .get();
 
-    // Check for common index error in Firestore
-    const isIndexError = error.message?.includes('index') || error.code === 9;
-    
-    res.setHeader('Content-Type', 'application/json');
-    return res.status(500).json({ 
-      error: isIndexError 
-        ? 'Erro de Índice: O ranking requer um índice composto no Firestore. Por favor, verifique o console do Firebase.' 
-        : (error.message || 'Falha ao carregar ranking'),
-      tip: isIndexError ? 'Abra o link de erro no log do servidor para criar o índice automaticamente.' : undefined,
+    const userRefs = enrollments.docs
+      .filter((entry) => entry.data().enrolled === true)
+      .map((entry) => db.collection('users').doc(entry.id));
+    const userSnapshots = userRefs.length ? await db.getAll(...userRefs) : [];
+    const topUsers = userSnapshots
+      .filter((snapshot) => snapshot.exists)
+      .map((snapshot) => {
+        const data = snapshot.data() || {};
+        return {
+          uid: snapshot.id,
+          displayName: data.displayName || 'Atleta',
+          photoURL: data.photoURL || '',
+          score: Number(data[scoreField] || 0),
+          streak: Number(data.streak || 0),
+          isSubscribed: data.isSubscribed === true,
+          subscriptionTier: data.subscriptionTier || 'open',
+          gymId,
+          gymName: data.gymName || data.gym || '',
+          positions: data.positions || {}
+        };
+      })
+      .sort((left, right) => right.score - left.score)
+      .map((entry, index) => ({ ...entry, rank: index + 1 }));
+
+    serverRankingCache.set(cacheKey, { topUsers, timestamp: now });
+    return res.status(200).json({ topUsers, enrolled: true, gymId });
+  } catch (error: any) {
+    console.error('[Ranking API] Falha ao carregar ranking opt-in:', error);
+    const isQuotaError = String(error?.message || '').includes('RESOURCE_EXHAUSTED');
+    return res.status(isQuotaError ? 429 : 500).json({
+      error: isQuotaError ? 'Ranking temporariamente sobrecarregado.' : 'Falha ao carregar ranking.',
       topUsers: []
     });
   }

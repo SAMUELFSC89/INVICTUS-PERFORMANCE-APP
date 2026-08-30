@@ -17,6 +17,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		94437AFF789B032EB84C2AA7 /* InvictusActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */; };
 		31B212FA3C7D8F9E093F73B2 /* InvictusActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0E5B569400740EC0C5741A /* InvictusActivityPlugin.swift */; };
+		A11CEB01A11CEB01A11CEB01 /* InvictusBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CEF01A11CEF01A11CEF01 /* InvictusBridgeViewController.swift */; };
 		EE51785F4C7BFDDB632AAA0B /* InvictusActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */; };
 		4D3AF0CEB5FAAB5306177083 /* InvictusActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9CAF07388650EC3347EB65 /* InvictusActivityWidgetBundle.swift */; };
 		5DBA1CA4E785731A2185BD97 /* InvictusActivityLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98552E9CC7C6A0DCB3DC7E2 /* InvictusActivityLiveActivityWidget.swift */; };
@@ -61,6 +62,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityAttributes.swift; sourceTree = "<group>"; };
 		BD0E5B569400740EC0C5741A /* InvictusActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityPlugin.swift; sourceTree = "<group>"; };
+		A11CEF01A11CEF01A11CEF01 /* InvictusBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusBridgeViewController.swift; sourceTree = "<group>"; };
 		8C9CAF07388650EC3347EB65 /* InvictusActivityWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityWidgetBundle.swift; sourceTree = "<group>"; };
 		A98552E9CC7C6A0DCB3DC7E2 /* InvictusActivityLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityLiveActivityWidget.swift; sourceTree = "<group>"; };
 		4265369A0FD40E943B92A0AC /* InvictusActivityIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvictusActivityIntents.swift; sourceTree = "<group>"; };
@@ -114,6 +116,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				E3CA8A4CE6C6D0E3F5218E95 /* InvictusActivityAttributes.swift */,
 				BD0E5B569400740EC0C5741A /* InvictusActivityPlugin.swift */,
+				A11CEF01A11CEF01A11CEF01 /* InvictusBridgeViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -251,6 +254,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				94437AFF789B032EB84C2AA7 /* InvictusActivityAttributes.swift in Sources */,
 				31B212FA3C7D8F9E093F73B2 /* InvictusActivityPlugin.swift in Sources */,
+				A11CEB01A11CEB01A11CEB01 /* InvictusBridgeViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

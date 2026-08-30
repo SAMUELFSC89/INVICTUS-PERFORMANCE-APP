@@ -183,10 +183,10 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
             InvictusActivityStore.shared.currentActivityId = activity.id
             call.resolve()
         } catch {
-            // Best-effort: a Live Activity é um extra -- nunca deve travar o
-            // fluxo real de início da atividade.
             print("[InvictusActivityPlugin] start falhou: \(error)")
-            call.resolve()
+            // O serviço JS captura essa rejeição sem interromper o treino,
+            // mas o erro deixa de ficar invisível nos logs do dispositivo.
+            call.reject("Não foi possível iniciar a Live Activity.", nil, error)
         }
     }
 

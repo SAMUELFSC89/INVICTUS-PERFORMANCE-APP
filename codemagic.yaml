@@ -103,7 +103,15 @@ workflows:
           set -e
           plutil -lint ios/App/App/Info.plist
           plutil -lint ios/App/App/App.entitlements
+          plutil -lint ios/App/InvictusActivityWidget/Info.plist
+          plutil -lint ios/App/InvictusActivityWidget/InvictusActivityWidget.entitlements
           grep -q "CODE_SIGN_ENTITLEMENTS = App/App.entitlements" ios/App/App.xcodeproj/project.pbxproj
+          grep -q 'customClass="InvictusBridgeViewController"' ios/App/App/Base.lproj/Main.storyboard
+          grep -q "InvictusBridgeViewController.swift in Sources" ios/App/App.xcodeproj/project.pbxproj
+          grep -q "InvictusActivityWidget.appex in Embed Foundation Extensions" ios/App/App.xcodeproj/project.pbxproj
+          grep -q "group.com.desafiosemdesculpa.app.activity" ios/App/App/App.entitlements
+          grep -q "group.com.desafiosemdesculpa.app.activity" ios/App/InvictusActivityWidget/InvictusActivityWidget.entitlements
+          grep -q "NSSupportsLiveActivities" ios/App/App/Info.plist
 
       - name: Instalar dependencias nativas (CocoaPods so se houver Podfile)
         script: |
