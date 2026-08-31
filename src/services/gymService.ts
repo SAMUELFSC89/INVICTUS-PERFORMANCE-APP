@@ -79,23 +79,6 @@ export const gymService = {
       }));
     } catch (error: any) {
       console.error('[GymService] Error searching gyms:', error);
-      
-  // Diagnostic: Check if API is alive at all
-        console.log(`[GymService] Heartbeat diagnostic: fetch(/api/heartbeat)`);
-        const heartbeatRes = await fetch('/api/heartbeat').catch((e) => {
-          console.error('[GymService] /api/heartbeat fetch exception:', e);
-          return null;
-        });
-        
-        console.log(`[GymService] Health diagnostic: fetch(/api/health?check=health)`);
-        const healthRes = await fetch('/api/health?check=health').catch((e) => {
-          console.error('[GymService] /api/health fetch exception:', e);
-          return null;
-        });
-        
-        if (heartbeatRes) console.log(`[GymService] Heartbeat status: ${heartbeatRes.status}`);
-        if (healthRes) console.log(`[GymService] Health status: ${healthRes.status}`);
-      
       throw error;
     }
   },

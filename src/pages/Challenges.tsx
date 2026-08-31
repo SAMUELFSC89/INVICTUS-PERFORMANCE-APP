@@ -29,6 +29,8 @@ import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib
 import { ACHIEVEMENTS } from '../achievements';
 import { ChallengesHubNew } from '../components/ChallengesHubNew';
 import { ActivityHistoryPageNew } from '../components/ActivityHistoryPageNew';
+import { communityChampionshipService } from '../services/communityChampionshipService';
+import { championshipService } from '../services/championshipService';
 
 export type ChallengeCategory =
   | 'all'
@@ -178,6 +180,18 @@ export function Challenges() {
   const [error, setError] = useState<string | null>(null);
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
   const [presenceCheckRequired, setPresenceCheckRequired] = useState(false);
+  const [championshipCheckInRequired, setChampionshipCheckInRequired] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      communityChampionshipService.status().catch(() => ({ enrolled: false, eventId: '' })),
+      championshipService.getUserRegistrations().catch(() => []),
+    ]).then(([community, registrations]) => {
+      if (active) setChampionshipCheckInRequired(Boolean(community.enrolled || registrations.some((item) => item.status === 'ACTIVE')));
+    });
+    return () => { active = false; };
+  }, [profile?.uid]);
   const [presenceCheckData, setPresenceCheckData] = useState<{ id: string; prompt: string } | null>(null);
   const [completion, setCompletion] = useState<ActivityCompletion | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -438,17 +452,20 @@ export function Challenges() {
   };
 
   // Start Session (Workout / Cardio)
-  const handleStartActivity = async (type: 'workout' | 'cardio') => {
+  const handleStartActivity = async (type: 'workout' | 'cardio', useCheckIn = false) => {
     setStartActivityError(null);
     setError(null);
     setStartingActivity(true);
     try {
       await activityService.requestMotionPermission();
+      const confirmedCheckIn = type === 'workout' && (useCheckIn || championshipCheckInRequired)
+        ? await activityService.performGymCheckIn()
+        : null;
       const session = await activityService.startSession(
         type,
-        undefined,
+        confirmedCheckIn?.location,
         type === 'cardio' ? selectedCardioOption.id : undefined,
-        undefined,
+        confirmedCheckIn?.checkInId,
         undefined,
         type === 'workout' ? selectedMuscleGroup : undefined
       );
@@ -726,12 +743,12 @@ export function Challenges() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const handleFlowStart = (type: 'workout' | 'cardio') => {
+  const handleFlowStart = (type: 'workout' | 'cardio', options?: { checkIn?: boolean }) => {
     if (type === 'workout' && flowScreen === 'workout-details') {
       setFlowScreen('workout-checkin');
       return;
     }
-    handleStartActivity(type);
+    handleStartActivity(type, Boolean(options?.checkIn));
   };
 
   const handleFlowBack = () => {
@@ -1043,6 +1060,7 @@ export function Challenges() {
           gpsSignal={gpsSignal}
           gpsPermissionDenied={gpsPermissionDenied}
           gymName={profile?.gymName || 'Sua academia'}
+          checkInRequired={championshipCheckInRequired}
           completedChallengeIds={Object.keys(submissions)}
           completion={completion}
           startError={startActivityError}

@@ -13,6 +13,26 @@ import { submitActivityToActiveChampionships } from '../../_lib/championship-sco
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from '../../_lib/geofence-engine.js';
 import { resolverPerfilValidacao, resolveModality } from '../../_lib/modality-config.js';
 import { GpsEngine } from '../../_lib/gps-engine.js';
+import { db } from '../../_lib/common.js';
+
+async function hasActiveChampionshipEnrollment(userId: string): Promise<boolean> {
+  if (!db) return false;
+  const [community, paid] = await Promise.all([
+    db.collection('community_championship_enrollments').doc(`community_friends_v1_${userId}`).get(),
+    db.collection('championship_registrations').where('userId', '==', userId).get(),
+  ]);
+  return community.data()?.status === 'active' || paid.docs.some((item) => item.data()?.status === 'paga');
+}
+
+async function validateCheckInOwnership(userId: string, checkInId: string): Promise<void> {
+  if (!db) throw new AppError('Não foi possível validar o check-in agora.', 503);
+  const snap = await db.collection('gym_checkins').doc(checkInId).get();
+  const data = snap.data();
+  const expiresAt = data?.expiresAt ? new Date(data.expiresAt).getTime() : 0;
+  if (!snap.exists || data?.userId !== userId || !['confirmed', 'suspicious'].includes(data?.status) || expiresAt < Date.now()) {
+    throw new AppError('Este check-in não é válido ou expirou. Faça um novo check-in presencial.', 400);
+  }
+}
 
 // #71: request.activityData.startTime e tipado como `Date | string` (DTO),
 // mas registrarAmostrasDeAtividade exige `timestamp: string`. O padrao
@@ -194,7 +214,15 @@ export class ValidateActivityService {
     // cliente para uma checagem antifraude que o proprio cliente decide se
     // roda -- reaproveita aqui o mesmo motor/limites (80m raio, 30m precisao)
     // ja usado no check-in.
-    if (request.activityData.type === 'workout' && !rawActivity.checkInId) {
+    const championshipCheckInRequired = request.activityData.type === 'workout'
+      ? await hasActiveChampionshipEnrollment(request.userId)
+      : false;
+
+    if (request.activityData.type === 'workout' && rawActivity.checkInId) {
+      await validateCheckInOwnership(request.userId, rawActivity.checkInId);
+    }
+
+    if (request.activityData.type === 'workout' && championshipCheckInRequired && !rawActivity.checkInId) {
       const gymId = (user as any).gymId;
       const gymLocation = (user as any).gymLocation;
       const geofenceResult = validateGeofenceCheckin(

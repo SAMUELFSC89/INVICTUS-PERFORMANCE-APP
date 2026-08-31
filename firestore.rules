@@ -10,15 +10,9 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Simplified admin check for list rules to avoid exists()/get() in O(N) loops
-    function isHardcodedAdmin() {
-      return isSignedIn() && request.auth.token.email in ["samuelfsc89@gmail.com", "mucafsc89@gmail.com"];
-    }
-
     function isAdmin() {
-      return isHardcodedAdmin() || 
-        (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin');
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin';
     }
 
     function incoming() {
@@ -43,7 +37,7 @@ service cloud.firestore {
               (data.email == request.auth.token.email) &&
               (data.uid == request.auth.uid) && // Identity Integrity
               (data.get('isAdmin', false) == false) &&
-              (data.get('role', 'user') == 'user' || (data.get('role', 'user') == 'admin' && data.email in ["samuelfsc89@gmail.com", "mucafsc89@gmail.com"])); // Prevent self-elevated roles except for bootstrapping admin
+              (data.get('role', 'user') == 'user');
     }
 
     function isValidWorkout(data) {
@@ -140,7 +134,7 @@ service cloud.firestore {
     // Workouts Collection
     match /workouts/{workoutId} {
       allow get: if isSignedIn() && isValidId(workoutId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       // Atividades que afetam IGA, saúde e antifraude são escritas somente
       // pelo backend (Admin SDK), após validação.
       allow create, update: if isAdmin();
@@ -151,13 +145,34 @@ service cloud.firestore {
     // exerciseIds e impede que a IA persista exercícios inventados.
     match /training_plans/{planId} {
       allow get: if isSignedIn() && isValidId(planId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create, update, delete: if isAdmin();
     }
 
     match /community_championship_enrollments/{enrollmentId} {
       allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow list, create, update, delete: if isAdmin();
+    }
+
+    // Campeonato por grupo/academia: placar, auditoria reforçada do Top 3 e
+    // premiações são calculados exclusivamente pelo servidor.
+    match /gym_championship_scores/{scoreId} {
+      allow read, write: if false;
+    }
+    match /gym_championship_results/{resultId} {
+      allow read, write: if false;
+    }
+    match /gym_championship_config/{configId} {
+      allow read, write: if false;
+    }
+    match /reward_coin_economy/{configId} {
+      allow read, write: if false;
+    }
+    match /reward_coin_monthly_counters/{counterId} {
+      allow read, write: if false;
+    }
+    match /mission_events/{eventId} {
+      allow read, write: if false;
     }
 
     // Loyalty currency is server-managed. It is completely separate from the
@@ -169,7 +184,7 @@ service cloud.firestore {
 
     match /reward_coin_transactions/{transactionId} {
       allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if isAdmin();
     }
 
@@ -201,7 +216,7 @@ service cloud.firestore {
     // Diets Collection
     match /diets/{dietId} {
       allow get: if isSignedIn() && isValidId(dietId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       
       allow create: if isSignedIn() && isValidId(dietId) && isValidDiet(incoming());
       allow update: if isSignedIn() && isOwner(existing().userId) && isValidDiet(incoming());
@@ -220,7 +235,7 @@ service cloud.firestore {
     // Meal Logs Collection
     match /meal_logs/{id} {
       allow get: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && isValidId(id) && incoming().userId == request.auth.uid;
       allow update: if isOwner(existing().userId) || isAdmin();
       allow delete: if isOwner(resource.data.userId) || isAdmin();
@@ -229,7 +244,7 @@ service cloud.firestore {
     // Daily Nutrition Summaries Collection
     match /daily_nutrition_summaries/{id} {
       allow get: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && isValidId(id) && incoming().userId == request.auth.uid;
       allow update: if isOwner(existing().userId) || isAdmin();
       allow delete: if isOwner(resource.data.userId) || isAdmin();
@@ -364,7 +379,7 @@ service cloud.firestore {
     // User Elite Challenges
     match /user_elite_challenges/{id} {
       allow get: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && isValidId(id) && incoming().userId == request.auth.uid;
       allow update: if isSignedIn() && isValidId(id) && (resource.data.userId == request.auth.uid || isAdmin());
       allow delete: if isAdmin();
@@ -381,7 +396,7 @@ service cloud.firestore {
     // Activities (Strava/Manual/GPS)
     match /activities/{activityId} {
       allow get: if isSignedIn() && isValidId(activityId) && (resource.data.user_id == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.user_id == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
       // Created and updated via server-side API only
       allow write: if isAdmin();
     }
@@ -405,14 +420,14 @@ service cloud.firestore {
     // Wearable Unified Activities
     match /wearable_activities/{activityId} {
       allow get: if isSignedIn() && isValidId(activityId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if isAdmin();
     }
 
     // Strava Activities
     match /strava_activities/{activityId} {
       allow get: if isSignedIn() && isValidId(activityId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if isAdmin();
     }
 
@@ -433,7 +448,7 @@ service cloud.firestore {
     // Gym Check-ins Collection
     match /gym_checkins/{checkInId} {
       allow get: if isSignedIn() && isValidId(checkInId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if isAdmin();
     }
 
@@ -487,7 +502,7 @@ service cloud.firestore {
     // Biometric Metrics Collection
     match /biometric_metrics/{metricId} {
       allow get: if isSignedIn() && isValidId(metricId) && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isHardcodedAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow write: if isAdmin();
     }
 

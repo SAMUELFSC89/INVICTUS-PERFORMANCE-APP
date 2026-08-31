@@ -3,29 +3,23 @@ import { Capacitor } from '@capacitor/core';
 import { 
   auth, 
   db, 
-  onAuthStateChanged, 
   signInWithPopup, 
   signInWithRedirect, 
   getRedirectResult, 
   GoogleAuthProvider, 
-  FacebookAuthProvider, 
-  OAuthProvider, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  sendEmailVerification,
-  signOut
+  sendEmailVerification
 } from '../firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { purchasePerformanceSubscription } from '../lib/revenuecat';
 import { UserProfile } from '../types';
-import { fitnessService } from '../services/fitnessService';
-import { Mail, Lock, User, Phone, MapPin, CheckCircle, ArrowLeft, Share2, ExternalLink, Zap, Calendar, Fingerprint, CreditCard, AlertTriangle, Loader2, LogOut, RefreshCw, Sparkles } from 'lucide-react';
+import { Lock, User, MapPin, CheckCircle, Calendar, Fingerprint, AlertTriangle, Loader2, LogOut, Sparkles } from 'lucide-react';
 import { referralService } from '../services/referralService';
-import { runningService } from '../services/runningService';
-import { rankingService } from '../services/rankingService';
 import { useUser } from '../UserContext';
 import { InvictusLogo } from './InvictusLogo';
+import { AuthExperience, RegistrationField } from './AuthExperience';
 import { CURRENT_LEGAL_VERSION } from '../lib/legalDocuments';
 
 const normalizeString = (str: string) => 
@@ -71,7 +65,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Paywall states
   const [pendingOrder, setPendingOrder] = useState<any>(null);
-  const [checkingPayment, setCheckingPayment] = useState(false);
   const [paywallLoading, setPaywallLoading] = useState(false);
   const [paywallError, setPaywallError] = useState('');
   const [paymentCheckMsg, setPaymentCheckMsg] = useState('');
@@ -87,9 +80,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
-  const [weeklyFrequency, setWeeklyFrequency] = useState<UserProfile['weeklyFrequency']>('3-4');
-  const [physicalSelfAssessment, setPhysicalSelfAssessment] = useState<UserProfile['bodySelfAssessment']>('normal');
-  const [objective, setObjective] = useState<UserProfile['objective']>('emagrecer');
+  const [weeklyFrequency] = useState<UserProfile['weeklyFrequency']>('3-4');
+  const [physicalSelfAssessment] = useState<UserProfile['bodySelfAssessment']>('normal');
+  const [objective] = useState<UserProfile['objective']>('emagrecer');
   const [sex, setSex] = useState<UserProfile['sex']>('male');
   const [preferredPlan, setPreferredPlan] = useState<'open' | 'performance'>('open');
   const [whatsappOptIn, setWhatsappOptIn] = useState(true);
@@ -100,8 +93,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [registrationStep, setRegistrationStep] = useState(1);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<'invictus_open' | 'invictus_performance'>('invictus_open');
-
-  const totalSteps = 4;
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -202,7 +193,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return message.replace(/^Firebase:\s*/, '') || 'Ocorreu um erro ao processar. Tente novamente.';
   };
 
-  const handleSocialLogin = async (providerName: 'google') => {
+  const handleSocialLogin = async () => {
     if (isLoggingIn) return;
     setError('');
     setIsLoggingIn(true);
@@ -273,9 +264,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         }
       }
       setResetEmailSent(true);
-      console.log(`[AUTH] [RESET_PASSWORD] [${email}] [SUCCESS] E-mail de redefinição enviado`);
+      console.log('[AUTH] [RESET_PASSWORD] [SUCCESS] E-mail de redefinição enviado');
     } catch (err: any) {
-      console.error(`[AUTH] [RESET_PASSWORD] [${email}] [FAILURE] Erro ao enviar e-mail: ${err.message}`);
+      console.error(`[AUTH] [RESET_PASSWORD] [FAILURE] Erro ao enviar e-mail: ${err.message}`);
       setError(formatAuthError(err));
     } finally {
       setLoading(false);
@@ -290,7 +281,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       const creds = await signInWithEmailAndPassword(auth, email, password);
       console.log(`[AUTH] [LOGIN] [${creds.user.uid}] [SUCCESS] Login realizado via e-mail e senha`);
     } catch (err: any) {
-      console.error(`[AUTH] [LOGIN] [${email}] [FAILURE] Erro ao autenticar: ${err.message}`);
+      console.error(`[AUTH] [LOGIN] [FAILURE] Erro ao autenticar: ${err.message}`);
       setError(formatAuthError(err));
     } finally {
       setLoading(false);
@@ -377,17 +368,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         termsAcceptedAt: new Date().toISOString(),
         whatsappEnabled: whatsappOptIn,
         phoneNumber: whatsapp,
-        plano: 'Nenhum',
-        currentPlan: 'Nenhum',
-        assinatura: 'Inativa',
-        subscriptionStatus: 'inactive',
+        plano: preferredPlan === 'open' ? 'Invictus Open' : 'Nenhum',
+        currentPlan: preferredPlan === 'open' ? 'invictus_open' : 'Nenhum',
+        assinatura: preferredPlan === 'open' ? 'Ativa' : 'Inativa',
+        subscriptionStatus: preferredPlan === 'open' ? 'active_basic' : 'inactive',
         status: 'Ativo',
         paymentStatus: 'Não aplicável',
         statusPagamento: 'Não aplicável',
         premium: false,
         performance: false,
-        isSubscribed: false,
-        subscriptionTier: 'Nenhum',
+        isSubscribed: preferredPlan === 'open',
+        subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
         role: 'user',
         league: 'Comunidade Invictus',
         score: 10,
@@ -431,7 +422,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       if (err?.code === 'auth/email-already-in-use' || err?.message?.includes('email-already-in-use')) {
-        console.warn(`[AUTH] [REGISTER] Email em uso: ${email}. Verificando se perfil existe ou se é reativação de conta...`);
+        console.warn('[AUTH] [REGISTER] E-mail em uso. Verificando se o perfil existe ou se é uma reativação...');
         try {
           // Attempt login with the provided credentials
           const signInRes = await signInWithEmailAndPassword(auth, email, password);
@@ -466,17 +457,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
               termsAccepted: true,
               whatsappEnabled: whatsappOptIn,
               phoneNumber: whatsapp,
-              plano: 'Nenhum',
-              currentPlan: 'Nenhum',
-              assinatura: 'Inativa',
-              subscriptionStatus: 'inactive',
+              plano: preferredPlan === 'open' ? 'Invictus Open' : 'Nenhum',
+              currentPlan: preferredPlan === 'open' ? 'invictus_open' : 'Nenhum',
+              assinatura: preferredPlan === 'open' ? 'Ativa' : 'Inativa',
+              subscriptionStatus: preferredPlan === 'open' ? 'active_basic' : 'inactive',
               status: 'Ativo',
               paymentStatus: 'Não aplicável',
               statusPagamento: 'Não aplicável',
               premium: false,
               performance: false,
-              isSubscribed: false,
-              subscriptionTier: 'Nenhum',
+              isSubscribed: preferredPlan === 'open',
+              subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
               role: 'user',
               league: 'Comunidade Invictus',
               score: 10,
@@ -534,252 +525,38 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (isGlobalLoading && !user) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] flex flex-col items-center justify-center gap-8 p-12 z-[9999] relative overflow-hidden">
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[120px] animate-pulse" />
-        </div>
-        <div className="relative z-10 flex flex-col items-center gap-6">
-          <div className="relative">
-            <div className="w-24 h-24 bg-surface-container-high rounded-full flex items-center justify-center shadow-2xl border border-white/5">
-              <Zap size={48} className="text-primary animate-pulse fill-current" />
-            </div>
-            <div className="absolute -inset-2 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-          </div>
-          <div className="text-center space-y-2">
-            <h2 className="font-headline italic font-black text-2xl text-white uppercase tracking-tighter">
-              {isRedirecting ? 'FINALIZANDO LOGIN...' : isLoggingIn ? 'AUTENTICANDO...' : 'CARREGANDO PERFIL...'}
-            </h2>
-          </div>
-        </div>
-        <div className="absolute bottom-12 left-0 right-0 px-8 text-center">
-          <button onClick={() => window.location.reload()} className="text-white/40 text-[9px] uppercase font-black tracking-widest hover:text-white transition-colors">
-            Se travar, clique para recarregar
-          </button>
-        </div>
+      <div className="auth-experience"><div className="auth-ambient" aria-hidden="true"><span /><span /><span /></div><div className="auth-shell"><div className="auth-brand"><InvictusLogo size={84} showText /><p>{isRedirecting ? 'FINALIZANDO LOGIN' : isLoggingIn ? 'AUTENTICANDO' : 'CARREGANDO SEU PERFIL'}</p></div></div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-background relative flex flex-col items-center justify-center px-6 py-12 overflow-hidden">
-        {/* Background Image */}
-        <div className="absolute inset-0 z-0">
-          <img 
-            src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2000&auto=format&fit=crop" 
-            alt="Background" 
-            className="w-full h-full object-cover opacity-30 grayscale blur-sm"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px]"></div>
-        </div>
-
-        <div className="relative z-10 w-full max-w-md space-y-8">
-          <div className="text-center space-y-4">
-            <InvictusLogo size={96} showText={true} />
-            <div className="space-y-1 !mt-1">
-              <p className="text-primary font-label text-[10px] font-bold tracking-[0.2em] uppercase">Desafie-se, treine e evolua com consistência!</p>
-            </div>
-          </div>
-
-          {!isRegistering ? (
-              <div className="space-y-6 bg-surface-container/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 shadow-2xl">
-                {showForgotPassword ? (
-                  <form onSubmit={handleForgotPassword} className="space-y-4">
-                    <div className="flex items-center gap-2 mb-4">
-                      <button type="button" onClick={() => setShowForgotPassword(false)} className="text-on-surface-variant hover:text-white">
-                        <ArrowLeft size={20} />
-                      </button>
-                      <h2 className="font-headline italic font-black text-xl uppercase tracking-tighter">RECUPERAR SENHA</h2>
-                    </div>
-                    <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest leading-relaxed mb-4">
-                      Informe seu email para receber um link de redefinição de senha.
-                    </p>
-                    <div className="space-y-2">
-                      <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Email</label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant" size={18} />
-                        <input 
-                          type="email" 
-                          required
-                          value={email}
-                          onChange={e => setEmail(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white focus:border-primary outline-none transition-all"
-                          placeholder="seu@email.com"
-                        />
-                      </div>
-                    </div>
-                    {resetEmailSent && (
-                      <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl flex gap-3 items-center">
-                        <CheckCircle className="text-primary" size={20} />
-                        <p className="text-primary font-bold text-[10px] uppercase tracking-tight leading-tight">Email enviado com sucesso!</p>
-                      </div>
-                    )}
-                    {error && <p className="text-error-red text-xs font-bold text-center">{error}</p>}
-                    <button 
-                      type="submit"
-                      disabled={loading}
-                      className="w-full h-14 bg-primary text-white font-headline italic font-black text-xl rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
-                    >
-                      {loading ? 'ENVIANDO...' : 'ENVIAR LINK'}
-                    </button>
-                  </form>
-                ) : (
-                  <form onSubmit={handleEmailLogin} className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Email</label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant" size={18} />
-                        <input 
-                          type="email" 
-                          required
-                          value={email}
-                          onChange={e => setEmail(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white focus:border-primary outline-none transition-all"
-                          placeholder="seu@email.com"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center px-1">
-                        <label className="font-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Senha</label>
-                        <button 
-                          type="button" 
-                          onClick={() => setShowForgotPassword(true)}
-                          className="text-[10px] text-primary font-bold uppercase tracking-widest hover:underline"
-                        >
-                          Esqueceu?
-                        </button>
-                      </div>
-                      <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant" size={18} />
-                        <input 
-                          type="password" 
-                          required
-                          value={password}
-                          onChange={e => setPassword(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white focus:border-primary outline-none transition-all"
-                          placeholder="••••••••"
-                        />
-                      </div>
-                    </div>
-                    {error && (
-                      <div className="space-y-2">
-                        <p className="text-error-red text-xs font-bold text-center">{error}</p>
-                        <button 
-                          type="button"
-                          onClick={handleClearCache}
-                          className="w-full text-[8px] text-white/40 uppercase font-bold hover:text-white text-center"
-                        >
-                          Problemas no login? Clique aqui para limpar o cache
-                        </button>
-                      </div>
-                    )}
-                    <button 
-                      type="submit"
-                      disabled={loading || isLoggingIn}
-                      className="w-full h-14 bg-primary text-white font-headline italic font-black text-xl rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50 disabled:grayscale"
-                    >
-                      {loading ? 'CARREGANDO...' : 'ENTRAR'}
-                    </button>
-                  </form>
-                )}
-
-                <div className="relative flex items-center py-2">
-                  <div className="flex-grow border-t border-white/10"></div>
-                  <span className="flex-shrink mx-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Ou entre com</span>
-                  <div className="flex-grow border-t border-white/10"></div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  <button
-                    disabled={isLoggingIn || loading}
-                    onClick={() => handleSocialLogin('google')}
-                    className="w-full h-14 bg-white text-black font-label font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
-                  >
-                    {isLoggingIn ? (
-                      <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <img 
-                          src="https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png" 
-                          className="w-5 h-5 object-contain" 
-                          alt="Google"
-                          referrerPolicy="no-referrer"
-                        />
-                        Entrar com Google
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <p className="text-center text-xs text-on-surface-variant font-bold uppercase tracking-widest">
-                  Não tem conta? <button onClick={() => setIsRegistering(true)} className="text-primary hover:underline">Cadastre-se</button>
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6 bg-surface-container/40 backdrop-blur-xl p-8 rounded-3xl border border-white/10 shadow-2xl relative">
-                {/* Header */}
-<div className="flex items-center justify-between mb-4">
-<div className="flex items-center gap-2">
-<button onClick={() => setIsRegistering(false)} className="text-on-surface-variant hover:text-white">
-<ArrowLeft size={20} />
-</button>
-<h2 className="font-headline italic font-black text-xl uppercase tracking-tighter">CRIAR CONTA</h2>
-</div>
-</div>
-
-<form onSubmit={handleRegister} className="space-y-4">
-<div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-<InputGroup icon={<User size={18} />} label="Nome Completo" value={fullName} onChange={setFullName} placeholder="João Silva" />
-<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-<InputGroup icon={<Fingerprint size={18} />} label="CPF" value={cpf} onChange={setCpf} placeholder="000.000.000-00" maxLength={14} />
-<InputGroup icon={<Calendar size={18} />} label="Nascimento" value={birthDate} onChange={setBirthDate} type="date" />
-</div>
-<InputGroup icon={<Mail size={18} />} label="Email" value={email} onChange={setEmail} type="email" placeholder="seu@email.com" />
-<InputGroup icon={<Lock size={18} />} label="Senha" value={password} onChange={setPassword} type="password" placeholder="••••••••" />
-<InputGroup icon={<Phone size={18} />} label="WhatsApp" value={whatsapp} onChange={setWhatsapp} placeholder="(11) 99999-9999" />
-<InputGroup icon={<Share2 size={18} />} label="Código de Indicação (Opcional)" value={referralCodeInput} onChange={setReferralCodeInput} placeholder="CÓDIGO-AMIGO" />
-
-<label className="flex items-start gap-3 cursor-pointer group bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
-<input
-type="checkbox"
-checked={termsAccepted}
-onChange={e => setTermsAccepted(e.target.checked)}
-className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
-/>
-<span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed group-hover:text-white transition-colors">
-Li e aceito os <span className="text-primary underline">Termos de Uso</span> e a Política de Privacidade. Permissões sensíveis serão solicitadas separadamente.
-</span>
-</label>
-
-<label className="flex items-start gap-3 cursor-pointer group bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
-<input
-type="checkbox"
-checked={whatsappOptIn}
-onChange={e => setWhatsappOptIn(e.target.checked)}
-className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
-/>
-<span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed group-hover:text-white transition-colors">
-Aceito receber notificações diárias no WhatsApp para lembretes de treino e incentivos de performance.
-</span>
-</label>
-
-{error && <p className="text-error-red text-xs font-bold text-center">{error}</p>}
-
-<button
-type="submit"
-disabled={!fullName || !email || !password || !whatsapp || !cpf || !birthDate || !termsAccepted || loading}
-className="w-full h-16 bg-primary text-white font-headline italic font-black text-xl rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest disabled:opacity-50"
->
-{loading ? 'CRIANDO CONTA...' : 'CRIAR CONTA'}
-</button>
-</div>
-</form>
-              </div>
-            )}
-        </div>
-      </div>
+      <AuthExperience
+        registering={isRegistering}
+        forgotPassword={showForgotPassword}
+        resetEmailSent={resetEmailSent}
+        loading={loading}
+        socialLoading={isLoggingIn}
+        error={error}
+        step={registrationStep}
+        fields={{ fullName, cpf, birthDate, email, password, whatsapp, referralCode: referralCodeInput }}
+        termsAccepted={termsAccepted}
+        whatsappOptIn={whatsappOptIn}
+        preferredPlan={preferredPlan}
+        onField={(field: RegistrationField, value: string) => ({ fullName: setFullName, cpf: setCpf, birthDate: setBirthDate, email: setEmail, password: setPassword, whatsapp: setWhatsapp, referralCode: setReferralCodeInput }[field])(value)}
+        onLogin={handleEmailLogin}
+        onRegister={handleRegister}
+        onForgot={handleForgotPassword}
+        onGoogle={handleSocialLogin}
+        onClearCache={handleClearCache}
+        onRegistering={(value) => { setIsRegistering(value); setRegistrationStep(1); setError(''); }}
+        onForgotPassword={(value) => { setShowForgotPassword(value); setError(''); }}
+        onStep={(step) => { setRegistrationStep(step); setError(''); }}
+        onTerms={setTermsAccepted}
+        onWhatsappOptIn={setWhatsappOptIn}
+        onPlan={setPreferredPlan}
+      />
     );
   }
 
@@ -798,16 +575,8 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
 
   if (showTerms && user && !user.isBlocked) {
     return (
-      <div className="fixed inset-0 z-[10000] bg-background flex flex-col items-center justify-center p-6 overflow-y-auto">
-        <div className="absolute inset-0 z-0">
-          <img 
-            src="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=2000&auto=format&fit=crop" 
-            alt="Background" 
-            className="w-full h-full object-cover opacity-20 grayscale"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm"></div>
-        </div>
+      <div className="fixed inset-0 z-[10000] bg-[#030303] flex flex-col items-center justify-center p-6 overflow-y-auto">
+        <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_50%_5%,rgba(232,173,21,.16),transparent_32%),linear-gradient(135deg,#020202,#0b0905,#020202)]"></div>
 
         <div className="relative z-10 w-full max-w-md space-y-6 bg-surface-container/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto">
           <div className="text-center space-y-1">
@@ -930,8 +699,8 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
 
             <button 
               onClick={async () => {
-                if (!cpf || !birthDate || !height || !weight || !city || !state || !termsAccepted) {
-                  setError('Preencha todos os campos obrigatórios.');
+                if (!cpf || !birthDate || !termsAccepted) {
+                  setError('Informe CPF, data de nascimento e aceite os termos para continuar.');
                   return;
                 }
                 setLoading(true);
@@ -956,12 +725,12 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
                     weight: parseInt(weight) || 0,
                     sex,
                     imc: ((parseInt(weight) || 0) / (((parseInt(height) || 0)/100) * ((parseInt(height) || 0)/100))) || 0,
-                    isSubscribed: false,
-                    subscriptionTier: 'Nenhum',
-                    currentPlan: 'Nenhum',
-                    plano: 'Nenhum',
-                    assinatura: 'Inativa',
-                    subscriptionStatus: 'inactive',
+                    isSubscribed: preferredPlan === 'open',
+                    subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
+                    currentPlan: preferredPlan === 'open' ? 'invictus_open' : 'Nenhum',
+                    plano: preferredPlan === 'open' ? 'Invictus Open' : 'Nenhum',
+                    assinatura: preferredPlan === 'open' ? 'Ativa' : 'Inativa',
+                    subscriptionStatus: preferredPlan === 'open' ? 'active_basic' : 'inactive',
                     status: 'Ativo',
                     paymentStatus: 'Não aplicável',
                     statusPagamento: 'Não aplicável',

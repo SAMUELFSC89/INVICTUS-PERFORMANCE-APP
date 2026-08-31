@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth, serverTimestamp } from '../_lib/common.js';
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from '../_lib/geofence-engine.js';
+import { ScoreEngine } from '../_lib/score-engine/index.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -187,6 +188,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     await db.collection('gym_checkins').doc(checkInId).set(checkinDoc);
 
+    // O check-in é opcional fora de campeonatos, mas continua sendo uma ação
+    // válida e pontuável para quem escolhe registrar presença. O ScoreEngine é
+    // idempotente pelo checkInId, evitando crédito duplicado em retentativas.
+    let pointsAwarded = 0;
+    let scoringPending = false;
+    try {
+      pointsAwarded = await ScoreEngine.processCheckin(auth.uid, {
+        checkInId,
+        gymId: userData.gymId,
+        timestamp: now.toISOString(),
+        hasPhoto: false,
+      });
+      await db.collection('gym_checkins').doc(checkInId).set({ pointsAwarded }, { merge: true });
+    } catch (scoringError) {
+      // O check-in já foi confirmado. Uma indisponibilidade isolada do motor de
+      // pontos não pode transformar sucesso em HTTP 500 e induzir o cliente a
+      // repetir a presença. O documento fica marcado para reconciliação.
+      scoringPending = true;
+      console.error('[Gym Checkin] Check-in salvo; pontuação pendente de reconciliação:', scoringError);
+      await db.collection('gym_checkins').doc(checkInId).set({
+        pointsAwarded: 0,
+        scoringPending: true,
+        scoringErrorAt: now.toISOString(),
+      }, { merge: true });
+    }
+
     // Log the event for forensic inspection / audit
     try {
       const { logEvent } = require('../_lib/observability');
@@ -215,7 +242,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       gymName: userData.gymName,
       distanceMeters: Number(distanceMeters.toFixed(1)),
       gpsAccuracy: accuracy,
-      riskFlags
+      riskFlags,
+      pointsAwarded,
+      scoringPending
     });
 
   } catch (error: any) {

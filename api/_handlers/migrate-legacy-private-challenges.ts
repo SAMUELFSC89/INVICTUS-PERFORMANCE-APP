@@ -31,8 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const userSnap = await db.collection('users').doc(auth.uid).get();
   const userData = userSnap.data();
-  const adminEmails = new Set(['samuelfsc89@gmail.com', 'mucafsc89@gmail.com']);
-  if (userData?.role !== 'admin' && !adminEmails.has(String(auth.email || '').toLowerCase())) {
+  if (userData?.role !== 'admin') {
     return res.status(403).json({ error: 'Só administradores podem realizar esta ação.' });
   }
 

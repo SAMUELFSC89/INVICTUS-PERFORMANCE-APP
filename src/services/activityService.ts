@@ -4,7 +4,6 @@ import { collection, addDoc, doc, updateDoc, getDoc, increment, query, where, ge
 import { validationService } from "./validationService";
 import { getCurrentLocation } from "../lib/locationUtils";
 import { compressBase64Image } from "../lib/imageCompression";
-import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from "./geofenceEngine";
 import { HealthDataCollector, type CollectedHealthMetrics } from "./healthDataCollector";
 import { getModalityConfig } from "../config/cardioConfig";
 import { nativeBackgroundLocationService } from "./nativeBackgroundLocationService";
@@ -81,6 +80,27 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 export const activityService = {
+  async performGymCheckIn(): Promise<{ checkInId: string; location: { lat: number; lng: number; accuracy?: number }; gymName?: string }> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Usuário não autenticado');
+    const location = await getCurrentLocation(true);
+    const token = await user.getIdToken();
+    const response = await fetch('/api/gyms/checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        action: 'confirm',
+        latitude: location.lat,
+        longitude: location.lng,
+        accuracy: location.accuracy || 15,
+        isMock: false,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.checkInId) throw new Error(result.error || 'Não foi possível confirmar o check-in presencial.');
+    return { checkInId: result.checkInId, location, gymName: result.gymName };
+  },
+
   async requestMotionPermission(): Promise<'granted' | 'denied' | 'unavailable' | 'not_supported' | 'error'> {
     if (typeof window === 'undefined' || !('DeviceMotionEvent' in window)) {
       if (typeof window !== 'undefined') localStorage.setItem('sensor_status', 'not_supported');
@@ -198,125 +218,10 @@ export const activityService = {
     if (type === 'cardio' && !cardioMapEntry) {
       throw new Error('Modalidade de cardio inválida ou não suportada. Selecione novamente antes de iniciar.');
     }
-    // #117: so o TREINO NA ACADEMIA precisa do fix de GPS ANTES de devolver a
-    // sessao -- e o unico caso que valida geofence (esta perto da academia?)
-    // antes de liberar o inicio. Cardio ao ar livre (corrida/caminhada/bike)
-    // nunca precisou dessa espera: nada aqui usa startLocation pra aprovar ou
-    // bloquear o inicio, so alimenta o primeiro ponto da rota -- e o
-    // watchPosition que ja roda assim que activeSession existe (Challenges.tsx)
-    // preenche os checkpoints reais conforme o GPS vai travando. Antes disto,
-    // getCurrentLocation(true) (enableHighAccuracy, maximumAge:0) podia levar
-    // ate 15s num sinal fraco/frio, e o atleta ficava parado no botao
-    // "INICIANDO..." esse tempo todo antes do cronometro sequer comecar --
-    // essa espera sincrona, nao o Firestore, era a causa raiz do atraso.
-    const blocksStartOnLocation = type === 'workout';
-
-    let startLocation = providedLocation;
-
-    if (!startLocation && blocksStartOnLocation) {
-      try {
-        startLocation = await getCurrentLocation(true);
-      } catch (error: any) {
-        console.warn('Location capture failed for startSession', error);
-        if (error.message.includes('Permissão')) {
-          throw error;
-        }
-      }
-    }
-
-    if (type === 'workout' && !checkInId) {
-      if (!userData.gymId) {
-        throw createStructuredError(
-          "📍 Seleção de Academia Necessária",
-          'Para que seus treinos possam ser validados e somarem pontos no ranking, selecione sua academia oficial na aba "Academia" antes de iniciar.'
-        );
-      }
-
-      if (startLocation) {
-        const accuracy = startLocation.accuracy || 15;
-
-        if (accuracy > 200) {
-          throw createStructuredError(
-            "📍 Aguardando Sinal de Localização",
-            "Certifique-se de que a localização do seu celular está ativada para que possamos confirmar seu treino na academia."
-          );
-        }
-
-        let gymLoc = userData.gymLocation;
-
-        let isGymLocationValid = gymLoc &&
-          gymLoc.lat !== undefined &&
-          gymLoc.lng !== undefined &&
-          !isNaN(Number(gymLoc.lat)) &&
-          !isNaN(Number(gymLoc.lng)) &&
-          Number(gymLoc.lat) >= -90 && Number(gymLoc.lat) <= 90 &&
-          Number(gymLoc.lng) >= -180 && Number(gymLoc.lng) <= 180 &&
-          (Number(gymLoc.lat) !== 0 || Number(gymLoc.lng) !== 0);
-
-        if (!isGymLocationValid && userData.gymId) {
-          try {
-            const gymDocRef = doc(db, 'gyms', userData.gymId);
-            const gymDocSnap = await withTimeout(getDoc(gymDocRef), 10000, 'Tempo limite ao consultar a localização da academia.');
-            if (gymDocSnap.exists()) {
-              const gymData = gymDocSnap.data();
-              const gLat = gymData?.latitude ?? gymData?.lat;
-              const gLng = gymData?.longitude ?? gymData?.lng;
-              if (gLat !== undefined && gLng !== undefined && !isNaN(Number(gLat)) && !isNaN(Number(gLng))) {
-                gymLoc = { lat: Number(gLat), lng: Number(gLng) };
-                isGymLocationValid = true;
-                try {
-                  const userRef = doc(db, 'users', user.uid);
-                  await withTimeout(updateDoc(userRef, { gymLocation: gymLoc }), 8000, 'Tempo limite ao atualizar a academia.');
-                } catch (e) {
-                  console.warn('Failed syncing gymLocation to user profile:', e);
-                }
-              }
-            }
-          } catch (err) {
-            console.warn('Error fetching gym doc in activityService:', err);
-          }
-        }
-
-        if (!isGymLocationValid || !gymLoc) {
-          console.warn(`Academia sem coordenadas válidas: gymId=${userData.gymId}, userId=${user.uid}`);
-          throw createStructuredError(
-            "📍 Atualização de Academia Necessária",
-            "Sua academia selecionada precisa ter o endereço confirmado no mapa.\n\nAcesse a aba 'Academia' no menu para atualizar."
-          );
-        }
-
-        const geofenceResult = validateGeofenceCheckin(
-          {
-            id: userData.gymId,
-            name: userData.gymName || 'Sua Academia',
-            latitude: gymLoc.lat,
-            longitude: gymLoc.lng
-          },
-          {
-            latitude: startLocation.lat,
-            longitude: startLocation.lng,
-            accuracy: accuracy,
-            timestamp: new Date().toISOString()
-          },
-          MAX_GEOFENCE_RADIUS_METERS,
-          Math.max(MAX_GPS_ACCURACY_METERS, 200)
-        );
-
-        if (!geofenceResult.approved) {
-          console.warn(`Tentativa de iniciar fora da geofence da academia: userId=${user.uid}, gymId=${userData.gymId}, reason=${geofenceResult.reason}`);
-          throw createStructuredError(
-            "📍 Localização da Academia",
-            geofenceResult.userFacingMessage
-          );
-        }
-      } else {
-        console.warn(`Tentativa de início de atividade sem dados de geolocalização: userId=${user.uid}, gymId=${userData.gymId}`);
-        throw createStructuredError(
-          "📍 Localização Indisponível",
-          "Não conseguimos identificar sua localização no momento.\n\nVerifique se a localização do celular está ativa e tente novamente."
-        );
-      }
-    }
+    // Check-in e GPS de academia são opcionais para treinos comuns. Quando o
+    // atleta opta pelo check-in (ou está inscrito em campeonato), o fluxo cria
+    // um registro servidor-autoritativo antes de chegar aqui e fornece ambos.
+    const startLocation = providedLocation;
 
     const session: ActivitySession = {
       id: Math.random().toString(36).substring(7),

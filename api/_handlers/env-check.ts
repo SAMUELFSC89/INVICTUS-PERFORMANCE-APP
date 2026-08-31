@@ -17,7 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const userSnap = await db.collection('users').doc(auth.uid).get();
   const userData = userSnap.exists ? userSnap.data() : null;
-  if (userData?.role !== 'admin' && auth.email !== 'samuelfsc89@gmail.com' && auth.email !== 'mucafsc89@gmail.com') {
+  if (userData?.role !== 'admin') {
     return res.status(403).json({ error: 'Acesso administrativo necessário.' });
   }
 

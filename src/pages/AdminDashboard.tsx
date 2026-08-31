@@ -46,17 +46,6 @@ export function AdminDashboard() {
     activePhase: 1,
     pools: { gym: 0, city: 0, national: 0 }
   });
-  const [pagarmeStats, setPagarmeStats] = useState({
-    activeSubscriptions: 0,
-    cancellations: 0,
-    inadimplencia: 0,
-    receitaMensal: 0,
-    receitaRecorrenteMensal: 0,
-    churn: 0,
-    churnRate: '0.0%',
-    chargebacks: 0,
-    pagamentosPendentes: 0
-  });
   const [recentUsers, setRecentUsers] = useState<UserProfile[]>([]);
   const [topUsers, setTopUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -465,23 +454,6 @@ export function AdminDashboard() {
           pools
         });
 
-        // Fetch Pagarme stats
-        try {
-          const currentUser = auth.currentUser;
-          if (currentUser) {
-            const token = await currentUser.getIdToken();
-            const res = await fetch('/api/payments/pagarme?action=admin-dashboard', {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const pData = await res.json();
-            if (pData?.success && pData.metrics) {
-              setPagarmeStats(pData.metrics);
-            }
-          }
-        } catch (e) {
-          console.error('Error fetching Pagarme stats:', e);
-        }
-
         // 2. Recent Users
         const recentQuery = query(usersCol, orderBy('createdAt', 'desc'), limit(10));
         const recentSnap = await getDocs(recentQuery);
@@ -606,70 +578,6 @@ export function AdminDashboard() {
             icon={<DollarSign size={20} />} 
             color="text-tertiary"
           />
-        </section>
-
-        {/* Pagar.me Telemetry Dashboard */}
-        <section className="bg-surface-container-low p-6 sm:p-8 rounded-[40px] border border-outline-variant/15 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-4 gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <CreditCard className="text-primary animate-pulse" size={22} />
-                <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight">TELEMETRIA FINANCEIRA (PAGAR.ME)</h3>
-              </div>
-              <p className="text-[10px] sm:text-xs text-on-surface-variant font-mono uppercase tracking-wider">Gateway de Pagamentos Pagar.me integrado no Backend</p>
-            </div>
-            <span className="self-start sm:self-center bg-primary/10 text-primary border border-primary/20 text-[9px] font-mono font-black px-2.5 py-1 rounded-full uppercase tracking-widest">LIVE CONECTADO</span>
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">ASSINATURAS ATIVAS</p>
-              <p className="font-headline italic font-black text-2xl text-secondary">{pagarmeStats.activeSubscriptions}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">Recorrência ativa no sistema</div>
-            </div>
-
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">RECEITA MENSAL (ATUAL)</p>
-              <p className="font-headline italic font-black text-2xl text-primary">R$ {pagarmeStats.receitaMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">Faturamento real liquidado</div>
-            </div>
-
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">M.R.R. (RECORRENTE)</p>
-              <p className="font-headline italic font-black text-2xl text-tertiary">R$ {pagarmeStats.receitaRecorrenteMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">Receita mensal projetada</div>
-            </div>
-
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">CHURN RATE</p>
-              <p className="font-headline italic font-black text-2xl text-red-400">{pagarmeStats.churnRate}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">{pagarmeStats.churn} cancelamentos totais</div>
-            </div>
-
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">PAGAMENTOS PENDENTES</p>
-              <p className="font-headline italic font-black text-2xl text-yellow-500">{pagarmeStats.pagamentosPendentes}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">Pix/Boleto aguardando liquidação</div>
-            </div>
-
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">INADIMPLÊNCIA</p>
-              <p className="font-headline italic font-black text-2xl text-orange-500">{pagarmeStats.inadimplencia}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">Faturas vencidas não pagas</div>
-            </div>
-
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">CHARGEBACKS</p>
-              <p className="font-headline italic font-black text-2xl text-red-500">{pagarmeStats.chargebacks}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">Contestações registradas</div>
-            </div>
-
-            <div className="bg-black/30 p-5 rounded-3xl border border-white/5 space-y-2">
-              <p className="text-[9px] font-mono font-black text-on-surface-variant uppercase tracking-widest">CANCELAMENTOS</p>
-              <p className="font-headline italic font-black text-2xl text-on-surface-variant">{pagarmeStats.cancellations}</p>
-              <div className="text-[9px] text-on-surface-variant uppercase font-medium">Assinaturas canceladas</div>
-            </div>
-          </div>
         </section>
 
         {/* Growth & Phase Progress */}

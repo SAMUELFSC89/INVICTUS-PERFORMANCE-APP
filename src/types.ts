@@ -565,6 +565,17 @@ export type IVCoinTransactionOrigin =
   | 'withdrawal_hold'
   | 'withdrawal_refund';
 
+export type IVCoinLedgerType =
+  | 'MISSION_REWARD'
+  | 'CONSISTENCY_REWARD'
+  | 'PRO_MISSION_REWARD'
+  | 'GYM_CHAMPIONSHIP_PARTICIPATION'
+  | 'GYM_CHAMPIONSHIP_PODIUM'
+  | 'STORE_PURCHASE'
+  | 'STORE_REFUND'
+  | 'PROMOTIONAL_REWARD'
+  | 'ADMIN_ADJUSTMENT';
+
 export interface IVCoinTransaction {
   id: string;
   userId: string;
@@ -603,6 +614,7 @@ export interface RewardCoinTransaction {
   amount: number;
   type: 'credit' | 'debit';
   origin: IVCoinTransactionOrigin;
+  ledgerType: IVCoinLedgerType;
   description: string;
   idempotencyKey: string;
   createdAt: string;
@@ -652,13 +664,29 @@ export interface Mission {
   title: string;
   description: string;
   category: 'daily' | 'weekly' | 'monthly' | 'special';
-  type: 'workout_count' | 'cardio_minutes' | 'streak_days' | 'total_days' | 'gym_checkins';
+  type:
+    | 'workout_count'
+    | 'strength_workout_count'
+    | 'cardio_count'
+    | 'cardio_minutes'
+    | 'hybrid_week'
+    | 'consistency_weeks'
+    | 'personal_best'
+    | 'performance_zone'
+    | 'monthly_active_weeks'
+    | 'event_count'
+    | 'streak_days'
+    | 'total_days'
+    | 'gym_checkins';
   target: number;
   rewardCoins: number;
   rewardCategory: IVCoinCategory;
   rewardXP: number;
   rewardBadge?: string;
   isFreeAccess: boolean; // Available to Free plan users
+  ledgerType?: IVCoinLedgerType;
+  weeklyGoal?: number;
+  definitionVersion?: number;
   active: boolean;
 }
 

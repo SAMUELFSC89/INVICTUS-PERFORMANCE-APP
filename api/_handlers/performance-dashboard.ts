@@ -18,9 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ownDashboard = userId === auth.uid;
   if (!ownDashboard) {
     const adminSnap = await db.collection('users').doc(auth.uid).get();
-    const adminEmails = new Set(['samuelfsc89@gmail.com', 'mucafsc89@gmail.com']);
-    const isAdmin = adminSnap.data()?.role === 'admin'
-      || adminEmails.has(String(auth.email || '').toLowerCase());
+    const isAdmin = adminSnap.data()?.role === 'admin';
     if (!isAdmin) {
       return res.status(403).json({ error: 'Não é permitido consultar o desempenho de outro usuário.' });
     }

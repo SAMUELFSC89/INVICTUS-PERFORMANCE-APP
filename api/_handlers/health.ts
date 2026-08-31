@@ -14,8 +14,7 @@ export default async function handler(req: any, res: any) {
 
   const userSnap = await db.collection('users').doc(auth.uid).get();
   const role = userSnap.exists ? userSnap.data()?.role : undefined;
-  const adminEmails = new Set(['samuelfsc89@gmail.com', 'mucafsc89@gmail.com']);
-  if (role !== 'admin' && !adminEmails.has(String(auth.email || '').toLowerCase())) {
+  if (role !== 'admin') {
     return res.status(403).json({ error: 'Acesso administrativo necessário.' });
   }
 

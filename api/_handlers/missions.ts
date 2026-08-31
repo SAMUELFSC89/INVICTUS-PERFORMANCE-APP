@@ -44,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const result = await MissionEngine.claimMissionReward(auth.uid, String(missionId));
       return res.status(200).json({
         success: true,
-        message: `Recompensa resgatada: +${result.rewardCoins} Invictus Coins e +${result.rewardXP} XP.`,
+        message: `Recompensa resgatada: +${result.rewardCoins} Invictus Coins${result.rewardXP > 0 ? ` e +${result.rewardXP} XP` : ''}.`,
         result
       });
     }

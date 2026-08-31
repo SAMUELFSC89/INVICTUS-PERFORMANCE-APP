@@ -558,7 +558,7 @@ export function Health() {
   const { summary, loadingSummary } = useHealthSummary();
 
   if (!user) return null;
-  if (loading || !state) return createPortal(<div className="health-screen health-loading">Preparando os seus dados de saúde…</div>, document.body);
+  if (loading || !state) return createPortal(<div className="health-screen health-new-shell health-loading">Preparando os seus dados de saúde…</div>, document.body);
 
   return createPortal(
     <main className="health-screen health-new-shell">
@@ -573,7 +573,7 @@ export function Health() {
           state={state}
           summary={summary}
           loadingSummary={loadingSummary}
-          onGenerateReport={() => navigate('/health/report/full')}
+          onGenerateReport={() => navigate('/health/report')}
           onOpenLegacyReport={() => navigate('/health/report')}
         />
       </div><HealthFooter navigate={navigate} />
@@ -590,7 +590,7 @@ export function HealthReport() {
   const { user, state, loading } = useHealthData(range);
   const weeklyRows = useMemo(() => state?.timeframeWorkouts.slice(-6).reverse() || [], [state]);
   if (!user) return null;
-  if (loading || !state) return createPortal(<div className="health-screen health-loading">Gerando relatório de saúde…</div>, document.body);
+  if (loading || !state) return createPortal(<div className="health-screen health-new-shell health-loading">Gerando relatório de saúde…</div>, document.body);
   const calories = metricNumber(state, 'total_calories_burned');
   const active = metricNumber(state, 'total_volume_time');
   const heartRate = metricNumber(state, 'avg_heart_rate');

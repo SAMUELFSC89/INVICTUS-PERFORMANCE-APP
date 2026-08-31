@@ -56,8 +56,7 @@ export function CreatorSandbox({
     }
   }, [toast]);
 
-  // Verify if current user is the creator (samuelfsc89@gmail.com) or an administrator
-  const isCreatorOrAdmin = user?.email === 'samuelfsc89@gmail.com' || user?.role === 'admin';
+  const isCreatorOrAdmin = user?.role === 'admin';
 
   // Change user role directly in Firestore for real integration tests
   const handleChangeRoleInDb = async (newRole: string) => {

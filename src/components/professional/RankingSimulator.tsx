@@ -1490,7 +1490,6 @@ export function RankingSimulator() {
                       reportId: simReport.id,
                       simulation_metadata: {
                         timestamp: simReport.timestamp,
-                        operator_email: 'samuelfsc89@gmail.com',
                         sandbox_status: 'isolated_secure_mode',
                         simulated_environment: 'Invictus Core Engine v2.1'
                       },

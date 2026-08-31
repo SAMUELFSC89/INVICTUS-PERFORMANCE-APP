@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, ChevronRight, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Plus, Share2, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Share2, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { ActivityMapView } from './ActivityMapView';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
@@ -54,6 +54,7 @@ export function ChallengeActivityFlow({
   gpsSignal = 'SEARCHING',
   gpsPermissionDenied = false,
   gymName,
+  checkInRequired = false,
   completedChallengeIds,
   completion,
   startError,
@@ -85,6 +86,7 @@ export function ChallengeActivityFlow({
   gpsSignal?: 'SEARCHING' | 'WEAK' | 'STRONG';
   gpsPermissionDenied?: boolean;
   gymName: string;
+  checkInRequired?: boolean;
   completedChallengeIds: string[];
   completion?: ActivityCompletion | null;
   startError?: string | null;
@@ -92,7 +94,7 @@ export function ChallengeActivityFlow({
   loading?: boolean;
   startingActivity?: boolean;
   onBack: () => void;
-  onStart: (type: 'workout' | 'cardio') => void;
+  onStart: (type: 'workout' | 'cardio', options?: { checkIn?: boolean }) => void;
   onEnd: () => void;
   onTogglePause?: () => void;
   onSummary: () => void;
@@ -101,7 +103,6 @@ export function ChallengeActivityFlow({
   onShare?: () => void;
   onDetail?: () => void;
 }) {
-  const activeCardio = session?.type === 'cardio' || screen === 'cardio-complete' || screen === 'cardio-summary' || screen === 'cardio-picker';
   const modalityCfg = getModalityConfig(session?.cardioType || cardio.id);
   const effectiveCardioLabel = session?.cardioTypeLabel || modalityCfg?.label || cardio.label;
   const effectiveMuscleGroup = session?.muscleGroup || group;
@@ -234,18 +235,19 @@ export function ChallengeActivityFlow({
 
       {checkin && (
         <section className="challenge-flow-checkin">
-          <p>Confirme sua localização na academia antes de iniciar o treino.</p>
+          <p>{checkInRequired ? 'Você está inscrito em campeonato. O check-in presencial é obrigatório para validar sua pontuação.' : 'O check-in é opcional. Faça para registrar presença e participar das missões de frequência.'}</p>
           <div className="challenge-flow-radar"><MapPin /></div>
-          <span>{startError ? 'Validação de presença não concluída.' : 'Aguardando a confirmação da sua localização.'}</span>
+          <span>{startError ? 'Validação de presença não concluída.' : checkInRequired ? 'Campeonato ativo: presença obrigatória.' : 'Você também pode iniciar sem compartilhar a localização.'}</span>
           <article className={startError ? 'is-blocked' : ''}>
             <small>{startError ? 'LOCALIZAÇÃO NÃO VALIDADA' : 'PRONTO PARA VERIFICAR'}</small>
             <b>{gymName || 'Sua academia'}</b>
-            <p>{startError || 'Toque abaixo para validar sua localização antes de iniciar.'}</p>
+            <p>{startError || (checkInRequired ? 'Confirme sua presença para competir e pontuar.' : 'O check-in confirmado conta para missões e histórico presencial.')}</p>
             {startError ? <MapPin /> : <Check />}
           </article>
-          <button className="challenge-flow-primary" onClick={() => onStart('workout')} disabled={startingActivity}>
-            <Check />{startingActivity ? 'VALIDANDO...' : startError ? 'TENTAR NOVAMENTE' : 'VALIDAR E INICIAR'}
+          <button className="challenge-flow-primary" onClick={() => onStart('workout', { checkIn: true })} disabled={startingActivity}>
+            <Check />{startingActivity ? 'VALIDANDO...' : startError ? 'TENTAR NOVAMENTE' : 'FAZER CHECK-IN E INICIAR'}
           </button>
+          {!checkInRequired && <button className="challenge-flow-secondary" onClick={() => onStart('workout', { checkIn: false })} disabled={startingActivity}>INICIAR SEM CHECK-IN</button>}
         </section>
       )}
 

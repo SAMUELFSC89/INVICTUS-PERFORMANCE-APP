@@ -1,46 +1,55 @@
-import React, { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { Home } from './pages/Home';
-import { Rankings } from './pages/Rankings';
-import { Achievements } from './pages/Achievements';
-import { Challenges } from './pages/Challenges';
-import { PublicProfile } from './pages/PublicProfile';
-import { ProfileNew } from './pages/ProfileNew';
-import { ProfileSecondary } from './pages/ProfileSecondary';
-import { PaymentSuccess } from './pages/PaymentSuccess';
-import { AdminWorkouts } from './pages/AdminWorkouts';
-import { AdminPayouts } from './pages/AdminPayouts';
-import { AdminDashboard } from './pages/AdminDashboard';
-import { AdminGymAudit } from './pages/AdminGymAudit';
-import { AdminRankingSimulator } from './pages/AdminRankingSimulator';
-import { AdminSecurityAudit } from './pages/AdminSecurityAudit';
-import { AdminIGATesteOriginal } from './pages/AdminIGATesteOriginal';
 import { AdminGuard } from './components/AdminGuard';
 import { AuthGuard } from './components/AuthGuard';
-import { Performance } from './pages/Performance';
-import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 import { MobileBridge } from './components/MobileBridge';
 
 import { UserProvider } from './UserContext';
 import { ProProvider } from './ProContext';
 import { API_CONFIG } from './config';
-import { PowerLift } from './pages/PowerLift';
-import { Health, HealthReport } from './pages/Health';
-import { HealthFullReport } from './pages/HealthFullReport';
-import { Notifications } from './pages/Notifications';
-import { ChampionshipsHub } from './pages/championships/ChampionshipsHub';
-import { CommunityChampionship } from './pages/championships/CommunityChampionship';
-import { ChampionshipPreview } from './pages/championships/ChampionshipPreview';
-import { Musculation } from './pages/Musculation';
-import { InvictusStore } from './pages/InvictusStore';
-import { StoreProductDetail } from './pages/StoreProductDetail';
-import { StoreCheckout } from './pages/StoreCheckout';
-import { StoreOrders } from './pages/StoreOrders';
-import { AdminStorePricing } from './pages/AdminStorePricing';
-import { AdminStoreDrops } from './pages/AdminStoreDrops';
-import { AdminStoreOrders } from './pages/AdminStoreOrders';
 import './styles/invictus.css';
+
+const lazyNamed = <T extends Record<string, unknown>, K extends keyof T>(
+  loader: () => Promise<T>,
+  exportName: K,
+) => lazy(async () => ({ default: (await loader())[exportName] as React.ComponentType<any> }));
+
+const Home = lazyNamed(() => import('./pages/Home'), 'Home');
+const Rankings = lazyNamed(() => import('./pages/Rankings'), 'Rankings');
+const Achievements = lazyNamed(() => import('./pages/Achievements'), 'Achievements');
+const Challenges = lazyNamed(() => import('./pages/Challenges'), 'Challenges');
+const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
+const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
+const ProfileSecondary = lazyNamed(() => import('./pages/ProfileSecondary'), 'ProfileSecondary');
+const PaymentSuccess = lazyNamed(() => import('./pages/PaymentSuccess'), 'PaymentSuccess');
+const AdminWorkouts = lazyNamed(() => import('./pages/AdminWorkouts'), 'AdminWorkouts');
+const AdminPayouts = lazyNamed(() => import('./pages/AdminPayouts'), 'AdminPayouts');
+const AdminDashboard = lazyNamed(() => import('./pages/AdminDashboard'), 'AdminDashboard');
+const AdminGymAudit = lazyNamed(() => import('./pages/AdminGymAudit'), 'AdminGymAudit');
+const AdminRankingSimulator = lazyNamed(() => import('./pages/AdminRankingSimulator'), 'AdminRankingSimulator');
+const AdminSecurityAudit = lazyNamed(() => import('./pages/AdminSecurityAudit'), 'AdminSecurityAudit');
+const AdminIGATesteOriginal = lazyNamed(() => import('./pages/AdminIGATesteOriginal'), 'AdminIGATesteOriginal');
+const Performance = lazyNamed(() => import('./pages/Performance'), 'Performance');
+const PowerLift = lazyNamed(() => import('./pages/PowerLift'), 'PowerLift');
+const Health = lazyNamed(() => import('./pages/Health'), 'Health');
+const HealthReport = lazyNamed(() => import('./pages/Health'), 'HealthReport');
+const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifications');
+const ChampionshipsHub = lazyNamed(() => import('./pages/championships/ChampionshipsHub'), 'ChampionshipsHub');
+const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');
+const ChampionshipPreview = lazyNamed(() => import('./pages/championships/ChampionshipPreview'), 'ChampionshipPreview');
+const Musculation = lazyNamed(() => import('./pages/Musculation'), 'Musculation');
+const InvictusStore = lazyNamed(() => import('./pages/InvictusStore'), 'InvictusStore');
+const StoreProductDetail = lazyNamed(() => import('./pages/StoreProductDetail'), 'StoreProductDetail');
+const StoreCheckout = lazyNamed(() => import('./pages/StoreCheckout'), 'StoreCheckout');
+const StoreOrders = lazyNamed(() => import('./pages/StoreOrders'), 'StoreOrders');
+const AdminStorePricing = lazyNamed(() => import('./pages/AdminStorePricing'), 'AdminStorePricing');
+const AdminStoreDrops = lazyNamed(() => import('./pages/AdminStoreDrops'), 'AdminStoreDrops');
+const AdminStoreOrders = lazyNamed(() => import('./pages/AdminStoreOrders'), 'AdminStoreOrders');
+
+function RouteLoading() {
+  return <div className="app-route-loading" role="status" aria-live="polite">CARREGANDO…</div>;
+}
 
 export default function App() {
   useEffect(() => {
@@ -54,12 +63,12 @@ export default function App() {
   }, []);
 
   return (
-    <GlobalErrorBoundary>
-      <UserProvider>
+    <UserProvider>
         <ProProvider>
           <BrowserRouter>
             <MobileBridge />
             <AuthGuard>
+            <Suspense fallback={<RouteLoading />}>
             <Routes>
               {/* Continue URLs de verificação/reset do Firebase apontam para
                   /login. Mantemos a rota dentro do guard para não cair em tela
@@ -110,7 +119,7 @@ export default function App() {
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
                 <Route path="/health" element={<Health />} />
                 <Route path="/health/report" element={<HealthReport />} />
-                <Route path="/health/report/full" element={<HealthFullReport />} />
+                <Route path="/health/report/full" element={<Navigate to="/health/report" replace />} />
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
                 <Route path="/pagamento/pendente" element={<PaymentSuccess />} />
                 <Route path="/pagamento/falha" element={<PaymentSuccess />} />
@@ -122,7 +131,7 @@ export default function App() {
                 <Route path="/admin/payouts" element={<AdminGuard><AdminPayouts /></AdminGuard>} />
                 <Route path="/admin/gym-audit" element={<AdminGuard><AdminGymAudit /></AdminGuard>} />
                 <Route path="/admin/ranking-simulator" element={<AdminGuard><AdminRankingSimulator /></AdminGuard>} />
-<Route path="/admin/iga-teste-original" element={<AdminGuard><AdminIGATesteOriginal /></AdminGuard>} />
+                <Route path="/admin/iga-teste-original" element={<AdminGuard><AdminIGATesteOriginal /></AdminGuard>} />
                 <Route path="/admin/security" element={<AdminGuard><AdminSecurityAudit /></AdminGuard>} />
                 <Route path="/admin/store/pricing" element={<AdminGuard><AdminStorePricing /></AdminGuard>} />
                 <Route path="/admin/store/drops" element={<AdminGuard><AdminStoreDrops /></AdminGuard>} />
@@ -131,10 +140,10 @@ export default function App() {
                 <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
               </Route>
             </Routes>
+            </Suspense>
           </AuthGuard>
         </BrowserRouter>
         </ProProvider>
-      </UserProvider>
-    </GlobalErrorBoundary>
+    </UserProvider>
   );
 }

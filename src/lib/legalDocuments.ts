@@ -35,6 +35,8 @@ Desafios concedem reconhecimento, XP, conquistas e, quando indicado, Invictus Co
 7. CAMPEONATOS
 O campeonato gratuito é uma experiência social entre amigos e comunidade, sem vínculo, patrocínio ou associação presumida com academias e sem premiação em dinheiro. As modalidades elegíveis são musculação e cardio.
 
+O check-in presencial é opcional em treinos comuns. Quem optar por realizá-lo pode receber a pontuação e o progresso de missão exibidos no app. Durante participação ativa em campeonato que exija comprovação presencial, o check-in poderá ser obrigatório para que a atividade seja competitivamente elegível; essa exigência deve ser informada antes do início do treino.
+
 Campeonatos pagos de musculação ou cardio permanecem EM BREVE. Sem edição publicada com organizador, datas, preço, critérios, premiação e regulamento específico aprovados, não haverá inscrição ou cobrança. Uma edição futura exigirá aceite separado do respectivo regulamento.
 
 8. INVICTUS COINS
@@ -72,6 +74,8 @@ Usamos dados para autenticar; registrar e mostrar atividades; criar planos e an�
 
 4. PERMISSÕES SENSÍVEIS
 O aceite geral não concede automaticamente acesso a HealthKit, Health Connect, localização, câmera, microfone, fotos ou notificações. A autorização é pedida no contexto do recurso e pode ser negada ou revogada no sistema operacional ou provedor.
+
+Treinos comuns de musculação podem ser iniciados sem localização. A localização é solicitada para check-in presencial escolhido pelo usuário ou quando a participação ativa em campeonato exigir comprovação de presença. Negar a permissão fora dessas hipóteses não impede o registro do treino comum.
 
 5. EXIBIÇÃO E COMPARTILHAMENTO
 Nome público, foto, posição, IGA, conquistas e resultados podem aparecer em recursos sociais conforme a adesão. Rotas exatas, CPF, contato, saúde bruta, endereço e sinais internos antifraude não são publicados. Compartilhamos somente o necessário com operadores de hospedagem, autenticação, segurança/IA, mapas, notificações, assinatura, pagamento, logística, suporte e integrações escolhidas. Não vendemos dados pessoais nem usamos saúde para publicidade comportamental.
@@ -131,11 +135,21 @@ ${HEADER}
 
 3. Power Lift exige vídeo e regras por movimento. O registro só entra no ranking após decisão válida; destaque público não é certificação profissional da execução.
 
-4. O campeonato gratuito é social, opcional, sem prêmio em dinheiro e sem vínculo com academia. Musculação e cardio seguem a política antifraude.
+4. O campeonato gratuito é social, opcional, sem prêmio em dinheiro e sem parceria, patrocínio ou vínculo comercial com academias. A academia informada pelo usuário pode ser usada apenas para formar o grupo competitivo. FREE e PRO usam o mesmo IGA e a assinatura não concede vantagem de pontuação.
+
+4.0.1. Fora de campeonato ativo, check-in presencial é opcional e o treino comum não depende de academia cadastrada ou GPS. O check-in voluntário pode conceder pontuação própria e progresso em missões. Em campeonato ativo que exija presença, a ausência de check-in válido torna a atividade inelegível para a competição, sem transformar a assinatura PRO em vantagem.
+
+4.1. A premiação padrão mensal do campeonato pode conceder 2.500 Coins ao 1º lugar, 1.500 ao 2º, 1.000 ao 3º e 50 pela conclusão válida do ciclo. Valores podem ser alterados antes do início de cada ciclo e devem aparecer no app. Coins continuam sem valor monetário.
+
+4.2. O encerramento gera resultado provisório. O Top 3 passa por auditoria automática reforçada e pode ficar APPROVED, REVIEW ou REJECTED. O crédito ocorre somente após aprovação. Irregularidades podem alterar a classificação final válida.
 
 5. Campeonatos pagos só poderão ser de musculação ou cardio. Permanecem EM BREVE. Antes de cobrança, deverão informar organizador, elegibilidade, datas, preço, cancelamento, critérios, auditoria, premiação e regulamento próprio. Este texto não cria direito a edição futura.
 
-6. Coins podem ser concedidos por atividade ou campanha habilitada. São cumulativos durante a conta ativa, sujeitos a correção de erro/fraude. Não têm valor monetário, não podem ser sacados, vendidos ou transferidos e só servem aos resgates disponíveis na Loja.
+6. Coins podem ser concedidos por missões, trilha de consistência, campeonato ou campanha habilitada. A consistência mensal é acessível a FREE e PRO e representa o cumprimento da meta semanal válida, não a obrigação de treinar diariamente. Missões PRO criam caminhos adicionais, mas não alteram IGA ou ranking.
+
+7. Os lançamentos são segregados por origem: missão base, consistência, missão PRO, conclusão de campeonato, pódio, promoção e ajuste administrativo. Premiação de pódio não integra eventual limite mensal de missões. A emissão pode respeitar orçamento global configurável e ser redimensionada conforme usuários e grupos ativos.
+
+8. Coins são cumulativos durante a conta ativa e sujeitos a correção de erro ou fraude. Não têm valor monetário, não podem ser sacados, vendidos ou transferidos e só servem aos resgates disponíveis na Loja.
 `;
 
 export const LEGAL_ACCOUNT_DELETION_POLICY = `

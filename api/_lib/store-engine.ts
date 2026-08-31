@@ -452,7 +452,7 @@ export class StoreEngine {
       const createdAt = new Date().toISOString();
       const order: PhysicalOrder = { orderId, userId: params.userId, status: 'PROCESSING', paymentMethod: 'COINS', totalCashAmount: 0, totalCoinAmount, shippingAmount: 0, address, dropId: activeDrop.id, idempotencyKey: params.idempotencyKey, createdAt, updatedAt: createdAt };
       const item: PhysicalOrderItemSnapshot = { productId: product.productId, name: product.name, gtin: product.gtin, quantity, unitPrice: 0, supplierCostSnapshot: product.currentSupplierCost, coinAmountUsed: totalCoinAmount, cashAmount: 0, shippingAmount: 0 };
-      const coinTransaction: RewardCoinTransaction = { id: coinTransactionRef.id, userId: params.userId, amount: totalCoinAmount, type: 'debit', origin: 'store_purchase', description: `Resgate na Loja Invictus: ${product.name}`, idempotencyKey: params.idempotencyKey, createdAt };
+      const coinTransaction: RewardCoinTransaction = { id: coinTransactionRef.id, userId: params.userId, amount: totalCoinAmount, type: 'debit', origin: 'store_purchase', ledgerType: 'STORE_PURCHASE', description: `Resgate na Loja Invictus: ${product.name}`, idempotencyKey: params.idempotencyKey, createdAt };
       transaction.update(productRef, { reservedDropStock: product.reservedDropStock + quantity, updatedAt: createdAt });
       transaction.set(walletRef, { userId: params.userId, balance: balance - totalCoinAmount, lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0), lifetimeSpent: Math.max(0, Number(wallet.lifetimeSpent) || 0) + totalCoinAmount, updatedAt: createdAt }, { merge: true });
       transaction.create(orderRef, order);
@@ -526,7 +526,7 @@ export class StoreEngine {
         const wallet = walletSnapshot.data() || {};
         if (!refundSnapshot.exists) {
           transaction.set(walletRef, { userId: order.userId, balance: Math.max(0, Number(wallet.balance) || 0) + order.totalCoinAmount, lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0), lifetimeSpent: Math.max(0, (Number(wallet.lifetimeSpent) || 0) - order.totalCoinAmount), updatedAt: now }, { merge: true });
-          const refund: RewardCoinTransaction = { id: refundRef.id, userId: order.userId, amount: order.totalCoinAmount, type: 'credit', origin: 'store_purchase', description: `Estorno do pedido ${order.orderId}`, idempotencyKey: `refund:${order.orderId}`, createdAt: now };
+          const refund: RewardCoinTransaction = { id: refundRef.id, userId: order.userId, amount: order.totalCoinAmount, type: 'credit', origin: 'store_purchase', ledgerType: 'STORE_REFUND', description: `Estorno do pedido ${order.orderId}`, idempotencyKey: `refund:${order.orderId}`, createdAt: now };
           transaction.create(refundRef, refund);
         }
       }

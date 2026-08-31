@@ -7,6 +7,7 @@ import { db } from '../_lib/common.js';
 import { logEvent } from '../_lib/observability.js';
 import { AdminRepository } from '../_repositories/admin-repository.js';
 import { AdminService } from '../_services/admin/admin-service.js';
+import { resolveGymChampionshipReview } from '../_lib/championship-scoring-service.js';
 
 const adminRepository = new AdminRepository();
 const adminService = new AdminService(adminRepository);
@@ -21,11 +22,9 @@ export default async function handler(req: VercelRequest & { userId?: string; us
     // 2. Authorize Admin
     const userSnap = await db.collection('users').doc(req.userId!).get();
     const userData = userSnap.exists ? userSnap.data() : {};
-    // Nunca confie em um booleano editável do perfil para conceder privilégio.
-    // O e-mail vem do token Firebase já verificado; roles são gravadas apenas
-    // pelo servidor/regras administrativas.
-    const adminEmails = new Set(['samuelfsc89@gmail.com', 'mucafsc89@gmail.com']);
-    const isAdmin = adminEmails.has(String(req.userEmail || '').toLowerCase()) || userData?.role === 'admin';
+    // A autorização usa somente o papel persistido. Exceções por e-mail
+    // espalhadas pelo código criavam dois modelos de permissão incompatíveis.
+    const isAdmin = userData?.role === 'admin';
 
     if (!isAdmin) {
       await logEvent({
@@ -45,6 +44,48 @@ export default async function handler(req: VercelRequest & { userId?: string; us
     switch (action) {
       case 'metrics':
         return res.status(200).json(await adminService.getMetrics());
+
+      case 'get-reward-economy-config': {
+        const [economy, championship] = await Promise.all([
+          db.collection('reward_coin_economy').doc('global').get(),
+          db.collection('gym_championship_config').doc('global').get(),
+        ]);
+        return res.status(200).json({
+          economy: { pilotUserLimit: 1000, missionMonthlyCap: null, globalIssuanceBudget: null, enforceGlobalBudget: false, ...(economy.data() || {}) },
+          championship: { top1Prize: 2500, top2Prize: 1500, top3Prize: 1000, participationPrize: 50, ...(championship.data() || {}) },
+        });
+      }
+
+      case 'update-reward-economy-config': {
+        const numberOrNull = (value: unknown) => value === null || value === '' || value === undefined ? null : Math.max(0, Number(value) || 0);
+        const economy = {
+          pilotUserLimit: Math.max(1, Number(req.body?.pilotUserLimit) || 1000),
+          missionMonthlyCap: numberOrNull(req.body?.missionMonthlyCap),
+          globalIssuanceBudget: numberOrNull(req.body?.globalIssuanceBudget),
+          enforceGlobalBudget: Boolean(req.body?.enforceGlobalBudget),
+          updatedAt: new Date().toISOString(), updatedBy: req.userId,
+        };
+        const championship = {
+          top1Prize: Math.max(0, Number(req.body?.top1Prize) || 2500),
+          top2Prize: Math.max(0, Number(req.body?.top2Prize) || 1500),
+          top3Prize: Math.max(0, Number(req.body?.top3Prize) || 1000),
+          participationPrize: Math.max(0, Number(req.body?.participationPrize) || 50),
+          updatedAt: new Date().toISOString(), updatedBy: req.userId,
+        };
+        await Promise.all([
+          db.collection('reward_coin_economy').doc('global').set(economy, { merge: true }),
+          db.collection('gym_championship_config').doc('global').set(championship, { merge: true }),
+        ]);
+        return res.status(200).json({ success: true, economy, championship });
+      }
+
+      case 'review-gym-championship-result': {
+        const decision = String(req.body?.decision || '').toUpperCase();
+        if (decision !== 'APPROVED' && decision !== 'REJECTED') throw new AppError('Decisão inválida.', 400);
+        return res.status(200).json(await resolveGymChampionshipReview({
+          resultId: String(req.body?.resultId || ''), decision, reviewerId: req.userId!, reason: String(req.body?.reason || ''),
+        }));
+      }
 
       case 'logs': {
         const category = (req.query.category as string) || 'system_logs';
