@@ -128,7 +128,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // Update showTerms when user loads
   useEffect(() => {
     if (user) {
-      const isIncomplete = !user.termsAccepted || !user.league || !user.city;
+      // `league` pertence ao ecossistema antigo e academia/cidade são dados
+      // opcionais de ranking. Nenhum deles pode prender uma conta válida no
+      // onboarding legado. O único bloqueio global aqui é o consentimento.
+      const isIncomplete = !user.termsAccepted;
       setShowTerms(isIncomplete);
     }
   }, [user]);

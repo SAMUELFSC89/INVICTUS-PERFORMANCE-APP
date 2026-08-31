@@ -1,598 +1,97 @@
-import React, { useState, useEffect } from 'react';
-import { useUser } from '../UserContext';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Heart, Activity, Flame, Crown, Clock, Sparkles, TrendingUp, TrendingDown,
-  CheckCircle, AlertTriangle, Download, Award, Smartphone, Users, ChevronLeft,
-  Info, Calendar, Share2, HelpCircle, X, ChevronRight, Zap, Shield, RefreshCw, FileText,
-  FileCode2, Milestone, Bot, ShieldCheck, Database, BarChart3, PieChart, Layers, ArrowRight
-} from 'lucide-react';
+import { Activity, ArrowLeft, BarChart3, Bot, ChevronRight, Clock, Database, Flame, Heart, Info, Plus, ShieldCheck, Sparkles, Trophy, UserRound } from 'lucide-react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { cn } from '../lib/utils';
-
-import { TimeRange, METRIC_CATALOG, PerformanceMetricDef } from '../core/performance/metricCatalog';
-import { processUserPerformance, RawWorkoutSession, UserPerformanceState, CalculatedMetricValue } from '../core/performance/performanceEngine';
+import { useUser } from '../UserContext';
+import { InvictusLogo } from '../components/InvictusLogo';
+import { TimeRange } from '../core/performance/metricCatalog';
+import { CalculatedMetricValue, processUserPerformance, RawWorkoutSession, UserPerformanceState } from '../core/performance/performanceEngine';
 import { MetricMatrixModal } from '../components/performance/MetricMatrixModal';
 import { TimelineView } from '../components/performance/TimelineView';
 import { PerformanceAIModal } from '../components/performance/PerformanceAIModal';
 import { ModuleDetailModal } from '../components/performance/ModuleDetailModal';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import './PerformanceNew.css';
+
+type ModuleId = 'overview' | 'volume' | 'cardio' | 'energy' | 'recovery' | 'consistency' | 'records' | 'timeline';
+const RANGES: { id: TimeRange; label: string }[] = [{id:'today',label:'HOJE'},{id:'7days',label:'7 DIAS'},{id:'30days',label:'30 DIAS'},{id:'90days',label:'90 DIAS'},{id:'1year',label:'1 ANO'},{id:'all',label:'TUDO'}];
+const MODULES: { id: ModuleId; label: string; metrics: string[] }[] = [
+  {id:'overview',label:'VISÃO GERAL',metrics:['total_volume_time','workout_count','avg_heart_rate','total_calories_burned']},
+  {id:'volume',label:'TREINOS',metrics:['total_volume_time','workout_count','average_session_duration']},
+  {id:'cardio',label:'CARDIO',metrics:['avg_heart_rate','max_heart_rate_session']},
+  {id:'energy',label:'ENERGIA',metrics:['total_calories_burned','calorie_gate_ratio','acute_chronic_workload_ratio']},
+  {id:'recovery',label:'RECUPERAÇÃO',metrics:['recovery_index','rest_interval_hours']},
+  {id:'consistency',label:'CONSISTÊNCIA',metrics:['weekly_active_days','current_streak_days']},
+  {id:'records',label:'RECORDES',metrics:[]},{id:'timeline',label:'LINHA DO TEMPO',metrics:[]}
+];
 
 export function Performance() {
-  const { user, refreshUser } = useUser();
+  const { user } = useUser();
   const navigate = useNavigate();
-
-  // Selected Time Horizon
-  const [selectedRange, setSelectedRange] = useState<TimeRange>('7days');
-  const [activeModule, setActiveModule] = useState<'overview' | 'volume' | 'cardio' | 'energy' | 'recovery' | 'consistency' | 'records' | 'timeline'>('overview');
-
-  // Firestore & Real Engine State
+  const [range, setRange] = useState<TimeRange>('7days');
+  const [module, setModule] = useState<ModuleId>('overview');
+  const [raw, setRaw] = useState<RawWorkoutSession[]>([]);
+  const [state, setState] = useState<UserPerformanceState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [rawWorkouts, setRawWorkouts] = useState<RawWorkoutSession[]>([]);
-  const [perfState, setPerfState] = useState<UserPerformanceState | null>(null);
-
-  // Modals Control
-  const [showMatrixModal, setShowMatrixModal] = useState(false);
-  const [showAIModal, setShowAIModal] = useState(false);
-  const [selectedMetricForDetail, setSelectedMetricForDetail] = useState<CalculatedMetricValue | null>(null);
+  const [error, setError] = useState('');
+  const [matrix, setMatrix] = useState(false);
+  const [ai, setAi] = useState(false);
+  const [metric, setMetric] = useState<CalculatedMetricValue | null>(null);
+  const isPro = user?.subscriptionTier === 'performance' || user?.currentPlan === 'performance' || user?.isSubscribed === true || user?.premium === true;
 
   useEffect(() => {
     if (!user) return;
+    let active = true;
+    setLoading(true); setError('');
+    getDocs(query(collection(db,'workouts'),where('userId','==',user.uid))).then(snapshot => {
+      const sessions: RawWorkoutSession[] = snapshot.docs.flatMap(item => {
+        const data = item.data();
+        const timestamp = readActivityTimestamp(data.timestamp ?? data.createdAt);
+        if (timestamp === null || normalizeActivityValidationStatus(data.validationStatus ?? data.status ?? data.validation?.status) !== 'validated') return [];
+        const duration = Number(data.durationMinutes ?? data.duration);
+        const avgHeartRate = Number(data.avgHeartRate ?? data.avgHr);
+        const maxHeartRate = Number(data.maxHeartRate ?? data.maxHr);
+        const calories = Number(data.caloriesBurned ?? data.calories);
+        return [{id:item.id,userId:user.uid,timestamp,durationMinutes:Number.isFinite(duration)&&duration>=0?duration:0,avgHeartRate:Number.isFinite(avgHeartRate)&&avgHeartRate>0?avgHeartRate:undefined,maxHeartRate:Number.isFinite(maxHeartRate)&&maxHeartRate>0?maxHeartRate:undefined,caloriesBurned:Number.isFinite(calories)&&calories>=0?calories:0,workoutType:data.workoutType||data.type||'workout',workoutName:data.workoutName||data.title||data.type||'Atividade registrada',validationStatus:'validated',hasSensorData:Number.isFinite(avgHeartRate)&&avgHeartRate>0,hasGPSData:Boolean(data.distanceKm||data.gpsTracked)}];
+      });
+      if (active) setRaw(sessions);
+    }).catch(reason => { if (active) setError(reason.message || 'Não foi possível carregar os dados.'); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [user]);
 
-    const fetchUserPerformanceData = async () => {
-      setLoading(true);
-      try {
-        const workoutsQuery = query(
-          collection(db, 'workouts'),
-          where('userId', '==', user.uid)
-        );
-        const snap = await getDocs(workoutsQuery);
-        
-        const fetchedWorkouts: RawWorkoutSession[] = snap.docs.flatMap(doc => {
-          const d = doc.data();
-          const timestamp = readActivityTimestamp(d.timestamp ?? d.createdAt);
-          const status = normalizeActivityValidationStatus(d.validationStatus ?? d.status ?? d.validation?.status);
-          if (timestamp === null || status !== 'validated') return [];
-          const duration = Number(d.durationMinutes ?? d.duration);
-          const avgHeartRate = Number(d.avgHeartRate ?? d.avgHr);
-          const maxHeartRate = Number(d.maxHeartRate ?? d.maxHr);
-          const calories = Number(d.caloriesBurned ?? d.calories);
-          return [{
-            id: doc.id,
-            userId: user.uid,
-            timestamp,
-            durationMinutes: Number.isFinite(duration) && duration >= 0 ? duration : 0,
-            avgHeartRate: Number.isFinite(avgHeartRate) && avgHeartRate > 0 ? avgHeartRate : undefined,
-            maxHeartRate: Number.isFinite(maxHeartRate) && maxHeartRate > 0 ? maxHeartRate : undefined,
-            caloriesBurned: Number.isFinite(calories) && calories >= 0 ? calories : 0,
-            workoutType: d.workoutType || d.type || 'workout',
-            workoutName: d.workoutName || d.title || d.type || 'Atividade registrada',
-            validationStatus: 'validated',
-            hasSensorData: Number.isFinite(avgHeartRate) && avgHeartRate > 0,
-            hasGPSData: !!(d.distanceKm || d.gpsTracked)
-          }];
-        });
+  useEffect(() => {
+    if (!user) return;
+    setState(processUserPerformance(raw,{...user,uid:user.uid,name:user.name||user.displayName},range));
+  }, [range, raw, user]);
 
-        setRawWorkouts(fetchedWorkouts);
+  if (!user) return null;
+  if (!isPro) return createPortal(<main className="pfn-screen"><div className="pfn-gate"><InvictusLogo size={72} /><small>INVICTUS PRO</small><h1>CENTRO DE PERFORMANCE</h1><p>Análises avançadas são liberadas no Plano Pro. Nenhuma métrica é estimada sem dados reais suficientes.</p><button onClick={() => navigate('/profile')}>VOLTAR AO PERFIL</button></div></main>,document.body);
+  const activeConfig = MODULES.find(item => item.id === module)!;
 
-        // Compute Analytics Engine State
-        const computedState = processUserPerformance(
-          fetchedWorkouts,
-          {
-            ...user,
-            uid: user.uid,
-            name: user.name || user.displayName
-          },
-          selectedRange
-        );
-
-        setPerfState(computedState);
-      } catch (err) {
-        console.error('[Performance] Error fetching user workouts:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUserPerformanceData();
-  }, [user, selectedRange]);
-
-  // Handle Range Filter Change
-  const handleRangeChange = (range: TimeRange) => {
-    setSelectedRange(range);
-    if (perfState && user) {
-      const updatedState = processUserPerformance(
-        rawWorkouts,
-        {
-          ...user,
-          uid: user.uid,
-          name: user.name || user.displayName
-        },
-        range
-      );
-      setPerfState(updatedState);
-    }
-  };
-
-  const ranges: { id: TimeRange; label: string }[] = [
-    { id: 'today', label: 'Hoje' },
-    { id: 'yesterday', label: 'Ontem' },
-    { id: '7days', label: '7 Dias' },
-    { id: '30days', label: '30 Dias' },
-    { id: '90days', label: '90 Dias' },
-    { id: '1year', label: '1 Ano' },
-    { id: 'all', label: 'Todo o Histórico' }
-  ];
-
-  const modules = [
-    { id: 'overview', label: 'Visão Geral' },
-    { id: 'volume', label: 'Volume & Treinos' },
-    { id: 'cardio', label: 'Cardiovascular' },
-    { id: 'energy', label: 'Energia & Carga' },
-    { id: 'recovery', label: 'Recuperação' },
-    { id: 'consistency', label: 'Consistência' },
-    { id: 'records', label: 'Recordes (PRs)' },
-    { id: 'timeline', label: 'Linha do Tempo' }
-  ];
-
-  if (!user || user.subscriptionTier !== 'performance') {
-    return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 gap-4 text-center">
-        {!user ? (
-          <p className="text-zinc-400 font-mono text-xs">Aguardando autenticação...</p>
-        ) : (
-          <>
-            <p className="text-zinc-300 text-sm font-bold max-w-xs">Este espaço é exclusivo do Plano Pro.</p>
-            <button onClick={() => navigate('/profile')} className="bg-emerald-500 text-black font-black text-xs px-5 py-2.5 rounded-2xl">Ver Planos</button>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-black text-white pb-24 font-sans selection:bg-emerald-500 selection:text-black">
-      {/* Top Banner Header */}
-      <header className="sticky top-0 z-40 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/80 px-4 md:px-8 py-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(-1)}
-              className="w-9 h-9 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-headline italic font-black text-xl md:text-2xl uppercase tracking-tight text-white flex items-center gap-2">
-                  <span>Centro de Performance Invictus</span>
-                  <span className="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold px-2.5 py-0.5 rounded-full not-italic">
-                    Plataforma Esportiva
-                  </span>
-                </h1>
-              </div>
-              <p className="text-xs text-zinc-400 font-medium">
-                Análise biométrica e inteligência de dados reais • {user.name || user.displayName}
-              </p>
-            </div>
-          </div>
-
-          {/* Top Action Buttons (Matrix & AI) */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowMatrixModal(true)}
-              className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-emerald-500/40 text-emerald-400 font-bold text-xs px-3.5 py-2 rounded-2xl flex items-center gap-2 transition-all cursor-pointer shadow-sm"
-            >
-              <FileCode2 size={16} />
-              <span>Matriz de Métricas</span>
-            </button>
-
-            {perfState && (
-              <button
-                onClick={() => setShowAIModal(true)}
-                className="bg-gradient-to-r from-emerald-500 to-teal-600 text-black font-black text-xs px-4 py-2 rounded-2xl flex items-center gap-2 transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-emerald-500/20"
-              >
-                <Sparkles size={16} />
-                <span>Invictus Performance AI</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-6 space-y-6">
-        {/* Time Range Selector Bar */}
-        <div className="bg-zinc-950/80 border border-zinc-800/80 p-2 rounded-3xl flex items-center gap-1 overflow-x-auto">
-          {ranges.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => handleRangeChange(r.id)}
-              className={cn(
-                "text-xs font-bold px-4 py-2 rounded-2xl whitespace-nowrap transition-all cursor-pointer",
-                selectedRange === r.id
-                  ? "bg-emerald-500 text-black font-black shadow-md shadow-emerald-500/20"
-                  : "text-zinc-400 hover:text-white hover:bg-zinc-900"
-              )}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Global Data Reliability & Device Status Bar */}
-        {perfState && (
-          <div className="bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 p-4 md:p-5 rounded-3xl border border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
-                <ShieldCheck size={22} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black uppercase text-white tracking-wider">
-                    Confiabilidade dos Dados no Período:
-                  </span>
-                  <span className={cn(
-                    "text-[10px] font-black px-2.5 py-0.5 rounded-full border uppercase font-mono",
-                    perfState.overallReliability === 'alta'
-                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                      : "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                  )}>
-                    Nível {perfState.overallReliability}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  {perfState.aiStructuredPayload.confidenceAssessment}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 text-xs border-t md:border-t-0 md:border-l border-zinc-800 pt-3 md:pt-0 md:pl-4">
-              <div className="text-right">
-                <p className="text-[10px] uppercase text-zinc-500 font-bold">Total no Histórico</p>
-                <p className="font-headline italic font-black text-lg text-white">
-                  {perfState.allWorkouts.length} <span className="text-xs text-zinc-400 font-normal">treinos</span>
-                </p>
-              </div>
-              <div className="w-px h-8 bg-zinc-800 hidden md:block" />
-              <div className="text-right">
-                <p className="text-[10px] uppercase text-zinc-500 font-bold">Amostra Biométrica</p>
-                <p className="font-headline italic font-black text-lg text-emerald-400">
-                  {perfState.aiStructuredPayload.dataCompleteness}% <span className="text-xs text-zinc-400 font-normal">validado</span>
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Module Tab Selector */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-zinc-800/60">
-          {modules.map((mod) => (
-            <button
-              key={mod.id}
-              onClick={() => setActiveModule(mod.id as any)}
-              className={cn(
-                "text-xs font-bold px-4 py-2.5 rounded-2xl whitespace-nowrap transition-all cursor-pointer border",
-                activeModule === mod.id
-                  ? "bg-zinc-900 text-emerald-400 border-emerald-500/40 shadow-sm"
-                  : "bg-zinc-950/40 text-zinc-400 border-zinc-800/60 hover:text-white"
-              )}
-            >
-              {mod.label}
-            </button>
-          ))}
-        </div>
-
-        {/* LOADING STATE */}
-        {loading || !perfState ? (
-          <div className="py-20 text-center text-zinc-500 space-y-3">
-            <RefreshCw size={32} className="mx-auto text-emerald-500 animate-spin" />
-            <p className="text-xs font-mono">Processando matriz analítica de biometria...</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* 1. VISÃO GERAL (OVERVIEW MODULE) */}
-            {activeModule === 'overview' && (
-              <div className="space-y-6">
-                {/* Top Readiness Hero Card */}
-                <div className="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 p-6 md:p-8 rounded-3xl border border-emerald-500/30 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                        <Activity size={26} />
-                      </div>
-                      <div>
-                        <span className="text-xs font-black uppercase tracking-widest text-emerald-400">
-                          Prontidão Fisiológica & Recuperação
-                        </span>
-                        <h2 className="font-headline italic font-black text-2xl text-white">
-                          Status: {perfState.readinessStatus}
-                        </h2>
-                      </div>
-                    </div>
-
-                    <div className="text-left sm:text-right">
-                      <span className="font-headline italic font-black text-3xl sm:text-4xl md:text-5xl text-emerald-400">
-                        {perfState.readinessScore ?? '—'}
-                      </span>
-                      {perfState.readinessScore !== null && <span className="text-zinc-400 font-bold text-lg ml-1">/ 100</span>}
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                    {perfState.readinessScore === null
-                      ? 'A prontidão só é exibida quando houver dados de recuperação e biometria suficientes no período.'
-                      : 'Indicador calculado a partir dos registros validados disponíveis no período.'}
-                  </p>
-                </div>
-
-                {/* Core Metric Cards Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <MetricCard
-                    metric={perfState.computedMetrics['total_volume_time']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['total_volume_time'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['workout_count']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['workout_count'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['avg_heart_rate']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['avg_heart_rate'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['total_calories_burned']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['total_calories_burned'])}
-                  />
-                </div>
-
-                {/* HR Zones Preview */}
-                <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 space-y-4">
-                  <h3 className="font-headline italic font-black text-lg uppercase text-white flex items-center gap-2">
-                    <Heart size={20} className="text-emerald-400" />
-                    <span>Zonas de Frequência Cardíaca no Período</span>
-                  </h3>
-
-                  {perfState.computedMetrics['hr_zones_distribution']?.hasEnoughData ? (
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                    {perfState.hrZones.map((z, idx) => (
-                      <div key={idx} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 space-y-2">
-                        <div className="flex items-center justify-between text-xs font-bold">
-                          <span style={{ color: z.color }}>{z.zoneName.split(' ')[0]} {z.zoneName.split(' ')[1]}</span>
-                          <span className="font-mono text-zinc-400">{z.percent}%</span>
-                        </div>
-                        <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                          <div className="h-full transition-all" style={{ width: `${z.percent}%`, backgroundColor: z.color }} />
-                        </div>
-                        <p className="text-[10px] text-zinc-500 font-mono">{z.range}</p>
-                      </div>
-                    ))}
-                  </div>
-                  ) : (
-                    <p className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-6 text-center text-xs text-zinc-500">
-                      Sem dados cardíacos reais suficientes para calcular as zonas neste período.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* 2. VOLUME & TREINOS */}
-            {activeModule === 'volume' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <MetricCard
-                    metric={perfState.computedMetrics['total_volume_time']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['total_volume_time'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['workout_count']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['workout_count'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['average_session_duration']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['average_session_duration'])}
-                  />
-                </div>
-
-                {/* Session Breakdown List */}
-                <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 space-y-4">
-                  <h3 className="font-headline italic font-black text-lg uppercase text-white">
-                    Sessões Auditadas no Período ({perfState.timeframeWorkouts.length})
-                  </h3>
-
-                  {perfState.timeframeWorkouts.length === 0 ? (
-                    <div className="py-8 text-center text-zinc-500 text-xs">
-                      Nenhuma sessão registrada neste intervalo de tempo.
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                      {perfState.timeframeWorkouts.map((w, idx) => (
-                        <div key={w.id} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center justify-between text-xs">
-                          <div>
-                            <p className="font-bold text-white text-sm">{w.workoutName}</p>
-                            <p className="text-[10px] text-zinc-500 font-mono">
-                              {new Date(w.timestamp).toLocaleDateString('pt-BR')} • Status: {w.validationStatus}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <span className="font-headline italic font-black text-base text-emerald-400">
-                              {w.durationMinutes} min
-                            </span>
-                            {w.avgHeartRate ? (
-                              <p className="text-[10px] text-zinc-400">{w.avgHeartRate} bpm méd</p>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* 3. CARDIOVASCULAR */}
-            {activeModule === 'cardio' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <MetricCard
-                    metric={perfState.computedMetrics['avg_heart_rate']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['avg_heart_rate'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['max_heart_rate_session']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['max_heart_rate_session'])}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 4. ENERGIA & CARGA */}
-            {activeModule === 'energy' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <MetricCard
-                    metric={perfState.computedMetrics['total_calories_burned']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['total_calories_burned'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['calorie_gate_ratio']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['calorie_gate_ratio'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['acute_chronic_workload_ratio']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['acute_chronic_workload_ratio'])}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 5. RECUPERAÇÃO */}
-            {activeModule === 'recovery' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <MetricCard
-                    metric={perfState.computedMetrics['recovery_index']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['recovery_index'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['rest_interval_hours']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['rest_interval_hours'])}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 6. CONSISTÊNCIA */}
-            {activeModule === 'consistency' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <MetricCard
-                    metric={perfState.computedMetrics['weekly_active_days']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['weekly_active_days'])}
-                  />
-                  <MetricCard
-                    metric={perfState.computedMetrics['current_streak_days']}
-                    onClick={() => setSelectedMetricForDetail(perfState.computedMetrics['current_streak_days'])}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 7. RECORDES & EVOLUÇÃO */}
-            {activeModule === 'records' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {perfState.personalRecords.map((pr, idx) => (
-                    <div key={idx} className="bg-zinc-950 p-6 rounded-3xl border border-amber-500/30 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
-                          {pr.category}
-                        </span>
-                        <Crown size={20} className="text-amber-400" />
-                      </div>
-                      <p className="text-xs text-zinc-400 uppercase font-bold">{pr.title}</p>
-                      <p className="font-headline italic font-black text-3xl text-white">{pr.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 8. LINHA DO TEMPO */}
-            {activeModule === 'timeline' && (
-              <TimelineView events={perfState.timelineEvents} userName={perfState.userName} />
-            )}
-          </div>
-        )}
-      </main>
-
-      {/* MODALS */}
-      <MetricMatrixModal
-        isOpen={showMatrixModal}
-        onClose={() => setShowMatrixModal(false)}
-      />
-
-      {perfState && (
-        <PerformanceAIModal
-          isOpen={showAIModal}
-          onClose={() => setShowAIModal(false)}
-          perfState={perfState}
-        />
-      )}
-
-      <ModuleDetailModal
-        isOpen={!!selectedMetricForDetail}
-        onClose={() => setSelectedMetricForDetail(null)}
-        metricData={selectedMetricForDetail}
-      />
-    </div>
-  );
+  return createPortal(<main className="pfn-screen"><div className="pfn-page">
+    <header className="pfn-header"><button onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={44}/><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={() => setMatrix(true)} aria-label="Metodologia"><Info /></button></header>
+    <section className="pfn-title"><small>CENTRO DE DADOS</small><h1>SUA <span>PERFORMANCE</span></h1><p>Análises calculadas exclusivamente com atividades validadas.</p></section>
+    <nav className="pfn-ranges">{RANGES.map(item=><button key={item.id} className={range===item.id?'is-active':''} onClick={()=>setRange(item.id)}>{item.label}</button>)}</nav>
+    {error ? <p className="pfn-error">{error}</p> : null}
+    {loading || !state ? <section className="pfn-loading"><i/><p>Processando registros validados...</p></section> : <>
+      <section className="pfn-readiness"><div><Activity/><span><small>PRONTIDÃO FISIOLÓGICA</small><h2>{state.readinessStatus.toUpperCase()}</h2><p>{state.readinessScore===null?'Dados de recuperação ainda insuficientes.':'Indicador calculado com os registros disponíveis.'}</p></span></div><b>{state.readinessScore??'—'}<small>{state.readinessScore!==null?'/100':''}</small></b></section>
+      <nav className="pfn-modules">{MODULES.map(item=><button key={item.id} className={module===item.id?'is-active':''} onClick={()=>setModule(item.id)}>{item.label}</button>)}</nav>
+      {module!=='records'&&module!=='timeline'?<section className="pfn-metrics">{activeConfig.metrics.map(id=><MetricCard key={id} metric={state.computedMetrics[id]} onClick={()=>setMetric(state.computedMetrics[id]||null)}/>)}</section>:null}
+      {(module==='overview'||module==='cardio')?<section className="pfn-zones"><header><Heart/><h2>ZONAS CARDÍACAS</h2></header>{state.computedMetrics.hr_zones_distribution?.hasEnoughData?<div>{state.hrZones.map(zone=><article key={zone.zoneName}><span><b>{zone.zoneName}</b><small>{zone.range}</small></span><i><em style={{width:`${zone.percent}%`,backgroundColor:zone.color}}/></i><strong>{zone.percent}%</strong></article>)}</div>:<p>Sem frequência cardíaca real suficiente neste período.</p>}</section>:null}
+      {module==='volume'?<section className="pfn-sessions"><header><Clock/><h2>SESSÕES VALIDADAS</h2><b>{state.timeframeWorkouts.length}</b></header>{state.timeframeWorkouts.length?state.timeframeWorkouts.map(item=><article key={item.id}><div><b>{item.workoutName}</b><small>{new Date(item.timestamp).toLocaleDateString('pt-BR')}</small></div><span>{item.durationMinutes>0?`${Math.round(item.durationMinutes)} min`:'—'}{item.avgHeartRate?<small>{Math.round(item.avgHeartRate)} bpm</small>:null}</span></article>):<p>Nenhuma sessão validada neste intervalo.</p>}</section>:null}
+      {module==='records'?<section className="pfn-records">{state.personalRecords.length?state.personalRecords.map((item,index)=><article key={`${item.title}-${index}`}><Trophy/><small>{item.category}</small><h2>{item.title}</h2><b>{item.value}</b><span>{item.date}</span></article>):<p>Nenhum recorde validado disponível.</p>}</section>:null}
+      {module==='timeline'?<section className="pfn-timeline"><TimelineView events={state.timelineEvents} userName={state.userName}/></section>:null}
+      <section className="pfn-actions"><button onClick={()=>setMatrix(true)}><Database/>COMO CALCULAMOS</button><button onClick={()=>setAi(true)}><Bot/>ANALISAR COM IA</button></section>
+    </>}
+  </div>
+  <MetricMatrixModal isOpen={matrix} onClose={()=>setMatrix(false)}/>{state?<PerformanceAIModal isOpen={ai} onClose={()=>setAi(false)} perfState={state}/>:null}<ModuleDetailModal isOpen={Boolean(metric)} onClose={()=>setMetric(null)} metricData={metric}/>
+  <nav className="pfn-footer"><button onClick={()=>navigate('/')}><InvictusLogo size={24}/><span>Início</span></button><button onClick={()=>navigate('/championships')}><Trophy/><span>Campeonatos</span></button><button className="is-plus" onClick={()=>navigate('/musculacao')}><Plus/></button><button onClick={()=>navigate('/challenges')}><ShieldCheck/><span>Desafios</span></button><button onClick={()=>navigate('/profile')}><UserRound/><span>Perfil</span></button></nav>
+  </main>,document.body);
 }
 
-// Sub-component for clean Metric Display Cards
-function MetricCard({ metric, onClick }: { metric?: CalculatedMetricValue; onClick: () => void }) {
+function MetricCard({metric,onClick}:{metric?:CalculatedMetricValue;onClick:()=>void}) {
   if (!metric) return null;
-  const def = metric.def;
-
-  return (
-    <div
-      onClick={onClick}
-      className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-emerald-500/50 p-5 rounded-3xl transition-all cursor-pointer space-y-3 group relative overflow-hidden"
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 group-hover:text-emerald-400 transition-colors">
-          {def.name}
-        </span>
-        <span className={cn(
-          "text-[9px] font-mono px-2 py-0.5 rounded-full border uppercase font-bold",
-          metric.reliability === 'alta'
-            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-            : "bg-amber-500/10 text-amber-400 border-amber-500/30"
-        )}>
-          {metric.reliability}
-        </span>
-      </div>
-
-      <div className="flex items-baseline justify-between">
-        <div>
-          <span className="font-headline italic font-black text-3xl md:text-4xl text-white group-hover:scale-105 transition-transform inline-block">
-            {metric.hasEnoughData ? metric.currentValue : '—'}
-          </span>
-          <span className="text-zinc-500 font-bold ml-1.5 text-xs">{metric.unit}</span>
-        </div>
-      </div>
-
-      <p className="text-[10px] text-zinc-500 line-clamp-2 leading-relaxed">
-        {metric.hasEnoughData ? def.simpleDescription : (metric.statusMessage || 'Dados reais insuficientes para esta métrica.')}
-      </p>
-
-      <div className="pt-2 border-t border-zinc-900 flex items-center justify-between text-[10px] text-emerald-400 font-bold">
-        <span>Inspecionar Fórmulas & Fonte</span>
-        <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
-      </div>
-    </div>
-  );
+  return <button className="pfn-metric" onClick={onClick}><header><BarChart3/><small>{metric.def.name}</small><em className={metric.reliability==='alta'?'is-high':''}>{metric.reliability}</em></header><div><b>{metric.hasEnoughData?metric.currentValue:'—'}</b><span>{metric.unit}</span></div><p>{metric.hasEnoughData?metric.def.simpleDescription:(metric.statusMessage||'Dados reais insuficientes.')}</p><footer>VER FONTE E CÁLCULO <ChevronRight/></footer></button>;
 }

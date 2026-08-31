@@ -5,7 +5,6 @@ import { Gauge, Trophy, Award, User, Zap, Settings as SettingsIcon, Medal, Walle
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { AchievementTracker } from './AchievementTracker';
-import { Onboarding } from './Onboarding';
 import { XPToast } from './XPToast';
 import { FloatingSessionIndicator } from './FloatingSessionIndicator';
 import { InvictusAIFloatingAssistant } from './InvictusAIFloatingAssistant';
@@ -18,7 +17,6 @@ import { BarbellLifter } from './BarbellLifter';
 export function Layout() {
   const { user, refreshUser } = useUser();
   const progress = getXPProgress(user?.xp || 0);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [showBarbellModal, setShowBarbellModal] = useState(false);
   const [xpToast, setXpToast] = useState<{ visible: boolean; points: number; message?: string; rankingPoints?: number }>({ 
     visible: false, points: 0 
@@ -41,16 +39,6 @@ export function Layout() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  useEffect(() => {
-    if (user) {
-      if (!user.termsAccepted || !user.league || !user.gymId) {
-        setShowOnboarding(true);
-      } else {
-        setShowOnboarding(false);
-      }
-    }
-  }, [user]);
-
   // UserContext fetches the profile once on login (no live Firestore
   // listener), so without this the Bell badge would only refresh after a
   // full app reload. Cheap periodic + on-focus refresh keeps it real.
@@ -69,9 +57,6 @@ export function Layout() {
 
   return (
     <div className="min-h-screen app-fundo text-on-surface font-body flex flex-col">
-      {showOnboarding && user && location.pathname !== '/settings' && (
-        <Onboarding user={user} onComplete={() => setShowOnboarding(false)} />
-      )}
       <TermsAndConsent />
       <AchievementTracker />
       <FloatingSessionIndicator />

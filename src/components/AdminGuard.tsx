@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
+import { AdminShell } from './AdminShell';
 
 export function AdminGuard({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
@@ -49,5 +50,5 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" replace />;
   }
 
-  return <>{children}</>;
+  return <AdminShell>{children}</AdminShell>;
 }

@@ -1,253 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { CheckCircle2, AlertCircle, Loader2, Sparkles, ChevronRight, Settings } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertCircle, CheckCircle2, ChevronRight, Clock3, RotateCcw, ShieldCheck } from 'lucide-react';
 import { auth } from '../firebase';
+import { API_CONFIG } from '../config';
+import { InvictusLogo } from '../components/InvictusLogo';
+import './PaymentSuccessNew.css';
+
+type PaymentStatus = 'pending'|'processing'|'approved'|'rejected'|'cancelled'|'refunded'|'charged_back'|'error';
+const FINAL = new Set<PaymentStatus>(['approved','rejected','cancelled','refunded','charged_back']);
 
 export function PaymentSuccess() {
-  const [searchParams] = useSearchParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
-  
-  const orderId = searchParams.get('orderId');
-
+  const orderId = params.get('orderId');
   const path = window.location.pathname;
-  const isPendentePage = path.includes('/pagamento/pendente');
-  const isFalhaPage = path.includes('/pagamento/falha');
+  const failurePage = path.includes('/pagamento/falha');
+  const pendingPage = path.includes('/pagamento/pendente');
+  const [status,setStatus] = useState<PaymentStatus>(failurePage?'rejected':'pending');
+  const [message,setMessage] = useState(failurePage?'Não foi possível aprovar o pagamento. Tente novamente com outro método.':pendingPage?'Seu pagamento está sendo processado. A liberação acontecerá automaticamente após a confirmação.':'Estamos confirmando seu pagamento. Assim que for aprovado, seu acesso será liberado.');
+  const [checking,setChecking] = useState(!failurePage);
+  const failures = useRef(0);
 
-  const [status, setStatus] = useState<'pending' | 'processing' | 'approved' | 'rejected' | 'cancelled' | 'refunded' | 'charged_back' | 'error'>(() => {
-    if (isFalhaPage) return 'rejected';
-    return 'pending';
-  });
-
-  const [message, setMessage] = useState(() => {
-    if (isFalhaPage) return 'Não foi possível aprovar o pagamento. Tente novamente com outro método.';
-    if (isPendentePage) return 'Seu pagamento está sendo processado. A liberação acontece automaticamente após a confirmação.';
-    return 'Estamos confirmando seu pagamento. Assim que for aprovado, seu acesso será liberado.';
-  });
-
-  const [loading, setLoading] = useState(!isFalhaPage);
-  const [retryCount, setRetryCount] = useState(0);
-
-  useEffect(() => {
-    if (isFalhaPage) {
-      setLoading(false);
-      return;
-    }
-
-    if (!orderId) {
-      setStatus('error');
-      setMessage('Nenhum identificador de pedido foi fornecido.');
-      setLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-    let pollInterval: NodeJS.Timeout;
-
-    const checkStatus = async () => {
-      try {
-        const idToken = await auth.currentUser?.getIdToken();
-        if (!idToken) {
-          console.warn('[PaymentSuccess] Standard user session token not fetched yet. Retrying...');
-          return;
-        }
-
-        const paymentIdFromUrl = searchParams.get('payment_id') || searchParams.get('paymentId');
-        const queryUrl = `/api/payments/status/${orderId}${paymentIdFromUrl ? `?paymentId=${paymentIdFromUrl}` : ''}`;
-        console.log(`[PaymentSuccess] Querying status redundantly: ${queryUrl}`);
-
-        const res = await fetch(queryUrl, {
-          headers: {
-            'Authorization': `Bearer ${idToken}`
-          }
-        });
-
-        if (!res.ok) {
-          throw new Error('Falha na requisição de consulta de status.');
-        }
-
-        const data = await res.json();
-        if (!isMounted) return;
-
-        if (data.success) {
-          const currentStatus = data.status;
-          setStatus(currentStatus);
-          setMessage(data.message || '');
-          
-          if (currentStatus === 'approved' || currentStatus === 'rejected' || currentStatus === 'cancelled' || currentStatus === 'refunded' || currentStatus === 'charged_back') {
-            setLoading(false);
-            clearInterval(pollInterval);
-          }
-        }
-      } catch (err) {
-        console.error('[PaymentSuccess Error] Status polling error:', err);
-        if (isMounted && retryCount > 5) {
-          setStatus('error');
-          setMessage('Ocorreu uma falha de conexão na verificação. Por favor, verifique seu extrato bancário ou carteira.');
-          setLoading(false);
-          clearInterval(pollInterval);
-        }
+  useEffect(()=>{
+    if(failurePage) return;
+    if(!orderId){setStatus('error');setMessage('O retorno não contém um identificador de pedido válido.');setChecking(false);return;}
+    let active=true; let timer:number|undefined;
+    const check=async()=>{
+      try{
+        const token=await auth.currentUser?.getIdToken();
+        if(!token) throw new Error('Sessão ainda indisponível.');
+        const paymentId=params.get('payment_id')||params.get('paymentId');
+        const suffix=paymentId?`?paymentId=${encodeURIComponent(paymentId)}`:'';
+        const response=await fetch(`${API_CONFIG.baseUrl}/api/payments/status/${encodeURIComponent(orderId)}${suffix}`,{headers:{Authorization:`Bearer ${token}`}});
+        if(!response.ok) throw new Error('Falha ao consultar o pagamento.');
+        const data=await response.json();
+        if(!active||!data.success) return;
+        const next=data.status as PaymentStatus;
+        setStatus(next); setMessage(data.message||'');
+        failures.current=0;
+        if(FINAL.has(next)){setChecking(false);return;}
+      }catch{
+        failures.current+=1;
+        if(failures.current>=6&&active){setStatus('error');setMessage('Não foi possível verificar o pagamento agora. Consulte seu extrato antes de tentar novamente.');setChecking(false);return;}
       }
+      if(active) timer=window.setTimeout(check,3000);
     };
+    void check();
+    return()=>{active=false;if(timer)window.clearTimeout(timer);};
+  },[failurePage,orderId,params]);
 
-    // Run first check
-    checkStatus();
-
-    // Setup active polling every 3 seconds
-    pollInterval = setInterval(() => {
-      setRetryCount(prev => prev + 1);
-      checkStatus();
-    }, 3000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(pollInterval);
-    };
-  }, [orderId, retryCount]);
-
-  return (
-    <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 bg-background-neutral text-on-surface">
-      <div className="w-full max-w-md p-8 rounded-3xl bg-surface-elevation-1 border border-border-neutral shadow-2xl relative overflow-hidden text-center">
-        
-        {/* Absolute Design Accents */}
-        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-primary to-secondary opacity-80" />
-        
-        <AnimatePresence mode="wait">
-          {loading && (status === 'pending' || status === 'processing') && (
-            <motion.div
-              key="pending-ui"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3 }}
-              className="flex flex-col items-center space-y-6"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary relative">
-                <Loader2 className="w-8 h-8 animate-spin" />
-                <div className="absolute inset-0 rounded-2xl border-2 border-primary/20 animate-ping" />
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="text-xl font-bold font-sans tracking-tight">Confirmando Pagamento</h2>
-                <p className="text-sm text-on-surface-variant font-label max-w-xs mx-auto">
-                  {message || 'Estamos confirmando seu pagamento junto ao Mercado Pago. Isso pode levar alguns instantes.'}
-                </p>
-              </div>
-
-              <div className="text-xs text-on-surface-variant font-mono bg-surface-elevation-2 px-3 py-1.5 rounded-full border border-border-neutral">
-                Pedido: #{orderId}
-              </div>
-
-              <p className="text-xs text-on-surface-variant italic animate-pulse">
-                Aguardando resposta do gateway... Por favor, não feche esta tela.
-              </p>
-            </motion.div>
-          )}
-
-          {status === 'approved' && (
-            <motion.div
-              key="approved-ui"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', damping: 15 }}
-              className="flex flex-col items-center space-y-6"
-            >
-              <div className="w-20 h-20 rounded-full bg-success/15 border-4 border-success/35 flex items-center justify-center text-success relative">
-                <CheckCircle2 className="w-10 h-10" />
-                <Sparkles className="absolute -top-1 -right-1 w-5 h-5 text-warning animate-bounce" />
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="text-2xl font-bold font-sans tracking-tight text-success">Pagamento Confirmado!</h2>
-                <h3 className="text-sm font-semibold text-primary uppercase tracking-wider font-sans">Acesso PRO Liberado</h3>
-                <p className="text-sm text-on-surface-variant max-w-xs mx-auto">
-                  Parabéns! Sua assinatura do Invictus foi ativada com sucesso. Seu ranking oficial, benefícios exclusivos e temporada estão desbloqueados.
-                </p>
-              </div>
-
-              <div className="w-full pt-4 flex flex-col space-y-3">
-                <button
-                  id="go-home-btn"
-                  onClick={() => navigate('/')}
-                  className="w-full py-3.5 bg-primary hover:bg-primary-hover active:scale-[0.98] transition-all text-on-primary rounded-2xl shadow-lg shadow-primary/20 flex items-center justify-center space-x-2 font-semibold text-sm cursor-pointer"
-                >
-                  <span>Acessar Painel Principal</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {(status === 'rejected' || status === 'cancelled' || status === 'error') && (
-            <motion.div
-              key="failure-ui"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', damping: 15 }}
-              className="flex flex-col items-center space-y-6"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-error/10 flex items-center justify-center text-error border border-error/20">
-                <AlertCircle className="w-8 h-8" />
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="text-xl font-bold font-sans tracking-tight text-error">Pagamento Não Aprovado</h2>
-                <p className="text-sm text-on-surface-variant max-w-xs mx-auto">
-                  {message || 'Não foi possível confirmar o recebimento do seu pagamento pelo Mercado Pago. O cartão pode ter sido recusado ou a transação foi cancelada.'}
-                </p>
-              </div>
-
-              <div className="w-full pt-4">
-                <button
-                  id="go-settings-btn"
-                  onClick={() => navigate('/settings')}
-                  className="w-full py-3.5 bg-surface-elevation-2 hover:bg-surface-elevation-3 transition-colors border border-border-neutral text-on-surface rounded-2xl flex items-center justify-center space-x-2 font-semibold text-sm cursor-pointer"
-                >
-                  <Settings className="w-4 h-4 text-on-surface-variant" />
-                  <span>Tentar Novamente (Planos)</span>
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {(status === 'refunded' || status === 'charged_back') && (
-            <motion.div
-              key="revocation-ui"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', damping: 15 }}
-              className="flex flex-col items-center space-y-6"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-warning/10 flex items-center justify-center text-warning border border-warning/20">
-                <AlertCircle className="w-8 h-8" />
-              </div>
-
-              <div className="space-y-2">
-                <h2 className="text-xl font-bold font-sans tracking-tight text-warning">Acesso Suspenso</h2>
-                <p className="text-sm text-on-surface-variant max-w-sm">
-                  Detectamos que este pagamento foi estornado ou que a transação sofreu chargeback. O acesso de sua conta às funcionalidades PRO foi revogado.
-                </p>
-                {status === 'charged_back' && (
-                  <p className="text-xs text-error font-medium mt-1">
-                    Sua conta está sob análise em nossa auditoria.
-                  </p>
-                )}
-              </div>
-
-              <div className="w-full pt-4">
-                <button
-                  id="go-home-revoked-btn"
-                  onClick={() => navigate('/')}
-                  className="w-full py-3 bg-surface-elevation-2 text-on-surface rounded-2xl text-sm font-semibold border border-border-neutral cursor-pointer"
-                >
-                  Ir para Painel Comum
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
+  const approved=status==='approved';
+  const revoked=status==='refunded'||status==='charged_back';
+  const pending=checking&&(status==='pending'||status==='processing');
+  return createPortal(<main className="payn-screen"><section className="payn-card"><header><InvictusLogo size={72}/><b>INVICTUS</b><small>PERFORMANCE</small></header>
+    {pending?<><div className="payn-icon is-pending"><Clock3/></div><small className="payn-label">PAGAMENTO EM ANÁLISE</small><h1>CONFIRMANDO PAGAMENTO</h1><p>{message}</p>{orderId?<code>Pedido #{orderId}</code>:null}<div className="payn-progress"><i/></div><em>Você pode sair desta tela. A confirmação também ocorre pelo servidor.</em></>:null}
+    {approved?<><div className="payn-icon is-approved"><CheckCircle2/></div><small className="payn-label">PAGAMENTO CONFIRMADO</small><h1>ACESSO PRO LIBERADO</h1><p>{message||'Sua assinatura foi ativada. Os benefícios do plano já estão disponíveis.'}</p><div className="payn-note"><ShieldCheck/><span>A assinatura não inscreve automaticamente em campeonatos ou temporadas.</span></div><button onClick={()=>navigate('/')}>IR PARA O INÍCIO <ChevronRight/></button></>:null}
+    {!pending&&!approved&&!revoked?<><div className="payn-icon is-failed"><AlertCircle/></div><small className="payn-label">PAGAMENTO NÃO CONCLUÍDO</small><h1>VERIFIQUE O PAGAMENTO</h1><p>{message}</p><button className="is-outline" onClick={()=>navigate('/profile/preferences/subscriptions')}><RotateCcw/> VER PLANOS</button></>:null}
+    {revoked?<><div className="payn-icon is-failed"><AlertCircle/></div><small className="payn-label">STATUS DO PAGAMENTO</small><h1>ACESSO PRO SUSPENSO</h1><p>{message||'O pagamento foi estornado ou contestado. Seu acesso Pro foi atualizado automaticamente.'}</p>{status==='charged_back'?<div className="payn-note is-alert"><AlertCircle/><span>A transação está sob revisão de segurança.</span></div>:null}<button className="is-outline" onClick={()=>navigate('/')}>VOLTAR AO INÍCIO</button></>:null}
+  </section></main>,document.body);
 }
 export default PaymentSuccess;

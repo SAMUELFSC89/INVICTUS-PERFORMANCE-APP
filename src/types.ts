@@ -7,6 +7,7 @@ export type Sex = 'male' | 'female';
 export interface Achievement {
   id: string;
   name: string;
+  normalizedName?: string;
   description: string;
   icon: string;
   unlockedAt?: string;
@@ -698,6 +699,193 @@ export interface StoreItem {
   priceCategory: IVCoinCategory | 'any';
   stock?: number;
   active: boolean;
+}
+
+export type ProductImageStatus = 'PENDING' | 'READY' | 'ERROR';
+export type PhysicalOrderStatus =
+  | 'PENDING_PAYMENT'
+  | 'PAID'
+  | 'PROCESSING'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'CANCELLED'
+  | 'REFUNDED';
+
+export interface ProductImages {
+  primary: string | null;
+  thumbnail: string | null;
+  gallery: string[];
+}
+
+export interface ProductPricing {
+  cashPrice: number | null;
+  supplierCost: number | null;
+  estimatedShippingCost: number | null;
+  packagingCost: number | null;
+  taxRate: number | null;
+  paymentFeePercent: number | null;
+  paymentFeeFixed: number | null;
+  otherVariableCost: number | null;
+  subsidyCost: number | null;
+  desiredMarginPercent: number | null;
+  calculatedSuggestedPrice: number | null;
+  estimatedProfit: number | null;
+  estimatedMarginPercent: number | null;
+  markup: number | null;
+  supplierCostAtLastPricing: number | null;
+  lastCalculatedAt: string | null;
+}
+
+export interface PhysicalProduct {
+  productId: string;
+  productStatus: 'DRAFT' | 'READY_FOR_PRICING' | 'READY_FOR_REVIEW' | 'ACTIVE' | 'INACTIVE' | 'COMING_SOON';
+  developmentStatus: 'READY' | 'PRODUCT_DEVELOPMENT_PENDING';
+  supplierId?: string | null;
+  supplierCode?: string | null;
+  supplierSku?: string | null;
+  supplierName?: string | null;
+  gtin: string | null;
+  gtinCandidate?: string | null;
+  boxGtin?: string | null;
+  boxGtinCandidate?: string | null;
+  barcodeType: 'EAN13' | null;
+  name: string;
+  brand: string;
+  category: 'Suplementos' | 'Bem-estar e Nutrição' | 'Vestuário' | 'Acessórios' | 'Nutrição' | 'Combos';
+  subcategory: string;
+  flavor?: string | null;
+  weight?: number | null;
+  weightUnit?: string | null;
+  package?: string | null;
+  supplierDescription: string | null;
+  publicDescription: string | null;
+  supplierClaims: string[];
+  publicHighlights: string[];
+  regularSupplierCost: number | null;
+  currentSupplierCost: number | null;
+  minimumOrderQuantity: number | null;
+  leadTime: string | null;
+  promotionMinimumQuantity: number | null;
+  promotionStartAt: string | null;
+  promotionEndAt: string | null;
+  availability: string | null;
+  lastCostUpdate: string | null;
+  currency: 'BRL';
+  active: boolean;
+  storeVisible: boolean;
+  published: boolean;
+  displayOrder: number;
+  canPurchaseWithMoney: boolean;
+  canRedeemWithCoins: boolean;
+  canUseCoinsPlusMoney: boolean;
+  coinPrice: number | null;
+  cashTopUp: number | null;
+  commercialStock: number;
+  dropStock: number;
+  reservedCommercialStock: number;
+  reservedDropStock: number;
+  images: ProductImages;
+  imageStatus: ProductImageStatus;
+  adminPending?: string[];
+  shippingWeight?: number | null;
+  shippingWeightUnit?: 'g' | 'kg' | null;
+  packageLengthCm?: number | null;
+  packageWidthCm?: number | null;
+  packageHeightCm?: number | null;
+  pricing: ProductPricing;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PublicPhysicalProduct = Omit<PhysicalProduct,
+  | 'supplierCode'
+  | 'supplierSku'
+  | 'supplierName'
+  | 'supplierId'
+  | 'supplierDescription'
+  | 'supplierClaims'
+  | 'gtinCandidate'
+  | 'boxGtinCandidate'
+  | 'regularSupplierCost'
+  | 'currentSupplierCost'
+  | 'promotionMinimumQuantity'
+  | 'promotionStartAt'
+  | 'promotionEndAt'
+  | 'availability'
+  | 'lastCostUpdate'
+  | 'minimumOrderQuantity'
+  | 'leadTime'
+  | 'developmentStatus'
+  | 'commercialStock'
+  | 'dropStock'
+  | 'reservedCommercialStock'
+  | 'reservedDropStock'
+  | 'adminPending'
+  | 'pricing'
+> & {
+  cashPrice: number | null;
+  availableForPurchase: boolean;
+  availableForDrop: boolean;
+  commercialAvailability: 'AVAILABLE' | 'UNAVAILABLE';
+  dropState: 'UPCOMING' | 'OPEN' | 'SOLD_OUT' | 'UNAVAILABLE';
+  nextDropAt: string | null;
+};
+
+export interface PhysicalOrderItemSnapshot {
+  productId: string;
+  name: string;
+  gtin: string;
+  quantity: number;
+  unitPrice: number;
+  supplierCostSnapshot: number;
+  coinAmountUsed: number;
+  cashAmount: number;
+  shippingAmount: number;
+}
+
+export interface PhysicalShippingAddress {
+  recipientName: string;
+  postalCode: string;
+  street: string;
+  number: string;
+  complement: string | null;
+  district: string;
+  city: string;
+  state: string;
+}
+
+export interface PhysicalOrder {
+  orderId: string;
+  userId: string;
+  status: PhysicalOrderStatus;
+  paymentMethod: 'MONEY' | 'COINS' | 'COINS_PLUS_MONEY';
+  totalCashAmount: number;
+  totalCoinAmount: number;
+  shippingAmount: number;
+  address: PhysicalShippingAddress;
+  dropId: string | null;
+  idempotencyKey: string;
+  trackingCode?: string | null;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoreDrop {
+  id: string;
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  active: boolean;
+  shippingMode: 'FREE' | 'PAID_PENDING';
+  productIds: string[];
+  freightSubsidy: number;
+  packagingCost: number;
+  otherCosts: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserInventoryItem {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, Plus, ShieldCheck, SlidersHorizontal, Trophy, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -9,6 +10,8 @@ import { TimeRange } from '../core/performance/metricCatalog';
 import { cn } from '../lib/utils';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 import { healthSummaryService, HealthSummaryResponse } from '../services/healthSummaryService';
+import { InvictusLogo } from '../components/InvictusLogo';
+import './HealthNew.css';
 
 const ranges: { id: TimeRange; label: string }[] = [
   { id: 'today', label: 'Hoje' },
@@ -211,7 +214,11 @@ function useHealthData(range: TimeRange) {
 }
 
 function HealthHeader({ title, subtitle, onBack, right }: { title: string; subtitle: string; onBack: () => void; right?: React.ReactNode }) {
-  return <header className="health-header"><button aria-label="Voltar" onClick={onBack} className="health-back"><ArrowLeft /></button><div className="health-heading"><div><h1>{title}</h1><span className="health-pro">PRO</span></div><p>{subtitle}</p></div>{right}</header>;
+  return <><div className="health-brand"><InvictusLogo size={42} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><header className="health-header"><button aria-label="Voltar" onClick={onBack} className="health-back"><ArrowLeft /></button><div className="health-heading"><div><h1>{title}</h1><span className="health-pro">PRO</span></div><p>{subtitle}</p></div>{right}</header></>;
+}
+
+function HealthFooter({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+  return <nav className="health-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')}><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button className="is-active" onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>;
 }
 
 function PeriodControl({ value, onChange, compact = false }: { value: TimeRange; onChange: (value: TimeRange) => void; compact?: boolean }) {
@@ -551,10 +558,10 @@ export function Health() {
   const { summary, loadingSummary } = useHealthSummary();
 
   if (!user) return null;
-  if (loading || !state) return <div className="health-screen health-loading">Preparando os seus dados de saúde…</div>;
+  if (loading || !state) return createPortal(<div className="health-screen health-loading">Preparando os seus dados de saúde…</div>, document.body);
 
-  return (
-    <main className="health-screen">
+  return createPortal(
+    <main className="health-screen health-new-shell">
       <div className="health-content">
         <HealthHeader
           title="SAÚDE"
@@ -569,9 +576,9 @@ export function Health() {
           onGenerateReport={() => navigate('/health/report/full')}
           onOpenLegacyReport={() => navigate('/health/report')}
         />
-      </div>
+      </div><HealthFooter navigate={navigate} />
     </main>
-  );
+  , document.body);
 }
 
 export function HealthReport() {
@@ -582,7 +589,7 @@ export function HealthReport() {
   const { user, state, loading } = useHealthData(range);
   const weeklyRows = useMemo(() => state?.timeframeWorkouts.slice(-6).reverse() || [], [state]);
   if (!user) return null;
-  if (loading || !state) return <div className="health-screen health-loading">Gerando relatório de saúde…</div>;
+  if (loading || !state) return createPortal(<div className="health-screen health-loading">Gerando relatório de saúde…</div>, document.body);
   const calories = metricNumber(state, 'total_calories_burned');
   const active = metricNumber(state, 'total_volume_time');
   const heartRate = metricNumber(state, 'avg_heart_rate');

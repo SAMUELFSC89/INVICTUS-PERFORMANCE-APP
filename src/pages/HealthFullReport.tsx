@@ -216,7 +216,7 @@ export function HealthFullReport() {
         {/* PÁGINA 1 -- VISÃO GERAL */}
         <section className="health-report-page">
           <div className="health-report-page-header">
-            <img src="/logo.svg" alt="Invictus" />
+            <img src="/capacete.webp" alt="Invictus" />
             <div>
               <h1>Invictus Saúde &amp; Performance</h1>
               <p>Relatório individual — {periodo}</p>
@@ -248,7 +248,7 @@ export function HealthFullReport() {
         {/* PÁGINA 2 -- CORAÇÃO */}
         <section className="health-report-page">
           <div className="health-report-page-header">
-            <img src="/logo.svg" alt="Invictus" />
+            <img src="/capacete.webp" alt="Invictus" />
             <div><h1>Invictus Coração</h1><p>Entenda seus indicadores</p></div>
           </div>
           <div className="health-report-explain">
@@ -282,7 +282,7 @@ export function HealthFullReport() {
         {/* PÁGINA 3 -- RECUPERAÇÃO */}
         <section className="health-report-page">
           <div className="health-report-page-header">
-            <img src="/logo.svg" alt="Invictus" />
+            <img src="/capacete.webp" alt="Invictus" />
             <div><h1>Invictus Recuperação</h1><p>Sono, HRV e contexto</p></div>
           </div>
           <div className="health-report-explain">
@@ -304,7 +304,7 @@ export function HealthFullReport() {
         {/* PÁGINA 4 -- ATIVIDADE & ENERGIA */}
         <section className="health-report-page">
           <div className="health-report-page-header">
-            <img src="/logo.svg" alt="Invictus" />
+            <img src="/capacete.webp" alt="Invictus" />
             <div><h1>Invictus Atividade &amp; Energia</h1><p>Transformando números em contexto</p></div>
           </div>
           <div className="health-report-explain">
@@ -327,7 +327,7 @@ export function HealthFullReport() {
         {/* PÁGINA 5 -- INSIGHTS DO PERÍODO */}
         <section className="health-report-page">
           <div className="health-report-page-header">
-            <img src="/logo.svg" alt="Invictus" />
+            <img src="/capacete.webp" alt="Invictus" />
             <div><h1>Invictus Insights do Período</h1><p>O que mudou e o que observar</p></div>
           </div>
           <h2 className="health-report-section-title">Principais mudanças</h2>
@@ -355,7 +355,7 @@ export function HealthFullReport() {
         {/* PÁGINA 6 -- RESUMO PARA PROFISSIONAL */}
         <section className="health-report-page">
           <div className="health-report-page-header">
-            <img src="/logo.svg" alt="Invictus" />
+            <img src="/capacete.webp" alt="Invictus" />
             <div><h1>Invictus Resumo para Profissional</h1><p>Dados, tendências e proveniência ({summary90?.windowDays || 90} dias)</p></div>
           </div>
           <h2 className="health-report-section-title">Resumo de {summary90?.windowDays || 90} dias</h2>

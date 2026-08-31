@@ -84,6 +84,37 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
 
   const body = req.body || {};
 
+  if (action === 'recognize') {
+    const targetUserId = String(body.targetUserId || '').trim();
+    if (!targetUserId || targetUserId.length > 128) {
+      return res.status(400).json({ error: 'Perfil inválido.' });
+    }
+    if (targetUserId === auth.uid) {
+      return res.status(400).json({ error: 'Você não pode reconhecer o próprio perfil.' });
+    }
+
+    const targetRef = db.collection('users').doc(targetUserId);
+    const result = await db.runTransaction(async transaction => {
+      const targetSnap = await transaction.get(targetRef);
+      if (!targetSnap.exists) throw new Error('PROFILE_NOT_FOUND');
+      const currentLikes = Array.isArray(targetSnap.data()?.profileLikes)
+        ? targetSnap.data()!.profileLikes.filter((value: unknown) => typeof value === 'string')
+        : [];
+      const alreadyRecognized = currentLikes.includes(auth.uid);
+      if (!alreadyRecognized) {
+        transaction.update(targetRef, { profileLikes: [...currentLikes, auth.uid] });
+      }
+      return { alreadyRecognized, count: currentLikes.length + (alreadyRecognized ? 0 : 1) };
+    }).catch(error => {
+      if (error?.message === 'PROFILE_NOT_FOUND') return null;
+      throw error;
+    });
+
+    if (!result) return res.status(404).json({ error: 'Perfil não encontrado.' });
+    cache.del(`profile_${targetUserId}`);
+    return res.status(200).json({ recognized: true, ...result });
+  }
+
   if (action === 'check-cpf') {
     const cpf = String(body.cpf || '').replace(/\D/g, '');
     if (cpf.length !== 11) {

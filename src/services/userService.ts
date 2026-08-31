@@ -2,6 +2,7 @@ import { auth, db, storage, handleFirestoreError, OperationType } from '../fireb
 import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { UserProfile } from '../types';
+import { API_CONFIG } from '../config';
 
 export const userService = {
   async updateProfilePhoto(photoBlob: Blob) {
@@ -135,19 +136,18 @@ export const userService = {
     return false;
   },
   
-  async likeProfile(targetUserId: string) {
+  async likeProfile(targetUserId: string): Promise<{ count: number; alreadyRecognized: boolean }> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado.');
     if (user.uid === targetUserId) return; // Cannot like your own profile
-
-    const userRef = doc(db, 'users', targetUserId);
-    try {
-      await updateDoc(userRef, {
-        profileLikes: arrayUnion(user.uid)
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${targetUserId}`);
-      throw error;
-    }
+    const token = await user.getIdToken();
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/profile?action=recognize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ targetUserId })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Não foi possível reconhecer este atleta.');
+    return { count: Number(payload.count) || 0, alreadyRecognized: payload.alreadyRecognized === true };
   }
 };

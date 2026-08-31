@@ -1,51 +1,100 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors, verifyAuth } from '../_lib/common.js';
-import { StoreEngine } from '../_lib/store-engine.js';
+import { cors, db, verifyAuth } from '../_lib/common.js';
 import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
+import { StoreEngine } from '../_lib/store-engine.js';
+
+async function requireAdmin(userId: string) {
+  if (!db) return false;
+  const snapshot = await db.collection('users').doc(userId).get();
+  return snapshot.exists && snapshot.data()?.role === 'admin';
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
-
   const auth = await verifyAuth(req);
-  if (!auth) {
-    return res.status(401).json({ success: false, error: 'Sessão inválida ou expirada.' });
-  }
-
-  const action = (req.query.action || req.body.action) as string;
+  if (!auth) return res.status(401).json({ success: false, error: 'Sessão inválida ou expirada.' });
+  const action = String(req.query.action || req.body?.action || 'catalogue');
 
   try {
-    if (req.method === 'GET') {
-      const [items, inventory, coinWallet, coinTransactions] = await Promise.all([
-        StoreEngine.getStoreItems(),
-        StoreEngine.getUserInventory(auth.uid),
+    if (req.method === 'GET' && action === 'catalogue') {
+      await StoreEngine.ensureRealCatalogue();
+      const [products, activeDrop, coinWallet, coinTransactions] = await Promise.all([
+        StoreEngine.getPublicProducts(),
+        StoreEngine.getActiveDrop(),
         RewardCoinEngine.getWallet(auth.uid),
         RewardCoinEngine.getTransactions(auth.uid),
       ]);
-
-      return res.status(200).json({
-        success: true,
-        items,
-        inventory,
-        coinWallet,
-        coinTransactions,
-      });
+      return res.status(200).json({ success: true, products, activeDrop: activeDrop ? { id: activeDrop.id, name: activeDrop.name || null, startsAt: activeDrop.startsAt || null, endsAt: activeDrop.endsAt || null } : null, coinWallet, coinTransactions });
     }
 
-    if (req.method === 'POST' && action === 'buy') {
-      const { itemId } = req.body;
-      if (!itemId) throw new Error('ID do item de loja é obrigatório.');
+    if (req.method === 'GET' && action === 'product') {
+      await StoreEngine.ensureRealCatalogue();
+      const product = await StoreEngine.getPublicProduct(String(req.query.productId || ''));
+      if (!product) return res.status(404).json({ success: false, error: 'Produto indisponível.' });
+      return res.status(200).json({ success: true, product });
+    }
 
-      const result = await StoreEngine.buyItem(auth.uid, String(itemId));
-      return res.status(200).json({
-        success: true,
-        message: `Compra de "${result.item.name}" realizada com sucesso!`,
-        result
-      });
+    if (req.method === 'GET' && action === 'my-orders') {
+      const orders = await StoreEngine.getMyPhysicalOrders(auth.uid);
+      return res.status(200).json({ success: true, orders });
+    }
+
+    if (req.method === 'POST' && action === 'redeem-with-coins') {
+      const result = await StoreEngine.redeemWithCoins({ userId: auth.uid, productId: String(req.body.productId || ''), quantity: Number(req.body.quantity), address: req.body.address, idempotencyKey: String(req.body.idempotencyKey || '') });
+      return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result });
+    }
+
+    const admin = await requireAdmin(auth.uid);
+    if (!admin) return res.status(403).json({ success: false, error: 'Acesso administrativo obrigatório.' });
+
+    if (req.method === 'GET' && action === 'admin-products') {
+      const products = await StoreEngine.getAdminProducts();
+      return res.status(200).json({ success: true, products });
+    }
+
+    if (req.method === 'GET' && action === 'admin-drops') {
+      const drops = await StoreEngine.getAdminDrops();
+      return res.status(200).json({ success: true, drops });
+    }
+
+    if (req.method === 'GET' && action === 'admin-orders') {
+      const orders = await StoreEngine.getAdminOrders();
+      return res.status(200).json({ success: true, orders });
+    }
+
+    if (req.method === 'POST' && action === 'import-catalogue') {
+      const result = await StoreEngine.ensureRealCatalogue();
+      return res.status(200).json({ success: true, result });
+    }
+
+    if (req.method === 'POST' && action === 'update-pricing') {
+      const product = await StoreEngine.updatePricing(String(req.body.productId || ''), req.body.pricing || {});
+      return res.status(200).json({ success: true, product });
+    }
+
+    if (req.method === 'POST' && action === 'update-supplier-cost') {
+      await StoreEngine.updateSupplierCost(String(req.body.productId || ''), Number(req.body.newCost), String(req.body.source || 'admin'));
+      return res.status(200).json({ success: true });
+    }
+
+    if (req.method === 'POST' && action === 'update-product-configuration') {
+      const product = await StoreEngine.updateProductConfiguration(String(req.body.productId || ''), req.body.configuration || {});
+      return res.status(200).json({ success: true, product });
+    }
+
+    if (req.method === 'POST' && action === 'save-drop') {
+      const drop = await StoreEngine.saveDrop(req.body.drop || {});
+      return res.status(200).json({ success: true, drop });
+    }
+
+    if (req.method === 'POST' && action === 'update-order-status') {
+      await StoreEngine.updateOrderStatus(String(req.body.orderId || ''), req.body.status, req.body.trackingCode);
+      return res.status(200).json({ success: true });
     }
 
     return res.status(400).json({ success: false, error: 'Ação de loja não suportada.' });
-  } catch (err: any) {
-    console.error('[Store Handler Error]:', err);
-    return res.status(400).json({ success: false, error: err.message || 'Erro ao processar loja de IV Coins.' });
+  } catch (error: any) {
+    console.error('[Store Handler Error]:', error);
+    return res.status(400).json({ success: false, error: error?.message || 'Erro ao processar a Loja Invictus.' });
   }
 }

@@ -1,0 +1,54 @@
+.admin-store-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid #286b41;
+  border-radius: 8px;
+  color: #70dc94;
+  background: #092315;
+}
+
+.admin-store-status.is-development {
+  border-color: #8f6800;
+  color: #f2b516;
+  background: #211805;
+}
+
+.admin-store-status span {
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+
+.admin-store-alerts p.is-development {
+  border-color: #8f6800;
+  color: #ffd564;
+  background: #211805;
+}
+
+.admin-store-activate {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 9px;
+  border: 1px solid #a97c00;
+  border-radius: 8px;
+  color: #f2b516;
+  background: #171104;
+  font-weight: 800;
+}
+
+.admin-store-activate svg {
+  width: 18px;
+}
+
+.admin-store-save:disabled,
+.admin-store-activate:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}

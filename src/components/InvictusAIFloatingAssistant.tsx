@@ -870,6 +870,12 @@ export function InvictusAIFloatingAssistant() {
     setHasNewInsight(false);
   };
 
+  useEffect(() => {
+    const openFromAppShortcut = () => handleOpenPanel();
+    window.addEventListener('invictus:open-ai', openFromAppShortcut);
+    return () => window.removeEventListener('invictus:open-ai', openFromAppShortcut);
+  }, []);
+
   // Helper to parse message text and detect progressive disclosure CTA
   const renderMessageContent = (m: Message) => {
     const rawText = m.text;

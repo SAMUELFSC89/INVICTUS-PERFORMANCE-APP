@@ -173,6 +173,31 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Catálogo físico, custos, Drops e pedidos são acessados exclusivamente
+    // pelos endpoints autenticados. Isso impede que o cliente leia custos de
+    // fornecedor, altere preço/estoque ou reserve produtos sem transação.
+    match /products/{productId} {
+      allow read, write: if false;
+    }
+    match /suppliers/{supplierId} {
+      allow read, write: if false;
+    }
+    match /supplierProducts/{supplierProductId} {
+      allow read, write: if false;
+    }
+    match /productCostHistory/{historyId} {
+      allow read, write: if false;
+    }
+    match /store_drops/{dropId} {
+      allow read, write: if false;
+    }
+    match /physicalOrders/{orderId} {
+      allow read, write: if false;
+    }
+    match /physicalOrderItems/{itemId} {
+      allow read, write: if false;
+    }
+
     // Diets Collection
     match /diets/{dietId} {
       allow get: if isSignedIn() && isValidId(dietId) && (resource.data.userId == request.auth.uid || isAdmin());

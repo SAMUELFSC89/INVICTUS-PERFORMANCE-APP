@@ -34,6 +34,12 @@ import { CommunityChampionship } from './pages/championships/CommunityChampionsh
 import { ChampionshipPreview } from './pages/championships/ChampionshipPreview';
 import { Musculation } from './pages/Musculation';
 import { InvictusStore } from './pages/InvictusStore';
+import { StoreProductDetail } from './pages/StoreProductDetail';
+import { StoreCheckout } from './pages/StoreCheckout';
+import { StoreOrders } from './pages/StoreOrders';
+import { AdminStorePricing } from './pages/AdminStorePricing';
+import { AdminStoreDrops } from './pages/AdminStoreDrops';
+import { AdminStoreOrders } from './pages/AdminStoreOrders';
 import './styles/invictus.css';
 
 export default function App() {
@@ -71,6 +77,9 @@ export default function App() {
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/musculacao" element={<Musculation />} />
                 <Route path="/store" element={<InvictusStore />} />
+                <Route path="/store/product/:productId" element={<StoreProductDetail />} />
+                <Route path="/store/product/:productId/checkout" element={<StoreCheckout />} />
+                <Route path="/store/orders" element={<StoreOrders />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />
                 <Route path="/profile/academy" element={<ProfileSecondary />} />
                 <Route path="/profile/academy/search" element={<ProfileSecondary />} />
@@ -115,6 +124,9 @@ export default function App() {
                 <Route path="/admin/ranking-simulator" element={<AdminGuard><AdminRankingSimulator /></AdminGuard>} />
 <Route path="/admin/iga-teste-original" element={<AdminGuard><AdminIGATesteOriginal /></AdminGuard>} />
                 <Route path="/admin/security" element={<AdminGuard><AdminSecurityAudit /></AdminGuard>} />
+                <Route path="/admin/store/pricing" element={<AdminGuard><AdminStorePricing /></AdminGuard>} />
+                <Route path="/admin/store/drops" element={<AdminGuard><AdminStoreDrops /></AdminGuard>} />
+                <Route path="/admin/store/orders" element={<AdminGuard><AdminStoreOrders /></AdminGuard>} />
                 <Route path="/admin/wearables" element={<AdminGuard><ProfileSecondary /></AdminGuard>} />
                 <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
               </Route>
