@@ -22,6 +22,13 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   onClearAll
 }) => {
   const unreadCount = notifications.filter(n => !n.read).length;
+  const openNotification = (id: string, actionUrl?: string) => {
+    onMarkAsRead(id);
+    if (actionUrl?.startsWith('/')) {
+      onClose();
+      window.location.assign(actionUrl);
+    }
+  };
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -114,7 +121,11 @@ case 'social': return <Heart className="text-red-400" size={20} />;
                         </p>
                         
                         {notif.actionUrl && (
-                          <button className="mt-2 flex items-center gap-1 text-primary group-hover:gap-2 transition-all">
+                          <button
+                            type="button"
+                            className="mt-2 flex items-center gap-1 text-primary group-hover:gap-2 transition-all"
+                            onClick={(event) => { event.stopPropagation(); openNotification(notif.id, notif.actionUrl); }}
+                          >
                             <span className="font-label text-[9px] font-black uppercase tracking-widest">VER DETALHES</span>
                             <ArrowRight size={10} />
                           </button>

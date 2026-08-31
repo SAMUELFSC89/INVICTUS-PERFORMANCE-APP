@@ -9,10 +9,11 @@ import {
   LEGAL_PRIVACY_POLICY, 
   LEGAL_HEALTH_DATA_POLICY, 
   LEGAL_PROMOTIONAL_RULES, 
-  LEGAL_ANTI_FRAUD_POLICY 
+  LEGAL_ANTI_FRAUD_POLICY,
+  CURRENT_LEGAL_VERSION
 } from '../lib/legalDocuments';
 
-export const CURRENT_TERMS_VERSION = 1;
+export const CURRENT_TERMS_VERSION = CURRENT_LEGAL_VERSION;
 
 export function TermsAndConsent() {
   const { user, refreshUser } = useUser();
@@ -50,9 +51,9 @@ export function TermsAndConsent() {
     const rawTextMap = {
       usage: { title: 'Termos de Uso da Plataforma', text: LEGAL_TERMS_OF_USE },
       privacy: { title: 'Política de Privacidade e Proteção de Dados', text: LEGAL_PRIVACY_POLICY },
-      competition: { title: 'Política de Dados de Saúde & HealthKit', text: LEGAL_HEALTH_DATA_POLICY },
-      prizes: { title: 'Regulamento de Campanhas Promocionais', text: LEGAL_PROMOTIONAL_RULES },
-      challenges: { title: 'Política Antifraude & Compliance', text: LEGAL_ANTI_FRAUD_POLICY }
+      competition: { title: 'Dados de Saúde e Wearables', text: LEGAL_HEALTH_DATA_POLICY },
+      prizes: { title: 'Desafios, Campeonatos, XP e Coins', text: LEGAL_PROMOTIONAL_RULES },
+      challenges: { title: 'Integridade, Power Lift e Revisão', text: LEGAL_ANTI_FRAUD_POLICY }
     };
 
     const doc = rawTextMap[type];
@@ -106,7 +107,7 @@ export function TermsAndConsent() {
           >
             <div className="flex items-center gap-4">
               <div className="p-3 bg-primary/10 text-primary rounded-2xl"><Trophy size={20} /></div>
-              <span className="font-headline italic font-black text-lg uppercase tracking-tight">Regras de Consistência</span>
+              <span className="font-headline italic font-black text-lg uppercase tracking-tight">Dados de Saúde</span>
             </div>
             <ChevronRight size={20} className="text-on-surface-variant/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />
           </button>
@@ -128,7 +129,7 @@ export function TermsAndConsent() {
           >
             <div className="flex items-center gap-4">
               <div className="p-3 bg-amber-500/10 text-amber-500 rounded-2xl"><Scale size={20} /></div>
-              <span className="font-headline italic font-black text-lg uppercase tracking-tight">Incentivos de Alta Performance</span>
+              <span className="font-headline italic font-black text-lg uppercase tracking-tight">Desafios, Campeonatos e Coins</span>
             </div>
             <ChevronRight size={20} className="text-on-surface-variant/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />
           </button>
@@ -139,7 +140,7 @@ export function TermsAndConsent() {
           >
             <div className="flex items-center gap-4">
               <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-2xl"><Users size={20} /></div>
-              <span className="font-headline italic font-black text-lg uppercase tracking-tight">Regras dos Desafios Privados</span>
+              <span className="font-headline italic font-black text-lg uppercase tracking-tight">Integridade e Power Lift</span>
             </div>
             <ChevronRight size={20} className="text-on-surface-variant/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />
           </button>
@@ -148,7 +149,7 @@ export function TermsAndConsent() {
         <div className="mt-8 p-6 bg-error/5 rounded-3xl border border-error/10 flex items-start gap-4">
           <AlertCircle className="text-error shrink-0" size={20} />
           <p className="text-on-surface-variant font-label text-[10px] uppercase font-bold leading-relaxed">
-            Inconsistências em atividades físicas detectadas pelo sistema de auditoria de IA, tais como <span className="text-error">simulação de dados com GPS adulterado</span> ou <span className="text-error">fotos incompatíveis de exercícios</span>, implicarão na imediata desconsideração da atividade e possível desclassificação dos rankings promocionais vigentes.
+            Atividades podem ser aprovadas, parcialmente consideradas, enviadas para revisão ou desconsideradas quando faltarem dados obrigatórios ou existirem sinais de manipulação. Você poderá solicitar revisão quando aplicável.
           </p>
         </div>
       </div>
@@ -176,7 +177,7 @@ export function TermsAndConsent() {
             {accepted && <Check size={20} className="text-on-primary animate-in zoom-in" />}
           </div>
           <span className="font-label text-xs font-black uppercase text-on-surface-variant tracking-wider leading-tight">
-            Li e concordo com todos os termos de integridade, privacidade e regulamentos da plataforma.
+            Li e concordo com os Termos de Uso e a Política de Privacidade. Permissões de saúde, GPS, câmera, vídeo e notificações serão solicitadas separadamente quando eu usar cada recurso.
           </span>
         </label>
 
@@ -188,7 +189,7 @@ export function TermsAndConsent() {
           {loading ? (
             <div className="w-6 h-6 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
           ) : (
-            "DECLARO INTEGRIDADE E PARTICIPAR"
+            "ACEITAR E CONTINUAR"
           )}
         </button>
       </div>

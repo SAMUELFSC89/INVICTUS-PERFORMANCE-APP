@@ -9,6 +9,7 @@ import { useUser } from '../UserContext';
 import type { PublicPhysicalProduct, RewardCoinTransaction, RewardCoinWallet } from '../types';
 import './InvictusStore.css';
 import './InvictusStoreExtras.css';
+import './InvictusStoreMobile.css';
 
 type StorePayload = { products?: PublicPhysicalProduct[]; activeDrop?: { id:string; name:string|null; startsAt:string|null; endsAt:string|null } | null; coinWallet?:RewardCoinWallet; coinTransactions?:RewardCoinTransaction[]; error?:string };
 const CATEGORIES = ['Todos','Suplementos','Bem-estar e Nutrição','Vestuário','Acessórios','Nutrição','Combos'] as const;

@@ -85,7 +85,7 @@ export default function App() {
                 <Route path="/profile/academy/search" element={<ProfileSecondary />} />
                 <Route path="/profile/academy/confirm" element={<ProfileSecondary />} />
                 <Route path="/profile/wearables" element={<ProfileSecondary />} />
-                <Route path="/profile/wallet" element={<ProfileSecondary />} />
+                <Route path="/profile/wallet" element={<Navigate to="/store" replace />} />
                 <Route path="/profile/goals" element={<ProfileSecondary />} />
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
@@ -103,7 +103,7 @@ export default function App() {
                 <Route path="/championships/:id/confirmed" element={<Navigate to="/championships" replace />} />
                 <Route path="/championships/:id" element={<Navigate to="/championships" replace />} />
                 <Route path="/achievements" element={<Achievements />} />
-                <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
+                <Route path="/wallet" element={<Navigate to="/store" replace />} />
                 <Route path="/performance" element={<Performance />} />
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />

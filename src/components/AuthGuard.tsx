@@ -26,6 +26,7 @@ import { runningService } from '../services/runningService';
 import { rankingService } from '../services/rankingService';
 import { useUser } from '../UserContext';
 import { InvictusLogo } from './InvictusLogo';
+import { CURRENT_LEGAL_VERSION } from '../lib/legalDocuments';
 
 const normalizeString = (str: string) => 
   str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -372,21 +373,23 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         city,
         state: state.toUpperCase(),
         termsAccepted: true,
+        termsVersionAccepted: CURRENT_LEGAL_VERSION,
+        termsAcceptedAt: new Date().toISOString(),
         whatsappEnabled: whatsappOptIn,
         phoneNumber: whatsapp,
         plano: 'Nenhum',
         currentPlan: 'Nenhum',
         assinatura: 'Inativa',
         subscriptionStatus: 'inactive',
-        status: 'Aguardando pagamento',
-        paymentStatus: 'Aguardando pagamento',
-        statusPagamento: 'Aguardando pagamento',
+        status: 'Ativo',
+        paymentStatus: 'Não aplicável',
+        statusPagamento: 'Não aplicável',
         premium: false,
         performance: false,
         isSubscribed: false,
         subscriptionTier: 'Nenhum',
         role: 'user',
-        league: 'Liga Beta',
+        league: 'Comunidade Invictus',
         score: 10,
         xp: 10,
         level: 1,
@@ -467,15 +470,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
               currentPlan: 'Nenhum',
               assinatura: 'Inativa',
               subscriptionStatus: 'inactive',
-              status: 'Aguardando pagamento',
-              paymentStatus: 'Aguardando pagamento',
-              statusPagamento: 'Aguardando pagamento',
+              status: 'Ativo',
+              paymentStatus: 'Não aplicável',
+              statusPagamento: 'Não aplicável',
               premium: false,
               performance: false,
               isSubscribed: false,
               subscriptionTier: 'Nenhum',
               role: 'user',
-              league: 'Liga Beta',
+              league: 'Comunidade Invictus',
               score: 10,
               xp: 10,
               level: 1,
@@ -738,16 +741,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 <InputGroup icon={<Phone size={18} />} label="WhatsApp" value={whatsapp} onChange={setWhatsapp} placeholder="(11) 99999-9999" />
 <InputGroup icon={<Share2 size={18} />} label="Código de Indicação (Opcional)" value={referralCodeInput} onChange={setReferralCodeInput} placeholder="CÓDIGO-AMIGO" />
 
-{new Date().getDate() > 1 && new Date().getDate() <= 10 && (
-<div className="bg-primary/10 border border-primary/20 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
-<Zap size={20} className="text-primary fill-primary" />
-<div className="flex-1">
-<p className="text-primary font-black text-[10px] uppercase tracking-wider">Boost de Equilíbrio Ativado!</p>
-<p className="text-white/60 font-medium text-[9px] uppercase leading-tight">Como você entrou no dia {new Date().getDate()}, você ganhará <span className="text-primary font-black">+{Math.round((new Date().getDate() - 1) * 15)}%</span> de pontos em todas as atividades para alcançar o topo!</p>
-</div>
-</div>
-)}
-
 <label className="flex items-start gap-3 cursor-pointer group bg-white/5 p-4 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
 <input
 type="checkbox"
@@ -756,7 +749,7 @@ onChange={e => setTermsAccepted(e.target.checked)}
 className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
 />
 <span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed group-hover:text-white transition-colors">
-Li e aceito os <span className="text-primary underline">Termos de Uso</span> e Regras do Desafio.
+Li e aceito os <span className="text-primary underline">Termos de Uso</span> e a Política de Privacidade. Permissões sensíveis serão solicitadas separadamente.
 </span>
 </label>
 
@@ -916,7 +909,7 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
                   className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary"
                 />
                 <span className="text-[10px] text-on-surface-variant font-bold uppercase leading-relaxed">
-                  Li e aceito os <span className="text-primary underline">Termos de Uso</span> e Regras do Desafio.
+                  Li e aceito os <span className="text-primary underline">Termos de Uso</span> e a Política de Privacidade. Permissões sensíveis serão solicitadas separadamente.
                 </span>
               </label>
 
@@ -969,19 +962,21 @@ className="w-full h-16 bg-primary text-white font-headline italic font-black tex
                     plano: 'Nenhum',
                     assinatura: 'Inativa',
                     subscriptionStatus: 'inactive',
-                    status: 'Aguardando pagamento',
-                    paymentStatus: 'Aguardando pagamento',
-                    statusPagamento: 'Aguardando pagamento',
+                    status: 'Ativo',
+                    paymentStatus: 'Não aplicável',
+                    statusPagamento: 'Não aplicável',
                     premium: false,
                     performance: false,
                     city,
                     state: state.toUpperCase(),
                     termsAccepted: true,
+                    termsVersionAccepted: CURRENT_LEGAL_VERSION,
+                    termsAcceptedAt: new Date().toISOString(),
                     whatsappEnabled: whatsappOptIn,
                     weeklyFrequency: user.weeklyFrequency || '3-4',
                     bodySelfAssessment: user.bodySelfAssessment || 'normal',
                     objective: user.objective || 'emagrecer',
-                    league: 'Liga Beta',
+                    league: 'Comunidade Invictus',
                     score: 10,
                     xp: 10,
                     level: 1,

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Award, CheckCircle2, ChevronRight, Dumbbell, FileVideo, ShieldCheck, Trophy, Upload, Users, Video, Camera, CircleX, Filter, Minus, Plus, Check, TrendingUp, Star, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auth, storage } from '../firebase';
@@ -294,12 +295,21 @@ export function PowerLift() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [modal]);
 
-  if (view !== 'home') return <>
-    <PowerLiftFlow view={view} exercise={selected} records={records} userId={user?.uid} userGymId={user?.gymId} weight={weight} setWeight={setWeight} videoFile={videoFile} reasons={reasons} submissionError={submissionError} uploadProgress={uploadProgress} onFile={setVideoFile} onSubmit={submitVideo} onBack={()=>setView('home')} onView={setView} onExercise={setSelected} onPlayVideo={openVideo} />
-    {playingRecord && <VideoPlaybackOverlay record={playingRecord} url={playbackUrl} loading={playbackLoading} error={playbackError} onClose={()=>setPlayingRecord(null)} />}
-  </>;
+  const backFromFlow = () => {
+    if (view === 'processing') return;
+    if (view === 'record') {
+      setView('register');
+      return;
+    }
+    setView('home');
+  };
 
-  return <main className="power-screen">
+  if (view !== 'home') return createPortal(<>
+    <PowerLiftFlow view={view} exercise={selected} records={records} userId={user?.uid} userGymId={user?.gymId} weight={weight} setWeight={setWeight} videoFile={videoFile} reasons={reasons} submissionError={submissionError} uploadProgress={uploadProgress} onFile={setVideoFile} onSubmit={submitVideo} onBack={backFromFlow} onView={setView} onExercise={setSelected} onPlayVideo={openVideo} />
+    {playingRecord && <VideoPlaybackOverlay record={playingRecord} url={playbackUrl} loading={playbackLoading} error={playbackError} onClose={()=>setPlayingRecord(null)} />}
+  </>, document.body);
+
+  return createPortal(<main className="power-screen">
     <header className="power-header">
       <button onClick={()=>navigate('/challenges')} aria-label="Voltar"><ArrowLeft /></button>
       <div>
@@ -358,11 +368,10 @@ export function PowerLift() {
             </div>
             <img src={item.image} alt={item.title}/>
             <div className="power-card-data">
-              <small>SUA MELHOR MARCA</small>
-              <strong>{best ? `${best} kg` : '—'}</strong>
-              <hr/>
-              <small>SUA POSIÇÃO</small>
-              <strong>{standing >= 0 ? `${standing+1}º` : '—'}</strong>
+              <div className="power-card-metrics">
+                <span><small>SUA MELHOR MARCA</small><strong>{best ? `${best} kg` : '—'}</strong></span>
+                <span><small>SUA POSIÇÃO</small><strong>{standing >= 0 ? `${standing+1}º` : '—'}</strong></span>
+              </div>
               <button onClick={()=>{setSelected(item.id);setView('ranking')}}>VER RANKING</button>
             </div>
           </article>
@@ -471,7 +480,7 @@ export function PowerLift() {
       </section>
     </div>}
     {playingRecord && <VideoPlaybackOverlay record={playingRecord} url={playbackUrl} loading={playbackLoading} error={playbackError} onClose={()=>setPlayingRecord(null)} />}
-  </main>;
+  </main>, document.body);
 }
 
 function VideoPlaybackOverlay({ record, url, loading, error, onClose }: { record: RecordRow; url: string; loading: boolean; error: string; onClose: () => void }) {
@@ -490,7 +499,7 @@ function VideoPlaybackOverlay({ record, url, loading, error, onClose }: { record
 
 function PowerLiftFlow({ view, exercise, records, userId, userGymId, weight, setWeight, videoFile, reasons, submissionError, uploadProgress, onFile, onSubmit, onBack, onView, onExercise, onPlayVideo }: { view:string; exercise:Exercise; records:RecordRow[]; userId?:string; userGymId?:string; weight:number; setWeight:(n:number)=>void; videoFile:File|null; reasons:string[]; submissionError:string|null; uploadProgress:number; onFile:(f:File|null)=>void; onSubmit:()=>void; onBack:()=>void; onView:(v:any)=>void; onExercise:(x:Exercise)=>void; onPlayVideo:(record:RecordRow)=>void }) {
   const item = exercises.find(x=>x.id===exercise)!; const rows = records.filter(r=>r.exercise===exercise).sort((a,b)=>b.weight-a.weight); const mine=rows.findIndex(r=>r.userId===userId); const [rankingTab,setRankingTab]=useState<'general'|'academy'|'mine'>('general'); const [filtersOpen, setFiltersOpen] = useState(false); const visibleRows=rankingTab==='mine'?rows.filter(row=>row.userId===userId):rankingTab==='academy'?rows.filter(row=>userGymId && row.gymId === userGymId):rows; const heading = view==='ranking' ? item.title : view==='register' ? 'REGISTRAR LEVANTAMENTO' : view==='record' ? item.title : view==='processing' ? 'PROCESSANDO VÍDEO' : view==='manual-review' ? 'EM REVISÃO MANUAL' : view==='approved' ? 'LEVANTAMENTO APROVADO!' : view==='rejected' ? 'LEVANTAMENTO RECUSADO' : 'REGRAS DO DESAFIO';
-  return <main className={`power-flow ${item.accent}`}><header><button onClick={onBack}><ArrowLeft /></button><div><h1>{heading}</h1><p>{view==='ranking'?'Ranking ativo':view==='record'?`Carga informada: ${weight || '—'} kg`:view==='rules'?'Entenda como funciona e garanta que seu vídeo seja aprovado.':''}</p></div>{view==='ranking'&&<button className="power-filter" onClick={() => setFiltersOpen(value => !value)} aria-label="Filtrar ranking" aria-expanded={filtersOpen}><Filter/></button>}</header>
+  return <main className={`power-flow ${item.accent}`}><header><button onClick={onBack} disabled={view === 'processing'} aria-label={view === 'processing' ? 'Envio em andamento' : 'Voltar'}><ArrowLeft /></button><div><h1>{heading}</h1><p>{view==='ranking'?'Ranking ativo':view==='record'?`Carga informada: ${weight || '—'} kg`:view==='rules'?'Entenda como funciona e garanta que seu vídeo seja aprovado.':''}</p></div>{view==='ranking'&&<button className="power-filter" onClick={() => setFiltersOpen(value => !value)} aria-label="Filtrar ranking" aria-expanded={filtersOpen}><Filter/></button>}</header>
   {view==='ranking'&&<>{filtersOpen && <div className="power-flow-tabs power-flow-filter-menu"><button className={rankingTab==='general'?'active':''} onClick={()=>{setRankingTab('general');setFiltersOpen(false)}}>GERAL</button><button className={rankingTab==='academy'?'active':''} onClick={()=>{setRankingTab('academy');setFiltersOpen(false)}}>MINHA ACADEMIA</button><button className={rankingTab==='mine'?'active':''} onClick={()=>{setRankingTab('mine');setFiltersOpen(false)}}>MINHAS MARCAS</button></div>}<div className="power-flow-tabs"><button className={rankingTab==='general'?'active':''} onClick={()=>setRankingTab('general')}>GERAL</button><button className={rankingTab==='academy'?'active':''} onClick={()=>setRankingTab('academy')}>ACADEMIA</button><button className={rankingTab==='mine'?'active':''} onClick={()=>setRankingTab('mine')}>MINHAS MARCAS</button></div><img className="power-flow-hero" src={item.image} alt=""/><div className="power-flow-columns"><span>POSIÇÃO</span><span>ATLETA</span><span>MELHOR MARCA</span></div><section className="power-flow-rank">{visibleRows.length?visibleRows.map((r,i)=><article key={r.id} className={r.userId===userId?'mine':''}><b>{rankingTab==='general'?i+1:'•'}</b>{r.userPhoto?<img src={r.userPhoto} alt=""/>:<span/>}<div><strong>{r.userName||'Atleta'}</strong><small>{r.gymName||'Academia não informada'}</small></div><em>{r.weight} kg</em><button className="power-rank-video" onClick={()=>void onPlayVideo(r)} aria-label={`Assistir levantamento de ${r.userName || 'atleta'}`}><Video/></button></article>):<p>{rankingTab==='mine'?'Você ainda não possui um levantamento aprovado nesta modalidade.':rankingTab==='academy'?'Não há levantamentos aprovados da sua academia nesta modalidade.':'Nenhum levantamento aprovado nesta modalidade ainda.'}</p>}</section><button className="power-flow-primary" onClick={()=>{setRankingTab('mine');window.setTimeout(()=>document.querySelector('.power-flow-rank .mine')?.scrollIntoView({behavior:'smooth',block:'center'}),0)}}>{mine>=0?`◎  VER MINHA POSIÇÃO`:'◎  SEM POSIÇÃO AINDA'}</button></>}
   {view==='register'&&<><p className="power-flow-label">ESCOLHA A MODALIDADE</p><div className="power-flow-choices">{exercises.map(x=><button className={x.id===exercise?'active':''} onClick={()=>onExercise(x.id)} key={x.id}>{x.icon}<span>{x.title}</span></button>)}</div><p className="power-flow-label">INFORME SUA MELHOR MARCA</p><section className="power-flow-weight"><button onClick={()=>setWeight(Math.max(0,weight-2.5))}><Minus/></button><b>{weight||'—'} <small>kg</small></b><button onClick={()=>setWeight(weight+2.5)}><Plus/></button></section><section className="power-flow-rules"><b>REGRAS IMPORTANTES</b><p>• Vídeo obrigatório<br/>• Mostre os pesos utilizados<br/>• Execução completa e válida<br/>• Ambiente de academia</p></section><button className="power-flow-primary" disabled={!weight} onClick={()=>onView('record')}>CONTINUAR</button></>}
   {view==='record'&&<><div className="power-flow-camera" style={{backgroundImage:`url(${item.image})`}}><span><i/> REC</span><b>00:00:00</b></div><section className="power-flow-rules"><b>ORIENTAÇÕES PARA GRAVAÇÃO</b><p>Mostre os pesos utilizados <Check/><br/>Execute o movimento completo <Check/><br/>Ambiente de academia visível <Check/><br/>Câmera fixa e sem edições <Check/></p></section><input id="power-video" className="power-video-input" type="file" accept="video/*" capture="environment" onChange={e=>onFile(e.target.files?.[0]||null)}/><label className="power-record-button" htmlFor="power-video"><Camera/></label><strong className="power-record-copy">{videoFile?'VÍDEO SELECIONADO':'GRAVAR OU SELECIONAR VÍDEO'}<small>{videoFile?.name||'Envie um take contínuo para auditoria.'}</small></strong>{submissionError&&<p className="power-load-error">{submissionError}</p>}{videoFile&&<button className="power-flow-primary" onClick={onSubmit}>ENVIAR PARA VALIDAÇÃO</button>}</>}

@@ -310,9 +310,9 @@ export function ChallengeActivityFlow({
 
       {screen === 'active' && session?.type === 'cardio' && !session.requiresGpsDistance && (
         <section className="challenge-flow-active">
-          <button className="challenge-flow-activity-type">
-            {activeTitle}<ChevronDown />
-          </button>
+          <div className="challenge-flow-activity-type" aria-label={`Atividade atual: ${activeTitle}`}>
+            {activeTitle}
+          </div>
           <span className="challenge-flow-gps">
             <Zap /> {session?.isPaused ? 'EM PAUSA' : session?.requiresGpsDistance ? 'GPS CONECTADO' : (session?.type === 'cardio' ? 'CARDIO INDOOR' : 'ATIVIDADE EM ANDAMENTO')}
           </span>

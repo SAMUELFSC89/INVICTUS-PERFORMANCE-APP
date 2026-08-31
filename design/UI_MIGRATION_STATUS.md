@@ -35,7 +35,7 @@ explicitamente e devem ser mantidas nas novas telas.
 - `/profile/:userId` — migrado para o shell preto/dourado; perfil público usa apenas campos públicos reais e reconhecimento passa pela API autenticada
 - `/profile/academy` e subfluxos — shell visual novo; funções preservadas
 - `/profile/wearables` — shell visual novo; integrações nativas preservadas
-- `/profile/wallet` — shell visual novo; carteira financeira separada dos Invictus Coins
+- `/profile/wallet` — fluxo financeiro legado encerrado; redireciona para a Loja
 - `/profile/goals` — shell visual novo
 - `/profile/security` — shell visual novo
 - `/profile/preferences` e documentos — shell visual novo, termos/FAQ/jogo/admin preservados
@@ -44,7 +44,7 @@ explicitamente e devem ser mantidas nas novas telas.
 - `/performance` — migrado; motor analítico, confiabilidade, metodologia e IA preservados com UI mobile nova
 - `/health` — migrado para o shell novo; Health Data Layer e atividades homologadas preservadas
 - `/health/report` e `/health/report/full` — identidade oficial aplicada; relatório detalhado preserva o formato de leitura/impressão
-- telas de retorno de pagamento — migradas; consulta nativa usa `API_CONFIG`, polling corrigido e assinatura não é confundida com inscrição em campeonato
+- telas de retorno de assinatura — migradas; consulta nativa usa `API_CONFIG` e polling corrigido
 
 As rotas administrativas agora usam um shell próprio preto/dourado, isolado da
 UI pública. As ferramentas internas foram preservadas; a revisão visual dos
@@ -68,7 +68,7 @@ conteúdos densos de cada painel continua na auditoria final.
 
 Implementar o ecossistema transversal definido no documento do produto:
 assinaturas Free/Pro configuráveis, ledger imutável de Invictus Coins, Loja,
-Drops, frete, recompensas, Campeonato da Academia, auditoria intermediária do
+Drops, frete, recompensas, campeonatos de musculação/cardio, auditoria intermediária do
 Top 3, orçamento de recompensas, feature flags e painel administrativo.
 
 Esta fase permanece deliberadamente posterior à estabilização das atividades e
@@ -99,3 +99,15 @@ financeiro e disponibilidade virão exclusivamente do backend/configuração rea
 - Painel de Drops controla período, produtos, frete, custos e exposição financeira máxima.
 - Custos, margens, histórico, Drops e pedidos não possuem acesso direto pelo SDK cliente.
 - Os assets dos 10 itens próprios e dos 21 produtos reais estão vinculados. O catálogo real usa as imagens fornecidas pelo usuário ou fotos originais correspondentes, sem reconstrução por IA.
+
+## Políticas e regras — versão 4.0.0
+
+- Termos, privacidade, saúde, antifraude, assinaturas, exclusão, consentimentos e FAQ foram alinhados ao ecossistema novo.
+- O novo aceite geral não autoriza automaticamente saúde, GPS, câmera, vídeo ou notificações; cada permissão permanece contextual.
+- Invictus Coins são cumulativos e usados na Loja, sem valor monetário, transferência, venda ou saque PIX.
+- Campeonato gratuito é social, sem prêmio financeiro e sem vínculo com academias.
+- Campeonatos pagos de musculação e cardio permanecem `EM BREVE`; catálogo e cobrança do servidor ficam fechados até a aprovação de uma edição e seu regulamento específico.
+- A rota pública da carteira financeira legada redireciona para a Loja; Coins não são confundidos com saldo em reais.
+- As APIs legadas de carteira/saque PIX e inscrição de temporada paga respondem como encerradas e não criam novas cobranças ou solicitações.
+- A versão de aceite foi elevada para `4`, exigindo nova confirmação das contas que aceitaram documentos anteriores.
+- Os textos são uma implementação de produto e precisam de revisão jurídica profissional antes da publicação comercial definitiva.

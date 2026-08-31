@@ -360,7 +360,11 @@ export function AdvancedShareModal({ stats, onClose }: AdvancedShareModalProps) 
                    <p className="text-[10px] font-medium text-on-surface-variant opacity-80">Seu desempenho te coloca no Top 10 oficial. Quer participar dos incentivos este mês?</p>
                 </div>
              </div>
-             <button className="w-full mt-4 bg-primary text-black py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all">
+             <button
+               type="button"
+               onClick={() => { onClose(); window.location.assign('/challenges'); }}
+               className="w-full mt-4 bg-primary text-black py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all"
+             >
                 QUERO PARTICIPAR!
              </button>
           </div>

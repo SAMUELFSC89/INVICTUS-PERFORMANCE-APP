@@ -25,6 +25,9 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === '/' || location.pathname === '/invite';
+  // Power Lift owns the whole viewport and ships its own footer. Keeping the
+  // legacy shell mounted here produced two navigation bars on the same screen.
+  const suppressLegacyChrome = location.pathname.startsWith('/power');
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -59,8 +62,8 @@ export function Layout() {
     <div className="min-h-screen app-fundo text-on-surface font-body flex flex-col">
       <TermsAndConsent />
       <AchievementTracker />
-      <FloatingSessionIndicator />
-      <InvictusAIFloatingAssistant />
+      {!suppressLegacyChrome && <FloatingSessionIndicator />}
+      {!suppressLegacyChrome && <InvictusAIFloatingAssistant />}
       
       <XPToast 
         isVisible={xpToast.visible} 
@@ -75,7 +78,7 @@ export function Layout() {
           um valor fixo: no iPhone o sino subia demais e encostava no relogio do
           sistema, e na web ficava colado na borda. env() vale 0px onde nao ha
           notch, entao na web o sino simplesmente desce para 1.5rem. */}
-      {location.pathname !== '/notifications' && <div
+      {!suppressLegacyChrome && location.pathname !== '/notifications' && <div
         className="fixed right-4 z-50 pointer-events-auto flex items-center gap-2"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.5rem)' }}>
         {/* #245: showBarbellModal e o BarbellLifter ja existiam prontos, mas
@@ -146,7 +149,7 @@ export function Layout() {
       </main>
 
       {/* Bottom Navigation - Thin style with labels */}
-      <nav id="bottom-nav" className="fixed bottom-0 left-0 right-0 z-30 pb-safe-offset-4 pointer-events-none">
+      {!suppressLegacyChrome && <nav id="bottom-nav" className="fixed bottom-0 left-0 right-0 z-30 pb-safe-offset-4 pointer-events-none">
         <div className="max-w-lg mx-auto px-4 md:px-6 pb-4 md:pb-6">
           <div className="pointer-events-auto flex justify-between items-center h-16 md:h-20 px-2 md:px-4 bg-[#16120C]/85 backdrop-blur-3xl border border-[#F5A623]/25 shadow-[0_8px_32px_rgba(0,0,0,0.7)] rounded-[24px] md:rounded-[32px]">
             <NavItem
@@ -167,7 +170,7 @@ export function Layout() {
             />
           </div>
         </div>
-      </nav>
+      </nav>}
 
       {/* Barbell Lifter Modal */}
       <AnimatePresence>

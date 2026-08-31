@@ -11,15 +11,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ success: false, error: 'Sessão inválida ou expirada.' });
   }
 
-  const action = (req.query.action || req.body.action) as string;
+  const action = (req.query?.action || req.body?.action) as string | undefined;
 
   try {
     if (req.method === 'GET') {
-      await MissionEngine.syncUserProgressFromValidatedActivities(auth.uid);
+      // These reads enrich the dashboard, but a temporary integration failure
+      // must not take the complete challenges catalogue down.
+      await MissionEngine.syncUserProgressFromValidatedActivities(auth.uid).catch((error) => {
+        console.warn('[Missions Sync Warning]:', error);
+      });
       const missions = await MissionEngine.getMissions();
       const [userProgress, coinWallet] = await Promise.all([
         MissionEngine.getUserMissionProgress(auth.uid),
-        RewardCoinEngine.getWallet(auth.uid),
+        RewardCoinEngine.getWallet(auth.uid).catch((error) => {
+          console.warn('[Mission Wallet Warning]:', error);
+          return { userId: auth.uid, balance: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
+        }),
       ]);
 
       return res.status(200).json({
