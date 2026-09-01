@@ -131,11 +131,9 @@ const result = await adminService.updateWithdrawalMinAmount(req.userId!, Number(
 return res.status(200).json(result);
 }
 case 'upsert-mission':
-      case 'upsert-sponsor-challenge':
       case 'upsert-store-item': {
-        const typeMap: Record<string, 'mission' | 'sponsor_challenge' | 'store_item'> = {
+        const typeMap: Record<string, 'mission' | 'store_item'> = {
           'upsert-mission': 'mission',
-          'upsert-sponsor-challenge': 'sponsor_challenge',
           'upsert-store-item': 'store_item'
         };
         const result = await adminService.upsertEntity(typeMap[action], req.body.id, req.body);

@@ -197,10 +197,9 @@ export class AdminService {
     return { success: true, message: 'Saque minimo atualizado para R$ ' + minWithdrawalAmount.toFixed(2) + '.', config: updated };
   }
 
-  async upsertEntity(type: 'mission' | 'sponsor_challenge' | 'store_item', id: string | undefined, data: Record<string, any>) {
+  async upsertEntity(type: 'mission' | 'store_item', id: string | undefined, data: Record<string, any>) {
     const collectionMap: Record<string, string> = {
       mission: 'missions',
-      sponsor_challenge: 'sponsor_challenges',
       store_item: 'store_items'
     };
 

@@ -33,6 +33,23 @@
   --liga-borda: #A855F7;
 }
 
+/* A troca de rota deve nascer sobre uma superfície neutra. Assim nenhum
+   wallpaper de uma tela anterior aparece enquanto o novo chunk é carregado. */
+.app-route-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  background: #030303;
+  color: var(--dourado);
+  font-family: 'Barlow', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
 /* 1) Camada de arte de fundo */
 .iv-fundo {
   position: relative;

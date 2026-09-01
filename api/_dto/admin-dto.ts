@@ -25,6 +25,6 @@ export interface UpdateWithdrawalRequest {
 
 export interface UpsertEntityRequest {
   id?: string;
-  type: 'mission' | 'sponsor_challenge' | 'store_item';
+  type: 'mission' | 'store_item';
   data: Record<string, any>;
 }

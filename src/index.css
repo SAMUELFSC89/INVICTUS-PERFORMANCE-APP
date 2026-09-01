@@ -494,7 +494,7 @@
 }
 
 /* Saúde PRO: superfícies, métricas e relatórios mobile. */
-.health-screen { min-height:100vh; padding-bottom:7rem; background:transparent; color:#fff; }
+.health-screen { position:relative; width:100%; min-height:100dvh; overflow-x:clip; padding-bottom:7rem; background:#030303; color:#fff; }
 .health-content { width:100%; max-width:980px; margin:0 auto; padding:1.25rem 1rem; background:transparent; }
 .health-loading { display:grid; min-height:100vh; place-items:center; color:#d9d3cb; font-family:Barlow,sans-serif; }
 .health-header { display:flex; align-items:center; gap:1rem; margin:0 0 1.65rem; }

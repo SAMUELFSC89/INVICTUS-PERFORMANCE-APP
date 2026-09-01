@@ -8,7 +8,7 @@ import {
   SEASON_MIN_PARTICIPANTS_PER_GYM,
   SEASON_TOP5_THRESHOLD_PER_GYM,
   TOP_10_PERCENTAGES,
-} from '../../src/constants.js';
+} from './season-constants.js';
 
 /**
  * Motor de premiacao da temporada (Liga Invictus).

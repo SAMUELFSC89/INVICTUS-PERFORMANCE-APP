@@ -11,7 +11,7 @@ import {
   SEASON_MIN_PARTICIPANTS_PER_GYM,
   SEASON_TOP5_THRESHOLD_PER_GYM,
   TOP_10_PERCENTAGES,
-} from '../../src/constants.js';
+} from '../_lib/season-constants.js';
 
 /**
  * Estado da premiacao da temporada para a academia do atleta.

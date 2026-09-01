@@ -701,22 +701,6 @@ export interface UserMissionProgress {
   updatedAt: string;
 }
 
-export interface SponsorChallenge {
-  id: string;
-  sponsorName: string;
-  sponsorLogoUrl: string;
-  title: string;
-  description: string;
-  bannerUrl: string;
-  startDate: string;
-  endDate: string;
-  totalPrizeCoins: number;
-  winnersCount: number;
-  criteria: string;
-  active: boolean;
-  participantsCount?: number;
-}
-
 export interface StoreItem {
   id: string;
   name: string;

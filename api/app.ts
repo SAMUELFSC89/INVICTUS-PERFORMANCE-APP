@@ -55,7 +55,6 @@ import performanceDashboardHandler from './_handlers/performance-dashboard.js';
 import performanceAiHandler from './_handlers/performance-ai.js';
 import financialHandler from './_handlers/financial.js';
 import missionsHandler from './_handlers/missions.js';
-import sponsorsHandler from './_handlers/sponsors.js';
 import storeHandler from './_handlers/store.js';
 import activityMapHandler from './activity-map.js';
 import wearablesHandler from './_handlers/wearables.js';
@@ -343,9 +342,6 @@ router.all('/financial', wrap(financialHandler));
 console.log('[ROUTE] /missions', typeof missionsHandler);
 router.all('/missions', wrap(missionsHandler));
 
-console.log('[ROUTE] /sponsors', typeof sponsorsHandler);
-router.all('/sponsors', wrap(sponsorsHandler));
-
 console.log('[ROUTE] /store', typeof storeHandler);
 router.all('/store', wrap(storeHandler));
 
@@ -379,7 +375,6 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'powerlift': return await powerLiftHandler(req as any, res as any);
     case 'financial': return await financialHandler(req as any, res as any);
     case 'missions': return await missionsHandler(req as any, res as any);
-    case 'sponsors': return await sponsorsHandler(req as any, res as any);
     case 'store': return await storeHandler(req as any, res as any);
     case 'payments-verify-purchase': return await paymentsVerifyPurchaseHandler(req as any, res as any);
     case 'payments-config': return await paymentsConfigHandler(req as any, res as any);

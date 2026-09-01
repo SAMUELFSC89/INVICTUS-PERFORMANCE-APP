@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, type ComponentType } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { AdminGuard } from './components/AdminGuard';
@@ -13,7 +13,7 @@ import './styles/invictus.css';
 const lazyNamed = <T extends Record<string, unknown>, K extends keyof T>(
   loader: () => Promise<T>,
   exportName: K,
-) => lazy(async () => ({ default: (await loader())[exportName] as React.ComponentType<any> }));
+) => lazy(async () => ({ default: (await loader())[exportName] as ComponentType<any> }));
 
 const Home = lazyNamed(() => import('./pages/Home'), 'Home');
 const Rankings = lazyNamed(() => import('./pages/Rankings'), 'Rankings');
