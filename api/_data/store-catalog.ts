@@ -15,7 +15,7 @@ const base = (data: {
   currentSupplierCost: number | null; displayOrder: number; image: string; gallery?: string[];
   supplierCode?: string; gtinCandidate?: string; boxGtin?: string; boxGtinCandidate?: string; flavor?: string; weight?: number; package?: string;
   regularSupplierCost?: number; promotionMinimumQuantity?: number; supplierDescription?: string;
-  productStatus?: CatalogueSeed['productStatus'];
+  productStatus?: CatalogueSeed['productStatus']; cashPrice: number; coinDiscountPrice: number; coinDiscountAmount: number;
 }): CatalogueSeed => {
   const status = data.productStatus ?? (data.gtin && data.currentSupplierCost !== null ? 'READY_FOR_PRICING' : 'DRAFT');
   const image = `/assets/store/products/catalog/${data.image}`;
@@ -58,11 +58,10 @@ const base = (data: {
     storeVisible: true,
     published: true,
     displayOrder: data.displayOrder,
-    canPurchaseWithMoney: false,
-    canRedeemWithCoins: false,
-    canUseCoinsPlusMoney: false,
-    coinPrice: null,
-    cashTopUp: null,
+    canPurchaseWithCash: true,
+    canPurchaseWithCoinsDiscount: true,
+    coinDiscountPrice: data.coinDiscountPrice,
+    coinDiscountAmount: data.coinDiscountAmount,
     commercialStock: 0,
     dropStock: 0,
     reservedCommercialStock: 0,
@@ -79,7 +78,7 @@ const base = (data: {
     packageLengthCm: null,
     packageWidthCm: null,
     packageHeightCm: null,
-    pricing: pricing(data.currentSupplierCost),
+    pricing: { ...pricing(data.currentSupplierCost), cashPrice: data.cashPrice },
   };
 };
 

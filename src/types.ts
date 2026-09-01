@@ -573,6 +573,10 @@ export type IVCoinLedgerType =
   | 'GYM_CHAMPIONSHIP_PODIUM'
   | 'STORE_PURCHASE'
   | 'STORE_REFUND'
+  | 'STORE_DISCOUNT'
+  | 'DROP_REDEMPTION'
+  | 'DROP_REFUND'
+  | 'ORDER_REFUND'
   | 'PROMOTIONAL_REWARD'
   | 'ADMIN_ADJUSTMENT';
 
@@ -617,6 +621,12 @@ export interface RewardCoinTransaction {
   ledgerType: IVCoinLedgerType;
   description: string;
   idempotencyKey: string;
+  productId?: string | null;
+  orderId?: string | null;
+  dropId?: string | null;
+  balanceBefore?: number;
+  balanceAfter?: number;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -787,11 +797,16 @@ export interface PhysicalProduct {
   storeVisible: boolean;
   published: boolean;
   displayOrder: number;
-  canPurchaseWithMoney: boolean;
-  canRedeemWithCoins: boolean;
-  canUseCoinsPlusMoney: boolean;
-  coinPrice: number | null;
-  cashTopUp: number | null;
+  canPurchaseWithCash: boolean;
+  canPurchaseWithCoinsDiscount: boolean;
+  coinDiscountPrice: number | null;
+  coinDiscountAmount: number | null;
+  /** Legacy fields are read only during migration and are never authoritative. */
+  canPurchaseWithMoney?: boolean;
+  canRedeemWithCoins?: boolean;
+  canUseCoinsPlusMoney?: boolean;
+  coinPrice?: number | null;
+  cashTopUp?: number | null;
   commercialStock: number;
   dropStock: number;
   reservedCommercialStock: number;
@@ -841,18 +856,25 @@ export type PublicPhysicalProduct = Omit<PhysicalProduct,
   commercialAvailability: 'AVAILABLE' | 'UNAVAILABLE';
   dropState: 'UPCOMING' | 'OPEN' | 'SOLD_OUT' | 'UNAVAILABLE';
   nextDropAt: string | null;
+  drop: PublicStoreDrop | null;
 };
 
 export interface PhysicalOrderItemSnapshot {
   productId: string;
   name: string;
-  gtin: string;
+  gtin: string | null;
+  supplierCode: string | null;
+  image: string | null;
   quantity: number;
   unitPrice: number;
   supplierCostSnapshot: number;
   coinAmountUsed: number;
   cashAmount: number;
   shippingAmount: number;
+  cashPriceAtPurchase: number;
+  discountMode: 'NONE' | 'COINS_DISCOUNT' | 'DROP';
+  shippingMode: StoreShippingMode;
+  createdAt: string;
 }
 
 export interface PhysicalShippingAddress {
@@ -877,6 +899,10 @@ export interface PhysicalOrder {
   address: PhysicalShippingAddress;
   dropId: string | null;
   idempotencyKey: string;
+  paymentProvider?: string | null;
+  paymentReference?: string | null;
+  coinReservationStatus?: 'NONE' | 'HELD' | 'CONSUMED' | 'RELEASED' | 'REFUNDED';
+  coinReservationExpiresAt?: string | null;
   trackingCode?: string | null;
   shippedAt?: string | null;
   deliveredAt?: string | null;
@@ -885,20 +911,32 @@ export interface PhysicalOrder {
   updatedAt: string;
 }
 
+export type StoreShippingMode = 'CUSTOMER_PAID' | 'INVICTUS_SUBSIDIZED' | 'SPONSORED' | 'FREE_SHIPPING_CAMPAIGN';
+export type StoreDropStatus = 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'SOLD_OUT' | 'ENDED' | 'CANCELLED';
+
 export interface StoreDrop {
   id: string;
   name: string;
+  productId: string;
+  coinPrice: number;
+  initialStock: number;
+  availableStock: number;
+  reservedStock: number;
+  limitPerUser: number;
   startsAt: string;
   endsAt: string;
-  active: boolean;
-  shippingMode: 'FREE' | 'PAID_PENDING';
-  productIds: string[];
+  status: StoreDropStatus;
+  shippingMode: StoreShippingMode;
+  maxExposure: number;
   freightSubsidy: number;
   packagingCost: number;
+  fulfillmentCost: number;
   otherCosts: number;
   createdAt: string;
   updatedAt: string;
 }
+
+export type PublicStoreDrop = Pick<StoreDrop, 'id' | 'name' | 'productId' | 'coinPrice' | 'availableStock' | 'limitPerUser' | 'startsAt' | 'endsAt' | 'status' | 'shippingMode'>;
 
 export interface UserInventoryItem {
   id: string;
