@@ -198,7 +198,6 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
                 analysis: { type: Type.STRING }
               }
             },
-            temperature: 0.1
           }
         });
 

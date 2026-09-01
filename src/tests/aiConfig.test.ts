@@ -1,4 +1,4 @@
-import { getAiApiKey, getAiTextModel } from '../../api/_lib/ai-config';
+import { friendlyAiError, getAiApiKey, getAiTextModel } from '../../api/_lib/ai-config';
 
 describe('configuração central da Invictus IA', () => {
   const original = {
@@ -28,8 +28,21 @@ describe('configuração central da Invictus IA', () => {
 
   it('usa o modelo estável padrão e permite configuração pelo ambiente', () => {
     delete process.env.GEMINI_TEXT_MODEL;
-    expect(getAiTextModel()).toBe('gemini-2.5-flash');
+    expect(getAiTextModel()).toBe('gemini-3.6-flash');
     process.env.GEMINI_TEXT_MODEL = 'modelo-configurado';
     expect(getAiTextModel()).toBe('modelo-configurado');
+  });
+
+  it('migra configuração antiga 2.5 e normaliza o prefixo models', () => {
+    process.env.GEMINI_TEXT_MODEL = 'gemini-2.5-flash';
+    expect(getAiTextModel()).toBe('gemini-3.6-flash');
+    process.env.GEMINI_TEXT_MODEL = 'models/gemini-3.6-flash';
+    expect(getAiTextModel()).toBe('gemini-3.6-flash');
+  });
+
+  it('não expõe o JSON interno do provedor ao atleta', () => {
+    const message = friendlyAiError(new Error('{"error":{"code":404,"status":"NOT_FOUND","message":"model no longer available"}}'));
+    expect(message).not.toContain('NOT_FOUND');
+    expect(message).toContain('Invictus IA');
   });
 });

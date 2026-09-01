@@ -1,4 +1,7 @@
 import { db } from './common.js';
+import { assessHealthConfidence, ConfidenceAssessment, deriveProvenanceStatus, HealthProvenance } from './health-confidence-engine.js';
+import type { MeasurementContext } from './health-evidence-registry.js';
+import { loadHealthConfidenceRuntime } from './health-confidence-runtime.js';
 
 /**
  * HEALTH DATA LAYER (Fase 1 -- fundacao).
@@ -52,6 +55,8 @@ export type HealthMetricType =
   | 'distance_cycling_km'
   | 'respiratory_rate'
   | 'oxygen_saturation'
+  | 'ecg'
+  | 'atrial_fibrillation_detection'
   | 'blood_pressure_systolic'
   | 'blood_pressure_diastolic'
   | 'blood_glucose'
@@ -74,7 +79,9 @@ export type HealthSampleSource =
   | 'invictus_gps';
 
 /**
- * Confiabilidade da leitura, INDEPENDENTE de ela ter pontuado no IGA.
+ * Campo legado do pipeline de atividade/antifraude. NÃO representa a
+ * confiança científica da medição; essa responsabilidade é exclusiva de
+ * `confidenceAtMeasurement` (Health Confidence Engine).
  * - sensor_verified: veio de sensor real E passou pelo SecurityPipeline sem alertas.
  * - sensor_flagged: veio de sensor real, mas o SecurityPipeline suspeitou da
  *   ATIVIDADE (ex.: padrao de GPS incompativel) -- a leitura biometrica pode
@@ -100,6 +107,12 @@ export interface HealthSample {
   sourceActivityId?: string; // referencia ao doc de `workouts`, quando aplicavel
   device?: string;
   quality: HealthSampleQuality;
+  provenance?: HealthProvenance;
+  confidenceAtMeasurement?: ConfidenceAssessment;
+  currentEvidenceConfidence?: ConfidenceAssessment;
+  measurementContext?: MeasurementContext;
+  derivedFrom?: string[];
+  sourceConfidence?: number[];
   createdAt: string;
 }
 
@@ -113,17 +126,49 @@ const HEALTH_SAMPLES_COLLECTION = 'health_samples';
  */
 export async function gravarAmostraSaude(sample: Omit<HealthSample, 'id' | 'createdAt'>): Promise<void> {
   try {
+    const provenance = sample.provenance || provenanceFromLegacySample(sample.source, sample.sourceId, sample.device);
+    const runtime = sample.confidenceAtMeasurement ? null : await loadHealthConfidenceRuntime();
+    const confidenceAtMeasurement = sample.confidenceAtMeasurement || assessHealthConfidence({
+      metricType: sample.metricType,
+      provenance,
+      measurementContext: sample.measurementContext,
+      completeness: provenance.status === 'VERIFIED_DEVICE' ? 'complete' : 'partial',
+      derivedFrom: sample.derivedFrom,
+      sourceConfidence: sample.sourceConfidence
+    }, runtime!.registry, runtime!.config);
     const rawId = sample.sampleId || sample.sourceActivityId || sample.timestamp;
     const safeId = Buffer.from(rawId).toString('base64url').slice(0, 900);
     const id = `${sample.source}_${sample.metricType}_${safeId}`;
-    await db.collection(HEALTH_SAMPLES_COLLECTION).doc(id).set({
+    // Classificação histórica é imutável. A mesma amostra resincronizada não
+    // recebe silenciosamente uma nova versão/nota; evidência atual aparece em
+    // `currentEvidenceConfidence` somente na leitura.
+    await db.collection(HEALTH_SAMPLES_COLLECTION).doc(id).create({
       ...sample,
+      provenance,
+      confidenceAtMeasurement,
+      measurementContext: confidenceAtMeasurement.measurementContext,
       id,
       createdAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (err) {
+    });
+  } catch (err: any) {
+    if (err?.code === 6 || err?.code === 'already-exists' || err?.code === 'ALREADY_EXISTS') return;
     console.error('[HealthDataLayer] Falha ao gravar amostra (nao-fatal):', err);
   }
+}
+
+function integrationForSource(source: HealthSampleSource): HealthProvenance['integration'] {
+  if (source === 'apple_health') return 'APPLE_HEALTH';
+  if (source === 'health_connect') return 'HEALTH_CONNECT';
+  if (source === 'strava') return 'STRAVA';
+  if (source === 'invictus_manual' || source === 'invictus_gps') return 'INVICTUS';
+  return 'UNKNOWN';
+}
+
+function provenanceFromLegacySample(source: HealthSampleSource, sourceId?: string, device?: string): HealthProvenance {
+  const partial: Omit<HealthProvenance, 'status'> = {
+    integration: integrationForSource(source), dataOrigin: sourceId, applicationName: device
+  };
+  return { ...partial, status: deriveProvenanceStatus(partial) };
 }
 
 /**
@@ -190,14 +235,15 @@ export async function registrarAmostrasDeAtividade(params: {
  * HealthKit/Health Connect via @capgo/capacitor-health -- NAO estao ligadas a
  * uma atividade/treino especifico, entao nao passam pelo SecurityPipeline
  * (nao sao uma alegacao competitiva: nao geram pontos nem entram em
- * ranking). Por isso `quality` e sempre 'sensor_verified' aqui -- vieram
- * direto do sensor/app de saude do usuario, sem antifraude aplicavel.
+ * ranking). `quality='sensor_verified'` é mantido apenas por compatibilidade
+ * do schema legado; origem por integração não prova hardware. Proveniência e
+ * confiança são classificadas separadamente pelo Confidence Engine.
  *
  * Deduplicacao: `gravarAmostraSaude` usa `source + (sourceActivityId ||
- * timestamp) + metricType` como id do documento (merge:true). Vitais nao tem
+ * timestamp) + metricType` como id do documento e criação imutável. Vitais nao tem
  * sourceActivityId, entao o `timestamp` da propria leitura garante que
- * resincronizar uma janela sobreposta so sobrescreve o mesmo doc, nunca
- * duplica a serie temporal.
+ * resincronizar uma janela sobreposta encontra o mesmo doc e não duplica nem
+ * reclassifica silenciosamente a serie temporal.
  */
 export async function registrarAmostrasPassivas(params: {
   userId: string;
@@ -205,6 +251,7 @@ export async function registrarAmostrasPassivas(params: {
   amostras: Array<{
     metricType: HealthMetricType; value: number; unit: string; timestamp: string;
     startDate?: string; endDate?: string; sampleId?: string; sourceId?: string; platformId?: string; device?: string;
+    provenance?: HealthProvenance; measurementContext?: MeasurementContext; derivedFrom?: string[]; sourceConfidence?: number[];
   }>;
 }): Promise<number> {
   const validas = params.amostras.filter((a) => typeof a.value === 'number' && Number.isFinite(a.value) && a.value > 0);
@@ -218,6 +265,10 @@ export async function registrarAmostrasPassivas(params: {
     sourceId: a.sourceId,
     platformId: a.platformId,
     device: a.device,
+    provenance: a.provenance,
+    measurementContext: a.measurementContext,
+    derivedFrom: a.derivedFrom,
+    sourceConfidence: a.sourceConfidence,
     quality: 'sensor_verified',
     metricType: a.metricType,
     value: a.value,
@@ -245,7 +296,20 @@ export async function lerSerieTemporalMetrica(
     .where('timestamp', '<=', ate.toISOString())
     .orderBy('timestamp', 'asc')
     .get();
-  return snap.docs.map((d) => d.data() as HealthSample);
+  const runtime = await loadHealthConfidenceRuntime();
+  return snap.docs.map((d) => {
+    const sample = d.data() as HealthSample;
+    const provenance = sample.provenance || { ...provenanceFromLegacySample(sample.source, sample.sourceId, undefined), status: 'LEGACY_UNKNOWN_SOURCE' as const };
+    return {
+      ...sample,
+      provenance,
+      currentEvidenceConfidence: assessHealthConfidence({
+        metricType: sample.metricType, provenance, measurementContext: sample.measurementContext,
+        completeness: sample.confidenceAtMeasurement ? 'complete' : 'minimal', assessedAt: new Date().toISOString(),
+        derivedFrom: sample.derivedFrom, sourceConfidence: sample.sourceConfidence
+      }, runtime.registry, runtime.config)
+    };
+  });
 }
 
 /**

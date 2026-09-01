@@ -1,7 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import { FieldValue, cors, db, verifyAuth } from '../_lib/common.js';
-import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
+import { friendlyAiError, getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
 
 const EXERCISES = [
   { id: 'barbell_bench_press', group: 'peito', equipment: ['barra_anilhas', 'banco'] },
@@ -69,7 +69,7 @@ async function generatePlan(answers: any, userId: string) {
   const response = await ai.models.generateContent({
     model: getAiTextModel(),
     contents: `Monte um plano de musculação em JSON usando SOMENTE os exerciseIds permitidos. Respostas do atleta: ${JSON.stringify(answers)}. IDs permitidos: ${JSON.stringify(available)}. Formato: {name,description,objective,experienceLevel,durationMinutes,daysPerWeek,workouts:[{id,name,focus,weekdays:number[],exercises:[{exerciseId,sets,repsMin,repsMax,restSeconds}]}]}. Não diagnostique lesões.`,
-    config: { responseMimeType: 'application/json', temperature: 0.2 }
+    config: { responseMimeType: 'application/json' }
   });
   let parsed: any;
   try {
@@ -96,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (req.method === 'POST' && req.body?.action === 'generate') {
     try { return res.status(200).json({ plan: await generatePlan(req.body.answers || {}, auth.uid) }); }
-    catch (error: any) { return res.status(422).json({ error: error.message || 'Não foi possível gerar o plano.' }); }
+    catch (error: unknown) { return res.status(422).json({ error: friendlyAiError(error) }); }
   }
   if (req.method === 'POST' && req.body?.action === 'save') {
     try {

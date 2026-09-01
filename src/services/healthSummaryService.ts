@@ -21,12 +21,30 @@ export interface UltimoValorMetrica {
   sampleId?: string;
   source?: string;
   device?: string;
+  provenance?: {
+    integration?: string; dataOrigin?: string; applicationName?: string; recordingMethod?: string;
+    deviceManufacturer?: string; deviceModel?: string; deviceName?: string; deviceType?: string;
+    hardwareVersion?: string; firmwareVersion?: string; softwareVersion?: string; localIdentifier?: string;
+    sourceVersion?: string; sourceProductType?: string; sourceOperatingSystemVersion?: string; status?: string;
+  };
+  confidenceAtMeasurement?: HealthConfidenceView;
+  currentEvidenceConfidence?: HealthConfidenceView;
+  measurementContext?: string;
+}
+
+export interface HealthConfidenceView {
+  confidenceLevel: 'A' | 'B' | 'C' | 'D' | 'E'; confidenceScore: number; confidenceReason: string;
+  limitations: string[]; evidenceReferences: Array<{ id: string; title: string; url?: string; scope: string }>;
+  confidenceEngineVersion: string; measurementContext: string; provenanceStatus: string; assessedAt: string;
 }
 
 export interface PontoTendencia {
   timestamp: string;
   value: number;
   source: string;
+  device?: string;
+  confidenceAtMeasurement?: HealthConfidenceView;
+  currentEvidenceConfidence?: HealthConfidenceView;
 }
 
 export interface HealthSummaryResponse {

@@ -1,7 +1,10 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import { createHash } from 'node:crypto';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { processarLoteWearable, WearableActivityPayload } from '../_lib/wearable-sync-service.js';
 import { registrarAmostrasPassivas, HealthMetricType, HealthSampleSource } from '../_lib/health-data-layer.js';
+import { deriveProvenanceStatus, HealthProvenance } from '../_lib/health-confidence-engine.js';
+import { applyUserDeclaredDeviceFromList, getUserDeviceDeclarations } from '../_lib/health-device-registry.js';
 
 const ALLOWED_PERMISSION_VALUES = new Set([
   'read_heart_rate',
@@ -107,9 +110,18 @@ const VITAL_METRIC_TYPES = new Set([
 // restante do histórico.
 const MAX_VITAIS_POR_SYNC = 800;
 
-type VitalPayload = { metricType: HealthMetricType; value: number; unit: string; timestamp: string; startDate?: string; endDate?: string; sampleId?: string; sourceId?: string; platformId?: string; device?: string };
+type VitalPayload = { metricType: HealthMetricType; value: number; unit: string; timestamp: string; startDate?: string; endDate?: string; sampleId?: string; sourceId?: string; platformId?: string; device?: string; provenance: HealthProvenance };
 
-function sanitizarVitais(input: unknown): VitalPayload[] {
+function safeText(value: unknown, max = 160): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined;
+}
+
+function hashLocalIdentifier(value: unknown): string | undefined {
+  const normalized = safeText(value, 200);
+  return normalized ? `sha256:${createHash('sha256').update(normalized).digest('hex')}` : undefined;
+}
+
+function sanitizarVitais(input: unknown, source: HealthSampleSource): VitalPayload[] {
   if (!Array.isArray(input)) return [];
   const validas: VitalPayload[] = [];
   for (const item of input.slice(0, MAX_VITAIS_POR_SYNC)) {
@@ -120,6 +132,18 @@ function sanitizarVitais(input: unknown): VitalPayload[] {
     if (!Number.isFinite(value) || value <= 0) continue;
     if (typeof a.unit !== 'string' || !a.unit) continue;
     if (typeof a.timestamp !== 'string' || isNaN(new Date(a.timestamp).getTime())) continue;
+    const partial: Omit<HealthProvenance, 'status'> = {
+      integration: source === 'apple_health' ? 'APPLE_HEALTH' : 'HEALTH_CONNECT',
+      dataOrigin: safeText(a.dataOrigin || a.sourceId, 200),
+      applicationName: safeText(a.applicationName || a.device),
+      recordingMethod: ['automatic', 'active', 'manual', 'unknown'].includes(String(a.recordingMethod)) ? a.recordingMethod as HealthProvenance['recordingMethod'] : 'unknown',
+      deviceManufacturer: safeText(a.deviceManufacturer), deviceModel: safeText(a.deviceModel),
+      deviceName: safeText(a.deviceName), deviceType: safeText(a.deviceType),
+      hardwareVersion: safeText(a.hardwareVersion, 80), firmwareVersion: safeText(a.firmwareVersion, 80),
+      softwareVersion: safeText(a.softwareVersion, 80), localIdentifier: hashLocalIdentifier(a.localIdentifier),
+      sourceVersion: safeText(a.sourceVersion, 80), sourceProductType: safeText(a.sourceProductType, 120),
+      sourceOperatingSystemVersion: safeText(a.sourceOperatingSystemVersion, 80)
+    };
     validas.push({
       metricType: a.metricType as HealthMetricType,
       value,
@@ -130,7 +154,8 @@ function sanitizarVitais(input: unknown): VitalPayload[] {
       sampleId: typeof a.sampleId === 'string' ? a.sampleId.slice(0, 500) : undefined,
       sourceId: typeof a.sourceId === 'string' ? a.sourceId.slice(0, 200) : undefined,
       platformId: typeof a.platformId === 'string' ? a.platformId.slice(0, 300) : undefined,
-      device: typeof a.device === 'string' ? a.device.slice(0, 120) : undefined
+      device: typeof a.device === 'string' ? a.device.slice(0, 120) : undefined,
+      provenance: { ...partial, status: deriveProvenanceStatus(partial) }
     });
   }
   return validas;
@@ -235,7 +260,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // action 'sync' de propósito (ver HealthVitalsProvider.ts).
   if (action === 'sync-vitals') {
     const source: HealthSampleSource = req.body?.source === 'health_connect' ? 'health_connect' : 'apple_health';
-    const vitais = sanitizarVitais(req.body?.vitals);
+    const vitais = sanitizarVitais(req.body?.vitals, source);
     const finalBatch = req.body?.finalBatch !== false;
     if (vitais.length === 0) {
       const now = new Date().toISOString();
@@ -243,7 +268,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ savedCount: 0, lastVitalsSyncTime: finalBatch ? now : undefined });
     }
     try {
-      const savedCount = await registrarAmostrasPassivas({ userId: auth.uid, source, amostras: vitais });
+      const declarations = await getUserDeviceDeclarations(auth.uid).catch(() => []);
+      const enrichedVitals = vitais.map((sample) => ({
+        ...sample,
+        provenance: applyUserDeclaredDeviceFromList(sample.provenance, sample.timestamp, declarations)
+      }));
+      const savedCount = await registrarAmostrasPassivas({ userId: auth.uid, source, amostras: enrichedVitals });
       const now = new Date().toISOString();
       if (finalBatch) await configRef.set({ lastVitalsSyncTime: now, updatedAt: now }, { merge: true });
       return res.status(200).json({ savedCount, lastVitalsSyncTime: finalBatch ? now : undefined });

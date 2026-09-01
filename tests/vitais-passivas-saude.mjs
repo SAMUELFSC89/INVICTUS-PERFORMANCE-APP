@@ -35,6 +35,14 @@ function criarBancoFalso() {
         set: async (data, opts) => {
           const atual = colecao(nome).get(id) || {};
           colecao(nome).set(id, opts?.merge ? { ...atual, ...data } : data);
+        },
+        create: async (data) => {
+          if (colecao(nome).has(id)) {
+            const err = new Error('already exists');
+            err.code = 6;
+            throw err;
+          }
+          colecao(nome).set(id, data);
         }
       })
     }),

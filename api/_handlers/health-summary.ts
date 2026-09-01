@@ -35,12 +35,19 @@ interface UltimoValor {
   sampleId?: string;
   source?: string;
   device?: string;
+  provenance?: unknown;
+  confidenceAtMeasurement?: unknown;
+  currentEvidenceConfidence?: unknown;
+  measurementContext?: string;
 }
 
 interface PontoTendencia {
   timestamp: string;
   value: number;
   source: string;
+  device?: string;
+  confidenceAtMeasurement?: unknown;
+  currentEvidenceConfidence?: unknown;
 }
 
 
@@ -69,12 +76,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return [tipo, ultima ? {
           value: ultima.value, unit: ultima.unit, timestamp: ultima.timestamp,
           startDate: ultima.startDate, endDate: ultima.endDate, sampleId: ultima.sampleId,
-          source: ultima.source, device: ultima.device
+          source: ultima.source, device: ultima.device, provenance: ultima.provenance,
+          confidenceAtMeasurement: ultima.confidenceAtMeasurement,
+          currentEvidenceConfidence: ultima.currentEvidenceConfidence,
+          measurementContext: ultima.measurementContext
         } : null];
       })),
       Promise.all(METRICAS_TENDENCIA.map(async (tipo): Promise<[HealthMetricType, PontoTendencia[]]> => {
         const amostras = selectDailyHealthSource(tipo, await lerSerieTemporalMetrica(auth.uid, tipo, desdeTendencia, agora));
-        return [tipo, amostras.map((a) => ({ timestamp: a.timestamp, value: a.value, source: a.source }))];
+        return [tipo, amostras.map((a) => ({ timestamp: a.timestamp, value: a.value, source: a.source, device: a.device,
+          confidenceAtMeasurement: a.confidenceAtMeasurement, currentEvidenceConfidence: a.currentEvidenceConfidence }))];
       }))
     ]);
 

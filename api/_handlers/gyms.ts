@@ -1,5 +1,6 @@
 import { cors, verifyAuth } from '../_lib/common.js';
 import NodeCache from 'node-cache';
+import { classifyGooglePlacesError, getGooglePlacesApiKey } from '../_lib/google-places-config.js';
 
 const cache = new NodeCache({ stdTTL: 1800, maxKeys: 2000, useClones: false }); // 30 minutes cache for gyms
 
@@ -40,7 +41,7 @@ export default async function handler(req: any, res: any) {
       return res.json(cached);
     }
 
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
+    const apiKey = getGooglePlacesApiKey();
     if (!apiKey) {
       console.error('[GymAPI] Google Places não configurada no ambiente.');
       return res.status(503).json({ error: 'A busca de academias está indisponível no momento.' });
@@ -67,15 +68,12 @@ export default async function handler(req: any, res: any) {
         
         if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
           console.error(`[GymAPI][${requestId}][${requestId_f}] GOOGLE API STATUS ERROR:`, data.status);
-          
-          if (data.status === 'REQUEST_DENIED') {
-            const isBillingError = data.error_message?.toLowerCase().includes('billing');
-            return { 
-              error: true, 
-              status: data.status, 
-              isBillingError 
-            };
-          }
+          const classified = classifyGooglePlacesError(data.status, data.error_message);
+          return {
+            error: true,
+            status: data.status,
+            ...classified
+          };
         } else {
           console.log(`[GymAPI][${requestId}][${requestId_f}] GOOGLE API STATUS: ${data.status} (Results: ${data.results?.length || 0})`);
         }
@@ -113,9 +111,13 @@ export default async function handler(req: any, res: any) {
           if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             if (data.error) {
-              return { error: true, status: 'V1_ERROR' };
+              return {
+                error: true,
+                status: data.error.status || `HTTP_${response.status}`,
+                ...classifyGooglePlacesError(data.error.status || response.status, data.error.message)
+              };
             }
-            return null;
+            return { error: true, status: `HTTP_${response.status}`, ...classifyGooglePlacesError(response.status, '') };
           }
           const data = await response.json();
           return (data.places || []).map((p: any) => ({
@@ -139,7 +141,10 @@ export default async function handler(req: any, res: any) {
           radius: '20000'
         });
         
-        if (legacy && (legacy as any).error) return legacy;
+        if (legacy && (legacy as any).error) {
+          const current = await tryPlacesV1(q);
+          return Array.isArray(current) ? current : current || legacy;
+        }
         if (!legacy || (legacy as any[]).length === 0) return await tryPlacesV1(q);
         return legacy;
       }
@@ -152,7 +157,11 @@ export default async function handler(req: any, res: any) {
         type: 'gym'
       });
 
-      if (gyms && (gyms as any).error) return gyms;
+      if (gyms && (gyms as any).error) {
+        const current = await tryPlacesV1();
+        if (Array.isArray(current)) gyms = current;
+        else return current || gyms;
+      }
 
       // Also try with keyword 'academia' as it's very specific in Brazil
       if (!gyms || (gyms as any[]).length < 3) {
@@ -229,9 +238,14 @@ export default async function handler(req: any, res: any) {
     if (resultGyms && (resultGyms as any).error) {
       const err = resultGyms as any;
       console.warn(`[GymAPI] Google API indisponível (${err.status || 'erro desconhecido'}). Nenhum dado simulado será retornado.`);
-      return res.status(502).json({
+      return res.status(err.isBillingError ? 503 : 502).json({
         success: false,
-        error: 'Não foi possível consultar academias agora. Tente novamente em instantes.'
+        code: err.code || 'UPSTREAM_ERROR',
+        isBillingError: err.isBillingError === true,
+        error: err.isBillingError
+          ? 'A busca de academias aguarda a ativação do faturamento no Google Cloud.'
+          : 'Não foi possível consultar academias agora.',
+        tip: err.tip || 'Tente novamente em instantes.'
       });
     }
 

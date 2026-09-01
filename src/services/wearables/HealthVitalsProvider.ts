@@ -68,6 +68,21 @@ export interface VitalSample {
   platformId?: string;
   sampleId: string;
   device?: string;
+  integration: 'APPLE_HEALTH' | 'HEALTH_CONNECT';
+  dataOrigin?: string;
+  applicationName?: string;
+  recordingMethod?: 'automatic' | 'active' | 'manual' | 'unknown';
+  deviceManufacturer?: string;
+  deviceModel?: string;
+  deviceName?: string;
+  deviceType?: string;
+  hardwareVersion?: string;
+  firmwareVersion?: string;
+  softwareVersion?: string;
+  localIdentifier?: string;
+  sourceVersion?: string;
+  sourceProductType?: string;
+  sourceOperatingSystemVersion?: string;
 }
 
 const COMMON_READ_TYPES = [
@@ -92,6 +107,10 @@ function sampleId(metricType: VitalMetricType, startDate: string, endDate: strin
 
 function normalizar(metricType: VitalMetricType, value: number, unit: string, sample: {
   startDate: string; endDate: string; sourceName?: string; sourceId?: string; platformId?: string;
+  dataOrigin?: string; recordingMethod?: 'automatic' | 'active' | 'manual' | 'unknown';
+  deviceManufacturer?: string; deviceModel?: string; deviceName?: string; deviceType?: string;
+  hardwareVersion?: string; firmwareVersion?: string; softwareVersion?: string; localIdentifier?: string;
+  sourceVersion?: string; sourceProductType?: string; sourceOperatingSystemVersion?: string;
 }): VitalSample {
   return {
     metricType, value, unit,
@@ -101,7 +120,22 @@ function normalizar(metricType: VitalMetricType, value: number, unit: string, sa
     sourceId: sample.sourceId,
     platformId: sample.platformId,
     sampleId: sampleId(metricType, sample.startDate, sample.endDate, sample.platformId, sample.sourceId),
-    device: sample.sourceName
+    device: sample.deviceName || [sample.deviceManufacturer, sample.deviceModel].filter(Boolean).join(' ') || sample.sourceName,
+    integration: Capacitor.getPlatform() === 'ios' ? 'APPLE_HEALTH' : 'HEALTH_CONNECT',
+    dataOrigin: sample.dataOrigin || sample.sourceId,
+    applicationName: sample.sourceName,
+    recordingMethod: sample.recordingMethod,
+    deviceManufacturer: sample.deviceManufacturer,
+    deviceModel: sample.deviceModel,
+    deviceName: sample.deviceName,
+    deviceType: sample.deviceType,
+    hardwareVersion: sample.hardwareVersion,
+    firmwareVersion: sample.firmwareVersion,
+    softwareVersion: sample.softwareVersion,
+    localIdentifier: sample.localIdentifier,
+    sourceVersion: sample.sourceVersion,
+    sourceProductType: sample.sourceProductType,
+    sourceOperatingSystemVersion: sample.sourceOperatingSystemVersion
   };
 }
 

@@ -57,6 +57,7 @@ import storeHandler from './_handlers/store.js';
 import activityMapHandler from './activity-map.js';
 import wearablesHandler from './_handlers/wearables.js';
 import healthSummaryHandler from './_handlers/health-summary.js';
+import healthConfidenceHandler from './_handlers/health-confidence.js';
 import powerLiftHandler from './_handlers/powerlift.js';
 import mapboxConfigHandler from './_handlers/mapbox-config.js';
 import {
@@ -284,6 +285,7 @@ router.all('/wearables', wrap(wearablesHandler));
 
 console.log('[ROUTE] /health-summary', typeof healthSummaryHandler);
 router.all('/health-summary', wrap(healthSummaryHandler));
+router.all('/health-confidence', wrap(healthConfidenceHandler));
 router.all('/mapbox-config', wrap(mapboxConfigHandler));
 
 console.log('[ROUTE] /powerlift', typeof powerLiftHandler);
@@ -373,6 +375,7 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'whatsapp-send': return await whatsappHandler(req as any, res as any);
     case 'wallet-redeem': return await walletRedeemHandler(req as any, res as any);
     case 'wearables': return await wearablesHandler(req as any, res as any);
+    case 'health-confidence': return await healthConfidenceHandler(req as any, res as any);
     case 'powerlift': return await powerLiftHandler(req as any, res as any);
     case 'financial': return await financialHandler(req as any, res as any);
     case 'missions': return await missionsHandler(req as any, res as any);

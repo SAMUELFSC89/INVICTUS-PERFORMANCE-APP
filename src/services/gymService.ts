@@ -39,7 +39,7 @@ export const gymService = {
         console.error(`[GymService] API Error: ${response.status}`, text);
         try {
           const errData = JSON.parse(text);
-          const error = new Error(errData.error || `Erro no servidor (Status: ${response.status})`);
+          const error = new Error([errData.error || `Erro no servidor (Status: ${response.status})`, errData.tip].filter(Boolean).join(' '));
           (error as any).isBillingError = errData.isBillingError;
           (error as any).tip = errData.tip;
           throw error;

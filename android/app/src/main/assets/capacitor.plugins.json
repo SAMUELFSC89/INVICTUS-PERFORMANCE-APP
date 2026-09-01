@@ -28,11 +28,19 @@
 		"classpath": "com.capacitorjs.plugins.statusbar.StatusBarPlugin"
 	},
 	{
+		"pkg": "@capawesome-team/capacitor-android-foreground-service",
+		"classpath": "io.capawesome.capacitorjs.plugins.foregroundservice.ForegroundServicePlugin"
+	},
+	{
 		"pkg": "@revenuecat/purchases-capacitor",
 		"classpath": "com.revenuecat.purchases.capacitor.PurchasesPlugin"
 	},
 	{
 		"pkg": "capacitor-health",
 		"classpath": "com.fit_up.health.capacitor.HealthPlugin"
+	},
+	{
+		"pkg": "capgo-capacitor-health",
+		"classpath": "app.capgo.plugin.health.HealthPlugin"
 	}
 ]

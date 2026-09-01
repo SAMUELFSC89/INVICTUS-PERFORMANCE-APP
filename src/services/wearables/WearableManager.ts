@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { auth } from '../../firebase';
+import { API_CONFIG } from '../../config';
 import { AppleHealthProvider } from './AppleHealthProvider';
 import { HealthConnectProvider } from './HealthConnectProvider';
 import { StravaProvider } from './StravaProvider';
@@ -28,6 +29,8 @@ const READ_HEALTH_PERMISSIONS = [
   'read_hydration',
   'read_mindfulness'
 ];
+
+const wearablesEndpoint = () => `${API_CONFIG.baseUrl || ''}/api/wearables`;
 
 type ServerWearableConfig = Partial<WearableConfig>;
 
@@ -115,7 +118,7 @@ export class WearableManager {
   private async requestConfig(method: 'GET' | 'POST' | 'PUT', body?: unknown): Promise<WearableConfig> {
     const user = auth.currentUser;
     const token = await this.getToken();
-    const response = await fetch('/api/wearables', {
+    const response = await fetch(wearablesEndpoint(), {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -277,7 +280,7 @@ export class WearableManager {
       }
     }
 
-    const response = await fetch('/api/wearables', {
+    const response = await fetch(wearablesEndpoint(), {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'sync', activities: atividades })
@@ -315,7 +318,9 @@ export class WearableManager {
    * @capgo/capacitor-health -- pipeline totalmente separado de syncAll()
    * acima. Vitais não passam pelo SecurityPipeline (não são uma alegação
    * competitiva: não geram pontos, não entram em ranking); vão direto pra
-   * Health Data Layer com quality='sensor_verified'.
+   * Health Data Layer. O campo legado quality continua existindo apenas por
+   * compatibilidade; a confiança científica vem do Confidence Engine e da
+   * proveniência preservada em cada leitura.
    *
    * A janela sobrepõe 24 horas ao cursor para absorver leituras que o relógio
    * entregou com atraso. IDs nativos tornam essa sobreposição idempotente.
@@ -336,7 +341,7 @@ export class WearableManager {
     let savedCount = 0;
     let lastVitalsSyncTime: string | undefined;
     for (let index = 0; index < batches.length; index += 1) {
-      const response = await fetch('/api/wearables', {
+      const response = await fetch(wearablesEndpoint(), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'sync-vitals', source, vitals: batches[index], finalBatch: index === batches.length - 1 })

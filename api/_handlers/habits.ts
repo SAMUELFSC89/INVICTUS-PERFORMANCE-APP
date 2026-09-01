@@ -26,7 +26,7 @@ async function generateRevealMessage(params: { milestoneTitle: string; order: nu
     const response = await habitAi.models.generateContent({
       model: getAiTextModel(),
       contents: prompt,
-      config: { temperature: 0.8, maxOutputTokens: 80 },
+      config: { maxOutputTokens: 80 },
     });
     const text = (response.text || '').trim();
     return text || fallback;

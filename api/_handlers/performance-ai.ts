@@ -114,8 +114,8 @@ const HEALTH_AI_METRICS: HealthMetricType[] = [
 
 const HEALTH_LABELS: Partial<Record<HealthMetricType, string>> = {
   heart_rate: 'Batimento mais recente', heart_rate_resting: 'FC em repouso', hrv_rmssd: 'HRV',
-  sleep_duration_min: 'Sono', steps_daily: 'Passos', calories_active: 'Calorias ativas',
-  calories_total: 'Calorias totais', distance_km: 'Distância a pé/correndo', distance_cycling_km: 'Distância de bicicleta',
+  sleep_duration_min: 'Sono', steps_daily: 'Passos', calories_active: 'Gasto energético ativo estimado',
+  calories_total: 'Gasto energético total estimado', distance_km: 'Distância a pé/correndo', distance_cycling_km: 'Distância de bicicleta',
   weight_kg: 'Peso', respiratory_rate: 'Frequência respiratória', oxygen_saturation: 'Oxigenação',
   vo2max_estimate: 'VO₂ máx.', blood_pressure_systolic: 'Pressão sistólica',
   blood_pressure_diastolic: 'Pressão diastólica', body_fat_percent: 'Gordura corporal',
@@ -133,7 +133,11 @@ async function buildHealthContext(userId: string): Promise<string> {
       const values = samples.map((sample) => sample.value).filter(Number.isFinite);
       const average = values.reduce((sum, value) => sum + value, 0) / values.length;
       const days = new Set(samples.map((sample) => sample.timestamp.slice(0, 10))).size;
-      return `- ${HEALTH_LABELS[metric] || metric}: último ${latest.value} ${latest.unit} em ${latest.timestamp}; média 30d ${average.toFixed(1)}; ${samples.length} leitura(s) em ${days} dia(s); fonte ${latest.source}${latest.device ? ` (${latest.device})` : ''}.`;
+      const confidence = latest.confidenceAtMeasurement || latest.currentEvidenceConfidence;
+      const caution = confidence?.confidenceLevel === 'C' ? 'Use “o dispositivo estimou” e trate apenas como tendência.'
+        : confidence?.confidenceLevel === 'D' ? 'Informe que é uma estimativa com incerteza relevante.'
+          : confidence?.confidenceLevel === 'E' ? 'Não gere conclusão forte.' : 'Use com cautela apropriada, sem diagnóstico.';
+      return `- ${HEALTH_LABELS[metric] || metric}: último ${latest.value} ${latest.unit} em ${latest.timestamp}; média 30d ${average.toFixed(1)}; ${samples.length} leitura(s) em ${days} dia(s); fonte ${latest.source}${latest.device ? ` (${latest.device})` : ''}; integração ${latest.provenance?.integration || 'desconhecida'}; contexto ${confidence?.measurementContext || latest.measurementContext || 'desconhecido'}; confiança ${confidence?.confidenceLevel || 'E'} (${confidence?.confidenceScore ?? 'não classificado'}/100); limitações ${(confidence?.limitations || ['proveniência histórica incompleta']).join(' | ')}. Orientação de linguagem: ${caution}`;
     } catch {
       return null;
     }
@@ -379,9 +383,7 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
       model: getAiTextModel(),
       contents: fullPrompt,
       config: {
-        systemInstruction: dynamicSystemPrompt,
-        temperature: 0.7,
-        topP: 0.95
+        systemInstruction: dynamicSystemPrompt
       }
     });
 

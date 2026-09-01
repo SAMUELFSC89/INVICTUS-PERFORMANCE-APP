@@ -175,7 +175,6 @@ Resposta da IA: "${aiResponse}"
         config: {
           responseMimeType: 'application/json',
           responseSchema: schema,
-          temperature: 0.1
         }
       });
 
