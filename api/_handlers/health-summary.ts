@@ -10,10 +10,13 @@ import { selectDailyHealthSource } from '../_lib/health-source-priority.js';
 // de api/_handlers/wearables.ts (vitais passivas).
 
 const METRICAS_RESUMO: HealthMetricType[] = [
-  'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'steps_daily', 'weight_kg'
+  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'steps_daily', 'weight_kg',
+  'calories_active', 'distance_km', 'respiratory_rate', 'oxygen_saturation', 'vo2max_estimate',
+  'blood_pressure_systolic', 'blood_pressure_diastolic', 'body_fat_percent', 'hydration_l'
 ];
 const METRICAS_TENDENCIA: HealthMetricType[] = [
-  'calories_active', 'hrv_rmssd', 'heart_rate_resting', 'sleep_duration_min', 'steps_daily', 'weight_kg', 'duration_min'
+  ...METRICAS_RESUMO, 'calories_total', 'calories_basal', 'distance_cycling_km', 'duration_min',
+  'exercise_duration_min', 'stand_hours', 'mindfulness_duration_min'
 ];
 // Um valor "atual" pode ter sido lido em qualquer sincronização recente --
 // não exigimos leitura de hoje (o usuário pode não ter aberto o app desde
@@ -27,6 +30,11 @@ interface UltimoValor {
   value: number;
   unit: string;
   timestamp: string;
+  startDate?: string;
+  endDate?: string;
+  sampleId?: string;
+  source?: string;
+  device?: string;
 }
 
 interface PontoTendencia {
@@ -58,7 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       Promise.all(METRICAS_RESUMO.map(async (tipo): Promise<[HealthMetricType, UltimoValor | null]> => {
         const amostras = selectDailyHealthSource(tipo, await lerSerieTemporalMetrica(auth.uid, tipo, desdeUltimo, agora));
         const ultima = amostras[amostras.length - 1];
-        return [tipo, ultima ? { value: ultima.value, unit: ultima.unit, timestamp: ultima.timestamp } : null];
+        return [tipo, ultima ? {
+          value: ultima.value, unit: ultima.unit, timestamp: ultima.timestamp,
+          startDate: ultima.startDate, endDate: ultima.endDate, sampleId: ultima.sampleId,
+          source: ultima.source, device: ultima.device
+        } : null];
       })),
       Promise.all(METRICAS_TENDENCIA.map(async (tipo): Promise<[HealthMetricType, PontoTendencia[]]> => {
         const amostras = selectDailyHealthSource(tipo, await lerSerieTemporalMetrica(auth.uid, tipo, desdeTendencia, agora));

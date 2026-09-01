@@ -4,6 +4,7 @@ import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRig
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { Capacitor } from '@capacitor/core';
 import { useUser } from '../UserContext';
 import { RawWorkoutSession, processUserPerformance, UserPerformanceState } from '../core/performance/performanceEngine';
 import { TimeRange } from '../core/performance/metricCatalog';
@@ -11,6 +12,7 @@ import { cn } from '../lib/utils';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 import { healthSummaryService, HealthSummaryResponse } from '../services/healthSummaryService';
 import { InvictusLogo } from '../components/InvictusLogo';
+import { WearableManager } from '../services/wearables/WearableManager';
 import './HealthNew.css';
 
 const ranges: { id: TimeRange; label: string }[] = [
@@ -154,13 +156,60 @@ function useHealthSummary() {
 
   useEffect(() => {
     let active = true;
-    healthSummaryService.fetchSummary().then((data) => {
+    const load = async () => {
+      if (Capacitor.isNativePlatform()) {
+        await WearableManager.getInstance().syncVitals().catch((error) => {
+          console.warn('[Health] Sincronização ao abrir a tela não foi concluída:', error);
+        });
+      }
+      const data = await healthSummaryService.fetchSummary();
       if (active) { setSummary(data); setLoadingSummary(false); }
-    });
+    };
+    void load();
     return () => { active = false; };
   }, []);
 
   return { summary, loadingSummary };
+}
+
+const HEALTH_GLOSSARY = [
+  ['HRV', 'Variação do tempo entre batimentos. Ajuda a acompanhar recuperação e estresse quando comparada à sua própria média.'],
+  ['FC em repouso', 'Batimentos por minuto quando o corpo está descansando. A tendência pessoal costuma ser mais útil que uma leitura isolada.'],
+  ['VO₂ máx.', 'Estimativa de quanto oxigênio seu corpo consegue usar no esforço. É um indicador de condicionamento aeróbico.'],
+  ['Oxigenação', 'Percentual de oxigênio transportado no sangue. Relógios fornecem estimativas e não substituem equipamento médico.'],
+  ['Sono', 'Tempo reconhecido pelo dispositivo como sono. Horários, estágios e qualidade dependem do sensor usado.'],
+  ['Calorias ativas', 'Energia estimada além do gasto básico do corpo durante movimentos e exercícios.'],
+  ['Frequência respiratória', 'Quantidade de respirações por minuto. Compare principalmente com seu padrão habitual.'],
+  ['Cobertura', 'Mostra quantos dias e leituras sustentam a análise; pouca cobertura reduz a confiança da tendência.']
+];
+
+function HealthGlossary() {
+  const [permissionStatus, setPermissionStatus] = useState('');
+  const updatePermissions = async () => {
+    setPermissionStatus('Abrindo permissões…');
+    try {
+      const updated = await WearableManager.getInstance().refreshHealthPermissions();
+      setPermissionStatus(updated ? 'Permissões e leituras atualizadas.' : 'Conecte o Apple Health ou Health Connect no Perfil.');
+    } catch {
+      setPermissionStatus('Não foi possível atualizar as permissões agora.');
+    }
+  };
+  return <section className="health-glossary"><div className="health-section-name">ENTENDA SEUS DADOS <Info /></div><div>{HEALTH_GLOSSARY.map(([term, explanation]) => <article key={term}><strong>{term}</strong><p>{explanation}</p></article>)}</div><small>Estas informações são educativas e não constituem diagnóstico ou orientação médica.</small>{Capacitor.isNativePlatform() ? <button className="health-permission-update" onClick={updatePermissions}>ATUALIZAR PERMISSÕES DE SAÚDE</button> : null}{permissionStatus ? <p className="health-permission-status" role="status">{permissionStatus}</p> : null}</section>;
+}
+
+const HEALTH_METRIC_LABELS: Record<string, string> = {
+  heart_rate: 'Batimentos', heart_rate_resting: 'FC em repouso', hrv_rmssd: 'HRV',
+  sleep_duration_min: 'Sono', steps_daily: 'Passos', weight_kg: 'Peso',
+  calories_active: 'Calorias ativas', distance_km: 'Distância', respiratory_rate: 'Respiração',
+  oxygen_saturation: 'Oxigenação', vo2max_estimate: 'VO₂ máx.',
+  blood_pressure_systolic: 'Pressão sistólica', blood_pressure_diastolic: 'Pressão diastólica',
+  body_fat_percent: 'Gordura corporal', hydration_l: 'Hidratação'
+};
+
+function HealthMetricLibrary({ summary }: { summary: HealthSummaryResponse | null }) {
+  const rows = Object.entries(summary?.latest || {}).filter((entry) => entry[1]);
+  if (!rows.length) return null;
+  return <section className="health-metric-library"><div className="health-section-name">ÚLTIMAS LEITURAS <Info /></div><div>{rows.map(([metric, sample]) => sample ? <article key={metric}><div><strong>{HEALTH_METRIC_LABELS[metric] || metric}</strong><b>{sample.value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} <small>{sample.unit}</small></b></div><p>{formatUltimaLeitura(sample.endDate || sample.timestamp)} · {sample.device || (sample.source === 'apple_health' ? 'Apple Health' : sample.source === 'health_connect' ? 'Health Connect' : 'Fonte sincronizada')}</p><code title="Identificador da leitura">{sample.sampleId ? `ID ${sample.sampleId.slice(0, 24)}` : 'ID derivado da data e origem'}</code></article> : null)}</div></section>;
 }
 
 function useHealthData(range: TimeRange) {
@@ -217,7 +266,7 @@ function HealthHeader({ title, subtitle, onBack, right }: { title: string; subti
   return <><div className="health-brand"><InvictusLogo size={42} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><header className="health-header"><button aria-label="Voltar" onClick={onBack} className="health-back"><ArrowLeft /></button><div className="health-heading"><div><h1>{title}</h1><span className="health-pro">PRO</span></div><p>{subtitle}</p></div>{right}</header></>;
 }
 
-function HealthFooter({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+export function HealthFooter({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   return <nav className="health-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')}><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button className="is-active" onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>;
 }
 
@@ -562,12 +611,14 @@ export function Health() {
           onGenerateReport={() => navigate('/health/report')}
           onOpenLegacyReport={() => navigate('/health/report')}
         />
+        <HealthMetricLibrary summary={summary} />
+        <HealthGlossary />
       </div><HealthFooter navigate={navigate} />
     </main>
   , document.body);
 }
 
-export function HealthReport() {
+export function HealthReportContent() {
   const navigate = useNavigate();
   const [range, setRange] = useState<TimeRange>('30days');
   const [filterOpen, setFilterOpen] = useState(false);

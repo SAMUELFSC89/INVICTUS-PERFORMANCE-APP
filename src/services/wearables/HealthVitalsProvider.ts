@@ -26,7 +26,7 @@ import { Capacitor } from '@capacitor/core';
 // 1ª falha) e agora bate com o nome real do product (resolve a 2ª).
 import { Health as CapgoHealth } from 'capgo-capacitor-health';
 
-// #253: leitura de METRICAS PASSIVAS (FC repouso, HRV, sono, peso) via
+// Leitura de métricas passivas de atividade, condicionamento e bem-estar via
 // @capgo/capacitor-health -- plugin DIFERENTE do "capacitor-health" (mley)
 // usado por AppleHealthProvider/HealthConnectProvider para treinos.
 //
@@ -45,17 +45,65 @@ import { Health as CapgoHealth } from 'capgo-capacitor-health';
 // Health Data Layer (health_samples) via action 'sync-vitals'. Ver
 // api/_lib/health-data-layer.ts::registrarAmostrasPassivas.
 
-export type VitalMetricType = 'heart_rate_resting' | 'hrv_rmssd' | 'sleep_duration_min' | 'weight_kg' | 'steps_daily';
+export type VitalMetricType =
+  | 'heart_rate' | 'heart_rate_resting' | 'hrv_rmssd'
+  | 'sleep_duration_min' | 'weight_kg' | 'steps_daily'
+  | 'calories_active' | 'calories_total' | 'calories_basal'
+  | 'distance_km' | 'distance_cycling_km'
+  | 'respiratory_rate' | 'oxygen_saturation' | 'vo2max_estimate'
+  | 'blood_pressure_systolic' | 'blood_pressure_diastolic'
+  | 'blood_glucose' | 'body_temperature' | 'height_cm'
+  | 'flights_climbed' | 'exercise_duration_min' | 'body_fat_percent'
+  | 'mindfulness_duration_min' | 'stand_hours' | 'hydration_l'
+  | 'dietary_energy_kcal';
 
 export interface VitalSample {
   metricType: VitalMetricType;
   value: number;
   unit: string;
-  timestamp: string; // ISO -- momento real da leitura (nao o de sincronizacao)
+  timestamp: string; // compatibilidade: igual a endDate
+  startDate: string;
+  endDate: string;
+  sourceId?: string;
+  platformId?: string;
+  sampleId: string;
   device?: string;
 }
 
-const READ_TYPES = ['restingHeartRate', 'heartRateVariability', 'sleep', 'weight', 'steps'] as const;
+const COMMON_READ_TYPES = [
+  'heartRate', 'restingHeartRate', 'heartRateVariability', 'sleep', 'weight', 'steps',
+  'calories', 'totalCalories', 'basalCalories', 'distance', 'distanceCycling',
+  'respiratoryRate', 'oxygenSaturation', 'vo2Max', 'bloodPressure', 'bloodGlucose', 'bodyTemperature',
+  'height', 'flightsClimbed', 'bodyFat', 'mindfulness',
+  'dietaryWater', 'dietaryEnergyConsumed', 'workouts'
+] as const;
+
+const IOS_ONLY_READ_TYPES = ['exerciseTime', 'appleStandHour'] as const;
+
+function readTypes() {
+  return Capacitor.getPlatform() === 'ios'
+    ? [...COMMON_READ_TYPES, ...IOS_ONLY_READ_TYPES]
+    : [...COMMON_READ_TYPES];
+}
+
+function sampleId(metricType: VitalMetricType, startDate: string, endDate: string, platformId?: string, sourceId?: string) {
+  return platformId || `${sourceId || 'health'}:${metricType}:${startDate}:${endDate}`;
+}
+
+function normalizar(metricType: VitalMetricType, value: number, unit: string, sample: {
+  startDate: string; endDate: string; sourceName?: string; sourceId?: string; platformId?: string;
+}): VitalSample {
+  return {
+    metricType, value, unit,
+    timestamp: sample.endDate,
+    startDate: sample.startDate,
+    endDate: sample.endDate,
+    sourceId: sample.sourceId,
+    platformId: sample.platformId,
+    sampleId: sampleId(metricType, sample.startDate, sample.endDate, sample.platformId, sample.sourceId),
+    device: sample.sourceName
+  };
+}
 
 function isSupportedPlatform(): boolean {
   const plataforma = Capacitor.getPlatform();
@@ -77,8 +125,8 @@ function valorValido(valor: unknown): valor is number {
  * inventar uma logica de fuso/corte-as-18h sem confirmar com dado real de
  * device.
  */
-function agruparSonoPorNoite(samples: Array<{ sleepState?: string; startDate: string; endDate: string; sourceName?: string }>): VitalSample[] {
-  const porNoite = new Map<string, { minutos: number; ultimaAmostra: string; device?: string }>();
+function agruparSonoPorNoite(samples: Array<{ sleepState?: string; startDate: string; endDate: string; sourceName?: string; sourceId?: string; platformId?: string }>): VitalSample[] {
+  const porNoite = new Map<string, { minutos: number; inicio: string; fim: string; device?: string; sourceId?: string; ids: string[] }>();
   for (const s of samples) {
     if (s.sleepState === 'awake' || s.sleepState === 'inBed') continue;
     const inicio = new Date(s.startDate).getTime();
@@ -86,21 +134,20 @@ function agruparSonoPorNoite(samples: Array<{ sleepState?: string; startDate: st
     if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim <= inicio) continue;
     const minutos = (fim - inicio) / 60000;
     const chave = s.startDate.slice(0, 10);
-    const atual = porNoite.get(chave) || { minutos: 0, ultimaAmostra: s.endDate, device: s.sourceName };
+    const atual = porNoite.get(chave) || { minutos: 0, inicio: s.startDate, fim: s.endDate, device: s.sourceName, sourceId: s.sourceId, ids: [] };
     atual.minutos += minutos;
-    if (s.endDate > atual.ultimaAmostra) atual.ultimaAmostra = s.endDate;
+    if (s.startDate < atual.inicio) atual.inicio = s.startDate;
+    if (s.endDate > atual.fim) atual.fim = s.endDate;
+    atual.ids.push(s.platformId || `${s.startDate}:${s.endDate}`);
     porNoite.set(chave, atual);
   }
   const resultado: VitalSample[] = [];
   for (const [, dados] of porNoite) {
     if (dados.minutos <= 0) continue;
-    resultado.push({
-      metricType: 'sleep_duration_min',
-      value: Math.round(dados.minutos),
-      unit: 'min',
-      timestamp: dados.ultimaAmostra,
-      device: dados.device
-    });
+    resultado.push({ ...normalizar('sleep_duration_min', Math.round(dados.minutos), 'min', {
+      startDate: dados.inicio, endDate: dados.fim, sourceName: dados.device, sourceId: dados.sourceId,
+      platformId: `sleep:${dados.ids.sort().join('|')}`
+    }) });
   }
   return resultado;
 }
@@ -120,7 +167,7 @@ export const HealthVitalsProvider = {
   async requestPermissions(): Promise<boolean> {
     if (!isSupportedPlatform()) return false;
     try {
-      const status = await CapgoHealth.requestAuthorization({ read: [...READ_TYPES] });
+      const status = await CapgoHealth.requestAuthorization({ read: readTypes(), requestHistoryAccess: true });
       // Assim como no HealthKit do mley, o iOS nao confirma negacao de
       // leitura com certeza -- so tratamos como concedido se pelo menos um
       // tipo apareceu como autorizado.
@@ -137,34 +184,43 @@ export const HealthVitalsProvider = {
     const endDate = new Date().toISOString();
     const amostras: VitalSample[] = [];
 
-    try {
-      const { samples } = await CapgoHealth.readSamples({ dataType: 'restingHeartRate', startDate, endDate, limit: 200, ascending: true });
-      for (const s of samples || []) {
-        if (!valorValido(s.value)) continue;
-        amostras.push({ metricType: 'heart_rate_resting', value: Math.round(s.value), unit: 'bpm', timestamp: s.startDate, device: s.sourceName });
+    const rawSpecs = [
+      ['heartRate', 'heart_rate', 'bpm', 10000], ['restingHeartRate', 'heart_rate_resting', 'bpm', 500],
+      ['heartRateVariability', 'hrv_rmssd', 'ms', 300], ['weight', 'weight_kg', 'kg', 100],
+      ['respiratoryRate', 'respiratory_rate', 'resp/min', 300], ['oxygenSaturation', 'oxygen_saturation', '%', 300],
+      ['vo2Max', 'vo2max_estimate', 'mL/min/kg', 100], ['bloodGlucose', 'blood_glucose', 'mg/dL', 200],
+      ['bodyTemperature', 'body_temperature', '°C', 200], ['height', 'height_cm', 'cm', 50],
+      ['flightsClimbed', 'flights_climbed', 'andares', 500], ['exerciseTime', 'exercise_duration_min', 'min', 500],
+      ['bodyFat', 'body_fat_percent', '%', 100], ['mindfulness', 'mindfulness_duration_min', 'min', 500],
+      ['appleStandHour', 'stand_hours', 'h', 500], ['dietaryWater', 'hydration_l', 'L', 500],
+      ['dietaryEnergyConsumed', 'dietary_energy_kcal', 'kcal', 500],
+      // Estes tipos não aceitam queryAggregated no Health Connect. Ler as
+      // amostras funciona nas duas plataformas e mantém origem/data/hora.
+      ['totalCalories', 'calories_total', 'kcal', 2000], ['basalCalories', 'calories_basal', 'kcal', 1000],
+      ['distanceCycling', 'distance_cycling_km', 'km', 2000]
+    ] as const;
+    for (const [dataType, metricType, unit, limit] of rawSpecs) {
+      if (Capacitor.getPlatform() !== 'ios' && (dataType === 'exerciseTime' || dataType === 'appleStandHour')) continue;
+      try {
+        const { samples } = await CapgoHealth.readSamples({ dataType, startDate, endDate, limit, ascending: true });
+        for (const s of samples || []) {
+          if (!valorValido(s.value)) continue;
+          const value = dataType === 'distanceCycling' ? s.value / 1000 : s.value;
+          amostras.push(normalizar(metricType, Math.round(value * 100) / 100, unit, s));
+        }
+      } catch (error) {
+        console.warn(`[HealthVitalsProvider] Falha ao ler ${dataType}:`, error);
       }
-    } catch (error) {
-      console.warn('[HealthVitalsProvider] Falha ao ler restingHeartRate:', error);
     }
 
     try {
-      const { samples } = await CapgoHealth.readSamples({ dataType: 'heartRateVariability', startDate, endDate, limit: 200, ascending: true });
+      const { samples } = await CapgoHealth.readSamples({ dataType: 'bloodPressure', startDate, endDate, limit: 200, ascending: true });
       for (const s of samples || []) {
-        if (!valorValido(s.value)) continue;
-        amostras.push({ metricType: 'hrv_rmssd', value: Math.round(s.value), unit: 'ms', timestamp: s.startDate, device: s.sourceName });
+        if (valorValido(s.systolic)) amostras.push(normalizar('blood_pressure_systolic', Math.round(s.systolic), 'mmHg', s));
+        if (valorValido(s.diastolic)) amostras.push(normalizar('blood_pressure_diastolic', Math.round(s.diastolic), 'mmHg', s));
       }
     } catch (error) {
-      console.warn('[HealthVitalsProvider] Falha ao ler heartRateVariability:', error);
-    }
-
-    try {
-      const { samples } = await CapgoHealth.readSamples({ dataType: 'weight', startDate, endDate, limit: 100, ascending: true });
-      for (const s of samples || []) {
-        if (!valorValido(s.value)) continue;
-        amostras.push({ metricType: 'weight_kg', value: Math.round(s.value * 10) / 10, unit: 'kg', timestamp: s.startDate, device: s.sourceName });
-      }
-    } catch (error) {
-      console.warn('[HealthVitalsProvider] Falha ao ler weight:', error);
+      console.warn('[HealthVitalsProvider] Falha ao ler bloodPressure:', error);
     }
 
     try {
@@ -182,12 +238,28 @@ export const HealthVitalsProvider = {
       const { samples } = await CapgoHealth.queryAggregated({ dataType: 'steps', startDate, endDate, bucket: 'day', aggregation: 'sum' });
       for (const s of samples || []) {
         if (!valorValido(s.value)) continue;
-        amostras.push({ metricType: 'steps_daily', value: Math.round(s.value), unit: 'passos', timestamp: s.endDate });
+        amostras.push(normalizar('steps_daily', Math.round(s.value), 'passos', { startDate: s.startDate, endDate: s.endDate }));
       }
     } catch (error) {
       console.warn('[HealthVitalsProvider] Falha ao ler steps agregados:', error);
     }
 
-    return amostras;
+    const aggregateSpecs = [
+      ['calories', 'calories_active', 'kcal'], ['distance', 'distance_km', 'km']
+    ] as const;
+    for (const [dataType, metricType, unit] of aggregateSpecs) {
+      try {
+        const { samples } = await CapgoHealth.queryAggregated({ dataType, startDate, endDate, bucket: 'day', aggregation: 'sum' });
+        for (const s of samples || []) {
+          if (!valorValido(s.value)) continue;
+          const value = dataType.startsWith('distance') ? s.value / 1000 : s.value;
+          amostras.push(normalizar(metricType, Math.round(value * 100) / 100, unit, { startDate: s.startDate, endDate: s.endDate }));
+        }
+      } catch (error) {
+        console.warn(`[HealthVitalsProvider] Falha ao agregar ${dataType}:`, error);
+      }
+    }
+
+    return Array.from(new Map(amostras.map((sample) => [`${sample.metricType}:${sample.sampleId}`, sample])).values());
   }
 };

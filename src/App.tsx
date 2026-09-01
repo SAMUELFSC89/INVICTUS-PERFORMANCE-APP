@@ -33,7 +33,7 @@ const AdminIGATesteOriginal = lazyNamed(() => import('./pages/AdminIGATesteOrigi
 const Performance = lazyNamed(() => import('./pages/Performance'), 'Performance');
 const PowerLift = lazyNamed(() => import('./pages/PowerLift'), 'PowerLift');
 const Health = lazyNamed(() => import('./pages/Health'), 'Health');
-const HealthReport = lazyNamed(() => import('./pages/Health'), 'HealthReport');
+const HealthReport = lazyNamed(() => import('./pages/HealthReport'), 'HealthReport');
 const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifications');
 const ChampionshipsHub = lazyNamed(() => import('./pages/championships/ChampionshipsHub'), 'ChampionshipsHub');
 const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');

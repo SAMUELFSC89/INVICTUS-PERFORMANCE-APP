@@ -18,7 +18,7 @@ import { cn } from '../lib/utils';
 import { calculateDistance, calculatePace } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
-import { ActivityHistorySection, ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
+import { ActivityHistorySection, ActivityHistoryItem } from '../components/ActivityHistorySection';
 import { PowerLift } from './PowerLift';
 import { RunShareCard } from '../components/RunShareCard';
 import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption, ActivityCompletion } from '../components/ChallengeActivityFlow';
@@ -624,11 +624,12 @@ export function Challenges() {
       } else if (status === 'pending') {
         setActiveSession(null);
         setCompletion({ status: 'pending', message: res.message });
-        setFlowScreen(null);
+        setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
         setNotice(res.message || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
       } else if (status === 'rejected' || status === 'not_eligible') {
         setActiveSession(null);
-        setFlowScreen(null);
+        setCompletion({ status: 'rejected', message: res.message });
+        setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
         setError(res.message || 'A atividade não foi validada. Nenhuma pontuação foi concedida.');
       } else {
         // Sem decisão explícita do servidor, falhamos de forma segura: não
@@ -982,7 +983,7 @@ export function Challenges() {
               await activityService.completeSessionAfterPresence();
               setActiveSession(null);
               setCompletion({ status: 'pending', message: result.userMessage });
-              setFlowScreen(null);
+              setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
               setNotice(result.userMessage || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
             } else {
               activityService.cancelSession();
@@ -998,15 +999,6 @@ export function Challenges() {
             setPresenceCheckData(null);
             setNotice('A atividade continua em andamento. Finalize novamente quando estiver pronto para concluir a confirmação de presença.');
           }}
-        />
-      )}
-
-      {/* #217: tela de detalhe estilo Strava mostrada JA na hora de finalizar a atividade */}
-      {finishedActivityItem && !flowScreen && (
-        <ActivityDetailScreen
-          item={finishedActivityItem}
-          onClose={() => setFinishedActivityItem(null)}
-          onShare={() => setShareCardData(buildShareableFromItem(finishedActivityItem))}
         />
       )}
 

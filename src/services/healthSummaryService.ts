@@ -6,13 +6,21 @@ import { API_CONFIG } from '../config';
 // nenhuma relação com IGA/ranking/pontuação, nenhuma escrita.
 // Ver api/_handlers/health-summary.ts.
 
-export type ResumoMetricType = 'heart_rate_resting' | 'hrv_rmssd' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg';
-export type TendenciaMetricType = 'calories_active' | 'hrv_rmssd' | 'heart_rate_resting' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg' | 'duration_min';
+export type ResumoMetricType =
+  | 'heart_rate' | 'heart_rate_resting' | 'hrv_rmssd' | 'sleep_duration_min' | 'steps_daily' | 'weight_kg'
+  | 'calories_active' | 'distance_km' | 'respiratory_rate' | 'oxygen_saturation' | 'vo2max_estimate'
+  | 'blood_pressure_systolic' | 'blood_pressure_diastolic' | 'body_fat_percent' | 'hydration_l';
+export type TendenciaMetricType = ResumoMetricType | 'calories_total' | 'calories_basal' | 'distance_cycling_km' | 'duration_min' | 'exercise_duration_min' | 'stand_hours' | 'mindfulness_duration_min';
 
 export interface UltimoValorMetrica {
   value: number;
   unit: string;
   timestamp: string;
+  startDate?: string;
+  endDate?: string;
+  sampleId?: string;
+  source?: string;
+  device?: string;
 }
 
 export interface PontoTendencia {

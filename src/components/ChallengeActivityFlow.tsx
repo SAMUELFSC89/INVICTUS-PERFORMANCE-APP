@@ -138,6 +138,8 @@ export function ChallengeActivityFlow({
   const awardedPoints = typeof completion?.pointsAwarded === 'number' && Number.isFinite(completion.pointsAwarded) && completion.pointsAwarded > 0
     ? completion.pointsAwarded
     : null;
+  const completionPending = completion?.status === 'pending';
+  const completionRejected = completion?.status === 'rejected';
 
   // #116: .challenge-flow-screen e position:fixed;inset:0;z-index:70 pensado
   // pra cobrir a tela INTEIRA por cima de tudo, inclusive o menu inferior
@@ -419,16 +421,20 @@ export function ChallengeActivityFlow({
       {complete && (
         <section className="challenge-flow-complete">
           <div className="challenge-flow-confetti">✦ ✦ ✦ ✦ ✦</div>
-          <span className="challenge-flow-check"><Check /></span>
+          <span className="challenge-flow-check">{completionRejected ? <XCircle /> : completionPending ? <Clock3 /> : <Check />}</span>
           <p>{completion?.message || 'Atividade validada pelo servidor.'}</p>
-          {awardedPoints !== null ? (
+          {completionRejected ? (
+            <strong className="text-[15px]">Nenhuma pontuação foi concedida</strong>
+          ) : completionPending ? (
+            <strong className="text-[15px]">Aguardando validação do servidor</strong>
+          ) : awardedPoints !== null ? (
             <strong>+{awardedPoints} XP <Zap /></strong>
           ) : (
             <strong className="text-[15px]">Pontuação registrada pelo servidor</strong>
           )}
           <article>
             <b>{screen === 'cardio-complete' ? effectiveCardioLabel.toUpperCase() : 'TREINO DE MUSCULAÇÃO'}</b>
-            <small>1/1</small>
+            <small>{completion?.status === 'approved' ? '1/1' : '—'}</small>
             <div />
           </article>
           <button className="challenge-flow-primary" onClick={onSummary}>

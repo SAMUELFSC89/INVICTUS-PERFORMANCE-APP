@@ -39,13 +39,31 @@ export type HealthMetricType =
   | 'heart_rate_avg'
   | 'heart_rate_max'
   | 'heart_rate_resting'   // #253: coletado via HealthVitalsProvider (@capgo/capacitor-health), sync separado de atividade (action 'sync-vitals')
+  | 'heart_rate'
   | 'hrv_rmssd'            // #253: idem
   | 'vo2max_estimate'      // calculado no cliente (performanceEngine.ts), nao no servidor -- integracao futura
   | 'sleep_duration_min'   // #253: idem (agregado por noite a partir dos segmentos de estagio)
   | 'weight_kg'            // #253: idem
   | 'steps_daily'          // #253: total de passos do dia, via queryAggregated (bucket=day, sum) -- HealthVitalsProvider
   | 'calories_active'
+  | 'calories_total'
+  | 'calories_basal'
   | 'distance_km'
+  | 'distance_cycling_km'
+  | 'respiratory_rate'
+  | 'oxygen_saturation'
+  | 'blood_pressure_systolic'
+  | 'blood_pressure_diastolic'
+  | 'blood_glucose'
+  | 'body_temperature'
+  | 'height_cm'
+  | 'flights_climbed'
+  | 'exercise_duration_min'
+  | 'body_fat_percent'
+  | 'mindfulness_duration_min'
+  | 'stand_hours'
+  | 'hydration_l'
+  | 'dietary_energy_kcal'
   | 'duration_min';
 
 export type HealthSampleSource =
@@ -73,6 +91,11 @@ export interface HealthSample {
   value: number;
   unit: string;
   timestamp: string; // ISO -- momento em que a leitura aconteceu (nao o de gravacao)
+  startDate?: string;
+  endDate?: string;
+  sampleId?: string;
+  sourceId?: string;
+  platformId?: string;
   source: HealthSampleSource;
   sourceActivityId?: string; // referencia ao doc de `workouts`, quando aplicavel
   device?: string;
@@ -90,7 +113,9 @@ const HEALTH_SAMPLES_COLLECTION = 'health_samples';
  */
 export async function gravarAmostraSaude(sample: Omit<HealthSample, 'id' | 'createdAt'>): Promise<void> {
   try {
-    const id = `${sample.source}_${sample.sourceActivityId || sample.timestamp}_${sample.metricType}`;
+    const rawId = sample.sampleId || sample.sourceActivityId || sample.timestamp;
+    const safeId = Buffer.from(rawId).toString('base64url').slice(0, 900);
+    const id = `${sample.source}_${sample.metricType}_${safeId}`;
     await db.collection(HEALTH_SAMPLES_COLLECTION).doc(id).set({
       ...sample,
       id,
@@ -177,13 +202,21 @@ export async function registrarAmostrasDeAtividade(params: {
 export async function registrarAmostrasPassivas(params: {
   userId: string;
   source: HealthSampleSource;
-  amostras: Array<{ metricType: HealthMetricType; value: number; unit: string; timestamp: string; device?: string }>;
+  amostras: Array<{
+    metricType: HealthMetricType; value: number; unit: string; timestamp: string;
+    startDate?: string; endDate?: string; sampleId?: string; sourceId?: string; platformId?: string; device?: string;
+  }>;
 }): Promise<number> {
   const validas = params.amostras.filter((a) => typeof a.value === 'number' && Number.isFinite(a.value) && a.value > 0);
   await Promise.all(validas.map((a) => gravarAmostraSaude({
     userId: params.userId,
     source: params.source,
     timestamp: a.timestamp,
+    startDate: a.startDate,
+    endDate: a.endDate,
+    sampleId: a.sampleId,
+    sourceId: a.sourceId,
+    platformId: a.platformId,
     device: a.device,
     quality: 'sensor_verified',
     metricType: a.metricType,
@@ -250,5 +283,8 @@ export interface HealthAccessAuditEntry {
  */
 export const metricsGravadasHoje: HealthMetricType[] = [
   'heart_rate_avg', 'heart_rate_max', 'calories_active', 'distance_km', 'duration_min',
-  'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily'
+  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily',
+  'calories_total', 'calories_basal', 'distance_cycling_km', 'respiratory_rate', 'oxygen_saturation',
+  'blood_pressure_systolic', 'blood_pressure_diastolic', 'blood_glucose', 'body_temperature', 'height_cm', 'flights_climbed', 'exercise_duration_min',
+  'body_fat_percent', 'mindfulness_duration_min', 'stand_hours', 'hydration_l', 'dietary_energy_kcal'
 ];

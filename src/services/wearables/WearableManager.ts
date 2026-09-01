@@ -15,7 +15,18 @@ const READ_HEALTH_PERMISSIONS = [
   'read_calories',
   'read_workouts',
   'read_sleep',
-  'read_weight'
+  'read_weight',
+  'read_oxygen_saturation',
+  'read_respiratory_rate',
+  'read_vo2_max',
+  'read_blood_pressure',
+  'read_blood_glucose',
+  'read_body_temperature',
+  'read_body_composition',
+  'read_total_calories',
+  'read_exercise_time',
+  'read_hydration',
+  'read_mindfulness'
 ];
 
 type ServerWearableConfig = Partial<WearableConfig>;
@@ -30,8 +41,9 @@ function emptyConfig(userId: string): WearableConfig {
     stravaConnected: false,
     // Não ativamos sincronização em segundo plano enquanto a ingestão dos
     // dados for feita exclusivamente pelo backend.
-    autoSync: false,
+    autoSync: true,
     lastSyncTime: null,
+    lastVitalsSyncTime: null,
     createdAt: '',
     updatedAt: ''
   };
@@ -94,6 +106,7 @@ export class WearableManager {
         : [],
       autoSync: input.autoSync === true,
       lastSyncTime: typeof input.lastSyncTime === 'string' ? input.lastSyncTime : null,
+      lastVitalsSyncTime: typeof input.lastVitalsSyncTime === 'string' ? input.lastVitalsSyncTime : null,
       createdAt: typeof input.createdAt === 'string' ? input.createdAt : '',
       updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : ''
     };
@@ -210,6 +223,20 @@ export class WearableManager {
     }
   }
 
+  /** Reabre o consentimento granular somente após ação explícita na tela Saúde. */
+  public async refreshHealthPermissions(): Promise<boolean> {
+    const config = this.config || (await this.loadConfig());
+    if (!config.appleHealthConnected && !config.healthConnectConnected) return false;
+    const authorized = await HealthVitalsProvider.requestPermissions();
+    if (!authorized) return false;
+    await this.updateConfig({
+      ...(config.appleHealthConnected ? { appleHealthPermissions: READ_HEALTH_PERMISSIONS } : {}),
+      ...(config.healthConnectConnected ? { healthConnectPermissions: READ_HEALTH_PERMISSIONS } : {})
+    });
+    await this.syncVitals();
+    return true;
+  }
+
   /**
    * #248: agora existe ingestão real no servidor (api/_handlers/wearables.ts,
    * action "sync" -> api/_lib/wearable-sync-service.ts). Este método só LÊ do
@@ -250,10 +277,6 @@ export class WearableManager {
       }
     }
 
-    if (atividades.length === 0) {
-      return { syncedCount: 0, duplicatesSkipped: 0, blockedCount: 0, logs: [] };
-    }
-
     const response = await fetch('/api/wearables', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -288,39 +311,42 @@ export class WearableManager {
   }
 
   /**
-   * #253: sincroniza METRICAS PASSIVAS (FC repouso, HRV, sono, peso) via
+   * Sincroniza métricas passivas de atividade, condicionamento e bem-estar via
    * @capgo/capacitor-health -- pipeline totalmente separado de syncAll()
    * acima. Vitais não passam pelo SecurityPipeline (não são uma alegação
    * competitiva: não geram pontos, não entram em ranking); vão direto pra
    * Health Data Layer com quality='sensor_verified'.
    *
-   * Sem `lastVitalsSyncTime` persistido ainda de propósito -- essa sincronia
-   * ainda não tem nenhuma tela consumidora (tela "Saúde" fica pra depois,
-   * ver #53); adicionar rastreio de cursor no servidor agora seria expandir
-   * schema pra uma leitura que ninguém dispara automaticamente. Usa uma
-   * janela fixa de 30 dias por chamada -- reprocessar o mesmo período em
-   * chamadas futuras é seguro (grava com merge, doc id determinístico por
-   * timestamp, não duplica a série).
+   * A janela sobrepõe 24 horas ao cursor para absorver leituras que o relógio
+   * entregou com atraso. IDs nativos tornam essa sobreposição idempotente.
    */
   public async syncVitals(): Promise<{ savedCount: number }> {
     const available = await HealthVitalsProvider.isAvailable();
     if (!available) return { savedCount: 0 };
 
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const config = this.config || (await this.loadConfig());
+    const lastVitalsMs = config.lastVitalsSyncTime ? new Date(config.lastVitalsSyncTime).getTime() : Number.NaN;
+    const since = Number.isFinite(lastVitalsMs)
+      ? new Date(Math.max(Date.now() - 30 * 24 * 60 * 60 * 1000, lastVitalsMs - 24 * 60 * 60 * 1000))
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const vitals = await HealthVitalsProvider.fetchVitals(since);
-    if (vitals.length === 0) return { savedCount: 0 };
-
     const token = await this.getToken();
     const source: WearableSource = Capacitor.getPlatform() === 'ios' ? 'apple_health' : 'health_connect';
-    const response = await fetch('/api/wearables', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sync-vitals', source, vitals })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload?.error || 'Não foi possível sincronizar os dados de saúde agora.');
+    const batches = vitals.length ? Array.from({ length: Math.ceil(vitals.length / 500) }, (_, index) => vitals.slice(index * 500, (index + 1) * 500)) : [[]];
+    let savedCount = 0;
+    let lastVitalsSyncTime: string | undefined;
+    for (let index = 0; index < batches.length; index += 1) {
+      const response = await fetch('/api/wearables', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync-vitals', source, vitals: batches[index], finalBatch: index === batches.length - 1 })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Não foi possível sincronizar os dados de saúde agora.');
+      savedCount += Number(payload.savedCount) || 0;
+      if (typeof payload.lastVitalsSyncTime === 'string') lastVitalsSyncTime = payload.lastVitalsSyncTime;
     }
-    return { savedCount: payload.savedCount || 0 };
+    if (this.config) this.config.lastVitalsSyncTime = lastVitalsSyncTime || new Date().toISOString();
+    return { savedCount };
   }
 }

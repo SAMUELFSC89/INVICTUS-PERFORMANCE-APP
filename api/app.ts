@@ -58,6 +58,7 @@ import activityMapHandler from './activity-map.js';
 import wearablesHandler from './_handlers/wearables.js';
 import healthSummaryHandler from './_handlers/health-summary.js';
 import powerLiftHandler from './_handlers/powerlift.js';
+import mapboxConfigHandler from './_handlers/mapbox-config.js';
 import {
   acceptChampionshipRegulationHandler,
   createChampionshipPaymentHandler,
@@ -155,6 +156,7 @@ assertHandler('envCheckHandler', envCheckHandler);
 assertHandler('wearablesHandler', wearablesHandler);
 assertHandler('healthSummaryHandler', healthSummaryHandler);
 assertHandler('powerLiftHandler', powerLiftHandler);
+assertHandler('mapboxConfigHandler', mapboxConfigHandler);
 assertHandler('paymentsVerifyPurchaseHandler', paymentsVerifyPurchaseHandler);
 assertHandler('revenuecatWebhookHandler', revenuecatWebhookHandler);
 assertHandler('paymentsConfigHandler', paymentsConfigHandler);
@@ -282,6 +284,7 @@ router.all('/wearables', wrap(wearablesHandler));
 
 console.log('[ROUTE] /health-summary', typeof healthSummaryHandler);
 router.all('/health-summary', wrap(healthSummaryHandler));
+router.all('/mapbox-config', wrap(mapboxConfigHandler));
 
 console.log('[ROUTE] /powerlift', typeof powerLiftHandler);
 router.all('/powerlift', wrap(powerLiftHandler));

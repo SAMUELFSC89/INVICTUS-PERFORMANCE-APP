@@ -1,31 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Polyline, useMap, Circle, Marker } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
 import type { GeoJSONSource, Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Capacitor } from '@capacitor/core';
 import { AlertCircle, Box, Compass, Crosshair, Layers3, MapPin, RefreshCw } from 'lucide-react';
-import L from 'leaflet';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-
-const defaultIcon = L.icon({ iconUrl: markerIcon, shadowUrl: markerShadow, iconSize: [25, 41], iconAnchor: [12, 41] });
-L.Marker.prototype.options.icon = defaultIcon;
-
-const runnerIcon = L.divIcon({
-  html: '<div class="invictus-map-position"><i></i></div>',
-  className: '', iconSize: [34, 34], iconAnchor: [17, 17]
-});
-const routeStartIcon = L.divIcon({
-  html: '<div class="invictus-map-route-start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4m0 1h11l-2.5 3L16 11H5"/></svg></div>',
-  className: '', iconSize: [30, 30], iconAnchor: [15, 15]
-});
-
-function ChangeView({ center }: { center: [number, number] }) {
-  const map = useMap();
-  useEffect(() => { map.setView(center, map.getZoom()); }, [center, map]);
-  return null;
-}
+import { auth } from '../firebase';
+import { API_CONFIG } from '../config';
 
 export interface LiveTrackingPoint { lat: number; lng: number; accuracy?: number; }
 
@@ -43,8 +22,8 @@ function resolveMapboxToken(): string {
   return Capacitor.isNativePlatform() ? (mobileToken || webToken) : (webToken || mobileToken);
 }
 
-function routeGeoJson(points: LiveTrackingPoint[]): GeoJSON.Feature<GeoJSON.LineString> {
-  return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: points.map(point => [point.lng, point.lat]) } };
+function routeGeoJson(points: LiveTrackingPoint[]) {
+  return { type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: points.map(point => [point.lng, point.lat]) } };
 }
 
 function ensureInvictusLayers(map: MapboxMap, points: LiveTrackingPoint[]) {
@@ -75,16 +54,11 @@ function EmptyMapState({ permissionDenied, gpsAccuracy, gpsSignal }: Pick<LiveTr
   return <div className="live-tracking-map-empty">{permissionDenied ? <><AlertCircle size={26} /><span>Permissão de GPS negada. Ative a localização para ver o mapa.</span></> : <><MapPin size={26} className={gpsAccuracy ? undefined : 'is-pulsing'} /><span>{gpsAccuracy === null ? 'Buscando sinal de GPS...' : gpsSignal === 'STRONG' ? 'Sinal ativo — aguardando primeiro ponto.' : 'Sinal instável. Vá para um local mais aberto.'}</span></>}</div>;
 }
 
-function LeafletFallback({ points, gpsAccuracy, gpsSignal, permissionDenied }: LiveTrackingMapProps) {
-  const lastPoint = points.length > 0 ? points[points.length - 1] : null;
-  const center: [number, number] = lastPoint ? [lastPoint.lat, lastPoint.lng] : [0, 0];
-  return <>{lastPoint ? <MapContainer center={center} zoom={16} className="h-full w-full z-0" zoomControl={false}><TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution="&copy; OpenStreetMap contributors" />{points.length >= 2 && <><Polyline positions={points.map(p => [p.lat, p.lng])} color="#f5a000" weight={5} opacity={0.9} /><Marker position={[points[0].lat, points[0].lng]} icon={routeStartIcon} /></>}<Circle center={center} radius={lastPoint.accuracy || 10} pathOptions={{ color: '#f5a000', fillColor: '#f5a000', fillOpacity: 0.1 }} /><Marker position={center} icon={runnerIcon} /><ChangeView center={center} /></MapContainer> : <EmptyMapState permissionDenied={permissionDenied} gpsAccuracy={gpsAccuracy} gpsSignal={gpsSignal} />}</>;
-}
-
 /** Renderer visual apenas. Captura, persistencia e antifraude GPS continuam no activityService. */
 export function LiveTrackingMap(props: LiveTrackingMapProps) {
   const { points, gpsAccuracy, gpsSignal, permissionDenied, heightPx = 360 } = props;
-  const token = useMemo(resolveMapboxToken, []);
+  const bundledToken = useMemo(resolveMapboxToken, []);
+  const [token, setToken] = useState(bundledToken);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
   const markerRef = useRef<MapboxMarker | null>(null);
@@ -94,8 +68,21 @@ export function LiveTrackingMap(props: LiveTrackingMapProps) {
   const [mapReady, setMapReady] = useState(false);
   const [satellite, setSatellite] = useState(true);
   const [is3d, setIs3d] = useState(true);
+  const [mapError, setMapError] = useState<string | null>(null);
   const lastPoint = points.length > 0 ? points[points.length - 1] : null;
   pointsRef.current = points;
+
+  useEffect(() => {
+    if (token || !auth.currentUser) return;
+    let cancelled = false;
+    void auth.currentUser.getIdToken().then((idToken) => fetch(`${API_CONFIG.baseUrl}/api/mapbox-config`, {
+      headers: { Authorization: `Bearer ${idToken}` }
+    })).then(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+      if (!cancelled && response.ok && typeof payload.token === 'string') setToken(payload.token);
+    }).catch((error) => console.warn('[LiveTrackingMap] Token Mapbox indisponível:', error));
+    return () => { cancelled = true; };
+  }, [token]);
 
   const addOrUpdateMarker = useCallback((map: MapboxMap, point: LiveTrackingPoint) => {
     if (!markerRef.current) {
@@ -131,8 +118,8 @@ export function LiveTrackingMap(props: LiveTrackingMapProps) {
       map.dragRotate.enable();
       map.touchZoomRotate.enableRotation();
       map.on('style.load', () => { ensureInvictusLayers(map, pointsRef.current); const first = pointsRef.current[0]; const latest = pointsRef.current.at(-1); if (first) addStartMarker(map, first); if (latest) addOrUpdateMarker(map, latest); setMapReady(true); });
-      map.on('error', event => console.warn('[LiveTrackingMap] Mapbox:', event.error?.message || event));
-    })().catch(error => console.warn('[LiveTrackingMap] Falha ao carregar Mapbox:', error));
+      map.on('error', event => { console.warn('[LiveTrackingMap] Mapbox:', event.error?.message || event); setMapError('O mapa Mapbox não pôde ser carregado agora.'); });
+    })().catch(error => { console.warn('[LiveTrackingMap] Falha ao carregar Mapbox:', error); setMapError('O mapa Mapbox não pôde ser carregado agora.'); });
     return () => {
       cancelled = true;
       markerRef.current?.remove();
@@ -160,7 +147,7 @@ export function LiveTrackingMap(props: LiveTrackingMapProps) {
   const resetBearing = () => mapRef.current?.easeTo({ bearing: 0, duration: 400 });
 
   return <div className="live-tracking-map live-tracking-map-mapbox" style={{ height: heightPx }}>
-    {!lastPoint ? <EmptyMapState permissionDenied={permissionDenied} gpsAccuracy={gpsAccuracy} gpsSignal={gpsSignal} /> : token ? <>
+    {!lastPoint ? <EmptyMapState permissionDenied={permissionDenied} gpsAccuracy={gpsAccuracy} gpsSignal={gpsSignal} /> : token && !mapError ? <>
       <div ref={containerRef} className="h-full w-full" />
       <div className="live-map-controls" aria-label="Controles do mapa">
         <button type="button" onClick={resetBearing} aria-label="Orientar mapa ao norte"><Compass /></button>
@@ -169,7 +156,7 @@ export function LiveTrackingMap(props: LiveTrackingMapProps) {
         <button type="button" onClick={recenter} aria-label="Centralizar na minha posição"><Crosshair /></button>
       </div>
       {!mapReady && <div className="live-map-loading"><RefreshCw /><span>Carregando mapa...</span></div>}
-    </> : <LeafletFallback {...props} />}
+    </> : <div className="live-tracking-map-empty"><AlertCircle size={26} /><span>{mapError || 'Mapbox não configurado nesta versão. A rota continua sendo registrada com segurança.'}</span></div>}
   </div>;
 }
 

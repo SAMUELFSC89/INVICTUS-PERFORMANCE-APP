@@ -4,6 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 import { MemoryRepository } from '../_repositories/memory-repository.js';
 import { MemoryService } from '../_services/ai/memory-service.js';
 import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
+import { lerSerieTemporalMetrica, HealthMetricType } from '../_lib/health-data-layer.js';
 
 const memoryRepo = new MemoryRepository();
 const memoryService = new MemoryService(memoryRepo);
@@ -97,7 +98,55 @@ ${personalityInstruction}
    - Os dados cadastrais do usuário (idade, peso, altura, sexo, IMC, BMR e TDEE estimados) constam no contexto.
    - A IA NUNCA prescreve medicamentos ou dietas hospitalares nem diagnostica patologias.
    - Se houver relatos de emergência médica (dor no peito, falta de ar, desmaio), INTERROMPA A ANÁLISE IMEDIATAMENTE e mande ligar para o SAMU (192) ou ir ao Pronto Socorro.
+   - Dados de saúde servem para educação, tendências e conversa com um profissional; nunca diagnostique, prometa prevenção ou indique tratamento.
+   - Diferencie claramente dado medido de estimativa e diga quando a cobertura é insuficiente.
+   - Ao citar um conceito técnico, explique-o imediatamente em uma frase simples. Exemplo: HRV é a variação de tempo entre batimentos; em geral, ela ajuda a observar recuperação e estresse, mas deve ser comparada com a própria média da pessoa.
+   - Não interprete uma leitura isolada como doença. Para valores preocupantes ou sintomas, recomende avaliação profissional.
 `;
+}
+
+const HEALTH_AI_METRICS: HealthMetricType[] = [
+  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'steps_daily',
+  'calories_active', 'calories_total', 'distance_km', 'distance_cycling_km', 'weight_kg',
+  'respiratory_rate', 'oxygen_saturation', 'vo2max_estimate', 'blood_pressure_systolic',
+  'blood_pressure_diastolic', 'body_fat_percent', 'exercise_duration_min', 'hydration_l'
+];
+
+const HEALTH_LABELS: Partial<Record<HealthMetricType, string>> = {
+  heart_rate: 'Batimento mais recente', heart_rate_resting: 'FC em repouso', hrv_rmssd: 'HRV',
+  sleep_duration_min: 'Sono', steps_daily: 'Passos', calories_active: 'Calorias ativas',
+  calories_total: 'Calorias totais', distance_km: 'Distância a pé/correndo', distance_cycling_km: 'Distância de bicicleta',
+  weight_kg: 'Peso', respiratory_rate: 'Frequência respiratória', oxygen_saturation: 'Oxigenação',
+  vo2max_estimate: 'VO₂ máx.', blood_pressure_systolic: 'Pressão sistólica',
+  blood_pressure_diastolic: 'Pressão diastólica', body_fat_percent: 'Gordura corporal',
+  exercise_duration_min: 'Tempo de exercício', hydration_l: 'Hidratação'
+};
+
+async function buildHealthContext(userId: string): Promise<string> {
+  const now = new Date();
+  const since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const rows = await Promise.all(HEALTH_AI_METRICS.map(async (metric) => {
+    try {
+      const samples = await lerSerieTemporalMetrica(userId, metric, since, now);
+      if (!samples.length) return null;
+      const latest = samples[samples.length - 1];
+      const values = samples.map((sample) => sample.value).filter(Number.isFinite);
+      const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+      const days = new Set(samples.map((sample) => sample.timestamp.slice(0, 10))).size;
+      return `- ${HEALTH_LABELS[metric] || metric}: último ${latest.value} ${latest.unit} em ${latest.timestamp}; média 30d ${average.toFixed(1)}; ${samples.length} leitura(s) em ${days} dia(s); fonte ${latest.source}${latest.device ? ` (${latest.device})` : ''}.`;
+    } catch {
+      return null;
+    }
+  }));
+  const available = rows.filter((row): row is string => Boolean(row));
+  return available.length
+    ? `DADOS DE SAÚDE SINCRONIZADOS (não diagnósticos; use cobertura e tendência, não uma leitura isolada):\n${available.join('\n')}`
+    : 'DADOS DE SAÚDE SINCRONIZADOS: ainda não há amostras suficientes.';
+}
+
+function isHealthIntent(queryText: string, currentPath?: string): boolean {
+  if (String(currentPath || '').startsWith('/health')) return true;
+  return /\b(sa[uú]de|sono|dormi|passos?|batimentos?|frequ[eê]ncia card[ií]aca|fc\b|hrv\b|variabilidade|press[aã]o|oxigena[cç][aã]o|spo2|vo2|respira[cç][aã]o|glicose|peso|gordura corporal|hidrata[cç][aã]o|recupera[cç][aã]o|calorias?|condicionamento)\b/i.test(queryText);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -241,6 +290,13 @@ BIOMETRIA E CADASTRO DO ATLETA (DADOS OFICIAIS DE REGISTRO NO SISTEMA):
 
     if (persistentMemoriesContext) {
       userContextSummary += `\n${persistentMemoriesContext}\n`;
+    }
+
+    // O contexto detalhado exige várias séries temporais. Carregue-o apenas
+    // na área de Saúde ou quando a pergunta realmente for sobre saúde, sem
+    // aumentar custo e latência de conversas gerais sobre o aplicativo.
+    if (isHealthIntent(queryText, currentPath)) {
+      userContextSummary += `\n${await buildHealthContext(userId)}\n`;
     }
 
     if (activeWorkoutSession && activeWorkoutSession.isSessionActive) {

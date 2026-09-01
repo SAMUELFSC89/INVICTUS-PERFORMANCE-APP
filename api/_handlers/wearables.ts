@@ -5,10 +5,25 @@ import { registrarAmostrasPassivas, HealthMetricType, HealthSampleSource } from 
 
 const ALLOWED_PERMISSION_VALUES = new Set([
   'read_heart_rate',
+  'read_resting_heart_rate',
+  'read_heart_rate_variability',
   'read_steps',
   'read_distance',
   'read_calories',
-  'read_workouts'
+  'read_workouts',
+  'read_sleep',
+  'read_weight',
+  'read_oxygen_saturation',
+  'read_respiratory_rate',
+  'read_vo2_max',
+  'read_blood_pressure',
+  'read_blood_glucose',
+  'read_body_temperature',
+  'read_body_composition',
+  'read_total_calories',
+  'read_exercise_time',
+  'read_hydration',
+  'read_mindfulness'
 ]);
 
 type WearableConfigPayload = {
@@ -76,18 +91,27 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
   return validas;
 }
 
-// #253: metricas passivas (FC repouso, HRV, sono, peso) lidas via
+// Métricas passivas de atividade, condicionamento e bem-estar lidas via
 // @capgo/capacitor-health (HealthVitalsProvider) -- distinto do payload de
 // atividades acima, que continua vindo do "capacitor-health" (mley).
-const VITAL_METRIC_TYPES = new Set(['heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily']);
-// Ate ~4 metricas x historico de varios meses cabe folgado; mesmo raciocinio
-// de MAX_ATIVIDADES_POR_SYNC -- protecao contra payload abusivo, nao limite
-// de produto (cliente pode sincronizar de novo).
+const VITAL_METRIC_TYPES = new Set([
+  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily',
+  'calories_active', 'calories_total', 'calories_basal', 'distance_km', 'distance_cycling_km',
+  'respiratory_rate', 'oxygen_saturation', 'vo2max_estimate', 'blood_glucose', 'body_temperature',
+  'blood_pressure_systolic', 'blood_pressure_diastolic',
+  'height_cm', 'flights_climbed', 'exercise_duration_min', 'body_fat_percent',
+  'mindfulness_duration_min', 'stand_hours', 'hydration_l', 'dietary_energy_kcal'
+]);
+// Proteção por requisição. O cliente envia lotes de até 500 amostras e só
+// avança o cursor depois do último lote, portanto este teto não descarta o
+// restante do histórico.
 const MAX_VITAIS_POR_SYNC = 800;
 
-function sanitizarVitais(input: unknown): Array<{ metricType: HealthMetricType; value: number; unit: string; timestamp: string; device?: string }> {
+type VitalPayload = { metricType: HealthMetricType; value: number; unit: string; timestamp: string; startDate?: string; endDate?: string; sampleId?: string; sourceId?: string; platformId?: string; device?: string };
+
+function sanitizarVitais(input: unknown): VitalPayload[] {
   if (!Array.isArray(input)) return [];
-  const validas: Array<{ metricType: HealthMetricType; value: number; unit: string; timestamp: string; device?: string }> = [];
+  const validas: VitalPayload[] = [];
   for (const item of input.slice(0, MAX_VITAIS_POR_SYNC)) {
     if (!item || typeof item !== 'object') continue;
     const a = item as Record<string, unknown>;
@@ -101,6 +125,11 @@ function sanitizarVitais(input: unknown): Array<{ metricType: HealthMetricType; 
       value,
       unit: a.unit,
       timestamp: a.timestamp,
+      startDate: typeof a.startDate === 'string' && !isNaN(new Date(a.startDate).getTime()) ? a.startDate : a.timestamp,
+      endDate: typeof a.endDate === 'string' && !isNaN(new Date(a.endDate).getTime()) ? a.endDate : a.timestamp,
+      sampleId: typeof a.sampleId === 'string' ? a.sampleId.slice(0, 500) : undefined,
+      sourceId: typeof a.sourceId === 'string' ? a.sourceId.slice(0, 200) : undefined,
+      platformId: typeof a.platformId === 'string' ? a.platformId.slice(0, 300) : undefined,
       device: typeof a.device === 'string' ? a.device.slice(0, 120) : undefined
     });
   }
@@ -118,6 +147,7 @@ function defaultConfig(userId: string) {
     stravaConnected: false,
     autoSync: true,
     lastSyncTime: null,
+    lastVitalsSyncTime: null,
     createdAt: now,
     updatedAt: now
   };
@@ -173,7 +203,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === 'sync') {
     const atividades = sanitizarAtividades(req.body?.activities);
     if (atividades.length === 0) {
-      return res.status(200).json({ syncedCount: 0, duplicatesSkipped: 0, blockedCount: 0, logs: [] });
+      const now = new Date().toISOString();
+      await configRef.set({ lastSyncTime: now, updatedAt: now }, { merge: true }).catch(() => undefined);
+      return res.status(200).json({ syncedCount: 0, duplicatesSkipped: 0, blockedCount: 0, logs: [], lastSyncTime: now });
     }
 
     try {
@@ -204,12 +236,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === 'sync-vitals') {
     const source: HealthSampleSource = req.body?.source === 'health_connect' ? 'health_connect' : 'apple_health';
     const vitais = sanitizarVitais(req.body?.vitals);
+    const finalBatch = req.body?.finalBatch !== false;
     if (vitais.length === 0) {
-      return res.status(200).json({ savedCount: 0 });
+      const now = new Date().toISOString();
+      if (finalBatch) await configRef.set({ lastVitalsSyncTime: now, updatedAt: now }, { merge: true }).catch(() => undefined);
+      return res.status(200).json({ savedCount: 0, lastVitalsSyncTime: finalBatch ? now : undefined });
     }
     try {
       const savedCount = await registrarAmostrasPassivas({ userId: auth.uid, source, amostras: vitais });
-      return res.status(200).json({ savedCount });
+      const now = new Date().toISOString();
+      if (finalBatch) await configRef.set({ lastVitalsSyncTime: now, updatedAt: now }, { merge: true });
+      return res.status(200).json({ savedCount, lastVitalsSyncTime: finalBatch ? now : undefined });
     } catch (err: any) {
       console.error('[Wearables Handler] Falha ao sincronizar vitais:', err);
       return res.status(500).json({ error: 'Não foi possível sincronizar os dados de saúde agora.' });

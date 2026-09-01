@@ -97,7 +97,7 @@ ${HEADER}
 
 1. Dados de saúde e fitness são usados para métricas visíveis ao usuário, sincronização autorizada, indicadores de treino, recomendações e coerência da atividade. Não são usados para anúncios direcionados, venda de perfis ou decisão médica.
 
-2. O app pode receber exercícios, passos, distância, calorias, frequência cardíaca, HRV, sono e outros tipos efetivamente autorizados no Apple Health/HealthKit, Health Connect, Strava ou provedor conectado. Solicitamos apenas o escopo necessário ao recurso apresentado.
+2. O app pode receber exercícios, passos, distâncias, calorias, frequência cardíaca, FC em repouso, HRV, sono, peso, composição corporal, frequência respiratória, oxigenação, VO₂ máx., pressão, glicose, temperatura, hidratação e atenção plena quando o tipo estiver disponível e for autorizado no Apple Health/HealthKit, Health Connect, Strava ou provedor conectado. Medicamentos, prontuários clínicos e dados reprodutivos não são solicitados.
 
 3. O aceite dos Termos não concede acesso à saúde. A permissão é solicitada pelo sistema ou provedor e pode ser limitada ou revogada. Revogar interrompe novas leituras, mas a exclusão de dados já importados deve ser solicitada separadamente.
 
@@ -106,6 +106,10 @@ ${HEADER}
 5. VO₂ máx., calorias, recuperação e outros indicadores são estimativas não clínicas. Sensores podem conter atraso, lacuna ou imprecisão. Não tome decisão médica exclusivamente pelo app.
 
 6. Dados brutos de saúde não são exibidos publicamente ou usados para marketing. Compartilhamento, retenção e direitos seguem a Política de Privacidade.
+
+7. Cada amostra importada mantém identificação técnica, origem, aparelho quando informado e data/hora inicial e final. Janelas sobrepostas de sincronização usam esses identificadores para evitar duplicidade entre leituras.
+
+8. A Invictus IA pode resumir exclusivamente os dados do titular autenticado em linguagem educativa. Ela deve explicar termos técnicos, indicar cobertura e incerteza, não diagnosticar, não prescrever e não substituir profissional de saúde.
 `;
 
 export const LEGAL_ANTI_FRAUD_POLICY = `

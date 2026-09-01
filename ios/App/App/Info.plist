@@ -39,7 +39,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>O INVICTUS usa a câmera para registrar comprovantes de treino e vídeos de homologação do Power Lift.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>O Invictus lê, com sua autorização, treinos, rotas, passos, calorias, distância, frequência cardíaca, frequência cardíaca em repouso, variabilidade cardíaca, sono e peso para montar seu histórico e relatórios de saúde e desempenho.</string>
+	<string>O Invictus lê, com sua autorização, atividades e métricas de condicionamento, recuperação, sono, coração, respiração, composição corporal, movimento, energia, hidratação e atenção plena para criar seu histórico e relatórios pessoais em linguagem simples. Não acessa medicamentos nem prontuários clínicos.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>O Invictus utiliza o Apple Health para registrar e sincronizar dados das suas atividades físicas, permitindo acompanhar seus treinos, evolução e métricas de desempenho.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

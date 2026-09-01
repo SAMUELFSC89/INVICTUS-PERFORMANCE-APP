@@ -32,6 +32,7 @@ export interface WearableConfig {
   stravaConnected: boolean;
   autoSync: boolean;
   lastSyncTime: string | null;
+  lastVitalsSyncTime: string | null;
   createdAt: string;
   updatedAt: string;
 }
