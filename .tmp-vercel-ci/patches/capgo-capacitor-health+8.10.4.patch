@@ -1,0 +1,161 @@
+diff --git a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt
+index 422fd74..60d1ade 100644
+--- a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt
++++ b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthDataType.kt
+@@ -1,6 +1,5 @@
+ package app.capgo.plugin.health
+ 
+-import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
+ import androidx.health.connect.client.permission.HealthPermission
+ import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+ import androidx.health.connect.client.records.BasalBodyTemperatureRecord
+@@ -28,7 +27,11 @@ import androidx.health.connect.client.records.Vo2MaxRecord
+ import androidx.health.connect.client.records.WeightRecord
+ import kotlin.reflect.KClass
+ 
+-@OptIn(ExperimentalMindfulnessSessionApi::class)
++// #322: connect-client:1.1.0 graduou MindfulnessSessionRecord para API estavel
++// e REMOVEU a classe ExperimentalMindfulnessSessionApi. O pacote capgo-capacitor-health
++// ainda trazia o @OptIn de uma versao beta anterior, quebrando a compilacao Kotlin
++// no Android ("Unresolved reference: ExperimentalMindfulnessSessionApi"). Anotacao
++// removida -- MindfulnessSessionRecord continua usado normalmente, sem opt-in.
+ enum class HealthDataType(
+     val identifier: String,
+     val recordClass: KClass<out Record>,
+diff --git a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
+index fde25d1..0365a3b 100644
+--- a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
++++ b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
+@@ -3,7 +3,6 @@ package app.capgo.plugin.health
+ import androidx.health.connect.client.HealthConnectClient
+ import androidx.health.connect.client.HealthConnectFeatures
+ import androidx.health.connect.client.aggregate.AggregationResult
+-import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
+ import androidx.health.connect.client.permission.HealthPermission
+ import androidx.health.connect.client.request.AggregateGroupByDurationRequest
+ import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+@@ -55,7 +54,8 @@ import kotlin.collections.buildSet
+ import kotlin.math.min
+ import kotlinx.coroutines.CancellationException
+ 
+-@OptIn(ExperimentalMindfulnessSessionApi::class)
++// #322: mesma correcao de HealthDataType.kt -- ExperimentalMindfulnessSessionApi
++// nao existe mais em connect-client:1.1.0 (MindfulnessSessionRecord ja e estavel).
+ class HealthManager {
+ 
+     private val formatter: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
+@@ -780,9 +780,19 @@ private fun createSamplePayload(
+         val dataOrigin = metadata.dataOrigin
+         payload.put("sourceId", dataOrigin.packageName)
+         payload.put("sourceName", dataOrigin.packageName)
++        payload.put("dataOrigin", dataOrigin.packageName)
++        payload.put("recordingMethod", when (metadata.recordingMethod) {
++            Metadata.RECORDING_METHOD_ACTIVELY_RECORDED -> "active"
++            Metadata.RECORDING_METHOD_AUTOMATICALLY_RECORDED -> "automatic"
++            Metadata.RECORDING_METHOD_MANUAL_ENTRY -> "manual"
++            else -> "unknown"
++        })
+         metadata.device?.let { device ->
+             val manufacturer = device.manufacturer?.takeIf { it.isNotBlank() }
+             val model = device.model?.takeIf { it.isNotBlank() }
++            manufacturer?.let { payload.put("deviceManufacturer", it) }
++            model?.let { payload.put("deviceModel", it) }
++            payload.put("deviceType", device.type.toString())
+             val label = listOfNotNull(manufacturer, model).joinToString(" ").trim()
+             if (label.isNotEmpty()) {
+                 payload.put("sourceName", label)
+diff --git a/node_modules/capgo-capacitor-health/dist/esm/definitions.d.ts b/node_modules/capgo-capacitor-health/dist/esm/definitions.d.ts
+index e3f241f..3d566c7 100644
+--- a/node_modules/capgo-capacitor-health/dist/esm/definitions.d.ts
++++ b/node_modules/capgo-capacitor-health/dist/esm/definitions.d.ts
+@@ -84,6 +84,20 @@ export interface HealthSample {
+     endDate: string;
+     sourceName?: string;
+     sourceId?: string;
++    /** Original application/package or HealthKit source identifier. */
++    dataOrigin?: string;
++    recordingMethod?: 'automatic' | 'active' | 'manual' | 'unknown';
++    deviceManufacturer?: string;
++    deviceModel?: string;
++    deviceName?: string;
++    deviceType?: string;
++    hardwareVersion?: string;
++    firmwareVersion?: string;
++    softwareVersion?: string;
++    localIdentifier?: string;
++    sourceVersion?: string;
++    sourceProductType?: string;
++    sourceOperatingSystemVersion?: string;
+     /** Platform-specific unique identifier (HealthKit UUID on iOS, Health Connect metadata ID on Android). */
+     platformId?: string;
+     /** For sleep data, indicates the sleep state (e.g., 'asleep', 'awake', 'rem', 'deep', 'light'). */
+diff --git a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift
+index 49fd04f..2addb87 100644
+--- a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift
++++ b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift
+@@ -1139,10 +1139,25 @@ final class Health {
+     }
+     
+     private func addSampleMetadata(_ sample: HKSample, to payload: inout [String: Any]) {
+-        let source = sample.sourceRevision.source
++        let revision = sample.sourceRevision
++        let source = revision.source
+         payload["sourceName"] = source.name
+         payload["sourceId"] = source.bundleIdentifier
+         payload["platformId"] = sample.uuid.uuidString
++        payload["dataOrigin"] = source.bundleIdentifier
++        if let version = revision.version { payload["sourceVersion"] = version }
++        if let productType = revision.productType { payload["sourceProductType"] = productType }
++        let os = revision.operatingSystemVersion
++        payload["sourceOperatingSystemVersion"] = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
++        if let device = sample.device {
++            if let value = device.name { payload["deviceName"] = value }
++            if let value = device.manufacturer { payload["deviceManufacturer"] = value }
++            if let value = device.model { payload["deviceModel"] = value }
++            if let value = device.hardwareVersion { payload["hardwareVersion"] = value }
++            if let value = device.firmwareVersion { payload["firmwareVersion"] = value }
++            if let value = device.softwareVersion { payload["softwareVersion"] = value }
++            if let value = device.localIdentifier { payload["localIdentifier"] = value }
++        }
+     }
+ 
+     private func sleepStateFromValue(_ value: Int) -> String? {
+diff --git a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
+index 4e4904b..51a6a5d 100644
+--- a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
++++ b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/HealthPlugin.swift
+@@ -1,10 +1,31 @@
+ import Foundation
+ import Capacitor
+ 
+-@objc(HealthPlugin)
+-public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
++// #71b (patch-package): renomeado de "HealthPlugin" para "CapgoHealthPlugin".
++// Motivo: Codemagic build #29 falhou no LINKER com
++// "duplicate symbol '_OBJC_CLASS_$_HealthPlugin'" entre este plugin (Capgo)
++// e o plugin "capacitor-health" do mley (HealthPluginPlugin.o) -- os dois
++// declaravam, de forma totalmente independente, uma classe Swift/ObjC
++// chamada literalmente "HealthPlugin" (confirmado comparando o
++// HealthPlugin.swift de cada um). ObjC nao tem namespace real de classes,
++// entao dois .o com o mesmo simbolo @objc colidem no link mesmo com os
++// pacotes SPM resolvendo certinho.
++//
++// So o NOME DA CLASSE muda aqui. `jsName = "Health"` continua igual --
++// e por esse nome que o wrapper JS do pacote npm resolve
++// `Capacitor.Plugins.Health` em tempo de execucao, entao a API publica
++// (HealthVitalsProvider.ts) nao precisa de nenhuma mudanca. `identifier`
++// tambem foi ajustado por seguranca (evitar qualquer colisao de string em
++// runtime), mas quem importa de verdade pro linker e o `@objc(...)`.
++//
++// Este patch e aplicado automaticamente a cada `npm ci`/`npm install` via
++// patch-package (ver patches/capgo-capacitor-health+8.10.4.patch e
++// "postinstall" em package.json) -- nao editar node_modules manualmente
++// de novo, editar o patch.
++@objc(CapgoHealthPlugin)
++public class CapgoHealthPlugin: CAPPlugin, CAPBridgedPlugin {
+     private let pluginVersion: String = "8.10.4"
+-    public let identifier = "HealthPlugin"
++    public let identifier = "CapgoHealthPlugin"
+     public let jsName = "Health"
+     public let pluginMethods: [CAPPluginMethod] = [
+         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
