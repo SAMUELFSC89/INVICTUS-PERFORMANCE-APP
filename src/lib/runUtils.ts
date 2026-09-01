@@ -25,11 +25,30 @@ export function formatDuration(seconds: number): string {
   ].filter(Boolean).join(':');
 }
 
+/**
+ * Formata um ritmo sem a unidade, para que a interface possa escolher onde
+ * exibir "/km". O cálculo usa segundos arredondados (em vez de truncados),
+ * evitando que o último segundo de uma atividade mude o pace exibido.
+ */
+export function formatPaceValue(distanceKm: number, seconds: number): string | null {
+  const km = Number(distanceKm);
+  const elapsed = Number(seconds);
+  if (!Number.isFinite(km) || !Number.isFinite(elapsed) || km <= 0 || elapsed <= 0) return null;
+
+  const totalSeconds = Math.max(0, Math.round(elapsed / km));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return `${minutes}'${String(remainingSeconds).padStart(2, '0')}"`;
+}
+
+/** Converte a velocidade instantânea (km/h) no pace equivalente (min/km). */
+export function formatPaceFromSpeed(speedKmH: number | null | undefined): string | null {
+  const speed = Number(speedKmH);
+  if (!Number.isFinite(speed) || speed <= 0.1) return null;
+  return formatPaceValue(1, 3600 / speed);
+}
+
 export function calculatePace(meters: number, seconds: number): string {
-  if (meters === 0 || seconds === 0) return "0'00\"/km";
-  const km = meters / 1000;
-  const secondsPerKm = seconds / km;
-  const m = Math.floor(secondsPerKm / 60);
-  const s = Math.floor(secondsPerKm % 60);
-  return `${m}'${String(s).padStart(2, '0')}"/km`;
+  const pace = formatPaceValue(Number(meters) / 1000, seconds);
+  return pace ? `${pace}/km` : "0'00\"/km";
 }

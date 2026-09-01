@@ -6,6 +6,7 @@ import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
 import { InvictusLogo } from './InvictusLogo';
 import { WorkoutActiveScreen } from './WorkoutActiveScreen';
+import { formatPaceValue } from '../lib/runUtils';
 
 export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'cardio-complete' | 'cardio-summary' | 'day-progress';
 
@@ -48,6 +49,7 @@ export function ChallengeActivityFlow({
   elapsed,
   distance,
   currentSpeedKmH,
+  currentSpeedUpdatedAt,
   trajectory,
   liveCheckpoints,
   gpsAccuracy = null,
@@ -80,6 +82,7 @@ export function ChallengeActivityFlow({
   elapsed: number;
   distance: number;
   currentSpeedKmH?: number | null;
+  currentSpeedUpdatedAt?: number | null;
   trajectory?: Array<{ lat: number; lng: number }>;
   liveCheckpoints?: Array<{ location: { lat: number; lng: number; accuracy?: number } }>;
   gpsAccuracy?: number | null;
@@ -111,10 +114,14 @@ export function ChallengeActivityFlow({
     : `Treino de ${effectiveMuscleGroup}`;
   const isBike = session?.cardioType === 'bike' || cardio.id === 'bike';
   const averageSpeedKmH = distance > 0.01 && elapsed > 0 ? (distance / (elapsed / 3600)).toFixed(1) : '—';
-  const liveBikeSpeed = typeof currentSpeedKmH === 'number' && Number.isFinite(currentSpeedKmH)
-    ? currentSpeedKmH.toFixed(1)
-    : averageSpeedKmH;
-  const pace = distance > 0.01 && elapsed ? `${Math.floor((elapsed / 60) / distance)}'${String(Math.round((elapsed / 60 / distance % 1) * 60)).padStart(2, '0')}"` : '—';
+  const speedIsFresh = typeof currentSpeedKmH === 'number'
+    && Number.isFinite(currentSpeedKmH)
+    && typeof currentSpeedUpdatedAt === 'number'
+    && Date.now() - currentSpeedUpdatedAt <= 8000
+    && !session?.isPaused;
+  const currentSpeed = speedIsFresh ? currentSpeedKmH! : null;
+  const currentSpeedLabel = currentSpeed !== null ? currentSpeed.toFixed(1) : '—';
+  const pace = formatPaceValue(distance, elapsed) || '—';
   const hasDistanceMetric = Boolean(modalityCfg ? modalityCfg.hasDistance : (session?.requiresGpsDistance || cardio.gps));
   const hasPaceMetric = Boolean(modalityCfg ? modalityCfg.hasPace : !isBike);
   const checkin = screen === 'workout-checkin';
@@ -229,6 +236,12 @@ export function ChallengeActivityFlow({
           <p className="challenge-flow-note">
             <Navigation /> Corrida, caminhada e bike ao ar livre usam GPS.
           </p>
+          {startError && (
+            <div className="challenge-flow-end-error" role="alert" aria-live="assertive">
+              <AlertCircle size={16} />
+              <span>{startError}</span>
+            </div>
+          )}
           <button className="challenge-flow-primary" onClick={() => onStart('cardio')} disabled={startingActivity}>
             <Play />{startingActivity ? 'INICIANDO...' : 'INICIAR CARDIO'}
           </button>
@@ -278,7 +291,8 @@ export function ChallengeActivityFlow({
               <div>
                 <article><Clock3 /><b>{time(elapsed)}</b><small>Tempo</small></article>
                 <article><Navigation /><b>{distance.toFixed(2)}</b><small>Distância (km)</small></article>
-                <article><Gauge /><b>{hasPaceMetric ? pace : liveBikeSpeed}</b><small>{hasPaceMetric ? 'Pace médio' : 'Velocidade (km/h)'}</small></article>
+                <article><Gauge /><b>{currentSpeedLabel}</b><small>Velocidade atual (km/h)</small></article>
+                <article><Timer /><b>{hasPaceMetric ? pace : `${averageSpeedKmH}`}</b><small>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade média (km/h)'}</small></article>
               </div>
             </article>
 
@@ -353,7 +367,8 @@ export function ChallengeActivityFlow({
               hasDistanceMetric ? (
                 <>
                   <article><b>{distance.toFixed(2)}</b><span>Distância (km)</span></article>
-                <article><b>{hasPaceMetric ? pace : `${liveBikeSpeed} km/h`}</b><span>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade atual'}</span></article>
+                  <article><b>{currentSpeedLabel}</b><span>Velocidade atual (km/h)</span></article>
+                  <article><b>{hasPaceMetric ? pace : `${averageSpeedKmH}`}</b><span>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade média (km/h)'}</span></article>
                   <article><b>—</b><span>Calorias (kcal)</span></article>
                 </>
               ) : (

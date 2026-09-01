@@ -1,4 +1,5 @@
 export type WorkoutPlanSource = 'manual' | 'ai' | 'imported';
+export type WorkoutPlanGenerationMode = 'gemini' | 'local_fallback';
 
 export type MuscleGroup = 'peito' | 'costas' | 'pernas' | 'ombros' | 'bracos' | 'core';
 
@@ -44,6 +45,9 @@ export interface WorkoutPlan {
   name: string;
   description?: string;
   source: WorkoutPlanSource;
+  /** Indica quando a IA externa estava indisponível e o plano foi montado
+   * deterministicamente a partir da biblioteca oficial. */
+  generationMode?: WorkoutPlanGenerationMode;
   status: 'active' | 'archived';
   objective: string;
   experienceLevel?: string;
@@ -59,6 +63,7 @@ export interface WorkoutPlanDraft {
   name: string;
   description?: string;
   source: WorkoutPlanSource;
+  generationMode?: WorkoutPlanGenerationMode;
   objective: string;
   experienceLevel?: string;
   durationMinutes: number;

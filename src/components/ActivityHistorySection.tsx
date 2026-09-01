@@ -16,6 +16,7 @@ import { RunShareCard } from './RunShareCard';
 import { InvictusLogo } from './InvictusLogo';
 import { API_CONFIG } from '../config';
 import { VALIDATION_MESSAGES } from '../services/validationMessages';
+import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 
 export interface ActivityHistoryItem {
   id: string;
@@ -53,26 +54,13 @@ export interface ActivityHistoryItem {
   details?: any;
 }
 
-function parseTimestamp(ts: any): { dateStr: string; timeStr: string; rawMs: number } {
-  let dateObj: Date;
-
-  if (!ts) {
-    dateObj = new Date();
-  } else if (typeof ts === 'string') {
-    dateObj = new Date(ts);
-  } else if (typeof ts === 'number') {
-    dateObj = new Date(ts);
-  } else if (ts.toDate && typeof ts.toDate === 'function') {
-    dateObj = ts.toDate();
-  } else if (ts.seconds) {
-    dateObj = new Date(ts.seconds * 1000);
-  } else {
-    dateObj = new Date();
-  }
-
-  if (isNaN(dateObj.getTime())) {
-    dateObj = new Date();
-  }
+function parseTimestamp(ts: any, fallback?: any): { dateStr: string; timeStr: string; rawMs: number } {
+  // Nunca substitua timestamp ausente/inválido pela data atual: isso fazia
+  // atividades legadas aparecerem como se tivessem acontecido hoje e
+  // contaminava filtros, ordenação e métricas do histórico.
+  const rawMs = readActivityTimestamp(ts) ?? readActivityTimestamp(fallback);
+  if (rawMs === null) return { dateStr: '—', timeStr: '—', rawMs: 0 };
+  const dateObj = new Date(rawMs);
 
   const day = dateObj.getDate().toString().padStart(2, '0');
   const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
@@ -84,7 +72,7 @@ function parseTimestamp(ts: any): { dateStr: string; timeStr: string; rawMs: num
   const secs = dateObj.getSeconds().toString().padStart(2, '0');
   const timeStr = `${hours}:${mins}:${secs}`;
 
-  return { dateStr, timeStr, rawMs: dateObj.getTime() };
+  return { dateStr, timeStr, rawMs };
 }
 
 function isToday(rawMs: number): boolean {
@@ -99,23 +87,58 @@ function formatClock(rawMs: number): string {
 }
 
 function formatDurationLabel(mins?: number): string {
-  const m = Math.round(Number(mins) || 0);
-  if (m >= 60) {
-    const h = Math.floor(m / 60);
-    const rem = m % 60;
-    return `${h}:${String(rem).padStart(2, '0')}:00`;
-  }
-  return `${m}:00`;
+  const totalSeconds = Math.max(0, Math.round((Number(mins) || 0) * 60));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${h > 0 ? `${h}:` : ''}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function computePace(distanceKm?: number, durationMins?: number): string | null {
   const km = Number(distanceKm) || 0;
   const mins = Number(durationMins) || 0;
   if (km <= 0 || mins <= 0) return null;
-  const paceMinPerKm = mins / km;
-  const whole = Math.floor(paceMinPerKm);
-  const secs = Math.round((paceMinPerKm - whole) * 60);
+  const totalSeconds = Math.max(0, Math.round((mins / km) * 60));
+  const whole = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
   return `${whole}'${String(secs).padStart(2, '0')}"`;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function activityDurationMins(data: any): number | undefined {
+  const value = data?.duration ?? data?.durationMins ?? data?.durationMinutes;
+  return optionalNumber(value);
+}
+
+function activityDistanceKm(data: any): number | undefined {
+  const direct = data?.distance ?? data?.distanceKm;
+  if (direct !== undefined && direct !== null && direct !== '') return optionalNumber(direct);
+  const meters = optionalNumber(data?.distanceMeters);
+  return meters !== undefined ? meters / 1000 : undefined;
+}
+
+/** Aceita o formato plano e o formato real `{ location: { lat, lng } }`. */
+function normalizeTrajectory(value: unknown): Array<{ lat: number; lng: number }> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const points = value.flatMap((point: any) => {
+    const location = point?.location || point;
+    const lat = Number(location?.lat ?? location?.latitude);
+    const lng = Number(location?.lng ?? location?.longitude);
+    return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+      ? [{ lat, lng }]
+      : [];
+  });
+  return points.length ? points : undefined;
+}
+
+/** O backend salva `M'SS"/km`; a tela acrescenta a unidade separadamente. */
+function normalizePaceLabel(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  return value.trim().replace(/\s*\/\s*km\s*$/i, '').trim() || undefined;
 }
 
 function caloriesTier(kcal?: number) {
@@ -474,19 +497,25 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
         }
         cleanWorkoutDocs.forEach(d => {
           const data = d.data();
-          const { dateStr, timeStr, rawMs } = parseTimestamp(data.timestamp || data.createdAt);
+          const { dateStr, timeStr, rawMs } = parseTimestamp(data.timestamp, data.createdAt);
 
-          let mappedStatus: 'homologada' | 'rejeitada' | 'pendente' = 'homologada';
-          const rawSt = (data.status || '').toLowerCase();
+          // `validationStatus` é a fonte canônica do fluxo novo; `status`
+          // continua sendo aceito para documentos legados (que usavam
+          // `completed` como status técnico de persistência).
+          const rawSt = String(data.validationStatus ?? data.status ?? data.validation?.status ?? '').toLowerCase();
+          const statusFromEngine = normalizeActivityValidationStatus(rawSt);
+          let mappedStatus: 'homologada' | 'rejeitada' | 'pendente' = 'pendente';
 
-          if (['valid', 'approved', 'validated', 'confirmed'].includes(rawSt)) {
+          if (statusFromEngine === 'validated' || (!statusFromEngine && String(data.status || '').toLowerCase() === 'completed')) {
             mappedStatus = 'homologada';
-          } else if (['invalid', 'rejected', 'not_validated', 'not_eligible', 'suspicious'].includes(rawSt)) {
+          } else if (statusFromEngine === 'rejected' || statusFromEngine === 'not_eligible') {
             mappedStatus = 'rejeitada';
-          } else if (['pending', 'under_review', 'manual_review', 'biometria_incompleta', 'partially_validated', 'pending_review'].includes(rawSt)) {
+          } else if (statusFromEngine === 'pending') {
             mappedStatus = 'pendente';
           } else if (data.isScoringEligible === false || data.nonScoringReason) {
             mappedStatus = 'rejeitada';
+          } else if (String(data.status || '').toLowerCase() === 'completed' && Number(data.points || data.pointsEarned || 0) > 0) {
+            mappedStatus = 'homologada';
           }
 
           let typeLabel = 'Treino';
@@ -516,7 +545,9 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             reason = VALIDATION_MESSAGES.NO_MOVEMENT_DETECTED;
           }
 
-          const trajectoryRaw = Array.isArray(data.trajectory) ? data.trajectory : (Array.isArray(data.checkpoints) ? data.checkpoints : undefined);
+          const durationMins = activityDurationMins(data);
+          const distanceKm = activityDistanceKm(data);
+          const trajectoryRaw = normalizeTrajectory(Array.isArray(data.trajectory) ? data.trajectory : data.checkpoints);
 
           items.push({
             id: d.id,
@@ -524,7 +555,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             type: data.type === 'cardio' ? 'cardio' : data.type === 'diet' ? 'diet' : data.type === 'recovery' ? 'recovery' : 'workout',
             typeLabel,
             title,
-            subtitle: data.cardioTypeLabel || (data.duration ? `${data.duration} minutos` : undefined),
+            subtitle: data.cardioTypeLabel || (durationMins !== undefined ? `${durationMins} minutos` : undefined),
             dateStr,
             timeStr,
             rawTimestamp: rawMs,
@@ -532,14 +563,14 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             statusRaw: rawSt || mappedStatus,
             points: Number(data.points || 0),
             rankingPointsEarned: data.rankingPointsEarned ? Number(data.rankingPointsEarned) : undefined,
-            durationMins: data.duration ? Number(data.duration) : undefined,
-            distanceKm: data.distance ? Number(data.distance) : undefined,
+            durationMins,
+            distanceKm,
             photoUrl: data.photoUrl || data.verificationPhotoUrl,
             rejectionReason: reason,
             aiAnalysis: data.validation?.details?.aiAnalysis || data.validation?.reason,
             avgHeartRate: data.avgHeartRate !== undefined && data.avgHeartRate !== null ? Number(data.avgHeartRate) : undefined,
             calories: data.calories !== undefined && data.calories !== null ? Number(data.calories) : undefined,
-            pace: data.pace || undefined,
+            pace: normalizePaceLabel(data.pace),
             elevationGain: data.elevationGain !== undefined && data.elevationGain !== null ? Number(data.elevationGain) : undefined,
             steps: data.steps !== undefined && data.steps !== null ? Number(data.steps) : undefined,
             trajectory: trajectoryRaw,
@@ -559,7 +590,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
         const cSnap = await getDocs(cQuery);
         cSnap.forEach(d => {
           const data = d.data();
-          const { dateStr, timeStr, rawMs } = parseTimestamp(data.checkInTime || data.timestamp || data.createdAt);
+          const { dateStr, timeStr, rawMs } = parseTimestamp(data.checkInTime, data.timestamp ?? data.createdAt);
 
           let mappedStatus: 'homologada' | 'rejeitada' | 'pendente' = 'homologada';
           const rawSt = (data.status || '').toLowerCase();
@@ -602,7 +633,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
         const pSnap = await getDocs(pQuery);
         pSnap.forEach(d => {
           const data = d.data();
-          const { dateStr, timeStr, rawMs } = parseTimestamp(data.timestamp || data.createdAt);
+          const { dateStr, timeStr, rawMs } = parseTimestamp(data.timestamp, data.createdAt);
 
           let mappedStatus: 'homologada' | 'rejeitada' | 'pendente' = 'homologada';
           const rawSt = (data.videoStatus || data.status || '').toLowerCase();
@@ -630,7 +661,9 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             points: mappedStatus === 'homologada' && Number.isFinite(Number(data.points)) ? Number(data.points) : 0,
             weightKg: data.weight ? Number(data.weight) : undefined,
             exerciseName: exName,
-            photoUrl: data.videoUrl,
+            // Vídeo exige URL assinada pelo endpoint Power Lift; não o trate
+            // como uma imagem pública no detalhe do histórico.
+            photoUrl: undefined,
             rejectionReason: data.rejectionReason,
             congratulated: !!data.congratulated,
             details: data
@@ -982,7 +1015,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
 
                       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                         {act.durationMins !== undefined && (
-                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">⏱️ {act.durationMins} min</span>
+                          <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">⏱️ {formatDurationLabel(act.durationMins)}</span>
                         )}
                         {act.distanceKm !== undefined && act.distanceKm > 0 && (
                           <span className="text-[10px] font-mono bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-zinc-300">🏃 {act.distanceKm.toFixed(2)} km</span>

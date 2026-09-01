@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { HealthFooter, HealthReportContent } from './Health';
 import { healthSummaryService, HealthSummaryResponse } from '../services/healthSummaryService';
+import { API_CONFIG } from '../config';
 
 const concepts = [
   ['HRV', 'É a variação do tempo entre batimentos. Ajuda a observar recuperação e estresse quando comparada à sua própria média.'],
@@ -26,7 +27,7 @@ function AiHealthNarrative() {
         const user = auth.currentUser;
         if (!user) return;
         const token = await user.getIdToken();
-        const response = await fetch('/api/performance-ai', {
+        const response = await fetch(`${API_CONFIG.baseUrl}/api/performance-ai`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({

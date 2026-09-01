@@ -52,6 +52,7 @@ export class GpsEngine {
       latitude: c.latitude ?? c.location?.lat ?? c.lat,
       longitude: c.longitude ?? c.location?.lng ?? c.lng,
       timestamp: c.timestamp,
+      segmentId: c.segmentId ?? c.location?.segmentId,
       accuracy: c.accuracy ?? c.location?.accuracy,
       isMocked: c.isMocked ?? c.location?.isMocked,
       isMockLocation: c.isMockLocation ?? c.location?.isMockLocation
@@ -113,6 +114,10 @@ export class GpsEngine {
       for (let i = 1; i < checkpoints.length; i++) {
         const p1 = checkpoints[i - 1];
         const p2 = checkpoints[i];
+        // O cliente marca cada trecho ativo com um segmento diferente ao
+        // retomar depois de uma pausa. Não atribua deslocamento/teleporte ao
+        // intervalo em que o atleta declarou estar parado.
+        if (p1.segmentId !== undefined && p2.segmentId !== undefined && p1.segmentId !== p2.segmentId) continue;
         if ([p1.latitude, p1.longitude, p2.latitude, p2.longitude].every(Number.isFinite) && p1.timestamp && p2.timestamp) {
           const distMeters = GpsEngine.haversineMeters(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
           const timeSec = Math.abs((new Date(p2.timestamp).getTime() - new Date(p1.timestamp).getTime()) / 1000);

@@ -273,7 +273,7 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
 
       try {
         const respostaIA = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: getAiTextModel(),
           contents: {
             parts: [
               { inlineData: { mimeType: "image/jpeg", data: base64 } },

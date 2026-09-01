@@ -1,4 +1,4 @@
-import { friendlyAiError, getAiApiKey, getAiTextModel } from '../../api/_lib/ai-config';
+import { classifyAiError, friendlyAiError, getAiApiKey, getAiTextModel } from '../../api/_lib/ai-config';
 
 describe('configuração central da Invictus IA', () => {
   const original = {
@@ -44,5 +44,29 @@ describe('configuração central da Invictus IA', () => {
     const message = friendlyAiError(new Error('{"error":{"code":404,"status":"NOT_FOUND","message":"model no longer available"}}'));
     expect(message).not.toContain('NOT_FOUND');
     expect(message).toContain('Invictus IA');
+  });
+
+  it('identifica faturamento pendente sem confundir com limite de cota', () => {
+    expect(classifyAiError(new Error('Billing account is not active'))).toMatchObject({
+      code: 'BILLING_REQUIRED',
+      status: 503,
+      isBillingError: true
+    });
+    expect(classifyAiError(new Error('faturamento pendente no projeto'))).toMatchObject({
+      code: 'BILLING_REQUIRED',
+      isBillingError: true
+    });
+    expect(classifyAiError(new Error('RESOURCE_EXHAUSTED: quota exceeded'))).toMatchObject({
+      code: 'QUOTA_EXCEEDED',
+      status: 429,
+      isBillingError: false
+    });
+  });
+
+  it('classifica chave, permissão, modelo e rede', () => {
+    expect(classifyAiError(new Error('API key not valid')).code).toBe('INVALID_API_KEY');
+    expect(classifyAiError(new Error('PERMISSION_DENIED')).code).toBe('PERMISSION_DENIED');
+    expect(classifyAiError(new Error('model not found')).code).toBe('MODEL_UNAVAILABLE');
+    expect(classifyAiError(new Error('fetch failed')).code).toBe('NETWORK_ERROR');
   });
 });

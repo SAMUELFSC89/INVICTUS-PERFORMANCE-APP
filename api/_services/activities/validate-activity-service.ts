@@ -63,7 +63,8 @@ export class ValidateActivityService {
     if (!data.type || typeof data.type !== 'string') {
       throw new AppError('Tipo da atividade e obrigatorio', 400);
     }
-    if (data.duration !== undefined && (typeof data.duration !== 'number' || data.duration < 0)) {
+    const durationValue = (data as any).duration ?? (data as any).durationMins;
+    if (durationValue !== undefined && (typeof durationValue !== 'number' || !Number.isFinite(durationValue) || durationValue < 0)) {
       throw new AppError('Duracao da atividade deve ser um numero valido de minutos', 400);
     }
     const validIntensities = ['low', 'moderate', 'high'];
@@ -89,11 +90,16 @@ export class ValidateActivityService {
   }
 
   private detectFraud(data: ValidateActivityRequest['activityData']): { isFraud: boolean; reason?: string } {
-    if (data.duration && data.duration > 360) {
+    // O app atual envia `durationMins`; integrações antigas enviavam
+    // `duration`. A checagem anterior só olhava o nome legado e permitia
+    // contornar o limite de seis horas usando o formato novo.
+    const duration = Number((data as any).duration ?? (data as any).durationMins);
+    const steps = Number(data.evidence?.steps);
+    if (Number.isFinite(duration) && duration > 360) {
       return { isFraud: true, reason: 'Duracao excessiva e nao crivel (> 6 horas continuas)' };
     }
-    if (data.evidence?.steps && data.duration && data.duration > 0) {
-      const stepsPerMinute = data.evidence.steps / data.duration;
+    if (Number.isFinite(steps) && steps > 0 && Number.isFinite(duration) && duration > 0) {
+      const stepsPerMinute = steps / duration;
       if (stepsPerMinute > 300) {
         return { isFraud: true, reason: 'Cadencia de passos por minuto sobre-humana (> 300 spm)' };
       }
@@ -139,6 +145,10 @@ export class ValidateActivityService {
       throw new AppError('Usuario nao encontrado no sistema', 404);
     }
 
+    const rawActivity: any = request.activityData || {};
+    const durationValue = rawActivity.duration ?? rawActivity.durationMins;
+    const durationForMetrics = Number(durationValue) || 0;
+
     const fraudCheck = this.detectFraud(request.activityData);
     if (fraudCheck.isFraud) {
       console.warn(`[ValidateActivityService] [${traceId}] Suspeita de fraude: ${fraudCheck.reason}`);
@@ -156,17 +166,18 @@ export class ValidateActivityService {
     const tenSecondsAgo = Date.now() - 10000;
     const isDuplicateSubmission = recentActivities.some(a => {
       const createdAtMs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const previousDuration = Number((a as any).duration ?? (a as any).durationMins);
+      const submittedDuration = durationValue === undefined ? 30 : Number(durationValue);
       return createdAtMs >= tenSecondsAgo &&
         a.type === request.activityData.type &&
-        (a.duration || 0) === (request.activityData.duration || 30);
+        Number.isFinite(previousDuration) && Number.isFinite(submittedDuration) &&
+        previousDuration === submittedDuration;
     });
     if (isDuplicateSubmission) {
       console.warn(`[ValidateActivityService] [${traceId}] Envio duplicado detectado e bloqueado (mesma atividade nos ultimos 10s)`);
       throw new AppError('Esta atividade ja foi registrada. Aguarde alguns segundos antes de tentar novamente.', 409);
     }
 
-    const rawActivity: any = request.activityData || {};
-    const durationForMetrics = Number(request.activityData.duration ?? rawActivity.durationMins) || 0;
     const modality = resolveModality(rawActivity);
     // Para cardio externo, distancia/velocidade competitivas nunca sao
     // aceitas diretamente do aparelho. O servidor refaz a trilha ponto a
@@ -729,7 +740,7 @@ export class ValidateActivityService {
         cardioType: rawActivity.cardioType,
         cardioTypeLabel: rawActivity.cardioTypeLabel,
         distance: effectiveDistanceKm,
-        duration: request.activityData.duration || rawActivity.durationMins || 30,
+        duration: durationForMetrics,
         calories: finalCalories,
         avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
         steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,

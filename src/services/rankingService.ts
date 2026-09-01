@@ -4,6 +4,7 @@ import { startOfMonth, addMonths, format } from 'date-fns';
 import { RankingSnapshot, UserProfile } from '../types';
 import { QuotaExhaustedError, isQuotaError } from './errors';
 import { redisService } from './redisService';
+import { API_CONFIG } from '../config';
 
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
 
@@ -68,7 +69,7 @@ export const rankingService = {
     const user = auth.currentUser;
     if (!user) return { enrolled: false, gymId: '' };
     const token = await user.getIdToken();
-    const response = await fetch('/api/ranking-enrollment', { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/ranking-enrollment`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) throw new Error('Não foi possível consultar sua adesão ao ranking.');
     return response.json();
   },
@@ -77,7 +78,7 @@ export const rankingService = {
     const user = auth.currentUser;
     if (!user) throw new Error('Autenticação necessária.');
     const token = await user.getIdToken();
-    const response = await fetch('/api/ranking-enrollment', {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/ranking-enrollment`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ gymId: gymId || undefined })
@@ -91,7 +92,7 @@ export const rankingService = {
     const user = auth.currentUser;
     if (!user) throw new Error('Autenticação necessária.');
     const token = await user.getIdToken();
-    const response = await fetch('/api/ranking-enrollment', {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/ranking-enrollment`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -117,7 +118,7 @@ export const rankingService = {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const response = await fetch(`/api/ranking?level=${level}&levelId=${levelId}&period=${period}`, { headers });
+        const response = await fetch(`${API_CONFIG.baseUrl}/api/ranking?level=${level}&levelId=${levelId}&period=${period}`, { headers });
         
         const text = await response.text();
 

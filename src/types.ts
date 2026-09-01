@@ -317,6 +317,9 @@ export interface ActivitySession {
   checkInId?: string;
   checkpoints: {
     timestamp: string;
+    /** Identifica o trecho ativo; muda após cada pausa para não ligar
+     * deslocamento em pausa ao pace oficial. Opcional para sessões legadas. */
+    segmentId?: number;
     location: { lat: number; lng: number; accuracy?: number; speedKmH?: number };
   }[];
   // #324: pausa real da sessao ativa (semaforo, cadarco, banheiro). O fluxo em
@@ -329,6 +332,8 @@ export interface ActivitySession {
   pausedMs?: number;
   /** Timestamp ISO de quando a pausa atual comecou; null quando nao pausado. */
   pauseStartedAt?: string | null;
+  /** Índice do trecho ativo atual, incrementado ao retomar após uma pausa. */
+  gpsSegmentId?: number;
   // #98: velocidade instantanea real do chip de GPS (position.coords.speed,
   // derivada do desvio Doppler do sinal -- o mesmo dado que Strava/Garmin usam
   // para o pace ao vivo), amostrada em TODO fix de GPS recebido durante a

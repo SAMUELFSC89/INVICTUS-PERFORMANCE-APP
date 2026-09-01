@@ -5,6 +5,7 @@ import { validationService } from "./validationService";
 import { getCurrentLocation } from "../lib/locationUtils";
 import { compressBase64Image } from "../lib/imageCompression";
 import { HealthDataCollector, type CollectedHealthMetrics } from "./healthDataCollector";
+import { API_CONFIG } from "../config";
 import { getModalityConfig } from "../config/cardioConfig";
 import { nativeBackgroundLocationService } from "./nativeBackgroundLocationService";
 
@@ -78,7 +79,7 @@ export const activityService = {
     if (!user) throw new Error('Usuário não autenticado');
     const location = await getCurrentLocation(true);
     const token = await user.getIdToken();
-    const response = await fetch('/api/gyms/checkin', {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/gyms/checkin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -130,19 +131,24 @@ export const activityService = {
     const existing = this.getCurrentSession();
     if (existing) throw new Error('Já existe uma atividade em andamento.');
 
-    // #323: a checagem de sessao ativa no servidor e a leitura do perfil do
-    // usuario (userSnap, logo abaixo) sao independentes uma da outra -- antes
-    // rodavam em serie (await, await), somando duas idas e voltas de rede
-    // inteiras antes mesmo do GPS entrar em cena. Essa espera serial, oculta
-    // atras do botao "INICIAR" sem nenhum feedback visual, era a causa raiz
-    // do atraso de alguns segundos sentido ao tocar em iniciar o cardio.
-    // Disparadas juntas agora; o catch abaixo so cobre a query de sessao ativa.
+    // #323: a checagem de sessão ativa e a leitura do perfil são independentes.
+    // A primeira protege contra duplicidade; a segunda fica em segundo plano,
+    // pois o perfil não é pré-requisito para criar a sessão local.
     const userRef = doc(db, 'users', user.uid);
     // #118: 12s de teto -- generoso o bastante pra rede movel ruim, mas finito.
     // Sem isto, uma conexao que trava (nem fecha, nem abre) deixava esta
     // Promise pendurada pra sempre.
     const userSnapPromise = withTimeout(getDoc(userRef), 12000, 'Não conseguimos conectar ao servidor para carregar seu perfil. Verifique sua conexão e tente novamente.');
-    userSnapPromise.catch(() => {}); // evita unhandled rejection se descartada no caminho de sessao ja ativa
+    // A autenticação já confirmou o atleta. A leitura do documento de perfil é
+    // apenas uma verificação de metadados e não pode bloquear a abertura do
+    // cardio; em especial, Firestore pode demorar/rejeitar quando o projeto
+    // está sem faturamento. Mantemos a observação em segundo plano para
+    // diagnóstico, sem transformar uma falha transitória em erro de início.
+    void userSnapPromise
+      .then((snapshot) => {
+        if (!snapshot.exists()) console.warn('[ActivityService] Profile document not found; session will continue locally.');
+      })
+      .catch((profileError) => console.warn('[ActivityService] Profile read failed; session will continue locally:', profileError));
 
     try {
       const activeSessionsQuery = query(
@@ -150,7 +156,11 @@ export const activityService = {
         where('userId', '==', user.uid),
         where('status', '==', 'active')
       );
-      const activeSessionsSnap = await withTimeout(getDocs(activeSessionsQuery), 12000, 'Tempo limite ao verificar sessões ativas no servidor.');
+      // Essa consulta é uma proteção adicional, não um pré-requisito para
+      // abrir o cronômetro. Em projetos com faturamento/Firestore pendente,
+      // esperar 12s fazia o botão parecer travado; após 3s seguimos com a
+      // sessão local e a escrita remota continua sendo best-effort.
+      const activeSessionsSnap = await withTimeout(getDocs(activeSessionsQuery), 3000, 'Tempo limite ao verificar sessões ativas no servidor.');
 
       for (const docSnap of activeSessionsSnap.docs) {
         const sessData = docSnap.data();
@@ -190,7 +200,8 @@ export const activityService = {
             gpsSpeedSampleCount: Number(sessData.gpsSpeedSampleCount) || 0,
             isPaused: !!sessData.isPaused,
             pausedMs: Number(sessData.pausedMs) || 0,
-            pauseStartedAt: sessData.pauseStartedAt || null
+            pauseStartedAt: sessData.pauseStartedAt || null,
+            gpsSegmentId: Number.isFinite(Number(sessData.gpsSegmentId)) ? Number(sessData.gpsSegmentId) : 0
           };
           localStorage.setItem(SESSION_KEY, JSON.stringify(restoredSession));
           throw new Error('Você já possui uma atividade ativa em andamento! Recuperamos sua sessão ativa do servidor.');
@@ -202,9 +213,6 @@ export const activityService = {
       }
       console.warn('[ActivityService] Server check for active sessions failed, proceeding locally:', checkErr);
     }
-
-    const userSnap = await userSnapPromise;
-    if (!userSnap.exists()) throw new Error('Perfil de usuário não encontrado');
 
     const cardioMapEntry = getModalityConfig(cardioType);
     if (type === 'cardio' && !cardioMapEntry) {
@@ -232,10 +240,11 @@ export const activityService = {
       startLocation,
       status: 'active',
       checkInId,
-      checkpoints: startLocation ? [{ timestamp: new Date().toISOString(), location: startLocation }] : [],
+      checkpoints: startLocation ? [{ timestamp: new Date().toISOString(), segmentId: 0, location: startLocation }] : [],
       isPaused: false,
       pausedMs: 0,
-      pauseStartedAt: null
+      pauseStartedAt: null,
+      gpsSegmentId: 0
     };
 
     if (typeof window !== 'undefined') {
@@ -330,6 +339,7 @@ export const activityService = {
       isPaused: false,
       pausedMs: 0,
       pauseStartedAt: null,
+      gpsSegmentId: session.gpsSegmentId || 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }).catch(err => console.warn('[ActivityService] Failed to write active session registry to Firestore:', err));
@@ -396,6 +406,7 @@ export const activityService = {
 
     session.checkpoints.push({
       timestamp: new Date(Number.isFinite(timestampMs) ? timestampMs! : Date.now()).toISOString(),
+      segmentId: session.gpsSegmentId || 0,
       location: {
         lat: location.lat,
         lng: location.lng,
@@ -466,6 +477,14 @@ export const activityService = {
     session.pauseStartedAt = new Date().toISOString();
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
+    // O coletor nativo pode continuar recebendo pontos com a tela bloqueada.
+    // Interrompê-lo durante a pausa evita que esses pontos voltem no lote final
+    // como se fossem deslocamento ativo. A operação é best-effort e não muda
+    // a resposta síncrona usada pelos botões da interface.
+    if (session.requiresGpsDistance) {
+      void nativeBackgroundLocationService.stop().catch((error) => console.warn('[ActivityService] Failed to stop native tracking during pause:', error));
+    }
+
     updateDoc(doc(db, 'active_sessions', session.id), {
       isPaused: true,
       pauseStartedAt: session.pauseStartedAt,
@@ -484,12 +503,18 @@ export const activityService = {
     session.pausedMs = (session.pausedMs || 0) + Math.max(0, Date.now() - pauseStarted);
     session.isPaused = false;
     session.pauseStartedAt = null;
+    session.gpsSegmentId = (session.gpsSegmentId || 0) + 1;
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+
+    if (session.requiresGpsDistance) {
+      void nativeBackgroundLocationService.start().catch((error) => console.warn('[ActivityService] Failed to restart native tracking after pause:', error));
+    }
 
     updateDoc(doc(db, 'active_sessions', session.id), {
       isPaused: false,
       pausedMs: session.pausedMs,
       pauseStartedAt: null,
+      gpsSegmentId: session.gpsSegmentId || 0,
       updatedAt: new Date().toISOString()
     }).catch(err => console.warn('[ActivityService] Failed to sync resume to Firestore:', err));
 
@@ -506,9 +531,26 @@ export const activityService = {
   calculateSessionDistance(session: ActivitySession): number {
     let distanceKm = 0;
     for (let i = 1; i < session.checkpoints.length; i++) {
-      const p1 = session.checkpoints[i - 1].location;
-      const p2 = session.checkpoints[i].location;
-      distanceKm += validationService.calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+      const previous = session.checkpoints[i - 1];
+      const current = session.checkpoints[i];
+      const p1 = previous.location;
+      const p2 = current.location;
+      // Um novo segmento começa ao retomar de uma pausa. Não conecte o último
+      // ponto anterior ao primeiro ponto posterior, pois esse intervalo inclui
+      // tempo sem esforço e distorceria a distância e o pace.
+      if (previous.segmentId !== undefined && current.segmentId !== undefined && previous.segmentId !== current.segmentId) continue;
+      const segmentKm = validationService.calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+      const timeSec = (new Date(current.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000;
+      if (!Number.isFinite(segmentKm) || segmentKm <= 0 || !Number.isFinite(timeSec) || timeSec <= 0 || timeSec > 45) continue;
+
+      // O mesmo piso de ruído e teto de velocidade usados pelo GpsEngine no
+      // servidor. Assim o número ao vivo não cresce por drift do GPS parado e
+      // o valor enviado ao encerrar continua coerente com o valor exibido.
+      const accuracyFloor = Math.max(2.5, Math.min(8, ((Number(p1.accuracy) || 10) + (Number(p2.accuracy) || 10)) * 0.12));
+      const segmentMeters = segmentKm * 1000;
+      const speedKmH = (segmentMeters / timeSec) * 3.6;
+      if (segmentMeters < accuracyFloor || speedKmH > 250) continue;
+      distanceKm += segmentKm;
     }
     return distanceKm;
   },
@@ -542,6 +584,7 @@ export const activityService = {
         if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng) || existingTimestamps.has(point.timestamp)) continue;
         session.checkpoints.push({
           timestamp: point.timestamp,
+          segmentId: session.gpsSegmentId || 0,
           location: { lat: point.lat, lng: point.lng, accuracy: point.accuracy }
         });
         if (typeof point.speedKmH === 'number') {
@@ -558,8 +601,8 @@ export const activityService = {
       // pelo servico em segundo plano. Pedir outra localizacao aqui acrescentava
       // ate quatro segundos ao encerramento sem melhorar a rota. O navegador,
       // que nao possui coletor nativo, continua capturando o ponto final.
-      const needsLocationAtEnd = session.type === 'workout'
-        || (Boolean(session.requiresGpsDistance) && recoveredNativePointCount === 0);
+      const needsLocationAtEnd = !session.isPaused && (session.type === 'workout'
+        || (Boolean(session.requiresGpsDistance) && recoveredNativePointCount === 0));
       if (needsLocationAtEnd) {
         // A rota de cardio externo também precisa de precisão alta para que o
         // último trecho não seja descartado. Sessões internas são ignoradas
@@ -573,6 +616,7 @@ export const activityService = {
     if (endLocation) {
       session.checkpoints.push({
         timestamp: endTime.toISOString(),
+        segmentId: session.gpsSegmentId || 0,
         location: endLocation
       });
     }
@@ -590,11 +634,12 @@ export const activityService = {
     // pausar pra atravessar a rua ou amarrar o cadarco inflava a duracao
     // reportada sem esforco/deslocamento correspondente, prejudicando o
     // pace medio e os fatores de tempo/intensidade que alimentam o IGA.
-    const rawDurationMins = Math.floor((endTime.getTime() - startTime.getTime() - pausedMs) / 60000);
-    // Preserva a duração real no histórico e na análise antifraude. O teto de
-    // minutos que pontua é aplicado no servidor; truncar aqui escondia cardio
-    // legítimo acima de 90 minutos e distorcia distância, ritmo e calorias.
-    const durationMins = Math.max(0, rawDurationMins);
+    const rawDurationMins = (endTime.getTime() - startTime.getTime() - pausedMs) / 60000;
+    // Preserva os segundos reais no histórico e na análise antifraude. O teto
+    // de minutos que pontua é aplicado no servidor; truncar para minutos
+    // inteiros distorcia o pace (principalmente em sessões curtas) e fazia a
+    // tela pós-atividade perder a duração exata capturada pelo cronômetro.
+    const durationMins = Math.max(0, Math.round(rawDurationMins * 100) / 100);
 
     const distanceKm = this.calculateSessionDistance(session);
 
@@ -740,7 +785,7 @@ export const activityService = {
 
     let response: Response;
     try {
-      response = await fetch('/api/validate-activity', {
+      response = await fetch(`${API_CONFIG.baseUrl}/api/validate-activity`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -894,7 +939,7 @@ export const activityService = {
     }
 
     const idToken = await user.getIdToken();
-    const response = await fetch('/api/validate-activity', {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/validate-activity`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -34,6 +34,7 @@ import { workoutService } from '../services/workoutService';
 import { activityService } from '../services/activityService';
 import { invictusAudioEffects } from '../lib/invictusAudioEffects';
 import { auth } from '../firebase';
+import { API_CONFIG } from '../config';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 
 interface Message {
@@ -340,7 +341,7 @@ export function InvictusAIFloatingAssistant() {
     setLoadingMemories(true);
     try {
       const token = await firebaseUser.getIdToken();
-      const res = await fetch('/api/performance-ai?action=get-memories', {
+      const res = await fetch(`${API_CONFIG.baseUrl}/api/performance-ai?action=get-memories`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Não foi possível carregar as memórias.');
@@ -358,7 +359,7 @@ export function InvictusAIFloatingAssistant() {
     if (!firebaseUser || !memoryId) return;
     try {
       const token = await firebaseUser.getIdToken();
-      const res = await fetch('/api/performance-ai', {
+      const res = await fetch(`${API_CONFIG.baseUrl}/api/performance-ai`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
@@ -797,6 +798,7 @@ export function InvictusAIFloatingAssistant() {
     }
 
     setLoading(true);
+    let failureMessage = '';
 
     const activeWorkoutSession = getActiveWorkoutContext();
 
@@ -804,7 +806,7 @@ export function InvictusAIFloatingAssistant() {
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) throw new Error('Sessão não autenticada.');
       const token = await firebaseUser.getIdToken();
-      const res = await fetch('/api/performance-ai', {
+      const res = await fetch(`${API_CONFIG.baseUrl}/api/performance-ai`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
@@ -847,14 +849,17 @@ export function InvictusAIFloatingAssistant() {
           return;
         }
       }
+      const errorData = await res.json().catch(() => ({}));
+      failureMessage = typeof errorData.error === 'string' ? errorData.error : '';
     } catch (err) {
       console.warn('[Invictus AI] Erro ao consultar IA:', err);
+      failureMessage = err instanceof Error ? err.message : '';
     }
 
     setMessages(prev => [...prev, {
       id: `ai_${Date.now()}`,
       sender: 'ai',
-      text: 'Não foi possível consultar a IA no momento. Tente novamente em instantes.',
+      text: failureMessage || 'Não foi possível consultar a IA no momento. Tente novamente em instantes.',
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     }]);
     setLoading(false);

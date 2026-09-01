@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth } from '../firebase';
+import { API_CONFIG } from '../config';
 
 interface VerifiedPresenceModalProps {
   isOpen: boolean;
@@ -151,7 +152,7 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
       }
 
       const idToken = await user.getIdToken();
-      const response = await fetch('/api/validate-presence', {
+      const response = await fetch(`${API_CONFIG.baseUrl}/api/validate-presence`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

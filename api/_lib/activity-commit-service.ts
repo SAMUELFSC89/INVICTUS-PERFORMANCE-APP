@@ -31,7 +31,10 @@ export async function commitActivityAfterPresenceCheck(params: {
   const userRepository = new UserRepository();
   const { userId, rawActivity, presenceOutcome } = params;
 
-  const durationForMetrics = Number(rawActivity.duration ?? rawActivity.durationMins) || 30;
+  const rawDuration = rawActivity.duration ?? rawActivity.durationMins;
+  const durationForMetrics = rawDuration === undefined
+    ? 30
+    : Math.max(0, Number(rawDuration) || 0);
   const finalCalories = (rawActivity.healthTelemetry && typeof rawActivity.healthTelemetry.calories === 'number' && rawActivity.healthTelemetry.calories > 0)
     ? rawActivity.healthTelemetry.calories
     : estimateCalories({ type: rawActivity.type, durationMins: durationForMetrics });

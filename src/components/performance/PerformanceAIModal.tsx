@@ -4,6 +4,7 @@ import Markdown from 'react-markdown';
 import { Sparkles, X, Send, ShieldCheck, Cpu, RefreshCw } from 'lucide-react';
 import { UserPerformanceState } from '../../core/performance/performanceEngine';
 import { auth } from '../../firebase';
+import { API_CONFIG } from '../../config';
 
 interface PerformanceAIModalProps {
   isOpen: boolean;
@@ -66,12 +67,13 @@ Como posso ajudar na sua jornada hoje?`,
     setMessages(prev => [...prev, userMsg]);
     if (!queryText) setInputQuery('');
     setLoading(true);
+    let failureMessage = '';
 
     try {
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) throw new Error('Sessão não autenticada.');
       const token = await firebaseUser.getIdToken();
-      const res = await fetch('/api/performance-ai', {
+      const res = await fetch(`${API_CONFIG.baseUrl}/api/performance-ai`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
@@ -101,6 +103,7 @@ Como posso ajudar na sua jornada hoje?`,
       throw new Error(errorData.error || 'A IA não retornou uma resposta válida.');
     } catch (e) {
       console.warn('[Performance AI Client] Servidor indisponível:', e);
+      failureMessage = e instanceof Error ? e.message : '';
     }
 
     // Nunca substitua a IA autenticada por aconselhamento clínico/fitness
@@ -108,7 +111,7 @@ Como posso ajudar na sua jornada hoje?`,
     setMessages(prev => [...prev, {
       id: `ai_${Date.now()}`,
       sender: 'ai',
-      text: 'Não foi possível consultar a IA agora. Nenhuma métrica ou recomendação foi estimada localmente. Tente novamente quando a conexão estiver disponível.',
+      text: failureMessage || 'Não foi possível consultar a IA agora. Nenhuma métrica ou recomendação foi estimada localmente. Tente novamente quando a conexão estiver disponível.',
       confidence: 'INDISPONÍVEL',
       sources: ['Servidor Invictus IA indisponível'],
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })

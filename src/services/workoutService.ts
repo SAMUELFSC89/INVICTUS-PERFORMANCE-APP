@@ -2,6 +2,7 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import type { Workout } from '../types';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { API_CONFIG } from '../config';
 
 /**
  * Leitura de atividades já homologadas. A criação, validação, score e
@@ -14,7 +15,7 @@ export const workoutService = {
     if (!user) throw new Error('Usuário não autenticado.');
 
     const idToken = await user.getIdToken();
-    const response = await fetch('/api/validate-activity', {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/validate-activity`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

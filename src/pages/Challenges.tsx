@@ -15,7 +15,7 @@ import { auth, db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivitySession } from '../types';
 import { cn } from '../lib/utils';
-import { calculateDistance, calculatePace } from '../lib/runUtils';
+import { calculateDistance, formatPaceValue } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityHistorySection, ActivityHistoryItem } from '../components/ActivityHistorySection';
@@ -91,6 +91,10 @@ export function Challenges() {
   // Live GPS tracking state (distância/pace em tempo real durante cardio ao ar livre)
   const [liveDistanceKm, setLiveDistanceKm] = useState(0);
   const [liveSpeedKmH, setLiveSpeedKmH] = useState<number | null>(null);
+  // Instante do último fix que alimentou a velocidade. Sem este marcador, a
+  // tela continuava exibindo a última velocidade para sempre quando o GPS
+  // perdia sinal, fazendo um valor antigo parecer "tempo real".
+  const [liveSpeedUpdatedAt, setLiveSpeedUpdatedAt] = useState<number | null>(null);
   // #328: espelha liveDistanceKm p/ o tick de 1s da notificação Android poder
   // ler o valor mais recente sem precisar re-executar o efeito do GPS a cada
   // atualização de distância.
@@ -293,10 +297,13 @@ export function Challenges() {
     if (!activeSession || !activeSession.requiresGpsDistance || typeof navigator === 'undefined' || !navigator.geolocation) {
       setLiveDistanceKm(0);
       setLiveSpeedKmH(null);
+      setLiveSpeedUpdatedAt(null);
       return;
     }
 
     setLiveDistanceKm(activityService.calculateSessionDistance(activeSession));
+    setLiveSpeedKmH(null);
+    setLiveSpeedUpdatedAt(null);
     lastCheckpointTimeRef.current = 0;
     lastRawGpsRef.current = null;
     setGpsAccuracy(null);
@@ -314,7 +321,12 @@ export function Challenges() {
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
-        const { accuracy, speed } = position.coords;
+        const rawAccuracy = Number(position.coords.accuracy);
+        // A browser GPS fix without a finite accuracy cannot support either
+        // route distance or a trustworthy live speed. Treat it as a weak fix
+        // instead of letting NaN slip into the UI and audit payload.
+        const accuracy = Number.isFinite(rawAccuracy) && rawAccuracy >= 0 ? rawAccuracy : 999;
+        const { speed } = position.coords;
         setGpsAccuracy(accuracy);
         setGpsSignal(accuracy < 20 ? 'STRONG' : accuracy < 50 ? 'WEAK' : 'SEARCHING');
 
@@ -326,7 +338,7 @@ export function Challenges() {
         // espaçados de ~10s, que naturalmente suaviza picos curtos.
         // `speed` vem em m/s e pode ser null (nem todo dispositivo/navegador
         // reporta); so propaga quando e um numero valido.
-        let instantSpeedKmH = typeof speed === 'number' && Number.isFinite(speed) && speed >= 0
+        let instantSpeedKmH = accuracy <= 50 && typeof speed === 'number' && Number.isFinite(speed) && speed >= 0
           ? speed * 3.6
           : null;
         // Alguns aparelhos Android não expõem coords.speed. Nesse caso,
@@ -339,6 +351,15 @@ export function Challenges() {
           accuracy
         };
         const previousRaw = lastRawGpsRef.current;
+        const currentSession = activityService.getCurrentSession();
+        // Durante uma pausa o aparelho pode continuar entregando fixes, mas
+        // eles não representam esforço da atividade. Não atualizamos a
+        // velocidade nem a rota até o atleta retomar.
+        if (currentSession?.isPaused) {
+          setLiveSpeedKmH(null);
+          setLiveSpeedUpdatedAt(null);
+          return;
+        }
         // Alguns bridges Android informam `0` quando a velocidade Doppler não
         // está disponível (em vez de `null`). Nesse caso o código antigo
         // aceitava zero para sempre e nunca executava o fallback, reproduzindo
@@ -356,11 +377,17 @@ export function Challenges() {
           }
         }
         if (accuracy <= 30) lastRawGpsRef.current = currentRaw;
+        // O mesmo teto de sanidade aplicado no acumulador da sessão evita
+        // que um valor espúrio do bridge GPS apareça na tela ou seja salvo no
+        // checkpoint, mesmo que a distância oficial do servidor descarte
+        // esse pico depois.
+        if (instantSpeedKmH !== null && instantSpeedKmH > 300) instantSpeedKmH = null;
         if (instantSpeedKmH !== null) {
           activityService.recordGpsSpeedSample(instantSpeedKmH, accuracy);
           // Suavizacao curta apenas para leitura ao vivo. A auditoria recebe
           // todas as amostras/checkpoints e nao confia neste valor visual.
           setLiveSpeedKmH((previous) => previous === null ? instantSpeedKmH : previous * 0.65 + instantSpeedKmH * 0.35);
+          setLiveSpeedUpdatedAt(Date.now());
         }
 
         const now = Date.now();
@@ -378,6 +405,11 @@ export function Challenges() {
 
         const current = activityService.getCurrentSession();
         if (current) {
+          // addCheckpoint persiste no localStorage e devolve um novo snapshot;
+          // sem atualizar o estado React, a tela continuava recebendo o array
+          // antigo em `liveCheckpoints` e o Mapbox nunca desenhava a rota nem
+          // o marcador da posição atual.
+          setActiveSession(current);
           setLiveDistanceKm(activityService.calculateSessionDistance(current));
         }
       },
@@ -460,8 +492,8 @@ export function Challenges() {
         type,
         confirmedCheckIn?.location,
         type === 'cardio' ? selectedCardioOption.id : undefined,
-        confirmedCheckIn?.checkInId,
         undefined,
+        confirmedCheckIn?.checkInId,
         type === 'workout' ? selectedMuscleGroup : undefined
       );
       setActiveSession(session);
@@ -577,7 +609,7 @@ export function Challenges() {
         const trajectory = rawTrajectory.length >= 2 ? rawTrajectory : undefined;
         const timeSeconds = serverDuration !== undefined ? serverDuration * 60 : undefined;
         const pace = sessionType === 'cardio' && serverDistance !== undefined && timeSeconds !== undefined
-          ? calculatePace(serverDistance * 1000, timeSeconds)
+          ? formatPaceValue(serverDistance, timeSeconds)
           : undefined;
         const muscleGroup = (res.workout as any)?.muscleGroup || sessionBeforeEnd.muscleGroup || selectedMuscleGroup;
         const workoutTitle = muscleGroup ? `Treino de ${muscleGroup}` : 'Treino de Musculação';
@@ -688,6 +720,14 @@ export function Challenges() {
       : activityService.pauseSession();
     if (updated) {
       setActiveSession(updated);
+      // O primeiro fix depois de uma pausa não pode derivar velocidade nem
+      // conectar o trajeto com o ponto anterior ao intervalo parado.
+      lastRawGpsRef.current = null;
+      lastCheckpointTimeRef.current = updated.isPaused ? Date.now() : 0;
+      if (updated.isPaused) {
+        setLiveSpeedKmH(null);
+        setLiveSpeedUpdatedAt(null);
+      }
       // #328: mudança de estado (pausar/retomar) atualiza a notificação na
       // hora -- não espera o próximo tick de 5s do throttle normal.
       activityNotificationService.update(updated, elapsedTime, liveDistanceKmRef.current, true);
@@ -1017,6 +1057,7 @@ export function Challenges() {
           elapsed={elapsedTime}
           distance={liveDistanceKm}
           currentSpeedKmH={liveSpeedKmH}
+          currentSpeedUpdatedAt={liveSpeedUpdatedAt}
           trajectory={finishedActivityItem?.trajectory}
           liveCheckpoints={activeSession?.checkpoints}
           gpsAccuracy={gpsAccuracy}

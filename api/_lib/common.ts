@@ -199,6 +199,15 @@ export const db = new Proxy({} as Firestore, {
   }
 });
 
+/** Permite que handlers que têm modo degradado não toquem no Proxy quando o
+ * Firebase Admin não conseguiu inicializar (por exemplo, variável de serviço
+ * ausente no deploy). O Proxy continua preservando o contrato legado dos
+ * repositórios existentes.
+ */
+export function isDbAvailable(): boolean {
+  return dbInstance !== null;
+}
+
 // 9. Simple connection test with runtime fallback
 export async function testConnection() {
     if (!dbInstance || !app) {
@@ -272,6 +281,10 @@ export function auth() {
 }
 
 const DEFAULT_CORS_ORIGINS = [
+  // Domínio Vercel usado pela implantação pública atual. Sem esta origem, o
+  // navegador rejeita as chamadas autenticadas de IA, planos e check-in com
+  // 403 antes que elas cheguem ao handler correspondente.
+  'https://sem-desculpa.vercel.app',
   'https://invictusperformance.app.br',
   'https://www.invictusperformance.app.br',
   // WebViews oficiais: Capacitor no iOS e localhost/https no Android.

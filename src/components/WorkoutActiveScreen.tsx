@@ -3,6 +3,7 @@ import { AlertCircle, ArrowLeft, Check, ChevronRight, Flame, HeartPulse, MoreVer
 import type { ActivitySession } from '../types';
 import { OFFICIAL_EXERCISES_BATCH_01 } from '../data/exerciseCatalog';
 import { InvictusLogo } from './InvictusLogo';
+import { activityService } from '../services/activityService';
 
 const formatElapsed = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 
@@ -47,6 +48,13 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(progress));
   }, [progress, storageKey]);
+
+  useEffect(() => {
+    // A planned list is only an intention. The backend receives this signal
+    // after the athlete completes at least one exercise, which improves the
+    // musculação audit without inventing execution just because a plan exists.
+    activityService.setHasExercises(progress.completedIds.length > 0);
+  }, [progress.completedIds.length]);
 
   const currentExercise = exercises[progress.activeIndex];
   const nextExercise = exercises[progress.activeIndex + 1];

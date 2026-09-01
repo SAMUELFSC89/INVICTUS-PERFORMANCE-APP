@@ -3,7 +3,7 @@ import { cors, verifyAuth } from '../_lib/common.js';
 import { GoogleGenAI } from '@google/genai';
 import { MemoryRepository } from '../_repositories/memory-repository.js';
 import { MemoryService } from '../_services/ai/memory-service.js';
-import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
+import { classifyAiError, getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
 import { lerSerieTemporalMetrica, HealthMetricType } from '../_lib/health-data-layer.js';
 
 const memoryRepo = new MemoryRepository();
@@ -225,7 +225,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const apiKey = getAiApiKey();
     if (!apiKey) {
       return res.status(503).json({
-        error: 'Chave do Gemini API não configurada no servidor.',
+        error: 'A Invictus IA está sem uma chave da Gemini API configurada no servidor.',
+        code: 'AI_NOT_CONFIGURED',
+        isBillingError: false,
+        retryable: false,
         fallback: true
       });
     }
@@ -242,8 +245,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Load persistent user memories for context if userId exists
     let persistentMemoriesContext = '';
     if (userId) {
-      const memoryResult = await memoryService.getFormattedMemoriesForContext(userId, queryText.trim());
-      persistentMemoriesContext = memoryResult.formattedContext;
+      try {
+        const memoryResult = await memoryService.getFormattedMemoriesForContext(userId, queryText.trim());
+        persistentMemoriesContext = memoryResult.formattedContext;
+      } catch (memoryError) {
+        // Memória é enriquecimento, não pré-requisito para responder. Se o
+        // Firestore estiver indisponível (por exemplo, cobrança pendente), a
+        // Gemini ainda consegue atender usando o contexto enviado pelo cliente.
+        console.warn('[PerformanceAI] Memórias indisponíveis; seguindo sem contexto persistente:', memoryError);
+      }
     }
 
     // Extract user biometrics from userProfile & perfState
@@ -465,9 +475,13 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     });
   } catch (err: any) {
-    console.error('[API Performance AI Error]:', err);
-    return res.status(500).json({
-      error: 'Erro ao conectar à Invictus Performance AI.'
+    const failure = classifyAiError(err);
+    console.error('[API Performance AI Error]:', failure.code, err);
+    return res.status(failure.status).json({
+      error: failure.message,
+      code: failure.code,
+      isBillingError: failure.isBillingError,
+      retryable: failure.retryable
     });
   }
 }
