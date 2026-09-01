@@ -3,6 +3,7 @@ import { cors, verifyAuth } from '../_lib/common.js';
 import { GoogleGenAI } from '@google/genai';
 import { MemoryRepository } from '../_repositories/memory-repository.js';
 import { MemoryService } from '../_services/ai/memory-service.js';
+import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
 
 const memoryRepo = new MemoryRepository();
 const memoryService = new MemoryService(memoryRepo);
@@ -168,7 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getAiApiKey();
     if (!apiKey) {
       return res.status(503).json({
         error: 'Chave do Gemini API não configurada no servidor.',
@@ -319,7 +320,7 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
     );
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: getAiTextModel(),
       contents: fullPrompt,
       config: {
         systemInstruction: dynamicSystemPrompt,
@@ -344,7 +345,7 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
       .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
       .trim();
 
-    const MAX_TTS_ATTEMPTS = 3;
+    const MAX_TTS_ATTEMPTS = payload.includeAudio === true ? 3 : 0;
     for (let ttsAttempt = 1; ttsAttempt <= MAX_TTS_ATTEMPTS; ttsAttempt++) {
       try {
         const ttsResponse = await ai.models.generateContent({

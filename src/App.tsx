@@ -40,6 +40,7 @@ const CommunityChampionship = lazyNamed(() => import('./pages/championships/Comm
 const ChampionshipPreview = lazyNamed(() => import('./pages/championships/ChampionshipPreview'), 'ChampionshipPreview');
 const Musculation = lazyNamed(() => import('./pages/Musculation'), 'Musculation');
 const InvictusStore = lazyNamed(() => import('./pages/InvictusStore'), 'InvictusStore');
+const InvictusAI = lazyNamed(() => import('./pages/InvictusAI'), 'InvictusAI');
 const StoreProductDetail = lazyNamed(() => import('./pages/StoreProductDetail'), 'StoreProductDetail');
 const StoreCheckout = lazyNamed(() => import('./pages/StoreCheckout'), 'StoreCheckout');
 const StoreOrders = lazyNamed(() => import('./pages/StoreOrders'), 'StoreOrders');
@@ -86,6 +87,7 @@ export default function App() {
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/musculacao" element={<Musculation />} />
                 <Route path="/store" element={<InvictusStore />} />
+                <Route path="/ai" element={<InvictusAI />} />
                 <Route path="/store/product/:productId" element={<StoreProductDetail />} />
                 <Route path="/store/product/:productId/checkout" element={<StoreCheckout />} />
                 <Route path="/store/orders" element={<StoreOrders />} />

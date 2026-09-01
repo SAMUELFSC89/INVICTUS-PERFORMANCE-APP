@@ -11,6 +11,7 @@ import { ValidateActivityService } from '../_services/activities/validate-activi
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from '../_lib/common.js';
 import { resolveClientSampledFramesStatus } from '../_lib/powerlift-audit.js';
+import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
 
 // Instanciar repositórios e serviços (Injeção de Dependência)
 const activityRepository = new ActivityRepository();
@@ -25,7 +26,7 @@ const validateActivityService = new ValidateActivityService(
   notificationService
 );
 
-const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+const apiKey = getAiApiKey();
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const POWER_EXERCISES = new Set(['supino', 'agachamento', 'terra']);
 const MAX_POWER_FRAMES = 8;
@@ -182,7 +183,7 @@ REGRAS:
 Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isValid, confidence (0-100), estimatedWeight, motivos e analysis.`;
 
         const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model: getAiTextModel(),
           contents: [promptText, ...imageParts],
           config: {
             responseMimeType: 'application/json',

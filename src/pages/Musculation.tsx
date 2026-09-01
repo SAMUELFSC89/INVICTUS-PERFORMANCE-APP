@@ -13,6 +13,7 @@ import { workoutPlanService } from '../services/workoutPlanService';
 import { activityService } from '../services/activityService';
 import type { PlannedExercise, PlannedWorkout, WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
 import './Musculation.css';
+import './MusculationAi.css';
 
 type View = 'hub' | 'manual' | 'ai' | 'ai-processing' | 'ai-success' | 'plan' | 'workout';
 type ManualDraft = WorkoutPlanDraft & { step: number; selectedWorkout: number };
@@ -24,6 +25,17 @@ const equipmentOptions = [
   ['kettlebell', 'KETTLEBELL'], ['barra_fixa', 'BARRA FIXA'], ['elasticos', 'ELÁSTICOS'],
   ['banco', 'BANCO DE MUSCULAÇÃO'], ['crossover', 'CROSSOVER']
 ] as const;
+
+const availableAiExerciseCount = (equipment: string[]) => {
+  const has = (item: string) => equipment.includes(item);
+  return 1
+    + (has('banco') ? 2 : 0)
+    + (has('barra_anilhas') ? 1 : 0)
+    + (has('barra_anilhas') && has('banco') ? 1 : 0)
+    + (has('halteres') && has('banco') ? 2 : 0)
+    + (has('crossover') ? 1 : 0)
+    + (has('maquinas') ? 2 : 0);
+};
 
 const emptyWorkout = (index: number): PlannedWorkout => ({
   id: `workout_${index + 1}`,
@@ -208,6 +220,19 @@ function ManualFlow({ draft, setDraft, query, setQuery, filter, setFilter, filte
 
 function AiFlow({ draft, setDraft, onBack, onGenerate }: any) {
   const selectArray = (key: keyof AiDraft, value: string, max = 99) => setDraft((current: AiDraft) => { const list = (current[key] as string[]) || []; return { ...current, [key]: list.includes(value) ? list.filter(item => item !== value) : list.length < max ? [...list, value] : list }; });
+  const equipmentExerciseCount = availableAiExerciseCount(draft.equipment);
+  const canContinue = draft.step === 1
+    ? Boolean(draft.primaryGoal)
+    : draft.step === 2
+      ? Boolean(draft.experienceLevel && draft.experienceTime)
+      : draft.step === 3
+        ? Boolean(draft.daysPerWeek && draft.durationMinutes && draft.preferredPeriod)
+        : draft.step === 4
+          ? equipmentExerciseCount >= 3
+          : Boolean(draft.preferredTraining && draft.preferredSplit);
+  const requirement = draft.step === 4 && draft.equipment.length > 0 && equipmentExerciseCount < 3
+    ? 'Selecione uma combinação que ofereça pelo menos 3 exercícios oficiais, como banco + halteres, aparelhos ou barra + banco.'
+    : 'Preencha as opções obrigatórias desta etapa para continuar.';
   const next = () => draft.step === 5 ? onGenerate() : setDraft((current: AiDraft) => ({ ...current, step: current.step + 1 }));
   return <><Header onBack={onBack} /><Steps current={draft.step} mode="ai" /><section className="mus-flow mus-ai-flow">
     {draft.step === 1 ? <><h1>CRIAR COM INVICTUS IA</h1><p>Responda algumas perguntas para que a IA monte o treino ideal para você.</p><h2>1. QUAL É O SEU PRINCIPAL OBJETIVO?</h2><div className="mus-choice-grid">{[['massa','GANHAR MASSA MUSCULAR'],['forca','GANHAR FORÇA'],['gordura','REDUZIR GORDURA CORPORAL'],['condicionamento','MELHORAR CONDICIONAMENTO'],['definicao','MELHORAR DEFINIÇÃO MUSCULAR'],['retorno','RETOMAR OS TREINOS'],['saude','SAÚDE E QUALIDADE DE VIDA']].map(([value,label]) => <Choice key={value} selected={draft.primaryGoal === value} onClick={() => setDraft({...draft,primaryGoal:value})} icon={<Target />} title={label} />)}</div><h2>OBJETIVOS SECUNDÁRIOS (OPCIONAL)</h2><div className="mus-check-grid">{['Aumentar força','Melhorar resistência','Ganhar mobilidade','Melhorar postura'].map(item => <Choice key={item} selected={draft.secondaryGoals.includes(item)} onClick={() => selectArray('secondaryGoals',item,3)} title={item} />)}</div></> : null}
@@ -215,7 +240,7 @@ function AiFlow({ draft, setDraft, onBack, onGenerate }: any) {
     {draft.step === 3 ? <><h1>3. QUAL É A SUA ROTINA ATUAL?</h1><p>Isso ajuda a IA a montar um plano realista para o seu dia a dia.</p><h2>QUANTOS DIAS POR SEMANA VOCÊ TREINA?</h2><div className="mus-choice-grid is-seven">{[1,2,3,4,5,6,7].map(n => <Choice key={n} selected={draft.daysPerWeek === n} onClick={() => setDraft({...draft,daysPerWeek:n})} title={`${n} ${n === 1 ? 'dia' : 'dias'}`} />)}</div><h2>QUANTO TEMPO POR TREINO?</h2><div className="mus-choice-grid is-four">{[[45,'Até 45 minutos'],[60,'45 a 60 minutos'],[90,'60 a 90 minutos'],[120,'Mais de 90 minutos']].map(([n,label]) => <Choice key={String(n)} selected={draft.durationMinutes === n} onClick={() => setDraft({...draft,durationMinutes:n})} title={String(label)} />)}</div><h2>HORÁRIO PREFERIDO</h2><div className="mus-choice-grid is-three">{['Manhã','Tarde','Noite'].map(item => <Choice key={item} selected={draft.preferredPeriod === item} onClick={() => setDraft({...draft,preferredPeriod:item})} icon={<Clock3 />} title={item} />)}</div></> : null}
     {draft.step === 4 ? <><h1>4. QUAIS EQUIPAMENTOS VOCÊ TEM ACESSO?</h1><p>A IA limitará o plano aos equipamentos que você selecionar.</p><div className="mus-choice-grid is-four">{equipmentOptions.map(([value,label]) => <Choice key={value} selected={draft.equipment.includes(value)} onClick={() => selectArray('equipment',value)} icon={<Dumbbell />} title={label} />)}</div><h2>ACESSÓRIOS (OPCIONAL)</h2><div className="mus-check-grid">{['Cinto','Munhequeira','Joelheira','Straps'].map(item => <Choice key={item} selected={draft.accessories.includes(item)} onClick={() => selectArray('accessories',item)} title={item} />)}</div></> : null}
     {draft.step === 5 ? <><h1>5. QUAIS SÃO AS SUAS PREFERÊNCIAS?</h1><p>Esses detalhes ajudam a IA a personalizar ainda mais seu plano.</p><h2>TIPO DE TREINO PREFERIDO</h2><div className="mus-choice-grid is-three">{[['forca','TREINO DE FORÇA'],['funcional','TREINO FUNCIONAL'],['cardio','CONDICIONAMENTO E CARDIO']].map(([value,label]) => <Choice key={value} selected={draft.preferredTraining === value} onClick={() => setDraft({...draft,preferredTraining:value})} icon={<Dumbbell />} title={label} />)}</div><h2>DIVISÃO PREFERIDA</h2><div className="mus-choice-grid is-three">{['Full body','Upper / Lower','ABC (3x por semana)','Bro split','PPL','Outro'].map(item => <Choice key={item} selected={draft.preferredSplit === item} onClick={() => setDraft({...draft,preferredSplit:item})} title={item} />)}</div><h2>PREFERÊNCIAS ADICIONAIS</h2><div className="mus-check-grid">{['Prefiro treinos sem impacto','Quero queimar mais gordura','Tenho pouco tempo disponível','Quero treinos desafiadores'].map(item => <Choice key={item} selected={draft.preferences.includes(item)} onClick={() => selectArray('preferences',item)} title={item} />)}</div></> : null}
-    <div className="mus-ai-note"><Brain /><span><b>A IA USA ESSES DADOS PARA:</b>Selecionar exercícios oficiais adequados à sua rotina e aos equipamentos disponíveis.</span></div><div className="mus-flow-actions"><button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button><button className="is-primary" onClick={next}>{draft.step === 5 ? 'GERAR MEU PLANO COM IA' : 'CONTINUAR'} <ArrowRight /></button></div>
+    <div className="mus-ai-note"><Brain /><span><b>A IA USA ESSES DADOS PARA:</b>Selecionar exercícios oficiais adequados à sua rotina e aos equipamentos disponíveis.</span></div>{!canContinue ? <p className="mus-ai-requirement" role="status">{requirement}</p> : null}<div className="mus-flow-actions"><button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button><button className="is-primary" onClick={next} disabled={!canContinue}>{draft.step === 5 ? 'GERAR MEU PLANO COM IA' : 'CONTINUAR'} <ArrowRight /></button></div>
   </section></>;
 }
 

@@ -6,13 +6,14 @@ import { errorHandler, AppError } from '../_middleware/error.js';
 import { db } from '../_lib/common.js';
 import { generateMilestonePlan, HabitGoalInput, HabitProfile, HabitGoalType } from '../_lib/habit-engine.js';
 import { applyHabitProgressInTransaction } from '../_lib/habit-integration.js';
+import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
 import { GoogleGenAI } from '@google/genai';
 
 // Optional AI text layer (decorative only, never used for numbers/decisions):
 // generates the short congratulatory + next-challenge line shown after a reveal.
 // The deterministic fallback in habit-engine.ts (fallbackMessage) is always used
 // if the AI call is unavailable or fails, so this can never block the flow.
-const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+const geminiApiKey = getAiApiKey();
 const habitAi = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
 
 async function generateRevealMessage(params: { milestoneTitle: string; order: number; totalMilestones: number; goalCompleted: boolean }): Promise<string> {
@@ -23,7 +24,7 @@ async function generateRevealMessage(params: { milestoneTitle: string; order: nu
   try {
     const prompt = `Voce e o treinador Invictus. Em portugues, escreva 1 frase curta (max 25 palavras), tom motivacional direto, no maximo 1 emoji, anunciando o desafio "${params.milestoneTitle}" (etapa ${params.order} de ${params.totalMilestones}) que o atleta acabou de desbloquear. Responda apenas a frase, sem aspas.`;
     const response = await habitAi.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: getAiTextModel(),
       contents: prompt,
       config: { temperature: 0.8, maxOutputTokens: 80 },
     });

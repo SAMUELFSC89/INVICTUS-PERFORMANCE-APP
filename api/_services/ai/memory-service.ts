@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { MemoryRepository } from '../../_repositories/memory-repository.js';
 import { UserMemory, CreateMemoryDTO, MemoryCategory } from '../../_dto/memory-dto.js';
+import { getAiApiKey, getAiTextModel } from '../../_lib/ai-config.js';
 
 export class MemoryService {
   constructor(private memoryRepo: MemoryRepository) {}
@@ -119,7 +120,7 @@ ${lines.join('\n')}
     if (!userId || !userMessage || userMessage.trim().length < 5) return;
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = getAiApiKey();
       if (!apiKey) return;
 
       const ai = new GoogleGenAI({
@@ -169,7 +170,7 @@ Resposta da IA: "${aiResponse}"
       };
 
       const result = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: getAiTextModel(),
         contents: extractionPrompt,
         config: {
           responseMimeType: 'application/json',

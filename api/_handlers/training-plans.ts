@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import { FieldValue, cors, db, verifyAuth } from '../_lib/common.js';
+import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
 
 const EXERCISES = [
   { id: 'barbell_bench_press', group: 'peito', equipment: ['barra_anilhas', 'banco'] },
@@ -62,16 +63,21 @@ async function generatePlan(answers: any, userId: string) {
   const equipment = Array.isArray(answers?.equipment) ? answers.equipment.filter((item: unknown) => typeof item === 'string') : [];
   const available = EXERCISES.filter(exercise => exercise.equipment.every(item => equipment.includes(item)) || exercise.equipment.length === 0);
   if (available.length < 3) throw new Error('Selecione equipamentos suficientes para montar um plano seguro com a biblioteca disponível.');
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getAiApiKey();
   if (!apiKey) throw new Error('A geração com Invictus IA está temporariamente indisponível.');
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: getAiTextModel(),
     contents: `Monte um plano de musculação em JSON usando SOMENTE os exerciseIds permitidos. Respostas do atleta: ${JSON.stringify(answers)}. IDs permitidos: ${JSON.stringify(available)}. Formato: {name,description,objective,experienceLevel,durationMinutes,daysPerWeek,workouts:[{id,name,focus,weekdays:number[],exercises:[{exerciseId,sets,repsMin,repsMax,restSeconds}]}]}. Não diagnostique lesões.`,
     config: { responseMimeType: 'application/json', temperature: 0.2 }
   });
   let parsed: any;
-  try { parsed = JSON.parse(response.text || '{}'); } catch { throw new Error('A IA não retornou um plano válido. Tente novamente.'); }
+  try {
+    const text = (response.text || '{}').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('A IA não retornou um plano válido. Tente novamente.');
+  }
   parsed.answers = answers;
   return normalizePlan(parsed, userId, 'ai');
 }

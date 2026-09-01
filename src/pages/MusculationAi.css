@@ -1,0 +1,12 @@
+.mus-flow-actions button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(.45);
+  opacity: .42;
+}
+
+.mus-ai-requirement {
+  margin: 10px 2px 0;
+  color: #e0aa31;
+  font-size: 12px;
+  line-height: 1.4;
+}
