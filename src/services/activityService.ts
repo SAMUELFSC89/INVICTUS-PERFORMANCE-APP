@@ -1,6 +1,6 @@
-import { ActivitySession, Workout, UserProfile, MealPlanEntry } from "../types";
-import { auth, db, handleFirestoreError, OperationType } from "../firebase";
-import { collection, addDoc, doc, updateDoc, getDoc, increment, query, where, getDocs, limit, runTransaction, setDoc } from "firebase/firestore";
+import { ActivitySession, Workout } from "../types";
+import { auth, db } from "../firebase";
+import { collection, doc, updateDoc, getDoc, query, where, getDocs, setDoc } from "firebase/firestore";
 import { validationService } from "./validationService";
 import { getCurrentLocation } from "../lib/locationUtils";
 import { compressBase64Image } from "../lib/imageCompression";
@@ -47,13 +47,6 @@ function computeVariance(samples: number[]): number | undefined {
   return samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length;
 }
 
-function createStructuredError(title: string, message: string): Error {
-  const fullMsg = `${title}\n\n${message}`;
-  const err = new Error(fullMsg);
-  (err as any).title = title;
-  (err as any).userFacingMessage = message;
-  return err;
-}
 
 /**
  * #118: o SDK web do Firestore (getDoc/getDocs) nao tem timeout embutido --
@@ -212,7 +205,6 @@ export const activityService = {
 
     const userSnap = await userSnapPromise;
     if (!userSnap.exists()) throw new Error('Perfil de usuário não encontrado');
-    const userData = userSnap.data() as UserProfile;
 
     const cardioMapEntry = getModalityConfig(cardioType);
     if (type === 'cardio' && !cardioMapEntry) {

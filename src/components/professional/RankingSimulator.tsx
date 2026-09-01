@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
-  Sliders, Award, Users, ShieldAlert, CheckCircle, Flame, 
-  HelpCircle, Sparkles, RefreshCw, Layers, MapPin, Play, 
+  Sliders, Award, ShieldAlert, CheckCircle,
+  Sparkles, RefreshCw, Layers, MapPin, Play,
   Info, BarChart2, TrendingUp, Search, Database, FileText, Check, Settings
 } from 'lucide-react';
 
@@ -127,7 +127,6 @@ export function RankingSimulator() {
   const [periodDays, setPeriodDays] = useState<number>(7);
   const [rankingType, setRankingType] = useState<string>('Geral');
   const [region, setRegion] = useState<string>('São Paulo');
-  const [communityLevel, setCommunityLevel] = useState<string>('Equilibrado');
 
   // Distribution States (percentages of levels)
   const [distIniciante, setDistIniciante] = useState<number>(40);
@@ -171,7 +170,6 @@ export function RankingSimulator() {
       setPeriodDays(preset.periodDays);
       setRankingType(preset.rankingType);
       setRegion(preset.region);
-      setCommunityLevel(preset.levelType);
       setDistIniciante(preset.distribution.iniciante);
       setDistIntermediario(preset.distribution.intermediario);
       setDistAvancado(preset.distribution.avancado);
@@ -181,7 +179,6 @@ export function RankingSimulator() {
 
   // Helper to normalize the distribution to strictly 100%
   const adjustDistribution = (levelChanged: 'ini' | 'int' | 'ava' | 'eli', val: number) => {
-    let currentTotal = 0;
     if (levelChanged === 'ini') {
       const rest = 100 - val;
       const sumOthers = distIntermediario + distAvancado + distElite;
@@ -1124,7 +1121,6 @@ export function RankingSimulator() {
                   <div className="h-40 relative flex items-end justify-between gap-1 pt-4 border-b border-white/10 px-2">
                     {/* Simulated bars resembling a bell curve centered around averageScore */}
                     {(() => {
-                      const barsCount = 15;
                       const heights = [10, 22, 38, 55, 75, 88, 95, 82, 68, 52, 35, 20, 12, 6, 2];
                       
                       return heights.map((h, idx) => (

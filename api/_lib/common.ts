@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import { VercelRequest } from '@vercel/node';
 import { initializeApp, cert, getApps, getApp, App, applicationDefault, ServiceAccount } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
@@ -59,7 +59,6 @@ const serviceAccount = loadServiceAccountFromEnvironment();
 // 2. Initialize App
 let app: App;
 let dbInstance: Firestore | null = null;
-let initError: Error | null = null;
 
 // Determine best Project ID
 const configPid = fixProjectId(config.projectId);
@@ -90,7 +89,7 @@ try {
       return docObj;
     };
 
-    const createMockCollection = (name: string): any => {
+    const createMockCollection = (_name: string): any => {
       const collObj: any = {
         doc: (id?: string) => createMockDoc(id || `doc_${Math.random().toString(36).substring(2, 9)}`),
         add: async () => createMockDoc(),
@@ -107,9 +106,9 @@ try {
       doc: (path: string) => createMockDoc(path),
       runTransaction: async (cb: any) => cb({
         get: async (ref: any) => ref.get(),
-        set: (ref: any, data: any) => {},
-        update: (ref: any, data: any) => {},
-        delete: (ref: any) => {}
+        set: (_ref: any, _data: any) => {},
+        update: (_ref: any, _data: any) => {},
+        delete: (_ref: any) => {}
       }),
       batch: () => ({
         set: () => {},
@@ -156,7 +155,6 @@ try {
   }
 } catch (e: any) {
   console.error(`[Firebase Admin Init Error] Failed to initialize App or Firestore safely: ${e.message}`);
-  initError = e;
 }
 
 /**
@@ -189,7 +187,7 @@ export function sanitizeForFirestore<T>(data: T): T {
 
 // 4. Initialize Firestore as a safe Proxy to prevent load-time process crashes
 export const db = new Proxy({} as Firestore, {
-  get(target, prop, receiver) {
+  get(_target, prop, receiver) {
     if (!dbInstance) {
       throw new Error('[Firebase Connection Error] O Firestore não foi inicializado. Configure FIREBASE_SERVICE_ACCOUNT ou uma Application Default Credential no ambiente seguro.');
     }

@@ -1,4 +1,3 @@
-import { SCORE_CONFIG } from '../../score-config.js';
 
 export interface ConsistencyEvaluation {
   score: number; // 0-100

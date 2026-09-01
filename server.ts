@@ -13,24 +13,24 @@ async function startServer() {
   const PORT = 3000;
 
   // Immediate health check endpoints for Cloud Run & load balancers
-  app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
-  app.get('/ping', (req, res) => res.status(200).send('pong'));
-  app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
+  app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }));
+  app.get('/ping', (_req, res) => res.status(200).send('pong'));
+  app.get('/api/health', (_req, res) => res.status(200).json({ status: 'ok' }));
 
   // Log e Proxy para autenticação Firebase usando domínio customizado
-  app.use('/__/auth', (req, res, next) => {
+  app.use('/__/auth', (req, _res, next) => {
     console.log(`[Firebase Auth Proxy Request] ${req.method} ${req.originalUrl}`);
     next();
   });
 
   app.use(createProxyMiddleware({
-    pathFilter: (path, req) => path.startsWith('/__/auth'),
+    pathFilter: (path, _req) => path.startsWith('/__/auth'),
     target: 'https://gen-lang-client-0890994677.firebaseapp.com',
     changeOrigin: true,
   }));
 
   // Request logger - filter out static assets and noise
-  app.use((req, res, next) => {
+  app.use((req, _res, next) => {
     if (req.url.startsWith('/api')) {
       console.log(`[API] ${req.method} ${req.url}`);
     } else if (!req.url.includes('.') && req.method !== 'GET') {
@@ -90,7 +90,7 @@ async function startServer() {
     const distPath = path.resolve(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
-      app.get('*', (req, res) => {
+      app.get('*', (_req, res) => {
         res.sendFile(path.resolve(distPath, 'index.html'));
       });
     } else {

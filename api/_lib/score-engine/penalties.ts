@@ -1,5 +1,5 @@
 export class PenaltyCalculator {
-  static calculate(activityData: any, userData: any): { penalties: number; breakdown: any } {
+  static calculate(_activityData: any, userData: any): { penalties: number; breakdown: any } {
     let penalties = 0;
     const details: string[] = [];
 

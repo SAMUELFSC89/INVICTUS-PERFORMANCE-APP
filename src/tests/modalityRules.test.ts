@@ -1,5 +1,5 @@
 import { CARDIO_MODALITY_CONFIG, getModalityConfig } from '../config/cardioConfig';
-import { MODALITY_BACKEND_CONFIG, resolveModality } from '../../api/_lib/modality-config';
+import { MODALITY_BACKEND_CONFIG } from '../../api/_lib/modality-config';
 import { GpsEngine } from '../../api/_lib/gps-engine';
 import { SensorEngine } from '../../api/_lib/sensor-engine';
 import { ValidationEngine } from '../../api/_lib/validation-engine';

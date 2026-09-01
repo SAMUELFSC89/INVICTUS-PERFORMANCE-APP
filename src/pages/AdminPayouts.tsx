@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { DollarSign, ShieldAlert, ArrowRight, Copy, CheckCircle, XCircle, Clock, AlertTriangle, RefreshCw, Filter } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { DollarSign, ArrowRight, Copy, CheckCircle, XCircle, AlertTriangle, RefreshCw, Filter } from 'lucide-react';
 import { auth } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';

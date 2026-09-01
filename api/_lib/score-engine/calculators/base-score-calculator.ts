@@ -1,11 +1,5 @@
 import { scoreLogger } from '../../logger.js';
 import { QualityEngine } from '../quality-engine.js';
-import { evaluateConsistency } from './consistency-calculator.js';
-import { evaluateIntensity } from './intensity-calculator.js';
-import { evaluateEfficiency } from './efficiency-calculator.js';
-import { evaluateTechnicalQuality } from './technical-quality-calculator.js';
-import { evaluateDataIntegrity } from './data-integrity-calculator.js';
-import { TrainingGoal, GOAL_WEIGHTS } from '../../score-config.js';
 
 export class BaseScoreCalculator {
   /**

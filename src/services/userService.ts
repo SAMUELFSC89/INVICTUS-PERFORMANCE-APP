@@ -1,5 +1,5 @@
 import { auth, db, storage, handleFirestoreError, OperationType } from '../firebase';
-import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { UserProfile } from '../types';
 import { API_CONFIG } from '../config';

@@ -37,8 +37,6 @@ export class DeviceFingerprintEngine {
     const osVersion = (deviceInfo.osVersion || deviceInfo.systemVersion || payload.osVersion || '1.0').toString().trim();
     const architecture = (deviceInfo.architecture || deviceInfo.cpuAbi || payload.arch || 'arm64-v8a').toString().toLowerCase().trim();
     const screenRes = (deviceInfo.screenResolution || deviceInfo.resolution || '1080x2400').toString().trim();
-    const timeZone = (deviceInfo.timeZone || payload.timeZone || 'America/Sao_Paulo').toString().trim();
-    const locale = (deviceInfo.locale || payload.locale || 'pt-BR').toString().trim();
     const appSignature = (deviceInfo.appSignatureHash || payload.appSignatureHash || 'DEFAULT_SIG').toString().trim();
 
     // Raw components for SHA-256 fingerprint

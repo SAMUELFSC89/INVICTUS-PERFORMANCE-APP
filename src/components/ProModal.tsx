@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Crown, Zap, Shield, Rocket, X, Users, Copy, Check, Share2 } from 'lucide-react';
+import { Crown, Zap, Shield, Rocket, X, Users, Copy, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useUser } from '../UserContext';
 

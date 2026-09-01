@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Check, X, AlertTriangle, UserMinus, ShieldAlert, Eye, Search, Filter, Clock, DollarSign, ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Check, X, AlertTriangle, UserMinus, ShieldAlert, Eye, Search, Clock, DollarSign, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, where, onSnapshot, doc, getDoc, updateDoc, orderBy } from 'firebase/firestore';
 import { Workout, UserProfile } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { userService } from '../services/userService';
 import { cn } from '../lib/utils';
 
 export function AdminWorkouts() {

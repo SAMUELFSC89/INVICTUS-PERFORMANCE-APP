@@ -1,5 +1,5 @@
 export function calculatePerformanceScorePure(
-  type: string,
+  _type: string,
   rawDuration: number,
   userData: any,
   activityData: any

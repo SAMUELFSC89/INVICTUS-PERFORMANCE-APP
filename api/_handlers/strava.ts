@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
-import { db, cors, verifyAuth, FieldValue } from '../_lib/common.js';
+import { db, cors, verifyAuth } from '../_lib/common.js';
 import { StravaApi } from '../_lib/strava-api.js';
 import { SyncService } from '../_lib/sync-service.js';
 

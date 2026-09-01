@@ -1,5 +1,5 @@
 import { WalletEngine } from './wallet-engine.js';
-import { IVCoinCategory, IVCoinTransactionOrigin } from '../../src/types.js';
+import { IVCoinCategory } from '../../src/types.js';
 
 export class RewardsEngine {
   /**

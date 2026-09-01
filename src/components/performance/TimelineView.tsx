@@ -1,6 +1,5 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { Crown, Trophy, Flame, Sparkles, Activity, CheckCircle, Calendar, Milestone, ShieldCheck } from 'lucide-react';
+import { Crown, Trophy, Flame, Sparkles, CheckCircle, Calendar, Milestone, ShieldCheck } from 'lucide-react';
 import { TimelineEvent } from '../../core/performance/performanceEngine';
 
 interface TimelineViewProps {

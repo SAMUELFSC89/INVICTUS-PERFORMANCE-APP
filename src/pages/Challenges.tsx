@@ -1,20 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Dumbbell, TrendingUp, MapPin, CheckCircle, XCircle,
-  Clock, Lock, Play, ShieldCheck, Flame, Trophy, Users, Camera, X,
-  Zap, AlertCircle, ArrowRight, Sparkles, Watch, Calendar,
-  Medal, Star, Building2, ChevronRight, Gift, Info, Target, Footprints
+  Dumbbell,
+  Clock, Flame, Trophy, X,
+  Zap, AlertCircle, ArrowRight,
+  Info, Footprints
 } from 'lucide-react';
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
 import { activityLiveActivityService } from '../services/activityLiveActivityService';
-import { userService } from '../services/userService';
-import { stravaService } from '../services/stravaService';
 import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
 import { auth, db } from '../firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivitySession } from '../types';
 import { cn } from '../lib/utils';
 import { calculateDistance, calculatePace } from '../lib/runUtils';
@@ -156,7 +154,6 @@ export function Challenges() {
   // consumido uma vez, mas SEMPRE abre a tela quando chega pela primeira vez,
   // independente do que `flowScreen` estava valendo naquele instante.
   const consumedDeepLinkRef = useRef<string | null>(deepLinkChallenge ? deepLinkType : null);
-  const [pendingChallenge, setPendingChallenge] = useState<CoreChallenge | null>(deepLinkChallenge);
   const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(
     initialActive
       ? 'active'
@@ -198,7 +195,6 @@ export function Challenges() {
 
   // Cardio States
   const [selectedCardioType, setSelectedCardioType] = useState<string>(initialActive?.cardioType || 'running');
-  const [stravaConnecting, setStravaConnecting] = useState(false);
   const levelProgress = getXPProgress(profile?.xp || 0);
   const unlockedBadges = ACHIEVEMENTS.filter((achievement) => profile?.achievements?.includes(achievement.id));
 
@@ -411,7 +407,6 @@ export function Challenges() {
       navigate('/musculacao');
       return;
     }
-    setPendingChallenge(challenge);
     setStartActivityError(null);
     setError(null);
     setNotice(null);
@@ -447,7 +442,7 @@ export function Challenges() {
   // Home volta para a Home; quem abriu pela propria tela de Desafios continua
   // nela. Antes, todo mundo caia na lista de Desafios.
   const closeFlow = () => {
-    setFlowScreen(null); setFinishedActivityItem(null); setPendingChallenge(null); setCompletion(null);
+    setFlowScreen(null); setFinishedActivityItem(null); setCompletion(null);
     if (openedFromHomeRef.current) { openedFromHomeRef.current = false; navigate('/'); }
   };
 
@@ -470,7 +465,6 @@ export function Challenges() {
         type === 'workout' ? selectedMuscleGroup : undefined
       );
       setActiveSession(session);
-      setPendingChallenge(null);
       setCompletion(null);
       setFlowScreen('active');
       // #328: sobe a notificação persistente Android assim que a sessão
@@ -496,19 +490,6 @@ export function Challenges() {
   };
 
   // Strava Authorization
-  const handleConnectStrava = async () => {
-    setStravaConnecting(true);
-    try {
-      const url = await stravaService.authorize('/challenges');
-      if (url) {
-        window.location.href = url;
-      }
-    } catch (err: any) {
-      setError('Erro ao conectar Strava: ' + (err.message || err));
-    } finally {
-      setStravaConnecting(false);
-    }
-  };
 
   // Converte o item exibido na tela de detalhe pos-atividade para o formato
   // aceito pelo RunShareCard (ShareableSession) -- mesmo mapeamento ja usado
@@ -692,7 +673,6 @@ export function Challenges() {
       activityLiveActivityService.stop();
       setActiveSession(null);
       setFlowScreen(null);
-      setPendingChallenge(null);
       setError(null);
       setLoading(false);
       triggerXPToast(0, 'Sessão descartada.');
@@ -733,15 +713,6 @@ export function Challenges() {
     );
   }, []);
 
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) {
-      return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
-    }
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   const handleFlowStart = (type: 'workout' | 'cardio', options?: { checkIn?: boolean }) => {
     if (type === 'workout' && flowScreen === 'workout-details') {

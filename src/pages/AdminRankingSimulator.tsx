@@ -1,4 +1,3 @@
-import React from 'react';
 import { RankingSimulator } from '../components/professional/RankingSimulator';
 import { ArrowLeft, Sliders } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';

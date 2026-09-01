@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   History, CheckCircle2, XCircle, AlertCircle, Clock, Dumbbell,
   TrendingUp, MapPin, Flame, Trophy, RefreshCw, Search, Filter,
-  Calendar, Award, Eye, X, ShieldAlert, Sparkles, ChevronRight,
-  Info, Check, AlertOctagon, Scale, ShieldCheck, Image as ImageIcon,
+  Calendar, Award, Eye, X, ShieldAlert, ChevronRight,
+  Info, AlertOctagon, ShieldCheck, Image as ImageIcon,
   Share2, ChevronLeft, Heart, Gauge, Mountain, Route as RouteIcon,
   Lock, ThumbsUp
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { cn } from '../lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { ActivityMapView } from './ActivityMapView';
 import { RunShareCard } from './RunShareCard';
 import { InvictusLogo } from './InvictusLogo';

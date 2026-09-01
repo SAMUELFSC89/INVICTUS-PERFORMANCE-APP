@@ -49,7 +49,7 @@ function isProUser(userData: any): boolean {
  * qualquer chamador autenticado. Agora só retorna desafios em que o usuário
  * é o criador ou já é membro.
  */
-async function handleListChallenges(req: VercelRequest, res: VercelResponse, userId: string) {
+async function handleListChallenges(_req: VercelRequest, res: VercelResponse, userId: string) {
   const challengesRef = db.collection('private_challenges');
   const now = new Date();
   const nowISO = now.toISOString();

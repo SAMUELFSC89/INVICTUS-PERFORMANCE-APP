@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Dumbbell, ArrowRight, Flame, Scale, Sparkles, Volume2, VolumeX, Zap, Award, Target, Trophy } from 'lucide-react';
+import { ArrowRight, Flame, Sparkles, Volume2, VolumeX, Zap } from 'lucide-react';
 import { getBarbellWeight, getXPProgress } from '../lib/levelUtils';
 import { useUser } from '../UserContext';
 
@@ -62,7 +62,6 @@ export const BarbellLifter: React.FC<BarbellLifterProps> = ({ level }) => {
 
   const currentLevelWeight = getBarbellWeight(level);
   const platesList = getPlatesList(currentLevelWeight);
-  const barWeight = currentLevelWeight <= 15 ? 5 : 15;
 
   // Manual performance simulation lift lifecycle
   const runLiftCycle = async () => {

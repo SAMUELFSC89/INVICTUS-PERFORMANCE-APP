@@ -5,8 +5,6 @@ import helmet from 'helmet';
 import { globalLimiter } from './_lib/rate-limit.js';
 import { RequestLogger } from './_lib/logger.js';
 import { initSentry, captureException } from './_lib/sentry.js';
-import { VercelRequest, VercelResponse } from '@vercel/node';
-import path from 'path';
 import { cors } from './_lib/common.js';
 
 // Initialize Sentry APM

@@ -8,12 +8,9 @@ import {
   TrendingUp, 
   Search, 
   Filter, 
-  ArrowRight, 
-  BarChart2, 
   Activity,
   Award,
   ChevronRight,
-  Trophy,
   UserCheck,
   Shield,
   CreditCard,
@@ -32,7 +29,6 @@ import { motion } from 'motion/react';
 import { db, auth } from '../firebase';
 import { collection, query, getDocs, getDoc, limit, orderBy, where, getCountFromServer, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
-import { rankingService } from '../services/rankingService';
 import { cn } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { CreatorSandbox } from '../components/CreatorSandbox';
@@ -697,7 +693,7 @@ export function AdminDashboard() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto no-scrollbar pr-1">
-                {simResult.users.map((u, i) => (
+                {simResult.users.map((u, _i) => (
                   <div key={u.uid} className="bg-black/30 p-3 rounded-2xl border border-white/5 space-y-2 hover:border-secondary/20 transition-all">
                     <div className="flex items-center gap-2">
                       <img 

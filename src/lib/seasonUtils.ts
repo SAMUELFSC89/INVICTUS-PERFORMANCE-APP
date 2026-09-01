@@ -130,7 +130,7 @@ function calculateOpenScore(type: string, rawDuration: number, context: any) {
   };
 }
 
-function calculatePerformanceScore(type: string, rawDuration: number, context: any) {
+function calculatePerformanceScore(_type: string, rawDuration: number, context: any) {
   const scoredDays = context.scoredDays || [];
   const todayISO = new Date().toISOString().split('T')[0];
   const isTodayAlreadyScored = scoredDays.includes(todayISO);

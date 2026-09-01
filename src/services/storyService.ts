@@ -7,15 +7,11 @@ import {
   query, 
   where, 
   orderBy, 
-  limit, 
   onSnapshot,
   updateDoc,
-  arrayUnion,
-  Timestamp,
-  deleteDoc
-} from 'firebase/firestore';
+  arrayUnion} from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { Story, UserProfile } from '../types';
+import { Story } from '../types';
 
 export const storyService = {
   async createStory(userId: string, imageBlob: Blob, userDisplayName: string, userPhotoURL?: string) {

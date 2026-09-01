@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowLeft, FlaskConical, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { calculateWeeklyIGAOriginal, IGAOriginalSessionInput } from '../core/iga/igaOriginal';

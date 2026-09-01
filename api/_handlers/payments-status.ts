@@ -1,6 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth } from '../_lib/common.js';
-import { grantProAccessAfterApprovedPayment, revokeProAccess } from '../_lib/payments-service.js';
 
 const STATUS_MESSAGES: Record<string, string> = {
   'approved': 'Pagamento aprovado. Seu acesso ao Invictus foi liberado.',

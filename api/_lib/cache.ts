@@ -24,7 +24,7 @@ export const redis = new Redis({
 let isRedisConnected = false;
 let hasLoggedDisconnect = false;
 
-redis.on('error', (err) => {
+redis.on('error', (_err) => {
   isRedisConnected = false;
   if (!hasLoggedDisconnect) {
     hasLoggedDisconnect = true;

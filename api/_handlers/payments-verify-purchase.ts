@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth } from '../_lib/common.js';
-import { grantProAccessAfterApprovedPayment, revokeProAccess, logPaymentAudit } from '../_lib/payments-service.js';
+import { grantProAccessAfterApprovedPayment, logPaymentAudit } from '../_lib/payments-service.js';
 
 // URL base da API REST da RevenueCat (usada para checar assinaturas reais do Plano Performance).
 const REVENUECAT_API_URL = 'https://api.revenuecat.com/v1';

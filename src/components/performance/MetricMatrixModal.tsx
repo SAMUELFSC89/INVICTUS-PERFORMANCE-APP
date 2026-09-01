@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShieldCheck, Database, Cpu, HelpCircle, Calculator, CheckCircle2, AlertTriangle, FileCode2, Sparkles, Filter } from 'lucide-react';
+import { X, Database, Cpu, Calculator, AlertTriangle, FileCode2, Sparkles } from 'lucide-react';
 import { METRIC_CATALOG, PerformanceMetricDef } from '../../core/performance/metricCatalog';
 
 interface MetricMatrixModalProps {
@@ -12,7 +12,7 @@ interface MetricMatrixModalProps {
 export function MetricMatrixModal({ isOpen, onClose, initialMetricId }: MetricMatrixModalProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMetric, setSelectedMetric] = useState<PerformanceMetricDef | null>(
+  const [selectedMetric] = useState<PerformanceMetricDef | null>(
     initialMetricId ? METRIC_CATALOG.find(m => m.id === initialMetricId) || null : null
   );
 

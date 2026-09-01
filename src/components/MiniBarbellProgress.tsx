@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ChevronUp, Zap, Sparkles } from 'lucide-react';
+import { ChevronUp } from 'lucide-react';
 import { getBarbellWeight, getLevelTitle } from '../lib/levelUtils';
 
 interface MiniBarbellProgressProps {

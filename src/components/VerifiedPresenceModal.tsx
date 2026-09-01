@@ -3,15 +3,13 @@ import { createPortal } from 'react-dom';
 import { 
   Camera, 
   ShieldCheck, 
-  RotateCw, 
   TriangleAlert, 
-  Eye, 
   Sparkles, 
   Info,
   Lock,
   Focus
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { auth } from '../firebase';
 
 interface VerifiedPresenceModalProps {

@@ -1,19 +1,9 @@
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db } from '../firebase';
 import { 
-  collection, 
   doc, 
-  getDoc, 
-  getDocs, 
-  query, 
-  where, 
   setDoc, 
   updateDoc, 
-  serverTimestamp, 
-  orderBy, 
-  limit,
-  addDoc
-} from 'firebase/firestore';
-import { Gym, UserProfile, RankingEntry } from '../types';
+  serverTimestamp} from 'firebase/firestore';
 import { API_CONFIG } from '../config';
 
 export const gymService = {

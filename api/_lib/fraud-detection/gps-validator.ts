@@ -45,7 +45,7 @@ export class GPSValidator {
     userId: string,
     coordinates: GPSPoint[],
     distance: number,
-    duration: number
+    _duration: number
   ): GPSValidationResult {
     if (!coordinates || coordinates.length < 2) {
       return { isValid: true, fraudScore: 0, flags: [], details: {} };

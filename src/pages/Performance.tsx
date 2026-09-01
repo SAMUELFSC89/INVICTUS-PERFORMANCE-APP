@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Activity, ArrowLeft, BarChart3, Bot, ChevronRight, Clock, Database, Flame, Heart, Info, Plus, ShieldCheck, Sparkles, Trophy, UserRound } from 'lucide-react';
+import { Activity, ArrowLeft, BarChart3, Bot, ChevronRight, Clock, Database, Heart, Info, Plus, ShieldCheck, Trophy, UserRound } from 'lucide-react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useUser } from '../UserContext';

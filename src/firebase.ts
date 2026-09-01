@@ -17,10 +17,7 @@ import {
   signOut
 } from 'firebase/auth';
 import { 
-  getFirestore, 
   initializeFirestore, 
-  doc, 
-  getDocFromServer,
   persistentLocalCache,
   persistentMultipleTabManager,
   memoryLocalCache,

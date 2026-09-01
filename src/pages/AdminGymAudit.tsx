@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   ShieldAlert, 
-  MapPin, 
   CheckCircle, 
   AlertTriangle, 
   Search, 
-  Filter, 
   ArrowLeft, 
   ExternalLink, 
   RefreshCw,

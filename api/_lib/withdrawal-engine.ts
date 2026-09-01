@@ -1,4 +1,4 @@
-import { db, FieldValue } from './common.js';
+import { db } from './common.js';
 import { WalletEngine } from './wallet-engine.js';
 import { PIXWithdrawal, WithdrawalStatus, WithdrawalConfig } from '../../src/types.js';
 import { AsaasClient } from './asaas-client.js';
@@ -59,7 +59,7 @@ export class WithdrawalEngine {
     return updated;
   }
 
-  static async evaluateWithdrawalRisk(userId: string, amount: number, pixKey: string, deviceId?: string): Promise<{
+  static async evaluateWithdrawalRisk(userId: string, amount: number, _pixKey: string, deviceId?: string): Promise<{
     score: number;
     passed: boolean;
     flags: string[];
@@ -179,7 +179,6 @@ export class WithdrawalEngine {
       .where('createdAt', '>=', dayStart.toISOString())
       .get();
     const dailyCommittedAmount = dailyWithdrawals.docs.reduce((total, doc) => {
-      const status = String(doc.data()?.status || '');
       // Uma solicitação criada já consome a cota do dia. Isso evita que alguém
       // fragmente tentativas recusadas/canceladas para burlar o limite.
       return total + (Number(doc.data()?.amount) || 0);

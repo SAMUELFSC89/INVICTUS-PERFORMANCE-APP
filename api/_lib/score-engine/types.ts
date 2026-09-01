@@ -1,4 +1,4 @@
-import { TrainingGoal, ActivitySource, ValidationStatus, ValidationReason } from '../score-config.js';
+import { TrainingGoal } from '../score-config.js';
 
 export interface ScoreEvent {
   userId: string;

@@ -85,7 +85,6 @@ export async function grantProAccessAfterApprovedPayment(orderId: string, paymen
 
   const userId = orderData.userId;
   const planId = orderData.planId;
-  const amount = orderData.amount;
 
   console.log(`[Grant Pro Access] Processing approval for user ${userId}, order ${orderId}, payment ${paymentId}`);
 

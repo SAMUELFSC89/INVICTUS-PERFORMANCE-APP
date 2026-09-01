@@ -36,6 +36,26 @@ export default defineConfig(({mode}) => {
       // Vite tambem carregam com crossorigin em runtime (via __vitePreload) e
       // sofrem do mesmo problema acima no esquema capacitor://.
       modulePreload: false,
+      // Mapbox e o SDK do Firebase sao dependencias grandes e independentes da
+      // interface principal. Mantê-los em chunks próprios reduz o bundle de
+      // entrada e permite que o navegador reutilize o cache entre publicações.
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('mapbox-gl')) return 'mapbox-gl';
+            if (id.includes('/firebase/') || id.includes('/@firebase/')) return 'firebase';
+            if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/react-router') || id.includes('/scheduler/')) return 'react';
+            if (id.includes('/lucide-react/')) return 'icons';
+            if (id.includes('/@google/genai/')) return 'google-ai';
+            if (id.includes('/html-to-image/')) return 'sharing';
+            return 'vendor';
+          },
+        },
+      },
+      // O Mapbox GL inclui o motor de renderização completo; seu chunk isolado
+      // fica abaixo deste teto e não representa crescimento do bundle inicial.
+      chunkSizeWarningLimit: 2000,
     },
     define: {
       // #224: a GEMINI_API_KEY foi REMOVIDA do bundle do cliente.

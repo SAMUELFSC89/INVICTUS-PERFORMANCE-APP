@@ -4,7 +4,6 @@ import { toPng } from 'html-to-image';
 import { RunSession, AdvancedRunStats } from '../services/runningService';
 import { formatDuration } from '../lib/runUtils';
 import { cn } from '../lib/utils';
-import { useUser } from '../UserContext';
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
 import { InvictusLogo } from './InvictusLogo';
@@ -54,37 +53,8 @@ function hasValidLatLng(p: any): boolean {
   return Number.isFinite(lat) && Number.isFinite(lng);
 }
 
-function caloriesLabel(kcal?: number) {
-  if (kcal === undefined) return '';
-  if (kcal >= 500) return 'Muito bom';
-  if (kcal >= 250) return 'Bom';
-  return 'Leve';
-}
-function hrZoneLabel(hr?: number, age?: number) {
-  if (hr === undefined) return '';
-  const maxHr = 220 - (age || 30);
-  const pct = hr / maxHr;
-  if (pct >= 0.9) return 'Zona 5';
-  if (pct >= 0.8) return 'Zona 4';
-  if (pct >= 0.7) return 'Zona 3';
-  if (pct >= 0.6) return 'Zona 2';
-  return 'Zona 1';
-}
-function cadenceLabel(spm?: number) {
-  if (spm === undefined) return '';
-  if (spm >= 170) return 'Ótima';
-  if (spm >= 150) return 'Boa';
-  return 'Regular';
-}
-function elevationLabel(m?: number) {
-  if (m === undefined) return '';
-  if (m > 0) return 'Ganho positivo';
-  if (m < 0) return 'Descida';
-  return 'Plano';
-}
 
 export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps) {
-  const { user } = useUser();
   const cardRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSharingLink, setIsSharingLink] = useState(false);
@@ -112,10 +82,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     (distanceKm > 0 && durationMins > 0
       ? `${Math.floor(durationMins / distanceKm)}'${String(Math.round((durationMins / distanceKm % 1) * 60)).padStart(2, '0')}"/km`
       : "--'--\"/km");
-  const calories = session.calories ? Math.round(Number(session.calories)) : undefined;
-  const avgHeartRate = session.avgHeartRate ? Math.round(Number(session.avgHeartRate)) : undefined;
-  const elevationGain = (session.elevationGain !== undefined && session.elevationGain !== null) ? Math.round(Number(session.elevationGain)) : undefined;
-  const cadence = (session.steps && durationMins > 0) ? Math.round(Number(session.steps) / durationMins) : undefined;
   const trajectory: Array<any> = Array.isArray(session.trajectory)
     ? session.trajectory
     : (Array.isArray(session.checkpoints) ? session.checkpoints : []);
@@ -123,8 +89,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   // #214: XP e pontos de ranking sao coisas DIFERENTES -- nunca rotular XP como
   // "pontos de ranking" (bug anterior: cardio sem rankingPointsEarned caia no
   // fallback de session.points, que e XP, e exibia como se fosse ranking).
-  const rankingPointsEarned = Number(session.rankingPointsEarned || 0);
-  const xpPoints = Number(session.points || 0);
   const rawStatus = String(session.status || session.validationStatus || '').toLowerCase();
   const validationState: 'approved' | 'pending' | 'rejected' = ['validated', 'valid', 'approved', 'homologada'].includes(rawStatus)
     ? 'approved'
@@ -137,23 +101,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const [backgroundMode, setBackgroundMode] = useState<'map' | 'photo'>(() => existingPhoto && !hasRoute ? 'photo' : 'map');
 
   const isBike = title.toLowerCase().includes('bike') || session.cardioType === 'bike';
-  const isIndoor = session.isIndoorCardio || title.toLowerCase().includes('indoor') || title.toLowerCase().includes('esteira') || title.toLowerCase().includes('ergométrica') || title.toLowerCase().includes('hiit') || title.toLowerCase().includes('musculação') || title.toLowerCase().includes('treino de');
   const hasDistance = distanceKm > 0.05;
   const speedKmH = (distanceKm > 0.01 && durationMins > 0) ? (distanceKm / (durationMins / 60)).toFixed(1) : undefined;
-
-  const activityDate = useMemo(() => {
-    const raw = session.date || session.startTime || session.timestamp;
-    return raw ? new Date(raw) : new Date();
-  }, [session.date, session.startTime, session.timestamp]);
-
-  const dateLabel = useMemo(() => {
-    const now = new Date();
-    const isToday = activityDate.toDateString() === now.toDateString();
-    const hh = String(activityDate.getHours()).padStart(2, '0');
-    const mm = String(activityDate.getMinutes()).padStart(2, '0');
-    const dayLabel = isToday ? 'Hoje' : activityDate.toLocaleDateString('pt-BR');
-    return `${dayLabel} às ${hh}:${mm}`;
-  }, [activityDate]);
 
   const [locationLabel, setLocationLabel] = useState<string | null>(session.locationLabel || null);
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TrendingUp, Trophy, Star } from 'lucide-react';
+import { Trophy, Star } from 'lucide-react';
 
 interface XPToastProps {
   points: number;

@@ -1,4 +1,4 @@
-import { db, FieldValue } from './common.js';
+import { db } from './common.js';
 import { UserWallet, IVCoinTransaction, IVCoinCategory, IVCoinTransactionOrigin } from '../../src/types.js';
 
 export class WalletEngine {

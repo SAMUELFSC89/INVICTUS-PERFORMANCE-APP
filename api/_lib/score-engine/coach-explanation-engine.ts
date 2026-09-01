@@ -3,10 +3,10 @@ import { CoachExplanation, MainImpacts, QualityBreakdown } from './types.js';
 export class CoachExplanationEngine {
   static generate(
     qualityScore: number,
-    goal: string,
+    _goal: string,
     breakdown: QualityBreakdown,
-    mainImpacts: MainImpacts,
-    simulationTargetScore?: number,
+    _mainImpacts: MainImpacts,
+    _simulationTargetScore?: number,
     simulatedGains?: number
   ): CoachExplanation {
     const sub = breakdown.subScores;

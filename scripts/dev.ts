@@ -25,11 +25,11 @@ async function runLocal() {
   }));
   app.use(express.json());
   
-  app.get('/ping', (req, res) => res.send('pong'));
-  app.get('/api/heartbeat', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+  app.get('/ping', (_req, res) => res.send('pong'));
+  app.get('/api/heartbeat', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
   // Middleware de log para depuração local
-  app.use((req, res, next) => {
+  app.use((req, _res, next) => {
     if (req.path.startsWith('/api')) {
       console.log(`[DEV SERVER] ${req.method} ${req.path}`);
     }

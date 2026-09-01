@@ -265,20 +265,6 @@ function ChartBars({ points, color = 'gold' }: { points: { value: number; label:
   return <div className={cn('health-chart-bars', color === 'violet' && 'is-violet')} aria-label="Gráfico de tendência">{points.map((point, index) => <div key={`${point.label}-${index}`}><i style={{ height: `${Math.max(4, Math.round((point.value / max) * 100))}%` }} /><span>{point.label}</span></div>)}</div>;
 }
 
-function HeartLineChart({ points }: { points: { value: number; label: string }[] }) {
-  const values = points.length ? points.map((point) => Number.isFinite(point.value) ? point.value : 0) : [0, 0, 0, 0, 0, 0, 0];
-  const min = Math.min(...values);
-  const max = Math.max(...values, min + 1);
-  const coordinates = values.map((value, index) => {
-    const x = values.length === 1 ? 125 : (index / (values.length - 1)) * 250;
-    const y = 48 - ((value - min) / (max - min)) * 38;
-    return `${x.toFixed(1)} ${y.toFixed(1)}`;
-  });
-  const path = `M${coordinates.join(' L')}`;
-  const peak = values.indexOf(max);
-  const [peakX, peakY] = (coordinates[peak] || '125 29').split(' ');
-  return <div className="health-heart-line" aria-label="Variação da frequência cardíaca média"><svg viewBox="0 0 250 58" role="img" aria-label="Linha de frequência cardíaca"><defs><linearGradient id="health-heart-gradient" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stopColor="#ff9235" /><stop offset=".48" stopColor="#ff3f4c" /><stop offset="1" stopColor="#ff752e" /></linearGradient></defs><path className="health-heart-line-glow" d={path} /><path className="health-heart-line-trace" d={path} /><circle className="health-heart-line-dot" cx={peakX} cy={peakY} r="3" /></svg></div>;
-}
 
 function ZoneChart({ state, onDetails }: { state: UserPerformanceState; onDetails?: () => void }) {
   const total = metricNumber(state, 'total_volume_time');

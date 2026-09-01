@@ -336,7 +336,6 @@ export class ValidateActivityService {
     // Guardado a parte de securityReason (que ja vem prefixado 'SECURITY_PIPELINE_')
     // para decidir, logo abaixo, se este e o caso especifico UNDER_REVIEW que
     // oferece uma segunda chance via selfie em vez de bloquear direto.
-    let securityDecision: string | null = null;
     // #237: historico real do atleta -- sem ele, BehaviorEngine e
     // ReputationEngine ficam no ramo neutro e nunca comparam o atleta com ele
     // mesmo. Ver api/_lib/user-activity-history.ts.
@@ -373,7 +372,6 @@ export class ValidateActivityService {
       competitiveIneligibleReason = securityResult.report.validation.ineligibleReason || null;
       if (!securityResult.shouldScore) {
         securityBlocked = true;
-        securityDecision = securityResult.decision;
         securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
         securityCanRetry = securityResult.decision !== 'BLOCKED';
         securityUserMessage = this.buildSecurityUserMessage(securityResult.decision);
@@ -390,7 +388,6 @@ export class ValidateActivityService {
       // do BLOCKED (ver #325): a sessao fecha normalmente, sem pontos, e o
       // status muda depois que alguem revisar manualmente.
       securityBlocked = true;
-      securityDecision = 'BLOCKED';
       securityReason = 'SECURITY_PIPELINE_ERROR';
       securityCanRetry = true;
       securityUserMessage = this.buildSecurityUserMessage('BLOCKED');

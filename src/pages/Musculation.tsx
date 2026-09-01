@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Brain, CalendarDays, Check, ChevronRight, Clock3,
-  Dumbbell, Flame, HeartPulse, Info, ListFilter, Pencil, Play, Plus,
+  Dumbbell, Info, ListFilter, Pencil, Play, Plus,
   Search, ShieldCheck, Sparkles, Target, Trophy, UserRound
 } from 'lucide-react';
 import { InvictusLogo } from '../components/InvictusLogo';
@@ -257,6 +257,6 @@ function PlanView({ plan, onBack, onWorkout }: { plan: WorkoutPlan; onBack: () =
   return <><Header onBack={onBack} /><section className="mus-flow"><h1>MEU PLANO</h1><p>{plan.description || 'Seu plano de musculação atual.'}</p><div className="mus-final-data"><h2>VISÃO GERAL</h2><p><Target /><span>Objetivo<b>{plan.objective}</b></span></p><p><CalendarDays /><span>Frequência<b>{plan.daysPerWeek} dias por semana</b></span></p><p><Clock3 /><span>Duração média<b>{plan.durationMinutes} min</b></span></p><p><Brain /><span>Origem<b>{plan.source === 'ai' ? 'Invictus IA' : 'Criado manualmente'}</b></span></p></div><h2>PROGRAMAÇÃO SEMANAL</h2><div className="mus-workout-list">{plan.workouts.map((workout,index) => <button key={workout.id} onClick={() => onWorkout(workout)}><i>{String.fromCharCode(65+index)}</i><span><b>{workout.name}</b><small>{workout.focus}</small></span><em>{workout.exercises.length} exercícios</em><ChevronRight /></button>)}</div></section></>;
 }
 
-function WorkoutView({ plan, workout, onBack, onStart, loading }: { plan: WorkoutPlan; workout: PlannedWorkout; onBack: () => void; onStart: () => void; loading: boolean }) {
+function WorkoutView({ workout, onBack, onStart, loading }: { plan: WorkoutPlan; workout: PlannedWorkout; onBack: () => void; onStart: () => void; loading: boolean }) {
   return <><Header onBack={onBack} /><section className="mus-flow"><h1>{workout.name}</h1><p>{workout.focus}</p><div className="mus-workout-detail">{workout.exercises.map((item,index) => { const exercise = OFFICIAL_EXERCISE_BY_ID.get(item.exerciseId); return <article key={`${item.exerciseId}-${index}`}><img src={exercise?.thumbUrl} alt="" /><i>{index+1}</i><span><b>{exercise?.name || item.exerciseId}</b><small>{item.sets} × {item.repsMin}–{item.repsMax} · {item.restSeconds}s descanso{item.initialLoadKg !== undefined ? ` · ${item.initialLoadKg} kg inicial` : ''}</small></span></article>; })}</div><button className="mus-start-workout" onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></section></>;
 }

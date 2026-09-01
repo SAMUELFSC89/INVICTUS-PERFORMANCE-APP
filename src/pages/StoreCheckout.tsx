@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, CheckCircle2, Coins, LockKeyhole, MapPin, PackageCheck, Truck } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, LockKeyhole, MapPin, PackageCheck, Truck } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ProductImage } from '../components/ProductImage';
 import { auth } from '../firebase';

@@ -2,26 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { auth, db, onAuthStateChanged } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { UserProfile } from './types';
-import { referralService } from './services/referralService';
-import { rankingService } from './services/rankingService';
 
-const normalizeString = (str: string) => 
-  str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
-const generateSearchKeywords = (name: string, username?: string): string[] => {
-  const keywords = new Set<string>();
-  const normalizedName = normalizeString(name);
-  const parts = normalizedName.split(/\s+/);
-  parts.forEach(part => {
-    for (let i = 1; i <= part.length; i++) keywords.add(part.substring(0, i));
-  });
-  for (let i = 1; i <= normalizedName.length; i++) keywords.add(normalizedName.substring(0, i));
-  if (username) {
-    const normalizedUsername = username.toLowerCase();
-    for (let i = 1; i <= normalizedUsername.length; i++) keywords.add(normalizedUsername.substring(0, i));
-  }
-  return Array.from(keywords).slice(0, 100);
-};
 
 interface UserContextType {
   user: UserProfile | null;
@@ -45,7 +27,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   });
   const [loading, setLoading] = useState(true);
-  const [quotaExceeded, setQuotaExceeded] = useState(false);
 
   const loadUserProfile = useCallback(async (uid: string) => {
     const userRef = doc(db, 'users', uid);
@@ -97,9 +78,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error: any) {
       console.error(`[AUTH] [LOAD_PROFILE] [${uid}] [FAILURE] Erro ao carregar perfil: ${error.message}`);
-      if (error?.code === 'resource-exhausted' || error?.message?.includes('quota')) {
-        setQuotaExceeded(true);
-      }
       setLoading(false);
       return null;
     }

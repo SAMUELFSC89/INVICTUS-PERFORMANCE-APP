@@ -42,7 +42,7 @@ function erroComoResposta(erro: any): { status: number; message: string } {
 }
 
 /** GET /api/championships -- catalogo publico (preco, janela, regulamento vigente). */
-export async function listChampionshipsHandler(req: any, res: any) {
+export async function listChampionshipsHandler(_req: any, res: any) {
   return res.json({ championships: listChampionships() });
 }
 

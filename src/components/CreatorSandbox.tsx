@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Wrench, Compass, UserCheck, ShieldAlert, Sparkles, X, Check, 
-  ChevronRight, RefreshCw, Layers, Eye, Heart, Activity, 
-  Sliders, Award, User, Wallet, Database, Lock
-} from 'lucide-react';
+  Wrench, Compass, UserCheck, Sparkles, X, Check,
+  ChevronRight, RefreshCw, Layers,
+  Sliders} from 'lucide-react';
 import { useUser } from '../UserContext';
-import { db, auth } from '../firebase';
+import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { cn } from '../lib/utils';
 

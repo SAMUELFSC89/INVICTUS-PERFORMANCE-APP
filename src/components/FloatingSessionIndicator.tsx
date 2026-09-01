@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Clock, Play, Square, AlertCircle, Timer, Zap, MapPin } from 'lucide-react';
+import { Square, Timer, Zap, MapPin } from 'lucide-react';
 import { activityService } from '../services/activityService';
-import { cn } from '../lib/utils';
 
 export function FloatingSessionIndicator() {
   const navigate = useNavigate();
@@ -140,24 +139,5 @@ export function FloatingSessionIndicator() {
         </div>
       </motion.div>
     </div>
-  );
-}
-
-function ArrowRight({ size, className }: { size: number; className?: string }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="3" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-    </svg>
   );
 }

@@ -4,7 +4,7 @@ export class EvolutionEngine {
   static evaluate(
     currentQualityScore: number,
     history: Array<{ qualityScore?: number; finalScore?: number; timestamp?: string; createdAt?: string }>,
-    currentSubScores?: { consistency: number; intensity: number; efficiency: number }
+    _currentSubScores?: { consistency: number; intensity: number; efficiency: number }
   ): EvolutionIndexResult {
     const scores = history
       .map(h => h.qualityScore ?? h.finalScore ?? 0)

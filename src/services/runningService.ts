@@ -63,33 +63,8 @@ export interface AdvancedRunStats {
 // historicos legados -- por isso fica.
 
 // Cache for running stats and ranking
-const serviceCache: Record<string, { data: any, timestamp: number }> = {};
-const CACHE_TTL = 60000; // Increase to 60 seconds
 
-function getCached(key: string, ignoreExpiration = false) {
-  const item = serviceCache[key];
-  if (item && (ignoreExpiration || Date.now() - item.timestamp < CACHE_TTL)) return item.data;
-  
-  // Try localStorage for public-safe data as a persistent fallback
-  try {
-    const stored = localStorage.getItem(`persist_${key}`);
-    if (stored) {
-      const { data, timestamp } = JSON.parse(stored);
-      // If ignoreExpiration is true, we return it regardless of how old it is
-      // Otherwise, for stats, we use slightly older data as fallback (24 hours for extreme cases)
-      if (ignoreExpiration || Date.now() - timestamp < 86400000) return data;
-    }
-  } catch (e) { /* ignore */ }
-  
-  return null;
-}
 
-function setCache(key: string, data: any) {
-  serviceCache[key] = { data, timestamp: Date.now() };
-  try {
-    localStorage.setItem(`persist_${key}`, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch (e) { /* ignore */ }
-}
 
 export const runningService = {
   async getHistory(userId: string): Promise<{ history: RunSession[] }> {

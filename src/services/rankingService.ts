@@ -1,7 +1,7 @@
-import { db, handleFirestoreError, OperationType, auth } from '../firebase';
-import { collection, query, where, getDocs, orderBy, limit, doc, getDoc, getCountFromServer } from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { startOfMonth, addMonths, format } from 'date-fns';
-import { RankingSnapshot, RankingEntry, UserProfile } from '../types';
+import { RankingSnapshot, UserProfile } from '../types';
 import { QuotaExhaustedError, isQuotaError } from './errors';
 import { redisService } from './redisService';
 
@@ -37,7 +37,6 @@ function setCache(key: string, data: any) {
 }
 
 // Deduping inflight requests
-const pendingRequests = new Map<string, Promise<any>>();
 let pendingStatsRequest: Promise<any> | null = null;
 
 async function getSystemStats() {
@@ -258,7 +257,7 @@ export const rankingService = {
     };
   },
 
-  calculateBoost(entryDay: number) {
+  calculateBoost(_entryDay: number) {
     return 1;
   },
 

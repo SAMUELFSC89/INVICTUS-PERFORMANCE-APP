@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   ShieldAlert, 
   ShieldCheck, 
@@ -9,11 +9,6 @@ import {
   Filter, 
   Eye, 
   Smartphone, 
-  MapPin, 
-  Heart, 
-  Camera, 
-  Cpu, 
-  Clock, 
   RefreshCw,
   Lock,
   BarChart3,
@@ -38,7 +33,7 @@ export function AdminSecurityAudit() {
 
   // Filters
   const [decisionFilter, setDecisionFilter] = useState<string>('ALL');
-  const [riskFilter, setRiskFilter] = useState<string>('ALL');
+  const [riskFilter] = useState<string>('ALL');
   const [searchUserId, setSearchUserId] = useState('');
 
   // Selected Report for Detail View

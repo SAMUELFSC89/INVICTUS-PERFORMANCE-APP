@@ -12,7 +12,7 @@ import { RiskEngine, RiskAnalysis, AutomaticDecision } from './risk-engine.js';
 import { ExplainabilityEngine, SecurityExplanation } from './explainability-engine.js';
 import { securityEventBus } from './security-events.js';
 import { AuditLogger } from './audit-logger.js';
-import { recordPipelineStage, PipelineTraceIds } from './observability.js';
+import { recordPipelineStage } from './observability.js';
 
 export interface SecurityReportDocument {
   id?: string;

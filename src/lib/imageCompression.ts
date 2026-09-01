@@ -10,7 +10,7 @@ export async function compressBase64Image(
   maxHeight: number = 800,
   quality: number = 0.6
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, _reject) => {
     // If it's empty or invalid, return immediately
     if (!base64Str) {
       resolve("");

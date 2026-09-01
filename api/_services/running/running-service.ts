@@ -58,7 +58,7 @@ export class RunningService {
     return result;
   }
 
-  async getRanking(period: 'month' | 'week', mode: 'official' | 'demo' = 'official', userId?: string): Promise<GetRankingResponse> {
+  async getRanking(period: 'month' | 'week', mode: 'official' | 'demo' = 'official', _userId?: string): Promise<GetRankingResponse> {
     if (!period) throw new AppError('O parâmetro period (month/week) é obrigatório.', 400);
 
     const cacheKey = `ranking_${period}_${mode}`;

@@ -61,7 +61,6 @@ export function PowerLift() {
   const { user } = useUser();
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [myRecords, setMyRecords] = useState<RecordRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [modal, setModal] = useState<'rules' | 'videos' | null>(null);
   const [selected, setSelected] = useState<Exercise>('supino');
@@ -78,7 +77,6 @@ export function PowerLift() {
   useEffect(() => {
     let mounted = true;
     const loadRecords = async () => {
-      setLoading(true);
       setLoadError(false);
       try {
         const firebaseUser = auth.currentUser;
@@ -106,7 +104,6 @@ export function PowerLift() {
         setMyRecords([]);
         setLoadError(true);
       } finally {
-        if (mounted) setLoading(false);
       }
     };
     void loadRecords();

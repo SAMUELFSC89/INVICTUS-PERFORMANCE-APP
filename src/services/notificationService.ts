@@ -54,7 +54,7 @@ export const notificationService = {
    */
   async createNotification(
     recipientId: string,
-    senderId: string,
+    _senderId: string,
     type: SocialNotification['type'],
     postId?: string,
     message?: string,

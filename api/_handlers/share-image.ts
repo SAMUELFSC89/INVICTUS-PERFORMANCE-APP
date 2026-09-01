@@ -78,7 +78,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 3. Load Fonts
     const fontTitle = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE);
-    const fontStats = await Jimp.loadFont(Jimp.FONT_SANS_128_WHITE);
     const fontLabel = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
     const fontXP = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
 

@@ -19,14 +19,11 @@ import {
   increment, 
   arrayUnion, 
   arrayRemove, 
-  onSnapshot,
-  Timestamp,
-  addDoc,
   startAfter,
   runTransaction
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { Post, Follow, SocialNotification, UserProfile } from '../types';
+import { Post, Follow, UserProfile } from '../types';
 import { notificationService } from './notificationService';
 
 export const socialService = {

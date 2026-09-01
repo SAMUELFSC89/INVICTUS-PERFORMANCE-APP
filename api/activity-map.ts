@@ -1,4 +1,3 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from './_lib/common.js';
 
 // Endpoint server-side que gera a imagem do mapa da rota. Mapbox e o provedor

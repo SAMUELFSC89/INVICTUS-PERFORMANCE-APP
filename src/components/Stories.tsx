@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Camera, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Camera } from 'lucide-react';
 import { storyService } from '../services/storyService';
 import { auth } from '../firebase';
 import { Story, UserProfile } from '../types';

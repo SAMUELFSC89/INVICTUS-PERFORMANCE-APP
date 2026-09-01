@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Award, Check, Flame, Plus, Share2, ShieldCheck, Trophy, UserRound } from 'lucide-react';
+import { ArrowLeft, Check, Plus, Share2, ShieldCheck, Trophy, UserRound } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { ACHIEVEMENTS } from '../achievements';
 import { InvictusLogo } from '../components/InvictusLogo';

@@ -29,7 +29,7 @@ export class FraudEngine {
    * Fraud Engine: Searches for fraud signals across security domains.
    * Aggregates concrete evidence without blocking directly.
    */
-  static analyze(activity: any, userData?: any, userHistory: any[] = []): FraudAnalysis {
+  static analyze(activity: any, _userData?: any, userHistory: any[] = []): FraudAnalysis {
     const evidences: FraudEvidence[] = [];
 
     // 1. Device Security Analysis

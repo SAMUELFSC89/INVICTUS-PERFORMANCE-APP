@@ -1,6 +1,5 @@
-import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShieldCheck, Calculator, Database, Activity, Sparkles, TrendingUp, AlertTriangle, Cpu, CheckCircle2 } from 'lucide-react';
+import { X, Calculator, Database, Sparkles, AlertTriangle, Cpu } from 'lucide-react';
 import { CalculatedMetricValue } from '../../core/performance/performanceEngine';
 
 interface ModuleDetailModalProps {

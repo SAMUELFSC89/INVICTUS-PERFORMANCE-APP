@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { UserProfile } from '../types';
 import { AdminShell } from './AdminShell';
 
 export function AdminGuard({ children }: { children: React.ReactNode }) {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Gauge, Trophy, Award, User, Zap, Settings as SettingsIcon, Medal, Wallet, Users, Heart, Dumbbell, Bell, Building2 } from 'lucide-react';
+import { Gauge, Trophy, Award, User, Dumbbell, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { AchievementTracker } from './AchievementTracker';
@@ -11,7 +11,7 @@ import { InvictusAIFloatingAssistant } from './InvictusAIFloatingAssistant';
 
 import { useUser } from '../UserContext';
 import { TermsAndConsent } from './TermsAndConsent';
-import { getXPProgress, getLevelFromXP } from '../lib/levelUtils';
+import { getXPProgress } from '../lib/levelUtils';
 import { BarbellLifter } from './BarbellLifter';
 
 export function Layout() {
@@ -29,7 +29,7 @@ export function Layout() {
   // legacy shell mounted here produced two navigation bars on the same screen.
   const suppressLegacyChrome = location.pathname.startsWith('/power');
 
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+  const [theme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
     }

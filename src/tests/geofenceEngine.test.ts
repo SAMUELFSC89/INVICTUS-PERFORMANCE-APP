@@ -1,4 +1,4 @@
-import { validateGeofenceCheckin, calculateHaversineDistanceMeters } from '../services/geofenceEngine';
+import { validateGeofenceCheckin } from '../services/geofenceEngine';
 
 /**
  * Automated Geofence Engine Test Suite

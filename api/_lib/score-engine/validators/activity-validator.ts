@@ -1,4 +1,3 @@
-import { RunActivity, GymCheckIn } from '../../schemas.js';
 import { scoreLogger } from '../../logger.js';
 import { SCORE_CONFIG } from '../../score-config.js';
 
@@ -73,7 +72,7 @@ export class ActivityValidator {
       }
     }
 
-    const { durationMins, durationSecs } = getNormalizedDuration(activity);
+    const { durationSecs } = getNormalizedDuration(activity);
     const isDurationExemptType = type === 'checkin' || type === 'diet' || type === 'meal' || type === 'recovery';
     if (!isDurationExemptType) {
       // Antes, durationSecs<=0 passava sem erro (a condicao so disparava quando
@@ -104,7 +103,7 @@ export class ActivityValidator {
   /**
    * Valida se usuário pode receber score (não é fraude, não está banido, etc)
    */
-  static validateUser(userId: string, userStatus: { isBanned?: boolean; accountAge?: number }): { valid: boolean; reason?: string } {
+  static validateUser(_userId: string, userStatus: { isBanned?: boolean; accountAge?: number }): { valid: boolean; reason?: string } {
     if (userStatus.isBanned) {
       return { valid: false, reason: 'User is banned' };
     }

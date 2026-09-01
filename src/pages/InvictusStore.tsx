@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CalendarDays, ChevronRight, Coins, Gift, History, Info, PackageOpen, Plus, ShieldCheck, ShoppingBag, Trophy, Truck, UserRound } from 'lucide-react';
+import { Bell, CalendarDays, ChevronRight, Coins, Gift, Info, PackageOpen, Plus, ShieldCheck, ShoppingBag, Trophy, Truck, UserRound } from 'lucide-react';
 import { InvictusLogo } from '../components/InvictusLogo';
 import { ProductImage } from '../components/ProductImage';
 import { auth } from '../firebase';
-import { useUser } from '../UserContext';
 import type { PublicPhysicalProduct, RewardCoinTransaction, RewardCoinWallet } from '../types';
 import './InvictusStore.css';
 import './InvictusStoreExtras.css';
@@ -17,7 +16,6 @@ const cash = (value:number) => value.toLocaleString('pt-BR',{style:'currency',cu
 
 export function InvictusStore() {
   const navigate = useNavigate();
-  const { user } = useUser();
   const [products, setProducts] = useState<PublicPhysicalProduct[]>([]);
   const [wallet, setWallet] = useState<RewardCoinWallet | null>(null);
   const [transactions, setTransactions] = useState<RewardCoinTransaction[]>([]);

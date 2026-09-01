@@ -308,7 +308,7 @@ async function handleRanking(req: any, res: any) {
   }
 }
 
-async function handleMyRecords(req: any, res: any, userId: string) {
+async function handleMyRecords(_req: any, res: any, userId: string) {
   try {
     const snap = await db.collection('power_records')
       .where('userId', '==', userId)

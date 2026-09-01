@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, ChevronRight, Check, AlertCircle, X, ScrollText, Lock, Trophy, Scale, Users } from 'lucide-react';
 import { useUser } from '../UserContext';

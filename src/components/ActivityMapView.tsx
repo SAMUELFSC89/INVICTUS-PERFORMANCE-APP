@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MapPin, EyeOff } from 'lucide-react';
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';

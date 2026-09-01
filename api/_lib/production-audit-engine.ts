@@ -48,7 +48,7 @@ export interface ProductionReadinessReport {
   };
 }
 
-export async function runProductionReadinessAudit(db: any): Promise<ProductionReadinessReport> {
+export async function runProductionReadinessAudit(_db: any): Promise<ProductionReadinessReport> {
   // 1. Block 1: Firestore Security & Rules Audit
   const firestoreSecurityBlock: AuditBlockResult = {
     id: 'block-1-firestore-security',

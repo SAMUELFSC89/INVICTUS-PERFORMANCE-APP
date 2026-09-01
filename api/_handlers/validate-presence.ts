@@ -411,7 +411,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 // TRANSACTIONALLY COMMIT STANDARD PLAYLOADS FOR WORKOUTS
 async function commitWorkoutSession(userId: string, payload: any, finalDecision: 'approved' | 'pending', presenceSelfie: string): Promise<number> {
-  const { type, durationMins, distanceKm, photoBase64, checkpoints, hasExercises, aiResult, focus, description, quizAnswers } = payload;
+  const { type, durationMins, distanceKm, photoBase64, checkpoints } = payload;
   const nowLocalDate = new Date();
   const todayISO = nowLocalDate.toISOString().split('T')[0];
   // Capturado de dentro da transaction abaixo (transaction callbacks nao podem
@@ -815,7 +815,6 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
     const isDayAlreadyScored = scoredDays.includes(todayISO);
 
     let isScoringEligible = false;
-    let nonSpScoringReason = null;
 
     if (xpAwarded > 0) {
       if (isDayAlreadyScored) {
@@ -827,7 +826,6 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
         weeklyStatsData.totalScoredDays = scoredDays.length;
       } else {
         isScoringEligible = false;
-        nonSpScoringReason = "WEEKLY_SCORING_LIMIT_REACHED";
         xpAwarded = 0;
       }
     } else {

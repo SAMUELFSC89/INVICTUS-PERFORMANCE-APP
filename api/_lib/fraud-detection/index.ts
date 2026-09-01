@@ -1,4 +1,4 @@
-import { FraudLogger, fraudLogger } from '../logger.js';
+import { FraudLogger } from '../logger.js';
 import { GPSValidator } from './gps-validator.js';
 import { DeviceFingerprintAnalyzer } from './device-fingerprint.js';
 import { BehaviorAnalyzer } from './behavior-analyzer.js';

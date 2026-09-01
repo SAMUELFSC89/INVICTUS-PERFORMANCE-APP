@@ -3,8 +3,6 @@ import { db, FieldValue } from './common.js';
 import { RewardsEngine } from './rewards-engine.js';
 import { lerConfiguracaoInscricao } from './season-settings.js';
 import {
-  SEASON_MIN_PARTICIPANTS_FOR_PRIZE,
-  SEASON_TOP5_PARTICIPANTS_THRESHOLD,
   SEASON_MIN_PARTICIPANTS_PER_GYM,
   SEASON_TOP5_THRESHOLD_PER_GYM,
   TOP_10_PERCENTAGES,
@@ -222,10 +220,6 @@ async function promoverInscritosDaNovaTemporada(novaSeasonId: string) {
   console.log(`[Temporada] ${entrando.size} atletas ativos na temporada ${novaSeasonId}.`);
 }
 
-function getWinnerCount(participantsCount: number): number {
-  if (participantsCount < SEASON_MIN_PARTICIPANTS_FOR_PRIZE) return 0;
-  return participantsCount >= SEASON_TOP5_PARTICIPANTS_THRESHOLD ? 5 : 3;
-}
 
 /**
  * Quantos atletas de UMA academia sao premiados, dado o tamanho dela.
