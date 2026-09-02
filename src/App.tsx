@@ -85,6 +85,7 @@ export default function App() {
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/gym" element={<Navigate to="/profile/academy" replace />} />
                 <Route path="/challenges" element={<Challenges />} />
+                <Route path="/challenges/cardio" element={<Challenges />} />
                 <Route path="/musculacao" element={<Musculation />} />
                 <Route path="/store" element={<InvictusStore />} />
                 <Route path="/ai" element={<InvictusAI />} />
