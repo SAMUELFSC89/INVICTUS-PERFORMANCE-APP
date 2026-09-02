@@ -27,7 +27,7 @@ export function Layout() {
   const isHome = location.pathname === '/' || location.pathname === '/invite';
   // Power Lift owns the whole viewport and ships its own footer. Keeping the
   // legacy shell mounted here produced two navigation bars on the same screen.
-  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health');
+  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity';
 
   const [theme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
