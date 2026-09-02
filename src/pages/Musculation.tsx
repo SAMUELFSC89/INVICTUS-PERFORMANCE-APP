@@ -64,7 +64,7 @@ function Footer({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   return <nav className="mus-footer" aria-label="Navegação principal">
     <button onClick={() => navigate('/')}><InvictusLogo size={25} /><span>Início</span></button>
     <button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button>
-    <button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Abrir musculação"><Plus /></button>
+    <button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button>
     <button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button>
     <button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button>
   </nav>;
