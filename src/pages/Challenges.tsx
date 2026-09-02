@@ -5,7 +5,7 @@ import {
   Zap, AlertCircle, ArrowRight,
   Info, Footprints
 } from 'lucide-react';
-import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
@@ -75,6 +75,7 @@ const DAILY_CHALLENGES_ORDER = ['workout', 'cardio'] as const;
 export function Challenges() {
   const { user: profile, refreshUser } = useUser();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Selected Category State
@@ -132,13 +133,16 @@ export function Challenges() {
   // Modals & Pending Operations
   // #234: HOME -> MUSCULACAO / CARDIO SEM ETAPA INTERMEDIARIA.
   //
-  // A Home navega para /challenges?type=workout|cardio. Ate agora o fluxo era
+  // A Home usa uma rota propria para cardio (/challenges/cardio). Mantemos a
+  // query ?type=cardio como compatibilidade com links antigos, mas a rota sem
+  // query e a entrada principal para o WKWebView do iPhone.
   // aberto apenas pelo useEffect mais abaixo, que roda DEPOIS da primeira
   // pintura: a lista de Desafios aparecia por um instante antes do overlay
   // subir, dando a impressao de ter sido jogado numa tela intermediaria e de
   // precisar procurar a atividade de novo. Resolvendo no proprio useState o
   // fluxo ja nasce aberto -- a lista nunca chega a ser vista.
-  const deepLinkType = searchParams.get('type');
+  const directCardioPath = location.pathname === '/challenges/cardio';
+  const deepLinkType = searchParams.get('type') || (directCardioPath ? 'cardio' : null);
   const deepLinkChallenge = deepLinkType === 'cardio'
     ? CORE_CHALLENGES.find((item) => item.id === deepLinkType) || null
     : null;
@@ -454,7 +458,7 @@ export function Challenges() {
   // A Home pode abrir diretamente o fluxo correto. Consumimos o parâmetro após
   // a abertura para que fechar a tela não a reabra em loop.
   useEffect(() => {
-    const requestedType = searchParams.get('type');
+    const requestedType = searchParams.get('type') || (location.pathname === '/challenges/cardio' ? 'cardio' : null);
     if (requestedType !== 'workout' && requestedType !== 'cardio') return;
     if (requestedType === 'workout') {
       navigate('/musculacao', { replace: true });
@@ -469,10 +473,12 @@ export function Challenges() {
       const challenge = CORE_CHALLENGES.find((item) => item.id === requestedType);
       if (challenge) { openedFromHomeRef.current = true; handleOpenChallenge(challenge); }
     }
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete('type');
-    setSearchParams(nextParams, { replace: true });
-  }, [navigate, searchParams, setSearchParams]);
+    if (searchParams.has('type')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('type');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [location.pathname, navigate, searchParams, setSearchParams]);
 
   // Fechar o fluxo deve devolver o usuario para ONDE ELE VEIO. Quem entrou pela
   // Home volta para a Home; quem abriu pela propria tela de Desafios continua
