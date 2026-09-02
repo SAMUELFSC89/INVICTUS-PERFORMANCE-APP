@@ -1031,3 +1031,68 @@ html.app-nativo body {
   .health-heart-card { padding:.85rem; } .health-heart-layout { grid-template-columns:62px 94px 1fr; gap:.45rem; } .health-heart-icon { width:58px; height:58px; } .health-heart-icon svg { width:26px; height:26px; } .health-heart-layout > div strong { font-size:27px; } .health-heart-layout > div strong small { font-size:11px; } .health-heart-layout > div p { font-size:9px; } .health-heart-minmax { grid-column:2 / 4; gap:.7rem; } .health-heart-minmax span { font-size:9px; } .health-heart-minmax b { font-size:13px; }
   .health-latest { padding:.85rem; } .health-workout { grid-template-columns:43px minmax(0,1fr) 16px; gap:.45rem; padding:.65rem 0; } .health-workout-icon { width:38px; height:38px; } .health-workout-icon svg { width:21px; } .health-workout b { font-size:13px; } .health-workout small { font-size:10px; } .health-workout > span:not(.health-workout-icon) { display:none; }
 }
+
+/* Seleção de cardio — redesign mobile: escolha rápida, contexto claro e
+   áreas de toque maiores para o fluxo nativo do iPhone. */
+.challenge-flow-cardio-picker {
+  width: min(100%, 32rem);
+  padding: .85rem;
+  border-color: rgba(245,160,0,.42);
+  background: radial-gradient(circle at 88% 0%, rgba(245,160,0,.13), transparent 25%), linear-gradient(145deg, #11100c, #060606 72%);
+}
+.challenge-flow-cardio-intro { display: grid; gap: .55rem; }
+.challenge-flow-cardio-selected { display: grid; grid-template-columns: 3.55rem minmax(0,1fr); gap: .72rem; align-items: center; padding: .72rem; border: 1px solid rgba(245,160,0,.62); border-radius: .72rem; background: linear-gradient(120deg, rgba(245,160,0,.16), rgba(245,160,0,.035) 58%, #090908); box-shadow: inset 0 0 .9rem rgba(245,160,0,.045); }
+.challenge-flow-cardio-selected-icon { display: grid; width: 3.35rem; height: 3.35rem; place-items: center; border: 1px solid #f5a000; border-radius: .85rem; color: #ffc335; background: #0a0906; box-shadow: 0 0 .95rem rgba(245,160,0,.2); }
+.challenge-flow-cardio-selected div { min-width: 0; }
+.challenge-flow-cardio-selected small,.challenge-flow-cardio-selected strong,.challenge-flow-cardio-selected>div>span { display: block; }
+.challenge-flow-cardio-selected small { color: #f5b516; font-size: .55rem; font-weight: 800; letter-spacing: .1em; }
+.challenge-flow-cardio-selected strong { margin: .18rem 0 .12rem; overflow: hidden; color: #fff; font-family: "Bebas Neue", sans-serif; font-size: 1.38rem; font-weight: 400; letter-spacing: .025em; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.challenge-flow-cardio-selected>div>span { overflow: hidden; color: #b4afa7; font-size: .66rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.challenge-flow-cardio-tracking { display: flex; align-items: center; gap: .55rem; min-height: 2.65rem; padding: .55rem .7rem; border: 1px solid rgba(255,255,255,.11); border-radius: .58rem; background: rgba(0,0,0,.22); }
+.challenge-flow-cardio-tracking>svg { width: 1.1rem; flex: none; }
+.challenge-flow-cardio-tracking span { display: grid; min-width: 0; }
+.challenge-flow-cardio-tracking b { color: #eeeae2; font-size: .62rem; letter-spacing: .035em; }
+.challenge-flow-cardio-tracking small { margin-top: .1rem; color: #98948c; font-size: .59rem; }
+.challenge-flow-cardio-tracking.is-gps>svg { color: #37d47b; }
+.challenge-flow-cardio-tracking.is-gps b { color: #72e59e; }
+.challenge-flow-cardio-tracking.is-timer>svg { color: #f5b516; }
+.challenge-flow-cardio-count { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin: 1rem .1rem .35rem; }
+.challenge-flow-cardio-count span { color: #f5b516; font-size: .58rem; font-weight: 800; letter-spacing: .1em; }
+.challenge-flow-cardio-count b { color: #8e8a82; font-size: .62rem; font-weight: 600; }
+.challenge-flow-cardio-group { margin-top: .82rem; }
+.challenge-flow-cardio-group-title { display: flex; align-items: center; gap: .55rem; margin-bottom: .45rem; }
+.challenge-flow-cardio-group-title>span { display: grid; width: 1.9rem; height: 1.9rem; flex: none; place-items: center; border: 1px solid rgba(245,160,0,.4); border-radius: .52rem; color: #f5b516; background: rgba(245,160,0,.08); }
+.challenge-flow-cardio-group-title>span.is-gps { border-color: rgba(55,212,123,.45); color: #55dd91; background: rgba(55,212,123,.08); }
+.challenge-flow-cardio-group-title svg { width: 1rem; height: 1rem; }
+.challenge-flow-cardio-group-title div { display: grid; min-width: 0; }
+.challenge-flow-cardio-group-title strong { color: #f4f1eb; font-size: .69rem; letter-spacing: .075em; }
+.challenge-flow-cardio-group-title small { margin-top: .08rem; color: #8e8a83; font-size: .59rem; }
+.challenge-flow-cardio-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .5rem; }
+.challenge-flow-cardio-grid.is-single { grid-template-columns: 1fr; }
+.challenge-flow-cardio-grid button { display: grid; grid-template-columns: 2.55rem minmax(0,1fr) 1.05rem; gap: .52rem; align-items: center; min-height: 4.75rem; padding: .55rem .52rem; border: 1px solid rgba(255,255,255,.13); border-radius: .7rem; color: #e9e6df; background: linear-gradient(145deg, #151515, #090909); text-align: left; transition: border-color .16s, background .16s, transform .16s, box-shadow .16s; }
+.challenge-flow-cardio-grid button:active { transform: scale(.98); }
+.challenge-flow-cardio-grid button:focus-visible { outline: 2px solid #ffd04a; outline-offset: 2px; }
+.challenge-flow-cardio-grid button.is-selected { border-color: #f5b516; background: linear-gradient(145deg, rgba(245,160,0,.2), #0d0c08); box-shadow: inset 0 0 .9rem rgba(245,160,0,.06), 0 0 .7rem rgba(245,160,0,.12); }
+.challenge-flow-cardio-option-icon { display: grid; width: 2.25rem; height: 2.25rem; place-items: center; border: 1px solid rgba(245,160,0,.33); border-radius: .6rem; color: #f5b516; background: #0a0907; }
+.challenge-flow-cardio-grid button.is-selected .challenge-flow-cardio-option-icon { border-color: #f5b516; background: rgba(245,160,0,.13); }
+.challenge-flow-cardio-option-icon svg { width: 1.2rem; height: 1.2rem; }
+.challenge-flow-cardio-option-copy { display: grid; min-width: 0; }
+.challenge-flow-cardio-option-copy strong { overflow: hidden; color: #f8f6f1; font-size: .74rem; font-weight: 800; line-height: 1.08; text-overflow: ellipsis; }
+.challenge-flow-cardio-option-copy small { margin-top: .22rem; overflow: hidden; color: #97938b; font-size: .56rem; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.challenge-flow-cardio-option-check { display: grid; width: 1.02rem; height: 1.02rem; place-items: center; border: 1px solid #5c5a55; border-radius: 50%; color: #171000; }
+.challenge-flow-cardio-option-check svg { width: .68rem; height: .68rem; stroke-width: 3; }
+.challenge-flow-cardio-grid button.is-selected .challenge-flow-cardio-option-check { border-color: #f5b516; background: #f5b516; }
+.challenge-flow-cardio-note { display: flex; align-items: flex-start; gap: .42rem !important; margin: 1rem .1rem .1rem !important; padding: .62rem .7rem; border: 1px solid rgba(255,255,255,.1); border-radius: .58rem; color: #aaa69e !important; background: rgba(0,0,0,.2); font-size: .61rem !important; line-height: 1.35 !important; }
+.challenge-flow-cardio-note svg { width: .88rem; flex: none; margin-top: .03rem; color: #f5b516; }
+.challenge-flow-cardio-actions { position: sticky; bottom: -.85rem; z-index: 3; margin: .75rem -.85rem -.85rem; padding: .65rem .85rem calc(.85rem + env(safe-area-inset-bottom)); background: linear-gradient(to bottom, rgba(6,6,6,0), rgba(6,6,6,.96) 22%, #060606 55%); }
+.challenge-flow-cardio-actions .challenge-flow-end-error { margin: 0 0 .55rem; }
+.challenge-flow-cardio-actions .challenge-flow-primary { margin-top: 0; min-height: 2.85rem; box-shadow: 0 .35rem 1rem rgba(245,160,0,.18); }
+@media (max-width: 390px) {
+  .challenge-flow-cardio-picker { padding: .72rem; }
+  .challenge-flow-cardio-grid { gap: .4rem; }
+  .challenge-flow-cardio-grid button { grid-template-columns: 2.3rem minmax(0,1fr) .95rem; gap: .38rem; min-height: 4.65rem; padding: .48rem .42rem; }
+  .challenge-flow-cardio-option-icon { width: 2.08rem; height: 2.08rem; }
+  .challenge-flow-cardio-option-copy strong { font-size: .7rem; }
+  .challenge-flow-cardio-option-copy small { font-size: .52rem; }
+  .challenge-flow-cardio-actions { margin-right: -.72rem; margin-left: -.72rem; padding-right: .72rem; padding-left: .72rem; }
+}
