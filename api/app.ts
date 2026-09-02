@@ -366,6 +366,7 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'ranking-enrollment': return await rankingEnrollmentHandler(req as any, res as any);
     case 'training-plans': return await trainingPlansHandler(req as any, res as any);
     case 'community-championship': return await communityChampionshipHandler(req as any, res as any);
+    case 'share': return await shareHandler(req as any, res as any);
     case 'gyms': return await gymsHandler(req as any, res as any);
     case 'gyms-join': return await gymsJoinHandler(req as any, res as any);
     case 'gyms-checkin': return await gymsCheckinHandler(req as any, res as any);
