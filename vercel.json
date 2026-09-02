@@ -1,4 +1,9 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/__/auth/:path*",
@@ -6,11 +11,11 @@
     },
     {
       "source": "/api/(.*)",
-      "destination": "/api/app.ts"
+      "destination": "/api/app"
     },
     {
       "source": "/share/:id",
-      "destination": "/api/app.ts"
+      "destination": "/api/app?action=share&id=:id"
     },
     {
       "source": "/((?!api/|assets/|__/auth/|capacete\\.webp|favicon-16\\.png|favicon-32\\.png|apple-touch-icon\\.png|icon-180\\.png|icon-192\\.png|icon-512\\.png|icon-512-maskable\\.png|brand-share\\.png|manifest\\.json|sw\\.js).*)",

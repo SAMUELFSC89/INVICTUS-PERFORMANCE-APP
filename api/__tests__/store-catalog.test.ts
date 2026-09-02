@@ -54,9 +54,11 @@ describe('Loja Invictus - catálogo e precificação', () => {
     expect(new Set(products.map(product => product.category))).toEqual(new Set(['Vestuário', 'Acessórios']));
   });
 
-  it('não cria preço, Coin Price, estoque ou imagem que não foram fornecidos', () => {
+  it('mantém os preços aprovados, sem criar Coin Price legado ou estoque', () => {
     const products = materializeCatalogue();
-    expect(products.every(product => product.pricing.cashPrice === null)).toBe(true);
+    expect(products[0].pricing.cashPrice).toBe(39.90);
+    expect(products[0].coinDiscountPrice).toBe(32.90);
+    expect(products[0].coinDiscountAmount).toBe(700);
     expect(products.every(product => product.coinPrice === null)).toBe(true);
     expect(products.every(product => product.commercialStock === 0 && product.dropStock === 0)).toBe(true);
     expect(REAL_STORE_CATALOGUE.every(product => product.imageStatus === 'READY' && product.images.primary)).toBe(true);
@@ -86,7 +88,8 @@ describe('Loja Invictus - catálogo e precificação', () => {
   it('identifica lacunas sem impedir a visibilidade de prévia solicitada', () => {
     const product = materializeCatalogue()[0];
     expect(product.published).toBe(true);
-    expect(getPublicationGaps(product)).toEqual(expect.arrayContaining(['descrição pública', 'configuração comercial']));
+    expect(getPublicationGaps(product)).toEqual(expect.arrayContaining(['descrição pública']));
+    expect(getPublicationGaps(product)).not.toContain('configuração comercial');
     expect(getPublicationGaps(product)).not.toContain('imagem principal');
   });
 
@@ -105,7 +108,8 @@ describe('Loja Invictus - catálogo e precificação', () => {
     expect(publicProduct).not.toHaveProperty('supplierDescription');
     expect(publicProduct).not.toHaveProperty('pricing');
     expect(publicProduct).not.toHaveProperty('adminPending');
-    expect(publicProduct.cashPrice).toBeNull();
+    expect(publicProduct.cashPrice).toBe(39.90);
+    expect(publicProduct).not.toHaveProperty('coinPrice');
   });
 
   it('gera histórico de custo idempotente para a mesma combinação de produto e custo', () => {
@@ -116,7 +120,8 @@ describe('Loja Invictus - catálogo e precificação', () => {
 
   it('recalcula pendências administrativas sem depender do estado salvo', () => {
     const pending = getAdminPending(materializeCatalogue()[15]);
-    expect(pending).toEqual(expect.arrayContaining(['SUPPLIER', 'SUPPLIER_SKU', 'GTIN_PENDING_VERIFICATION', 'SUPPLIER_COST', 'PUBLIC_DESCRIPTION', 'CASH_PRICE', 'COIN_PRICE', 'STOCK', 'LOGISTICS', 'PRICING']));
+    expect(pending).toEqual(expect.arrayContaining(['SUPPLIER', 'SUPPLIER_SKU', 'GTIN_PENDING_VERIFICATION', 'SUPPLIER_COST', 'PUBLIC_DESCRIPTION', 'STOCK', 'LOGISTICS', 'PRICING']));
+    expect(pending).not.toContain('COIN_DISCOUNT');
     expect(pending).not.toContain('IMAGES');
   });
 });

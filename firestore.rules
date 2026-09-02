@@ -206,6 +206,9 @@ service cloud.firestore {
     match /store_drops/{dropId} {
       allow read, write: if false;
     }
+    match /store_drop_redemptions/{redemptionId} {
+      allow read, write: if false;
+    }
     match /physicalOrders/{orderId} {
       allow read, write: if false;
     }

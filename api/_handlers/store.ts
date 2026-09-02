@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         RewardCoinEngine.getWallet(auth.uid),
         RewardCoinEngine.getTransactions(auth.uid),
       ]);
-      return res.status(200).json({ success: true, products, activeDrop: activeDrop ? { id: activeDrop.id, name: activeDrop.name || null, startsAt: activeDrop.startsAt || null, endsAt: activeDrop.endsAt || null } : null, coinWallet, coinTransactions });
+      return res.status(200).json({ success: true, products, activeDrop: activeDrop ? { id: activeDrop.id, name: activeDrop.name || null, productId: activeDrop.productId || null, coinPrice: activeDrop.coinPrice || null, availableStock: activeDrop.availableStock ?? null, limitPerUser: activeDrop.limitPerUser || null, startsAt: activeDrop.startsAt || null, endsAt: activeDrop.endsAt || null, status: activeDrop.status || null, shippingMode: activeDrop.shippingMode } : null, coinWallet, coinTransactions });
     }
 
     if (req.method === 'GET' && action === 'product') {
@@ -39,9 +39,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, orders });
     }
 
+    if (req.method === 'GET' && action === 'payment-status') {
+      const orderId = String(req.query.orderId || '');
+      if (!orderId) return res.status(400).json({ success: false, error: 'Identificador do pedido ausente.' });
+      const order = await StoreEngine.getPhysicalOrder(auth.uid, orderId);
+      if (!order) return res.status(404).json({ success: false, error: 'Pedido não encontrado.' });
+      return res.status(200).json({ success: true, order });
+    }
+
     if (req.method === 'POST' && action === 'redeem-with-coins') {
       const result = await StoreEngine.redeemWithCoins({ userId: auth.uid, productId: String(req.body.productId || ''), quantity: Number(req.body.quantity), address: req.body.address, idempotencyKey: String(req.body.idempotencyKey || '') });
       return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result });
+    }
+
+    if (req.method === 'POST' && action === 'create-cash-order') {
+      const paymentMethod = req.body.paymentMethod === 'COINS_PLUS_MONEY' ? 'COINS_PLUS_MONEY' : 'MONEY';
+      const result = await StoreEngine.createMoneyOrder({ userId: auth.uid, productId: String(req.body.productId || ''), quantity: Number(req.body.quantity), address: req.body.address, paymentMethod, idempotencyKey: String(req.body.idempotencyKey || '') });
+      try {
+        const payment = await StoreEngine.createPaymentForOrder(auth.uid, result.order.orderId);
+        return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result, payment });
+      } catch (paymentError) {
+        await StoreEngine.updateOrderStatus(result.order.orderId, 'CANCELLED').catch(() => undefined);
+        throw paymentError;
+      }
     }
 
     const admin = await requireAdmin(auth.uid);

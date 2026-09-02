@@ -9,18 +9,23 @@ export function initSentry(): void {
     logger.info({}, 'Sentry DSN not provided; running without external Sentry logging');
   }
 
-  Sentry.init({
-    dsn: dsn || undefined,
-    environment,
-    tracesSampleRate: environment === 'production' ? 0.1 : 1.0,
-    profilesSampleRate: environment === 'production' ? 0.1 : 1.0,
-    beforeSend(event) {
-      // Filter out sensitive data if needed
-      return event;
-    }
-  });
-
-  logger.info({ environment, hasDsn: !!dsn }, 'Sentry APM initialized successfully');
+  try {
+    Sentry.init({
+      dsn: dsn || undefined,
+      environment,
+      tracesSampleRate: environment === 'production' ? 0.1 : 1.0,
+      profilesSampleRate: environment === 'production' ? 0.1 : 1.0,
+      beforeSend(event) {
+        // Filter out sensitive data if needed
+        return event;
+      }
+    });
+    logger.info({ environment, hasDsn: !!dsn }, 'Sentry APM initialized successfully');
+  } catch (error: any) {
+    // Observability must never prevent the API from booting. This also keeps
+    // local/test environments without procfs metrics compatible with Sentry.
+    logger.warn({ environment, error: error?.message || String(error) }, 'Sentry could not be initialized; continuing without APM');
+  }
 }
 
 export function captureException(error: unknown, context?: Record<string, unknown>): void {

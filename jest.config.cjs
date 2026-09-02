@@ -9,4 +9,5 @@ module.exports = {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
+  modulePathIgnorePatterns: ['<rootDir>/.tmp-vercel-ci/'],
 };

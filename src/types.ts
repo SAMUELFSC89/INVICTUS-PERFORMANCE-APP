@@ -868,18 +868,19 @@ export interface PhysicalOrderItemSnapshot {
   productId: string;
   name: string;
   gtin: string | null;
-  supplierCode: string | null;
-  image: string | null;
+  /** Optional while older orders are migrated to the expanded snapshot. */
+  supplierCode?: string | null;
+  image?: string | null;
   quantity: number;
   unitPrice: number;
   supplierCostSnapshot: number;
   coinAmountUsed: number;
   cashAmount: number;
   shippingAmount: number;
-  cashPriceAtPurchase: number;
-  discountMode: 'NONE' | 'COINS_DISCOUNT' | 'DROP';
-  shippingMode: StoreShippingMode;
-  createdAt: string;
+  cashPriceAtPurchase?: number;
+  discountMode?: 'NONE' | 'COINS_DISCOUNT' | 'DROP';
+  shippingMode?: StoreShippingMode;
+  createdAt?: string;
 }
 
 export interface PhysicalShippingAddress {
@@ -906,8 +907,12 @@ export interface PhysicalOrder {
   idempotencyKey: string;
   paymentProvider?: string | null;
   paymentReference?: string | null;
+  paymentQrCode?: { encodedImage?: string; payload?: string; expirationDate?: string } | null;
+  paymentInvoiceUrl?: string | null;
+  paymentDueAt?: string | null;
   coinReservationStatus?: 'NONE' | 'HELD' | 'CONSUMED' | 'RELEASED' | 'REFUNDED';
   coinReservationExpiresAt?: string | null;
+  shippingMode?: StoreShippingMode;
   trackingCode?: string | null;
   shippedAt?: string | null;
   deliveredAt?: string | null;
@@ -916,26 +921,32 @@ export interface PhysicalOrder {
   updatedAt: string;
 }
 
-export type StoreShippingMode = 'CUSTOMER_PAID' | 'INVICTUS_SUBSIDIZED' | 'SPONSORED' | 'FREE_SHIPPING_CAMPAIGN';
+export type StoreShippingMode = 'CUSTOMER_PAID' | 'INVICTUS_SUBSIDIZED' | 'SPONSORED' | 'FREE_SHIPPING_CAMPAIGN' | 'FREE' | 'PAID_PENDING';
 export type StoreDropStatus = 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'SOLD_OUT' | 'ENDED' | 'CANCELLED';
 
 export interface StoreDrop {
   id: string;
   name: string;
-  productId: string;
-  coinPrice: number;
-  initialStock: number;
-  availableStock: number;
-  reservedStock: number;
-  limitPerUser: number;
+  /** Canonical single-product fields. Optional for legacy multi-product drops. */
+  productId?: string;
+  coinPrice?: number;
+  initialStock?: number;
+  availableStock?: number;
+  reservedStock?: number;
+  limitPerUser?: number;
   startsAt: string;
   endsAt: string;
-  status: StoreDropStatus;
+  status?: StoreDropStatus;
   shippingMode: StoreShippingMode;
-  maxExposure: number;
+  maxExposure?: number;
+  maxBudget?: number | null;
+  image?: string | null;
+  /** Legacy fields kept for the existing admin/drop migration. */
+  active?: boolean;
+  productIds?: string[];
   freightSubsidy: number;
   packagingCost: number;
-  fulfillmentCost: number;
+  fulfillmentCost?: number;
   otherCosts: number;
   createdAt: string;
   updatedAt: string;

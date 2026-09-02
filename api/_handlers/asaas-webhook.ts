@@ -7,6 +7,7 @@ import {
   confirmarInscricaoChampionshipPorPagamento,
   marcarInscricaoChampionshipComoReembolsada,
 } from '../_lib/championship-inscription-service.js';
+import { StoreEngine } from '../_lib/store-engine.js';
 
 /**
  * Webhook do Asaas: recebe eventos de transferência PIX (TRANSFER_DONE,
@@ -58,6 +59,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const confirmado = event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED';
 
       console.log('[Asaas Webhook] Evento de cobrança: ' + event + ' para pagamento ' + payment.id + ' (status: ' + payment.status + ')');
+
+      // A loja física também usa o Asaas. O pedido é localizado pela referência
+      // do pagamento antes de tentar interpretar o evento como inscrição.
+      const resultadoLoja = await StoreEngine.handleStorePaymentWebhook(payment.id, event, payment.value);
+      if (resultadoLoja.found) {
+        return res.status(200).json({ received: true, loja: resultadoLoja });
+      }
 
       if (confirmado) {
         // Uma cobranca so pode ser de UMA das duas coisas (inscricao de
