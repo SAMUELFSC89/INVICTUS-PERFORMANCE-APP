@@ -64,7 +64,7 @@ export function FloatingSessionIndicator() {
   if (!activeSession && !runningSession) return null;
 
   // Don't show if we are already on the challenges or running page depending on the session type
-  if (activeSession && location.pathname === '/challenges') return null;
+  if (activeSession && location.pathname.startsWith('/challenges')) return null;
   if (runningSession && location.pathname === '/running') return null;
 
   const formatTime = (seconds: number) => {
@@ -87,7 +87,7 @@ export function FloatingSessionIndicator() {
 
   const handleAction = () => {
     if (activeSession) navigate('/challenges');
-    else navigate('/challenges?type=cardio');
+    else navigate('/challenges/cardio');
   };
 
   const handleCancel = (e: React.MouseEvent) => {
