@@ -28,7 +28,7 @@ export function ActivityHistoryPageNew() {
       <nav className="ah-new-footer">
         <button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button>
         <button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button>
-        <button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Criar ou iniciar treino"><Plus /></button>
+        <button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button>
         <button className="is-active" onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button>
         <button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button>
       </nav>
