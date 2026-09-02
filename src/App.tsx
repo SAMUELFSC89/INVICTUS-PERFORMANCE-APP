@@ -19,6 +19,7 @@ const Home = lazyNamed(() => import('./pages/Home'), 'Home');
 const Rankings = lazyNamed(() => import('./pages/Rankings'), 'Rankings');
 const Achievements = lazyNamed(() => import('./pages/Achievements'), 'Achievements');
 const Challenges = lazyNamed(() => import('./pages/Challenges'), 'Challenges');
+const ActivityTypeChooser = lazyNamed(() => import('./components/ActivityTypeChooser'), 'ActivityTypeChooser');
 const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
 const ProfileSecondary = lazyNamed(() => import('./pages/ProfileSecondary'), 'ProfileSecondary');
@@ -86,6 +87,7 @@ export default function App() {
                 <Route path="/gym" element={<Navigate to="/profile/academy" replace />} />
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/challenges/cardio" element={<Challenges />} />
+                <Route path="/activity" element={<ActivityTypeChooser />} />
                 <Route path="/musculacao" element={<Musculation />} />
                 <Route path="/store" element={<InvictusStore />} />
                 <Route path="/ai" element={<InvictusAI />} />
