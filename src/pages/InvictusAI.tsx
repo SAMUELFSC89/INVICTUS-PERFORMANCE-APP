@@ -73,7 +73,7 @@ export function InvictusAI() {
     </article>)}{loading ? <div className="iai-thinking"><i /><i /><i /><span>Analisando com segurança…</span></div> : null}<div ref={endRef} /></section>
     <form className="iai-composer" onSubmit={submit}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={handleKeyDown} maxLength={4000} rows={1} placeholder="Pergunte sobre treino, evolução ou o aplicativo…" aria-label="Mensagem para a Invictus IA" /><button disabled={loading || !input.trim()} aria-label="Enviar mensagem"><Send /></button></form>
     <p className="iai-disclaimer">A Invictus IA não substitui orientação médica ou profissional presencial.</p>
-  </div><nav className="iai-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Criar treino"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>
+  </div><nav className="iai-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>
   </main>, document.body);
 }
 
