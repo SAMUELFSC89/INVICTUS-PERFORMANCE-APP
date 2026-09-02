@@ -157,7 +157,12 @@ export function Challenges() {
   // caia direto na lista de Desafios). Com a ref, o mesmo valor de `type` so e
   // consumido uma vez, mas SEMPRE abre a tela quando chega pela primeira vez,
   // independente do que `flowScreen` estava valendo naquele instante.
-  const consumedDeepLinkRef = useRef<string | null>(deepLinkChallenge ? deepLinkType : null);
+  // Começa vazio de propósito. Mesmo quando o fluxo já nasce aberto pelo
+  // useState acima, o efeito precisa ser a fonte única que consome o deep link
+  // e marca a origem como Home. Inicializar com "cardio" fazia o efeito pular
+  // justamente na primeira montagem e deixava a abertura dependente do timing
+  // da transição de rota.
+  const consumedDeepLinkRef = useRef<string | null>(null);
   const [flowScreen, setFlowScreen] = useState<ChallengeFlowScreen | null>(
     initialActive
       ? 'active'
@@ -455,11 +460,10 @@ export function Challenges() {
       navigate('/musculacao', { replace: true });
       return;
     }
-    // #250: so pula se ESTE MESMO valor de type ja foi aberto por este efeito
-    // (ou pelo useState inicial) -- nao depende de flowScreen (ver comentario
-    // na ref acima). Isso garante que o deep link sempre abre a tela certa na
-    // primeira vez que aparece, mesmo se o componente ja tiver montado com
-    // algum flowScreen setado por outro motivo.
+    // #250: só pula se ESTE MESMO valor de type já foi processado por este
+    // efeito. Não depende de flowScreen nem do timing da primeira renderização.
+    // Assim o deep link sempre abre a tela certa na primeira vez que aparece,
+    // mesmo se o componente já tiver montado com outro fluxo.
     if (consumedDeepLinkRef.current !== requestedType) {
       consumedDeepLinkRef.current = requestedType;
       const challenge = CORE_CHALLENGES.find((item) => item.id === requestedType);
