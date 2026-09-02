@@ -20,10 +20,12 @@ function isPersistenceFailure(error: unknown): boolean {
 
 function isAiAvailabilityFailure(error: unknown): boolean {
   const candidate = error as RequestError | undefined;
-  if (['AI_NOT_CONFIGURED', 'BILLING_REQUIRED', 'QUOTA_EXCEEDED', 'INVALID_API_KEY', 'PERMISSION_DENIED', 'MODEL_UNAVAILABLE', 'NETWORK_ERROR', 'UPSTREAM_ERROR'].includes(candidate?.code || '')) return true;
+  if (['AI_NOT_CONFIGURED', 'BILLING_REQUIRED', 'QUOTA_EXCEEDED', 'INVALID_API_KEY', 'PERMISSION_DENIED', 'MODEL_UNAVAILABLE', 'NETWORK_ERROR', 'UPSTREAM_ERROR', 'INVALID_PLAN'].includes(candidate?.code || '')) return true;
+  if (candidate?.retryable === true) return true;
+  if (typeof candidate?.status === 'number' && candidate.status >= 500) return true;
+  if (candidate instanceof TypeError) return true;
   const message = String(candidate?.message || '').toLowerCase();
-  return (candidate?.status === 502 || candidate?.status === 503)
-    && /gemini|invictus ia|faturamento|billing|quota|modelo|ia está indisponível|ia esta indisponivel/.test(message);
+  return /gemini|invictus ia|faturamento|billing|quota|modelo|ia está indisponível|ia esta indisponivel|fetch failed|network|timeout/.test(message);
 }
 
 const FALLBACK_REQUIREMENTS: Record<string, string[]> = {
@@ -126,11 +128,11 @@ function writeLocalPlan(draft: WorkoutPlanDraft): WorkoutPlan {
   return plan;
 }
 
-async function request<T>(method: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, body?: unknown, path = '/api/training-plans'): Promise<T> {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado.');
   const token = await user.getIdToken();
-  const response = await fetch(apiUrl('/api/training-plans'), {
+  const response = await fetch(apiUrl(path), {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: body === undefined ? undefined : JSON.stringify(body)
@@ -165,7 +167,10 @@ async function syncPendingLocalPlan(): Promise<WorkoutPlan | null> {
 export const workoutPlanService = {
   async list(): Promise<WorkoutPlan[]> {
     try {
-      const result = await request<{ plans: WorkoutPlan[] }>('GET');
+      // Na Vercel, /api/* é reescrito para /api/app. Sem a ação explícita,
+      // o endpoint unificado responde 400 em vez de encaminhar para a lista.
+      // A query continua compatível com o handler direto usado localmente.
+      const result = await request<{ plans: WorkoutPlan[] }>('GET', undefined, '/api/training-plans?action=training-plans');
       const synced = await syncPendingLocalPlan();
       const local = readLocalPlans();
       return [...(synced ? [synced] : []), ...local, ...result.plans.filter((remote) => !local.some((item) => item.id === remote.id))];
