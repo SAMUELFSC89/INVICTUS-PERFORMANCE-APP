@@ -41,7 +41,7 @@ export function StoreProductDetail() {
 
   const packageLabel = product ? [product.flavor, product.weight ? `${product.weight}${product.weightUnit || ''}` : null, product.package].filter(Boolean).join(' • ') : '';
   const cashPending = product?.cashPrice === null;
-  const coinsPending = product?.coinPrice === null;
+  const discountAvailable = Boolean(product?.canPurchaseWithCoinsDiscount && product.coinDiscountPrice !== null && product.coinDiscountAmount !== null);
 
   return createPortal(
     <main className="product-detail-screen">
@@ -68,17 +68,24 @@ export function StoreProductDetail() {
           {product.productStatus === 'COMING_SOON' ? <section className="product-detail-coming"><PackageCheck /><span><b>EM BREVE</b><p>Este produto faz parte da futura linha própria Invictus Performance. Compra e resgate serão liberados somente após aprovação comercial.</p></span><button disabled>EM BREVE</button></section> : <section className="product-detail-options">
             <article>
               <ShoppingBag />
-              <span>COMPRA</span>
+              <span>COMPRA NORMAL</span>
               <strong>{cashPending ? 'PREÇO A DEFINIR' : cash(product.cashPrice!)}</strong>
               <p>{cashPending ? 'O valor de venda ainda será definido.' : product.commercialAvailability === 'AVAILABLE' ? 'Disponível para compra.' : 'Estoque comercial indisponível.'}</p>
               <button disabled={!product.availableForPurchase} onClick={() => navigate(`/store/product/${product.productId}/checkout?mode=money`)}>{product.availableForPurchase ? 'COMPRAR AGORA' : 'EM PREPARAÇÃO'}</button>
             </article>
             <article>
               <Coins />
-              <span>RESGATE COM COINS</span>
-              <strong>{coinsPending ? 'COINS A DEFINIR' : `${product.coinPrice!.toLocaleString('pt-BR')} COINS`}</strong>
-              <p>{product.dropState === 'OPEN' ? 'Drop aberto para resgate.' : product.nextDropAt ? `Próximo Drop: ${new Date(product.nextDropAt).toLocaleString('pt-BR')}` : 'Próximo Drop ainda não agendado.'}</p>
-              <button disabled={!product.availableForDrop} onClick={() => navigate(`/store/product/${product.productId}/checkout?mode=coins`)}>{product.availableForDrop ? 'RESGATAR NO DROP' : 'DROP EM PREPARAÇÃO'}</button>
+              <span>COMPRA COM DESCONTO</span>
+              <strong>{discountAvailable ? `${cash(product.coinDiscountPrice!)} + ${product.coinDiscountAmount!.toLocaleString('pt-BR')} Coins` : 'DESCONTO A DEFINIR'}</strong>
+              <p>{discountAvailable ? 'Pague uma parte em dinheiro e use Coins para liberar o preço reduzido.' : 'A opção de desconto ainda está sendo configurada.'}</p>
+              <button disabled={!product.availableForPurchase || !discountAvailable} onClick={() => navigate(`/store/product/${product.productId}/checkout?mode=discount`)}>{product.availableForPurchase && discountAvailable ? 'USAR DESCONTO' : 'EM PREPARAÇÃO'}</button>
+            </article>
+            <article>
+              <Coins />
+              <span>DROP 100% COINS</span>
+              <strong>{product.drop?.coinPrice ? `${product.drop.coinPrice.toLocaleString('pt-BR')} COINS` : 'DROP A DEFINIR'}</strong>
+              <p>{product.dropState === 'OPEN' ? 'Drop aberto para resgate.' : product.nextDropAt ? `Próximo Drop: ${new Date(product.nextDropAt).toLocaleString('pt-BR')}` : 'Nenhum Drop aberto para este produto.'}</p>
+              <button disabled={!product.availableForDrop} onClick={() => navigate(`/store/product/${product.productId}/checkout?mode=drop`)}>{product.availableForDrop ? 'RESGATAR NO DROP' : 'DROP EM PREPARAÇÃO'}</button>
             </article>
           </section>}
 
