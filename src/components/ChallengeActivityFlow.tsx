@@ -10,19 +10,28 @@ import { formatPaceValue } from '../lib/runUtils';
 
 export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'cardio-complete' | 'cardio-summary' | 'day-progress';
 
-export type CardioOption = { id: string; label: string; icon: 'run' | 'walk' | 'bike' | 'treadmill' | 'elliptical' | 'stairs' | 'row' | 'swim' | 'hiit'; gps: boolean };
+export type CardioOption = {
+  id: string;
+  label: string;
+  description: string;
+  icon: 'run' | 'walk' | 'bike' | 'treadmill' | 'elliptical' | 'stairs' | 'row' | 'swim' | 'hiit';
+  gps: boolean;
+};
 export const CARDIO_OPTIONS: CardioOption[] = [
-  { id: 'running', label: 'Corrida ao ar livre', icon: 'run', gps: true },
-  { id: 'walking', label: 'Caminhada ao ar livre', icon: 'walk', gps: true },
-  { id: 'bike', label: 'Bike ao ar livre', icon: 'bike', gps: true },
-  { id: 'treadmill', label: 'Esteira', icon: 'treadmill', gps: false },
-  { id: 'stationary_bike', label: 'Bike ergométrica', icon: 'bike', gps: false },
-  { id: 'elliptical', label: 'Elíptico / Transport', icon: 'elliptical', gps: false },
-  { id: 'rowing', label: 'Remo indoor', icon: 'row', gps: false },
-  { id: 'stair_climber', label: 'Escada / Stairmaster', icon: 'stairs', gps: false },
-  { id: 'swimming', label: 'Natação', icon: 'swim', gps: false },
-  { id: 'hiit', label: 'HIIT / Funcional', icon: 'hiit', gps: false }
+  { id: 'running', label: 'Corrida ao ar livre', description: 'Distância, pace e rota no mapa', icon: 'run', gps: true },
+  { id: 'walking', label: 'Caminhada ao ar livre', description: 'Distância, pace e rota no mapa', icon: 'walk', gps: true },
+  { id: 'bike', label: 'Bike ao ar livre', description: 'Distância, velocidade e rota', icon: 'bike', gps: true },
+  { id: 'treadmill', label: 'Esteira', description: 'Tempo, distância e velocidade', icon: 'treadmill', gps: false },
+  { id: 'stationary_bike', label: 'Bike ergométrica', description: 'Tempo, distância e velocidade', icon: 'bike', gps: false },
+  { id: 'elliptical', label: 'Elíptico / Transport', description: 'Treino registrado por tempo', icon: 'elliptical', gps: false },
+  { id: 'rowing', label: 'Remo indoor', description: 'Treino registrado por tempo', icon: 'row', gps: false },
+  { id: 'stair_climber', label: 'Escada / Stairmaster', description: 'Treino registrado por tempo', icon: 'stairs', gps: false },
+  { id: 'swimming', label: 'Natação', description: 'Treino registrado por tempo', icon: 'swim', gps: false },
+  { id: 'hiit', label: 'HIIT / Funcional', description: 'Treino registrado por tempo', icon: 'hiit', gps: false }
 ];
+const outdoorCardioOptions = CARDIO_OPTIONS.filter(item => item.gps);
+const indoorCardioOptions = CARDIO_OPTIONS.filter(item => !item.gps && item.id !== 'swimming');
+const aquaticCardioOptions = CARDIO_OPTIONS.filter(item => item.id === 'swimming');
 const groups = ['Peito', 'Costas', 'Pernas', 'Ombros', 'Braços', 'Abdômen', 'Corpo todo'];
 const RunningGlyph = ({ size = 20 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -218,33 +227,104 @@ export function ChallengeActivityFlow({
       )}
 
       {screen === 'cardio-picker' && (
-        <section className="challenge-flow-card challenge-flow-cardio-picker">
-          <p>Escolha a modalidade que você irá realizar.</p>
-          <div className="challenge-flow-cardio-grid">
-            {CARDIO_OPTIONS.map(item => (
-              <button
-                className={cardio.id === item.id ? 'is-selected' : ''}
-                key={item.id}
-                onClick={() => onCardio(item)}
-              >
-                {icon(item.icon)}
-                <span>{item.label}</span>
-                <small>{item.gps ? 'Com GPS' : 'Sem GPS'}</small>
-              </button>
-            ))}
-          </div>
-          <p className="challenge-flow-note">
-            <Navigation /> Corrida, caminhada e bike ao ar livre usam GPS.
-          </p>
-          {startError && (
-            <div className="challenge-flow-end-error" role="alert" aria-live="assertive">
-              <AlertCircle size={16} />
-              <span>{startError}</span>
+        <section className="challenge-flow-card challenge-flow-cardio-picker" aria-label="Seleção de modalidade de cardio">
+          <div className="challenge-flow-cardio-intro">
+            <div className="challenge-flow-cardio-selected">
+              <span className="challenge-flow-cardio-selected-icon">{icon(cardio.icon, 27)}</span>
+              <div>
+                <small>MODALIDADE SELECIONADA</small>
+                <strong>{cardio.label.replace(' ao ar livre', '')}</strong>
+                <span>{cardio.description}</span>
+              </div>
             </div>
-          )}
-          <button className="challenge-flow-primary" onClick={() => onStart('cardio')} disabled={startingActivity}>
-            <Play />{startingActivity ? 'INICIANDO...' : 'INICIAR CARDIO'}
-          </button>
+            <div className={`challenge-flow-cardio-tracking ${cardio.gps ? 'is-gps' : 'is-timer'}`}>
+              {cardio.gps ? <Navigation /> : <Timer />}
+              <span><b>{cardio.gps ? 'GPS + MAPA' : 'REGISTRO POR TEMPO'}</b><small>{cardio.gps ? 'Ative a localização' : 'Sem localização necessária'}</small></span>
+            </div>
+          </div>
+
+          <div className="challenge-flow-cardio-count"><span>ESCOLHA SUA MODALIDADE</span><b>{CARDIO_OPTIONS.length} opções</b></div>
+
+          <section className="challenge-flow-cardio-group" aria-labelledby="cardio-outdoor-title">
+            <div className="challenge-flow-cardio-group-title">
+              <span className="is-gps"><Navigation /></span>
+              <div><strong id="cardio-outdoor-title">AO AR LIVRE</strong><small>Rota e distância com GPS</small></div>
+            </div>
+            <div className="challenge-flow-cardio-grid">
+              {outdoorCardioOptions.map(item => (
+                <button
+                  type="button"
+                  className={cardio.id === item.id ? 'is-selected' : ''}
+                  key={item.id}
+                  onClick={() => onCardio(item)}
+                  aria-pressed={cardio.id === item.id}
+                >
+                  <span className="challenge-flow-cardio-option-icon">{icon(item.icon, 22)}</span>
+                  <span className="challenge-flow-cardio-option-copy"><strong>{item.label.replace(' ao ar livre', '')}</strong><small>{item.description}</small></span>
+                  <span className="challenge-flow-cardio-option-check" aria-hidden="true">{cardio.id === item.id ? <Check /> : null}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="challenge-flow-cardio-group" aria-labelledby="cardio-indoor-title">
+            <div className="challenge-flow-cardio-group-title">
+              <span><Timer /></span>
+              <div><strong id="cardio-indoor-title">ACADEMIA / ESTÚDIO</strong><small>Registre o treino sem GPS</small></div>
+            </div>
+            <div className="challenge-flow-cardio-grid">
+              {indoorCardioOptions.map(item => (
+                <button
+                  type="button"
+                  className={cardio.id === item.id ? 'is-selected' : ''}
+                  key={item.id}
+                  onClick={() => onCardio(item)}
+                  aria-pressed={cardio.id === item.id}
+                >
+                  <span className="challenge-flow-cardio-option-icon">{icon(item.icon, 22)}</span>
+                  <span className="challenge-flow-cardio-option-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
+                  <span className="challenge-flow-cardio-option-check" aria-hidden="true">{cardio.id === item.id ? <Check /> : null}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="challenge-flow-cardio-group" aria-labelledby="cardio-aquatic-title">
+            <div className="challenge-flow-cardio-group-title">
+              <span><Waves /></span>
+              <div><strong id="cardio-aquatic-title">PISCINA</strong><small>Registre sua sessão na água</small></div>
+            </div>
+            <div className="challenge-flow-cardio-grid is-single">
+              {aquaticCardioOptions.map(item => (
+                <button
+                  type="button"
+                  className={cardio.id === item.id ? 'is-selected' : ''}
+                  key={item.id}
+                  onClick={() => onCardio(item)}
+                  aria-pressed={cardio.id === item.id}
+                >
+                  <span className="challenge-flow-cardio-option-icon">{icon(item.icon, 22)}</span>
+                  <span className="challenge-flow-cardio-option-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
+                  <span className="challenge-flow-cardio-option-check" aria-hidden="true">{cardio.id === item.id ? <Check /> : null}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <p className="challenge-flow-note">
+            <MapPin /> O GPS é usado apenas nas modalidades ao ar livre. Você pode alterar a escolha a qualquer momento.
+          </p>
+          <div className="challenge-flow-cardio-actions">
+            {startError && (
+              <div className="challenge-flow-end-error" role="alert" aria-live="assertive">
+                <AlertCircle size={16} />
+                <span>{startError}</span>
+              </div>
+            )}
+            <button type="button" className="challenge-flow-primary" onClick={() => onStart('cardio')} disabled={startingActivity}>
+              <Play />{startingActivity ? 'INICIANDO...' : 'INICIAR CARDIO'}
+            </button>
+          </div>
         </section>
       )}
 
