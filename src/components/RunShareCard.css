@@ -67,7 +67,7 @@
 
 .share-background-picker {
   position: absolute;
-  top: 53px;
+  top: 94px;
   left: 50%;
   display: flex;
   max-width: calc(100vw - 28px);
@@ -426,7 +426,7 @@
   }
 
   .share-card-activity-heading h1 {
-    font-size: 43px;
+    font-size: 37px;
   }
 
   .share-card-metric strong {
