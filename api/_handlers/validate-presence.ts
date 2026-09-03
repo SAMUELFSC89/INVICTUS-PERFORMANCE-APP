@@ -17,6 +17,8 @@ import { estimateCalories, formatPace } from '../_lib/activity-metrics.js';
 import { commitActivityAfterPresenceCheck } from '../_lib/activity-commit-service.js';
 import { criarInscricaoChampionship } from '../_lib/championship-inscription-service.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
+import { getAiPresenceModel } from '../_lib/ai-config.js';
+import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -217,16 +219,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     parts.push({ text: promptText });
 
     let geminiResponse;
+    const presenceModel = getAiPresenceModel();
+    const presenceRequestId = newAiRequestId();
+    const presenceStartedAt = Date.now();
     try {
       geminiResponse = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: presenceModel,
         contents: { parts },
         config: {
           systemInstruction,
           responseMimeType: "application/json"
         }
       });
+      // Só metadados numéricos -- nunca a selfie/foto de referência nem o texto
+      // de "reason" (dado de biometria do atleta), e a decisão antifraude
+      // abaixo continua exatamente igual, esta chamada só observa.
+      logAiUsage({
+        requestId: presenceRequestId,
+        userId: auth.uid,
+        feature: 'PRESENCE_BIOMETRIC_CHECK',
+        model: presenceModel,
+        ...extractUsage(geminiResponse),
+        durationMs: Date.now() - presenceStartedAt,
+        success: true,
+        contextSize: promptText.length
+      }).catch(() => {});
     } catch (apiErr: any) {
+      logAiUsage({
+        requestId: presenceRequestId,
+        userId: auth.uid,
+        feature: 'PRESENCE_BIOMETRIC_CHECK',
+        model: presenceModel,
+        durationMs: Date.now() - presenceStartedAt,
+        success: false,
+        errorCode: apiErr?.message ? String(apiErr.message).slice(0, 200) : 'unknown_error'
+      }).catch(() => {});
       console.error('[Verified Presence API] Gemini processing error:', apiErr);
       throw new Error(`Servidor de análise biométrica temporariamente ocupado: ${apiErr.message}`);
     }

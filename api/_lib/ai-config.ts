@@ -38,6 +38,50 @@ export function getAiTextModel(): string {
   return configured.replace(/^models\//, '');
 }
 
+// #AI_COST_AUDIT: configuração por feature (Fase 8 da auditoria de custo).
+// Cada getAi*Model() é a ÚNICA fonte do nome do modelo para aquela feature --
+// nenhum arquivo de handler deve escrever "gemini-..." direto no código.
+// Os padrões abaixo preservam EXATAMENTE o modelo que cada chamada já usava
+// antes desta auditoria: nenhuma troca de modelo foi feita às cegas, em
+// especial nas features de antifraude (visão/presença), onde uma troca de
+// modelo sem validação separada poderia mudar a precisão da checagem.
+export function getAiChatModel(): string {
+  return read(process.env.GEMINI_CHAT_MODEL) || getAiTextModel();
+}
+
+export function getAiWorkoutModel(): string {
+  return read(process.env.GEMINI_WORKOUT_MODEL) || getAiTextModel();
+}
+
+/** PowerLift (vídeo) e validação de foto de atividade -- já usavam getAiTextModel(). */
+export function getAiVisionModel(): string {
+  return read(process.env.GEMINI_VISION_MODEL) || getAiTextModel();
+}
+
+/** Prova de presença biométrica -- antes hardcoded como "gemini-3.5-flash". */
+export function getAiPresenceModel(): string {
+  return read(process.env.GEMINI_PRESENCE_MODEL) || 'gemini-3.5-flash';
+}
+
+/**
+ * Tier mais barato do Gemini (Flash-Lite), reservado para tarefas de baixo
+ * risco: texto curto/decorativo com fallback determinístico, ou classificação
+ * estruturada simples -- nunca para chat aberto, geração de treino vendida
+ * como benefício PRO, ou qualquer sinal usado pelo antifraude (regra #2).
+ */
+export function getAiLiteModel(): string {
+  return read(process.env.GEMINI_LITE_MODEL) || 'gemini-3.1-flash-lite';
+}
+
+export function getAiHabitModel(): string {
+  return read(process.env.GEMINI_HABIT_MODEL) || getAiLiteModel();
+}
+
+/** Extração/classificação de memórias em segundo plano -- não é a resposta do chat em si. */
+export function getAiMemoryExtractionModel(): string {
+  return read(process.env.GEMINI_MEMORY_MODEL) || getAiLiteModel();
+}
+
 function errorText(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;

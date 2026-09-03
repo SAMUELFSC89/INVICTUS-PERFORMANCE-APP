@@ -222,6 +222,20 @@ export const workoutPlanService = {
       const result = await request<{ plan: WorkoutPlanDraft }>('POST', { action: 'generate', answers });
       return { ...result.plan, generationMode: 'gemini' };
     } catch (error) {
+      const candidate = error as RequestError | undefined;
+      // #AI_COST_AUDIT: geração de treino por IA é benefício PRO. Isto não é
+      // uma falha do Gemini (outage/cota/faturamento) -- é uma decisão de
+      // produto -- então a mensagem/log não pode soar como indisponibilidade
+      // técnica. O atleta Free ainda sai com um plano de treino de verdade
+      // (mesma biblioteca oficial de exercícios), só que montado localmente.
+      if (candidate?.code === 'PRO_REQUIRED') {
+        console.info('[WorkoutPlanService] Geração por IA é exclusiva do plano PRO; usando plano local determinístico.');
+        const fallback = buildLocalFallbackPlan(answers);
+        return {
+          ...fallback,
+          description: 'Plano montado com a biblioteca oficial de exercícios do Invictus. A geração por Invictus IA é um benefício exclusivo do plano PRO.'
+        };
+      }
       if (isAiAvailabilityFailure(error)) {
         console.warn('[WorkoutPlanService] Gemini indisponível; usando plano local de contingência:', error);
         return buildLocalFallbackPlan(answers);

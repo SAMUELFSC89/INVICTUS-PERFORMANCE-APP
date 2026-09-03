@@ -1,7 +1,37 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { MemoryRepository } from '../../_repositories/memory-repository.js';
 import { UserMemory, CreateMemoryDTO, MemoryCategory } from '../../_dto/memory-dto.js';
-import { getAiApiKey, getAiTextModel } from '../../_lib/ai-config.js';
+import { getAiApiKey, getAiMemoryExtractionModel } from '../../_lib/ai-config.js';
+import { extractUsage, logAiUsage, newAiRequestId } from '../../_lib/ai-usage-logger.js';
+
+// #AI_COST_AUDIT: antes desta mudança, TODA mensagem do chat (mesmo "oi",
+// "valeu", "beleza") disparava uma segunda chamada Gemini completa só para
+// checar se havia algo memorável -- dobrando o número de requests do
+// recurso mais usado do app, no mesmo modelo caro do chat (não um modelo
+// econômico, apesar de ser uma classificação simples). O filtro abaixo evita
+// a chamada quando a mensagem claramente não carrega informação duradoura,
+// sem arriscar perder uma memória real: qualquer mensagem fora da lista de
+// saudações/confirmações comuns ou mais longa que o limiar ainda passa
+// normalmente pela extração via IA.
+// Mensagens curtas ainda podem ser um dado real ("2x/semana", "joelho D"), por
+// isso o filtro NÃO é por tamanho -- só reconhece saudações/confirmações
+// exatas conhecidas. Qualquer coisa fora dessa lista, mesmo curta, segue
+// normalmente para a extração via IA.
+const TRIVIAL_MESSAGE_PATTERNS = [
+  /^oi+!?$/, /^ol[aá]!?$/, /^e\s*a[ií]!?$/, /^bom\s*dia!?$/, /^boa\s*tarde!?$/, /^boa\s*noite!?$/,
+  /^obrigad[oa]!?$/, /^vlw!?$/, /^valeu!?$/, /^bl?z!?$/, /^beleza!?$/, /^show!?$/, /^top!?$/,
+  /^ok(ay)?!?$/, /^certo!?$/, /^entendi!?$/, /^perfeito!?$/, /^legal!?$/, /^massa!?$/,
+  /^sim!?$/, /^n[aã]o!?$/, /^de nada!?$/, /^tchau!?$/, /^at[eé]\s*mais!?$/, /^flw!?$/,
+  /^👍+$/, /^🙏+$/, /^😊+$/, /^❤️+$/
+];
+
+export function isTrivialMessage(message: string): boolean {
+  const trimmed = message.trim().toLowerCase();
+  return TRIVIAL_MESSAGE_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+/** Contexto suficiente para a extração sem reenviar a resposta inteira da IA. */
+const MAX_AI_RESPONSE_CHARS_FOR_EXTRACTION = 600;
 
 export class MemoryService {
   constructor(private memoryRepo: MemoryRepository) {}
@@ -118,6 +148,16 @@ ${lines.join('\n')}
     aiResponse: string
   ): Promise<void> {
     if (!userId || !userMessage || userMessage.trim().length < 5) return;
+    // #AI_COST_AUDIT: saudações/confirmações não carregam memória duradoura --
+    // não vale a pena gastar uma chamada Gemini inteira só para descobrir isso.
+    if (isTrivialMessage(userMessage)) return;
+
+    const requestId = newAiRequestId();
+    const startedAt = Date.now();
+    // #AI_COST_AUDIT: extração de memória é classificação estruturada em
+    // segundo plano (não a resposta do chat) -- roda no tier Flash-Lite, mais
+    // barato, sem prejuízo de qualidade percebida pelo atleta.
+    const model = getAiMemoryExtractionModel();
 
     try {
       const apiKey = getAiApiKey();
@@ -127,6 +167,13 @@ ${lines.join('\n')}
         apiKey,
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
       });
+
+      // A resposta completa da IA pode ser longa (análises detalhadas); para
+      // decidir o que vale memorizar, o começo já basta -- reenviar o texto
+      // inteiro só infla o input sem melhorar a extração.
+      const truncatedAiResponse = aiResponse.length > MAX_AI_RESPONSE_CHARS_FOR_EXTRACTION
+        ? `${aiResponse.slice(0, MAX_AI_RESPONSE_CHARS_FOR_EXTRACTION)}…`
+        : aiResponse;
 
       const extractionPrompt = `
 Você é o módulo de Análise de Memória Persistente do Invictus IA.
@@ -141,7 +188,7 @@ Analise a mensagem do usuário e determine se ela contém informações duradour
 5. Se a mensagem não contiver nada relevante para armazenamento duradouro, retorne uma lista vazia.
 
 Mensagem do Usuário: "${userMessage}"
-Resposta da IA: "${aiResponse}"
+Resposta da IA: "${truncatedAiResponse}"
 `;
 
       const schema = {
@@ -170,13 +217,24 @@ Resposta da IA: "${aiResponse}"
       };
 
       const result = await ai.models.generateContent({
-        model: getAiTextModel(),
+        model,
         contents: extractionPrompt,
         config: {
           responseMimeType: 'application/json',
           responseSchema: schema,
         }
       });
+
+      logAiUsage({
+        requestId,
+        userId,
+        feature: 'MEMORY_EXTRACTION',
+        model,
+        ...extractUsage(result),
+        durationMs: Date.now() - startedAt,
+        success: true,
+        contextSize: extractionPrompt.length
+      }).catch(() => {});
 
       const rawText = result.text;
       if (!rawText) return;
@@ -197,6 +255,15 @@ Resposta da IA: "${aiResponse}"
         }
       }
     } catch (err) {
+      logAiUsage({
+        requestId,
+        userId,
+        feature: 'MEMORY_EXTRACTION',
+        model,
+        durationMs: Date.now() - startedAt,
+        success: false,
+        errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown_error'
+      }).catch(() => {});
       console.warn('[MemoryService] Silent extraction error:', err);
     }
   }

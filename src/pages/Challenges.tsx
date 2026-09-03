@@ -114,6 +114,13 @@ export function Challenges() {
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsSignal, setGpsSignal] = useState<'SEARCHING' | 'WEAK' | 'STRONG'>('SEARCHING');
   const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
+  // #168: sem isto, um GPS que nunca consegue um fix (indoors, prédio alto,
+  // erro silencioso do provedor nativo) deixava a tela presa para sempre em
+  // "Buscando sinal..." sem nenhuma saída -- só fechando e reabrindo a
+  // atividade. `gpsRetryKey` força o efeito de watchPosition a reiniciar do
+  // zero quando o atleta toca em "Tentar novamente".
+  const [gpsStalled, setGpsStalled] = useState(false);
+  const [gpsRetryKey, setGpsRetryKey] = useState(0);
   const wakeLockRef = useRef<any>(null);
 
   // Tela de detalhe pos-atividade usada pelo fluxo de musculacao e pelo
@@ -343,6 +350,14 @@ export function Challenges() {
     setGpsAccuracy(null);
     setGpsSignal('SEARCHING');
     setGpsPermissionDenied(false);
+    setGpsStalled(false);
+
+    // #168: se nenhum fix chegar em 20s (prédio, GPS travado no provedor
+    // nativo, callback perdido), a tela ficava presa para sempre em "Buscando
+    // sinal..." sem nenhuma saída visível além de fechar e reabrir a
+    // atividade. Isto dá ao atleta uma mensagem clara e um botão para
+    // reiniciar o watch sem perder a sessão em andamento.
+    const stallTimer = window.setTimeout(() => setGpsStalled(true), 20000);
 
     // Tela ligada durante o cardio ao ar livre -- sem isto o celular apaga a
     // tela no bolso e o atleta perde o mapa/cronometro no meio da corrida.
@@ -361,6 +376,9 @@ export function Challenges() {
         // instead of letting NaN slip into the UI and audit payload.
         const accuracy = Number.isFinite(rawAccuracy) && rawAccuracy >= 0 ? rawAccuracy : 999;
         const { speed } = position.coords;
+        // Qualquer fix real (mesmo fraco) prova que o GPS voltou a responder.
+        clearTimeout(stallTimer);
+        setGpsStalled(false);
         setGpsAccuracy(accuracy);
         setGpsSignal(accuracy < 20 ? 'STRONG' : accuracy < 50 ? 'WEAK' : 'SEARCHING');
 
@@ -450,12 +468,19 @@ export function Challenges() {
       (err) => {
         console.warn('[Challenges] GPS watchPosition error during cardio session:', err);
         if (err.code === 1) setGpsPermissionDenied(true);
+        // #168: erro de posição indisponível/timeout (code 2/3) não travava
+        // nada visualmente antes -- o indicador continuava "Buscando sinal..."
+        // e o atleta não tinha como saber se era só demora ou uma falha real.
+        // O timer de estagnação acima cobre o caso de nenhum callback chegar;
+        // isto cobre o caso de o provedor nativo desistir e reportar erro.
+        else if (err.code === 2 || err.code === 3) setGpsStalled(true);
       },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
     );
     gpsWatchIdRef.current = watchId;
 
     return () => {
+      clearTimeout(stallTimer);
       if (gpsWatchIdRef.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(gpsWatchIdRef.current);
         gpsWatchIdRef.current = null;
@@ -465,7 +490,7 @@ export function Challenges() {
         wakeLockRef.current = null;
       }
     };
-  }, [activeSession?.id, activeSession?.requiresGpsDistance]);
+  }, [activeSession?.id, activeSession?.requiresGpsDistance, gpsRetryKey]);
 
   // Open Challenge Modal
   const handleOpenChallenge = (challenge: CoreChallenge) => {
@@ -642,7 +667,13 @@ export function Challenges() {
 
   // End Workout/Cardio Session
   const handleEndActivity = async () => {
-    if (!activeSession) return;
+    // #328: o botão "Finalizar" do app já é desabilitado durante `loading`,
+    // mas o botão da notificação persistente/Live Activity chama este mesmo
+    // handler direto via ref, sem passar pela UI -- sem esta guarda, um toque
+    // na notificação enquanto uma finalização anterior ainda está em voo
+    // (ex: rede lenta) disparava uma segunda chamada concorrente a
+    // endSession(), duplicando o envio e deixando o estado inconsistente.
+    if (!activeSession || loading) return;
     setLoading(true);
     setError(null);
     setNotice(null);
@@ -823,6 +854,14 @@ export function Challenges() {
       triggerXPToast(0, 'Sessão descartada.');
       navigate('/activity/exit', { replace: true });
     }
+  };
+
+  // #168: reinicia o watch de GPS do zero sem descartar a sessão em
+  // andamento -- o efeito acima reage a `gpsRetryKey` e refaz toda a
+  // configuração (wake lock, watchPosition, timer de estagnação).
+  const handleRetryGps = () => {
+    setGpsStalled(false);
+    setGpsRetryKey((key) => key + 1);
   };
 
   // #324: pausa/retoma a sessao ativa. So existia no componente orfao
@@ -1202,6 +1241,8 @@ export function Challenges() {
           gpsAccuracy={gpsAccuracy}
           gpsSignal={gpsSignal}
           gpsPermissionDenied={gpsPermissionDenied}
+          gpsStalled={gpsStalled}
+          onRetryGps={handleRetryGps}
           gymName={profile?.gymName || 'Sua academia'}
           checkInRequired={championshipCheckInRequired}
           completedChallengeIds={Object.keys(submissions)}

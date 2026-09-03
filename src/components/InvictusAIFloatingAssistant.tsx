@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import {
@@ -46,6 +46,8 @@ interface Message {
   timestamp: string;
   audioBase64?: string | null;
   audioMimeType?: string;
+  /** Bloqueio de benefício PRO (chat de IA) -- renderiza CTA de upgrade em vez de um erro genérico. */
+  isProGate?: boolean;
 }
 
 export interface AIVoiceConfig {
@@ -309,6 +311,7 @@ function renderChipIcon(type: string) {
 
 export function InvictusAIFloatingAssistant() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useUser();
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -851,6 +854,19 @@ export function InvictusAIFloatingAssistant() {
       }
       const errorData = await res.json().catch(() => ({}));
       failureMessage = typeof errorData.error === 'string' ? errorData.error : '';
+      // Chat da Invictus IA é benefício PRO (decisão de produto, não uma falha
+      // técnica) -- mostra um CTA de upgrade em vez de um erro genérico.
+      if (res.status === 403 && errorData.code === 'PRO_REQUIRED') {
+        setMessages(prev => [...prev, {
+          id: `ai_${Date.now()}`,
+          sender: 'ai',
+          text: failureMessage || 'A Invictus IA (chat) é um benefício exclusivo do plano PRO.',
+          timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          isProGate: true
+        }]);
+        setLoading(false);
+        return;
+      }
     } catch (err) {
       console.warn('[Invictus AI] Erro ao consultar IA:', err);
       failureMessage = err instanceof Error ? err.message : '';
@@ -895,6 +911,18 @@ export function InvictusAIFloatingAssistant() {
         <div className="markdown-body text-[13px] sm:text-sm leading-relaxed text-zinc-100 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_strong]:font-semibold [&_strong]:text-[#f5ab12]">
           <Markdown>{cleanedText || rawText}</Markdown>
         </div>
+
+        {/* Bloqueio PRO: CTA de upgrade em vez de um erro genérico */}
+        {m.isProGate && (
+          <button
+            onClick={() => navigate('/store')}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#f5ab12] to-amber-500 px-3.5 py-1.5 text-[13px] font-semibold text-zinc-950 hover:brightness-110 transition-all cursor-pointer group"
+          >
+            <Sparkles size={14} />
+            <span>Assinar Invictus PRO</span>
+            <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        )}
 
         {/* Progressive Disclosure Interactive Action */}
         {hasFullAnalysisCTA && (

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
-import { Sparkles, X, Send, ShieldCheck, Cpu, RefreshCw } from 'lucide-react';
+import { Sparkles, X, Send, ShieldCheck, Cpu, RefreshCw, ChevronRight } from 'lucide-react';
 import { UserPerformanceState } from '../../core/performance/performanceEngine';
 import { auth } from '../../firebase';
 import { API_CONFIG } from '../../config';
@@ -19,9 +20,12 @@ interface Message {
   confidence?: string;
   sources?: string[];
   timestamp: string;
+  /** Bloqueio de benefício PRO (chat de IA) -- renderiza CTA de upgrade em vez de um erro genérico. */
+  isProGate?: boolean;
 }
 
 export function PerformanceAIModal({ isOpen, onClose, perfState }: PerformanceAIModalProps) {
+  const navigate = useNavigate();
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -100,6 +104,19 @@ Como posso ajudar na sua jornada hoje?`,
         }
       }
       const errorData = await res.json().catch(() => ({}));
+      // Chat da Invictus IA é benefício PRO (decisão de produto, não uma falha
+      // técnica) -- mostra um CTA de upgrade em vez do erro genérico abaixo.
+      if (res.status === 403 && errorData.code === 'PRO_REQUIRED') {
+        setMessages(prev => [...prev, {
+          id: `ai_${Date.now()}`,
+          sender: 'ai',
+          text: errorData.error || 'A Invictus IA (chat) é um benefício exclusivo do plano PRO.',
+          timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          isProGate: true
+        }]);
+        setLoading(false);
+        return;
+      }
       throw new Error(errorData.error || 'A IA não retornou uma resposta válida.');
     } catch (e) {
       console.warn('[Performance AI Client] Servidor indisponível:', e);
@@ -292,6 +309,17 @@ Para aprofundar qualquer aspecto específico, você pode me perguntar sobre:
                     <div className="markdown-body space-y-2 text-xs leading-relaxed text-zinc-200 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_h1]:text-sm [&_h1]:font-bold [&_h2]:text-xs [&_h2]:font-bold [&_h3]:text-xs [&_h3]:font-bold [&_h3]:text-emerald-400 [&_strong]:font-semibold [&_strong]:text-emerald-300 [&_code]:bg-zinc-800 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
                       <Markdown>{m.text}</Markdown>
                     </div>
+                  )}
+
+                  {m.isProGate && (
+                    <button
+                      onClick={() => navigate('/store')}
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-3.5 py-1.5 text-[11px] font-bold text-zinc-950 hover:brightness-110 transition-all cursor-pointer group"
+                    >
+                      <Sparkles size={12} />
+                      <span>Assinar Invictus PRO</span>
+                      <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                    </button>
                   )}
 
                   {m.sender === 'ai' && m.sources && (

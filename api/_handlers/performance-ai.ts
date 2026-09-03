@@ -1,10 +1,12 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors, verifyAuth } from '../_lib/common.js';
+import { cors, verifyAuth, db } from '../_lib/common.js';
 import { GoogleGenAI } from '@google/genai';
 import { MemoryRepository } from '../_repositories/memory-repository.js';
-import { MemoryService } from '../_services/ai/memory-service.js';
-import { classifyAiError, getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
+import { MemoryService, isTrivialMessage } from '../_services/ai/memory-service.js';
+import { classifyAiError, getAiApiKey, getAiChatModel } from '../_lib/ai-config.js';
 import { lerSerieTemporalMetrica, HealthMetricType } from '../_lib/health-data-layer.js';
+import { isProUser } from '../_lib/entitlement.js';
+import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 
 const memoryRepo = new MemoryRepository();
 const memoryService = new MemoryService(memoryRepo);
@@ -221,6 +223,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Texto da pergunta é obrigatório e deve ter no máximo 4.000 caracteres.' });
   }
 
+  // #AI_COST_AUDIT: Chat da Invictus IA virou benefício PRO (decisão do
+  // produto, não uma limitação técnica). As ações de memória acima (get/
+  // delete/add) não chamam Gemini e continuam liberadas para todos -- só o
+  // fluxo que efetivamente gera uma resposta via IA é bloqueado aqui, ANTES
+  // de montar qualquer prompt ou tocar na API do Gemini, para não gastar nada
+  // com quem não tem acesso.
+  try {
+    const userSnap = await db.collection('users').doc(userId).get();
+    const userData = userSnap.exists ? userSnap.data() : null;
+    if (!isProUser(userData)) {
+      return res.status(403).json({
+        error: 'A Invictus IA (chat) é um benefício exclusivo do plano PRO.',
+        code: 'PRO_REQUIRED'
+      });
+    }
+  } catch (entitlementErr) {
+    // Falha ao checar o plano não pode travar o usuário PRO real; loga e
+    // segue para a checagem de IA normalmente (fail-open só nesta consulta
+    // de leitura, nunca nas decisões de antifraude).
+    console.warn('[PerformanceAI] Falha ao verificar plano PRO; seguindo com checagem padrão:', entitlementErr);
+  }
+
   try {
     const apiKey = getAiApiKey();
     if (!apiKey) {
@@ -309,7 +333,9 @@ BIOMETRIA E CADASTRO DO ATLETA (DADOS OFICIAIS DE REGISTRO NO SISTEMA):
     // O contexto detalhado exige várias séries temporais. Carregue-o apenas
     // na área de Saúde ou quando a pergunta realmente for sobre saúde, sem
     // aumentar custo e latência de conversas gerais sobre o aplicativo.
-    if (isHealthIntent(queryText, currentPath)) {
+    // Mensagens triviais ("oi", "valeu") na tela de Saúde não justificam o
+    // fan-out de 18 métricas x 30 dias no Firestore.
+    if (!isTrivialMessage(queryText) && isHealthIntent(queryText, currentPath)) {
       userContextSummary += `\n${await buildHealthContext(userId)}\n`;
     }
 
@@ -389,13 +415,28 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
       payload.aiPersonality || userProfile?.aiPersonality || 'motivadora'
     );
 
+    const chatModel = getAiChatModel();
+    const chatRequestId = newAiRequestId();
+    const chatStartedAt = Date.now();
     const response = await ai.models.generateContent({
-      model: getAiTextModel(),
+      model: chatModel,
       contents: fullPrompt,
       config: {
         systemInstruction: dynamicSystemPrompt
       }
     });
+
+    logAiUsage({
+      requestId: chatRequestId,
+      userId,
+      feature: 'AI_CHAT',
+      model: chatModel,
+      ...extractUsage(response),
+      durationMs: Date.now() - chatStartedAt,
+      success: true,
+      contextSize: fullPrompt.length + dynamicSystemPrompt.length,
+      conversationMessagesCount: Array.isArray(history) ? history.length : 0
+    }).catch(() => {});
 
     const aiText = response.text || 'Não foi possível processar a resposta no momento.';
 
@@ -414,10 +455,13 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
       .trim();
 
     const MAX_TTS_ATTEMPTS = payload.includeAudio === true ? 3 : 0;
+    const ttsModel = 'gemini-2.5-flash-preview-tts';
     for (let ttsAttempt = 1; ttsAttempt <= MAX_TTS_ATTEMPTS; ttsAttempt++) {
+      const ttsRequestId = newAiRequestId();
+      const ttsStartedAt = Date.now();
       try {
         const ttsResponse = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-preview-tts',
+          model: ttsModel,
           contents: cleanTtsText || aiText,
           config: {
             responseModalities: ['AUDIO'],
@@ -432,6 +476,18 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
           }
         });
 
+        logAiUsage({
+          requestId: ttsRequestId,
+          userId,
+          feature: 'AI_CHAT_TTS',
+          model: ttsModel,
+          ...extractUsage(ttsResponse),
+          durationMs: Date.now() - ttsStartedAt,
+          success: true,
+          retryCount: ttsAttempt - 1,
+          contextSize: (cleanTtsText || aiText).length
+        }).catch(() => {});
+
         const parts = ttsResponse.candidates?.[0]?.content?.parts;
         if (parts && parts.length > 0) {
           for (const part of parts) {
@@ -445,6 +501,16 @@ Responda como a Invictus Performance IA seguindo rigorosamente os 4 domínios e 
 
         if (audioBase64) break;
       } catch (ttsErr: any) {
+        logAiUsage({
+          requestId: ttsRequestId,
+          userId,
+          feature: 'AI_CHAT_TTS',
+          model: ttsModel,
+          durationMs: Date.now() - ttsStartedAt,
+          success: false,
+          retryCount: ttsAttempt - 1,
+          errorCode: ttsErr?.message ? String(ttsErr.message).slice(0, 200) : 'unknown_error'
+        }).catch(() => {});
         console.warn(`[PerformanceAI] TTS generation attempt ${ttsAttempt}/${MAX_TTS_ATTEMPTS} failed:`, ttsErr?.message || ttsErr);
       }
 

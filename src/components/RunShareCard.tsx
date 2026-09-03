@@ -223,13 +223,22 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     setFeedback(null);
     setIsGenerating(true);
     try {
-      // pixelRatio 1 evita estourar a memoria do Safari/iPhone. O arquivo final
-      // continua sendo exportado no tamanho vertical oficial 1080x1920.
+      // #169: com pixelRatio fixo em 1, a captura saia do tamanho real do
+      // card na tela (ex: ~360px de largura num iPhone) e so depois era
+      // esticada ate 1080x1920 pelo canvas final -- essa ampliacao de ~3x em
+      // cima de uma captura de baixa resolucao era a causa da perda de
+      // qualidade relatada. Agora calculamos o pixelRatio a partir do
+      // tamanho real do card (agora sempre 9:16, ver RunShareCard.css) para
+      // que a captura ja nasca perto da resolucao final, sem depender de
+      // esticar a imagem depois. O teto de 2 preserva a mesma cautela de
+      // memoria do Safari/iPhone que o valor fixo anterior tentava garantir.
+      const cardRect = cardRef.current.getBoundingClientRect();
+      const pixelRatio = cardRect.width > 0 ? Math.min(2, 1080 / cardRect.width) : 2;
       await new Promise(resolve => setTimeout(resolve, 150));
       const dataUrl = await toPng(cardRef.current, {
         canvasWidth: 1080,
         canvasHeight: 1920,
-        pixelRatio: 1,
+        pixelRatio,
         cacheBust: true,
         backgroundColor: '#050608',
       });
@@ -379,7 +388,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           </div>
 
           <div className="share-card-brand">
-            <InvictusLogo size={48} />
+            <InvictusLogo size={64} />
             <div className="share-card-brand-copy">
               <strong>INVICTUS</strong>
               <span>PERFORMANCE</span>

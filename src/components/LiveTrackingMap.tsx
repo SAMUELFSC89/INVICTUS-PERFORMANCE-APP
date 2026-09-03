@@ -13,6 +13,9 @@ interface LiveTrackingMapProps {
   gpsAccuracy: number | null;
   gpsSignal: 'SEARCHING' | 'WEAK' | 'STRONG';
   permissionDenied?: boolean;
+  /** #168: nenhum fix de GPS chegou dentro do tempo esperado -- mostra uma saída clara em vez de "buscando..." infinito. */
+  stalled?: boolean;
+  onRetry?: () => void;
   heightPx?: number;
 }
 
@@ -50,13 +53,25 @@ function ensureInvictusLayers(map: MapboxMap, points: LiveTrackingPoint[]) {
   }
 }
 
-function EmptyMapState({ permissionDenied, gpsAccuracy, gpsSignal }: Pick<LiveTrackingMapProps, 'permissionDenied' | 'gpsAccuracy' | 'gpsSignal'>) {
+function EmptyMapState({ permissionDenied, gpsAccuracy, gpsSignal, stalled, onRetry }: Pick<LiveTrackingMapProps, 'permissionDenied' | 'gpsAccuracy' | 'gpsSignal' | 'stalled' | 'onRetry'>) {
+  // #168: sem esta ramificação, um GPS que nunca consegue um fix deixava o
+  // atleta preso para sempre no ícone pulsante de "Buscando sinal...", sem
+  // nenhuma explicação nem saída -- exatamente o "só fica essa bolinha"
+  // reportado. Depois de ~20s sem resposta (ver Challenges.tsx), mostramos
+  // uma mensagem clara com um botão para reiniciar o GPS sem perder a sessão.
+  if (!permissionDenied && stalled) {
+    return <div className="live-tracking-map-empty">
+      <AlertCircle size={26} />
+      <span>Não conseguimos obter sinal de GPS. Verifique se a localização do aparelho está ativada e você está em um local aberto.</span>
+      {onRetry && <button type="button" className="live-tracking-map-retry" onClick={onRetry}><RefreshCw size={14} />Tentar novamente</button>}
+    </div>;
+  }
   return <div className="live-tracking-map-empty">{permissionDenied ? <><AlertCircle size={26} /><span>Permissão de GPS negada. Ative a localização para ver o mapa.</span></> : <><MapPin size={26} className={gpsAccuracy ? undefined : 'is-pulsing'} /><span>{gpsAccuracy === null ? 'Buscando sinal de GPS...' : gpsSignal === 'STRONG' ? 'Sinal ativo — aguardando primeiro ponto.' : 'Sinal instável. Vá para um local mais aberto.'}</span></>}</div>;
 }
 
 /** Renderer visual apenas. Captura, persistencia e antifraude GPS continuam no activityService. */
 export function LiveTrackingMap(props: LiveTrackingMapProps) {
-  const { points, gpsAccuracy, gpsSignal, permissionDenied, heightPx = 360 } = props;
+  const { points, gpsAccuracy, gpsSignal, permissionDenied, stalled, onRetry, heightPx = 360 } = props;
   const bundledToken = useMemo(resolveMapboxToken, []);
   const [token, setToken] = useState(bundledToken);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -147,7 +162,7 @@ export function LiveTrackingMap(props: LiveTrackingMapProps) {
   const resetBearing = () => mapRef.current?.easeTo({ bearing: 0, duration: 400 });
 
   return <div className="live-tracking-map live-tracking-map-mapbox" style={{ height: heightPx }}>
-    {!lastPoint ? <EmptyMapState permissionDenied={permissionDenied} gpsAccuracy={gpsAccuracy} gpsSignal={gpsSignal} /> : token && !mapError ? <>
+    {!lastPoint ? <EmptyMapState permissionDenied={permissionDenied} gpsAccuracy={gpsAccuracy} gpsSignal={gpsSignal} stalled={stalled} onRetry={onRetry} /> : token && !mapError ? <>
       <div ref={containerRef} className="h-full w-full" />
       <div className="live-map-controls" aria-label="Controles do mapa">
         <button type="button" onClick={resetBearing} aria-label="Orientar mapa ao norte"><Compass /></button>

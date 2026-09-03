@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth } from '../_lib/common.js';
+import { isProUser } from '../_lib/entitlement.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -27,18 +28,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('[Private Challenges API Error]:', error);
     return res.status(500).json({ error: error.message || 'Erro ao processar requisição de desafios.' });
   }
-}
-
-/**
- * Checa se o usuário tem plano PRO (subscriptionTier === 'performance').
- * Esta é a MESMA checagem usada no restante do app (Home.tsx, Performance.tsx,
- * Profile.tsx) — não inventamos um novo critério de entitlement aqui.
- * Nota: unificar essa lógica em um único lugar é o objetivo da tarefa #128
- * (Política canônica de entitlement PRO/Free), ainda pendente.
- */
-function isProUser(userData: any): boolean {
-  const tier = (userData?.subscriptionTier || '').toString().toLowerCase();
-  return tier === 'performance' || tier === 'pro';
 }
 
 /**

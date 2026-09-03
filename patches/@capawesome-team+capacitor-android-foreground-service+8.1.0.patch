@@ -1,0 +1,83 @@
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/LICENSE b/node_modules/@capawesome-team/capacitor-android-foreground-service/LICENSE
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/README.md b/node_modules/@capawesome-team/capacitor-android-foreground-service/README.md
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/build.gradle b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/build.gradle
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/AndroidManifest.xml b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/AndroidManifest.xml
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/AndroidForegroundService.java b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/AndroidForegroundService.java
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundService.java b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundService.java
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundServiceHelper.java b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundServiceHelper.java
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundServicePlugin.java b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundServicePlugin.java
+old mode 100644
+new mode 100755
+index aa2c75f..78d5fd3
+--- a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundServicePlugin.java
++++ b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/ForegroundServicePlugin.java
+@@ -297,7 +297,15 @@ public class ForegroundServicePlugin extends Plugin {
+     private void handleButtonClicked(int buttonId) {
+         JSObject result = new JSObject();
+         result.put("buttonId", buttonId);
+-        notifyListeners(BUTTON_CLICKED_EVENT, result);
++        // #167 (Invictus): sem o terceiro argumento `true`, o Capacitor descarta
++        // o evento em vez de retê-lo quando ainda não há um listener JS
++        // registrado (ex: WebView recém-recriada pelo Android após o processo
++        // ficar em segundo plano por tempo suficiente). Nesse caso, tocar em
++        // "Finalizar" na notificação persistente não fazia nada -- o clique
++        // se perdia silenciosamente e a atividade continuava "ativa" para
++        // sempre. handleNotificationTapped (acima) já usava `true` para o
++        // mesmo propósito; faltava aqui.
++        notifyListeners(BUTTON_CLICKED_EVENT, result, true);
+     }
+ 
+     private static ForegroundServicePlugin getForegroundServicePluginInstance() {
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/NotificationActionBroadcastReceiver.java b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/java/io/capawesome/capacitorjs/plugins/foregroundservice/NotificationActionBroadcastReceiver.java
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/res/.gitkeep b/node_modules/@capawesome-team/capacitor-android-foreground-service/android/src/main/res/.gitkeep
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/docs.json b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/docs.json
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/definitions.d.ts b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/definitions.d.ts
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/definitions.js b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/definitions.js
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/definitions.js.map b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/definitions.js.map
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/index.d.ts b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/index.d.ts
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/index.js b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/index.js
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/index.js.map b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/esm/index.js.map
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.cjs.js b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.cjs.js
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.cjs.js.map b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.cjs.js.map
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.js b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.js
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.js.map b/node_modules/@capawesome-team/capacitor-android-foreground-service/dist/plugin.js.map
+old mode 100644
+new mode 100755

@@ -1,7 +1,9 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import { FieldValue, cors, db, isDbAvailable, verifyAuth } from '../_lib/common.js';
-import { classifyAiError, getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
+import { classifyAiError, getAiApiKey, getAiWorkoutModel } from '../_lib/ai-config.js';
+import { isProUser } from '../_lib/entitlement.js';
+import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 
 const EXERCISES = [
   { id: 'barbell_bench_press', group: 'peito', equipment: ['barra_anilhas', 'banco'] },
@@ -67,11 +69,40 @@ async function generatePlan(answers: any, userId: string) {
   const apiKey = getAiApiKey();
   if (!apiKey) throw new Error('AI_NOT_CONFIGURED');
   const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: getAiTextModel(),
-    contents: `Monte um plano de musculação em JSON usando SOMENTE os exerciseIds permitidos. Respostas do atleta: ${JSON.stringify(answers)}. IDs permitidos: ${JSON.stringify(available)}. Formato: {name,description,objective,experienceLevel,durationMinutes,daysPerWeek,workouts:[{id,name,focus,weekdays:number[],exercises:[{exerciseId,sets,repsMin,repsMax,restSeconds}]}]}. Não diagnostique lesões.`,
-    config: { responseMimeType: 'application/json' }
-  });
+  const model = getAiWorkoutModel();
+  const requestId = newAiRequestId();
+  const startedAt = Date.now();
+  const prompt = `Monte um plano de musculação em JSON usando SOMENTE os exerciseIds permitidos. Respostas do atleta: ${JSON.stringify(answers)}. IDs permitidos: ${JSON.stringify(available)}. Formato: {name,description,objective,experienceLevel,durationMinutes,daysPerWeek,workouts:[{id,name,focus,weekdays:number[],exercises:[{exerciseId,sets,repsMin,repsMax,restSeconds}]}]}. Não diagnostique lesões.`;
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: { responseMimeType: 'application/json' }
+    });
+    logAiUsage({
+      requestId,
+      userId,
+      feature: 'WORKOUT_GENERATION',
+      model,
+      ...extractUsage(response),
+      durationMs: Date.now() - startedAt,
+      success: true,
+      contextSize: prompt.length
+    }).catch(() => {});
+  } catch (err) {
+    logAiUsage({
+      requestId,
+      userId,
+      feature: 'WORKOUT_GENERATION',
+      model,
+      durationMs: Date.now() - startedAt,
+      success: false,
+      contextSize: prompt.length,
+      errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown_error'
+    }).catch(() => {});
+    throw err;
+  }
   let parsed: any;
   try {
     const text = (response.text || '{}').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
@@ -101,6 +132,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
   if (req.method === 'POST' && req.body?.action === 'generate') {
+    // #AI_COST_AUDIT: geração de treino por IA virou benefício PRO. Checa o
+    // plano ANTES de chamar generatePlan() (que já faz a chamada Gemini), para
+    // não gastar nada com quem não tem acesso. Free continua com o plano
+    // determinístico local (buildLocalFallbackPlan no cliente), sem perda de
+    // funcionalidade essencial.
+    try {
+      const userSnap = await db.collection('users').doc(auth.uid).get();
+      const userData = userSnap.exists ? userSnap.data() : null;
+      if (!isProUser(userData)) {
+        return res.status(403).json({
+          error: 'A geração de treino por IA é um benefício exclusivo do plano PRO.',
+          code: 'PRO_REQUIRED'
+        });
+      }
+    } catch (entitlementErr) {
+      console.warn('[API Training Plans] Falha ao verificar plano PRO; seguindo com checagem padrão:', entitlementErr);
+    }
     try {
       return res.status(200).json({ plan: await generatePlan(req.body.answers || {}, auth.uid) });
     } catch (error: unknown) {

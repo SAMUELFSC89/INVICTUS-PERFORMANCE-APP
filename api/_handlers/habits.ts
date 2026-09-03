@@ -6,7 +6,8 @@ import { errorHandler, AppError } from '../_middleware/error.js';
 import { db } from '../_lib/common.js';
 import { generateMilestonePlan, HabitGoalInput, HabitProfile, HabitGoalType } from '../_lib/habit-engine.js';
 import { applyHabitProgressInTransaction } from '../_lib/habit-integration.js';
-import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
+import { getAiApiKey, getAiHabitModel } from '../_lib/ai-config.js';
+import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 import { GoogleGenAI } from '@google/genai';
 
 // Optional AI text layer (decorative only, never used for numbers/decisions):
@@ -16,21 +17,43 @@ import { GoogleGenAI } from '@google/genai';
 const geminiApiKey = getAiApiKey();
 const habitAi = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
 
-async function generateRevealMessage(params: { milestoneTitle: string; order: number; totalMilestones: number; goalCompleted: boolean }): Promise<string> {
+async function generateRevealMessage(params: { milestoneTitle: string; order: number; totalMilestones: number; goalCompleted: boolean; userId?: string }): Promise<string> {
   const fallback = params.goalCompleted
     ? 'Voce concluiu toda a jornada do seu habito! Objetivo final alcancado.'
     : `Novo desafio desbloqueado: ${params.milestoneTitle}. Vamos ver ate onde voce consegue chegar!`;
   if (!habitAi) return fallback;
+  const model = getAiHabitModel();
+  const requestId = newAiRequestId();
+  const startedAt = Date.now();
   try {
     const prompt = `Voce e o treinador Invictus. Em portugues, escreva 1 frase curta (max 25 palavras), tom motivacional direto, no maximo 1 emoji, anunciando o desafio "${params.milestoneTitle}" (etapa ${params.order} de ${params.totalMilestones}) que o atleta acabou de desbloquear. Responda apenas a frase, sem aspas.`;
     const response = await habitAi.models.generateContent({
-      model: getAiTextModel(),
+      model,
       contents: prompt,
       config: { maxOutputTokens: 80 },
     });
+    logAiUsage({
+      requestId,
+      userId: params.userId,
+      feature: 'HABIT_REVEAL_MESSAGE',
+      model,
+      ...extractUsage(response),
+      durationMs: Date.now() - startedAt,
+      success: true,
+      contextSize: prompt.length
+    }).catch(() => {});
     const text = (response.text || '').trim();
     return text || fallback;
   } catch (e: any) {
+    logAiUsage({
+      requestId,
+      userId: params.userId,
+      feature: 'HABIT_REVEAL_MESSAGE',
+      model,
+      durationMs: Date.now() - startedAt,
+      success: false,
+      errorCode: e?.message ? String(e.message).slice(0, 200) : 'unknown_error'
+    }).catch(() => {});
     console.warn('[habits] AI reveal message failed, using deterministic fallback:', e?.message);
     return fallback;
   }
@@ -312,6 +335,7 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
     order: txResult.nextIndex + 1,
     totalMilestones: txResult.totalMilestones,
     goalCompleted: false,
+    userId,
   });
   return res.status(200).json({
     habit: toPublicGoal({ id: updatedSnap.id, ...updatedSnap.data() }),

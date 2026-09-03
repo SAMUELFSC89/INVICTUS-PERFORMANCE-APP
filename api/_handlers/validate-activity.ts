@@ -11,7 +11,8 @@ import { ValidateActivityService } from '../_services/activities/validate-activi
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from '../_lib/common.js';
 import { resolveClientSampledFramesStatus } from '../_lib/powerlift-audit.js';
-import { getAiApiKey, getAiTextModel } from '../_lib/ai-config.js';
+import { getAiApiKey, getAiVisionModel } from '../_lib/ai-config.js';
+import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 
 // Instanciar repositórios e serviços (Injeção de Dependência)
 const activityRepository = new ActivityRepository();
@@ -182,8 +183,11 @@ REGRAS:
 
 Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isValid, confidence (0-100), estimatedWeight, motivos e analysis.`;
 
+        const powerLiftModel = getAiVisionModel();
+        const powerLiftRequestId = newAiRequestId();
+        const powerLiftStartedAt = Date.now();
         const response = await ai.models.generateContent({
-          model: getAiTextModel(),
+          model: powerLiftModel,
           contents: [promptText, ...imageParts],
           config: {
             responseMimeType: 'application/json',
@@ -200,6 +204,21 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
             },
           }
         });
+
+        // Instrumentação só de metadados numéricos (tokens/duração) -- nunca
+        // os frames de vídeo nem o texto da análise, por privacidade (dado de
+        // biometria/imagem do atleta) e para não interferir na decisão do
+        // antifraude, que continua inalterada abaixo.
+        logAiUsage({
+          requestId: powerLiftRequestId,
+          userId: req.userId,
+          feature: 'POWERLIFT_VIDEO_AUDIT',
+          model: powerLiftModel,
+          ...extractUsage(response),
+          durationMs: Date.now() - powerLiftStartedAt,
+          success: true,
+          contextSize: promptText.length
+        }).catch(() => {});
 
         const parsed = JSON.parse(response.text || '{}');
         const confidence = Math.max(0, Math.min(100, Number(parsed.confidence) || 0));
@@ -231,6 +250,15 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
           analysis
         }));
       } catch (gemErr: any) {
+        logAiUsage({
+          requestId: newAiRequestId(),
+          userId: req.userId,
+          feature: 'POWERLIFT_VIDEO_AUDIT',
+          model: getAiVisionModel(),
+          durationMs: 0,
+          success: false,
+          errorCode: gemErr?.message ? String(gemErr.message).slice(0, 200) : 'unknown_error'
+        }).catch(() => {});
         console.warn('[validate-activity] Power video Gemini audit warning:', gemErr?.message || 'erro desconhecido');
         return res.status(200).json(await manual('A auditoria automática falhou; o vídeo seguirá para revisão manual.'));
       }
@@ -271,9 +299,12 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
           ? "Você é um nutricionista avaliando a adesão à dieta. Esta imagem mostra uma refeição real preparada (prato de comida, salada, frutas, lanche saudável)? REJEITE e considere 'isValid: false' se for uma foto de ambiente, uma embalagem fechada, uma pessoa, um animal, objetos aleatórios, telas de computador ou fotos da internet. Deve ser comida real pronta para consumo. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100)."
           : "Você é um monitor de desempenho esportivo. Analise esta imagem. Ela mostra de forma clara um contexto de atividade física (pessoa suada, roupa de treino, pista de corrida, parque, academia ou o visor de uma esteira/bike)? REJEITE se for uma foto sem contexto de esforço físico, fotos de ambientes internos comuns, animais, carros ou fotos da internet. Responda em JSON com 'isValid' (boolean), 'analysis' (string curto e direto em português) e 'confidence' (0-100).";
 
+      const photoValidationModel = getAiVisionModel();
+      const photoValidationRequestId = newAiRequestId();
+      const photoValidationStartedAt = Date.now();
       try {
         const respostaIA = await ai.models.generateContent({
-          model: getAiTextModel(),
+          model: photoValidationModel,
           contents: {
             parts: [
               { inlineData: { mimeType: "image/jpeg", data: base64 } },
@@ -294,6 +325,17 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
           }
         });
 
+        logAiUsage({
+          requestId: photoValidationRequestId,
+          userId: req.userId,
+          feature: 'ACTIVITY_PHOTO_VALIDATION',
+          model: photoValidationModel,
+          ...extractUsage(respostaIA),
+          durationMs: Date.now() - photoValidationStartedAt,
+          success: true,
+          contextSize: promptImagem.length
+        }).catch(() => {});
+
         const resultado = JSON.parse(respostaIA.text || '{}');
         return res.status(200).json({
           isValid: resultado.isValid === true,
@@ -301,6 +343,15 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
           confidence: Number(resultado.confidence) || 0
         });
       } catch (imgErr: any) {
+        logAiUsage({
+          requestId: photoValidationRequestId,
+          userId: req.userId,
+          feature: 'ACTIVITY_PHOTO_VALIDATION',
+          model: photoValidationModel,
+          durationMs: Date.now() - photoValidationStartedAt,
+          success: false,
+          errorCode: imgErr?.message ? String(imgErr.message).slice(0, 200) : 'unknown_error'
+        }).catch(() => {});
         console.warn('[validate-activity] image_validation Gemini error:', imgErr?.message);
         return res.status(200).json(revisaoManual);
       }

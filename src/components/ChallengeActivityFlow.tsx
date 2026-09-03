@@ -62,6 +62,8 @@ export function ChallengeActivityFlow({
   gpsAccuracy = null,
   gpsSignal = 'SEARCHING',
   gpsPermissionDenied = false,
+  gpsStalled = false,
+  onRetryGps,
   gymName,
   checkInRequired = false,
   completedChallengeIds,
@@ -92,6 +94,8 @@ export function ChallengeActivityFlow({
   gpsAccuracy?: number | null;
   gpsSignal?: 'SEARCHING' | 'WEAK' | 'STRONG';
   gpsPermissionDenied?: boolean;
+  gpsStalled?: boolean;
+  onRetryGps?: () => void;
   gymName: string;
   checkInRequired?: boolean;
   completedChallengeIds: string[];
@@ -354,6 +358,8 @@ export function ChallengeActivityFlow({
             gpsAccuracy={gpsAccuracy}
             gpsSignal={gpsSignal}
             permissionDenied={gpsPermissionDenied}
+            stalled={gpsStalled}
+            onRetry={onRetryGps}
             heightPx={Math.max(350, Math.min(540, typeof window !== 'undefined' ? window.innerHeight * .59 : 460))}
           />
 
@@ -431,6 +437,8 @@ export function ChallengeActivityFlow({
                 gpsAccuracy={gpsAccuracy}
                 gpsSignal={gpsSignal}
                 permissionDenied={gpsPermissionDenied}
+                stalled={gpsStalled}
+                onRetry={onRetryGps}
               />
               <GpsSignalIndicator accuracy={gpsAccuracy} signal={gpsSignal} />
             </>
