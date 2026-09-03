@@ -366,7 +366,7 @@ export default async function handler(req, res) {
         points = decimatePoints(points, Math.max(20, Math.floor(points.length * 0.7)));
         mapUrl = buildMapboxUrl(points);
       }
-    } else if (googleApiKey) {
+    } else if (googleApiKey && h <= w) {
       mapUrl = buildGoogleMapUrl();
     }
 
@@ -384,8 +384,11 @@ export default async function handler(req, res) {
       const errText = mapRes ? await mapRes.text().catch(() => '') : 'nenhum provedor configurado';
       console.error('[activity-map] Static map error:', mapRes?.status || 'none', errText);
 
-      // Se o Mapbox falhar, ainda tentamos a chave Google quando disponível.
-      if (mapboxToken && googleApiKey) {
+      // Para o card vertical, o Google Static Maps retorna no máximo uma
+      // imagem quadrada. A montagem por tiles vem primeiro para preservar o
+      // formato 9:16 da referência; Google continua reserva para mapas
+      // horizontais e para uma eventual falha do fallback vertical.
+      if (mapboxToken && googleApiKey && h <= w) {
         try {
           const googleRes = await fetch(buildGoogleMapUrl());
           if (googleRes.ok) {
@@ -400,6 +403,17 @@ export default async function handler(req, res) {
       }
 
       if (!imageDataUrl) imageDataUrl = await renderFallbackMap(points, w, h, requestedMapType);
+      if (!imageDataUrl && mapboxToken && googleApiKey && h > w) {
+        try {
+          const googleRes = await fetch(buildGoogleMapUrl());
+          if (googleRes.ok) {
+            const buffer = Buffer.from(await googleRes.arrayBuffer());
+            imageDataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
+          }
+        } catch (googleError) {
+          console.warn('[activity-map] Reserva Google para card vertical falhou:', googleError);
+        }
+      }
       if (!imageDataUrl) return res.status(502).json({ success: false, userMessage: 'Nao foi possivel gerar a imagem do mapa agora.' });
     }
 
