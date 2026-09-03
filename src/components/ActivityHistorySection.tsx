@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   History, CheckCircle2, XCircle, AlertCircle, Clock, Dumbbell,
   TrendingUp, MapPin, Flame, Trophy, RefreshCw, Search, Filter,
@@ -247,7 +248,8 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
     }
   };
 
-  return (
+  return createPortal(
+    (
     <div className="fixed inset-0 z-[250] bg-black flex flex-col overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-md border-b border-white/10">
@@ -450,6 +452,8 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         </button>
       </div>
     </div>
+    ),
+    document.body
   );
 }
 
