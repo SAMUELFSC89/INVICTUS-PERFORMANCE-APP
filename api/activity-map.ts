@@ -121,7 +121,9 @@ export default async function handler(req, res) {
     return res.status(401).json({ success: false, userMessage: 'Sessao expirada. Entre novamente.' });
   }
 
-  const mapboxToken = process.env.VITE_MAPBOX_WEB_TOKEN || process.env.VITE_MAPBOX_MOBILE_TOKEN || process.env.MAPBOX_ACCESS_TOKEN;
+  // MAPBOX_PUBLIC_TOKEN is the canonical Vercel variable used by the other
+  // map endpoint. Keep the older aliases for existing environments.
+  const mapboxToken = process.env.MAPBOX_PUBLIC_TOKEN || process.env.VITE_MAPBOX_WEB_TOKEN || process.env.VITE_MAPBOX_MOBILE_TOKEN || process.env.MAPBOX_ACCESS_TOKEN;
   const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!mapboxToken && !googleApiKey) {
     console.error('[activity-map] Nenhum provedor de mapa configurado.');
