@@ -115,19 +115,14 @@ export function Challenges() {
   const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
   const wakeLockRef = useRef<any>(null);
 
-  // #217: tela de detalhe estilo Strava mostrada IMEDIATAMENTE ao finalizar uma
-  // atividade (cardio ou treino) -- antes so aparecia depois, no Historico >
-  // Ver Detalhes. Reaproveita o mesmo componente exportado de
-  // ActivityHistorySection.tsx, alimentado com os dados reais da sessao que
-  // acabou de ser encerrada.
+  // Tela de detalhe pos-atividade usada pelo fluxo de musculacao e pelo
+  // historico. Cardio abre diretamente o banner novo de compartilhamento.
   const [finishedActivityItem, setFinishedActivityItem] = useState<ActivityHistoryItem | null>(null);
-  // A primeira resposta da validacao de presenca ainda nao contem o workout
-  // final. Guardamos o snapshot para, depois da selfie, abrir a mesma tela nova
-  // de detalhe em vez de cair no overlay antigo de conclusao.
+  // A primeira resposta da validacao de presenca ainda nao contem o registro
+  // final. Guardamos o snapshot para montar o banner depois da selfie.
   const pendingPresenceSessionRef = useRef<{ session: ActivitySession; finishedAt: number } | null>(null);
 
-  // Card premium de compartilhamento pós-atividade (estilo Strava), aberto a
-  // partir do botao "Compartilhar" da tela de detalhe acima.
+  // Card premium de compartilhamento pós-atividade.
   const [shareCardData, setShareCardData] = useState<any>(null);
 
   // Today's completed submissions
@@ -698,7 +693,7 @@ export function Challenges() {
 
         if (serverDistance !== undefined) setLiveDistanceKm(serverDistance);
 
-        setFinishedActivityItem({
+        const finishedItem: ActivityHistoryItem = {
           id: res.workout.id,
           source: 'workout',
           type: sessionType === 'cardio' ? 'cardio' : 'workout',
@@ -718,7 +713,15 @@ export function Challenges() {
           pace,
           trajectory,
           photoUrl: (res.workout as any).photoUrl || (res.workout as any).verificationPhotoUrl,
-        });
+        };
+        // Cardio nao passa mais pela conclusao antiga nem pela tela Spartan de
+        // detalhes: o banner novo e a propria tela final, com os icones de
+        // compartilhar/baixar sobre a arte.
+        if (sessionType === 'cardio') {
+          setShareCardData(buildShareableFromItem(finishedItem));
+        } else {
+          setFinishedActivityItem(finishedItem);
+        }
         setHistoryRefreshKey((key) => key + 1);
       }
 
@@ -729,16 +732,16 @@ export function Challenges() {
           triggerXPToast(points, 'Atividade validada.', rankingPoints);
         }
 
-        setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
+        setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
       } else if (status === 'pending') {
         setActiveSession(null);
         setCompletion({ status: 'pending', message: res.message });
-        setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
+        setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
         setNotice(res.message || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
       } else if (status === 'rejected' || status === 'not_eligible') {
         setActiveSession(null);
         setCompletion({ status: 'rejected', message: res.message });
-        setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
+        setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
         setError(res.message || 'A atividade não foi validada. Nenhuma pontuação foi concedida.');
       } else {
         // Sem decisão explícita do servidor, falhamos de forma segura: não
@@ -1097,20 +1100,30 @@ export function Challenges() {
               setCompletion({ status: 'approved', message: result.userMessage, pointsAwarded: points });
               if (points !== undefined) triggerXPToast(points, 'Atividade validada.');
               if (pendingPresence) {
-                setFinishedActivityItem(buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result));
+                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result);
+                if (sessionType === 'cardio') {
+                  setShareCardData(buildShareableFromItem(finishedItem));
+                } else {
+                  setFinishedActivityItem(finishedItem);
+                }
                 setHistoryRefreshKey((key) => key + 1);
               }
-              setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
+              setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
               setNotice(null);
             } else if (presenceStatus === 'pending') {
               await activityService.completeSessionAfterPresence();
               setActiveSession(null);
               setCompletion({ status: 'pending', message: result.userMessage });
               if (pendingPresence) {
-                setFinishedActivityItem(buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result));
+                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result);
+                if (sessionType === 'cardio') {
+                  setShareCardData(buildShareableFromItem(finishedItem));
+                } else {
+                  setFinishedActivityItem(finishedItem);
+                }
                 setHistoryRefreshKey((key) => key + 1);
               }
-              setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
+              setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
               setNotice(result.userMessage || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
             } else {
               activityService.cancelSession();
@@ -1131,7 +1144,7 @@ export function Challenges() {
 
       {/* Card premium de compartilhamento pós-atividade (estilo Strava) */}
       {shareCardData && (
-        <RunShareCard session={shareCardData} onClose={() => setShareCardData(null)} />
+        <RunShareCard session={shareCardData} onClose={() => { setShareCardData(null); closeFlow(); }} />
       )}
       {finishedActivityItem && !shareCardData && (
         <ActivityDetailScreen
@@ -1152,7 +1165,6 @@ export function Challenges() {
           distance={liveDistanceKm}
           currentSpeedKmH={liveSpeedKmH}
           currentSpeedUpdatedAt={liveSpeedUpdatedAt}
-          trajectory={finishedActivityItem?.trajectory}
           liveCheckpoints={activeSession?.checkpoints}
           gpsAccuracy={gpsAccuracy}
           gpsSignal={gpsSignal}
@@ -1169,10 +1181,9 @@ export function Challenges() {
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
           onTogglePause={handleTogglePause}
-          onSummary={() => setFlowScreen(flowScreen === 'cardio-complete' ? 'cardio-summary' : 'day-progress')}
+          onSummary={() => setFlowScreen('day-progress')}
           onDone={closeFlow}
           onCancel={handleCancelActivity}
-          onShare={finishedActivityItem ? () => setShareCardData(buildShareableFromItem(finishedActivityItem)) : undefined}
         />
       )}
     </div>
