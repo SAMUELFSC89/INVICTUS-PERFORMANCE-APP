@@ -18,7 +18,7 @@ import { cn } from '../lib/utils';
 import { calculateDistance, formatPaceValue } from '../lib/runUtils';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
-import { ActivityHistorySection, ActivityHistoryItem } from '../components/ActivityHistorySection';
+import { ActivityDetailScreen, ActivityHistorySection, ActivityHistoryItem } from '../components/ActivityHistorySection';
 import { PowerLift } from './PowerLift';
 import { RunShareCard } from '../components/RunShareCard';
 import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption, ActivityCompletion } from '../components/ChallengeActivityFlow';
@@ -121,6 +121,10 @@ export function Challenges() {
   // ActivityHistorySection.tsx, alimentado com os dados reais da sessao que
   // acabou de ser encerrada.
   const [finishedActivityItem, setFinishedActivityItem] = useState<ActivityHistoryItem | null>(null);
+  // A primeira resposta da validacao de presenca ainda nao contem o workout
+  // final. Guardamos o snapshot para, depois da selfie, abrir a mesma tela nova
+  // de detalhe em vez de cair no overlay antigo de conclusao.
+  const pendingPresenceSessionRef = useRef<{ session: ActivitySession; finishedAt: number } | null>(null);
 
   // Card premium de compartilhamento pós-atividade (estilo Strava), aberto a
   // partir do botao "Compartilhar" da tela de detalhe acima.
@@ -553,6 +557,62 @@ export function Challenges() {
     photoUrl: item.photoUrl,
   });
 
+  const buildFinishedItemFromPresence = (
+    session: ActivitySession,
+    finishedAt: number,
+    result: { status: string; pointsAwarded?: number; commitResult?: any }
+  ): ActivityHistoryItem => {
+    const startMs = Date.parse(session.startTime);
+    const durationMins = Number.isFinite(startMs)
+      ? Math.max(0, Math.round(((finishedAt - startMs - (session.pausedMs || 0)) / 60000) * 100) / 100)
+      : undefined;
+    const distanceKm = session.requiresGpsDistance
+      ? activityService.calculateSessionDistance(session)
+      : undefined;
+    const trajectory = (session.checkpoints || [])
+      .filter((checkpoint) => checkpoint.location && Number.isFinite(checkpoint.location.lat) && Number.isFinite(checkpoint.location.lng))
+      .map((checkpoint) => ({ lat: checkpoint.location.lat, lng: checkpoint.location.lng }));
+    const validTrajectory = trajectory.length >= 2 ? trajectory : undefined;
+    const pace = session.type === 'cardio' && distanceKm !== undefined && distanceKm > 0 && durationMins !== undefined && durationMins > 0
+      ? formatPaceValue(distanceKm, durationMins * 60)
+      : undefined;
+    const rawStatus = normalizeActivityValidationStatus(result.status);
+    const historyStatus: ActivityHistoryItem['status'] = rawStatus === 'validated'
+      ? 'homologada'
+      : rawStatus === 'rejected' || rawStatus === 'not_eligible'
+        ? 'rejeitada'
+        : 'pendente';
+    const completedAt = new Date(Number.isFinite(startMs) ? finishedAt : Date.now());
+    const cardioLabel = session.cardioTypeLabel || selectedCardioOption.label || 'Cardio';
+    const rawCalories = session.healthTelemetry?.calories;
+    const rawHeartRate = session.healthTelemetry?.avgHeartRate ?? Number(session.smartwatchData?.avgHeartRate ?? session.smartwatchData?.heartRate);
+    const rawSteps = session.healthTelemetry?.steps ?? Number(session.smartwatchData?.steps ?? session.smartwatchData?.pedometerSteps);
+    const activityId = result.commitResult?.activityId || result.commitResult?.id || `local_${session.id}`;
+
+    return {
+      id: activityId,
+      source: 'workout',
+      type: session.type === 'cardio' ? 'cardio' : 'workout',
+      typeLabel: session.type === 'cardio' ? 'Cardio' : 'Treino',
+      title: session.type === 'cardio' ? cardioLabel : `Treino de ${session.muscleGroup || selectedMuscleGroup}`,
+      dateStr: completedAt.toLocaleDateString('pt-BR'),
+      timeStr: completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      rawTimestamp: completedAt.getTime(),
+      status: historyStatus,
+      statusRaw: rawStatus || result.status,
+      points: historyStatus === 'homologada' && typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded)
+        ? result.pointsAwarded
+        : 0,
+      durationMins,
+      distanceKm,
+      calories: typeof rawCalories === 'number' && Number.isFinite(rawCalories) ? rawCalories : undefined,
+      avgHeartRate: Number.isFinite(rawHeartRate) && rawHeartRate > 0 ? rawHeartRate : undefined,
+      steps: Number.isFinite(rawSteps) && rawSteps > 0 ? rawSteps : undefined,
+      pace,
+      trajectory: validTrajectory,
+    };
+  };
+
   // End Workout/Cardio Session
   const handleEndActivity = async () => {
     if (!activeSession) return;
@@ -580,6 +640,13 @@ export function Challenges() {
         }
         // A sessão permanece ativa e não recebe XP até a decisão da prova de
         // presença. Repetir endSession aqui criava conclusões duplicadas.
+        pendingPresenceSessionRef.current = {
+          session: {
+            ...sessionBeforeEnd,
+            checkpoints: [...(sessionBeforeEnd.checkpoints || [])]
+          },
+          finishedAt: Date.now()
+        };
         setPresenceCheckData({ id: res.presenceCheckId, prompt: res.livenessPrompt || 'Siga o gesto indicado' });
         setPresenceCheckRequired(true);
         setNotice(res.userMessage || 'Uma confirmação de presença é necessária antes da validação da atividade.');
@@ -1017,7 +1084,9 @@ export function Challenges() {
             setPresenceCheckRequired(false);
             setPresenceCheckData(null);
             const presenceStatus = normalizeActivityValidationStatus(result.status);
-            const sessionType = activeSession?.type;
+            const pendingPresence = pendingPresenceSessionRef.current;
+            pendingPresenceSessionRef.current = null;
+            const sessionType = pendingPresence?.session.type || activeSession?.type;
 
             if (presenceStatus === 'validated') {
               await activityService.completeSessionAfterPresence();
@@ -1027,12 +1096,20 @@ export function Challenges() {
                 : undefined;
               setCompletion({ status: 'approved', message: result.userMessage, pointsAwarded: points });
               if (points !== undefined) triggerXPToast(points, 'Atividade validada.');
+              if (pendingPresence) {
+                setFinishedActivityItem(buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result));
+                setHistoryRefreshKey((key) => key + 1);
+              }
               setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
               setNotice(null);
             } else if (presenceStatus === 'pending') {
               await activityService.completeSessionAfterPresence();
               setActiveSession(null);
               setCompletion({ status: 'pending', message: result.userMessage });
+              if (pendingPresence) {
+                setFinishedActivityItem(buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result));
+                setHistoryRefreshKey((key) => key + 1);
+              }
               setFlowScreen(sessionType === 'cardio' ? 'cardio-complete' : 'workout-complete');
               setNotice(result.userMessage || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
             } else {
@@ -1056,7 +1133,14 @@ export function Challenges() {
       {shareCardData && (
         <RunShareCard session={shareCardData} onClose={() => setShareCardData(null)} />
       )}
-      {flowScreen && (
+      {finishedActivityItem && !shareCardData && (
+        <ActivityDetailScreen
+          item={finishedActivityItem}
+          onClose={closeFlow}
+          onShare={() => setShareCardData(buildShareableFromItem(finishedActivityItem))}
+        />
+      )}
+      {flowScreen && !finishedActivityItem && (
         <ChallengeActivityFlow
           screen={flowScreen}
           group={selectedMuscleGroup}
