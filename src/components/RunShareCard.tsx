@@ -89,6 +89,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     satellite: null,
     roadmap: null,
   });
+  const [mapError, setMapError] = useState(false);
 
   const session: any = rawSession;
   const distanceKm = Number(
@@ -173,15 +174,16 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   // visivel no card 9:16 e nao fica cortada como acontecia com o mapa quadrado.
   useEffect(() => {
     let cancelled = false;
+    let requestStarted = false;
     const points = trajectory.filter(hasValidLatLng);
     if (!hasRoute || backgroundMode === 'solid') return undefined;
 
     const variant: MapVariant = backgroundMode === 'satellite' ? 'satellite' : 'roadmap';
     if (mapImages[variant]) return undefined;
 
-    const fetchMap = async () => {
-      const authUser = auth.currentUser;
-      if (!authUser) return;
+    const fetchMap = async (authUser: NonNullable<typeof auth.currentUser>) => {
+      if (cancelled || requestStarted) return;
+      requestStarted = true;
       try {
         const idToken = await authUser.getIdToken();
         const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, {
@@ -189,19 +191,29 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
           body: JSON.stringify({ trajectory: points, width: 720, height: 1280, mapType: variant }),
         });
+        if (!response.ok) throw new Error(`activity-map respondeu ${response.status}`);
         const json = await response.json();
         if (cancelled) return;
         if (json.success && json.imageDataUrl) {
           setMapImages(current => ({ ...current, [variant]: json.imageDataUrl }));
+        } else {
+          setMapError(true);
         }
       } catch (error) {
+        if (!cancelled) setMapError(true);
         console.warn('[RunShareCard] Falha ao carregar mapa para o card:', error);
       }
     };
 
-    void fetchMap();
+    // O card pode montar antes da persistencia do Firebase restaurar o usuario.
+    // O listener evita deixar o mapa preso em "carregando" no iPhone/Safari.
+    const unsubscribe = auth.onAuthStateChanged((authUser) => {
+      if (authUser) void fetchMap(authUser);
+    });
+    if (auth.currentUser) void fetchMap(auth.currentUser);
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [backgroundMode, hasRoute, mapImages, trajectory]);
 
@@ -264,6 +276,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const selectBackground = (mode: BackgroundMode) => {
     if ((mode === 'satellite' || mode === 'roadmap') && !hasRoute) return;
     setFeedback(null);
+    setMapError(false);
     setBackgroundMode(mode);
   };
 
@@ -357,7 +370,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
             <div className="share-card-vignette" />
             {!mapBackgroundAvailable && backgroundMode !== 'photo' && backgroundMode !== 'solid' ? (
-              <div className="share-card-loading-map">CARREGANDO MAPA...</div>
+              <div className="share-card-loading-map">{mapError ? 'MAPA INDISPONÍVEL' : 'CARREGANDO MAPA...'}</div>
             ) : null}
             {backgroundMode === 'photo' && !selectedPhoto ? (
               <div className="share-card-photo-empty">SELECIONE UMA FOTO ACIMA</div>
