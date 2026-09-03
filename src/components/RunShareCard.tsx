@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Share2, Download, X, ShieldCheck, ShieldAlert, Clock, Flame, Gauge, RefreshCw, Image as ImageIcon, Map, Upload, MapPin, Timer } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { RunSession, AdvancedRunStats } from '../services/runningService';
@@ -249,7 +250,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       ? 'ATIVIDADE EM ANÁLISE'
       : 'ATIVIDADE NÃO PONTUOU';
 
-  return (
+  return createPortal(
+    (
     <div className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-xl flex flex-col p-4 sm:p-6 animate-in fade-in duration-300 overflow-y-auto">
       <div className="flex items-center justify-between mb-6 shrink-0">
         <h2 className="text-lg sm:text-xl font-black text-white italic tracking-tighter uppercase">Compartilhar Atividade</h2>
@@ -412,5 +414,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         </div>
       </div>
     </div>
+    ),
+    document.body
   );
 }
