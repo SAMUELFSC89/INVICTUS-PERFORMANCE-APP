@@ -1,14 +1,13 @@
 import { createPortal } from 'react-dom';
-import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, Share2, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
-import { ActivityMapView } from './ActivityMapView';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
 import { InvictusLogo } from './InvictusLogo';
 import { WorkoutActiveScreen } from './WorkoutActiveScreen';
 import { formatPaceValue } from '../lib/runUtils';
 
-export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'cardio-complete' | 'cardio-summary' | 'day-progress';
+export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'day-progress';
 
 export type CardioOption = {
   id: string;
@@ -59,7 +58,6 @@ export function ChallengeActivityFlow({
   distance,
   currentSpeedKmH,
   currentSpeedUpdatedAt,
-  trajectory,
   liveCheckpoints,
   gpsAccuracy = null,
   gpsSignal = 'SEARCHING',
@@ -78,9 +76,7 @@ export function ChallengeActivityFlow({
   onTogglePause,
   onSummary,
   onDone,
-  onCancel,
-  onShare,
-  onDetail
+  onCancel
 }: {
   screen: ChallengeFlowScreen;
   group: string;
@@ -92,7 +88,6 @@ export function ChallengeActivityFlow({
   distance: number;
   currentSpeedKmH?: number | null;
   currentSpeedUpdatedAt?: number | null;
-  trajectory?: Array<{ lat: number; lng: number }>;
   liveCheckpoints?: Array<{ location: { lat: number; lng: number; accuracy?: number } }>;
   gpsAccuracy?: number | null;
   gpsSignal?: 'SEARCHING' | 'WEAK' | 'STRONG';
@@ -112,13 +107,11 @@ export function ChallengeActivityFlow({
   onSummary: () => void;
   onDone: () => void;
   onCancel?: () => void;
-  onShare?: () => void;
-  onDetail?: () => void;
 }) {
   const modalityCfg = getModalityConfig(session?.cardioType || cardio.id);
   const effectiveCardioLabel = session?.cardioTypeLabel || modalityCfg?.label || cardio.label;
   const effectiveMuscleGroup = session?.muscleGroup || group;
-  const activeTitle = (session?.type === 'cardio' || screen === 'cardio-complete' || screen === 'cardio-summary')
+  const activeTitle = session?.type === 'cardio'
     ? effectiveCardioLabel
     : `Treino de ${effectiveMuscleGroup}`;
   const isBike = session?.cardioType === 'bike' || cardio.id === 'bike';
@@ -134,7 +127,7 @@ export function ChallengeActivityFlow({
   const hasDistanceMetric = Boolean(modalityCfg ? modalityCfg.hasDistance : (session?.requiresGpsDistance || cardio.gps));
   const hasPaceMetric = Boolean(modalityCfg ? modalityCfg.hasPace : !isBike);
   const checkin = screen === 'workout-checkin';
-  const complete = screen === 'workout-complete' || screen === 'cardio-complete';
+  const complete = screen === 'workout-complete';
   const subtitle = screen === 'workout-details'
     ? 'DETALHES DO DESAFIO'
     : screen === 'cardio-picker'
@@ -144,10 +137,8 @@ export function ChallengeActivityFlow({
         : screen === 'active'
           ? (session?.type === 'cardio' ? 'CARDIO EM ANDAMENTO' : 'TREINO EM ANDAMENTO')
           : complete
-            ? (screen === 'cardio-complete' ? 'CARDIO CONCLUÍDO!' : 'TREINO CONCLUÍDO!')
-            : screen === 'cardio-summary'
-              ? 'RESUMO DA ATIVIDADE'
-              : 'DESAFIOS DO DIA';
+            ? 'TREINO CONCLUÍDO!'
+            : 'DESAFIOS DO DIA';
   const workoutCompleted = completedChallengeIds.includes('workout');
   const cardioCompleted = completedChallengeIds.includes('cardio');
   const completedToday = [workoutCompleted, cardioCompleted].filter(Boolean).length;
@@ -528,61 +519,13 @@ export function ChallengeActivityFlow({
             <strong className="text-[15px]">Pontuação registrada pelo servidor</strong>
           )}
           <article>
-            <b>{screen === 'cardio-complete' ? effectiveCardioLabel.toUpperCase() : 'TREINO DE MUSCULAÇÃO'}</b>
+            <b>TREINO DE MUSCULAÇÃO</b>
             <small>{completion?.status === 'approved' ? '1/1' : '—'}</small>
             <div />
           </article>
           <button className="challenge-flow-primary" onClick={onSummary}>
-            {screen === 'cardio-complete' ? 'VER RESUMO' : 'VER DESAFIOS DO DIA'}
+            VER DESAFIOS DO DIA
           </button>
-          <button className="challenge-flow-secondary" onClick={onDone}>
-            VOLTAR PARA DESAFIOS
-          </button>
-        </section>
-      )}
-
-      {screen === 'cardio-summary' && (
-        <section className="challenge-flow-summary">
-          <div className="challenge-flow-summary-title">
-            <div>
-              <h2>{effectiveCardioLabel}</h2>
-              <p>Atividade registrada com dados reais.</p>
-            </div>
-            <span>{time(elapsed)}</span>
-          </div>
-          {trajectory && trajectory.length >= 2 ? (
-            <ActivityMapView trajectory={trajectory} heightPx={220} />
-          ) : modalityCfg?.hasRouteMap ? (
-            <div className="challenge-flow-map is-empty">
-              <MapPin />
-              <span>O mapa estará disponível após o GPS registrar o percurso.</span>
-            </div>
-          ) : null}
-          <div className="challenge-flow-summary-kpis">
-            <article><b>{time(elapsed)}</b><small>DURAÇÃO</small></article>
-            {hasDistanceMetric ? (
-              <>
-                <article><b>{distance.toFixed(2)} km</b><small>DISTÂNCIA</small></article>
-                <article><b>{hasPaceMetric ? pace : `${averageSpeedKmH} km/h`}</b><small>{hasPaceMetric ? 'PACE MÉDIO' : 'VELOCIDADE MÉDIA'}</small></article>
-              </>
-            ) : (
-              <>
-                <article><b>Indoor</b><small>MODALIDADE</small></article>
-                <article><b>Validado</b><small>STATUS</small></article>
-              </>
-            )}
-          </div>
-          {onShare && (
-            <button className="challenge-flow-primary mt-3 flex items-center justify-center gap-2" onClick={onShare}>
-              <Share2 size={16} />
-              <span>COMPARTILHAR ATIVIDADE</span>
-            </button>
-          )}
-          {onDetail && (
-            <button className="challenge-flow-secondary mt-1" onClick={onDetail}>
-              VER DETALHES COMPLETOS
-            </button>
-          )}
           <button className="challenge-flow-secondary" onClick={onDone}>
             VOLTAR PARA DESAFIOS
           </button>
