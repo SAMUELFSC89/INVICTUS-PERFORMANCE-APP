@@ -304,6 +304,7 @@ export default async function handler(req, res) {
   // map endpoint. Keep the older aliases for existing environments.
   const mapboxToken = process.env.MAPBOX_PUBLIC_TOKEN || process.env.VITE_MAPBOX_WEB_TOKEN || process.env.VITE_MAPBOX_MOBILE_TOKEN || process.env.MAPBOX_ACCESS_TOKEN;
   const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const mapboxReferer = String(process.env.PUBLIC_APP_URL || process.env.APP_URL || 'https://www.invictusperformance.app.br').replace(/\/$/, '');
   if (!mapboxToken && !googleApiKey) console.warn('[activity-map] Provedor principal nao configurado; usando tiles de fallback.');
 
   try {
@@ -371,15 +372,20 @@ export default async function handler(req, res) {
     }
 
     const [mapRes, weather] = await Promise.all([
-      mapUrl ? fetch(mapUrl) : Promise.resolve(null),
+      mapUrl
+        ? fetch(mapUrl, mapboxToken ? { headers: { Referer: mapboxReferer } } : undefined)
+        : Promise.resolve(null),
       fetchWeather(start.lat, start.lng)
     ]);
 
     let imageDataUrl = null;
+    let mapProvider = 'tile-fallback';
     if (mapRes?.ok) {
       const arrBuf = await mapRes.arrayBuffer();
       const buffer = Buffer.from(arrBuf);
-      imageDataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
+      const contentType = mapRes.headers.get('content-type')?.split(';')[0] || 'image/png';
+      imageDataUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
+      mapProvider = mapboxToken ? 'mapbox' : 'google';
     } else {
       const errText = mapRes ? await mapRes.text().catch(() => '') : 'nenhum provedor configurado';
       console.error('[activity-map] Static map error:', mapRes?.status || 'none', errText);
@@ -393,7 +399,9 @@ export default async function handler(req, res) {
           const googleRes = await fetch(buildGoogleMapUrl());
           if (googleRes.ok) {
             const buffer = Buffer.from(await googleRes.arrayBuffer());
-            imageDataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
+            const contentType = googleRes.headers.get('content-type')?.split(';')[0] || 'image/png';
+            imageDataUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
+            mapProvider = 'google';
           } else {
             console.warn('[activity-map] Google Static Maps tambem falhou:', googleRes.status, await googleRes.text().catch(() => ''));
           }
@@ -408,7 +416,9 @@ export default async function handler(req, res) {
           const googleRes = await fetch(buildGoogleMapUrl());
           if (googleRes.ok) {
             const buffer = Buffer.from(await googleRes.arrayBuffer());
-            imageDataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
+            const contentType = googleRes.headers.get('content-type')?.split(';')[0] || 'image/png';
+            imageDataUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
+            mapProvider = 'google';
           }
         } catch (googleError) {
           console.warn('[activity-map] Reserva Google para card vertical falhou:', googleError);
@@ -441,7 +451,7 @@ export default async function handler(req, res) {
       console.warn('[activity-map] Reverse geocoding falhou (nao critico):', geoErr);
     }
 
-    return res.json({ success: true, imageDataUrl, location, weather: weather || null });
+    return res.json({ success: true, imageDataUrl, mapProvider, location, weather: weather || null });
   } catch (err) {
     console.error('[activity-map] Erro inesperado:', err);
     return res.status(500).json({ success: false, userMessage: 'Erro ao gerar o mapa da atividade.' });
