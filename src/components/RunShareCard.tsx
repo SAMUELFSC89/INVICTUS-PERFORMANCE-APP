@@ -59,6 +59,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const cardRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSharingLink, setIsSharingLink] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [mapImages, setMapImages] = useState<{ satellite: string | null; roadmap: string | null }>({
     satellite: null,
     roadmap: null,
@@ -168,10 +169,11 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const randomPhrase = useMemo(() => phrases[Math.floor(Math.random() * phrases.length)], []);
 
   const handleShareLink = async () => {
-    if (!session.id) {
-      alert('Sincronizando atividade... tente novamente em instantes.');
+    if (!session.id || String(session.id).startsWith('local_')) {
+      setFeedback('O link ficará disponível assim que a atividade sincronizar. Você já pode baixar a imagem.');
       return;
     }
+    setFeedback(null);
     setIsSharingLink(true);
     const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://www.invictusperformance.app.br');
     const shareUrl = `${baseUrl.replace(/\/$/, '')}/share/${session.id}`;
@@ -182,12 +184,16 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     try {
       if (navigator.share) {
         await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+        setFeedback('Compartilhamento concluído.');
       } else {
         await navigator.clipboard.writeText(shareUrl);
-        alert('Link copiado para a área de transferência!');
+        setFeedback('Link copiado para a área de transferência!');
       }
     } catch (err) {
       console.error('[RunShareCard] Share Error:', err);
+      setFeedback(err instanceof DOMException && err.name === 'AbortError'
+        ? 'Compartilhamento cancelado.'
+        : 'Não foi possível compartilhar o link. Tente baixar a imagem.');
     } finally {
       setIsSharingLink(false);
     }
@@ -195,6 +201,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
   const handleExport = async (mode: 'download' | 'share') => {
     if (!cardRef.current) return;
+    setFeedback(null);
     setIsGenerating(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 150));
@@ -210,6 +217,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           const file = new File([blob], 'invictus-atividade.png', { type: 'image/png' });
           if ((navigator as any).canShare && (navigator as any).canShare({ files: [file] })) {
             await navigator.share({ files: [file], title: 'Invictus Performance', text: `${hasDistance ? `${distanceKm.toFixed(2)} km` : title} no INVICTUS!` });
+            setFeedback('Imagem compartilhada com sucesso.');
             return;
           }
         } catch (shareErr) {
@@ -221,8 +229,10 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       link.download = `invictus-atividade-${session.id || 'compartilhamento'}.png`;
       link.href = dataUrl;
       link.click();
+      setFeedback('Imagem baixada com sucesso.');
     } catch (err) {
       console.error('[RunShareCard] Export Error:', err);
+      setFeedback('Não foi possível gerar a imagem. Tente novamente.');
     } finally {
       setIsGenerating(false);
     }
@@ -404,6 +414,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           >
             {isGenerating ? <RefreshCw className="animate-spin" size={16} /> : <><Download size={16} /> Baixar Imagem</>}
           </button>
+
+          {feedback && <p role="status" aria-live="polite" className="text-center text-[11px] font-bold leading-relaxed text-primary">{feedback}</p>}
 
           <button
             onClick={onClose}
