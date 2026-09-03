@@ -156,8 +156,13 @@ export default async function handler(req, res) {
           type: 'FeatureCollection',
           features: [
             { type: 'Feature', properties: { stroke: '#ffad12', 'stroke-width': 6, 'stroke-opacity': 1 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } },
+            // Duas camadas por ponto reproduzem os marcadores circulares da
+            // arte de referencia: aro claro + centro laranja no inicio e aro
+            // claro + centro escuro na chegada.
+            { type: 'Feature', properties: { 'marker-size': 'medium', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
             { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffad12' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
-            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
+            { type: 'Feature', properties: { 'marker-size': 'medium', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } },
+            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#151515' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
           ]
         };
         return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/auto/${w}x${h}@2x?padding=55&access_token=${encodeURIComponent(mapboxToken)}`;
@@ -176,7 +181,7 @@ export default async function handler(req, res) {
     } else {
       const encoded = encodePolyline(points);
       const styleParams = requestedMapType === 'roadmap' ? `&${DARK_STYLE_RULES.map((s) => `style=${encodeURIComponent(s)}`).join('&')}` : '';
-      mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=${w}x${h}&scale=2&maptype=${requestedMapType}` + styleParams + `&path=color:0xFFAA00FF|weight:5|enc:${encodeURIComponent(encoded)}` + `&markers=color:0xFF7A00|size:mid|${start.lat},${start.lng}` + `&markers=color:0x111111|size:mid|${end.lat},${end.lng}` + `&key=${googleApiKey}`;
+      mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=${w}x${h}&scale=2&maptype=${requestedMapType}` + styleParams + `&path=color:0xFFAA00FF|weight:5|enc:${encodeURIComponent(encoded)}` + `&markers=color:0xFFFFFF|size:mid|${start.lat},${start.lng}` + `&markers=color:0xFFAA00|size:small|${start.lat},${start.lng}` + `&markers=color:0xFFFFFF|size:mid|${end.lat},${end.lng}` + `&markers=color:0x111111|size:small|${end.lat},${end.lng}` + `&key=${googleApiKey}`;
     }
 
     const [mapRes, weather] = await Promise.all([
