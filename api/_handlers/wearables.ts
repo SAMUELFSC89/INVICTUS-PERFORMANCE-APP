@@ -54,6 +54,82 @@ const FONTES_PERMITIDAS = new Set(['apple_health', 'health_connect']);
 // produto, e protecao contra payload gigante/abusivo numa unica chamada; o
 // cliente pode sincronizar de novo para pegar o restante (usa lastSyncTime).
 const MAX_ATIVIDADES_POR_SYNC = 50;
+const ACTIVITY_TELEMETRY_VERSION = 2;
+const MIN_BPM = 30;
+const MAX_BPM = 240;
+const MAX_AMOSTRAS_FC_POR_ATIVIDADE = 12000;
+const TOLERANCIA_AMOSTRA_FC_MS = 5 * 60 * 1000;
+const HEALTH_VITALS_VERSION = 1;
+
+type WearableHeartRateSamplePayload = {
+  timestamp: string;
+  bpm: number;
+};
+
+type WearableCheckpointPayload = {
+  latitude: number;
+  longitude: number;
+  timestamp?: string;
+};
+
+/**
+ * Valida a curva de FC sem inventar pontos. O app pode normalizar o formato,
+ * mas o servidor continua sendo a última barreira antes de persistir dados
+ * biométricos: timestamps reais, faixa fisiologicamente plausível, janela da
+ * atividade e deduplicação por instante.
+ */
+function sanitizarSerieCardiaca(
+  input: unknown,
+  startTime: string,
+  durationSeconds: number
+): WearableHeartRateSamplePayload[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+
+  const startMs = new Date(startTime).getTime();
+  const endMs = startMs + durationSeconds * 1000;
+  const byTimestamp = new Map<string, WearableHeartRateSamplePayload>();
+
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const raw = item as Record<string, unknown>;
+    const rawTimestamp = raw.timestamp ?? raw.startDate ?? raw.date ?? raw.time;
+    const timestamp = typeof rawTimestamp === 'string' ? new Date(rawTimestamp) : null;
+    const bpm = Number(raw.bpm ?? raw.value ?? raw.heartRate);
+    if (!timestamp || !Number.isFinite(timestamp.getTime())) continue;
+    if (!Number.isFinite(bpm) || bpm < MIN_BPM || bpm > MAX_BPM) continue;
+    if (timestamp.getTime() < startMs - TOLERANCIA_AMOSTRA_FC_MS
+      || timestamp.getTime() > endMs + TOLERANCIA_AMOSTRA_FC_MS) continue;
+
+    const iso = timestamp.toISOString();
+    if (!byTimestamp.has(iso)) {
+      byTimestamp.set(iso, { timestamp: iso, bpm: Math.round(bpm * 10) / 10 });
+    }
+  }
+
+  const sorted = [...byTimestamp.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  if (sorted.length <= MAX_AMOSTRAS_FC_POR_ATIVIDADE) return sorted.length ? sorted : undefined;
+
+  // Limita o payload mantendo o começo, o fim e a distribuição temporal.
+  const reduced: WearableHeartRateSamplePayload[] = [];
+  const lastIndex = sorted.length - 1;
+  for (let index = 0; index < MAX_AMOSTRAS_FC_POR_ATIVIDADE; index += 1) {
+    const sourceIndex = Math.round((index * lastIndex) / (MAX_AMOSTRAS_FC_POR_ATIVIDADE - 1));
+    reduced.push(sorted[sourceIndex]);
+  }
+  return reduced;
+}
+
+function numeroPositivo(value: unknown): number | undefined {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function bpmResumo(value: unknown): number | undefined {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= MIN_BPM && numeric <= MAX_BPM
+    ? Math.round(numeric * 10) / 10
+    : undefined;
+}
 
 /** Aceita só o que realmente veio do dispositivo, no formato esperado -- não
  * confia em nenhum campo de pontuação/aprovação vindo do cliente (o cliente
@@ -71,10 +147,30 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
     const durationSeconds = Number(a.durationSeconds);
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) continue;
 
-    const checkpoints = Array.isArray(a.checkpoints)
+    const heartRateSamples = sanitizarSerieCardiaca(a.heartRateSamples, a.startTime, durationSeconds);
+    const heartRateValues = heartRateSamples?.map((sample) => sample.bpm) || [];
+    const averageHeartRate = heartRateValues.length > 0
+      ? Math.round((heartRateValues.reduce((sum, value) => sum + value, 0) / heartRateValues.length) * 10) / 10
+      : bpmResumo(a.averageHeartRate);
+    const maxHeartRate = heartRateValues.length > 0
+      ? Math.max(...heartRateValues)
+      : bpmResumo(a.maxHeartRate);
+    const steps = numeroPositivo(a.steps);
+
+    const checkpoints: WearableCheckpointPayload[] | undefined = Array.isArray(a.checkpoints)
       ? (a.checkpoints as unknown[])
           .filter((p): p is { latitude: unknown; longitude: unknown } => !!p && typeof p === 'object')
-          .map((p) => ({ latitude: Number((p as any).latitude), longitude: Number((p as any).longitude) }))
+          .map((p) => {
+            const rawTimestamp = (p as any).timestamp;
+            const timestamp = typeof rawTimestamp === 'string' && Number.isFinite(new Date(rawTimestamp).getTime())
+              ? new Date(rawTimestamp).toISOString()
+              : undefined;
+            return {
+              latitude: Number((p as any).latitude),
+              longitude: Number((p as any).longitude),
+              ...(timestamp ? { timestamp } : {})
+            };
+          })
           .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
       : undefined;
 
@@ -84,10 +180,12 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
       activityType: a.activityType,
       startTime: a.startTime,
       durationSeconds,
-      distanceMeters: Number.isFinite(Number(a.distanceMeters)) ? Number(a.distanceMeters) : undefined,
-      calories: Number.isFinite(Number(a.calories)) ? Number(a.calories) : undefined,
-      averageHeartRate: Number.isFinite(Number(a.averageHeartRate)) ? Number(a.averageHeartRate) : undefined,
-      maxHeartRate: Number.isFinite(Number(a.maxHeartRate)) ? Number(a.maxHeartRate) : undefined,
+      distanceMeters: numeroPositivo(a.distanceMeters),
+      calories: numeroPositivo(a.calories),
+      averageHeartRate,
+      maxHeartRate,
+      ...(steps !== undefined ? { steps: Math.round(steps) } : {}),
+      heartRateSamples,
       checkpoints: checkpoints && checkpoints.length > 0 ? checkpoints : undefined
     });
   }
@@ -172,6 +270,8 @@ function defaultConfig(userId: string) {
     stravaConnected: false,
     autoSync: true,
     lastSyncTime: null,
+    activityTelemetryVersion: 0,
+    healthVitalsVersion: 0,
     lastVitalsSyncTime: null,
     createdAt: now,
     updatedAt: now
@@ -227,17 +327,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // treino manual/check-in/corrida GPS/Strava já passam.
   if (action === 'sync') {
     const atividades = sanitizarAtividades(req.body?.activities);
+    const finalBatch = req.body?.finalBatch !== false;
+    const readComplete = req.body?.readComplete !== false;
     if (atividades.length === 0) {
       const now = new Date().toISOString();
-      await configRef.set({ lastSyncTime: now, updatedAt: now }, { merge: true }).catch(() => undefined);
-      return res.status(200).json({ syncedCount: 0, duplicatesSkipped: 0, blockedCount: 0, logs: [], lastSyncTime: now });
+      await configRef.set({
+        lastSyncTime: now,
+        ...(finalBatch && readComplete ? { activityTelemetryVersion: ACTIVITY_TELEMETRY_VERSION } : {}),
+        updatedAt: now
+      }, { merge: true }).catch(() => undefined);
+      return res.status(200).json({
+        syncedCount: 0,
+        duplicatesSkipped: 0,
+        blockedCount: 0,
+        logs: [],
+        lastSyncTime: now,
+        activityTelemetryVersion: finalBatch && readComplete ? ACTIVITY_TELEMETRY_VERSION : undefined
+      });
     }
 
     try {
       const { resultados, syncedCount, duplicatesSkipped, blockedCount } = await processarLoteWearable(auth.uid, atividades);
       const now = new Date().toISOString();
       try {
-        await configRef.set({ lastSyncTime: now, updatedAt: now }, { merge: true });
+        await configRef.set({
+          lastSyncTime: now,
+          ...(finalBatch && readComplete ? { activityTelemetryVersion: ACTIVITY_TELEMETRY_VERSION } : {}),
+          updatedAt: now
+        }, { merge: true });
       } catch (writeErr) {
         console.warn('[Wearables Handler] Aviso ao atualizar lastSyncTime:', writeErr);
       }
@@ -246,6 +363,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         duplicatesSkipped,
         blockedCount,
         lastSyncTime: now,
+        activityTelemetryVersion: finalBatch && readComplete ? ACTIVITY_TELEMETRY_VERSION : undefined,
         logs: resultados
       });
     } catch (err: any) {
@@ -262,10 +380,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const source: HealthSampleSource = req.body?.source === 'health_connect' ? 'health_connect' : 'apple_health';
     const vitais = sanitizarVitais(req.body?.vitals, source);
     const finalBatch = req.body?.finalBatch !== false;
+    const readComplete = req.body?.readComplete !== false;
     if (vitais.length === 0) {
       const now = new Date().toISOString();
-      if (finalBatch) await configRef.set({ lastVitalsSyncTime: now, updatedAt: now }, { merge: true }).catch(() => undefined);
-      return res.status(200).json({ savedCount: 0, lastVitalsSyncTime: finalBatch ? now : undefined });
+      if (finalBatch && readComplete) await configRef.set({ lastVitalsSyncTime: now, healthVitalsVersion: HEALTH_VITALS_VERSION, updatedAt: now }, { merge: true }).catch(() => undefined);
+      return res.status(200).json({ savedCount: 0, lastVitalsSyncTime: finalBatch && readComplete ? now : undefined, healthVitalsVersion: finalBatch && readComplete ? HEALTH_VITALS_VERSION : undefined });
     }
     try {
       const declarations = await getUserDeviceDeclarations(auth.uid).catch(() => []);
@@ -275,8 +394,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }));
       const savedCount = await registrarAmostrasPassivas({ userId: auth.uid, source, amostras: enrichedVitals });
       const now = new Date().toISOString();
-      if (finalBatch) await configRef.set({ lastVitalsSyncTime: now, updatedAt: now }, { merge: true });
-      return res.status(200).json({ savedCount, lastVitalsSyncTime: finalBatch ? now : undefined });
+      if (finalBatch && readComplete) await configRef.set({ lastVitalsSyncTime: now, healthVitalsVersion: HEALTH_VITALS_VERSION, updatedAt: now }, { merge: true });
+      return res.status(200).json({ savedCount, lastVitalsSyncTime: finalBatch && readComplete ? now : undefined, healthVitalsVersion: finalBatch && readComplete ? HEALTH_VITALS_VERSION : undefined });
     } catch (err: any) {
       console.error('[Wearables Handler] Falha ao sincronizar vitais:', err);
       return res.status(500).json({ error: 'Não foi possível sincronizar os dados de saúde agora.' });

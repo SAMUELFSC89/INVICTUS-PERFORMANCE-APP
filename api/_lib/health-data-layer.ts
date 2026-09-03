@@ -48,6 +48,7 @@ export type HealthMetricType =
   | 'sleep_duration_min'   // #253: idem (agregado por noite a partir dos segmentos de estagio)
   | 'weight_kg'            // #253: idem
   | 'steps_daily'          // #253: total de passos do dia, via queryAggregated (bucket=day, sum) -- HealthVitalsProvider
+  | 'steps_activity'       // passos associados a uma sessão de treino wearable
   | 'calories_active'
   | 'calories_total'
   | 'calories_basal'
@@ -195,6 +196,7 @@ export async function registrarAmostrasDeAtividade(params: {
   avgHeartRate?: number;
   maxHeartRate?: number;
   calories?: number;
+  steps?: number;
   distanceKm?: number;
   durationMin?: number;
 }): Promise<void> {
@@ -219,6 +221,9 @@ export async function registrarAmostrasDeAtividade(params: {
   }
   if (typeof params.calories === 'number' && params.calories > 0) {
     gravacoes.push(gravarAmostraSaude({ ...base, metricType: 'calories_active', value: params.calories, unit: 'kcal' }));
+  }
+  if (typeof params.steps === 'number' && params.steps > 0) {
+    gravacoes.push(gravarAmostraSaude({ ...base, metricType: 'steps_activity', value: Math.round(params.steps), unit: 'passos' }));
   }
   if (typeof params.distanceKm === 'number' && params.distanceKm > 0) {
     gravacoes.push(gravarAmostraSaude({ ...base, metricType: 'distance_km', value: params.distanceKm, unit: 'km' }));
@@ -346,7 +351,7 @@ export interface HealthAccessAuditEntry {
  * - Vitais passivas #253 (api/_handlers/wearables.ts action 'sync-vitals', via registrarAmostrasPassivas)
  */
 export const metricsGravadasHoje: HealthMetricType[] = [
-  'heart_rate_avg', 'heart_rate_max', 'calories_active', 'distance_km', 'duration_min',
+  'heart_rate_avg', 'heart_rate_max', 'calories_active', 'steps_activity', 'distance_km', 'duration_min',
   'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily',
   'calories_total', 'calories_basal', 'distance_cycling_km', 'respiratory_rate', 'oxygen_saturation',
   'blood_pressure_systolic', 'blood_pressure_diastolic', 'blood_glucose', 'body_temperature', 'height_cm', 'flights_climbed', 'exercise_duration_min',

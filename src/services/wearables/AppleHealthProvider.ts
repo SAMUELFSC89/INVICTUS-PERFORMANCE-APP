@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Health } from 'capacitor-health';
 import type { WearableProvider, WearableActivity } from './types';
+import { normalizeHeartRateSamples, normalizeIsoTimestamp, normalizePositiveNumber } from './heartRateSamples';
 
 // Plugin real: pacote npm "capacitor-health" (mley/capacitor-health), que expõe
 // uma API única para Apple HealthKit (iOS) e Google Health Connect (Android).
@@ -9,7 +10,7 @@ import type { WearableProvider, WearableActivity } from './types';
 // #248: READ_ROUTE entra pra ingestao real -- sem ela nenhuma corrida do
 // Apple Watch tem coordenada, e o antifraude trata toda corrida como "sem
 // GPS" (perfil CARDIO exige evidencia de deslocamento).
-const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE', 'READ_ROUTE'] as const;
+const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_ACTIVE_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE', 'READ_ROUTE'] as const;
 
 function mapWorkoutType(hkType: string): string {
   if (!hkType) return 'Cardio';
@@ -75,7 +76,9 @@ export class AppleHealthProvider implements WearableProvider {
         // checagem de GPS do antifraude -- sem isso toda atividade de cardio
         // caia em "sem evidencia de deslocamento".
         includeRoute: true,
-        includeSteps: false,
+        // Os passos já existem no HKWorkout. Sem esta flag o app Saúde mostra
+        // passos que nunca chegam ao Invictus.
+        includeSteps: true,
       });
       this.hasSuccessfulRead = true;
       return (workouts || []).map((w) => this.mapWorkout(w));
@@ -83,7 +86,10 @@ export class AppleHealthProvider implements WearableProvider {
       console.error('[AppleHealthProvider] Erro ao buscar atividades do HealthKit:', error);
       this.hasSuccessfulRead = false;
       this.consentRequestedInSession = false;
-      return [];
+      // Uma falha não é “nenhuma atividade”: o manager precisa manter o
+      // cursor de backfill pendente para tentar de novo após a permissão ser
+      // corrigida no app Saúde.
+      throw error;
     }
   }
 
@@ -151,16 +157,26 @@ export class AppleHealthProvider implements WearableProvider {
   }
 
   private mapWorkout(w: any): WearableActivity {
-    const heartRates: number[] = (w.heartRate || []).map((h: any) => h.bpm).filter((v: number) => !!v);
+    const heartRateSamples = normalizeHeartRateSamples(w.heartRate);
+    const heartRates = heartRateSamples.map((sample) => sample.bpm);
     const averageHeartRate = heartRates.length ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : undefined;
     const maxHeartRate = heartRates.length ? Math.max(...heartRates) : undefined;
     // #248: RouteSample vem como {timestamp, lat, lng, alt} -- convertido pro
     // formato latitude/longitude que o antifraude (validation-engine,
-    // integrity-engine) ja espera em `activity.checkpoints`.
+    // integrity-engine) ja espera em `activity.checkpoints`. O timestamp é
+    // preservado porque o servidor precisa calcular distância/velocidade
+    // entre pontos reais; sem ele toda rota vira apenas uma lista de locais.
     const checkpoints = Array.isArray(w.route) && w.route.length > 0
       ? w.route
           .filter((p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
-          .map((p: any) => ({ latitude: p.lat, longitude: p.lng }))
+          .map((p: any) => {
+            const timestamp = normalizeIsoTimestamp(p.timestamp);
+            return {
+              latitude: p.lat,
+              longitude: p.lng,
+              ...(timestamp ? { timestamp } : {})
+            };
+          })
       : undefined;
     return {
       id: `apple_health_${w.id}`,
@@ -174,7 +190,8 @@ export class AppleHealthProvider implements WearableProvider {
       calories: w.calories || 0,
       averageHeartRate,
       maxHeartRate,
-      steps: w.steps || 0,
+      steps: normalizePositiveNumber(w.steps),
+      heartRateSamples: heartRateSamples.length > 0 ? heartRateSamples : undefined,
       averageSpeed: 0,
       pace: '--',
       biometricValidated: !!averageHeartRate,

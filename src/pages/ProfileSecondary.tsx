@@ -183,7 +183,7 @@ export function ProfileSecondary() {
 
       if (wearables?.appleHealthConnected || wearables?.healthConnectConnected) {
         try {
-          const resultado = await manager.syncAll();
+          const resultado = await manager.syncAll({ forceActivityTelemetryBackfill: true });
           partes.push(`Health: ${resultado.syncedCount} nova(s), ${resultado.duplicatesSkipped} duplicata(s), ${resultado.blockedCount} não aprovada(s).`);
         } catch (e: any) {
           partes.push(`Health: ${e?.message || 'falhou ao sincronizar'}.`);

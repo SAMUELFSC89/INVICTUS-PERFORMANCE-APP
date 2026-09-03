@@ -1,4 +1,5 @@
 import { TimeRange, ReliabilityLevel, METRIC_CATALOG, PerformanceMetricDef } from './metricCatalog';
+import { aggregateHeartRateSamples, HeartRateSample } from '../health/heartRateAnalysis';
 
 export interface RawWorkoutSession {
   id: string;
@@ -9,10 +10,13 @@ export interface RawWorkoutSession {
   durationMinutes: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
+  steps?: number;
+  heartRateSamples?: HeartRateSample[];
   caloriesBurned?: number;
   workoutType?: string;
   workoutName?: string;
-  validationStatus?: 'valid' | 'validated' | 'approved' | 'pending' | 'rejected' | 'not_eligible';
+  validationStatus?: 'valid' | 'validated' | 'approved' | 'pending' | 'rejected' | 'not_eligible' | 'health_only';
+  source?: string;
   distanceKm?: number;
   hasSensorData?: boolean;
   hasGPSData?: boolean;
@@ -55,6 +59,10 @@ export interface UserPerformanceState {
   selectedRange: TimeRange;
   timeframeWorkouts: RawWorkoutSession[];
   allWorkouts: RawWorkoutSession[];
+  /** Atividades recebidas de sensores para análise privada de saúde. Pode
+   * incluir health_only quando o SecurityPipeline não homologou competição. */
+  healthTimeframeWorkouts: RawWorkoutSession[];
+  healthAllWorkouts: RawWorkoutSession[];
   
   // Computed Metrics Map indexed by Metric ID
   computedMetrics: Record<string, CalculatedMetricValue>;
@@ -68,6 +76,8 @@ export interface UserPerformanceState {
     color: string;
     description: string;
   }[];
+  /** Tempo coberto por intervalos de leituras reais de FC no período. */
+  heartRateCoverageMinutes?: number;
 
   // Calculated Overall Physio Readiness & Whoop-like Score
   readinessScore: number | null;
@@ -172,6 +182,11 @@ export function processUserPerformance(
     .sort((a, b) => a.timestamp - b.timestamp);
 
   const timeframeWorkouts = filterWorkoutsByRange(validAllWorkouts, selectedRange);
+  const healthAllWorkouts = allWorkouts
+    .filter(w => ['valid', 'validated', 'approved', 'health_only'].includes(String(w.validationStatus || '').toLowerCase()))
+    .filter(w => Number.isFinite(w.timestamp) && w.timestamp > 0)
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const healthTimeframeWorkouts = filterWorkoutsByRange(healthAllWorkouts, selectedRange);
 
   // Calculate Overall Data Reliability
   let sensorCount = 0;
@@ -191,6 +206,10 @@ export function processUserPerformance(
 
   // Build computed metrics dictionary
   const computedMetrics: Record<string, CalculatedMetricValue> = {};
+  // Zonas e cobertura são métricas de saúde, não de ranking. Por isso podem
+  // usar uma atividade health_only: o treino continua fora de pontos/IGA,
+  // mas uma FC real recebida do Apple Health não desaparece do relatório.
+  const hrSeriesAnalysis = aggregateHeartRateSamples(healthTimeframeWorkouts, userMaxHR);
 
   METRIC_CATALOG.forEach(def => {
     let currentValue: number | string = 0;
@@ -368,10 +387,12 @@ export function processUserPerformance(
       }
 
       case 'hr_zones_distribution': {
-        const hrWorkouts = timeframeWorkouts.filter(w => w.avgHeartRate && w.avgHeartRate > 0);
-        hasEnoughData = hrWorkouts.length > 0;
-        currentValue = hasEnoughData ? 'Mapeado (Z1-Z5)' : 'Sem Dados de Sensor';
-        statusMessage = hasEnoughData ? '' : 'Sincronize seu relógio/cinta Bluetooth para visualizar gráfico de zonas';
+        const hasCurve = hrSeriesAnalysis.sampleCount > 0;
+        hasEnoughData = hrSeriesAnalysis.hasEnoughData;
+        currentValue = hasEnoughData ? 'Mapeado (Z1-Z5)' : hasCurve ? 'Curva recebida' : 'Sem Dados de Sensor';
+        statusMessage = hasEnoughData
+          ? ''
+          : hrSeriesAnalysis.reason || 'Sincronize uma atividade com série de batimentos para visualizar as zonas.';
         break;
       }
 
@@ -511,52 +532,10 @@ export function processUserPerformance(
     };
   });
 
-  // Não existe série temporal de frequência cardíaca em RawWorkoutSession.
-  // Logo não é correto distribuir artificialmente toda a duração entre zonas.
-  // Mantemos a estrutura vazia para o layout e aguardamos dados reais de zona.
-  const zoneRange = (from: number, to: number) => userMaxHR ? `${Math.round(userMaxHR * from)} - ${Math.round(userMaxHR * to)} bpm` : '—';
-  const hrZones = [
-    {
-      zoneName: 'Zona Máxima (Vermelho Z5)',
-      range: zoneRange(0.9, 1),
-      minutes: 0,
-      percent: 0,
-      color: '#EF4444',
-      description: 'Potência anaeróbica máxima, sprints intensos e esforços limite.'
-    },
-    {
-      zoneName: 'Zona Limiar Anaeróbico (Z4)',
-      range: zoneRange(0.8, 0.89),
-      minutes: 0,
-      percent: 0,
-      color: '#F97316',
-      description: 'Aumento de tolerância ao lactato muscular e velocidade sustentada.'
-    },
-    {
-      zoneName: 'Zona Aeróbica Moderada (Z3)',
-      range: zoneRange(0.7, 0.79),
-      minutes: 0,
-      percent: 0,
-      color: '#EAB308',
-      description: 'Eficiência cardiovascular, vascularização e queima de gordura.'
-    },
-    {
-      zoneName: 'Zona Leve (Aquecimento Z2)',
-      range: zoneRange(0.6, 0.69),
-      minutes: 0,
-      percent: 0,
-      color: '#22C55E',
-      description: 'Aquecimento, queima basal de gorduras e resistência de base.'
-    },
-    {
-      zoneName: 'Zona de Recuperação (Z1)',
-      range: zoneRange(0.5, 0.59),
-      minutes: 0,
-      percent: 0,
-      color: '#3B82F6',
-      description: 'Recuperação ativa, mobilidade e regeneração tecidual.'
-    }
-  ];
+  // A distribuição agora é baseada no intervalo entre pontos reais da curva.
+  // Quando não há série ou FC máxima individual, a estrutura continua pronta
+  // para o layout, mas a métrica permanece indisponível.
+  const hrZones = hrSeriesAnalysis.zones;
 
   const readinessScore = null;
   const readinessStatus: UserPerformanceState['readinessStatus'] = 'Indisponível';
@@ -637,8 +616,11 @@ export function processUserPerformance(
     selectedRange,
     timeframeWorkouts,
     allWorkouts: validAllWorkouts,
+    healthTimeframeWorkouts,
+    healthAllWorkouts,
     computedMetrics,
     hrZones,
+    heartRateCoverageMinutes: hrSeriesAnalysis.coverageSeconds / 60,
     readinessScore,
     readinessStatus,
     overallReliability,

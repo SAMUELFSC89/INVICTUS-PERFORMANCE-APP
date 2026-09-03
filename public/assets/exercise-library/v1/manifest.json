@@ -12,6 +12,23 @@
     { "id": "decline_push_up", "name": "Flexão de Braços Declinada", "thumb": "decline_push_up/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
     { "id": "incline_push_up", "name": "Flexões com Mãos no Banco", "thumb": "incline_push_up/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
     { "id": "barbell_bent_over_row", "name": "Remada Curvada com Barra", "thumb": "barbell_bent_over_row/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
-    { "id": "t_bar_row", "name": "Remada Cavalinho Neutra", "thumb": "t_bar_row/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" }
+    { "id": "t_bar_row", "name": "Remada Cavalinho Neutra", "thumb": "t_bar_row/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "barbell_back_squat", "name": "Agachamento Livre", "thumb": "barbell_back_squat/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "smith_machine_squat", "name": "Agachamento no Smith", "thumb": "smith_machine_squat/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "leg_press_45", "name": "Leg Press 45°", "thumb": "leg_press_45/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "hack_squat", "name": "Hack Squat", "thumb": "hack_squat/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "leg_extension", "name": "Cadeira Extensora", "thumb": "leg_extension/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "leg_curl", "name": "Mesa Flexora", "thumb": "leg_curl/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "seated_leg_curl", "name": "Cadeira Flexora", "thumb": "seated_leg_curl/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "barbell_stiff_deadlift", "name": "Stiff / Romanian Deadlift", "thumb": "barbell_stiff_deadlift/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "dumbbell_lunge", "name": "Afundo com Halteres", "thumb": "dumbbell_lunge/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "bulgarian_split_squat", "name": "Agachamento Búlgaro", "thumb": "bulgarian_split_squat/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "dumbbell_walking_lunge", "name": "Passada com Halteres", "thumb": "dumbbell_walking_lunge/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "hip_adductor_machine", "name": "Cadeira Adutora", "thumb": "hip_adductor_machine/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "hip_abductor_machine", "name": "Cadeira Abdutora", "thumb": "hip_abductor_machine/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "barbell_hip_thrust", "name": "Elevação Pélvica / Hip Thrust", "thumb": "barbell_hip_thrust/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "standing_calf_raise_machine", "name": "Panturrilha em Pé", "thumb": "standing_calf_raise_machine/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "seated_calf_raise", "name": "Panturrilha Sentado", "thumb": "seated_calf_raise/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" },
+    { "id": "leg_press_calf_raise", "name": "Panturrilha no Leg Press", "thumb": "leg_press_calf_raise/thumb.png", "thumbStatus": "ready", "demoStatus": "waiting_for_demo" }
   ]
 }

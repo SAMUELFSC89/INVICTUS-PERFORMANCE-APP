@@ -1096,3 +1096,39 @@ html.app-nativo body {
   .challenge-flow-cardio-option-copy small { font-size: .52rem; }
   .challenge-flow-cardio-actions { margin-right: -.72rem; margin-left: -.72rem; padding-right: .72rem; padding-left: .72rem; }
 }
+
+/* Pace atual e pace médio ocupam linhas próprias no painel de corrida. */
+.challenge-cardio-live-stats>div.has-live-pace { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.challenge-cardio-live-stats>div.has-live-pace article:nth-child(2n) { border-right: 0; }
+.challenge-cardio-live-stats>div.has-live-pace article:nth-child(n+3) { padding-top: 1rem; border-top: 1px solid rgba(255,255,255,.12); }
+.challenge-cardio-live-stats>div.has-live-pace article:last-child { grid-column: 1 / -1; border-right: 0; }
+
+/* Acesso persistente à atividade em andamento — mesma linguagem da tela
+   cardio nova: painel compacto, fundo escuro, dourado para ação e verde para
+   indicar que o registro continua vivo. */
+.floating-session-indicator { position: fixed; z-index: 65; top: calc(env(safe-area-inset-top, 0px) + 4.4rem); right: .75rem; left: .75rem; pointer-events: none; }
+.floating-session-card { display: flex; width: min(100%, 30rem); min-height: 4.35rem; margin: 0 auto; align-items: center; justify-content: space-between; gap: .75rem; padding: .62rem .62rem .62rem .72rem; border: 1px solid rgba(245,160,0,.46); border-radius: 1rem; color: #f4f1eb; background: linear-gradient(130deg, rgba(12,12,10,.98), rgba(4,5,4,.94)); box-shadow: 0 .9rem 2.5rem rgba(0,0,0,.58), inset 0 0 .8rem rgba(245,160,0,.035); backdrop-filter: blur(14px); pointer-events: auto; }
+.floating-session-copy { display: flex; min-width: 0; align-items: center; gap: .62rem; }
+.floating-session-icon { display: grid; width: 2.35rem; height: 2.35rem; flex: none; place-items: center; border: 1px solid rgba(245,160,0,.58); border-radius: .72rem; color: #f5b516; background: rgba(245,160,0,.08); box-shadow: 0 0 .8rem rgba(245,160,0,.1); }
+.floating-session-icon svg { width: 1.05rem; height: 1.05rem; }
+.floating-session-text { display: grid; min-width: 0; gap: .13rem; }
+.floating-session-text p { display: flex; min-width: 0; align-items: center; gap: .32rem; margin: 0; overflow: hidden; color: #72e59e; font-size: .57rem; font-weight: 800; letter-spacing: .095em; line-height: 1; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.floating-session-text p i { width: .38rem; height: .38rem; flex: none; border-radius: 50%; background: #37d47b; box-shadow: 0 0 .45rem rgba(55,212,123,.85); }
+.floating-session-text strong { display: block; max-width: 13rem; overflow: hidden; color: #f4f1eb; font-family: "Roboto Condensed", sans-serif; font-size: .82rem; font-weight: 700; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.floating-session-text>span { display: flex; align-items: center; gap: .25rem; color: #aaa69e; font-family: "Roboto Condensed", sans-serif; font-size: .68rem; font-weight: 700; line-height: 1; }
+.floating-session-text>span svg { width: .78rem; height: .78rem; color: #f5b516; }
+.floating-session-actions { display: flex; flex: none; align-items: center; gap: .38rem; }
+.floating-session-open { display: flex; min-height: 2.25rem; align-items: center; justify-content: center; gap: .28rem; padding: 0 .7rem; border: 1px solid #f5a000; border-radius: 999px; color: #181105; background: linear-gradient(100deg, #ffc847, #f3a500); font-family: "Roboto Condensed", sans-serif; font-size: .62rem; font-weight: 800; letter-spacing: .08em; }
+.floating-session-open svg { width: .82rem; height: .82rem; }
+.floating-session-open:hover { filter: brightness(1.08); }
+.floating-session-cancel { display: grid; width: 2.25rem; height: 2.25rem; place-items: center; border: 1px solid rgba(255,76,67,.35); border-radius: 50%; color: #ff6a61; background: rgba(255,76,67,.08); }
+.floating-session-cancel:hover { color: #fff; background: #d9433b; }
+@media (max-width: 390px) {
+  .floating-session-indicator { top: calc(env(safe-area-inset-top, 0px) + 4.1rem); right: .55rem; left: .55rem; }
+  .floating-session-card { gap: .45rem; padding-left: .58rem; }
+  .floating-session-copy { gap: .45rem; }
+  .floating-session-icon { width: 2.15rem; height: 2.15rem; }
+  .floating-session-text strong { max-width: 8.2rem; font-size: .75rem; }
+  .floating-session-open { padding: 0 .55rem; }
+  .floating-session-open svg { display: none; }
+}

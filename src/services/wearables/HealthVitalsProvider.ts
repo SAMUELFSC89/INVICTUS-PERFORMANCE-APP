@@ -85,6 +85,27 @@ export interface VitalSample {
   sourceOperatingSystemVersion?: string;
 }
 
+export interface HealthReadDiagnostic {
+  dataType: string;
+  metricType: string;
+  status: 'ok' | 'empty' | 'error';
+  count: number;
+  error?: string;
+}
+
+export interface HealthVitalsDiagnostics {
+  since: string;
+  until: string;
+  reads: HealthReadDiagnostic[];
+  failedTypes: string[];
+  emptyTypes: string[];
+}
+
+export interface HealthPermissionSnapshot {
+  readAuthorized: string[];
+  readDenied: string[];
+}
+
 const COMMON_READ_TYPES = [
   'heartRate', 'restingHeartRate', 'heartRateVariability', 'sleep', 'weight', 'steps',
   'calories', 'totalCalories', 'basalCalories', 'distance', 'distanceCycling',
@@ -212,11 +233,48 @@ export const HealthVitalsProvider = {
     }
   },
 
+  async checkPermissions(): Promise<HealthPermissionSnapshot | null> {
+    if (!isSupportedPlatform()) return null;
+    try {
+      const status = await CapgoHealth.checkAuthorization({ read: readTypes(), requestHistoryAccess: true });
+      return {
+        readAuthorized: Array.isArray(status.readAuthorized) ? status.readAuthorized.map(String) : [],
+        readDenied: Array.isArray(status.readDenied) ? status.readDenied.map(String) : []
+      };
+    } catch (error) {
+      console.warn('[HealthVitalsProvider] Não foi possível confirmar as permissões atuais:', error);
+      return null;
+    }
+  },
+
   async fetchVitals(since: Date): Promise<VitalSample[]> {
-    if (!isSupportedPlatform()) return [];
+    const result = await this.fetchVitalsWithDiagnostics(since);
+    return result.samples;
+  },
+
+  /**
+   * Igual à leitura normal, mas informa por tipo se o HealthKit/Health
+   * Connect realmente devolveu amostras. Isso permite diferenciar "não há
+   * dados" de "o usuário não autorizou passos/FC" na tela do Invictus.
+   */
+  async fetchVitalsWithDiagnostics(since: Date): Promise<{ samples: VitalSample[]; diagnostics: HealthVitalsDiagnostics }> {
+    if (!isSupportedPlatform()) {
+      const now = new Date().toISOString();
+      return { samples: [], diagnostics: { since: since.toISOString(), until: now, reads: [], failedTypes: [], emptyTypes: [] } };
+    }
     const startDate = since.toISOString();
     const endDate = new Date().toISOString();
     const amostras: VitalSample[] = [];
+    const reads: HealthReadDiagnostic[] = [];
+    const addDiagnostic = (dataType: string, metricType: string, count: number, error?: unknown) => {
+      reads.push({
+        dataType,
+        metricType,
+        status: error ? 'error' : count > 0 ? 'ok' : 'empty',
+        count,
+        ...(error ? { error: error instanceof Error ? error.message.slice(0, 160) : 'Falha de leitura' } : {})
+      });
+    };
 
     const rawSpecs = [
       ['heartRate', 'heart_rate', 'bpm', 10000], ['restingHeartRate', 'heart_rate_resting', 'bpm', 500],
@@ -237,30 +295,40 @@ export const HealthVitalsProvider = {
       if (Capacitor.getPlatform() !== 'ios' && (dataType === 'exerciseTime' || dataType === 'appleStandHour')) continue;
       try {
         const { samples } = await CapgoHealth.readSamples({ dataType, startDate, endDate, limit, ascending: true });
+        let count = 0;
         for (const s of samples || []) {
           if (!valorValido(s.value)) continue;
           const value = dataType === 'distanceCycling' ? s.value / 1000 : s.value;
           amostras.push(normalizar(metricType, Math.round(value * 100) / 100, unit, s));
+          count += 1;
         }
+        addDiagnostic(dataType, metricType, count);
       } catch (error) {
+        addDiagnostic(dataType, metricType, 0, error);
         console.warn(`[HealthVitalsProvider] Falha ao ler ${dataType}:`, error);
       }
     }
 
     try {
       const { samples } = await CapgoHealth.readSamples({ dataType: 'bloodPressure', startDate, endDate, limit: 200, ascending: true });
+      let count = 0;
       for (const s of samples || []) {
-        if (valorValido(s.systolic)) amostras.push(normalizar('blood_pressure_systolic', Math.round(s.systolic), 'mmHg', s));
-        if (valorValido(s.diastolic)) amostras.push(normalizar('blood_pressure_diastolic', Math.round(s.diastolic), 'mmHg', s));
+        if (valorValido(s.systolic)) { amostras.push(normalizar('blood_pressure_systolic', Math.round(s.systolic), 'mmHg', s)); count += 1; }
+        if (valorValido(s.diastolic)) { amostras.push(normalizar('blood_pressure_diastolic', Math.round(s.diastolic), 'mmHg', s)); count += 1; }
       }
+      addDiagnostic('bloodPressure', 'blood_pressure', count);
     } catch (error) {
+      addDiagnostic('bloodPressure', 'blood_pressure', 0, error);
       console.warn('[HealthVitalsProvider] Falha ao ler bloodPressure:', error);
     }
 
     try {
       const { samples } = await CapgoHealth.readSamples({ dataType: 'sleep', startDate, endDate, limit: 500, ascending: true });
-      amostras.push(...agruparSonoPorNoite(samples || []));
+      const sleepSamples = agruparSonoPorNoite(samples || []);
+      amostras.push(...sleepSamples);
+      addDiagnostic('sleep', 'sleep_duration_min', sleepSamples.length);
     } catch (error) {
+      addDiagnostic('sleep', 'sleep_duration_min', 0, error);
       console.warn('[HealthVitalsProvider] Falha ao ler sleep:', error);
     }
 
@@ -270,11 +338,15 @@ export const HealthVitalsProvider = {
     // contagem se duas fontes reportarem o mesmo intervalo.
     try {
       const { samples } = await CapgoHealth.queryAggregated({ dataType: 'steps', startDate, endDate, bucket: 'day', aggregation: 'sum' });
+      let count = 0;
       for (const s of samples || []) {
         if (!valorValido(s.value)) continue;
         amostras.push(normalizar('steps_daily', Math.round(s.value), 'passos', { startDate: s.startDate, endDate: s.endDate }));
+        count += 1;
       }
+      addDiagnostic('steps', 'steps_daily', count);
     } catch (error) {
+      addDiagnostic('steps', 'steps_daily', 0, error);
       console.warn('[HealthVitalsProvider] Falha ao ler steps agregados:', error);
     }
 
@@ -284,16 +356,29 @@ export const HealthVitalsProvider = {
     for (const [dataType, metricType, unit] of aggregateSpecs) {
       try {
         const { samples } = await CapgoHealth.queryAggregated({ dataType, startDate, endDate, bucket: 'day', aggregation: 'sum' });
+        let count = 0;
         for (const s of samples || []) {
           if (!valorValido(s.value)) continue;
           const value = dataType.startsWith('distance') ? s.value / 1000 : s.value;
           amostras.push(normalizar(metricType, Math.round(value * 100) / 100, unit, { startDate: s.startDate, endDate: s.endDate }));
+          count += 1;
         }
+        addDiagnostic(dataType, metricType, count);
       } catch (error) {
+        addDiagnostic(dataType, metricType, 0, error);
         console.warn(`[HealthVitalsProvider] Falha ao agregar ${dataType}:`, error);
       }
     }
 
-    return Array.from(new Map(amostras.map((sample) => [`${sample.metricType}:${sample.sampleId}`, sample])).values());
+    return {
+      samples: Array.from(new Map(amostras.map((sample) => [`${sample.metricType}:${sample.sampleId}`, sample])).values()),
+      diagnostics: {
+        since: startDate,
+        until: endDate,
+        reads,
+        failedTypes: reads.filter((read) => read.status === 'error').map((read) => read.dataType),
+        emptyTypes: reads.filter((read) => read.status === 'empty').map((read) => read.dataType)
+      }
+    };
   }
 };

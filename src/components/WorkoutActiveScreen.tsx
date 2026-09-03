@@ -30,7 +30,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
       });
     }
     const normalizedGroup = (session.muscleGroup || '').toLocaleLowerCase('pt-BR');
-    const catalogGroup = normalizedGroup.includes('peito') ? 'peito' : normalizedGroup.includes('costa') ? 'costas' : null;
+    const catalogGroup = normalizedGroup.includes('peito') ? 'peito' : normalizedGroup.includes('costa') ? 'costas' : normalizedGroup.includes('perna') ? 'pernas' : null;
     return catalogGroup ? OFFICIAL_EXERCISES_BATCH_01.filter((exercise) => exercise.muscleGroup === catalogGroup).slice(0, 6).map(exercise => ({ ...exercise, planned: undefined })) : [];
   }, [session.muscleGroup, session.plannedExercises]);
   const storageKey = `invictus_workout_progress_${session.id}`;
@@ -71,7 +71,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
   };
 
   return <section className="workout-live-screen">
-    <header className="workout-live-brand"><button className="workout-live-back" aria-label="Voltar" onClick={onBack}><ArrowLeft /></button><span className="workout-live-logo"><InvictusLogo size={34} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></span><button aria-label="Mais opções" onClick={() => setMenuOpen((value) => !value)}><MoreVertical /></button>{menuOpen ? <div className="workout-live-menu"><button onClick={completeCurrent} disabled={!currentExercise}>Concluir exercício atual</button>{onCancel ? <button className="is-danger" onClick={onCancel}>Descartar treino</button> : null}</div> : null}</header>
+    <header className="workout-live-brand"><button className="workout-live-back" aria-label="Minimizar atividade" title="Sair sem encerrar a atividade" onClick={onBack}><ArrowLeft /></button><span className="workout-live-logo"><InvictusLogo size={34} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></span><button aria-label="Mais opções" onClick={() => setMenuOpen((value) => !value)}><MoreVertical /></button>{menuOpen ? <div className="workout-live-menu"><button onClick={completeCurrent} disabled={!currentExercise}>Concluir exercício atual</button>{onCancel ? <button className="is-danger" onClick={onCancel}>Descartar treino</button> : null}</div> : null}</header>
 
     <div className="workout-live-summary">
       <div><small><i />{session.isPaused ? 'TREINO PAUSADO' : 'TREINO EM ANDAMENTO'}</small><strong>{formatElapsed(elapsed)}</strong><span>Tempo decorrido</span></div>

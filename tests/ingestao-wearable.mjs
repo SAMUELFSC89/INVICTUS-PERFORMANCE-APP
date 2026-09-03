@@ -46,6 +46,14 @@ function criarBancoFalso() {
         set: async (data, opts) => {
           const atual = colecao(nome).get(id) || {};
           colecao(nome).set(id, opts?.merge ? { ...atual, ...data } : data);
+        },
+        create: async (data) => {
+          if (colecao(nome).has(id)) {
+            const erro = new Error('already exists');
+            erro.code = 6;
+            throw erro;
+          }
+          colecao(nome).set(id, data);
         }
       }),
       where: () => ({
@@ -91,14 +99,33 @@ const base = new Date('2026-08-27T10:00:00Z');
 
 // CENARIO 2: corrida com rota GPS real (checkpoints) -- deve aprovar.
 {
-  __setDb(criarBancoFalso());
-  const checkpoints = Array.from({ length: 10 }, (_, i) => ({ latitude: -23.5 + i * 0.001, longitude: -46.6 + i * 0.001 }));
+  const banco2 = criarBancoFalso();
+  __setDb(banco2);
+  const checkpoints = Array.from({ length: 10 }, (_, i) => ({
+    latitude: -23.5 + i * 0.0035,
+    longitude: -46.6 + i * 0.0035,
+    timestamp: new Date(base.getTime() + i * 3 * 60 * 1000).toISOString()
+  }));
   const r = await processarLoteWearable('user2', [{
     source: 'health_connect', sourceActivityId: 'r1', activityType: 'Corrida',
     startTime: base.toISOString(), durationSeconds: 30 * 60, distanceMeters: 5000,
-    averageHeartRate: 150, maxHeartRate: 170, checkpoints
+    averageHeartRate: 150, maxHeartRate: 170, steps: 312, checkpoints,
+    heartRateSamples: [
+      { timestamp: '2026-08-27T10:00:00Z', bpm: 142 },
+      { timestamp: '2026-08-27T10:10:00Z', bpm: 150 },
+      { timestamp: '2026-08-27T10:20:00Z', bpm: 168 }
+    ]
   }]);
-  conferir('Corrida com rota GPS: aprovada', r.syncedCount === 1, JSON.stringify(r.resultados));
+  // A rota/FC/passos são telemetria de saúde válida, mas o SecurityPipeline
+  // ainda exige acelerômetro/giroscópio para pontuação competitiva. Como o
+  // HealthKit/Health Connect não entrega esses dois sensores neste contrato,
+  // o treino fica fora do ranking sem ser descartado da saúde.
+  conferir('Corrida com telemetria real: fora do ranking sem motion telemetry', r.syncedCount === 0 && r.blockedCount === 1, JSON.stringify(r.resultados));
+  const treinos2 = Object.values(banco2._dump('workouts'));
+  conferir('Wearable: persistiu passos reais', treinos2.some(a => a.steps === 312));
+  conferir('Wearable: persistiu a curva real de FC', treinos2.some(a => a.heartRateSamples?.length === 3 && a.hasHeartRateSeries === true));
+  const amostras2 = Object.values(banco2._dump('health_samples'));
+  conferir('Health Layer: associou passos à atividade', amostras2.some(a => a.metricType === 'steps_activity' && a.value === 312));
 }
 
 // CENARIO 3: corrida SEM rota GPS -- não pode ser tratada como se tivesse
@@ -128,12 +155,23 @@ const base = new Date('2026-08-27T10:00:00Z');
 {
   const banco4 = criarBancoFalso();
   __setDb(banco4);
-  const checkpoints = Array.from({ length: 5 }, (_, i) => ({ latitude: -23.5 + i * 0.001, longitude: -46.6 + i * 0.001 }));
+  const checkpoints = Array.from({ length: 5 }, (_, i) => ({
+    latitude: -23.5 + i * 0.0048,
+    longitude: -46.6 + i * 0.0048,
+    timestamp: new Date(base.getTime() + i * 4 * 60 * 1000).toISOString()
+  }));
   const r = await processarLoteWearable('user4', [
     { source: 'apple_health', sourceActivityId: 'dup1', activityType: 'Corrida', startTime: base.toISOString(), durationSeconds: 20 * 60, distanceMeters: 3000, checkpoints },
-    { source: 'apple_health', sourceActivityId: 'dup1', activityType: 'Corrida', startTime: base.toISOString(), durationSeconds: 20 * 60, distanceMeters: 3000, checkpoints }
+    { source: 'apple_health', sourceActivityId: 'dup1', activityType: 'Corrida', startTime: base.toISOString(), durationSeconds: 20 * 60, distanceMeters: 3000, steps: 280, checkpoints,
+      heartRateSamples: [
+        { timestamp: '2026-08-27T10:00:00Z', bpm: 140 },
+        { timestamp: '2026-08-27T10:01:00Z', bpm: 145 },
+        { timestamp: '2026-08-27T10:02:00Z', bpm: 150 }
+      ] }
   ]);
-  conferir('Reprocessar o mesmo id do mesmo lote: 1 aprovada + 1 duplicata', r.syncedCount === 1 && r.duplicatesSkipped === 1, JSON.stringify(r.resultados));
+  conferir('Reprocessar o mesmo id do mesmo lote: preserva o status e atualiza telemetria', r.syncedCount === 0 && r.blockedCount === 2 && r.duplicatesSkipped === 0, JSON.stringify(r.resultados));
+  const treinoResincronizado = Object.values(banco4._dump('workouts')).find(a => a.sourceActivityId === 'dup1');
+  conferir('Resync: adicionou passos e curva sem rebaixar o status', treinoResincronizado?.steps === 280 && treinoResincronizado?.heartRateSamples?.length === 3 && treinoResincronizado?.validationStatus === 'invalid');
 
   // #251: a segunda entrega (duplicata) não pode inflar a série temporal de
   // saúde -- mesmo evento real, uma leitura só. distance_km deve aparecer

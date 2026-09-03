@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Health } from 'capacitor-health';
 import type { WearableProvider, WearableActivity } from './types';
+import { normalizeHeartRateSamples, normalizeIsoTimestamp, normalizePositiveNumber } from './heartRateSamples';
 
 // Plugin real: pacote npm "capacitor-health" (mley/capacitor-health), que expõe
 // uma API única para Apple HealthKit (iOS) e Google Health Connect (Android).
@@ -94,12 +95,17 @@ export class HealthConnectProvider implements WearableProvider {
         // checagem de GPS do antifraude -- sem isso toda atividade de cardio
         // caia em "sem evidencia de deslocamento".
         includeRoute: true,
-        includeSteps: false,
+        // O Health Connect devolve os passos associados ao exercício; sem
+        // esta flag eles ficam apenas no app de saúde do aparelho.
+        includeSteps: true,
       });
       return (workouts || []).map((w) => this.mapWorkout(w));
     } catch (error) {
       console.error('[HealthConnectProvider] Erro ao buscar atividades do Health Connect:', error);
-      return [];
+      // Uma falha não é “nenhuma atividade”: o manager precisa manter o
+      // cursor de backfill pendente para tentar de novo após a permissão ser
+      // corrigida no Health Connect.
+      throw error;
     }
   }
 
@@ -167,16 +173,26 @@ export class HealthConnectProvider implements WearableProvider {
   }
 
   private mapWorkout(w: any): WearableActivity {
-    const heartRates: number[] = (w.heartRate || []).map((h: any) => h.bpm).filter((v: number) => !!v);
+    const heartRateSamples = normalizeHeartRateSamples(w.heartRate);
+    const heartRates = heartRateSamples.map((sample) => sample.bpm);
     const averageHeartRate = heartRates.length ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : undefined;
     const maxHeartRate = heartRates.length ? Math.max(...heartRates) : undefined;
     // #248: RouteSample vem como {timestamp, lat, lng, alt} -- convertido pro
     // formato latitude/longitude que o antifraude (validation-engine,
-    // integrity-engine) ja espera em `activity.checkpoints`.
+    // integrity-engine) ja espera em `activity.checkpoints`. O timestamp é
+    // preservado porque o servidor precisa calcular distância/velocidade
+    // entre pontos reais; sem ele toda rota vira apenas uma lista de locais.
     const checkpoints = Array.isArray(w.route) && w.route.length > 0
       ? w.route
           .filter((p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
-          .map((p: any) => ({ latitude: p.lat, longitude: p.lng }))
+          .map((p: any) => {
+            const timestamp = normalizeIsoTimestamp(p.timestamp);
+            return {
+              latitude: p.lat,
+              longitude: p.lng,
+              ...(timestamp ? { timestamp } : {})
+            };
+          })
       : undefined;
     return {
       id: `health_connect_${w.id}`,
@@ -190,7 +206,8 @@ export class HealthConnectProvider implements WearableProvider {
       calories: w.calories || 0,
       averageHeartRate,
       maxHeartRate,
-      steps: w.steps || 0,
+      steps: normalizePositiveNumber(w.steps),
+      heartRateSamples: heartRateSamples.length > 0 ? heartRateSamples : undefined,
       averageSpeed: 0,
       pace: '--',
       biometricValidated: !!averageHeartRate,

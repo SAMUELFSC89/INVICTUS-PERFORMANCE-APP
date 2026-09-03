@@ -73,6 +73,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
+function sessionFromActiveDocument(data: Record<string, any>): ActivitySession {
+  return {
+    id: String(data.id || ''),
+    userId: String(data.userId || ''),
+    type: data.type === 'workout' ? 'workout' : 'cardio',
+    cardioType: data.cardioType || undefined,
+    cardioTypeLabel: data.cardioTypeLabel || undefined,
+    muscleGroup: data.muscleGroup || undefined,
+    workoutPlanId: data.workoutPlanId || undefined,
+    workoutId: data.workoutId || undefined,
+    plannedExercises: Array.isArray(data.plannedExercises) ? data.plannedExercises : undefined,
+    isIndoorCardio: data.isIndoorCardio,
+    requiresGpsDistance: data.requiresGpsDistance,
+    smartwatchData: data.smartwatchData || undefined,
+    startTime: data.startTime,
+    startLocation: data.startLocation || undefined,
+    status: 'active',
+    checkInId: data.checkInId || undefined,
+    checkpoints: Array.isArray(data.checkpoints) ? data.checkpoints : [],
+    maxObservedSpeedKmH: Number(data.maxObservedSpeedKmH) || 0,
+    gpsSpeedSampleCount: Number(data.gpsSpeedSampleCount) || 0,
+    isPaused: Boolean(data.isPaused),
+    pausedMs: Number(data.pausedMs) || 0,
+    pauseStartedAt: data.pauseStartedAt || null,
+    gpsSegmentId: Number.isFinite(Number(data.gpsSegmentId)) ? Number(data.gpsSegmentId) : 0,
+  };
+}
+
 export const activityService = {
   async performGymCheckIn(): Promise<{ checkInId: string; location: { lat: number; lng: number; accuracy?: number }; gymName?: string }> {
     const user = auth.currentUser;
@@ -376,6 +404,69 @@ export const activityService = {
       return session;
     } catch (e) {
       localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+  },
+
+  /**
+   * Recupera a última sessão ativa do Firestore quando o aparelho perdeu o
+   * estado local (fechamento do app, troca de rota ou reabertura no iPhone).
+   * A leitura é best-effort: uma falha de rede não impede o restante do app de
+   * abrir, mas uma sessão encontrada volta para o mesmo armazenamento usado
+   * pelo fluxo ao vivo.
+   */
+  async restoreActiveSession(): Promise<ActivitySession | null> {
+    const localSession = this.getCurrentSession();
+    if (localSession) return localSession;
+
+    const user = auth.currentUser;
+    if (!user) return null;
+
+    try {
+      const activeSessionsQuery = query(
+        collection(db, 'active_sessions'),
+        where('userId', '==', user.uid),
+        where('status', '==', 'active'),
+      );
+      const snapshot = await withTimeout(
+        getDocs(activeSessionsQuery),
+        5000,
+        'Tempo limite ao recuperar a atividade em andamento.',
+      );
+      const documents = snapshot.docs
+        .map((item) => item.data() as Record<string, any>)
+        .filter((data) => data.id && data.startTime)
+        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+      const data = documents[0];
+      if (!data) return null;
+
+      const session = sessionFromActiveDocument(data);
+      const startTimeMs = new Date(session.startTime).getTime();
+      const now = Date.now();
+      const pausedMs = (session.pausedMs || 0) + (session.pauseStartedAt
+        ? Math.max(0, now - new Date(session.pauseStartedAt).getTime())
+        : 0);
+      const elapsedMinutes = (now - startTimeMs - pausedMs) / (1000 * 60);
+      const maxMinutes = session.type === 'cardio' ? MAX_SESSION_MINUTES.cardio : MAX_SESSION_MINUTES.workout;
+
+      if (!Number.isFinite(startTimeMs) || elapsedMinutes > maxMinutes) {
+        await updateDoc(doc(db, 'active_sessions', session.id), {
+          status: 'abandoned',
+          abandonedReason: `Sessão abandonada (tempo limite de ${maxMinutes} minutos excedido)`,
+          endTime: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }).catch((error) => console.warn('[ActivityService] Não foi possível encerrar sessão expirada:', error));
+        return null;
+      }
+
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      if (session.requiresGpsDistance) {
+        void nativeBackgroundLocationService.start().catch((error) => console.warn('[ActivityService] Não foi possível retomar o rastreamento nativo:', error));
+      }
+      return session;
+    } catch (error) {
+      console.warn('[ActivityService] Não foi possível recuperar atividade ativa do servidor:', error);
       return null;
     }
   },

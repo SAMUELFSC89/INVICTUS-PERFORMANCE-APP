@@ -1,5 +1,10 @@
 export type WearableSource = 'health_connect' | 'apple_health' | 'strava' | 'garmin' | 'fitbit' | 'polar';
 
+export interface WearableHeartRateSample {
+  timestamp: string;
+  bpm: number;
+}
+
 export interface WearableActivity {
   id: string; // unique internal id
   userId: string;
@@ -10,9 +15,12 @@ export interface WearableActivity {
   durationSeconds: number;
   distanceMeters: number;
   calories: number;
-  averageHeartRate: number;
-  maxHeartRate: number;
-  steps: number;
+  averageHeartRate?: number;
+  maxHeartRate?: number;
+  /** Passos contabilizados pela fonte dentro desta sessão, quando disponíveis. */
+  steps?: number;
+  /** Série bruta de FC; cada ponto precisa ter timestamp real da fonte. */
+  heartRateSamples?: WearableHeartRateSample[];
   averageSpeed: number; // m/s
   pace: string; // mm:ss / km
   biometricValidated: boolean; // meets heart rate variability and fraud criteria
@@ -20,7 +28,7 @@ export interface WearableActivity {
   createdAt: string;
   /** #248: rota real do GPS (quando o provedor e a atividade tiverem), usada
    * pelo antifraude pra confirmar deslocamento em modalidades de cardio. */
-  checkpoints?: { latitude: number; longitude: number }[];
+  checkpoints?: { latitude: number; longitude: number; timestamp?: string }[];
 }
 
 export interface WearableConfig {
@@ -32,6 +40,10 @@ export interface WearableConfig {
   stravaConnected: boolean;
   autoSync: boolean;
   lastSyncTime: string | null;
+  /** Versão da telemetria de atividade persistida pelo servidor. */
+  activityTelemetryVersion?: number;
+  /** Versão do backfill de vitais passivas (FC, passos, sono e energia). */
+  healthVitalsVersion?: number;
   lastVitalsSyncTime: string | null;
   createdAt: string;
   updatedAt: string;

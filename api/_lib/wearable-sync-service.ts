@@ -34,7 +34,10 @@ export interface WearableActivityPayload {
   calories?: number;
   averageHeartRate?: number;
   maxHeartRate?: number;
-  checkpoints?: { latitude: number; longitude: number }[];
+  steps?: number;
+  /** Curva de FC composta apenas por leituras com timestamp real da fonte. */
+  heartRateSamples?: { timestamp: string; bpm: number }[];
+  checkpoints?: { latitude: number; longitude: number; timestamp?: string }[];
 }
 
 export interface ResultadoIngestaoAtividade {
@@ -89,8 +92,29 @@ export async function processarAtividadeWearable(
       sourceActivityId: activity.sourceActivityId
     });
 
+    // O mesmo ID da mesma fonte aparece de novo quando fazemos uma janela de
+    // sobreposição para recuperar telemetria que faltou. Isso é idempotência,
+    // não uma nova duplicata: atualizamos os campos de saúde sem transformar
+    // um treino previamente validado em inválido.
+    const mesmaAtividadeDaMesmaFonte = Boolean(
+      duplicata?.motivo === 'MESMO_ID_DE_ORIGEM' && duplicata.id === docId
+    );
+    let statusExistente: Record<string, any> | null = null;
+    if (mesmaAtividadeDaMesmaFonte) {
+      try {
+        const existente = await db.collection('workouts').doc(docId).get();
+        statusExistente = existente.exists ? (existente.data() || {}) : null;
+      } catch (readErr) {
+        console.warn(`[WearableSync] Não foi possível ler o status anterior de ${docId}; preservando-o sem sobrescrever.`, readErr);
+      }
+    }
+
     let aprovado = false;
-    if (duplicata) {
+    if (mesmaAtividadeDaMesmaFonte) {
+      aprovado = ['completed', 'validated', 'approved', 'valid'].includes(
+        String(statusExistente?.validationStatus || statusExistente?.status || '').toLowerCase()
+      );
+    } else if (duplicata) {
       console.warn(`[WearableSync] Atividade ${docId} é duplicata de ${duplicata.id} (${duplicata.motivo}) -- não vai pontuar.`);
     } else {
       try {
@@ -113,6 +137,7 @@ export async function processarAtividadeWearable(
             avgHeartRate: activity.averageHeartRate,
             maxHeartRate: activity.maxHeartRate,
             calories: activity.calories,
+            steps: activity.steps,
             // Nunca é entrada manual: veio direto do sensor do relógio/telefone.
             manual: false,
             isDuplicateActivity: false
@@ -131,6 +156,38 @@ export async function processarAtividadeWearable(
       }
     }
 
+    const statusFields = mesmaAtividadeDaMesmaFonte && statusExistente
+      ? {
+          // Campos de decisão pertencem ao servidor e não podem regredir numa
+          // ressincronização de telemetria.
+          status: statusExistente.status,
+          validationStatus: statusExistente.validationStatus,
+          securityBlocked: statusExistente.securityBlocked,
+          nonScoringReason: statusExistente.nonScoringReason,
+          userMessage: statusExistente.userMessage,
+          points: statusExistente.points,
+          pointsEarned: statusExistente.pointsEarned
+        }
+      : mesmaAtividadeDaMesmaFonte
+        ? {}
+        : {
+            // Mesma whitelist que api/_lib/igaService.ts usa para decidir o
+            // que conta pro IGA -- reprovado/duplicata fica visível no
+            // histórico, só não alimenta a competição.
+            status: aprovado ? 'completed' : 'suspicious',
+            validationStatus: aprovado ? 'validated' : 'invalid',
+            securityBlocked: aprovado ? undefined : true,
+            nonScoringReason: aprovado ? undefined : (duplicata ? 'DUPLICATE_ACTIVITY' : 'SECURITY_PIPELINE_BLOCKED'),
+            userMessage: duplicata?.detalhe,
+            points: 0,
+            pointsEarned: 0
+          };
+
+    const hasGpsRoute = Array.isArray(activity.checkpoints) && activity.checkpoints.length > 0;
+    const hasGpsRouteToPersist = mesmaAtividadeDaMesmaFonte && statusExistente
+      ? Boolean(statusExistente.hasGpsRoute || hasGpsRoute)
+      : hasGpsRoute;
+
     await db.collection('workouts').doc(docId).set({
       id: docId,
       userId,
@@ -140,21 +197,20 @@ export async function processarAtividadeWearable(
       sourceActivityId: activity.sourceActivityId,
       timestamp: activity.startTime || new Date().toISOString(),
       duration: Math.ceil(durationMins),
-      distance: distanceKm > 0 ? distanceKm : undefined,
-      calories: activity.calories,
-      avgHeartRate: activity.averageHeartRate,
-      maxHeartRate: activity.maxHeartRate,
-      hasGpsRoute: Array.isArray(activity.checkpoints) && activity.checkpoints.length > 0,
-      // Mesma whitelist que api/_lib/igaService.ts usa para decidir o que
-      // conta pro IGA -- reprovado/duplicata fica visível no histórico
-      // (a atividade aconteceu), só não alimenta a competição.
-      status: aprovado ? 'completed' : 'suspicious',
-      validationStatus: aprovado ? 'validated' : 'invalid',
-      securityBlocked: aprovado ? undefined : true,
-      nonScoringReason: aprovado ? undefined : (duplicata ? 'DUPLICATE_ACTIVITY' : 'SECURITY_PIPELINE_BLOCKED'),
-      userMessage: duplicata?.detalhe,
-      points: 0,
-      pointsEarned: 0,
+      ...(distanceKm > 0 ? { distance: distanceKm } : {}),
+      ...(typeof activity.calories === 'number' ? { calories: activity.calories } : {}),
+      ...(typeof activity.averageHeartRate === 'number' ? { avgHeartRate: activity.averageHeartRate } : {}),
+      ...(typeof activity.maxHeartRate === 'number' ? { maxHeartRate: activity.maxHeartRate } : {}),
+      ...(typeof activity.steps === 'number' ? { steps: activity.steps } : {}),
+      ...(activity.heartRateSamples?.length
+        ? {
+            heartRateSamples: activity.heartRateSamples,
+            heartRateSampleCount: activity.heartRateSamples.length,
+            hasHeartRateSeries: true
+          }
+        : {}),
+      hasGpsRoute: hasGpsRouteToPersist,
+      ...statusFields,
       createdAt: new Date().toISOString()
     }, { merge: true });
 
@@ -170,9 +226,12 @@ export async function processarAtividadeWearable(
         sourceActivityId: docId,
         timestamp: activity.startTime || new Date().toISOString(),
         aprovadoPeloAntifraude: aprovado,
-        pularDuplicata: Boolean(duplicata),
+        // Re-sincronização do mesmo documento é permitida para preencher
+        // telemetria ausente; duplicatas entre fontes continuam excluídas.
+        pularDuplicata: Boolean(duplicata && !mesmaAtividadeDaMesmaFonte),
         avgHeartRate: activity.averageHeartRate,
         maxHeartRate: activity.maxHeartRate,
+        steps: activity.steps,
         calories: activity.calories,
         distanceKm: distanceKm > 0 ? distanceKm : undefined,
         durationMin: durationMins > 0 ? durationMins : undefined
@@ -183,8 +242,13 @@ export async function processarAtividadeWearable(
 
     return {
       sourceActivityId: activity.sourceActivityId,
-      status: duplicata ? 'duplicate' : aprovado ? 'approved' : 'blocked',
-      detalhe: duplicata?.detalhe
+      // Re-sincronizar o mesmo documento atualiza telemetria; não é uma
+      // duplicata entre fontes e não deve aparecer para o usuário como algo
+      // descartado. O status competitivo anterior continua preservado.
+      status: mesmaAtividadeDaMesmaFonte && statusExistente
+        ? aprovado ? 'approved' : 'blocked'
+        : duplicata ? 'duplicate' : aprovado ? 'approved' : 'blocked',
+      detalhe: mesmaAtividadeDaMesmaFonte ? undefined : duplicata?.detalhe
     };
   } catch (err: any) {
     console.error(`[WearableSync] Falha inesperada processando ${docId}:`, err);

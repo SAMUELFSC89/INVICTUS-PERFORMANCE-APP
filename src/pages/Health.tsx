@@ -8,10 +8,14 @@ import { API_CONFIG } from '../config';
 import { Capacitor } from '@capacitor/core';
 import { useUser } from '../UserContext';
 import { RawWorkoutSession, processUserPerformance, UserPerformanceState } from '../core/performance/performanceEngine';
+import { buildHealthInsights } from '../core/health/healthInsights';
 import { TimeRange } from '../core/performance/metricCatalog';
 import { cn } from '../lib/utils';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
 import { healthSummaryService, HealthSummaryResponse } from '../services/healthSummaryService';
+import type { HealthVitalsDiagnostics } from '../services/wearables/HealthVitalsProvider';
+import { normalizeHeartRateSamples } from '../services/wearables/heartRateSamples';
+import { analyzeHeartRateSamples } from '../core/health/heartRateAnalysis';
 import { InvictusLogo } from '../components/InvictusLogo';
 import { WearableManager } from '../services/wearables/WearableManager';
 import './HealthNew.css';
@@ -155,14 +159,23 @@ function MiniSparkline({ points, color = '#ffb000' }: { points: number[]; color?
 function useHealthSummary() {
   const [summary, setSummary] = useState<HealthSummaryResponse | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
+  const [syncDiagnostics, setSyncDiagnostics] = useState<HealthVitalsDiagnostics | null>(null);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       if (Capacitor.isNativePlatform()) {
-        await WearableManager.getInstance().syncVitals().catch((error) => {
-          console.warn('[Health] Sincronização ao abrir a tela não foi concluída:', error);
-        });
+        const manager = WearableManager.getInstance();
+        await Promise.all([
+          manager.syncAll().catch((error) => {
+            console.warn('[Health] Sincronização de atividades ao abrir a tela não foi concluída:', error);
+          }),
+          manager.syncVitals().then((result) => {
+            if (active && result.diagnostics) setSyncDiagnostics(result.diagnostics);
+          }).catch((error) => {
+            console.warn('[Health] Sincronização de vitais ao abrir a tela não foi concluída:', error);
+          })
+        ]);
       }
       const data = await healthSummaryService.fetchSummary();
       if (active) { setSummary(data); setLoadingSummary(false); }
@@ -171,7 +184,7 @@ function useHealthSummary() {
     return () => { active = false; };
   }, []);
 
-  return { summary, loadingSummary };
+  return { summary, loadingSummary, syncDiagnostics };
 }
 
 const HEALTH_GLOSSARY = [
@@ -197,6 +210,38 @@ function HealthGlossary() {
     }
   };
   return <section className="health-glossary"><div className="health-section-name">ENTENDA SEUS DADOS <Info /></div><div>{HEALTH_GLOSSARY.map(([term, explanation]) => <article key={term}><strong>{term}</strong><p>{explanation}</p></article>)}</div><small>Estas informações são educativas e não constituem diagnóstico ou orientação médica.</small>{Capacitor.isNativePlatform() ? <button className="health-permission-update" onClick={updatePermissions}>ATUALIZAR PERMISSÕES DE SAÚDE</button> : null}{permissionStatus ? <p className="health-permission-status" role="status">{permissionStatus}</p> : null}</section>;
+}
+
+function HealthSyncStatus({ diagnostics, loading }: { diagnostics: HealthVitalsDiagnostics | null; loading: boolean }) {
+  if (!Capacitor.isNativePlatform()) return null;
+  if (loading && !diagnostics) return <section className="health-sync-status is-loading" aria-live="polite"><Activity /> <span>Atualizando dados do Apple Health/Health Connect…</span></section>;
+  if (!diagnostics) return <section className="health-sync-status" aria-live="polite"><AlertCircle /> <span>Não foi possível confirmar agora se o dispositivo entregou batimentos e passos. Toque em “Atualizar permissões de saúde” para tentar novamente.</span></section>;
+
+  const heartRate = diagnostics.reads.find((read) => read.dataType === 'heartRate');
+  const steps = diagnostics.reads.find((read) => read.dataType === 'steps');
+  const hasErrors = diagnostics.failedTypes.includes('heartRate') || diagnostics.failedTypes.includes('steps');
+  const missingCoreData = heartRate?.status !== 'ok' || steps?.status !== 'ok';
+  const statusText = hasErrors
+    ? 'Houve uma falha ao consultar uma das métricas principais.'
+    : missingCoreData
+      ? 'O dispositivo respondeu, mas não entregou batimentos e/ou passos nesta janela.'
+      : 'Batimentos e passos foram lidos ativamente do dispositivo.';
+  return <section className={cn('health-sync-status', missingCoreData && 'has-warning')} aria-live="polite"><div><span className="health-sync-status-icon">{missingCoreData ? <AlertCircle /> : <ShieldCheck />}</span><strong>{statusText}</strong></div><p><span>Batimentos: {heartRate?.status === 'ok' ? `${heartRate.count} leituras` : heartRate?.status === 'error' ? 'erro de leitura' : 'nenhuma leitura'}</span><span>Passos: {steps?.status === 'ok' ? `${steps.count} dias agregados` : steps?.status === 'error' ? 'erro de leitura' : 'nenhum dia'}</span></p>{missingCoreData ? <small>Verifique no app Saúde se o Invictus tem acesso a “Batimentos” e “Passos”. O Invictus não cria valores quando a fonte não entrega a leitura.</small> : <small>Última consulta: {formatUltimaLeitura(diagnostics.until)} · valores exibidos abaixo vêm dessa leitura.</small>}</section>;
+}
+
+function HealthInsightsSection({ summary, state }: { summary: HealthSummaryResponse | null; state: UserPerformanceState }) {
+  const insights = useMemo(() => buildHealthInsights({
+    summary,
+    workouts: state.healthTimeframeWorkouts.map((workout) => ({
+      timestamp: workout.timestamp,
+      durationMinutes: workout.durationMinutes,
+      avgHeartRate: workout.avgHeartRate,
+      distanceKm: workout.distanceKm,
+      workoutType: workout.workoutType
+    }))
+  }), [summary, state.healthTimeframeWorkouts]);
+  if (!insights.length) return null;
+  return <section className="health-insights" aria-label="Análises da Invictus"><div className="health-section-name"><HeartPulse /> LEITURAS DA INVICTUS</div><div className="health-insights-list">{insights.map((insight) => <article key={insight.id} className={`is-${insight.kind}`}><div className="health-insight-heading"><strong>{insight.title}</strong><span>{insight.kind === 'congratulations' ? 'PARABÉNS' : insight.kind === 'alert' ? 'ATENÇÃO' : insight.kind === 'decline' ? 'OBSERVE' : 'EVOLUÇÃO'}</span></div><p>{insight.message}</p><small>{insight.evidence}</small></article>)}</div><small className="health-insights-note">As mensagens descrevem tendências dos seus próprios dados; não são diagnóstico nem substituem avaliação profissional.</small></section>;
 }
 
 const HEALTH_METRIC_LABELS: Record<string, string> = {
@@ -267,9 +312,18 @@ function useHealthData(range: TimeRange) {
           const item = entry.data();
           const timestamp = readActivityTimestamp(item.timestamp) ?? readActivityTimestamp(item.createdAt);
           const validationStatus = normalizeActivityValidationStatus(item.validationStatus ?? item.status ?? item.validation?.status);
-          // A tela de saúde é uma fonte de dados reais: registros sem data
-          // válida ou ainda não homologados não entram em relatórios.
-          if (!timestamp || validationStatus !== 'validated') return result;
+          const isWearable = item.source === 'apple_health' || item.source === 'health_connect';
+          const heartRateSamples = normalizeHeartRateSamples(item.heartRateSamples);
+          const hasHealthTelemetry = heartRateSamples.length > 0
+            || Number(item.steps) > 0 || Number(item.avgHeartRate || item.averageHeartRate) > 0
+            || Number(item.maxHeartRate || item.maxHr) > 0 || Number(item.calories || item.caloriesBurned) > 0
+            || Number(item.distance || item.distanceKm) > 0;
+          const isHealthOnly = isWearable && validationStatus !== 'validated'
+            && item.nonScoringReason !== 'DUPLICATE_ACTIVITY' && hasHealthTelemetry;
+          // A tela de Saúde aceita uma atividade health_only quando veio do
+          // dispositivo com telemetria real. Ela não entra nas métricas/IGA
+          // competitivos; serve para curva, zonas e contexto pessoal.
+          if (!timestamp || (validationStatus !== 'validated' && !isHealthOnly)) return result;
           result.push({
             id: entry.id,
             userId: item.userId || user.uid,
@@ -277,12 +331,15 @@ function useHealthData(range: TimeRange) {
             durationMinutes: Number(item.durationMinutes) || Number(item.duration) || 0,
             avgHeartRate: Number(item.avgHeartRate) || Number(item.avgHr) || 0,
             maxHeartRate: Number(item.maxHeartRate) || Number(item.maxHr) || 0,
+            steps: Number(item.steps) > 0 ? Math.round(Number(item.steps)) : undefined,
+            heartRateSamples: heartRateSamples.length ? heartRateSamples : undefined,
             caloriesBurned: Number(item.caloriesBurned) || Number(item.calories) || 0,
             distanceKm: Number(item.distanceKm) || Number(item.distance) || 0,
             workoutType: item.workoutType || item.type || 'activity',
             workoutName: item.workoutName || item.title || item.cardioTypeLabel || 'Atividade registrada',
-            validationStatus,
-            hasSensorData: Boolean(item.avgHeartRate || item.maxHeartRate),
+            validationStatus: isHealthOnly ? 'health_only' : validationStatus || 'pending',
+            source: typeof item.source === 'string' ? item.source : undefined,
+            hasSensorData: Boolean(item.avgHeartRate || item.maxHeartRate || heartRateSamples?.length),
             hasGPSData: Boolean(item.distanceKm || item.distance || item.gpsTracked)
           });
           return result;
@@ -353,9 +410,53 @@ function ChartBars({ points, color = 'gold' }: { points: { value: number; label:
   return <div className={cn('health-chart-bars', color === 'violet' && 'is-violet')} aria-label="Gráfico de tendência">{points.map((point, index) => <div key={`${point.label}-${index}`}><i style={{ height: `${Math.max(4, Math.round((point.value / max) * 100))}%` }} /><span>{point.label}</span></div>)}</div>;
 }
 
+function HeartRateCurve({ state }: { state: UserPerformanceState }) {
+  const workout = [...state.healthTimeframeWorkouts]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .find((item) => (item.heartRateSamples?.length || 0) >= 2);
+  const samples = workout?.heartRateSamples || [];
+  if (!workout || samples.length < 2) {
+    return <article className="health-heart-curve"><div className="health-section-name">CURVA DE BATIMENTOS <Info /></div><p className="health-empty">A atividade sincronizada não trouxe pontos suficientes de batimentos para desenhar a curva.</p></article>;
+  }
+
+  const curveAnalysis = analyzeHeartRateSamples(samples);
+  if (curveAnalysis.coverageSeconds <= 0) {
+    return <article className="health-heart-curve"><div className="health-section-name">CURVA DE BATIMENTOS <Info /></div><p className="health-empty">As leituras chegaram, mas não há dois pontos consecutivos próximos o suficiente para desenhar uma curva confiável.</p></article>;
+  }
+
+  const maxPoints = 180;
+  const displaySamples = samples.length > maxPoints
+    ? Array.from({ length: maxPoints }, (_, index) => samples[Math.round((index * (samples.length - 1)) / (maxPoints - 1))])
+    : samples;
+  const width = 360;
+  const height = 140;
+  const padding = 12;
+  const values = displaySamples.map((sample) => sample.bpm);
+  const min = Math.max(30, Math.floor(Math.min(...values) / 5) * 5 - 5);
+  const max = Math.min(240, Math.ceil(Math.max(...values) / 5) * 5 + 5);
+  const segments: string[][] = [[]];
+
+  displaySamples.forEach((sample, index) => {
+    const previous = displaySamples[index - 1];
+    const gapSeconds = previous
+      ? (new Date(sample.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000
+      : 0;
+    if (previous && (!Number.isFinite(gapSeconds) || gapSeconds <= 0 || gapSeconds > 60)) segments.push([]);
+    const x = padding + (index / Math.max(1, displaySamples.length - 1)) * (width - padding * 2);
+    const y = height - padding - ((sample.bpm - min) / Math.max(1, max - min)) * (height - padding * 2);
+    segments[segments.length - 1].push([x.toFixed(1), y.toFixed(1)].join(','));
+  });
+
+  const visibleSegments = segments.filter((segment) => segment.length >= 2);
+  const firstLabel = new Date(displaySamples[0].timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const lastLabel = new Date(displaySamples[displaySamples.length - 1].timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  return <article className="health-heart-curve"><div className="health-section-name">CURVA DE BATIMENTOS <Info /></div><div className="health-heart-curve-heading"><strong>{Math.round(curveAnalysis.coverageSeconds / 60)} min</strong><span>{workout.workoutName || 'Último treino'} · {samples.length} pontos reais</span></div><svg className="health-heart-curve-chart" viewBox={'0 0 ' + width + ' ' + height} role="img" aria-label={'Curva de frequência cardíaca com ' + samples.length + ' pontos reais'}><line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />{visibleSegments.map((segment, index) => <polyline key={'hr-segment-' + index} points={segment.join(' ')} fill="none" stroke="#ff515b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />)}</svg><div className="health-heart-curve-labels"><span>{firstLabel}</span><span>{lastLabel}</span></div><small>O gráfico usa somente leituras recebidas do dispositivo; lacunas longas não são conectadas.</small></article>;
+}
+
 
 function ZoneChart({ state, onDetails }: { state: UserPerformanceState; onDetails?: () => void }) {
-  const total = metricNumber(state, 'total_volume_time');
+  const total = state.heartRateCoverageMinutes || 0;
   const zones = state.hrZones;
   const hasZoneData = Boolean(state.computedMetrics.hr_zones_distribution?.hasEnoughData);
   if (!hasZoneData) return <article className="health-zone-card"><div className="health-section-name">DISTRIBUIÇÃO DE ZONAS CARDÍACAS <Info /></div><p className="health-empty">Conecte um sensor que registre zonas cardíacas para visualizar esta distribuição.</p></article>;
@@ -363,13 +464,13 @@ function ZoneChart({ state, onDetails }: { state: UserPerformanceState; onDetail
     const previous = zones.slice(0, index).reduce((sum, item) => sum + item.percent, 0);
     return [...result, `${zone.color} ${previous}% ${previous + zone.percent}%`];
   }, []);
-  return <article className="health-zone-card"><div className="health-section-name">DISTRIBUIÇÃO DE ZONAS CARDÍACAS <Info /></div><div className="health-zone-body"><div className="health-donut" style={{ background: `conic-gradient(${stops.join(',')})` }}><div><small>Tempo total</small><strong>{formatDuration(total)}</strong></div></div><div className="health-zone-list">{zones.map((zone) => <div key={zone.zoneName}><i style={{ background: zone.color, boxShadow: `0 0 9px ${zone.color}` }} /><span>{zone.zoneName.replace(/ \(.+\)/, '')}</span><b>{formatDuration(zone.minutes)}</b><em>{zone.percent}%</em></div>)}</div></div>{onDetails && <button onClick={onDetails} className="health-card-link">VER DETALHES <ChevronRight /></button>}</article>;
+  return <article className="health-zone-card"><div className="health-section-name">DISTRIBUIÇÃO DE ZONAS CARDÍACAS <Info /></div><div className="health-zone-body"><div className="health-donut" style={{ background: `conic-gradient(${stops.join(',')})` }}><div><small>Tempo coberto</small><strong>{formatDuration(total)}</strong></div></div><div className="health-zone-list">{zones.map((zone) => <div key={zone.zoneName}><i style={{ background: zone.color, boxShadow: `0 0 9px ${zone.color}` }} /><span>{zone.zoneName.replace(/ \(.+\)/, '')}</span><b>{formatDuration(zone.minutes)}</b><em>{zone.percent}%</em></div>)}</div></div>{onDetails && <button onClick={onDetails} className="health-card-link">VER DETALHES <ChevronRight /></button>}</article>;
 }
 
 function LatestWorkouts({ state, expanded, onToggle }: { state: UserPerformanceState; expanded: boolean; onToggle: () => void }) {
-  const allWorkouts = [...state.timeframeWorkouts].sort((a, b) => b.timestamp - a.timestamp);
+  const allWorkouts = [...state.healthTimeframeWorkouts].sort((a, b) => b.timestamp - a.timestamp);
   const workouts = expanded ? allWorkouts : allWorkouts.slice(0, 2);
-  return <article id="health-activities" className="health-latest"><div className="health-section-line"><div>ÚLTIMOS TREINOS</div><button type="button" onClick={onToggle}>{expanded ? 'MOSTRAR MENOS' : 'VER TODOS'}</button></div>{workouts.length ? workouts.map((workout) => { const isRun = /corrida|run/i.test(workout.workoutType || ''); return <div className="health-workout" key={workout.id}><span className={cn('health-workout-icon', isRun && 'is-run')}>{isRun ? <Footprints /> : <Dumbbell />}</span><div><b>{workout.workoutName}</b><small>{new Date(workout.timestamp).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</small></div><span><Clock3 />{formatDuration(workout.durationMinutes)}</span><span><Flame />{Math.round(workout.caloriesBurned || 0)} kcal</span><span><Heart />{workout.avgHeartRate || '—'} bpm</span><ChevronRight /></div>; }) : <p className="health-empty">Quando seu próximo treino for validado, ele aparecerá aqui.</p>}</article>;
+  return <article id="health-activities" className="health-latest"><div className="health-section-line"><div>ÚLTIMAS ATIVIDADES RECEBIDAS</div><button type="button" onClick={onToggle}>{expanded ? 'MOSTRAR MENOS' : 'VER TODOS'}</button></div>{workouts.length ? workouts.map((workout) => { const isRun = /corrida|run/i.test(workout.workoutType || ''); const healthOnly = workout.validationStatus === 'health_only'; return <div className="health-workout" key={workout.id}><span className={cn('health-workout-icon', isRun && 'is-run')}>{isRun ? <Footprints /> : <Dumbbell />}</span><div><b>{workout.workoutName}</b><small>{new Date(workout.timestamp).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}{workout.steps ? ` · ${workout.steps.toLocaleString('pt-BR')} passos` : ''}{healthOnly ? ' · Saúde · fora do ranking' : ''}</small></div><span><Clock3 />{formatDuration(workout.durationMinutes)}</span><span><Flame />{Math.round(workout.caloriesBurned || 0)} kcal</span><span><Heart />{workout.avgHeartRate || '—'} bpm</span><ChevronRight /></div>; }) : <p className="health-empty">Quando o dispositivo sincronizar uma atividade, ela aparecerá aqui. A homologação competitiva é uma etapa separada.</p>}</article>;
 }
 
 type SaudeTab = 'resumo' | 'coracao' | 'recuperacao' | 'atividade' | 'energia' | 'performance';
@@ -389,20 +490,22 @@ const SAUDE_TABS: { id: SaudeTab; label: string }[] = [
 // de emagrecimento (que depende de ingestão, hidratação, sono, hormônios...).
 const KCAL_POR_KG_GORDURA = 7700;
 
-function EnergyBlock({ calories }: { calories: number }) {
-  const kgEquivalente = calories > 0 ? calories / KCAL_POR_KG_GORDURA : 0;
+function EnergyBlock({ calories, deviceCalories = 0 }: { calories: number; deviceCalories?: number }) {
+  const hasCalories = calories > 0;
+  const kgEquivalente = hasCalories ? calories / KCAL_POR_KG_GORDURA : 0;
   return (
     <article className="health-overview health-energy-card">
       <div className="health-section-line"><div><Flame /> GASTO ENERGÉTICO</div></div>
       <div className="health-energy-row">
         <div className="health-energy-icon"><Flame /></div>
         <div className="health-energy-values">
-          <div className="health-energy-value"><strong>{calories.toLocaleString('pt-BR')}</strong><span>kcal no período</span></div>
-          {calories > 0
+          <div className="health-energy-value"><strong>{hasCalories ? calories.toLocaleString('pt-BR') : '—'}</strong><span>{hasCalories ? 'kcal no período' : 'Sem calorias de treino no período'}</span></div>
+          {hasCalories
             ? <div className="health-energy-kg">≈ {kgEquivalente.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg de gordura*</div>
-            : <div className="health-energy-kg">Sem estimativa de gasto energético no período.</div>}
+            : <div className="health-energy-kg">O dispositivo pode fornecer gasto ativo diário abaixo.</div>}
         </div>
       </div>
+      {deviceCalories > 0 && <div className="health-energy-device"><strong>{Math.round(deviceCalories).toLocaleString('pt-BR')} kcal</strong><span>Gasto ativo diário mais recente recebido do dispositivo</span></div>}
       <div className="health-energy-disclaimer">
         <AlertCircle />
         <span>*Equivalência energética, não peso realmente perdido — depende de ingestão, hidratação, sono e hormônios.</span>
@@ -435,10 +538,11 @@ function EstadoDeHojeCard({ fcDelta, hrvDelta, sonoDelta, ultimaAtualizacao }: {
   );
 }
 
-function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport, onOpenLegacyReport }: {
+function HealthSummaryContent({ state, summary, loadingSummary, syncDiagnostics, onGenerateReport, onOpenLegacyReport }: {
   state: UserPerformanceState;
   summary: HealthSummaryResponse | null;
   loadingSummary: boolean;
+  syncDiagnostics: HealthVitalsDiagnostics | null;
   onGenerateReport: () => void;
   onOpenLegacyReport: () => void;
 }) {
@@ -454,6 +558,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
   const hrv = summary?.latest.hrv_rmssd || null;
   const sono = summary?.latest.sleep_duration_min || null;
   const passos = summary?.latest.steps_daily || null;
+  const caloriasAtivas = summary?.latest.calories_active || null;
 
   const semDado = loadingSummary ? 'Carregando…' : 'Sem dados sincronizados';
 
@@ -484,6 +589,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
 
   return (
     <>
+      <HealthSyncStatus diagnostics={syncDiagnostics} loading={loadingSummary} />
       <div className="health-tabs">
         {SAUDE_TABS.map((tab) => (
           <button key={tab.id} className={activeTab === tab.id ? 'is-active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
@@ -493,6 +599,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
       {activeTab === 'resumo' && (
         <>
           <EstadoDeHojeCard fcDelta={fcDelta} hrvDelta={hrvDelta} sonoDelta={sonoDelta} ultimaAtualizacao={ultimaAtualizacaoHoje} />
+          <HealthInsightsSection summary={summary} state={state} />
 
           <section id="health-overview" className="health-overview">
             <div className="health-section-line"><div><Activity /> RESUMO DE HOJE</div></div>
@@ -502,12 +609,13 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
               <MetricCard icon={<Moon />} label="SONO" value={sono ? formatDuration(sono.value) : '—'} detail={sono ? `Última noite: ${formatUltimaLeitura(sono.timestamp)}` : semDado} tone="blue" onTap={() => setActiveTab('recuperacao')} delta={sonoDelta} deltaUnit="min" sparklinePoints={sonoTrend.map((p) => p.value)} />
               <MetricCard icon={<Footprints />} label="PASSOS" value={passos ? passos.value.toLocaleString('pt-BR') : '—'} detail={passos ? `Registrado: ${formatUltimaLeitura(passos.timestamp)}` : semDado} tone="green" onTap={() => setActiveTab('atividade')} delta={passosDelta} sparklinePoints={passosTrend.map((p) => p.value)} />
               <MetricCard icon={<Clock3 />} label="EXERCÍCIO" value={formatDuration(minutes)} detail={workouts ? `${workouts} sessão(ões) homologada(s) no período` : 'Sem sessões homologadas'} onTap={() => setActiveTab('atividade')} delta={exercicioDelta} deltaUnit="min" sparklinePoints={exercicioTrend.map((p) => p.value)} />
-              <MetricCard icon={<Flame />} label="GASTO ENERGÉTICO ESTIMADO" value={calories.toLocaleString('pt-BR')} unit="kcal" detail="Total do período" onTap={() => setActiveTab('energia')} />
+              <MetricCard icon={<Flame />} label="GASTO ENERGÉTICO ESTIMADO" value={state.computedMetrics.total_calories_burned?.hasEnoughData ? calories.toLocaleString('pt-BR') : '—'} unit={state.computedMetrics.total_calories_burned?.hasEnoughData ? 'kcal' : ''} detail={state.computedMetrics.total_calories_burned?.hasEnoughData ? 'Total de sessões homologadas' : 'Sem calorias de treino homologadas'} onTap={() => setActiveTab('energia')} />
+              <MetricCard icon={<Flame />} label="GASTO ATIVO DO DISPOSITIVO" value={caloriasAtivas ? Math.round(caloriasAtivas.value).toLocaleString('pt-BR') : '—'} unit={caloriasAtivas ? 'kcal' : ''} detail={caloriasAtivas ? `Último total diário: ${formatUltimaLeitura(caloriasAtivas.timestamp)}` : semDado} onTap={() => setActiveTab('energia')} />
             </div>
             <p className="health-tap-hint">Toque em um card para ver mais detalhes</p>
           </section>
 
-          <EnergyBlock calories={calories} />
+          <EnergyBlock calories={calories} deviceCalories={caloriasAtivas?.value || 0} />
 
           <article className="health-overview health-trends-compact" style={{ marginTop: '1rem' }}>
             <div className="health-section-line"><div><Activity /> TENDÊNCIAS DOS ÚLTIMOS 30 DIAS</div></div>
@@ -555,6 +663,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
               <MetricCard icon={<Heart />} label="FC MÉDIA" value={heartRateAvg || '—'} unit={heartRateAvg ? 'bpm' : ''} detail={heartRateAvg ? 'Média dos treinos do período' : 'Conecte um sensor cardíaco'} tone="red" />
             </div>
           </section>
+          <HeartRateCurve state={state} />
           <div className="health-dual">
             <ZoneChart state={state} />
             <article className="health-trend-card">
@@ -601,7 +710,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
 
       {activeTab === 'energia' && (
         <>
-          <EnergyBlock calories={calories} />
+          <EnergyBlock calories={calories} deviceCalories={caloriasAtivas?.value || 0} />
           <article className="health-overview" style={{ marginTop: '1rem' }}>
             <div className="health-section-line"><div>GASTO ENERGÉTICO ESTIMADO (30 DIAS)</div></div>
             {summary?.trends.calories_active?.length ? <ChartBars points={trendPontos(summary.trends.calories_active)} /> : <p className="health-empty">Ainda não há histórico suficiente para mostrar tendência.</p>}
@@ -614,7 +723,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport
           <div className="health-section-name">MÉTRICAS AVANÇADAS <Info /></div>
           <div>
             <span>VO₂ MÁX. ESTIMADO <b>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? metricNumber(state, 'vo2max_estimate').toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}</b><small>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? 'ml/kg/min (estimado)' : (state.computedMetrics.vo2max_estimate?.statusMessage || 'Requer corrida/caminhada com GPS + FC')}</small></span>
-            <span>CARGA DE TREINO <b>{state.computedMetrics.acute_chronic_workload_ratio?.hasEnoughData ? metricNumber(state, 'acute_chronic_workload_ratio') : '—'}</b><small>{state.computedMetrics.acute_chronic_workload_ratio?.statusMessage || 'Requer carga registrada'}</small></span>
+            <span>COBERTURA DE FC <b>{Math.round(state.heartRateCoverageMinutes || 0)} min</b><small>Tempo com leituras reais da curva</small></span>
             <span>RECUPERAÇÃO <b>{state.computedMetrics.recovery_index?.hasEnoughData ? `${metricNumber(state, 'recovery_index')}%` : '—'}</b><small>{state.readinessStatus}</small></span>
             <span>ÍNDICE DE CONSISTÊNCIA <b>{state.computedMetrics.consistency_index?.hasEnoughData ? `${metricNumber(state, 'consistency_index')}%` : '—'}</b><small>{state.computedMetrics.consistency_index?.hasEnoughData ? 'da meta de 5 dias/semana' : (state.computedMetrics.consistency_index?.statusMessage || 'Requer métrica auditada')}</small></span>
           </div>
@@ -629,7 +738,7 @@ export function Health() {
   const navigate = useNavigate();
   const [range, setRange] = useState<TimeRange>('7days');
   const { user, state, loading } = useHealthData(range);
-  const { summary, loadingSummary } = useHealthSummary();
+  const { summary, loadingSummary, syncDiagnostics } = useHealthSummary();
 
   if (!user) return null;
   if (loading || !state) return createPortal(<div className="health-screen health-new-shell health-loading">Preparando os seus dados de saúde…</div>, document.body);
@@ -647,6 +756,7 @@ export function Health() {
           state={state}
           summary={summary}
           loadingSummary={loadingSummary}
+          syncDiagnostics={syncDiagnostics}
           onGenerateReport={() => navigate('/health/report')}
           onOpenLegacyReport={() => navigate('/health/report')}
         />
@@ -664,7 +774,8 @@ export function HealthReportContent() {
   const [activitiesExpanded, setActivitiesExpanded] = useState(false);
   const [heartDetailsExpanded, setHeartDetailsExpanded] = useState(false);
   const { user, state, loading } = useHealthData(range);
-  const weeklyRows = useMemo(() => state?.timeframeWorkouts.slice(-6).reverse() || [], [state]);
+  const { summary, loadingSummary, syncDiagnostics } = useHealthSummary();
+  const weeklyRows = useMemo(() => state?.healthTimeframeWorkouts.slice(-6).reverse() || [], [state]);
   if (!user) return null;
   if (loading || !state) return createPortal(<div className="health-screen health-new-shell health-loading">Gerando relatório de saúde…</div>, document.body);
   const calories = metricNumber(state, 'total_calories_burned');
@@ -672,8 +783,11 @@ export function HealthReportContent() {
   const heartRate = metricNumber(state, 'avg_heart_rate');
   const workoutCount = metricNumber(state, 'workout_count');
   const points = state.computedMetrics.total_calories_burned?.historyPoints.map((item) => ({ label: item.date, value: item.value })) || [];
-  const allActivities = [...state.timeframeWorkouts].sort((a, b) => b.timestamp - a.timestamp);
+  const allActivities = [...state.healthTimeframeWorkouts].sort((a, b) => b.timestamp - a.timestamp);
   const distance = state.timeframeWorkouts.reduce((sum, workout) => sum + (workout.distanceKm || 0), 0);
   const heartPoints = state.computedMetrics.avg_heart_rate?.historyPoints.map((item) => ({ label: item.date, value: item.value })) || [];
-  return <main className="health-screen"><div className="health-content health-report"><HealthHeader title="RELATÓRIO DE SAÚDE" subtitle="Análise completa do seu desempenho e evolução." onBack={() => navigate('/health')} right={<div className="health-report-actions"><button onClick={() => window.print()}><Download />EXPORTAR</button><button onClick={() => setFilterOpen(value => !value)} aria-expanded={filterOpen}><SlidersHorizontal />FILTRAR</button></div>} />{filterOpen && <div className="health-period-bar">{ranges.map(item => <button key={item.id} className={range === item.id ? 'is-selected' : ''} onClick={() => { setRange(item.id); setFilterOpen(false); }}>{item.label}</button>)}</div>}<PeriodControl value={range} onChange={setRange} compact /><section className="health-report-metrics"><MetricCard icon={<Flame />} label="GASTO ENERGÉTICO ESTIMADO" value={state.computedMetrics.total_calories_burned?.hasEnoughData ? calories.toLocaleString('pt-BR') : '—'} unit={state.computedMetrics.total_calories_burned?.hasEnoughData ? 'kcal' : ''} detail="Estimativa do dispositivo no período" /><MetricCard icon={<Clock3 />} label="TEMPO ATIVO" value={formatDuration(active)} detail="Total do período" /><MetricCard icon={<Dumbbell />} label="TREINOS" value={workoutCount} detail="Sessões homologadas" /><MetricCard icon={<Heart />} label="FC MÉDIA" value={heartRate || '—'} unit={heartRate ? 'bpm' : ''} detail="Dados do sensor" tone="red" /><MetricCard icon={<MapPin />} label="DISTÂNCIA" value={distance > 0 ? distance.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—'} unit={distance > 0 ? 'km' : ''} detail={distance > 0 ? 'GPS registrado' : 'Sem percurso GPS no período'} /></section><section className="health-report-chart"><div><h2>TENDÊNCIA DO GASTO ESTIMADO <Info /></h2><strong>{state.computedMetrics.total_calories_burned?.hasEnoughData ? calories.toLocaleString('pt-BR') : '—'} <small>{state.computedMetrics.total_calories_burned?.hasEnoughData ? 'kcal' : ''}</small></strong><p>Estimativa total registrada no período</p></div><ChartBars points={points} /></section><section className="health-dual health-report-dual"><ZoneChart state={state} onDetails={() => document.getElementById('health-report-heart')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} /><article id="health-report-heart" className="health-trend-card"><div className="health-section-name">FC MÉDIA (POR DIA) <Info /></div><strong>{heartRate || '—'} <small>{heartRate ? 'bpm' : ''}</small></strong><p>{heartRate ? 'Média dos dados sincronizados' : 'Conecte um sensor cardíaco'}</p><ChartBars points={heartPoints} color="violet" />{heartDetailsExpanded && <p className="health-empty">A frequência cardíaca exibida é a média dos registros sincronizados no período. Leituras ausentes ou incompletas não são estimadas.</p>}<button onClick={() => setHeartDetailsExpanded(value => !value)} aria-expanded={heartDetailsExpanded} className="health-card-link">{heartDetailsExpanded ? 'OCULTAR DETALHES DE FC' : 'VER DETALHES DE FC'} <ChevronRight /></button></article></section><section className="health-dual"><article className="health-activity-card"><div className="health-section-name">ATIVIDADE POR TIPO <Info /></div><div className="health-activity-total"><strong>{workoutCount}</strong><span>Treinos</span></div><button onClick={() => setActivitiesExpanded(value => !value)} className="health-card-link">{activitiesExpanded ? 'MOSTRAR MENOS' : 'VER TODOS OS TREINOS'} <ChevronRight /></button></article><article className="health-weekly-card"><div className="health-section-name">RESUMO SEMANAL <Info /></div>{weeklyRows.length ? weeklyRows.map((workout) => <div key={workout.id}><span>{new Date(workout.timestamp).toLocaleDateString('pt-BR')}</span><b>{workout.caloriesBurned ? `${Math.round(workout.caloriesBurned)} kcal` : '—'}</b><span>{formatDuration(workout.durationMinutes)}</span></div>) : <p className="health-empty">Nenhuma atividade no período.</p>}</article></section>{activitiesExpanded && <LatestWorkouts state={{ ...state, timeframeWorkouts: allActivities } as UserPerformanceState} expanded onToggle={() => setActivitiesExpanded(false)} />}<section className="health-advanced"><div className="health-section-name">MÉTRICAS AVANÇADAS <Info /></div><div><span>VO₂ MÁX. ESTIMADO <b>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? metricNumber(state, 'vo2max_estimate').toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}</b><small>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? 'ml/kg/min (estimado)' : (state.computedMetrics.vo2max_estimate?.statusMessage || 'Requer corrida/caminhada com GPS + FC')}</small></span><span>CARGA DE TREINO <b>{state.computedMetrics.acute_chronic_workload_ratio?.hasEnoughData ? metricNumber(state, 'acute_chronic_workload_ratio') : '—'}</b><small>{state.computedMetrics.acute_chronic_workload_ratio?.statusMessage || 'Requer carga registrada'}</small></span><span>RECUPERAÇÃO <b>{state.computedMetrics.recovery_index?.hasEnoughData ? `${metricNumber(state, 'recovery_index')}%` : '—'}</b><small>{state.readinessStatus}</small></span><span>ÍNDICE DE CONSISTÊNCIA <b>{state.computedMetrics.consistency_index?.hasEnoughData ? `${metricNumber(state, 'consistency_index')}%` : '—'}</b><small>{state.computedMetrics.consistency_index?.hasEnoughData ? 'da meta de 5 dias/semana' : (state.computedMetrics.consistency_index?.statusMessage || 'Requer métrica auditada')}</small></span></div></section></div></main>;
+  const latestSteps = summary?.latest.steps_daily?.value || 0;
+  const latestSleep = summary?.latest.sleep_duration_min?.value || 0;
+  const latestActiveCalories = summary?.latest.calories_active?.value || 0;
+  return <main className="health-screen"><div className="health-content health-report"><HealthHeader title="RELATÓRIO DE SAÚDE" subtitle="Análise completa do seu desempenho e evolução." onBack={() => navigate('/health')} right={<div className="health-report-actions"><button onClick={() => window.print()}><Download />EXPORTAR</button><button onClick={() => setFilterOpen(value => !value)} aria-expanded={filterOpen}><SlidersHorizontal />FILTRAR</button></div>} />{filterOpen && <div className="health-period-bar">{ranges.map(item => <button key={item.id} className={range === item.id ? 'is-selected' : ''} onClick={() => { setRange(item.id); setFilterOpen(false); }}>{item.label}</button>)}</div>}<PeriodControl value={range} onChange={setRange} compact /><HealthSyncStatus diagnostics={syncDiagnostics} loading={loadingSummary} /><HealthInsightsSection summary={summary} state={state} /><section className="health-report-metrics"><MetricCard icon={<Flame />} label="GASTO ENERGÉTICO ESTIMADO" value={state.computedMetrics.total_calories_burned?.hasEnoughData ? calories.toLocaleString('pt-BR') : '—'} unit={state.computedMetrics.total_calories_burned?.hasEnoughData ? 'kcal' : ''} detail="Total de sessões homologadas no período" /><MetricCard icon={<Clock3 />} label="TEMPO ATIVO" value={formatDuration(active)} detail="Total do período" /><MetricCard icon={<Dumbbell />} label="TREINOS" value={workoutCount} detail="Sessões homologadas" /><MetricCard icon={<Heart />} label="FC MÉDIA" value={heartRate || '—'} unit={heartRate ? 'bpm' : ''} detail="Dados do sensor" tone="red" /><MetricCard icon={<MapPin />} label="DISTÂNCIA" value={distance > 0 ? distance.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : '—'} unit={distance > 0 ? 'km' : ''} detail={distance > 0 ? 'GPS registrado' : 'Sem percurso GPS no período'} /></section><section className="health-overview health-report-crossed-metrics"><div className="health-section-name">DADOS CRUZADOS DO DISPOSITIVO <Info /></div><div className="health-metrics-grid"><MetricCard icon={<Footprints />} label="PASSOS" value={latestSteps ? latestSteps.toLocaleString('pt-BR') : '—'} detail={latestSteps ? 'Último total diário recebido' : 'Sem passos sincronizados'} tone="green" /><MetricCard icon={<Moon />} label="SONO" value={latestSleep ? formatDuration(latestSleep) : '—'} detail={latestSleep ? 'Última noite recebida' : 'Sem sono sincronizado'} tone="blue" /><MetricCard icon={<Flame />} label="GASTO ATIVO DO DISPOSITIVO" value={latestActiveCalories ? Math.round(latestActiveCalories).toLocaleString('pt-BR') : '—'} unit={latestActiveCalories ? 'kcal' : ''} detail={latestActiveCalories ? 'Último total diário recebido' : 'Sem gasto ativo sincronizado'} tone="gold" /></div></section><section className="health-report-chart"><div><h2>TENDÊNCIA DO GASTO ESTIMADO <Info /></h2><strong>{state.computedMetrics.total_calories_burned?.hasEnoughData ? calories.toLocaleString('pt-BR') : '—'} <small>{state.computedMetrics.total_calories_burned?.hasEnoughData ? 'kcal' : ''}</small></strong><p>Estimativa total registrada no período</p></div><ChartBars points={points} /></section><HeartRateCurve state={state} /><section className="health-dual health-report-dual"><ZoneChart state={state} onDetails={() => document.getElementById('health-report-heart')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} /><article id="health-report-heart" className="health-trend-card"><div className="health-section-name">FC MÉDIA (POR DIA) <Info /></div><strong>{heartRate || '—'} <small>{heartRate ? 'bpm' : ''}</small></strong><p>{heartRate ? 'Média dos dados sincronizados' : 'Conecte um sensor cardíaco'}</p><ChartBars points={heartPoints} color="violet" />{heartDetailsExpanded && <p className="health-empty">A frequência cardíaca exibida é a média dos registros sincronizados no período. Leituras ausentes ou incompletas não são estimadas.</p>}<button onClick={() => setHeartDetailsExpanded(value => !value)} aria-expanded={heartDetailsExpanded} className="health-card-link">{heartDetailsExpanded ? 'OCULTAR DETALHES DE FC' : 'VER DETALHES DE FC'} <ChevronRight /></button></article></section><section className="health-dual"><article className="health-activity-card"><div className="health-section-name">ATIVIDADE POR TIPO <Info /></div><div className="health-activity-total"><strong>{workoutCount}</strong><span>Treinos</span></div><button onClick={() => setActivitiesExpanded(value => !value)} className="health-card-link">{activitiesExpanded ? 'MOSTRAR MENOS' : 'VER TODOS OS TREINOS'} <ChevronRight /></button></article><article className="health-weekly-card"><div className="health-section-name">RESUMO SEMANAL <Info /></div>{weeklyRows.length ? weeklyRows.map((workout) => <div key={workout.id}><span>{new Date(workout.timestamp).toLocaleDateString('pt-BR')}</span><b>{workout.caloriesBurned ? `${Math.round(workout.caloriesBurned)} kcal` : '—'}</b><span>{formatDuration(workout.durationMinutes)}</span></div>) : <p className="health-empty">Nenhuma atividade no período.</p>}</article></section>{activitiesExpanded && <LatestWorkouts state={{ ...state, timeframeWorkouts: allActivities } as UserPerformanceState} expanded onToggle={() => setActivitiesExpanded(false)} />}<section className="health-advanced"><div className="health-section-name">MÉTRICAS AVANÇADAS <Info /></div><div><span>VO₂ MÁX. ESTIMADO <b>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? metricNumber(state, 'vo2max_estimate').toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}</b><small>{state.computedMetrics.vo2max_estimate?.hasEnoughData ? 'ml/kg/min (estimado)' : (state.computedMetrics.vo2max_estimate?.statusMessage || 'Requer corrida/caminhada com GPS + FC')}</small></span><span>COBERTURA DE FC <b>{Math.round(state.heartRateCoverageMinutes || 0)} min</b><small>Tempo com leituras reais da curva</small></span><span>RECUPERAÇÃO <b>{state.computedMetrics.recovery_index?.hasEnoughData ? `${metricNumber(state, 'recovery_index')}%` : '—'}</b><small>{state.readinessStatus}</small></span><span>ÍNDICE DE CONSISTÊNCIA <b>{state.computedMetrics.consistency_index?.hasEnoughData ? `${metricNumber(state, 'consistency_index')}%` : '—'}</b><small>{state.computedMetrics.consistency_index?.hasEnoughData ? 'da meta de 5 dias/semana' : (state.computedMetrics.consistency_index?.statusMessage || 'Requer métrica auditada')}</small></span></div></section></div></main>;
 }

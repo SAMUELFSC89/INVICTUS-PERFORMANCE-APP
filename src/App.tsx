@@ -88,6 +88,12 @@ export default function App() {
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/challenges/cardio" element={<Challenges />} />
                 <Route path="/activity" element={<ActivityTypeChooser />} />
+                {/* Rotas canônicas para retomar uma sessão sem voltar à escolha
+                    de modalidade. A rota de saída apenas minimiza a sessão;
+                    cancelar continua sendo uma ação explícita dentro do fluxo. */}
+                <Route path="/activity/ongoing" element={<Challenges />} />
+                <Route path="/running" element={<Challenges />} />
+                <Route path="/activity/exit" element={<Navigate to="/" replace />} />
                 <Route path="/musculacao" element={<Musculation />} />
                 <Route path="/store" element={<InvictusStore />} />
                 <Route path="/ai" element={<InvictusAI />} />
