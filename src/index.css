@@ -238,7 +238,10 @@
   content: '';
   position: fixed;
   inset: 0;
-  background-image: url('/fundo-home.webp');
+  /* #171: substituído o espartano em chamas por uma foto real da academia
+     (enviada pelo usuário) -- ele pediu explicitamente para não usar mais
+     aquele banner. */
+  background-image: url('/assets/home/home-season-hallway-v1.webp');
   background-size: cover;
   background-position: top center;
   z-index: 0;
