@@ -325,7 +325,24 @@ export default async function handler(req, res) {
     const h = Math.min(1280, Math.max(200, Number(height) || 400));
     const start = points[0];
     const end = points[points.length - 1];
-    const requestedMapType = mapType === 'satellite' ? 'satellite' : 'roadmap';
+    // #201: mapType agora aceita as 6 opcoes oferecidas no seletor do card de
+    // compartilhamento (pedido do usuario apos ver a lista de Classic Styles
+    // do Mapbox). "satellite"/"roadmap" sao os 2 originais (mantidos para nao
+    // quebrar o ActivityMapView, que so manda esses dois). Provedores de
+    // fallback (Google/tiles) so distinguem satelite x rua, entao qualquer
+    // estilo novo cai no visual mais proximo nesses caminhos secundarios --
+    // o Mapbox (provedor principal, com token configurado) e quem realmente
+    // renderiza os 6 estilos distintos.
+    const MAPBOX_STYLE_BY_TYPE = {
+      satellite: 'satellite-streets-v12',
+      roadmap: 'dark-v11',
+      'satellite-plain': 'satellite-v9',
+      streets: 'streets-v12',
+      outdoors: 'outdoors-v12',
+      'navigation-night': 'navigation-night-v1',
+    };
+    const requestedMapType = Object.prototype.hasOwnProperty.call(MAPBOX_STYLE_BY_TYPE, mapType) ? mapType : 'roadmap';
+    const isSatelliteFamily = requestedMapType === 'satellite' || requestedMapType === 'satellite-plain';
 
     let mapUrl = null;
     const buildGoogleMapUrl = () => {
@@ -334,12 +351,22 @@ export default async function handler(req, res) {
       const googleWidth = Math.min(640, w);
       const googleHeight = Math.min(640, h);
       const encoded = encodePolyline(points);
-      const styleParams = requestedMapType === 'roadmap' ? `&${DARK_STYLE_RULES.map((s) => `style=${encodeURIComponent(s)}`).join('&')}` : '';
-      return `https://maps.googleapis.com/maps/api/staticmap?size=${googleWidth}x${googleHeight}&scale=2&maptype=${requestedMapType}` + styleParams + `&path=color:0xFFAA00FF|weight:5|enc:${encodeURIComponent(encoded)}` + `&markers=color:0xFFFFFF|size:mid|${start.lat},${start.lng}` + `&markers=color:0xFFAA00|size:small|${start.lat},${start.lng}` + `&markers=color:0xFFFFFF|size:mid|${end.lat},${end.lng}` + `&markers=color:0x111111|size:small|${end.lat},${end.lng}` + `&key=${googleApiKey}`;
+      const googleMapType = isSatelliteFamily ? 'satellite' : 'roadmap';
+      const styleParams = googleMapType === 'roadmap' ? `&${DARK_STYLE_RULES.map((s) => `style=${encodeURIComponent(s)}`).join('&')}` : '';
+      return `https://maps.googleapis.com/maps/api/staticmap?size=${googleWidth}x${googleHeight}&scale=2&maptype=${googleMapType}` + styleParams + `&path=color:0xFFAA00FF|weight:5|enc:${encodeURIComponent(encoded)}` + `&markers=color:0xFFFFFF|size:mid|${start.lat},${start.lng}` + `&markers=color:0xFFAA00|size:small|${start.lat},${start.lng}` + `&markers=color:0xFFFFFF|size:mid|${end.lat},${end.lng}` + `&markers=color:0x111111|size:small|${end.lat},${end.lng}` + `&key=${googleApiKey}`;
     };
 
     if (mapboxToken) {
-      const styleId = requestedMapType === 'satellite' ? 'satellite-streets-v12' : 'dark-v11';
+      const styleId = MAPBOX_STYLE_BY_TYPE[requestedMapType];
+      // #201: com padding fixo em 55px, uma rota curta (ex: 1-2km) preenchia
+      // quase todo o bbox e o "auto" da Static Images API aproximava demais
+      // (zoom excessivo, sem contexto de bairro/ruas ao redor) -- reportado
+      // ao vivo pelo usuario numa corrida real. O padding e em pixels da
+      // imagem final, entao escalamos com o menor lado (w ou h) em vez de um
+      // valor fixo, pra afastar a camera de forma proporcional em qualquer
+      // tamanho de card pedido (720x1280 no compartilhamento, 640x~320 no
+      // detalhe de atividade).
+      const mapPadding = Math.round(Math.min(w, h) * 0.16);
       const buildMapboxUrl = (routePoints) => {
         const overlay = {
           type: 'FeatureCollection',
@@ -354,7 +381,7 @@ export default async function handler(req, res) {
             { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#151515' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
           ]
         };
-        return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/auto/${w}x${h}@2x?padding=55&access_token=${encodeURIComponent(mapboxToken)}`;
+        return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/auto/${w}x${h}@2x?padding=${mapPadding}&access_token=${encodeURIComponent(mapboxToken)}`;
       };
 
       mapUrl = buildMapboxUrl(points);
@@ -410,7 +437,10 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!imageDataUrl) imageDataUrl = await renderFallbackMap(points, w, h, requestedMapType);
+      // renderFallbackMap so distingue satelite x rua (tiles publicos nao tem
+      // os 6 estilos do Mapbox) -- normaliza os 4 estilos novos pro par mais
+      // proximo antes de chamar.
+      if (!imageDataUrl) imageDataUrl = await renderFallbackMap(points, w, h, isSatelliteFamily ? 'satellite' : 'roadmap');
       if (!imageDataUrl && mapboxToken && googleApiKey && h > w) {
         try {
           const googleRes = await fetch(buildGoogleMapUrl());

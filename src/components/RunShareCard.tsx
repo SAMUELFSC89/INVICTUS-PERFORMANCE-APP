@@ -8,7 +8,11 @@ import {
   Image as ImageIcon,
   Map,
   MapPin,
+  Mountain,
+  Navigation,
   RefreshCw,
+  Route,
+  Satellite,
   Share2,
   ShieldAlert,
   ShieldCheck,
@@ -63,8 +67,16 @@ interface RunShareCardProps {
   onClose: () => void;
 }
 
-type BackgroundMode = 'satellite' | 'roadmap' | 'photo' | 'solid';
-type MapVariant = 'satellite' | 'roadmap';
+// #201: 4 estilos novos (pedido do usuario apos ver a lista de Classic Styles
+// do Mapbox) somados aos 2 originais. "satellite"/"roadmap" mantem o nome
+// historico (ja usados no backend e no ActivityMapView) -- os 4 novos usam o
+// mesmo nome do mapType aceito por api/activity-map.ts.
+type MapVariant = 'satellite' | 'roadmap' | 'satellite-plain' | 'streets' | 'outdoors' | 'navigation-night';
+type BackgroundMode = MapVariant | 'photo' | 'solid';
+const MAP_VARIANTS: MapVariant[] = ['satellite', 'roadmap', 'satellite-plain', 'streets', 'outdoors', 'navigation-night'];
+function isMapVariant(mode: BackgroundMode): mode is MapVariant {
+  return (MAP_VARIANTS as string[]).includes(mode);
+}
 
 function hasValidLatLng(point: any): boolean {
   if (!point) return false;
@@ -88,6 +100,10 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const [mapImages, setMapImages] = useState<Record<MapVariant, string | null>>({
     satellite: null,
     roadmap: null,
+    'satellite-plain': null,
+    streets: null,
+    outdoors: null,
+    'navigation-night': null,
   });
   const [mapError, setMapError] = useState(false);
 
@@ -183,9 +199,9 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     let cancelled = false;
     let requestStarted = false;
     const points = trajectory.filter(hasValidLatLng);
-    if (!hasRoute || backgroundMode === 'solid') return undefined;
+    if (!hasRoute || !isMapVariant(backgroundMode)) return undefined;
 
-    const variant: MapVariant = backgroundMode === 'satellite' ? 'satellite' : 'roadmap';
+    const variant: MapVariant = backgroundMode;
     if (mapImages[variant]) return undefined;
 
     const fetchMap = async (authUser: NonNullable<typeof auth.currentUser>) => {
@@ -285,13 +301,16 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
   };
 
-  const currentMapImage: string | null = backgroundMode === 'satellite'
-    ? mapImages.satellite
+  // Overlay de rota sob a FOTO sempre usa o estilo escuro (roadmap), igual
+  // antes -- so o fundo em tela cheia (satellite/roadmap/etc.) muda com a
+  // selecao do usuario.
+  const currentMapImage: string | null = isMapVariant(backgroundMode)
+    ? mapImages[backgroundMode]
     : mapImages.roadmap;
   const mapBackgroundAvailable = Boolean(currentMapImage);
 
   const selectBackground = (mode: BackgroundMode) => {
-    if ((mode === 'satellite' || mode === 'roadmap') && !hasRoute) return;
+    if (isMapVariant(mode) && !hasRoute) return;
     setFeedback(null);
     setMapError(false);
     setBackgroundMode(mode);
@@ -324,6 +343,46 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           >
             <MapPin size={14} />
             <span>MAPA ESCURO</span>
+          </button>
+          <button
+            type="button"
+            className={cn('share-background-option', backgroundMode === 'satellite-plain' && 'is-selected', !hasRoute && 'is-disabled')}
+            onClick={() => selectBackground('satellite-plain')}
+            disabled={!hasRoute}
+            aria-pressed={backgroundMode === 'satellite-plain'}
+          >
+            <Satellite size={14} />
+            <span>SATÉLITE PURO</span>
+          </button>
+          <button
+            type="button"
+            className={cn('share-background-option', backgroundMode === 'streets' && 'is-selected', !hasRoute && 'is-disabled')}
+            onClick={() => selectBackground('streets')}
+            disabled={!hasRoute}
+            aria-pressed={backgroundMode === 'streets'}
+          >
+            <Route size={14} />
+            <span>RUAS</span>
+          </button>
+          <button
+            type="button"
+            className={cn('share-background-option', backgroundMode === 'outdoors' && 'is-selected', !hasRoute && 'is-disabled')}
+            onClick={() => selectBackground('outdoors')}
+            disabled={!hasRoute}
+            aria-pressed={backgroundMode === 'outdoors'}
+          >
+            <Mountain size={14} />
+            <span>TRILHA</span>
+          </button>
+          <button
+            type="button"
+            className={cn('share-background-option', backgroundMode === 'navigation-night' && 'is-selected', !hasRoute && 'is-disabled')}
+            onClick={() => selectBackground('navigation-night')}
+            disabled={!hasRoute}
+            aria-pressed={backgroundMode === 'navigation-night'}
+          >
+            <Navigation size={14} />
+            <span>GPS NOITE</span>
           </button>
           <label
             className={cn('share-background-option', backgroundMode === 'photo' && 'is-selected')}
