@@ -957,7 +957,17 @@ export function InvictusAIFloatingAssistant() {
           whileDrag={{ scale: 1.08 }}
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="fixed bottom-20 md:bottom-24 right-4 md:right-8 z-50 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none select-none"
+          // #198: z-50 ficava ATRÁS de .challenge-flow-screen (index.css, z-index:100
+          // -- a tela full-screen de corrida/desafio ao vivo em /running,
+          // /activity/ongoing e /challenges). O FloatingSessionIndicator se
+          // esconde sozinho nessas rotas, mas este FAB não tem essa lógica e
+          // continuava montado atrás do overlay. Diagnosticado ao vivo pelo
+          // usuário em uma corrida real no iOS: o botão existia mas era
+          // inacessível, coberto
+          // pela própria tela de atividade. z-[105] garante que o FAB (e seu
+          // modal, que já usa z-[120]+) sempre fique acima da tela de
+          // atividade, disponível durante o treino -- como pedido.
+          className="fixed bottom-20 md:bottom-24 right-4 md:right-8 z-[105] flex flex-col items-center cursor-grab active:cursor-grabbing touch-none select-none"
         >
           <button
             onClick={(e) => {
