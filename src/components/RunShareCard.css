@@ -149,6 +149,20 @@
   overflow: hidden;
   background: #07090d;
   isolation: isolate;
+  /* #173: todo o texto/ícone abaixo era dimensionado com unidades vw (%
+     da LARGURA TOTAL DA JANELA), nao da largura real do card. Isso so
+     "acerta" quando o card ocupa 100% da largura da tela (celular estreito
+     em pe); em qualquer tela mais larga que alta -- desktop, o preview do
+     Chrome usado pra testar, tablets -- min(100%,56.25vh) faz o card ficar
+     bem mais estreito que 100vw, mas o texto continuava calculado em cima
+     da largura cheia da janela, saindo desproporcionalmente GIGANTE dentro
+     do card pequeno (a causa raiz do "elementos bem maiores que a
+     referencia"). container-type torna este elemento uma "container query"
+     -- as unidades cqw abaixo passam a ser % da largura REAL deste card,
+     nao da janela, entao o texto fica proporcional ao card em qualquer
+     tela, exatamente como na referencia. */
+  container-type: inline-size;
+  container-name: share-card;
 }
 
 .share-card-art--solid {
@@ -243,7 +257,7 @@
 
 .share-card-brand-copy strong {
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(22px, 5.6vw, 36px);
+  font-size: clamp(22px, 5.6cqw, 36px);
   font-style: italic;
   font-weight: 900;
   letter-spacing: .07em;
@@ -251,7 +265,7 @@
 
 .share-card-brand-copy span {
   color: #f6aa16;
-  font-size: clamp(9px, 2vw, 13px);
+  font-size: clamp(9px, 2cqw, 13px);
   font-weight: 900;
   letter-spacing: .38em;
 }
@@ -267,13 +281,13 @@
 .share-card-activity-heading {
   display: flex;
   align-items: center;
-  gap: clamp(9px, 2.6vw, 17px);
+  gap: clamp(9px, 2.6cqw, 17px);
 }
 
 .share-card-activity-icon {
   display: inline-flex;
-  width: clamp(60px, 14vw, 96px);
-  height: clamp(60px, 14vw, 96px);
+  width: clamp(60px, 14cqw, 96px);
+  height: clamp(60px, 14cqw, 96px);
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -288,7 +302,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(27px, 7.2vw, 50px);
+  font-size: clamp(27px, 7.2cqw, 50px);
   font-weight: 900;
   letter-spacing: .01em;
   line-height: .9;
@@ -315,7 +329,7 @@
 
 .share-card-divider {
   height: 1px;
-  margin: clamp(18px, 4.3vw, 28px) 0 clamp(17px, 4vw, 26px);
+  margin: clamp(18px, 4.3cqw, 28px) 0 clamp(17px, 4cqw, 26px);
   background: linear-gradient(90deg, rgba(232, 155, 18, .78), rgba(232, 155, 18, .18), transparent);
 }
 
@@ -326,7 +340,7 @@
 
 .share-card-metric {
   min-width: 0;
-  padding: 0 clamp(9px, 2.7vw, 20px);
+  padding: 0 clamp(9px, 2.7cqw, 20px);
 }
 
 .share-card-metric:first-child {
@@ -343,7 +357,7 @@
 
 .share-card-metric-icon {
   display: block;
-  margin-bottom: clamp(8px, 2vw, 13px);
+  margin-bottom: clamp(8px, 2cqw, 13px);
   color: #f6a816;
 }
 
@@ -351,7 +365,7 @@
   display: block;
   overflow: hidden;
   color: rgba(255, 255, 255, .62);
-  font-size: clamp(10px, 2.4vw, 16px);
+  font-size: clamp(10px, 2.4cqw, 16px);
   font-weight: 800;
   letter-spacing: .12em;
   line-height: 1.2;
@@ -366,7 +380,7 @@
   overflow: hidden;
   color: #fff;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(29px, 7.8vw, 54px);
+  font-size: clamp(29px, 7.8cqw, 54px);
   font-weight: 900;
   letter-spacing: .01em;
   line-height: .9;
@@ -377,7 +391,7 @@
 .share-card-metric strong small {
   color: #f6a816;
   font-family: inherit;
-  font-size: clamp(10px, 2.4vw, 17px);
+  font-size: clamp(10px, 2.4cqw, 17px);
   letter-spacing: .05em;
 }
 
@@ -385,8 +399,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: clamp(25px, 6vw, 40px);
-  font-size: clamp(11px, 2.8vw, 17px);
+  margin-top: clamp(25px, 6cqw, 40px);
+  font-size: clamp(11px, 2.8cqw, 17px);
   font-weight: 900;
   letter-spacing: .18em;
   line-height: 1;
