@@ -110,10 +110,17 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         : durationMins * 60),
   );
   const duration = formatDuration(durationSeconds || 0);
+  // #199: com distanceKm minusculo (ruido de GPS, ex: 0.006km), a formula de
+  // ritmo dividia por um numero quase zero e virava um valor absurdo tipo
+  // "1651'xx"/km" -- estourava a largura fixa do card e aparecia cortado
+  // ("1651...") no compartilhamento real. distanceKm > 0 nao e suficiente
+  // como guarda; usa o mesmo limiar de 0.05km (50m) que ja define hasDistance
+  // logo abaixo, pra manter TEMPO/RITMO consistentes com o "-" de DISTÂNCIA
+  // quando o GPS nao captou deslocamento real.
   const pace =
     session.pace ||
     session.avgPace ||
-    (distanceKm > 0 && durationMins > 0
+    (distanceKm > 0.05 && durationMins > 0
       ? `${Math.floor(durationMins / distanceKm)}'${String(Math.round(((durationMins / distanceKm) % 1) * 60)).padStart(2, '0')}"/km`
       : null);
   const trajectory: Array<any> = Array.isArray(session.trajectory)

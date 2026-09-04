@@ -245,29 +245,43 @@
   left: 6.2%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+/* #200: InvictusLogo (componente compartilhado, usado em varias telas do app
+   fora deste card) recebe size={64} como prop numerica fixa e aplica isso
+   como style inline em px no <img> -- nunca escalava com cqw como todo o
+   resto do card. Numa tela real (~380-420px de largura), 64px vira ~15-17%
+   da largura do card; na referencia o emblema ocupa uns 5%. Sobrescrevemos
+   aqui via !important (unica forma de vencer o style inline do componente)
+   em vez de mexer no InvictusLogo, que e usado em outras telas (AuthGuard,
+   onboarding) e nao deve mudar de tamanho la. */
+.share-card-brand img {
+  width: clamp(34px, 8cqw, 56px) !important;
+  height: clamp(34px, 8cqw, 56px) !important;
 }
 
 .share-card-brand-copy {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   line-height: 1;
 }
 
 .share-card-brand-copy strong {
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(22px, 5.6cqw, 36px);
-  font-style: italic;
+  font-size: clamp(20px, 5cqw, 32px);
+  font-style: normal;
   font-weight: 900;
-  letter-spacing: .07em;
+  letter-spacing: .06em;
+  color: #fff;
 }
 
 .share-card-brand-copy span {
-  color: #f6aa16;
-  font-size: clamp(9px, 2cqw, 13px);
-  font-weight: 900;
-  letter-spacing: .38em;
+  color: rgba(255, 255, 255, .68);
+  font-size: clamp(8px, 1.8cqw, 12px);
+  font-weight: 700;
+  letter-spacing: .34em;
 }
 
 .share-card-content {
