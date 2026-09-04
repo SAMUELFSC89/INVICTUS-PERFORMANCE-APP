@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, Plus, ShieldCheck, SlidersHorizontal, Trophy, UserRound } from 'lucide-react';
+import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Droplet, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, Plus, ShieldCheck, SlidersHorizontal, Trophy, UserRound, Wind } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -93,6 +93,15 @@ function formatDeltaCurto(delta: DeltaInfo, unidade: string, casasDecimais = 0):
   const seta = delta.direction === 'up' ? '↑' : delta.direction === 'down' ? '↓' : '→';
   const valorAbs = Math.abs(delta.diff).toLocaleString('pt-BR', { maximumFractionDigits: casasDecimais });
   return `${seta} ${valorAbs}${unidade ? ` ${unidade}` : ''}`;
+}
+
+// #291: mesma seta/direção de formatDeltaCurto, mas em percentual relativo à
+// própria média do usuário (diff/média) -- usado só onde faz mais sentido
+// comparar em % (ex.: HRV) do que em unidade absoluta.
+function formatDeltaPercentCurto(delta: DeltaInfo): string {
+  const seta = delta.direction === 'up' ? '↑' : delta.direction === 'down' ? '↓' : '→';
+  const percent = delta.media > 0 ? Math.abs(Math.round((delta.diff / delta.media) * 100)) : 0;
+  return `${seta} ${percent}%`;
 }
 
 // #69: "Melhorando/Estável/Observar" -- rótulo textual do bloco de
@@ -578,6 +587,38 @@ function UltimoTreinoCard({ workout, onVerDetalhes }: { workout: RawWorkoutSessi
 // já usada por avg_heart_rate no performanceEngine). Sem pelo menos 2
 // treinos com FC no período, mostra estado vazio em vez de comparar contra
 // amostra insuficiente.
+// #291: curva real do treino mais recente (mesma matemática de segmentos de
+// HeartRateCurve, sem interpolar lacunas) com uma linha pontilhada de
+// referência na FC média dos outros treinos do período -- NÃO é uma "curva
+// média" fabricada ponto a ponto (os treinos têm durações diferentes e não
+// há como alinhar amostra a amostra sem inventar dado); é uma reta real
+// (constante) na média real dos demais treinos.
+function RespostaAoTreinoChart({ samples, baselineHR }: { samples: { timestamp: string; bpm: number }[]; baselineHR: number }) {
+  const width = 320; const height = 110; const padding = 10;
+  const values = samples.map((s) => s.bpm);
+  const min = Math.min(...values, baselineHR);
+  const max = Math.max(...values, baselineHR);
+  const span = Math.max(1, max - min);
+  const segments: string[][] = [[]];
+  samples.forEach((sample, index) => {
+    const previous = samples[index - 1];
+    const gapSeconds = previous ? (new Date(sample.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000 : 0;
+    if (previous && (!Number.isFinite(gapSeconds) || gapSeconds <= 0 || gapSeconds > 60)) segments.push([]);
+    const x = padding + (index / Math.max(1, samples.length - 1)) * (width - padding * 2);
+    const y = height - padding - ((sample.bpm - min) / span) * (height - padding * 2);
+    segments[segments.length - 1].push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  });
+  const baselineY = height - padding - ((baselineHR - min) / span) * (height - padding * 2);
+  return (
+    <svg className="health-response-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Curva de frequência cardíaca do treino mais recente comparada à média dos demais treinos">
+      <line x1={padding} y1={baselineY} x2={width - padding} y2={baselineY} strokeDasharray="4 4" />
+      {segments.filter((s) => s.length >= 2).map((segment, index) => (
+        <polyline key={index} points={segment.join(' ')} fill="none" stroke="#ff515b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      ))}
+    </svg>
+  );
+}
+
 function RespostaAoTreinoCard({ state }: { state: UserPerformanceState }) {
   const hrWorkouts = state.healthTimeframeWorkouts.filter((w) => w.avgHeartRate && w.avgHeartRate > 0).sort((a, b) => b.timestamp - a.timestamp);
   if (hrWorkouts.length < 2) {
@@ -591,10 +632,12 @@ function RespostaAoTreinoCard({ state }: { state: UserPerformanceState }) {
   const caloriasComDado = rest.filter((w) => w.caloriesBurned && w.caloriesBurned > 0);
   const baselineCalorias = caloriasComDado.length ? caloriasComDado.reduce((soma, w) => soma + (w.caloriesBurned || 0), 0) / caloriasComDado.length : null;
   const caloriasDiff = baselineCalorias !== null && latest.caloriesBurned ? Math.round(latest.caloriesBurned - baselineCalorias) : null;
+  const samples = latest.heartRateSamples && latest.heartRateSamples.length >= 4 ? latest.heartRateSamples : null;
   return (
     <article className="health-overview health-response-card">
       <div className="health-section-name">RESPOSTA AO TREINO <Info /></div>
       <p>Comparado aos outros {rest.length} treino{rest.length > 1 ? 's' : ''} com frequência cardíaca do período.</p>
+      {samples ? <RespostaAoTreinoChart samples={samples} baselineHR={baselineHR} /> : null}
       <div className="health-response-grid">
         <div><span>FC MÉDIA</span><b style={{ color: hrDiffPercent > 0 ? '#ff8a5b' : '#46d47b' }}>{hrDiffPercent > 0 ? '+' : ''}{hrDiffPercent}%</b><small>vs sua média</small></div>
         <div><span>DURAÇÃO</span><b style={{ color: durationDiffMin >= 0 ? '#46d47b' : '#ff8a5b' }}>{durationDiffMin >= 0 ? '+' : ''}{durationDiffMin} min</b><small>vs sua média</small></div>
@@ -609,12 +652,35 @@ function RespostaAoTreinoCard({ state }: { state: UserPerformanceState }) {
 // de musculação é contagem real de sessões / semanas da janela;
 // consistência reaproveita consistency_index já calculado pelo
 // performanceEngine (não recalcula em paralelo).
+// #291: bloco de séries usado tanto pelo pace de cardio (menor é melhor,
+// por isso a cor não é fixa) quanto pelas sessões semanais de musculação --
+// mesmo MiniSparkline já usado nos "Indicadores dos últimos 7 dias".
+function EvolucaoMiniChart({ points, color }: { points: number[]; color: string }) {
+  if (points.length < 2) return null;
+  return <div className="health-evolution-spark"><MiniSparkline points={points} color={color} /></div>;
+}
+
 function Evolucao30DiasCard({ state }: { state: UserPerformanceState }) {
   const cardioWorkouts = state.healthTimeframeWorkouts.filter((w) => /corrida|run|cardio|bike|ciclismo|caminhada/i.test(w.workoutType || ''));
   const forcaWorkouts = state.healthTimeframeWorkouts.filter((w) => !/corrida|run|cardio|bike|ciclismo|caminhada/i.test(w.workoutType || ''));
-  const cardioComDistancia = cardioWorkouts.filter((w) => w.distanceKm && w.distanceKm > 0 && w.durationMinutes > 0);
+  const cardioComDistancia = cardioWorkouts
+    .filter((w) => w.distanceKm && w.distanceKm > 0 && w.durationMinutes > 0)
+    .sort((a, b) => a.timestamp - b.timestamp);
   const paceMedio = cardioComDistancia.length ? cardioComDistancia.reduce((soma, w) => soma + w.durationMinutes / (w.distanceKm || 1), 0) / cardioComDistancia.length : null;
   const paceLabel = paceMedio ? `${Math.floor(paceMedio)}:${String(Math.round((paceMedio % 1) * 60)).padStart(2, '0')} min/km` : null;
+  // Pace real por sessão (min/km) na ordem cronológica -- sparkline sobe
+  // quando o pace piora (mais minutos por km), então invertemos o eixo
+  // (max-valor) pra visualmente "melhora = linha sobe", igual ao resto da tela.
+  const paceSerie = cardioComDistancia.map((w) => w.durationMinutes / (w.distanceKm || 1));
+  const paceSerieInvertida = paceSerie.length ? (() => { const max = Math.max(...paceSerie); return paceSerie.map((v) => max - v + Math.min(...paceSerie)); })() : [];
+
+  // Sessões de musculação por semana (contagem real, sem inventar), na
+  // ordem cronológica das últimas semanas com atividade.
+  const semanaDe = (timestamp: number) => Math.floor(timestamp / (7 * 24 * 60 * 60 * 1000));
+  const porSemana = new Map<number, number>();
+  forcaWorkouts.forEach((w) => { const semana = semanaDe(w.timestamp); porSemana.set(semana, (porSemana.get(semana) || 0) + 1); });
+  const sessoesPorSemana = Array.from(porSemana.entries()).sort((a, b) => a[0] - b[0]).map(([, count]) => count);
+
   const consistency = state.computedMetrics.consistency_index;
   return (
     <article className="health-overview health-evolution-card">
@@ -625,6 +691,7 @@ function Evolucao30DiasCard({ state }: { state: UserPerformanceState }) {
           {cardioWorkouts.length ? <>
             <p>Pace médio<b>{paceLabel || '—'}</b></p>
             <p>Sessões no período<b>{cardioWorkouts.length}</b></p>
+            <EvolucaoMiniChart points={paceSerieInvertida} color="#46d47b" />
           </> : <p className="health-empty">Sem sessões de cardio homologadas no período.</p>}
         </div>
         <div>
@@ -632,6 +699,7 @@ function Evolucao30DiasCard({ state }: { state: UserPerformanceState }) {
           {forcaWorkouts.length ? <>
             <p>Frequência semanal<b>{(forcaWorkouts.length / 4.3).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}x</b></p>
             <p>Consistência<b>{consistency?.hasEnoughData ? `${consistency.currentValue}%` : '—'}</b></p>
+            <EvolucaoMiniChart points={sessoesPorSemana} color="#f2b516" />
           </> : <p className="health-empty">Sem sessões de musculação homologadas no período.</p>}
         </div>
       </div>
@@ -647,6 +715,32 @@ function Evolucao30DiasCard({ state }: { state: UserPerformanceState }) {
 // mostra o texto padrão "precisamos de mais dados" em vez de uma correlação
 // não confiável. Nenhuma chamada de rede/IA -- só aritmética sobre dados já
 // carregados.
+// #291: dispersão real sono (horas) × performance (minutos ativos) por dia
+// -- cada ponto é um dia real em que as duas séries tinham valor no mesmo
+// dia (o mesmo `pares` usado no cálculo textual abaixo). Sem regressão
+// desenhada por cima: só os pontos reais, para não sugerir uma tendência
+// mais forte do que a amostra realmente sustenta.
+function SonoXPerformanceScatter({ pares }: { pares: { sono: number; performance: number }[] }) {
+  const width = 300; const height = 110; const padding = 22;
+  const horas = pares.map((p) => p.sono / 60);
+  const minHoras = Math.min(4, ...horas);
+  const maxHoras = Math.max(10, ...horas);
+  const maxPerf = Math.max(...pares.map((p) => p.performance), 1);
+  return (
+    <svg className="health-sleep-scatter" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Dispersão de horas de sono por desempenho diário">
+      <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />
+      <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
+      {pares.map((p, index) => {
+        const x = padding + ((p.sono / 60 - minHoras) / Math.max(1, maxHoras - minHoras)) * (width - padding * 2);
+        const y = height - padding - (p.performance / maxPerf) * (height - padding * 2 - 6);
+        return <circle key={index} cx={x} cy={Math.max(padding, y)} r="3" />;
+      })}
+      <text x={padding} y={height - 4} className="health-sleep-scatter-label">{Math.round(minHoras)}h</text>
+      <text x={width - padding} y={height - 4} textAnchor="end" className="health-sleep-scatter-label">{Math.round(maxHoras)}h</text>
+    </svg>
+  );
+}
+
 function SonoXPerformanceCard({ sonoTrend, performanceTrend }: { sonoTrend: PontoTendencia[]; performanceTrend: PontoTendencia[] }) {
   const porDia = new Map<string, { sono?: number; performance?: number }>();
   sonoTrend.forEach((p) => { const dia = p.timestamp.slice(0, 10); porDia.set(dia, { ...(porDia.get(dia) || {}), sono: p.value }); });
@@ -664,6 +758,7 @@ function SonoXPerformanceCard({ sonoTrend, performanceTrend }: { sonoTrend: Pont
     <article className="health-overview health-sleep-performance-card">
       <div className="health-section-name">SONO × PERFORMANCE <Info /></div>
       <p>Nos dias após sono de 7h ou mais ({comSonoBom.length} dias no período), seu tempo ativo médio foi {Math.abs(diffPercent)}% {diffPercent >= 0 ? 'maior' : 'menor'} do que nos dias com menos de 7h de sono ({comSonoRuim.length} dias).</p>
+      <SonoXPerformanceScatter pares={pares} />
       <small>Correlação calculada com seus próprios dados sincronizados; não é uma recomendação médica.</small>
     </article>
   );
@@ -678,11 +773,12 @@ function InvictusIACTA({ insights, onOpenChat }: { insights: ReturnType<typeof b
   const primeiro = insights[0];
   return (
     <article className="health-overview health-ia-cta">
+      <InvictusLogo size={30} />
       <div className="health-ia-cta-text">
         <div className="health-section-line"><div>INSIGHT INVICTUS IA</div><span className="health-pro">PRO</span></div>
         <p>{primeiro ? primeiro.message : 'Continue sincronizando seus dados para receber leituras personalizadas da Invictus IA.'}</p>
       </div>
-      <button type="button" className="health-ia-cta-button" onClick={onOpenChat}>CONVERSAR COM<br />INVICTUS IA</button>
+      <button type="button" className="health-ia-cta-button" onClick={onOpenChat}>CONVERSAR COM<br />INVICTUS IA <ChevronRight aria-hidden="true" /></button>
     </article>
   );
 }
@@ -717,26 +813,80 @@ function EnergyBlock({ calories, deviceCalories = 0 }: { calories: number; devic
   );
 }
 
-// #69: bloco "Estado de Hoje" -- combina o status calculado (ver
-// calcularEstadoDeHoje, heurística simples e não-clínica) com a arte
-// oficial enviada pelo usuário (public/estado-de-hoje.webp), posicionada ao
-// lado do texto em vez de como imagem de topo isolada.
-function EstadoDeHojeCard({ fcDelta, hrvDelta, sonoDelta, ultimaAtualizacao }: {
+// #69: destaca a palavra "Considere" dentro da descrição de
+// calcularEstadoDeHoje quando presente -- é a mesma frase já existente,
+// só com um realce visual (nenhum texto novo é inventado aqui).
+function DescricaoComRealce({ texto, cor }: { texto: string; cor: string }) {
+  const partes = texto.split(/(Considere)/);
+  return <p>{partes.map((parte, indice) => parte === 'Considere' ? <strong key={indice} style={{ color: cor }}>{parte}</strong> : <React.Fragment key={indice}>{parte}</React.Fragment>)}</p>;
+}
+
+// #291: pequeno indicador circular ao lado do status -- mesma paleta fixa
+// de 4 faixas (verde/amarelo/laranja/vermelho) já usada na ilustração
+// corporal do card "Seu Corpo × Seus Treinos", não uma métrica nova. O
+// ícone central usa a cor real do status calculado por calcularEstadoDeHoje.
+function StatusRing({ cor }: { cor: string }) {
+  return (
+    <div className="health-status-ring" aria-hidden="true">
+      <div style={{ color: cor }}><ShieldCheck /></div>
+    </div>
+  );
+}
+
+// #291: badge "Confiança dos Dados" -- reaproveita o MESMO grau A-E já
+// calculado pelo Health Confidence Engine no backend para cada amostra
+// (confidenceAtMeasurement/currentEvidenceConfidence, também usado em
+// HealthMetricLibrary/ConfidenceDetails). Não é um novo cálculo: é a leitura
+// mais recente entre FC repouso/HRV/Sono que tiver grau disponível. A barra
+// é só uma leitura visual determinística do grau (A=100% … E=20%).
+const GRAU_PARA_PERCENT: Record<string, number> = { A: 100, B: 80, C: 60, D: 40, E: 20 };
+const GRAU_PARA_COR: Record<string, string> = { A: '#35d47a', B: '#80d98f', C: '#f0c33a', D: '#ed8d35', E: '#999' };
+
+function ConfiancaDosDados({ amostras }: { amostras: Array<{ confidenceAtMeasurement?: { confidenceLevel?: string } | null; currentEvidenceConfidence?: { confidenceLevel?: string } | null } | null> }) {
+  const grau = amostras
+    .map((amostra) => amostra?.confidenceAtMeasurement?.confidenceLevel || amostra?.currentEvidenceConfidence?.confidenceLevel)
+    .find((nivel): nivel is string => Boolean(nivel));
+  if (!grau) return null;
+  const percent = GRAU_PARA_PERCENT[grau] || 20;
+  return (
+    <div className="health-hoje-confidence">
+      <span>CONFIANÇA DOS DADOS <Info aria-hidden="true" /></span>
+      <span className={`health-confidence-badge level-${grau}`}>{grau} {CONFIDENCE_LABELS[grau]?.replace(' confiança', '').replace('Evidência insuficiente', 'Insuficiente') || ''}</span>
+      <div className="health-small-progress"><b style={{ width: `${percent}%`, background: GRAU_PARA_COR[grau] }} /></div>
+    </div>
+  );
+}
+
+// #69/#291: bloco "Estado de Hoje" -- status calculado (calcularEstadoDeHoje,
+// heurística simples e não-clínica) + os 3 sinais que alimentam esse cálculo
+// (FC repouso/HRV/Sono, valor real mais recente + delta vs média 7 dias) +
+// grau de confiança real da medição. Nenhum valor aqui é inventado: tudo vem
+// de summary.latest (mesma fonte já usada no restante da tela).
+function EstadoDeHojeCard({ fcRepouso, hrv, sono, fcDelta, hrvDelta, sonoDelta, ultimaAtualizacao }: {
+  fcRepouso: HealthSummaryResponse['latest']['heart_rate_resting'];
+  hrv: HealthSummaryResponse['latest']['hrv_rmssd'];
+  sono: HealthSummaryResponse['latest']['sleep_duration_min'];
   fcDelta: DeltaInfo | null; hrvDelta: DeltaInfo | null; sonoDelta: DeltaInfo | null; ultimaAtualizacao: string | null;
 }) {
   const resultado = calcularEstadoDeHoje(fcDelta, hrvDelta, sonoDelta);
   const relativo = formatRelativo(ultimaAtualizacao);
   return (
     <article className="health-hoje-card">
-      <div className="health-hoje-text">
-        <span className="health-hoje-label">ESTADO DE HOJE</span>
-        <div className="health-hoje-status" style={{ color: resultado.cor }}>
-          <ShieldCheck aria-hidden="true" /> {resultado.status}
+      <div className="health-hoje-top"><span className="health-hoje-label">ESTADO DE HOJE</span>{relativo && <span className="health-hoje-updated">Atualizado {relativo}</span>}</div>
+      <div className="health-hoje-main">
+        <StatusRing cor={resultado.cor} />
+        <div className="health-hoje-text">
+          <span className="health-hoje-sublabel">Recuperação</span>
+          <div className="health-hoje-status" style={{ color: resultado.cor }}>{resultado.status.charAt(0) + resultado.status.slice(1).toLowerCase()}</div>
         </div>
-        <p>{resultado.descricao}</p>
-        {relativo && <span className="health-hoje-updated">Atualizado {relativo}</span>}
       </div>
-      <img src="/estado-de-hoje.webp" alt="Invictus" className="health-hoje-art" />
+      <DescricaoComRealce texto={resultado.descricao} cor={resultado.cor} />
+      <div className="health-hoje-stats">
+        <div><Heart aria-hidden="true" /><span>FC REPOUSO</span><b>{fcRepouso ? `${fcRepouso.value} bpm` : '—'}</b>{fcDelta && <em style={{ color: fcDelta.direction === 'down' ? '#46d47b' : fcDelta.direction === 'up' ? '#ff8a5b' : '#8a8580' }}>{formatDeltaCurto(fcDelta, 'bpm')} vs sua média</em>}</div>
+        <div><HeartPulse aria-hidden="true" /><span>HRV</span><b>{hrv ? `${hrv.value} ms` : '—'}</b>{hrvDelta && <em style={{ color: hrvDelta.direction === 'up' ? '#46d47b' : hrvDelta.direction === 'down' ? '#ff8a5b' : '#8a8580' }}>{formatDeltaPercentCurto(hrvDelta)} vs sua média</em>}</div>
+        <div><Moon aria-hidden="true" /><span>SONO</span><b>{sono ? formatDuration(sono.value) : '—'}</b>{sonoDelta && <em style={{ color: sonoDelta.direction === 'up' ? '#46d47b' : sonoDelta.direction === 'down' ? '#ff8a5b' : '#8a8580' }}>{formatDeltaCurto(sonoDelta, 'min')} vs sua média</em>}</div>
+      </div>
+      <ConfiancaDosDados amostras={[fcRepouso, hrv, sono]} />
     </article>
   );
 }
@@ -826,7 +976,7 @@ function HealthSummaryContent({ state, summary, loadingSummary, syncDiagnostics,
 
       {activeTab === 'saude' && (
         <>
-          <EstadoDeHojeCard fcDelta={fcDelta} hrvDelta={hrvDelta} sonoDelta={sonoDelta} ultimaAtualizacao={ultimaAtualizacaoHoje} />
+          <EstadoDeHojeCard fcRepouso={fcRepouso} hrv={hrv} sono={sono} fcDelta={fcDelta} hrvDelta={hrvDelta} sonoDelta={sonoDelta} ultimaAtualizacao={ultimaAtualizacaoHoje} />
           <SeuCorpoXSeusTreinosCard activityCount72h={activityCount72h} estadoHoje={estadoHoje} onVerAnalise={() => setActiveTab('recuperacao')} />
           <UltimoTreinoCard workout={ultimoTreino} onVerDetalhes={() => setActiveTab('atividades')} />
           <RespostaAoTreinoCard state={state} />
@@ -840,8 +990,8 @@ function HealthSummaryContent({ state, summary, loadingSummary, syncDiagnostics,
               <MetricCard icon={<HeartPulse />} label="HRV" value={media7Dias(hrvTrend) !== null ? Math.round(media7Dias(hrvTrend)!) : '—'} unit={media7Dias(hrvTrend) !== null ? 'ms' : ''} detail="Média" tone="violet" onTap={() => setActiveTab('tendencias')} delta={hrvDelta} deltaUnit="ms" sparklinePoints={hrvTrend.map((p) => p.value)} />
               <MetricCard icon={<Moon />} label="SONO" value={media7Dias(sonoTrend) !== null ? formatDuration(media7Dias(sonoTrend)!) : '—'} detail="Média" tone="blue" onTap={() => setActiveTab('recuperacao')} delta={sonoDelta} deltaUnit="min" sparklinePoints={sonoTrend.map((p) => p.value)} />
               <MetricCard icon={<Footprints />} label="PASSOS" value={media7Dias(passosTrend) !== null ? Math.round(media7Dias(passosTrend)!).toLocaleString('pt-BR') : '—'} detail="Média" tone="green" onTap={() => setActiveTab('atividades')} delta={passosDelta} sparklinePoints={passosTrend.map((p) => p.value)} />
-              <MetricCard icon={<Activity />} label="FREQ. RESP." value={media7Dias(freqRespTrend) !== null ? media7Dias(freqRespTrend)!.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'} unit={media7Dias(freqRespTrend) !== null ? 'rpm' : ''} detail="Média" onTap={() => setActiveTab('tendencias')} sparklinePoints={freqRespTrend.map((p) => p.value)} />
-              <MetricCard icon={<HeartPulse />} label="SpO₂" value={media7Dias(spo2Trend) !== null ? `${Math.round(media7Dias(spo2Trend)!)}` : '—'} unit={media7Dias(spo2Trend) !== null ? '%' : ''} detail="Média" onTap={() => setActiveTab('tendencias')} sparklinePoints={spo2Trend.map((p) => p.value)} />
+              <MetricCard icon={<Wind />} label="FREQ. RESP." value={media7Dias(freqRespTrend) !== null ? media7Dias(freqRespTrend)!.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'} unit={media7Dias(freqRespTrend) !== null ? 'rpm' : ''} detail="Média" tone="blue" onTap={() => setActiveTab('tendencias')} sparklinePoints={freqRespTrend.map((p) => p.value)} />
+              <MetricCard icon={<Droplet />} label="SpO₂" value={media7Dias(spo2Trend) !== null ? `${Math.round(media7Dias(spo2Trend)!)}` : '—'} unit={media7Dias(spo2Trend) !== null ? '%' : ''} detail="Média" tone="red" onTap={() => setActiveTab('tendencias')} sparklinePoints={spo2Trend.map((p) => p.value)} />
             </div>
             <p className="health-tap-hint">Toque em um indicador para ver mais detalhes</p>
           </section>
