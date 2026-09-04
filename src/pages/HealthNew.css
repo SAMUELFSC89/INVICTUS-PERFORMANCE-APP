@@ -22,9 +22,8 @@
 .health-body-rows>div{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:.5rem .7rem;border:1px solid #2b2b2b;border-radius:8px;background:#111}
 .health-body-rows span{color:#999;font:700 10px Barlow,sans-serif;letter-spacing:.03em}
 .health-body-rows b{font:700 12px Barlow,sans-serif;color:#eee}
-.health-body-illustration{display:grid;place-items:center;gap:6px;padding:10px;border:1px dashed #3a3a3a;border-radius:12px;background:radial-gradient(circle,rgba(242,181,22,.08),transparent 70%);text-align:center}
-.health-body-illustration svg{width:40px;height:40px;color:#4a4a4a}
-.health-body-illustration small{color:#666;font:400 8px Barlow,sans-serif}
+.health-body-illustration{display:grid;place-items:center;overflow:hidden;border-radius:12px;background:radial-gradient(circle,rgba(242,181,22,.06),transparent 72%)}
+.health-body-illustration img{width:100%;height:auto;max-height:150px;object-fit:contain}
 .health-card-link{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:.9rem;padding:.7rem 0;border:0;border-top:1px solid #2a2a2a;background:none;color:#f2b516;font:800 11px "Roboto Condensed",sans-serif;cursor:pointer}
 .health-card-link svg{width:16px}
 .health-badge{padding:3px 8px;border:1px solid #d39c00;border-radius:5px;color:#f2b516;font:800 9px Barlow,sans-serif;letter-spacing:.04em}

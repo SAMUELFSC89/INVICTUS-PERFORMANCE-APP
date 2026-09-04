@@ -527,9 +527,8 @@ function SeuCorpoXSeusTreinosCard({ activityCount72h, estadoHoje, onVerAnalise }
           <div><span>RECUPERAÇÃO</span><b style={{ color: semDados ? '#8a8580' : estadoHoje.cor }}>{semDados ? 'Sem dados' : estadoHoje.status}</b></div>
           <div><span>PRONTIDÃO</span><b className="is-muted">Indisponível</b></div>
         </div>
-        <div className="health-body-illustration" role="img" aria-label="Ilustração corporal de recuperação (em preparação)">
-          <UserRound aria-hidden="true" />
-          <small>Ilustração em preparação</small>
+        <div className="health-body-illustration">
+          <img src="/assets/health/health-body-recovery-illustration-v1.webp" alt="Ilustração corporal de recuperação" loading="lazy" />
         </div>
       </div>
       <button type="button" className="health-card-link" onClick={onVerAnalise}>VER ANÁLISE COMPLETA <ChevronRight /></button>
