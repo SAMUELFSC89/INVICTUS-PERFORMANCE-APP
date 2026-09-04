@@ -3,6 +3,20 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
+// #mapa-ios-2026-09-04: efeito colateral, sem exports usados aqui de proposito.
+//
+// Este modulo substitui window.navigator.geolocation por uma versao apoiada
+// no plugin nativo @capacitor/geolocation quando Capacitor.isNativePlatform()
+// e verdadeiro (na web ele nao faz nada). Antes desta linha, esse polyfill so
+// era carregado se o usuario passasse pela tela de Perfil (unico import
+// existente), entao quem abria Desafios > Cardio direto de um app recem-aberto
+// no iOS caia no navigator.geolocation cru do WKWebView -- que no
+// capacitor://localhost frequentemente nunca entrega nenhum fix de GPS.
+// Resultado observado: DISTANCIA 00.00 e mapa preso no icone de alerta mesmo
+// com TEMPO correndo. Importar aqui, no unico arquivo que "concentra TODOS os
+// imports da aplicacao" (comentario abaixo), garante que o polyfill esteja
+// instalado antes de qualquer tela pedir localizacao.
+import './lib/locationUtils';
 
 // #223: este arquivo concentra TODOS os imports da aplicacao.
 //
