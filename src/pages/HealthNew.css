@@ -24,8 +24,6 @@
 .health-body-rows b{font:700 12px Barlow,sans-serif;color:#eee}
 .health-body-illustration{display:grid;place-items:center;overflow:hidden;border-radius:12px;background:radial-gradient(circle,rgba(242,181,22,.06),transparent 72%)}
 .health-body-illustration img{width:100%;height:auto;max-height:150px;object-fit:contain}
-.health-card-link{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:.9rem;padding:.7rem 0;border:0;border-top:1px solid #2a2a2a;background:none;color:#f2b516;font:800 11px "Roboto Condensed",sans-serif;cursor:pointer}
-.health-card-link svg{width:16px}
 .health-badge{padding:3px 8px;border:1px solid #d39c00;border-radius:5px;color:#f2b516;font:800 9px Barlow,sans-serif;letter-spacing:.04em}
 .health-last-workout-date{margin:.4rem 0 0;color:#999;font:400 11px Barlow,sans-serif;text-transform:capitalize}
 .health-last-workout-duration{margin:.15rem 0 .7rem;font:400 40px "Bebas Neue",sans-serif;color:#fff}

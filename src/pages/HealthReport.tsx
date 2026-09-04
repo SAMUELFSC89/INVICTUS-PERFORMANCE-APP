@@ -56,7 +56,7 @@ function AiHealthNarrative() {
 
   return <section className="health-ai-report" aria-live="polite">
     <div className="health-section-name"><BrainCircuit /> ANÁLISE DA INVICTUS IA</div>
-    {!requested && <><p>Gere uma leitura em linguagem simples dos seus dados medidos neste período.</p><button type="button" className="health-card-link" onClick={solicitarAnalise}>ANALISAR COM IA</button></>}
+    {!requested && <><p>Gere uma leitura em linguagem simples dos seus dados medidos neste período.</p><button type="button" className="health-inline-link" onClick={solicitarAnalise}>ANALISAR COM IA</button></>}
     {requested && loading && <p>Analisando cobertura, leituras e tendências reais…</p>}
     {requested && !loading && <div className="health-ai-report-text">{answer}</div>}
     <small>Conteúdo educativo. Não é diagnóstico, prescrição nem substituto de atendimento profissional.</small>

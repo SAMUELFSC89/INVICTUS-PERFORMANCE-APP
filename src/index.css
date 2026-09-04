@@ -547,6 +547,17 @@
 .health-zone-list em { color:#d7d1cb; font-style:normal; white-space:nowrap; }
 .health-card-link { position:absolute; right:1rem; bottom:1rem; left:1rem; display:flex; align-items:center; justify-content:space-between; padding:.72rem 0 0; border-top:1px solid rgba(255,255,255,.11); color:#ffad00; font-family:Anton,sans-serif; font-size:15px; font-style:italic; text-align:left; }
 .health-card-link svg { width:24px; height:24px; }
+/* #saude-2026-09-04: .health-inline-link (nao .health-card-link) e o link usado nos
+   cards novos da aba SAUDE (Seu Corpo x Seus Treinos, Ultimo Treino, Analisar com IA).
+   .health-card-link acima e position:absolute pensado para cards que declaram
+   position:relative (.health-zone-card/.health-trend-card/.health-activity-card, todos
+   ja existentes). Os cards novos usam .health-overview como base, que NAO tem
+   position:relative -- reutilizar .health-card-link neles fazia o link "escapar" para
+   o ancestral fixed mais proximo (.health-new-shell) e todos os links empilhavam no
+   mesmo ponto da tela, sobrepondo o texto. Corrigido usando esta classe em fluxo normal,
+   sem tocar na .health-card-link original (ainda usada pelas telas antigas). */
+.health-inline-link{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:.9rem;padding:.7rem 0;border:0;border-top:1px solid #2a2a2a;background:none;color:#f2b516;font:800 11px "Roboto Condensed",sans-serif;cursor:pointer}
+.health-inline-link svg{width:16px}
 .health-trend-card > .health-period-picker { position:absolute; top:.8rem; right:.8rem; min-height:39px; font-family:Barlow,sans-serif; font-size:13px; }
 .health-trend-card > strong { display:block; margin:2.6rem 0 .2rem; font-family:Anton,sans-serif; font-size:34px; font-weight:400; line-height:1; }
 .health-trend-card > strong small,.health-report-chart strong small { color:#e4ded7; font-family:Barlow,sans-serif; font-size:16px; font-weight:500; }

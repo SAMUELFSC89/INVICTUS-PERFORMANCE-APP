@@ -531,7 +531,7 @@ function SeuCorpoXSeusTreinosCard({ activityCount72h, estadoHoje, onVerAnalise }
           <img src="/assets/health/health-body-recovery-illustration-v1.webp" alt="Ilustração corporal de recuperação" loading="lazy" />
         </div>
       </div>
-      <button type="button" className="health-card-link" onClick={onVerAnalise}>VER ANÁLISE COMPLETA <ChevronRight /></button>
+      <button type="button" className="health-inline-link" onClick={onVerAnalise}>VER ANÁLISE COMPLETA <ChevronRight /></button>
     </article>
   );
 }
@@ -568,7 +568,7 @@ function UltimoTreinoCard({ workout, onVerDetalhes }: { workout: RawWorkoutSessi
         <div><span>FC MÁXIMA</span><b>{workout.maxHeartRate ? `${workout.maxHeartRate} bpm` : '—'}</b></div>
         <div><span>CALORIAS</span><b>{workout.caloriesBurned ? `${Math.round(workout.caloriesBurned)} kcal` : '—'}</b></div>
       </div>
-      <button type="button" className="health-card-link" onClick={onVerDetalhes}>VER DETALHES DO TREINO <ChevronRight /></button>
+      <button type="button" className="health-inline-link" onClick={onVerDetalhes}>VER DETALHES DO TREINO <ChevronRight /></button>
     </article>
   );
 }
