@@ -240,8 +240,9 @@
   inset: 0;
   /* #171: substituído o espartano em chamas por uma foto real da academia
      (enviada pelo usuário) -- ele pediu explicitamente para não usar mais
-     aquele banner. */
-  background-image: url('/assets/home/home-season-hallway-v1.webp');
+     aquele banner. Atualizado em 2026-09-03 para a nova foto do corredor
+     enviada pelo usuário (tom mais escuro/dramático, logo em destaque). */
+  background-image: url('/assets/home/home-season-hallway-v2.webp');
   background-size: cover;
   background-position: top center;
   z-index: 0;
