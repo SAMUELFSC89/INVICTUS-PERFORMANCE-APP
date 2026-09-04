@@ -16,41 +16,51 @@ const concepts = [
   ['Gasto energético estimado', 'É uma estimativa de energia além do gasto básico. Não representa um valor exato e pode variar entre dispositivos e contextos.']
 ];
 
+// #291: a análise por IA do relatório NÃO dispara mais sozinha ao montar a
+// tela (isso violava a regra "abrir uma tela de Saúde não chama Gemini" --
+// o relatório é alcançado por um clique em "GERAR RELATÓRIO"/"VER ANÁLISE
+// COMPLETA", mas a chamada à IA em si precisa ser uma ação própria e
+// explícita). Agora só chama /api/performance-ai depois que o usuário toca
+// em "ANALISAR COM IA".
 function AiHealthNarrative() {
   const [answer, setAnswer] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [requested, setRequested] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const user = auth.currentUser;
-        if (!user) return;
-        const token = await user.getIdToken();
-        const response = await fetch(`${API_CONFIG.baseUrl}/api/performance-ai`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'health-report',
-            queryText: 'Gere meu relatório de saúde em linguagem simples. Resuma os dados disponíveis, explique cada termo técnico usado, indique tendências e próximos passos prudentes. Não diagnostique e deixe claro quando faltarem dados.',
-            screenName: 'Relatório de Saúde',
-            currentPath: '/health/report',
-            includeAudio: false
-          })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (active) setAnswer(response.ok ? String(payload.answer || '') : 'A análise da IA está temporariamente indisponível. As métricas medidas continuam válidas abaixo.');
-      } catch {
-        if (active) setAnswer('A análise da IA está temporariamente indisponível. As métricas medidas continuam válidas abaixo.');
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    void load();
-    return () => { active = false; };
-  }, []);
+  const solicitarAnalise = async () => {
+    setRequested(true);
+    setLoading(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_CONFIG.baseUrl}/api/performance-ai`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'health-report',
+          queryText: 'Gere meu relatório de saúde em linguagem simples. Resuma os dados disponíveis, explique cada termo técnico usado, indique tendências e próximos passos prudentes. Não diagnostique e deixe claro quando faltarem dados.',
+          screenName: 'Relatório de Saúde',
+          currentPath: '/health/report',
+          includeAudio: false
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      setAnswer(response.ok ? String(payload.answer || '') : 'A análise da IA está temporariamente indisponível. As métricas medidas continuam válidas abaixo.');
+    } catch {
+      setAnswer('A análise da IA está temporariamente indisponível. As métricas medidas continuam válidas abaixo.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  return <section className="health-ai-report" aria-live="polite"><div className="health-section-name"><BrainCircuit /> ANÁLISE DA INVICTUS IA</div>{loading ? <p>Analisando cobertura, leituras e tendências reais…</p> : <div className="health-ai-report-text">{answer}</div>}<small>Conteúdo educativo. Não é diagnóstico, prescrição nem substituto de atendimento profissional.</small></section>;
+  return <section className="health-ai-report" aria-live="polite">
+    <div className="health-section-name"><BrainCircuit /> ANÁLISE DA INVICTUS IA</div>
+    {!requested && <><p>Gere uma leitura em linguagem simples dos seus dados medidos neste período.</p><button type="button" className="health-card-link" onClick={solicitarAnalise}>ANALISAR COM IA</button></>}
+    {requested && loading && <p>Analisando cobertura, leituras e tendências reais…</p>}
+    {requested && !loading && <div className="health-ai-report-text">{answer}</div>}
+    <small>Conteúdo educativo. Não é diagnóstico, prescrição nem substituto de atendimento profissional.</small>
+  </section>;
 }
 
 function HealthDataQuality() {
