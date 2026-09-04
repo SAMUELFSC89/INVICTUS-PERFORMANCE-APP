@@ -634,7 +634,12 @@
    ver calcularEstadoDeHoje em Health.tsx) ao lado da arte oficial enviada
    pelo usuário, substituindo o banner-imagem anterior pra bater com a
    referência real recebida. */
-.health-hoje-card { overflow:hidden; margin-bottom:1rem; padding:1.1rem 1.2rem; border:1px solid rgba(245,166,35,.3); border-radius:20px; background:radial-gradient(120% 140% at 0% 15%, #1a1108 0%, #0a0705 55%, #000 100%); }
+/* #saude-2026-09-04: .health-hoje-card usa o MESMO cromo de card que
+   .health-overview (borda/fundo/raio) -- antes tinha um gradiente e raio
+   próprios, o que deixava o card "Estado de Hoje" visualmente diferente dos
+   outros 7 cards da tela. A referência mostra os 8 cards com a mesma
+   moldura; unificado aqui em vez de manter um segundo estilo de card. */
+.health-hoje-card { overflow:hidden; margin-bottom:1rem; padding:1.25rem 1rem; border:1px solid rgba(245,166,35,.25); border-radius:22px; background:linear-gradient(135deg,rgba(18,17,19,0.95),rgba(10,10,12,0.92) 80%); box-shadow:inset 0 0 24px rgba(255,174,0,.035); }
 .health-hoje-top { display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; }
 .health-hoje-text { flex:1 1 auto; min-width:0; }
 .health-hoje-label { display:block; color:#e8c98a; font-family:Anton,sans-serif; font-size:12px; font-weight:400; letter-spacing:.06em; text-transform:uppercase; }

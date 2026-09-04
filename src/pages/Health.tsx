@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Droplet, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, Plus, ShieldCheck, SlidersHorizontal, Trophy, UserRound, Wind } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -157,20 +157,52 @@ function calcularEstadoDeHoje(fcDelta: DeltaInfo | null, hrvDelta: DeltaInfo | n
   return { status: 'ATENÇÃO', descricao: 'Alguns sinais recentes (FC de repouso, HRV ou sono) estão piores do que a sua média dos últimos dias. Considere priorizar recuperação.', cor: '#ff8a5b' };
 }
 
+// #saude-2026-09-04: interpolação Catmull-Rom -> Bezier cúbica, só para
+// desenhar a MESMA série de dados reais como curva suave em vez de linha
+// quebrada -- não altera nenhum valor, é puramente a forma como os pontos
+// já calculados são conectados visualmente (pedido do usuário: gráficos
+// "vivos"/interativos, como um app fitness moderno).
+function smoothPathFromPoints(points: { x: number; y: number }[]): string {
+  if (points.length < 2) return '';
+  if (points.length === 2) return `M ${points[0].x},${points[0].y} L ${points[1].x},${points[1].y}`;
+  let d = `M ${points[0].x},${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
 function MiniSparkline({ points, color = '#ffb000' }: { points: number[]; color?: string }) {
+  const gradientId = useId();
   if (!points || points.length < 2) return null;
   const min = Math.min(...points);
   const max = Math.max(...points, min + 1);
   const largura = 100;
   const altura = 28;
-  const coords = points.map((valor, indice) => {
-    const x = (indice / (points.length - 1)) * largura;
-    const y = altura - ((valor - min) / (max - min || 1)) * (altura - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+  const coords = points.map((valor, indice) => ({
+    x: (indice / (points.length - 1)) * largura,
+    y: altura - ((valor - min) / (max - min || 1)) * (altura - 4) - 2
+  }));
+  const linePath = smoothPathFromPoints(coords);
+  const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(1)},${altura} L ${coords[0].x.toFixed(1)},${altura} Z`;
   return (
     <svg className="health-metric-spark" viewBox={`0 0 ${largura} ${altura}`} preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={coords.join(' ')} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <defs>
+        <linearGradient id={`spark-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.38" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path className="health-spark-area" d={areaPath} fill={`url(#spark-${gradientId})`} stroke="none" />
+      <path className="health-spark-line" d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color }} />
     </svg>
   );
 }
@@ -594,27 +626,39 @@ function UltimoTreinoCard({ workout, onVerDetalhes }: { workout: RawWorkoutSessi
 // há como alinhar amostra a amostra sem inventar dado); é uma reta real
 // (constante) na média real dos demais treinos.
 function RespostaAoTreinoChart({ samples, baselineHR }: { samples: { timestamp: string; bpm: number }[]; baselineHR: number }) {
+  const gradientId = useId();
   const width = 320; const height = 110; const padding = 10;
   const values = samples.map((s) => s.bpm);
   const min = Math.min(...values, baselineHR);
   const max = Math.max(...values, baselineHR);
   const span = Math.max(1, max - min);
-  const segments: string[][] = [[]];
+  const segments: { x: number; y: number }[][] = [[]];
   samples.forEach((sample, index) => {
     const previous = samples[index - 1];
     const gapSeconds = previous ? (new Date(sample.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000 : 0;
     if (previous && (!Number.isFinite(gapSeconds) || gapSeconds <= 0 || gapSeconds > 60)) segments.push([]);
     const x = padding + (index / Math.max(1, samples.length - 1)) * (width - padding * 2);
     const y = height - padding - ((sample.bpm - min) / span) * (height - padding * 2);
-    segments[segments.length - 1].push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    segments[segments.length - 1].push({ x, y });
   });
   const baselineY = height - padding - ((baselineHR - min) / span) * (height - padding * 2);
   return (
     <svg className="health-response-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Curva de frequência cardíaca do treino mais recente comparada à média dos demais treinos">
+      <defs>
+        <linearGradient id={`resposta-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ff515b" stopOpacity="0.32" />
+          <stop offset="100%" stopColor="#ff515b" stopOpacity="0" />
+        </linearGradient>
+      </defs>
       <line x1={padding} y1={baselineY} x2={width - padding} y2={baselineY} strokeDasharray="4 4" />
-      {segments.filter((s) => s.length >= 2).map((segment, index) => (
-        <polyline key={index} points={segment.join(' ')} fill="none" stroke="#ff515b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      ))}
+      {segments.filter((s) => s.length >= 2).map((segment, index) => {
+        const linePath = smoothPathFromPoints(segment);
+        const areaPath = `${linePath} L ${segment[segment.length - 1].x.toFixed(1)},${height - padding} L ${segment[0].x.toFixed(1)},${height - padding} Z`;
+        return <g key={index}>
+          <path className="health-response-area" d={areaPath} fill={`url(#resposta-${gradientId})`} stroke="none" />
+          <path className="health-response-line" d={linePath} fill="none" stroke="#ff515b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        </g>;
+      })}
     </svg>
   );
 }
@@ -733,7 +777,7 @@ function SonoXPerformanceScatter({ pares }: { pares: { sono: number; performance
       {pares.map((p, index) => {
         const x = padding + ((p.sono / 60 - minHoras) / Math.max(1, maxHoras - minHoras)) * (width - padding * 2);
         const y = height - padding - (p.performance / maxPerf) * (height - padding * 2 - 6);
-        return <circle key={index} cx={x} cy={Math.max(padding, y)} r="3" />;
+        return <circle key={index} cx={x} cy={Math.max(padding, y)} r="3.5" />;
       })}
       <text x={padding} y={height - 4} className="health-sleep-scatter-label">{Math.round(minHoras)}h</text>
       <text x={width - padding} y={height - 4} textAnchor="end" className="health-sleep-scatter-label">{Math.round(maxHoras)}h</text>
@@ -976,12 +1020,18 @@ function HealthSummaryContent({ state, summary, loadingSummary, syncDiagnostics,
 
       {activeTab === 'saude' && (
         <>
-          <EstadoDeHojeCard fcRepouso={fcRepouso} hrv={hrv} sono={sono} fcDelta={fcDelta} hrvDelta={hrvDelta} sonoDelta={sonoDelta} ultimaAtualizacao={ultimaAtualizacaoHoje} />
-          <SeuCorpoXSeusTreinosCard activityCount72h={activityCount72h} estadoHoje={estadoHoje} onVerAnalise={() => setActiveTab('recuperacao')} />
-          <UltimoTreinoCard workout={ultimoTreino} onVerDetalhes={() => setActiveTab('atividades')} />
-          <RespostaAoTreinoCard state={state} />
-          <Evolucao30DiasCard state={state} />
-          <SonoXPerformanceCard sonoTrend={sonoTrend} performanceTrend={exercicioTrend} />
+          <div className="health-grid-2col">
+            <EstadoDeHojeCard fcRepouso={fcRepouso} hrv={hrv} sono={sono} fcDelta={fcDelta} hrvDelta={hrvDelta} sonoDelta={sonoDelta} ultimaAtualizacao={ultimaAtualizacaoHoje} />
+            <SeuCorpoXSeusTreinosCard activityCount72h={activityCount72h} estadoHoje={estadoHoje} onVerAnalise={() => setActiveTab('recuperacao')} />
+          </div>
+          <div className="health-grid-2col">
+            <UltimoTreinoCard workout={ultimoTreino} onVerDetalhes={() => setActiveTab('atividades')} />
+            <RespostaAoTreinoCard state={state} />
+          </div>
+          <div className="health-grid-2col">
+            <Evolucao30DiasCard state={state} />
+            <SonoXPerformanceCard sonoTrend={sonoTrend} performanceTrend={exercicioTrend} />
+          </div>
 
           <section id="health-overview" className="health-overview">
             <div className="health-section-line"><div><Activity /> INDICADORES DOS ÚLTIMOS 7 DIAS</div></div>
