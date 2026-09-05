@@ -31,6 +31,7 @@ const AdminGymAudit = lazyNamed(() => import('./pages/AdminGymAudit'), 'AdminGym
 const AdminRankingSimulator = lazyNamed(() => import('./pages/AdminRankingSimulator'), 'AdminRankingSimulator');
 const AdminSecurityAudit = lazyNamed(() => import('./pages/AdminSecurityAudit'), 'AdminSecurityAudit');
 const AdminIGATesteOriginal = lazyNamed(() => import('./pages/AdminIGATesteOriginal'), 'AdminIGATesteOriginal');
+const AdminFlaggedActivities = lazyNamed(() => import('./pages/AdminFlaggedActivities'), 'AdminFlaggedActivities');
 const Performance = lazyNamed(() => import('./pages/Performance'), 'Performance');
 const PowerLift = lazyNamed(() => import('./pages/PowerLift'), 'PowerLift');
 const Health = lazyNamed(() => import('./pages/Health'), 'Health');
@@ -144,6 +145,7 @@ export default function App() {
                 <Route path="/admin/ranking-simulator" element={<AdminGuard><AdminRankingSimulator /></AdminGuard>} />
                 <Route path="/admin/iga-teste-original" element={<AdminGuard><AdminIGATesteOriginal /></AdminGuard>} />
                 <Route path="/admin/security" element={<AdminGuard><AdminSecurityAudit /></AdminGuard>} />
+                <Route path="/admin/flagged-activities" element={<AdminGuard><AdminFlaggedActivities /></AdminGuard>} />
                 <Route path="/admin/store/pricing" element={<AdminGuard><AdminStorePricing /></AdminGuard>} />
                 <Route path="/admin/store/drops" element={<AdminGuard><AdminStoreDrops /></AdminGuard>} />
                 <Route path="/admin/store/orders" element={<AdminGuard><AdminStoreOrders /></AdminGuard>} />

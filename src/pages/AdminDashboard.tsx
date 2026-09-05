@@ -13,6 +13,7 @@ import {
   ChevronRight,
   UserCheck,
   Shield,
+  ShieldAlert,
   CreditCard,
   RefreshCw,
   Sparkles,
@@ -635,6 +636,11 @@ export function AdminDashboard() {
           <ActionButton label="Payouts" icon={<CreditCard size={18} />} onClick={() => navigate('/admin/payouts')} />
           <ActionButton label="Workouts" icon={<Activity size={18} />} onClick={() => navigate('/admin/workouts')} />
           <ActionButton label="Auditar Academias" icon={<MapPin size={18} />} onClick={() => navigate('/admin/gym-audit')} />
+          {/* #249: sem este link nao havia como um admin encontrar a fila de
+              revisao manual (o endpoint list-flagged-activities ja existia,
+              so faltava a tela) -- atividades pendentes ficavam paradas pra
+              sempre. */}
+          <ActionButton label="Fila de Revisão" icon={<ShieldAlert size={18} />} onClick={() => navigate('/admin/flagged-activities')} />
         </section>
 
         {/* Simulador de Atletas Performance */}
