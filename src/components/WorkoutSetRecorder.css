@@ -1,0 +1,26 @@
+.workout-set-heart-note{margin:0 0 16px;color:#aaa79c;font-size:12px;line-height:1.5}
+.workout-set-recorder{margin:18px 0;padding:18px;border:1px solid #5a4823;border-radius:16px;background:#15140f;color:#eee9df}
+.workout-set-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.workout-set-heading small{font-size:10px;letter-spacing:.08em;color:#d4ac52}
+.workout-set-heading h2{font-size:18px;line-height:1.25;margin:5px 0 0;font-weight:700}
+.workout-set-heading>span{font-size:12px;color:#c9bea3;text-align:right;flex:0 0 auto;padding-top:4px}
+.workout-set-recorder p{font-size:13px;line-height:1.5;margin:12px 0;color:#c3bdaf}
+.workout-set-recorder .workout-set-active{color:#f1d68e}
+.workout-set-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.workout-set-fields label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;min-width:0}
+.workout-set-fields label>span{color:#a29b8a;font-weight:400}
+.workout-set-fields input{background:#080807;border:1px solid #5b5340;border-radius:9px;color:#fff;font-size:16px;padding:11px;width:100%;box-sizing:border-box}
+.workout-set-fields input::placeholder{color:#969084;font-size:13px}
+.workout-set-recorder .workout-set-hint{font-size:11px;color:#afa796}
+.workout-set-recorder button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700;line-height:1.3;background:#27251c;border:1px solid #635637;color:#eee4cc;cursor:pointer}
+.workout-set-recorder button.is-primary{background:#e8b838;border-color:#e8b838;color:#191507}
+.workout-set-recorder button:disabled{opacity:.5;cursor:default}
+.workout-set-recorder button:focus-visible,.workout-set-fields input:focus-visible{outline:2px solid #f7cf68;outline-offset:3px}
+.workout-set-buttons{display:flex;gap:10px;flex-wrap:wrap}
+.workout-set-start{width:100%}
+.workout-set-results{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:8px}
+.workout-set-results li{display:flex;flex-wrap:wrap;gap:6px 12px;border-top:1px solid #393325;padding-top:9px;font-size:12px;color:#c3bdaf}
+.workout-set-results b{color:#ebdfc4}
+.workout-set-recorder .workout-set-notice{font-size:12px;color:#dfd5b9}
+.workout-set-recorder .workout-set-error{color:#ffa8a0;font-size:12px}
+@media(max-width:420px){.workout-set-recorder{padding:14px}.workout-set-heading{display:block}.workout-set-heading>span{display:block;text-align:left;margin-top:8px}.workout-set-heading h2{font-size:17px}.workout-set-fields{gap:9px}.workout-set-buttons>button{flex:1 1 130px}}

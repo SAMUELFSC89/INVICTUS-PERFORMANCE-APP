@@ -23,10 +23,9 @@ index 422fd74..60d1ade 100644
      val identifier: String,
      val recordClass: KClass<out Record>,
 diff --git a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
-index fde25d1..0365a3b 100644
 --- a/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
 +++ b/node_modules/capgo-capacitor-health/android/src/main/java/app/capgo/plugin/health/HealthManager.kt
-@@ -3,7 +3,6 @@ package app.capgo.plugin.health
+@@ -3,7 +3,6 @@
  import androidx.health.connect.client.HealthConnectClient
  import androidx.health.connect.client.HealthConnectFeatures
  import androidx.health.connect.client.aggregate.AggregationResult
@@ -34,7 +33,7 @@ index fde25d1..0365a3b 100644
  import androidx.health.connect.client.permission.HealthPermission
  import androidx.health.connect.client.request.AggregateGroupByDurationRequest
  import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
-@@ -55,7 +54,8 @@ import kotlin.collections.buildSet
+@@ -55,7 +54,8 @@
  import kotlin.math.min
  import kotlinx.coroutines.CancellationException
  
@@ -44,7 +43,18 @@ index fde25d1..0365a3b 100644
  class HealthManager {
  
      private val formatter: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
-@@ -780,9 +780,19 @@ private fun createSamplePayload(
+@@ -208,6 +208,10 @@
+             }
+             HealthDataType.HEART_RATE -> readRecords(client, HeartRateRecord::class, startTime, endTime, limit) { record ->
+                 record.samples.forEach { sample ->
++                    // A matching record can extend beyond this query window.
++                    // Filter each point before applying the output limit, so
++                    // subdividing a dense range can retrieve the whole curve.
++                    if (sample.time.isBefore(startTime) || !sample.time.isBefore(endTime)) return@forEach
+                     val payload = createSamplePayload(
+                         dataType,
+                         sample.time,
+@@ -780,9 +784,19 @@
          val dataOrigin = metadata.dataOrigin
          payload.put("sourceId", dataOrigin.packageName)
          payload.put("sourceName", dataOrigin.packageName)
@@ -90,10 +100,9 @@ index e3f241f..3d566c7 100644
      platformId?: string;
      /** For sleep data, indicates the sleep state (e.g., 'asleep', 'awake', 'rem', 'deep', 'light'). */
 diff --git a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift
-index 49fd04f..2addb87 100644
 --- a/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift
 +++ b/node_modules/capgo-capacitor-health/ios/Sources/HealthPlugin/Health.swift
-@@ -1139,10 +1139,25 @@ final class Health {
+@@ -1139,10 +1139,29 @@
      }
      
      private func addSampleMetadata(_ sample: HKSample, to payload: inout [String: Any]) {
@@ -104,6 +113,10 @@ index 49fd04f..2addb87 100644
          payload["sourceId"] = source.bundleIdentifier
          payload["platformId"] = sample.uuid.uuidString
 +        payload["dataOrigin"] = source.bundleIdentifier
++        // Only a positive HealthKit manual-entry marker establishes manual
++        // recording; its absence does not prove an automatic sensor reading.
++        let wasUserEntered = (sample.metadata?[HKMetadataKeyWasUserEntered] as? Bool) == true
++        payload["recordingMethod"] = wasUserEntered ? "manual" : "unknown"
 +        if let version = revision.version { payload["sourceVersion"] = version }
 +        if let productType = revision.productType { payload["sourceProductType"] = productType }
 +        let os = revision.operatingSystemVersion

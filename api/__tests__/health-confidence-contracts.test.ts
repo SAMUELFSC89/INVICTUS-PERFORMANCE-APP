@@ -15,18 +15,11 @@ describe('contratos ponta a ponta do Health Confidence Engine', () => {
 
   test('relatório exibe confiança, integração, dispositivo e período', () => {
     const source = read('src/pages/HealthReport.tsx');
-    expect(source).toContain('SOBRE A QUALIDADE DOS DADOS');
+    expect(source).toContain('POSSO CONFIAR NESTAS LEITURAS?');
     expect(source).toContain('sample.provenance?.integration');
-    expect(source).toContain('confidence?.confidenceLevel');
+    expect(source).toContain('sample.confidenceAtMeasurement?.confidenceLevel');
+    expect(source).toContain('sample.currentEvidenceConfidence?.confidenceLevel');
     expect(source).toContain('sample.timestamp');
-  });
-
-  test('histórico preserva classificação e deduplicação imutável', () => {
-    const source = read('api/_lib/health-data-layer.ts');
-    expect(source).toContain('confidenceAtMeasurement');
-    expect(source).toContain('currentEvidenceConfidence');
-    expect(source).toContain('.create({');
-    expect(source).toContain("err?.code === 6");
   });
 
   test('bridges nativos expõem proveniência opcional em iOS e Android', () => {

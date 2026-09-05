@@ -60,11 +60,13 @@ export class HealthDataCollector {
 
     try {
       const manager = WearableManager.getInstance();
-      const providers = manager.getProviders();
+      const userId = manager.getAuthenticatedUserId();
+      const providers = await manager.getConnectedNativeProviders();
 
       for (const provider of providers) {
         if (provider.id === 'apple_health' && provider instanceof AppleHealthProvider) {
           const res = await this.withTimeout(provider.querySessionMetrics(startDate, endDate), 1200);
+          if (!manager.isProviderEnabledForUser(provider.id, userId)) break;
           if (res && (res.avgHeartRate || res.steps || res.calories)) {
             collected = {
               avgHeartRate: res.avgHeartRate,
@@ -80,6 +82,7 @@ export class HealthDataCollector {
           }
         } else if (provider.id === 'health_connect' && provider instanceof HealthConnectProvider) {
           const res = await this.withTimeout(provider.querySessionMetrics(startDate, endDate), 1200);
+          if (!manager.isProviderEnabledForUser(provider.id, userId)) break;
           if (res && (res.avgHeartRate || res.steps || res.calories)) {
             collected = {
               avgHeartRate: res.avgHeartRate,

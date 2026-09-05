@@ -14,6 +14,7 @@ import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_M
 import { resolverPerfilValidacao, resolveModality } from '../../_lib/modality-config.js';
 import { GpsEngine } from '../../_lib/gps-engine.js';
 import { db } from '../../_lib/common.js';
+import { sanitizeWorkoutHealthRecord } from '../../_lib/workout-health-record.js';
 
 async function hasActiveChampionshipEnrollment(userId: string): Promise<boolean> {
   if (!db) return false;
@@ -146,6 +147,11 @@ export class ValidateActivityService {
     }
 
     const rawActivity: any = request.activityData || {};
+    // Health observations are sanitized separately and never enter competitive evidence.
+    const workoutHealth = sanitizeWorkoutHealthRecord(rawActivity.healthSession);
+    // Keep the private time series out of competition audit payloads and their
+    // document size limits. The surrounding workout is its only persistence.
+    const { healthSession: _privateHealthSession, ...activityDataForAudit } = rawActivity;
     const durationValue = rawActivity.duration ?? rawActivity.durationMins;
     const durationForMetrics = Number(durationValue) || 0;
 
@@ -156,7 +162,7 @@ export class ValidateActivityService {
         traceId,
         userId: request.userId,
         action: 'VALIDATE_ACTIVITY_FRAUD_DETECTED',
-        details: { activityData: request.activityData, reason: fraudCheck.reason },
+        details: { activityData: activityDataForAudit, reason: fraudCheck.reason },
         result: 'FLAGGED'
       });
       throw new AppError(`Atividade recusada: ${fraudCheck.reason}.`, 422);
@@ -271,6 +277,7 @@ export class ValidateActivityService {
         let pendingActivityTimestamp = request.activityData.endTime || new Date().toISOString();
         try {
           const pendingActivity = await this.activityRepository.create({
+            ...workoutHealth,
             userId: request.userId,
             type: request.activityData.type,
             muscleGroup: rawActivity.muscleGroup,
@@ -301,12 +308,13 @@ export class ValidateActivityService {
           traceId,
           userId: request.userId,
           action: 'VALIDATE_ACTIVITY_GEOFENCE_PENDING_REVIEW',
-          details: { activityData: request.activityData, reason: geofenceResult.reason, status: geofenceResult.status, activityId: pendingActivityId },
+          details: { activityData: activityDataForAudit, reason: geofenceResult.reason, status: geofenceResult.status, activityId: pendingActivityId },
           result: 'FLAGGED'
         });
 
         return {
           success: true,
+          ...workoutHealth,
           pending: true,
           status: 'pending_review',
           activityId: pendingActivityId,
@@ -318,6 +326,7 @@ export class ValidateActivityService {
           canRetry: true,
           traceId,
           workout: pendingActivityId ? {
+            ...workoutHealth,
             id: pendingActivityId,
             points: 0,
             rankingPointsEarned: 0,
@@ -459,6 +468,7 @@ export class ValidateActivityService {
       let pendingActivityTimestamp = request.activityData.endTime || new Date().toISOString();
       try {
         const pendingActivity = await this.activityRepository.create({
+          ...workoutHealth,
           userId: request.userId,
           type: request.activityData.type,
           muscleGroup: rawActivity.muscleGroup,
@@ -523,12 +533,13 @@ export class ValidateActivityService {
         traceId,
         userId: request.userId,
         action: 'VALIDATE_ACTIVITY_SECURITY_PIPELINE_PENDING_REVIEW',
-        details: { activityData: request.activityData, reason: securityReason, internalReason: securityInternalReason, activityId: pendingActivityId },
+        details: { activityData: activityDataForAudit, reason: securityReason, internalReason: securityInternalReason, activityId: pendingActivityId },
         result: 'FLAGGED'
       });
 
       return {
         success: true,
+        ...workoutHealth,
         pending: true,
         status: 'pending_review',
         activityId: pendingActivityId,
@@ -540,6 +551,7 @@ export class ValidateActivityService {
         canRetry: securityCanRetry,
         traceId,
         workout: pendingActivityId ? {
+          ...workoutHealth,
           id: pendingActivityId,
           points: 0,
           rankingPointsEarned: 0,
@@ -587,6 +599,7 @@ export class ValidateActivityService {
     // dados eram usados so para analise antifraude e descartados antes de chegar
     // no documento salvo, entao o historico nunca tinha nada alem de duracao/distancia.
     const savedActivity = await this.activityRepository.create({
+      ...workoutHealth,
       userId: request.userId,
       type: request.activityData.type,
       muscleGroup: rawActivity.muscleGroup,
@@ -657,6 +670,7 @@ export class ValidateActivityService {
       })]);
       return {
         success: true,
+        ...workoutHealth,
         activityId: savedActivity.id || '',
         scoreAwarded: 0,
         rankingPointsEarned: 0,
@@ -664,6 +678,7 @@ export class ValidateActivityService {
         userMessage: message,
         traceId,
         workout: {
+          ...workoutHealth,
           id: savedActivity.id,
           points: 0,
           rankingPointsEarned: 0,
@@ -756,6 +771,7 @@ export class ValidateActivityService {
 
     return {
       success: true,
+      ...workoutHealth,
       activityId: savedActivity.id || '',
       scoreAwarded,
       rankingPointsEarned: weeklyIgaScore,
@@ -765,6 +781,7 @@ export class ValidateActivityService {
       userMessage: successUserMessage,
       traceId,
       workout: {
+        ...workoutHealth,
         id: savedActivity.id,
         points: scoreAwarded,
         rankingPointsEarned: weeklyIgaScore,

@@ -2,6 +2,8 @@ export interface ValidateActivityRequest {
   userId: string;
   activityData: {
     type: string;
+    /** Private observations; sanitized independently from competitive evidence. */
+    healthSession?: unknown;
     duration: number;
     intensity: 'low' | 'moderate' | 'high';
     startTime: Date | string;
