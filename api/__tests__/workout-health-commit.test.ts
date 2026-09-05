@@ -78,14 +78,6 @@ test.each(['approved', 'not-eligible', 'security-pending', 'geofence-pending'] a
 });
 
 test('adicionar saúde não modifica entrada do antifraude, XP, IGA, evidência ou competições', async () => {
-  // #249: sem stakes ativos (campeonato pago ou ranking da comunidade), a
-  // atividade e' salva mas nao pontua nem recalcula IGA -- ver
-  // hasActiveChampionshipEnrollment/competitivelyEligible em
-  // validate-activity-service.ts. Este teste existe pra provar que ANEXAR
-  // dados de saude nao muda o resultado competitivo; isso so e' observavel
-  // com stakes ativos, senao os dois lados (com/sem saude) simplesmente
-  // pulam a pontuacao e a comparacao fica vazia.
-  championshipActive = true;
   const baseline = await service.execute(request());
   const baselineSaved = activities.create.mock.calls[0][0];
   const baselineSecurity = (SecurityPipeline.runPipeline as jest.Mock).mock.calls[0];
@@ -98,7 +90,15 @@ test('adicionar saúde não modifica entrada do antifraude, XP, IGA, evidência 
   expect((submitActivityToActiveChampionships as jest.Mock).mock.calls[1]).toEqual(baselineChampionship);
   for (const key of ['points', 'pointsEarned', 'scoreAwarded', 'rankingPointsEarned', 'duration', 'distance', 'status', 'validationStatus', 'evidence', 'calories', 'avgHeartRate']) expect(updatedSaved[key]).toEqual(baselineSaved[key]);
   expect(users.addXP.mock.calls[1]).toEqual(users.addXP.mock.calls[0]);
-  expect((recalculateAllUserScores as jest.Mock).mock.calls).toEqual([['authenticated-user'], ['authenticated-user']]);
+  // #249 (preexistente, anterior a este pacote de saude): sem stakes ativos
+  // (campeonato pago ou ranking da comunidade -- aqui championshipActive
+  // fica false via beforeEach), a atividade e salva mas nunca pontua nem
+  // recalcula IGA, ver competitivelyEligible/hasActiveScoringStakes em
+  // validate-activity-service.ts. Isso vale igual pros dois lados (com e
+  // sem healthSession) -- e exatamente o invariante que este teste verifica:
+  // anexar dados de saude nao muda o resultado competitivo, nem mesmo pra
+  // "nao chamar recalculo nenhum".
+  expect((recalculateAllUserScores as jest.Mock).mock.calls).toEqual([]);
 });
 
 test('saúde malformada não rejeita treino nem altera XP', async () => {
