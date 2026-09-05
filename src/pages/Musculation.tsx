@@ -20,6 +20,18 @@ type View = 'hub' | 'manual' | 'ai' | 'ai-processing' | 'ai-success' | 'plan' | 
 type ManualDraft = WorkoutPlanDraft & { step: number; selectedWorkout: number };
 type AiDraft = WorkoutPlanAnswers & { step: number };
 
+// #243: "o usuario precisa escolher um treino por no minimo 30 dias" -- um
+// plano so pode ser trocado de verdade (adaptacao/evolucao consistente)
+// depois desse periodo minimo. Nao existe campo novo no backend/tipo
+// WorkoutPlan: o proprio createdAt (ja gravado em todo plano salvo, local ou
+// remoto) e usado pra calcular a idade do plano ativo.
+const MIN_PLAN_COMMITMENT_DAYS = 30;
+function daysSince(iso: string): number {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return MIN_PLAN_COMMITMENT_DAYS; // data invalida nunca trava o usuario
+  return Math.floor((Date.now() - then) / 86400000);
+}
+
 const weekdays = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 const equipmentOptions = [
   ['barra_anilhas', 'BARRA E ANILHAS'], ['halteres', 'HALTERES'], ['maquinas', 'APARELHOS DE MUSCULAÇÃO'],
@@ -112,6 +124,10 @@ export function Musculation() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  // #243: quando o plano ativo ainda esta dentro do compromisso minimo de 30
+  // dias, "GERAR COM IA"/"CRIAR MANUALMENTE" nao trocam de tela direto -- primeiro
+  // avisam que ha um plano em andamento e pedem confirmacao explicita.
+  const [pendingNewPlanFlow, setPendingNewPlanFlow] = useState<'manual' | 'ai' | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -131,6 +147,20 @@ export function Musculation() {
   }, []);
 
   const activePlan = selectedPlan || plans.find(plan => plan.status === 'active') || null;
+  const activePlanAgeDays = activePlan ? daysSince(activePlan.createdAt) : null;
+  const activePlanLocked = activePlanAgeDays !== null && activePlanAgeDays < MIN_PLAN_COMMITMENT_DAYS;
+  const activePlanDaysRemaining = activePlanLocked ? MIN_PLAN_COMMITMENT_DAYS - (activePlanAgeDays as number) : 0;
+  const startNewPlanFlow = (flow: 'manual' | 'ai') => {
+    if (activePlanLocked) { setPendingNewPlanFlow(flow); return; }
+    if (flow === 'manual') { setManual(initialManual()); setView('manual'); }
+    else { setAi(initialAi()); setView('ai'); }
+  };
+  const confirmNewPlanFlow = () => {
+    const flow = pendingNewPlanFlow;
+    setPendingNewPlanFlow(null);
+    if (flow === 'manual') { setManual(initialManual()); setView('manual'); }
+    else if (flow === 'ai') { setAi(initialAi()); setView('ai'); }
+  };
   const todayWorkout = useMemo(() => {
     if (!activePlan) return null;
     const today = new Date().getDay();
@@ -190,7 +220,7 @@ export function Musculation() {
   };
 
   const content = <main className="mus-screen"><div className="mus-page">
-    {view === 'hub' ? <Hub userName={user?.displayName || user?.name || 'Atleta'} plan={activePlan} today={todayWorkout} loading={loading} onManual={() => { setManual(initialManual()); setView('manual'); }} onAi={() => { setAi(initialAi()); setView('ai'); }} onPlan={() => setView('plan')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} onStart={() => activePlan && todayWorkout && startWorkout(activePlan, todayWorkout)} /> : null}
+    {view === 'hub' ? <Hub userName={user?.displayName || user?.name || 'Atleta'} plan={activePlan} today={todayWorkout} loading={loading} planLocked={activePlanLocked} planDaysRemaining={activePlanDaysRemaining} onManual={() => startNewPlanFlow('manual')} onAi={() => startNewPlanFlow('ai')} onPlan={() => setView('plan')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} onStart={() => activePlan && todayWorkout && startWorkout(activePlan, todayWorkout)} /> : null}
     {view === 'manual' ? <ManualFlow draft={manual} setDraft={setManual} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} filteredExercises={filteredExercises} addExercise={addExercise} updateExercise={updateExercise} updateWorkout={updateManualWorkout} onBack={() => manual.step > 1 ? setManual(current => ({ ...current, step: current.step - 1 })) : setView('hub')} onSave={saveManual} loading={loading} /> : null}
     {view === 'ai' ? <AiFlow draft={ai} setDraft={setAi} onBack={() => ai.step > 1 ? setAi(current => ({ ...current, step: current.step - 1 })) : setView('hub')} onGenerate={generateAi} /> : null}
     {view === 'ai-processing' ? <Processing answers={ai} /> : null}
@@ -199,37 +229,54 @@ export function Musculation() {
     {view === 'workout' && activePlan && selectedWorkout ? <WorkoutView plan={activePlan} workout={selectedWorkout} onBack={() => setView('plan')} onStart={() => startWorkout(activePlan, selectedWorkout)} loading={loading} /> : null}
     {error ? <div className="mus-error" role="alert">{error}<button onClick={() => setError(null)}>Fechar</button></div> : null}
     {showInfo ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-info-title" onClick={() => setShowInfo(false)}><section onClick={event => event.stopPropagation()}><ShieldCheck /><h2 id="mus-info-title">COMO FUNCIONA</h2><p>Crie ou escolha um plano, inicie o treino do dia e registre a sessão completa. Somente atividades concluídas e homologadas alimentam sua evolução, seus desafios e o ranking.</p><button onClick={() => setShowInfo(false)}>ENTENDI</button></section></div> : null}
+    {pendingNewPlanFlow ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-lock-title" onClick={() => setPendingNewPlanFlow(null)}><section onClick={event => event.stopPropagation()}><CalendarDays /><h2 id="mus-lock-title">TROCAR DE TREINO?</h2><p>Seu plano atual está ativo há {(activePlanAgeDays ?? 0)} {(activePlanAgeDays ?? 0) === 1 ? 'dia' : 'dias'} -- faltam {activePlanDaysRemaining} para completar o período mínimo recomendado de {MIN_PLAN_COMMITMENT_DAYS} dias, necessário para o corpo se adaptar e você ver evolução real. Criar um novo treino agora vai substituir o atual. Deseja continuar mesmo assim?</p><button onClick={() => setPendingNewPlanFlow(null)}>MANTER TREINO ATUAL</button><button className="is-back" onClick={confirmNewPlanFlow}>CONTINUAR MESMO ASSIM</button></section></div> : null}
   </div><Footer navigate={navigate} /></main>;
   return createPortal(content, document.body);
 }
 
-function Hub({ userName, plan, today, loading, onManual, onAi, onPlan, onWorkout, onStart }: any) {
+function Hub({ userName, plan, today, loading, planLocked, planDaysRemaining, onManual, onAi, onPlan, onWorkout, onStart }: any) {
   return <><Header /><section className="mus-hero"><div><h1>MUSCULAÇÃO</h1><p>Organize seus treinos, acompanhe sua evolução e supere seus limites.</p></div></section>
     {plan && today ? <section><h2 className="mus-section-title"><CalendarDays /> TREINO DE HOJE</h2><article className="mus-today-card">
       {today.exercises[0] ? <OfficialExerciseMedia exercise={OFFICIAL_EXERCISE_BY_ID.get(today.exercises[0].exerciseId)} label={today.exercises[0].exerciseId} className="mus-today-media" /> : null}
       <div><h3>{today.focus || today.name}</h3><span>{today.name}</span><p><Dumbbell /> {today.exercises.length} exercícios</p><p><Clock3 /> ~{plan.durationMinutes} min</p><button onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></div>
     </article></section> : <section className="mus-empty-plan"><h2>COMECE SEU PLANO</h2><p>{userName.split(' ')[0]}, escolha como deseja montar seus treinos.</p></section>}
     {plan ? <section><div className="mus-title-line"><h2>MEUS TREINOS</h2><button onClick={onPlan}>VER TODOS <ChevronRight /></button></div><div className="mus-workout-list">{plan.workouts.map((workout: PlannedWorkout, index: number) => <button key={workout.id} onClick={() => onWorkout(workout)}><i>{String.fromCharCode(65 + index)}</i><span><b>{workout.name}</b><small>{workout.focus}</small></span><em>{workout.exercises.length} exercícios</em><ChevronRight /></button>)}</div></section> : null}
-    <section><h2 className="mus-section-title">CRIAR NOVO TREINO</h2><div className="mus-create-grid"><article><Brain /><h3>GERAR COM IA</h3><p>Responda algumas perguntas e receba um treino completo feito para você.</p><button onClick={onAi}>GERAR MEU TREINO <ChevronRight /></button></article><article><Pencil /><h3>CRIAR MANUALMENTE</h3><p>Monte seu treino escolhendo exercícios, séries, repetições, cargas e descansos.</p><button onClick={onManual}>MONTAR TREINO <ChevronRight /></button></article></div></section>
+    <section><h2 className="mus-section-title">CRIAR NOVO TREINO</h2>
+      {/* #243: aviso transparente de que ha um compromisso minimo em andamento --
+          nao impede o toque (a confirmacao real acontece no overlay), so avisa
+          antes de a pessoa nem cogitar trocar de treino. */}
+      {planLocked ? <p className="mus-plan-lock-note"><CalendarDays size={14} /> Seu treino atual ainda está no período mínimo de {MIN_PLAN_COMMITMENT_DAYS} dias (faltam {planDaysRemaining} {planDaysRemaining === 1 ? 'dia' : 'dias'}). Você pode criar um novo mesmo assim, mas trocar cedo demais atrapalha a adaptação do corpo.</p> : null}
+      <div className="mus-create-grid"><article><Brain /><h3>GERAR COM IA</h3><p>Responda algumas perguntas e receba um treino completo feito para você.</p><button onClick={onAi}>GERAR MEU TREINO <ChevronRight /></button></article><article><Pencil /><h3>CRIAR MANUALMENTE</h3><p>Monte seu treino escolhendo exercícios, séries, repetições, cargas e descansos.</p><button onClick={onManual}>MONTAR TREINO <ChevronRight /></button></article></div></section>
   </>;
 }
 
 function ManualFlow({ draft, setDraft, query, setQuery, filter, setFilter, filteredExercises, addExercise, updateExercise, updateWorkout, onBack, onSave, loading }: any) {
   const workout = draft.workouts[draft.selectedWorkout];
   const next = () => setDraft((current: ManualDraft) => ({ ...current, step: Math.min(5, current.step + 1) }));
+  // #243: confirmacao explicita do compromisso minimo de 30 dias, exigida no
+  // ultimo passo antes de salvar (nao persiste no draft -- e so um gate de UI
+  // desta tela, resetado a cada visita ao passo 5).
+  const [confirmCommitment, setConfirmCommitment] = useState(false);
   return <><Header onBack={onBack} /><Steps current={draft.step} mode="manual" /><section className="mus-flow">
     {draft.step === 1 ? <><h1>CRIAR MANUALMENTE</h1><p>Monte seu treino escolhendo exercícios, séries, repetições, cargas e descansos.</p><h2>1. DADOS DO TREINO</h2><div className="mus-form-card"><label>NOME DO PLANO<input maxLength={60} value={draft.name} placeholder="Ex.: Meu plano de hipertrofia" onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><label>DESCRIÇÃO (OPCIONAL)<textarea maxLength={240} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label></div><h2>2. CONFIGURAÇÕES DO TREINO</h2><div className="mus-setting-grid"><label>DIAS POR SEMANA<div>{[1,2,3,4,5,6].map(n => <button key={n} className={draft.daysPerWeek === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, daysPerWeek: n, workouts: Array.from({length:n}, (_,i) => draft.workouts[i] || emptyWorkout(i)) })}>{n}</button>)}</div></label><label>TEMPO ESTIMADO<div>{[30,45,60,90].map(n => <button key={n} className={draft.durationMinutes === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, durationMinutes: n })}>{n}{n === 90 ? '+' : ''} min</button>)}</div></label><label>NÍVEL DO TREINO<select value={draft.experienceLevel || ''} onChange={event => setDraft({ ...draft, experienceLevel: event.target.value })}><option value="">Selecione</option><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select></label><label>OBJETIVO PRINCIPAL<select value={draft.objective} onChange={event => setDraft({ ...draft, objective: event.target.value })}><option>Hipertrofia</option><option>Força</option><option>Condicionamento</option><option>Saúde e qualidade de vida</option></select></label></div></> : null}
     {draft.step === 2 ? <><h1>2. DIVISÃO SEMANAL</h1><p>Defina quantos treinos e como eles serão distribuídos na semana.</p><div className="mus-form-card"><h3>SELECIONE OS DIAS DE CADA TREINO</h3>{draft.workouts.map((item: PlannedWorkout, index: number) => <article className="mus-split-row" key={item.id}><i>{index + 1}</i><input value={item.name} onChange={event => updateWorkout(index, { name: event.target.value })} /><input placeholder="Grupo muscular" value={item.focus} onChange={event => updateWorkout(index, { focus: event.target.value })} /><div>{weekdays.map((day, dayIndex) => <button key={day} className={item.weekdays.includes(dayIndex) ? 'is-selected' : ''} onClick={() => updateWorkout(index, { weekdays: item.weekdays.includes(dayIndex) ? item.weekdays.filter((n:number) => n !== dayIndex) : [...item.weekdays, dayIndex] })}>{day}</button>)}</div></article>)}</div></> : null}
     {draft.step === 3 ? <><h1>3. EXERCÍCIOS</h1><p>Adicione os exercícios e configure séries, repetições e descanso.</p><div className="mus-workout-tabs">{draft.workouts.map((item: PlannedWorkout, index: number) => <button key={item.id} className={draft.selectedWorkout === index ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, selectedWorkout: index })}>{item.name}</button>)}</div><div className="mus-library"><div className="mus-search"><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar exercício na biblioteca" /><ListFilter /></div><div className="mus-filters">{[['todos','Todos'],...Object.entries(OFFICIAL_MUSCLE_GROUP_LABELS),['biceps','Bíceps'],['triceps','Tríceps']].map(([item,label]) => <button key={item} className={filter === item ? 'is-selected' : ''} onClick={() => setFilter(item)}>{label}</button>)}</div>{filteredExercises.map((exercise: any) => <ExerciseRow key={exercise.id} exerciseId={exercise.id} onAdd={() => addExercise(exercise.id)} />)}</div><h2>EXERCÍCIOS ADICIONADOS</h2><div className="mus-configured">{workout.exercises.map((exercise: PlannedExercise, index: number) => <article key={exercise.exerciseId}><ExerciseRow exerciseId={exercise.exerciseId} /><label>Séries<input type="number" value={exercise.sets} onChange={event => updateExercise(index, { sets: Number(event.target.value) })} /></label><label>Reps mín.<input type="number" value={exercise.repsMin} onChange={event => updateExercise(index, { repsMin: Number(event.target.value) })} /></label><label>Reps máx.<input type="number" value={exercise.repsMax} onChange={event => updateExercise(index, { repsMax: Number(event.target.value) })} /></label><label>Descanso<input type="number" value={exercise.restSeconds} onChange={event => updateExercise(index, { restSeconds: Number(event.target.value) })} /></label><label>Carga opcional<input type="number" value={exercise.initialLoadKg ?? ''} onChange={event => updateExercise(index, { initialLoadKg: event.target.value === '' ? undefined : Number(event.target.value) })} /></label></article>)}</div></> : null}
     {draft.step === 4 ? <><h1>4. REVISÃO</h1><p>Confira a estrutura antes de salvar.</p>{draft.workouts.map((item: PlannedWorkout, index: number) => <article className="mus-review-card" key={item.id}><i>{String.fromCharCode(65 + index)}</i><div><h3>{item.name}</h3><p>{item.focus || 'Foco não informado'}</p><span>{item.exercises.length} exercícios · {item.exercises.reduce((sum:number, exercise:PlannedExercise) => sum + exercise.sets, 0)} séries</span></div><button onClick={() => setDraft({ ...draft, selectedWorkout:index, step:3 })}><Pencil /></button></article>)}</> : null}
-    {draft.step === 5 ? <><h1>5. SALVAR TREINO</h1><p>Finalize seu treino e comece a evoluir.</p><div className="mus-final-data"><h2>DADOS FINAIS</h2><p><Dumbbell /><span>Nome do treino<b>{draft.name || 'Meu plano'}</b></span></p><p><CalendarDays /><span>Divisão<b>{draft.daysPerWeek} treinos por semana</b></span></p><p><Target /><span>Objetivo principal<b>{draft.objective}</b></span></p><p><Clock3 /><span>Tempo estimado<b>~{draft.durationMinutes} min</b></span></p></div><div className="mus-tip"><ShieldCheck /><span><b>DICA INVICTUS</b>Registre suas cargas e evolua a cada sessão.</span></div></> : null}
-    <div className="mus-flow-actions">{draft.step > 1 ? <button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button> : null}{draft.step < 5 ? <button className="is-primary" onClick={next} disabled={draft.step === 1 && !draft.name.trim()}>CONTINUAR <ArrowRight /></button> : <button className="is-primary" onClick={onSave} disabled={loading}>{loading ? 'SALVANDO…' : 'SALVAR E IR PARA MEUS TREINOS'} <Check /></button>}</div>
+    {draft.step === 5 ? <><h1>5. SALVAR TREINO</h1><p>Finalize seu treino e comece a evoluir.</p><div className="mus-final-data"><h2>DADOS FINAIS</h2><p><Dumbbell /><span>Nome do treino<b>{draft.name || 'Meu plano'}</b></span></p><p><CalendarDays /><span>Divisão<b>{draft.daysPerWeek} treinos por semana</b></span></p><p><Target /><span>Objetivo principal<b>{draft.objective}</b></span></p><p><Clock3 /><span>Tempo estimado<b>~{draft.durationMinutes} min</b></span></p></div><div className="mus-tip"><ShieldCheck /><span><b>DICA INVICTUS</b>Registre suas cargas e evolua a cada sessão.</span></div>
+      {/* #243: confirmacao obrigatoria do compromisso minimo antes de habilitar
+          o botao de salvar -- ver AiFlow para o mesmo padrao no fluxo de IA. */}
+      <label className="mus-commitment-check"><input type="checkbox" checked={confirmCommitment} onChange={event => setConfirmCommitment(event.target.checked)} /><span>Entendo que, ao salvar, este treino ficará ativo por no mínimo {MIN_PLAN_COMMITMENT_DAYS} dias -- o tempo mínimo pro corpo se adaptar e a evolução aparecer de verdade.</span></label>
+    </> : null}
+    <div className="mus-flow-actions">{draft.step > 1 ? <button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button> : null}{draft.step < 5 ? <button className="is-primary" onClick={next} disabled={draft.step === 1 && !draft.name.trim()}>CONTINUAR <ArrowRight /></button> : <button className="is-primary" onClick={onSave} disabled={loading || !confirmCommitment}>{loading ? 'SALVANDO…' : 'SALVAR E IR PARA MEUS TREINOS'} <Check /></button>}</div>
   </section></>;
 }
 
 function AiFlow({ draft, setDraft, onBack, onGenerate }: any) {
   const selectArray = (key: keyof AiDraft, value: string, max = 99) => setDraft((current: AiDraft) => { const list = (current[key] as string[]) || []; return { ...current, [key]: list.includes(value) ? list.filter(item => item !== value) : list.length < max ? [...list, value] : list }; });
   const equipmentExerciseCount = availableAiExerciseCount(draft.equipment);
+  // #243: mesmo gate de confirmacao do ManualFlow, aplicado ao ultimo passo
+  // antes de gerar (que aqui tambem ja salva o plano, ver generateAi).
+  const [confirmCommitment, setConfirmCommitment] = useState(false);
   const canContinue = draft.step === 1
     ? Boolean(draft.primaryGoal)
     : draft.step === 2
@@ -238,17 +285,24 @@ function AiFlow({ draft, setDraft, onBack, onGenerate }: any) {
         ? Boolean(draft.daysPerWeek && draft.durationMinutes && draft.preferredPeriod)
         : draft.step === 4
           ? equipmentExerciseCount >= 3
-          : Boolean(draft.preferredTraining && draft.preferredSplit);
+          : Boolean(draft.preferredTraining && draft.preferredSplit && confirmCommitment);
   const requirement = draft.step === 4 && draft.equipment.length > 0 && equipmentExerciseCount < 3
     ? 'Selecione uma combinação que ofereça pelo menos 3 exercícios oficiais, como banco + halteres, aparelhos ou barra + banco.'
-    : 'Preencha as opções obrigatórias desta etapa para continuar.';
+    : draft.step === 5 && Boolean(draft.preferredTraining && draft.preferredSplit) && !confirmCommitment
+      ? `Confirme que entendeu o compromisso mínimo de ${MIN_PLAN_COMMITMENT_DAYS} dias para gerar seu plano.`
+      : 'Preencha as opções obrigatórias desta etapa para continuar.';
   const next = () => draft.step === 5 ? onGenerate() : setDraft((current: AiDraft) => ({ ...current, step: current.step + 1 }));
   return <><Header onBack={onBack} /><Steps current={draft.step} mode="ai" /><section className="mus-flow mus-ai-flow">
     {draft.step === 1 ? <><h1>CRIAR COM INVICTUS IA</h1><p>Responda algumas perguntas para que a IA monte o treino ideal para você.</p><h2>1. QUAL É O SEU PRINCIPAL OBJETIVO?</h2><div className="mus-choice-grid">{[['massa','GANHAR MASSA MUSCULAR'],['forca','GANHAR FORÇA'],['gordura','REDUZIR GORDURA CORPORAL'],['condicionamento','MELHORAR CONDICIONAMENTO'],['definicao','MELHORAR DEFINIÇÃO MUSCULAR'],['retorno','RETOMAR OS TREINOS'],['saude','SAÚDE E QUALIDADE DE VIDA']].map(([value,label]) => <Choice key={value} selected={draft.primaryGoal === value} onClick={() => setDraft({...draft,primaryGoal:value})} icon={<Target />} title={label} />)}</div><h2>OBJETIVOS SECUNDÁRIOS (OPCIONAL)</h2><div className="mus-check-grid">{['Aumentar força','Melhorar resistência','Ganhar mobilidade','Melhorar postura'].map(item => <Choice key={item} selected={draft.secondaryGoals.includes(item)} onClick={() => selectArray('secondaryGoals',item,3)} title={item} />)}</div></> : null}
     {draft.step === 2 ? <><h1>2. QUAL É A SUA EXPERIÊNCIA?</h1><p>Seu nível define volume, intensidade e complexidade dos movimentos.</p><div className="mus-choice-grid is-three">{[['iniciante','INICIANTE','Nunca treinei ou estou começando'],['intermediario','INTERMEDIÁRIO','Treino com consistência'],['avancado','AVANÇADO','Tenho ampla experiência']].map(([value,title,detail]) => <Choice key={value} selected={draft.experienceLevel === value} onClick={() => setDraft({...draft,experienceLevel:value})} icon={<Dumbbell />} title={title} detail={detail} />)}</div><h2>TEMPO DE EXPERIÊNCIA</h2><div className="mus-choice-grid is-four">{['Menos de 6 meses','6 a 12 meses','1 a 3 anos','Mais de 3 anos'].map(item => <Choice key={item} selected={draft.experienceTime === item} onClick={() => setDraft({...draft,experienceTime:item})} title={item} />)}</div></> : null}
     {draft.step === 3 ? <><h1>3. QUAL É A SUA ROTINA ATUAL?</h1><p>Isso ajuda a IA a montar um plano realista para o seu dia a dia.</p><h2>QUANTOS DIAS POR SEMANA VOCÊ TREINA?</h2><div className="mus-choice-grid is-seven">{[1,2,3,4,5,6,7].map(n => <Choice key={n} selected={draft.daysPerWeek === n} onClick={() => setDraft({...draft,daysPerWeek:n})} title={`${n} ${n === 1 ? 'dia' : 'dias'}`} />)}</div><h2>QUANTO TEMPO POR TREINO?</h2><div className="mus-choice-grid is-four">{[[45,'Até 45 minutos'],[60,'45 a 60 minutos'],[90,'60 a 90 minutos'],[120,'Mais de 90 minutos']].map(([n,label]) => <Choice key={String(n)} selected={draft.durationMinutes === n} onClick={() => setDraft({...draft,durationMinutes:n})} title={String(label)} />)}</div><h2>HORÁRIO PREFERIDO</h2><div className="mus-choice-grid is-three">{['Manhã','Tarde','Noite'].map(item => <Choice key={item} selected={draft.preferredPeriod === item} onClick={() => setDraft({...draft,preferredPeriod:item})} icon={<Clock3 />} title={item} />)}</div></> : null}
     {draft.step === 4 ? <><h1>4. QUAIS EQUIPAMENTOS VOCÊ TEM ACESSO?</h1><p>A IA limitará o plano aos equipamentos que você selecionar.</p><div className="mus-choice-grid is-four">{equipmentOptions.map(([value,label]) => <Choice key={value} selected={draft.equipment.includes(value)} onClick={() => selectArray('equipment',value)} icon={<Dumbbell />} title={label} />)}</div><h2>ACESSÓRIOS (OPCIONAL)</h2><div className="mus-check-grid">{['Cinto','Munhequeira','Joelheira','Straps'].map(item => <Choice key={item} selected={draft.accessories.includes(item)} onClick={() => selectArray('accessories',item)} title={item} />)}</div></> : null}
-    {draft.step === 5 ? <><h1>5. QUAIS SÃO AS SUAS PREFERÊNCIAS?</h1><p>Esses detalhes ajudam a IA a personalizar ainda mais seu plano.</p><h2>TIPO DE TREINO PREFERIDO</h2><div className="mus-choice-grid is-three">{[['forca','TREINO DE FORÇA'],['funcional','TREINO FUNCIONAL'],['cardio','CONDICIONAMENTO E CARDIO']].map(([value,label]) => <Choice key={value} selected={draft.preferredTraining === value} onClick={() => setDraft({...draft,preferredTraining:value})} icon={<Dumbbell />} title={label} />)}</div><h2>DIVISÃO PREFERIDA</h2><div className="mus-choice-grid is-three">{[['Full body','Treina o corpo inteiro em cada sessão — bom pra quem tem poucos dias livres na semana.'],['Upper / Lower','Alterna treinos de membros superiores e inferiores em dias diferentes.'],['ABC (3x por semana)','Divide os grupos musculares em 3 treinos (A, B, C) repetidos ao longo da semana.'],['Bro split','Um grupo muscular principal por dia (peito, costas, pernas…), com mais volume por músculo.'],['PPL','Push, Pull, Legs — separa por empurrar, puxar e pernas, podendo repetir o ciclo na semana.'],['Outro','Sem preferência definida — a IA escolhe a divisão com base nas suas outras respostas.']].map(([item,detail]) => <Choice key={item} selected={draft.preferredSplit === item} onClick={() => setDraft({...draft,preferredSplit:item})} title={item} detail={detail} />)}</div><h2>PREFERÊNCIAS ADICIONAIS</h2><div className="mus-check-grid">{['Prefiro treinos sem impacto','Quero queimar mais gordura','Tenho pouco tempo disponível','Quero treinos desafiadores'].map(item => <Choice key={item} selected={draft.preferences.includes(item)} onClick={() => selectArray('preferences',item)} title={item} />)}</div></> : null}
+    {draft.step === 5 ? <><h1>5. QUAIS SÃO AS SUAS PREFERÊNCIAS?</h1><p>Esses detalhes ajudam a IA a personalizar ainda mais seu plano.</p><h2>TIPO DE TREINO PREFERIDO</h2><div className="mus-choice-grid is-three">{[['forca','TREINO DE FORÇA'],['funcional','TREINO FUNCIONAL'],['cardio','CONDICIONAMENTO E CARDIO']].map(([value,label]) => <Choice key={value} selected={draft.preferredTraining === value} onClick={() => setDraft({...draft,preferredTraining:value})} icon={<Dumbbell />} title={label} />)}</div><h2>DIVISÃO PREFERIDA</h2><div className="mus-choice-grid is-three">{[['Full body','Treina o corpo inteiro em cada sessão — bom pra quem tem poucos dias livres na semana.'],['Upper / Lower','Alterna treinos de membros superiores e inferiores em dias diferentes.'],['ABC (3x por semana)','Divide os grupos musculares em 3 treinos (A, B, C) repetidos ao longo da semana.'],['Bro split','Um grupo muscular principal por dia (peito, costas, pernas…), com mais volume por músculo.'],['PPL','Push, Pull, Legs — separa por empurrar, puxar e pernas, podendo repetir o ciclo na semana.'],['Outro','Sem preferência definida — a IA escolhe a divisão com base nas suas outras respostas.']].map(([item,detail]) => <Choice key={item} selected={draft.preferredSplit === item} onClick={() => setDraft({...draft,preferredSplit:item})} title={item} detail={detail} />)}</div><h2>PREFERÊNCIAS ADICIONAIS</h2><div className="mus-check-grid">{['Prefiro treinos sem impacto','Quero queimar mais gordura','Tenho pouco tempo disponível','Quero treinos desafiadores'].map(item => <Choice key={item} selected={draft.preferences.includes(item)} onClick={() => selectArray('preferences',item)} title={item} />)}</div>
+      {/* #243: mesma confirmacao de compromisso do fluxo manual, exigida antes
+          de habilitar "GERAR MEU PLANO COM IA" (generateAi ja salva o plano
+          gerado em seguida). */}
+      <label className="mus-commitment-check"><input type="checkbox" checked={confirmCommitment} onChange={event => setConfirmCommitment(event.target.checked)} /><span>Entendo que, ao gerar, este treino ficará ativo por no mínimo {MIN_PLAN_COMMITMENT_DAYS} dias -- o tempo mínimo pro corpo se adaptar e a evolução aparecer de verdade.</span></label>
+    </> : null}
     <div className="mus-ai-note"><Brain /><span><b>A IA USA ESSES DADOS PARA:</b>Selecionar exercícios oficiais adequados à sua rotina e aos equipamentos disponíveis.</span></div>{!canContinue ? <p className="mus-ai-requirement" role="status">{requirement}</p> : null}<div className="mus-flow-actions"><button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button><button className="is-primary" onClick={next} disabled={!canContinue}>{draft.step === 5 ? 'GERAR MEU PLANO COM IA' : 'CONTINUAR'} <ArrowRight /></button></div>
   </section></>;
 }
