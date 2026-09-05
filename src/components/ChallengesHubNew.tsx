@@ -22,6 +22,19 @@ const progressFor = (mission: Mission, list: UserMissionProgress[]) => list.find
   id: '', userId: '', missionId: mission.id, currentProgress: 0, target: mission.target, completed: false, claimed: false, updatedAt: '',
 };
 
+// #250: clicar num desafio precisa levar pra tela da atividade que de fato
+// cumpre esse desafio -- antes os cards de "DESAFIOS EM DESTAQUE" nao tinham
+// nenhum onClick, e os de "DESAFIOS DISPONÍVEIS" so mostravam um ChevronRight
+// decorativo sem acao nenhuma (parecia clicavel mas nao levava a lugar
+// nenhum). Mapeia o tipo real da missao pro fluxo que a cumpre; quando o
+// tipo nao aponta pra uma unica atividade (habitos/consistencia/eventos),
+// cai no seletor de modalidade (/activity) em vez de nao fazer nada.
+const missionActivityType = (mission: Mission): 'workout' | 'cardio' | 'other' => {
+  if (['workout_count', 'strength_workout_count', 'gym_checkins'].includes(mission.type)) return 'workout';
+  if (['cardio_count', 'cardio_minutes'].includes(mission.type)) return 'cardio';
+  return 'other';
+};
+
 export function ChallengesHubNew({ onCardio, onHistory }: Props) {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -54,6 +67,18 @@ export function ChallengesHubNew({ onCardio, onHistory }: Props) {
     requestAnimationFrame(() => availableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
+  // #250: leva pra tela real da atividade que cumpre o desafio clicado.
+  // Missoes PRO travadas continuam indo pra assinatura -- clicar num
+  // desafio bloqueado nao deveria abrir a atividade sem o atleta saber que
+  // ela nao vale a recompensa daquele desafio especifico.
+  const openMissionActivity = (mission: Mission, locked: boolean) => {
+    if (locked) { navigate('/profile/preferences/subscriptions'); return; }
+    const kind = missionActivityType(mission);
+    if (kind === 'workout') navigate('/musculacao');
+    else if (kind === 'cardio') onCardio();
+    else navigate('/activity');
+  };
+
   const iconFor = (mission: Mission) => mission.type === 'cardio_minutes' || mission.type === 'cardio_count' ? Footprints : mission.type === 'streak_days' || mission.type === 'consistency_weeks' || mission.type === 'monthly_active_weeks' ? Flame : mission.type === 'workout_count' || mission.type === 'strength_workout_count' ? Dumbbell : CalendarCheck;
   const renderReward = (mission: Mission) => <>{mission.rewardXP > 0 ? <span>{mission.rewardXP.toLocaleString('pt-BR')} XP</span> : null}<span>+ {mission.rewardCoins.toLocaleString('pt-BR')} Invictus Coins <Coins /></span></>;
 
@@ -61,13 +86,13 @@ export function ChallengesHubNew({ onCardio, onHistory }: Props) {
     <header className="dc-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="dc-avatar" onClick={() => navigate('/profile')}>{user?.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
     <section className="dc-hero"><h1>DESAFIOS</h1><p>Supere limites. Conquiste recompensas.</p><div><Coins /><b>{dashboard ? dashboard.coinWallet.balance.toLocaleString('pt-BR') : '—'}</b><span>Invictus Coins</span></div></section>
     <div className="dc-section-head"><h2>DESAFIOS EM DESTAQUE</h2></div>
-    <section className="dc-featured">{featured.map(mission => { const item = progressFor(mission, progress); const Icon = iconFor(mission); const percentage = mission.target > 0 ? Math.min(100, item.currentProgress / mission.target * 100) : 0; return <article key={mission.id}><small>DESAFIO {mission.category.toUpperCase()} {mission.isFreeAccess ? '· FREE + PRO' : '· PRO'}</small><Icon /><h3>{mission.title}</h3><p>{mission.description}</p><div className="dc-count"><b>{item.currentProgress}/{mission.target}</b><i><span style={{ width: `${percentage}%` }} /></i></div><div className="dc-reward"><small>RECOMPENSA</small>{renderReward(mission)}</div></article>; })}{!loading && featured.length === 0 ? <p className="dc-empty">Nenhum desafio em destaque foi publicado.</p> : null}</section>
+    <section className="dc-featured">{featured.map(mission => { const item = progressFor(mission, progress); const Icon = iconFor(mission); const percentage = mission.target > 0 ? Math.min(100, item.currentProgress / mission.target * 100) : 0; const locked = !mission.isFreeAccess && !paid; return <article key={mission.id} role="button" tabIndex={0} onClick={() => openMissionActivity(mission, locked)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openMissionActivity(mission, locked); }}><small>DESAFIO {mission.category.toUpperCase()} {mission.isFreeAccess ? '· FREE + PRO' : '· PRO'}</small><Icon /><h3>{mission.title}</h3><p>{mission.description}</p><div className="dc-count"><b>{item.currentProgress}/{mission.target}</b><i><span style={{ width: `${percentage}%` }} /></i></div><div className="dc-reward"><small>RECOMPENSA</small>{renderReward(mission)}</div></article>; })}{!loading && featured.length === 0 ? <p className="dc-empty">Nenhum desafio em destaque foi publicado.</p> : null}</section>
     <section className="dc-powerlift-feature"><span><Crown /></span><div><small>DESTAQUE DE FORÇA</small><h2>INVICTUS POWER LIFT</h2><p>Registre seu levantamento em vídeo, passe pela validação inteligente e mostre sua força no ranking.</p><ul><li><Play /> Vídeo obrigatório</li><li><ShieldCheck /> Antifraude por IA</li><li><Trophy /> Ranking por modalidade</li></ul></div><button onClick={() => navigate('/power')}>ENTRAR NO POWER LIFT <ArrowRight /></button></section>
     <div className="dc-section-head"><h2>CATEGORIAS</h2></div><section className="dc-filters">{[
       ['all','TODOS',Target],['workout','MUSCULAÇÃO',Dumbbell],['cardio','CARDIO',Footprints],['performance','PERFORMANCE',BarChart3],['habits','HÁBITOS',Flame],['social','SOCIAIS',Users],
     ].map(([id,label,Icon]: any) => <button key={id} className={filter === id ? 'is-active' : ''} onClick={() => setFilter(id)}><Icon /><span>{label}</span></button>)}</section>
     <div ref={availableRef} className="dc-section-head"><h2>DESAFIOS DISPONÍVEIS</h2><button onClick={onHistory}><History /> HISTÓRICO</button></div>
-    {error ? <p className="dc-error">{error}</p> : null}{loading ? <p className="dc-loading">Carregando desafios reais…</p> : <section className="dc-list">{filtered.map(mission => { const item = progressFor(mission, progress); const Icon = iconFor(mission); const percentage = mission.target > 0 ? Math.min(100, item.currentProgress / mission.target * 100) : 0; const locked = !mission.isFreeAccess && !paid; return <article key={mission.id} className={locked ? 'is-locked' : ''}><span className="dc-list-icon"><Icon /></span><div><small>DESAFIO {mission.category.toUpperCase()} {mission.isFreeAccess ? '· FREE + PRO' : '· PRO'}</small><h3>{mission.title}</h3><p>{mission.description}</p></div><div className="dc-list-reward"><small>RECOMPENSA</small>{renderReward(mission)}</div><div className="dc-ring" style={{ '--progress': `${percentage * 3.6}deg` } as React.CSSProperties}><span>{locked ? 'PRO' : `${item.currentProgress}/${mission.target}`}</span></div>{locked ? <button onClick={() => navigate('/profile/preferences/subscriptions')}>VER PRO</button> : item.completed && !item.claimed ? <button disabled={claiming === mission.id} onClick={() => claim(mission)}>{claiming === mission.id ? '…' : 'RESGATAR'}</button> : item.claimed ? <span className="dc-claimed"><Check />RESGATADO</span> : <ChevronRight />}</article>; })}{filtered.length === 0 ? <p className="dc-empty">Nenhum desafio publicado nesta categoria.</p> : null}</section>}
+    {error ? <p className="dc-error">{error}</p> : null}{loading ? <p className="dc-loading">Carregando desafios reais…</p> : <section className="dc-list">{filtered.map(mission => { const item = progressFor(mission, progress); const Icon = iconFor(mission); const percentage = mission.target > 0 ? Math.min(100, item.currentProgress / mission.target * 100) : 0; const locked = !mission.isFreeAccess && !paid; return <article key={mission.id} className={locked ? 'is-locked' : ''} role="button" tabIndex={0} onClick={() => openMissionActivity(mission, locked)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openMissionActivity(mission, locked); }}><span className="dc-list-icon"><Icon /></span><div><small>DESAFIO {mission.category.toUpperCase()} {mission.isFreeAccess ? '· FREE + PRO' : '· PRO'}</small><h3>{mission.title}</h3><p>{mission.description}</p></div><div className="dc-list-reward"><small>RECOMPENSA</small>{renderReward(mission)}</div><div className="dc-ring" style={{ '--progress': `${percentage * 3.6}deg` } as React.CSSProperties}><span>{locked ? 'PRO' : `${item.currentProgress}/${mission.target}`}</span></div>{locked ? <button onClick={event => { event.stopPropagation(); navigate('/profile/preferences/subscriptions'); }}>VER PRO</button> : item.completed && !item.claimed ? <button disabled={claiming === mission.id} onClick={event => { event.stopPropagation(); claim(mission); }}>{claiming === mission.id ? '…' : 'RESGATAR'}</button> : item.claimed ? <span className="dc-claimed"><Check />RESGATADO</span> : <ChevronRight />}</article>; })}{filtered.length === 0 ? <p className="dc-empty">Nenhum desafio publicado nesta categoria.</p> : null}</section>}
     <section className="dc-activities"><button onClick={() => navigate('/musculacao')}><Dumbbell /><span><b>INICIAR MUSCULAÇÃO</b>Treino e plano de hoje</span><ArrowRight /></button><button onClick={onCardio}><Footprints /><span><b>INICIAR CARDIO</b>Escolha a modalidade</span><ArrowRight /></button><button onClick={() => navigate('/power')}><Trophy /><span><b>POWER LIFT</b>Desafios de força</span><ArrowRight /></button></section>
     <section className="dc-premium"><Trophy /><div><h2>DESAFIOS PREMIUM</h2><p>Desafios PRO não oferecem dinheiro: ampliam reconhecimento, XP e Invictus Coins.</p></div><button onClick={openProChallenges}>VER DESAFIOS PRO <ArrowRight /></button></section>
     <div className="dc-coin-note"><ShieldCheck /><span>Invictus Coins não têm valor monetário, não podem ser sacadas e serão usadas somente na futura Loja Invictus.</span></div>
