@@ -16,6 +16,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivitySession } from '../types';
 import { cn } from '../lib/utils';
 import { calculateDistance, formatPaceValue } from '../lib/runUtils';
+import { hapticNotification } from '../lib/haptics';
 import { useUser } from '../UserContext';
 import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
 import { ActivityDetailScreen, ActivityHistorySection, ActivityHistoryItem } from '../components/ActivityHistorySection';
@@ -798,6 +799,8 @@ export function Challenges() {
         setActiveSession(null);
         setCompletion({ status: 'approved', message: res.message, pointsAwarded: points });
         if (points !== undefined) {
+          // #242: retorno tátil no momento em que o XP/pontuação é confirmado.
+          void hapticNotification('success');
           triggerXPToast(points, 'Atividade validada.', rankingPoints);
         }
 
@@ -1176,7 +1179,7 @@ export function Challenges() {
                 ? result.pointsAwarded
                 : undefined;
               setCompletion({ status: 'approved', message: result.userMessage, pointsAwarded: points });
-              if (points !== undefined) triggerXPToast(points, 'Atividade validada.');
+              if (points !== undefined) { void hapticNotification('success'); triggerXPToast(points, 'Atividade validada.'); }
               if (pendingPresence) {
                 const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
                 setFinishedActivityItem(finishedItem);

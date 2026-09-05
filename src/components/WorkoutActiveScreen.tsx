@@ -7,6 +7,7 @@ import { InvictusLogo } from './InvictusLogo';
 import { activityService } from '../services/activityService';
 import { auth } from '../firebase';
 import { workoutSetJournal, type WorkoutSetJournalState } from '../services/workoutSetJournal';
+import { hapticImpact, hapticNotification } from '../lib/haptics';
 import './WorkoutSetRecorder.css';
 
 const formatElapsed = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
@@ -50,9 +51,12 @@ function playRestAlertSound() {
   } catch { /* alerta sonoro é um extra, nunca bloqueia o registro da série */ }
 }
 function vibrateRestAlert() {
-  // #REST_TIMER: navigator.vibrate não existe no iOS (Safari/WKWebView nunca
-  // implementou a API) -- por isso este alerta é só um reforço no Android/web,
-  // nunca o único aviso (o beep sonoro e o card visual cobrem os dois).
+  // #REST_TIMER / #242: navigator.vibrate não existe no iOS (Safari/WKWebView
+  // nunca implementou a API), então este alerta ficava mudo em todo iPhone --
+  // só o beep sonoro e o card visual cobriam esse caso. @capacitor/haptics
+  // funciona nos dois nativos (iOS e Android); o navigator.vibrate continua
+  // como fallback só para PWA/Android web, onde não há o plugin nativo.
+  void hapticNotification('success');
   try { navigator.vibrate?.([200, 100, 200, 100, 400]); } catch { /* best-effort */ }
 }
 
@@ -212,6 +216,9 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
     if (!ownsSession || session.isPaused || loading) return;
     setRecordError(null);
     try {
+      // #242: retorno tátil no toque que efetivamente encerra a execução da
+      // série -- o gesto mais repetido do fluxo de musculação.
+      void hapticImpact('medium');
       // Stop at the explicit tap. Optional result entry happens afterwards,
       // so time spent typing is never counted as exercise execution.
       const completed = workoutSetJournal.complete(session.userId, session.id, { reps: null, loadKg: null });
