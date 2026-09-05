@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Star } from 'lucide-react';
 
@@ -12,7 +13,18 @@ interface XPToastProps {
 
 export const XPToast: React.FC<XPToastProps> = ({ points, message, rankingPoints, isVisible, onComplete }) => {
   const hasRankingPoints = rankingPoints !== undefined && rankingPoints !== null;
-  return (
+  // #250: fica atrás (visualmente escondido) da tela de conclusão sempre que
+  // ela aparece junto (workout-complete, portada em .challenge-flow-screen a
+  // z-index 70, ou .mus-screen a z-index 90 -- ver ChallengeActivityFlow.tsx
+  // e Musculation.css). O motivo é o mesmo dos outros dois casos documentados
+  // no código (#116/#198): um elemento fixed dentro da árvore normal do
+  // Layout só compete em z-index DENTRO do stacking context local de
+  // <main>/Layout, nunca contra um elemento portado direto pra document.body.
+  // Corrigido igual aos outros: portal pra document.body + z-index acima de
+  // qualquer tela de conclusão conhecida, mas abaixo dos modais de ação
+  // (z-[100] em Layout/ProModal/AdminWorkouts) já que o toast é meramente
+  // informativo (pointer-events-none) e não deve tampar uma decisão real.
+  return createPortal(
     <AnimatePresence>
       {isVisible && (
         <motion.div
@@ -22,7 +34,7 @@ export const XPToast: React.FC<XPToastProps> = ({ points, message, rankingPoints
           onAnimationComplete={() => {
             setTimeout(onComplete, 2000);
           }}
-          className="fixed bottom-32 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+          className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[95] pointer-events-none"
         >
           <div className="bg-primary text-on-primary px-6 py-4 rounded-3xl shadow-2xl flex flex-col items-center gap-1 border-4 border-white/20">
             <div className="flex items-center gap-3">
@@ -74,6 +86,7 @@ export const XPToast: React.FC<XPToastProps> = ({ points, message, rankingPoints
           </div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };
