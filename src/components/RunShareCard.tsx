@@ -20,6 +20,8 @@ import {
   Timer,
   Upload,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { RunSession, AdvancedRunStats } from '../services/runningService';
@@ -110,15 +112,19 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     });
     return () => { cancelled = true; };
   }, []);
-  const [mapImages, setMapImages] = useState<Record<MapVariant, string | null>>({
-    satellite: null,
-    roadmap: null,
-    'satellite-plain': null,
-    streets: null,
-    outdoors: null,
-    'navigation-night': null,
-  });
+  // #251: chave por variante+zoom (nao so variante) pra poder cachear mais de
+  // um nivel de zoom da mesma variante sem descartar o anterior a cada ajuste.
+  const [mapImages, setMapImages] = useState<Record<string, string | null>>({});
   const [mapError, setMapError] = useState(false);
+  // #251: ajuste manual de zoom do mapa do card, pedido explicito do usuario
+  // ("a pessoa poder controlar o zoom assim como no mapa ao vivo"). O backend
+  // (api/activity-map.ts) calcula um zoom de enquadramento da rota inteira e
+  // soma este ajuste, sempre dentro de limites seguros -- nunca deixa a pessoa
+  // aproximar tanto que a rota saia do card, nem afastar tanto que vire so um
+  // pontinho.
+  const [zoomAdjust, setZoomAdjust] = useState(0);
+  const ZOOM_ADJUST_MIN = -3;
+  const ZOOM_ADJUST_MAX = 3;
 
   const session: any = rawSession;
   const distanceKm = Number(
@@ -211,10 +217,16 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     let cancelled = false;
     let requestStarted = false;
     const points = trajectory.filter(hasValidLatLng);
-    if (!hasRoute || !isMapVariant(backgroundMode)) return undefined;
-
-    const variant: MapVariant = backgroundMode;
-    if (mapImages[variant]) return undefined;
+    // #251: "FOTO + MAPA" usa a foto como fundo e o mapa (roadmap) como overlay
+    // da rota por cima (ver JSX abaixo, share-card-route-overlay) -- mas esse
+    // efeito só buscava a imagem do mapa quando backgroundMode ERA um dos
+    // MapVariant. Como 'photo' não é um MapVariant, o fetch nunca disparava a
+    // menos que o usuário tivesse visitado a aba "MAPA ESCURO" antes -- por
+    // isso a opção aparecia só com a foto, sem o mapa por cima nunca.
+    if (!hasRoute || backgroundMode === 'solid') return undefined;
+    const variant: MapVariant = isMapVariant(backgroundMode) ? backgroundMode : 'roadmap';
+    const cacheKey = `${variant}:${zoomAdjust}`;
+    if (mapImages[cacheKey]) return undefined;
 
     const fetchMap = async (authUser: NonNullable<typeof auth.currentUser>) => {
       if (cancelled || requestStarted) return;
@@ -224,14 +236,14 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ trajectory: points, width: 720, height: 1280, mapType: variant }),
+          body: JSON.stringify({ trajectory: points, width: 720, height: 1280, mapType: variant, zoomAdjust }),
         });
         if (!response.ok) throw new Error(`activity-map respondeu ${response.status}`);
         const json = await response.json();
         if (cancelled) return;
         if (json.success && json.imageDataUrl) {
           console.info('[RunShareCard] Mapa carregado via:', json.mapProvider || 'provedor nao informado');
-          setMapImages(current => ({ ...current, [variant]: json.imageDataUrl }));
+          setMapImages(current => ({ ...current, [cacheKey]: json.imageDataUrl }));
         } else {
           setMapError(true);
         }
@@ -251,7 +263,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       cancelled = true;
       unsubscribe();
     };
-  }, [backgroundMode, hasRoute, mapImages, trajectory]);
+  }, [backgroundMode, hasRoute, mapImages, trajectory, zoomAdjust]);
 
   const handleExport = async (mode: 'download' | 'share') => {
     if (!cardRef.current) return;
@@ -338,10 +350,14 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   // Overlay de rota sob a FOTO sempre usa o estilo escuro (roadmap), igual
   // antes -- so o fundo em tela cheia (satellite/roadmap/etc.) muda com a
   // selecao do usuario.
-  const currentMapImage: string | null = isMapVariant(backgroundMode)
-    ? mapImages[backgroundMode]
-    : mapImages.roadmap;
+  const currentMapVariant: MapVariant = isMapVariant(backgroundMode) ? backgroundMode : 'roadmap';
+  const currentMapImage: string | null = mapImages[`${currentMapVariant}:${zoomAdjust}`] ?? null;
   const mapBackgroundAvailable = Boolean(currentMapImage);
+  const showsMap = backgroundMode !== 'solid';
+
+  const adjustZoom = (delta: number) => {
+    setZoomAdjust((current) => Math.max(ZOOM_ADJUST_MIN, Math.min(ZOOM_ADJUST_MAX, current + delta)));
+  };
 
   const selectBackground = (mode: BackgroundMode) => {
     if (isMapVariant(mode) && !hasRoute) return;
@@ -436,6 +452,38 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
             <span>SÓLIDO</span>
           </button>
         </div>
+
+        {hasRoute && showsMap ? (
+          // #234: controle manual de zoom do mapa do card, no mesmo espirito do
+          // mapa ao vivo (que deixa o usuario reenquadrar). O valor eh enviado
+          // pro backend (api/activity-map.ts) como zoomAdjust e cacheado por
+          // variante+zoom em mapImages. Posicionado absoluto (ver CSS) pra nao
+          // entrar no fluxo flex do .share-screen-toolbar (que usa
+          // space-between entre o botao fechar e as acoes da direita).
+          <div className="share-zoom-control">
+            <button
+              type="button"
+              className="share-zoom-button"
+              onClick={() => adjustZoom(-1)}
+              disabled={zoomAdjust <= ZOOM_ADJUST_MIN}
+              aria-label="Diminuir zoom do mapa"
+              title="Diminuir zoom do mapa"
+            >
+              <ZoomOut size={16} />
+            </button>
+            <span className="share-zoom-value">Zoom {zoomAdjust > 0 ? `+${zoomAdjust}` : zoomAdjust}</span>
+            <button
+              type="button"
+              className="share-zoom-button"
+              onClick={() => adjustZoom(1)}
+              disabled={zoomAdjust >= ZOOM_ADJUST_MAX}
+              aria-label="Aumentar zoom do mapa"
+              title="Aumentar zoom do mapa"
+            >
+              <ZoomIn size={16} />
+            </button>
+          </div>
+        ) : null}
 
         <div className="share-screen-actions">
           <button

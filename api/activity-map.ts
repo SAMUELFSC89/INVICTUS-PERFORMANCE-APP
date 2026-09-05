@@ -80,6 +80,43 @@ function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+// #234: calculo de "fit bounds" (mesma formula classica usada pela Google
+// Maps JS API para achar o zoom que encaixa um retangulo de coordenadas numa
+// area de pixels). Usado para SUBSTITUIR o "/auto/" do Mapbox Static Images
+// API, que nao tem como limitar o zoom maximo -- rotas curtas/ruidosas
+// (poucos metros de GPS) preenchiam quase todo o bbox e o "auto" aproximava
+// a camera muito mais que o mapa ao vivo (LiveTrackingMap.tsx usa zoom fixo
+// 16.2), alem de mudar de card pra card sem controle do usuario.
+function latRad(lat) {
+  const sin = Math.sin((lat * Math.PI) / 180);
+  const radX2 = Math.log((1 + sin) / (1 - sin)) / 2;
+  return clampNumber(radX2, -Math.PI, Math.PI) / 2;
+}
+
+function computeFitZoom(points, mapWidthPx, mapHeightPx) {
+  const WORLD_DIM = 256;
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+
+  const latFraction = (latRad(maxLat) - latRad(minLat)) / Math.PI;
+  const lngDiff = maxLng - minLng;
+  const lngFraction = (lngDiff < 0 ? lngDiff + 360 : lngDiff) / 360;
+
+  const safeWidth = Math.max(1, mapWidthPx);
+  const safeHeight = Math.max(1, mapHeightPx);
+  const latZoom = latFraction > 0 ? Math.log2(safeHeight / WORLD_DIM / latFraction) : 21;
+  const lngZoom = lngFraction > 0 ? Math.log2(safeWidth / WORLD_DIM / lngFraction) : 21;
+
+  return {
+    zoom: Math.min(latZoom, lngZoom),
+    center: { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 },
+  };
+}
+
 function drawFallbackCircle(image, cx, cy, radius, color) {
   const minX = Math.max(0, Math.floor(cx - radius));
   const maxX = Math.min(image.bitmap.width - 1, Math.ceil(cx + radius));
@@ -308,7 +345,7 @@ export default async function handler(req, res) {
   if (!mapboxToken && !googleApiKey) console.warn('[activity-map] Provedor principal nao configurado; usando tiles de fallback.');
 
   try {
-    const { trajectory, width, height, mapType } = req.body || {};
+    const { trajectory, width, height, mapType, zoomAdjust: zoomAdjustInput } = req.body || {};
     if (!Array.isArray(trajectory) || trajectory.length < 2) {
       return res.status(400).json({ success: false, userMessage: 'Rota GPS insuficiente para gerar o mapa desta atividade.' });
     }
@@ -367,6 +404,22 @@ export default async function handler(req, res) {
       // tamanho de card pedido (720x1280 no compartilhamento, 640x~320 no
       // detalhe de atividade).
       const mapPadding = Math.round(Math.min(w, h) * 0.16);
+
+      // #234: zoom explicito no lugar do "/auto/" -- calcula o zoom que
+      // encaixa a rota (descontando o padding visual dos dois lados, pra
+      // imitar o respiro que o "auto+padding" dava) e limita ao teto de
+      // 16.5, bem proximo do zoom fixo 16.2 do mapa ao vivo, resolvendo tanto
+      // o "zoom excessivo" quanto a divergencia entre os dois mapas. Por cima
+      // disso aplicamos o ajuste manual que o usuario controla no card
+      // (zoomAdjust, -3..+3, ver share-zoom-control em RunShareCard.tsx).
+      const MAX_AUTO_FIT_ZOOM = 16.5;
+      const fit = computeFitZoom(points, Math.max(1, w - mapPadding * 2), Math.max(1, h - mapPadding * 2));
+      const clampedFitZoom = clampNumber(fit.zoom, 3, MAX_AUTO_FIT_ZOOM);
+      const zoomAdjustNumber = Number(zoomAdjustInput);
+      const zoomAdjust = Number.isFinite(zoomAdjustNumber) ? clampNumber(Math.round(zoomAdjustNumber), -3, 3) : 0;
+      const finalZoom = clampNumber(clampedFitZoom + zoomAdjust, 3, 18);
+      const centerParam = `${fit.center.lng.toFixed(6)},${fit.center.lat.toFixed(6)},${finalZoom.toFixed(2)}`;
+
       const buildMapboxUrl = (routePoints) => {
         const overlay = {
           type: 'FeatureCollection',
@@ -381,7 +434,7 @@ export default async function handler(req, res) {
             { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#151515' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
           ]
         };
-        return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/auto/${w}x${h}@2x?padding=${mapPadding}&access_token=${encodeURIComponent(mapboxToken)}`;
+        return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/${centerParam}/${w}x${h}@2x?access_token=${encodeURIComponent(mapboxToken)}`;
       };
 
       mapUrl = buildMapboxUrl(points);
