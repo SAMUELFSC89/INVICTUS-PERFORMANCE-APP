@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, Check, ChevronRight, Flame, HeartPulse, MoreVertical, Pause, Play, Square } from 'lucide-react';
 import type { ActivitySession } from '../types';
-import { OFFICIAL_EXERCISES_BATCH_01 } from '../data/exerciseCatalog';
+import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_MUSCLE_GROUP_LABELS } from '../data/exerciseCatalog';
+import { ExerciseDemoDialog, OfficialExerciseMedia } from './OfficialExerciseMedia';
 import { InvictusLogo } from './InvictusLogo';
 import { activityService } from '../services/activityService';
 import { auth } from '../firebase';
@@ -33,8 +34,9 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
       });
     }
     const normalizedGroup = (session.muscleGroup || '').toLocaleLowerCase('pt-BR');
-    const catalogGroup = normalizedGroup.includes('peito') ? 'peito' : normalizedGroup.includes('costa') ? 'costas' : normalizedGroup.includes('perna') ? 'pernas' : null;
-    return catalogGroup ? OFFICIAL_EXERCISES_BATCH_01.filter((exercise) => exercise.muscleGroup === catalogGroup).slice(0, 6).map(exercise => ({ ...exercise, planned: undefined })) : [];
+    const catalogGroup = normalizedGroup.includes('peito') ? 'peito' : normalizedGroup.includes('costa') ? 'costas' : normalizedGroup.includes('perna') ? 'pernas' : normalizedGroup.includes('ombro') ? 'ombros' : /bra[cç]o|b[ií]cep|tr[ií]cep/.test(normalizedGroup) ? 'bracos' : /core|abd[oô]m/.test(normalizedGroup) ? 'core' : null;
+    const catalogSubgroup = /b[ií]cep/.test(normalizedGroup) ? 'biceps' : /tr[ií]cep/.test(normalizedGroup) ? 'triceps' : null;
+    return catalogGroup ? OFFICIAL_EXERCISES_BATCH_01.filter((exercise) => exercise.muscleGroup === catalogGroup && (!catalogSubgroup || exercise.muscleSubgroup === catalogSubgroup)).slice(0, 6).map(exercise => ({ ...exercise, planned: undefined })) : [];
   }, [session.muscleGroup, session.plannedExercises]);
   const storageKey = `invictus_workout_progress_${session.id}`;
   const [progress, setProgress] = useState<WorkoutProgress>(() => {
@@ -46,7 +48,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
     }
   });
   const [menuOpen, setMenuOpen] = useState(false);
-  const [demoNotice, setDemoNotice] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
   const ownsSession = auth.currentUser?.uid === session.userId;
   const [journal, setJournal] = useState<WorkoutSetJournalState>(() => workoutSetJournal.read(session.userId, session.id));
   const [actualReps, setActualReps] = useState('');
@@ -177,11 +179,12 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
     {endError ? <div className="challenge-flow-end-error"><AlertCircle /><span>{endError}</span></div> : null}
 
     {currentExercise ? <>
-      <article className="workout-live-current" style={{ backgroundImage: `linear-gradient(90deg,rgba(7,7,6,.98) 0%,rgba(7,7,6,.82) 38%,rgba(7,7,6,.08) 75%),url(${currentExercise.thumbUrl})` }}>
-        <div><small>EXERCÍCIO SELECIONADO</small><h1>{currentExercise.name}</h1><span>{currentExercise.muscleGroup.toUpperCase()}</span><em>{currentExercise.planned ? `Planejado: ${currentExercise.planned.sets} séries · ${currentExercise.planned.repsMin}–${currentExercise.planned.repsMax} reps` : 'Exercício selecionado'}</em></div>
-        <button onClick={() => setDemoNotice(true)} aria-label={`Ver execução de ${currentExercise.name}`}><Play /><span>VER EXECUÇÃO</span></button>
+      <article className="workout-live-current">
+        <OfficialExerciseMedia exercise={currentExercise} priority className="workout-live-current-media" />
+        <div className="workout-live-current-copy"><small>EXERCÍCIO SELECIONADO</small><h1>{currentExercise.name}</h1><span>{OFFICIAL_MUSCLE_GROUP_LABELS[currentExercise.muscleGroup].toLocaleUpperCase('pt-BR')}</span><em>{currentExercise.planned ? `Planejado: ${currentExercise.planned.sets} séries · ${currentExercise.planned.repsMin}–${currentExercise.planned.repsMax} reps` : 'Exercício selecionado'}</em></div>
+        <button onClick={() => setDemoOpen(true)} aria-label={`Ver execução de ${currentExercise.name}`}><Play /><span>VER EXECUÇÃO</span></button>
       </article>
-      {demoNotice ? <p className="workout-demo-notice" role="status">A demonstração será liberada após revisão técnica do vídeo. A imagem identifica o exercício e não substitui orientação profissional.</p> : null}
+      <ExerciseDemoDialog exercise={currentExercise} open={demoOpen} onClose={() => setDemoOpen(false)} />
 
       <section className="workout-set-recorder" aria-labelledby="workout-set-title">
         <div className="workout-set-heading"><div><small>REGISTRO OPCIONAL</small><h2 id="workout-set-title">Registre a série que você fizer</h2></div><span>{recordedSets.length} {recordedSets.length === 1 ? 'série registrada' : 'séries registradas'}</span></div>
@@ -203,7 +206,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
         {recordError ? <p className="workout-set-error" role="alert">{recordError}</p> : null}
       </section>
 
-      {nextExercise ? <article className="workout-live-next" style={{ backgroundImage: `linear-gradient(90deg,rgba(8,8,7,.98),rgba(8,8,7,.48)),url(${nextExercise.thumbUrl})` }}><div><small>PRÓXIMO EXERCÍCIO</small><h2>{nextExercise.name}</h2><span>{nextExercise.muscleGroup.toUpperCase()}</span><em>{nextExercise.planned ? `${nextExercise.planned.sets} séries · ${nextExercise.planned.repsMin}–${nextExercise.planned.repsMax} reps` : 'Plano selecionado'}</em></div></article> : null}
+      {nextExercise ? <article className="workout-live-next"><OfficialExerciseMedia exercise={nextExercise} className="workout-live-next-media" /><div className="workout-live-next-copy"><small>PRÓXIMO EXERCÍCIO</small><h2>{nextExercise.name}</h2><span>{OFFICIAL_MUSCLE_GROUP_LABELS[nextExercise.muscleGroup].toLocaleUpperCase('pt-BR')}</span><em>{nextExercise.planned ? `${nextExercise.planned.sets} séries · ${nextExercise.planned.repsMin}–${nextExercise.planned.repsMax} reps` : 'Plano selecionado'}</em></div></article> : null}
 
       <div className="workout-live-list-head"><h2>TREINO DE HOJE</h2><span>{exercises.length} exercícios</span></div>
       <div className="workout-live-list">
@@ -211,11 +214,11 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
           const completed = progress.completedIds.includes(exercise.id);
           const active = index === progress.activeIndex && !completed;
           return <button key={exercise.id} className={active ? 'is-active' : ''} onClick={() => { if (index !== progress.activeIndex) interruptOpenSet(); setProgress((current) => ({ ...current, activeIndex: index })); }}>
-            <img src={exercise.thumbUrl} alt="" /><b>{index + 1}</b><span><strong>{exercise.name}</strong><small>{exercise.muscleGroup.toUpperCase()} · {exercise.planned ? `${exercise.planned.sets} séries · ${exercise.planned.repsMin}–${exercise.planned.repsMax}` : 'Plano selecionado'}</small></span><i className={completed ? 'is-complete' : active ? 'is-current' : ''}>{completed ? <Check /> : active ? <Play /> : null}</i><em>{completed ? 'Concluído' : active ? 'Selecionado' : 'Pendente'}</em><ChevronRight />
+            <OfficialExerciseMedia exercise={exercise} className="workout-live-list-media" /><b>{index + 1}</b><span><strong>{exercise.name}</strong><small>{OFFICIAL_MUSCLE_GROUP_LABELS[exercise.muscleGroup].toLocaleUpperCase('pt-BR')} · {exercise.planned ? `${exercise.planned.sets} séries · ${exercise.planned.repsMin}–${exercise.planned.repsMax}` : 'Plano selecionado'}</small></span><i className={completed ? 'is-complete' : active ? 'is-current' : ''}>{completed ? <Check /> : active ? <Play /> : null}</i><em>{completed ? 'Concluído' : active ? 'Selecionado' : 'Pendente'}</em><ChevronRight />
           </button>;
         })}
       </div>
-    </> : <article className="workout-library-pending"><h2>BIBLIOTECA EM PREPARAÇÃO</h2><p>Os assets oficiais para {session.muscleGroup || 'este grupo muscular'} ainda não foram aprovados. O treino continua registrando tempo e sensores normalmente.</p></article>}
+    </> : <article className="workout-library-pending"><h2>EXERCÍCIOS NÃO ENCONTRADOS</h2><p>Não foi possível localizar exercícios do plano para {session.muscleGroup || 'este grupo muscular'} no catálogo atual. O treino continua registrando tempo e sensores normalmente.</p></article>}
 
     <footer className="workout-live-actions"><button className="is-finish" onClick={() => { interruptOpenSet(); onEnd(); }} disabled={loading}><Square />{loading ? 'FINALIZANDO…' : 'FINALIZAR TREINO'}</button>{onTogglePause ? <button className="is-pause" onClick={() => { if (!session.isPaused) interruptOpenSet(); onTogglePause(); }} disabled={loading}>{session.isPaused ? <Play /> : <Pause />}{session.isPaused ? 'RETOMAR TREINO' : 'PAUSAR TREINO'}</button> : null}</footer>
   </section>;
