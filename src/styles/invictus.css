@@ -3,15 +3,15 @@
 @import '@fontsource/barlow/600.css';
 @import '@fontsource/barlow/700.css';
 
-/* #247: removido todo o bloco de variaveis :root e classes .iv-* (era o
-   design system da Home/Campeonatos/banners ANTES da reescrita nh-* de
-   Home.tsx e dos redesigns posteriores de banner). Confirmado por grep em
-   todo o src/**/*.tsx que nenhuma dessas classes (.iv-fundo, .iv-conteudo,
-   .iv-card*, .iv-chip*, .iv-aba*, .iv-titulo*, .iv-texto, .iv-rotulo,
-   .iv-linha*, .iv-icone-circulo, .iv-liga-banner*, .iv-camp-banner*,
-   .iv-camp-cta*) e usada em lugar nenhum -- e as imagens que essas regras
-   carregavam (public/fundo-home.webp, public/assets/championships/*) tambem
-   foram removidas junto por nao terem mais nenhum consumidor. Mantido so
+/* #247: removido todo o bloco de variaveis :root e classes .iv-ponto (era o
+   design system da Home/Campeonatos/banners ANTES da reescrita nh-ponto de
+   Home.tsx e dos redesigns posteriores de banner). Confirmado via grep em
+   todos os arquivos .tsx do projeto que nenhuma dessas classes (.iv-fundo,
+   .iv-conteudo, .iv-card, .iv-chip, .iv-aba, .iv-titulo, .iv-texto,
+   .iv-rotulo, .iv-linha, .iv-icone-circulo, .iv-liga-banner, .iv-camp-banner,
+   .iv-camp-cta) e usada em lugar nenhum -- e as imagens que essas regras
+   carregavam (fundo-home.webp e os banners de campeonato) tambem foram
+   removidas junto por nao terem mais nenhum consumidor. Mantido so
    .app-route-loading abaixo, que continua ativo. */
 
 /* A troca de rota deve nascer sobre uma superfície neutra. Assim nenhum
