@@ -158,7 +158,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       ? session.checkpoints
       : [];
   const title = String(session.title || session.cardioTypeLabel || 'Corrida ao ar livre');
-  const titleUpper = title.toUpperCase();
   const rawStatus = String(session.status || session.validationStatus || '').toLowerCase();
   const validationState: 'approved' | 'pending' | 'rejected' = ['validated', 'valid', 'approved', 'homologada'].includes(rawStatus)
     ? 'approved'
@@ -511,14 +510,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           <div className="share-card-content">
             <div className="share-card-activity-heading">
               <span className="share-card-activity-icon"><Flame size={31} strokeWidth={2.4} /></span>
-              <h1>{titleUpper}</h1>
-              {validationState === 'approved' ? (
-                <ShieldCheck className="share-card-validation-icon is-approved" size={27} />
-              ) : validationState === 'pending' ? (
-                <Clock className="share-card-validation-icon is-pending" size={26} />
-              ) : (
-                <ShieldAlert className="share-card-validation-icon is-rejected" size={26} />
-              )}
             </div>
 
             <div className="share-card-divider" />
@@ -567,14 +558,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           <div className="share-card-content">
             <div className="share-card-activity-heading">
               <span className="share-card-activity-icon"><Flame size={31} strokeWidth={2.4} /></span>
-              <h1>{titleUpper}</h1>
-              {validationState === 'approved' ? (
-                <ShieldCheck className="share-card-validation-icon is-approved" size={27} />
-              ) : validationState === 'pending' ? (
-                <Clock className="share-card-validation-icon is-pending" size={26} />
-              ) : (
-                <ShieldAlert className="share-card-validation-icon is-rejected" size={26} />
-              )}
             </div>
 
             <div className="share-card-divider" />
