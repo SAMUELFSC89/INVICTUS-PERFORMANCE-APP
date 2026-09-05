@@ -225,15 +225,21 @@ export class ValidateActivityService {
     // cliente para uma checagem antifraude que o proprio cliente decide se
     // roda -- reaproveita aqui o mesmo motor/limites (80m raio, 30m precisao)
     // ja usado no check-in.
-    const championshipCheckInRequired = request.activityData.type === 'workout'
-      ? await hasActiveChampionshipEnrollment(request.userId)
-      : false;
+    // #249: mesmo sinal usado abaixo so pra geofence de musculacao, agora
+    // tambem decide se a atividade (qualquer tipo, nao so musculacao) tem
+    // ALGUM premio/ranking real em jogo -- ver uso em `competitivelyEligible`
+    // e no desvio da fila de revisao manual mais abaixo. `hasActiveChampionshipEnrollment`
+    // ja e 100% servidor (le Firestore, nunca confia no cliente): true se o
+    // atleta pagou inscricao num campeonato ('paga') OU entrou por opcao
+    // propria no ranking da comunidade (`community_championship_enrollments`,
+    // que exige um toque explicito em "participar" -- nao e automatico).
+    const hasActiveScoringStakes = await hasActiveChampionshipEnrollment(request.userId);
 
     if (request.activityData.type === 'workout' && rawActivity.checkInId) {
       await validateCheckInOwnership(request.userId, rawActivity.checkInId);
     }
 
-    if (request.activityData.type === 'workout' && championshipCheckInRequired && !rawActivity.checkInId) {
+    if (request.activityData.type === 'workout' && hasActiveScoringStakes && !rawActivity.checkInId) {
       const gymId = (user as any).gymId;
       const gymLocation = (user as any).gymLocation;
       const geofenceResult = validateGeofenceCheckin(
@@ -382,15 +388,32 @@ export class ValidateActivityService {
       competitivelyEligible = securityResult.report.validation.competitivelyEligible;
       competitiveIneligibleReason = securityResult.report.validation.ineligibleReason || null;
       if (!securityResult.shouldScore) {
-        securityBlocked = true;
-        securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
-        securityCanRetry = securityResult.decision !== 'BLOCKED';
-        securityUserMessage = this.buildSecurityUserMessage(securityResult.decision);
-        securityInternalReason = this.buildInternalSecurityReason(
-          securityResult.decision,
-          securityResult.report?.explanation?.summaryText,
-          securityResult.report?.explanation?.primaryRiskDriver
-        );
+        // #249: sem NENHUM premio/ranking em jogo, uma decisao so "ambigua"
+        // (UNDER_REVIEW/PARTIALLY_APPROVED -- nao um bloqueio forte tipo mock
+        // location/teleporte) nao precisa mais travar a atividade numa fila de
+        // revisao manual pra render 0 pontos de qualquer jeito (a pontuacao ja
+        // fica zerada abaixo, fora deste bloco, so por nao ter stakes). O
+        // relatorio de seguranca completo (security_reports/security_audit_log)
+        // continua gravado do mesmo jeito DENTRO do proprio
+        // SecurityPipeline.runPipeline (nao depende do que este metodo faz com
+        // a decisao) -- reputacao/historico do atleta nao perdem nada, so a
+        // experiencia dele muda: fecha na hora, sem espera.
+        // BLOCKED continua sempre indo pra fila, com ou sem stakes: e o unico
+        // nivel que indica dado tecnicamente fabricado (GPS falso, teleporte),
+        // e isso vale a pena um humano ver mesmo sem premio em disputa.
+        if (!hasActiveScoringStakes && securityResult.decision !== 'BLOCKED') {
+          console.log(`[ValidateActivityService] [${traceId}] Decisao ${securityResult.decision} sem stakes ativos -- liberado sem fila de revisao (sem pontuacao de qualquer forma)`);
+        } else {
+          securityBlocked = true;
+          securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
+          securityCanRetry = securityResult.decision !== 'BLOCKED';
+          securityUserMessage = this.buildSecurityUserMessage(securityResult.decision);
+          securityInternalReason = this.buildInternalSecurityReason(
+            securityResult.decision,
+            securityResult.report?.explanation?.summaryText,
+            securityResult.report?.explanation?.primaryRiskDriver
+          );
+        }
       }
     } catch (secErr) {
       // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, a
@@ -404,6 +427,18 @@ export class ValidateActivityService {
       securityUserMessage = this.buildSecurityUserMessage('BLOCKED');
       securityInternalReason = 'Falha tecnica no motor antifraude (fail-closed): ' + (secErr instanceof Error ? secErr.message : String(secErr));
       console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):`, secErr);
+    }
+
+    // #249: sem inscricao paga NEM participacao no ranking da comunidade, a
+    // atividade nao vale premio nenhum -- entao nao gera XP/IGA, pedido
+    // explicito do usuario (mesma decisao ja tomada pra duracao minima
+    // abaixo). Aplicado depois do bloco de seguranca acima (nao antes) pra
+    // nao mudar o resultado do `if (securityBlocked)`: BLOCKED e falha tecnica
+    // do pipeline continuam indo pra fila de revisao normalmente, com ou sem
+    // stakes -- so a PONTUACAO que fica zerada aqui.
+    if (competitivelyEligible && !hasActiveScoringStakes) {
+      competitivelyEligible = false;
+      competitiveIneligibleReason = 'Atividade registrada, mas sem pontuação: você não está participando de nenhuma competição no momento.';
     }
 
     if (securityBlocked) {
