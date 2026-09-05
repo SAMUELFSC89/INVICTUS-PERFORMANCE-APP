@@ -8,6 +8,8 @@ import { HealthDataCollector, type CollectedHealthMetrics } from "./healthDataCo
 import { API_CONFIG } from "../config";
 import { getModalityConfig } from "../config/cardioConfig";
 import { nativeBackgroundLocationService } from "./nativeBackgroundLocationService";
+import { communityChampionshipService } from "./communityChampionshipService";
+import { championshipService } from "./championshipService";
 
 const SESSION_KEY = 'current_activity_session';
 const MAX_SESSION_MINUTES = {
@@ -121,6 +123,24 @@ export const activityService = {
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.checkInId) throw new Error(result.error || 'Não foi possível confirmar o check-in presencial.');
     return { checkInId: result.checkInId, location, gymName: result.gymName };
+  },
+
+  // #249: mesmo criterio usado no servidor (validate-activity-service.ts,
+  // hasActiveChampionshipEnrollment) -- entrou por opcao propria no ranking
+  // da comunidade OU tem inscricao paga ativa em algum campeonato. So serve
+  // pra decisoes de UX no cliente (ex: pular pedido de permissao de sensor,
+  // deixar o mapa ao vivo opcional) -- a decisao de PONTUACAO de verdade
+  // sempre e recalculada no servidor, nunca confia neste valor do cliente.
+  async hasActiveScoringStakes(): Promise<boolean> {
+    try {
+      const [community, registrations] = await Promise.all([
+        communityChampionshipService.status().catch(() => ({ enrolled: false })),
+        championshipService.getUserRegistrations().catch(() => [])
+      ]);
+      return Boolean(community.enrolled || registrations.some((item) => item.status === 'ACTIVE'));
+    } catch {
+      return false;
+    }
   },
 
   async requestMotionPermission(): Promise<'granted' | 'denied' | 'unavailable' | 'not_supported' | 'error'> {

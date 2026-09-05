@@ -182,7 +182,15 @@ export function Musculation() {
   const startWorkout = async (plan: WorkoutPlan, workout: PlannedWorkout) => {
     setLoading(true); setError(null);
     try {
-      await activityService.requestMotionPermission();
+      // #249: so vale pedir permissao de sensor (acelerometro/giroscopio, usado
+      // pelo antifraude de movimento) quando ha ALGUM premio/ranking real em
+      // jogo -- sem isso, quem so quer marcar os proprios exercicios feitos
+      // levava o mesmo pedido de permissao de quem esta competindo por
+      // dinheiro. A pontuacao de verdade continua 100% decidida no servidor
+      // (validate-activity-service.ts), isto e so pra nao incomodar a toa.
+      if (await activityService.hasActiveScoringStakes()) {
+        await activityService.requestMotionPermission();
+      }
       await activityService.startSession('workout', undefined, undefined, undefined, undefined, workout.focus || 'Musculação', {
         workoutPlanId: plan.id, workoutId: workout.id, plannedExercises: workout.exercises
       });

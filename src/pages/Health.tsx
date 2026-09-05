@@ -414,7 +414,12 @@ function useHealthData(range: TimeRange) {
 }
 
 function HealthHeader({ title, subtitle, onBack, right }: { title: string; subtitle: string; onBack: () => void; right?: React.ReactNode }) {
-  return <><div className="health-brand"><InvictusLogo size={42} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><header className="health-header"><button aria-label="Voltar" onClick={onBack} className="health-back"><ArrowLeft /></button><div className="health-heading"><div><h1>{title}</h1><span className="health-pro">PRO</span></div><p>{subtitle}</p></div>{right}</header></>;
+  // #248: a tela Saude inteira e gratuita (rota /health sem gate de plano) --
+  // essa badge "PRO" fixa ao lado do titulo era enganosa, sugeria que a tela
+  // toda exigia assinatura. As duas coisas que sao PRO de verdade aqui (chat
+  // "Insight Invictus IA" e o botao "Relatorio") ja tem sua propria badge
+  // "PRO" mais abaixo -- essa generica no topo so foi removida.
+  return <><div className="health-brand"><InvictusLogo size={42} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><header className="health-header"><button aria-label="Voltar" onClick={onBack} className="health-back"><ArrowLeft /></button><div className="health-heading"><div><h1>{title}</h1></div><p>{subtitle}</p></div>{right}</header></>;
 }
 
 export function HealthFooter({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {

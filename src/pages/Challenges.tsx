@@ -550,7 +550,13 @@ export function Challenges() {
     setError(null);
     setStartingActivity(true);
     try {
-      await activityService.requestMotionPermission();
+      // #249: pedir permissao de sensor so quando ha campeonato/ranking ativo
+      // de verdade (mesmo sinal ja usado abaixo pro check-in de academia) --
+      // sem isso, todo mundo levava o mesmo pedido de permissao do iOS mesmo
+      // so treinando/correndo por conta propria, sem nada em disputa.
+      if (championshipCheckInRequired) {
+        await activityService.requestMotionPermission();
+      }
       const confirmedCheckIn = type === 'workout' && (useCheckIn || championshipCheckInRequired)
         ? await activityService.performGymCheckIn()
         : null;
