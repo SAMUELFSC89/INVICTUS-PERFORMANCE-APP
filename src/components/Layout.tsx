@@ -7,7 +7,6 @@ import { cn } from '../lib/utils';
 import { AchievementTracker } from './AchievementTracker';
 import { XPToast } from './XPToast';
 import { FloatingSessionIndicator } from './FloatingSessionIndicator';
-import { InvictusAIFloatingAssistant } from './InvictusAIFloatingAssistant';
 
 import { useUser } from '../UserContext';
 import { TermsAndConsent } from './TermsAndConsent';
@@ -62,9 +61,12 @@ export function Layout() {
     <div className="min-h-screen app-fundo text-on-surface font-body flex flex-col">
       <TermsAndConsent />
       <AchievementTracker />
+      {/* #246: removido o acesso flutuante da Invictus IA (ficava duplicado com
+          o card "Invictus IA" dos Acessos Rápidos da Home e com a própria
+          pagina /ai) -- a IA continua acessivel normalmente por la, só o FAB
+          arrastavel saiu. */}
       {!suppressLegacyChrome && <FloatingSessionIndicator />}
-      {!suppressLegacyChrome && <InvictusAIFloatingAssistant />}
-      
+
       <XPToast 
         isVisible={xpToast.visible} 
         points={xpToast.points} 
@@ -149,7 +151,14 @@ export function Layout() {
       </main>
 
       {/* Bottom Navigation - Thin style with labels */}
-      {!suppressLegacyChrome && <nav id="bottom-nav" className="fixed bottom-0 left-0 right-0 z-30 pb-safe-offset-4 pointer-events-none">
+      {/* #246: a Home ("/") tem seu proprio footer completo (nh-footer,
+          portalled direto pro body em Home.tsx: Inicio/Campeonatos/+/Desafios/
+          Perfil) desde a reescrita nh-*. Esse nav legado (Inicio/Ranking/
+          Desafios/Perfil) continuava montado por baixo dele porque a Home
+          nunca entrou na lista de suppressLegacyChrome -- ficava um "menu
+          fantasma" vazando atras do nav novo. Mesmo raciocinio que ja existe
+          pra Power Lift/Saude/Activity (cada um com footer proprio). */}
+      {!suppressLegacyChrome && !isHome && <nav id="bottom-nav" className="fixed bottom-0 left-0 right-0 z-30 pb-safe-offset-4 pointer-events-none">
         <div className="max-w-lg mx-auto px-4 md:px-6 pb-4 md:pb-6">
           <div className="pointer-events-auto flex justify-between items-center h-16 md:h-20 px-2 md:px-4 bg-[#16120C]/85 backdrop-blur-3xl border border-[#F5A623]/25 shadow-[0_8px_32px_rgba(0,0,0,0.7)] rounded-[24px] md:rounded-[32px]">
             <NavItem
