@@ -784,8 +784,15 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
     <div id="activity-history-section" className="bg-surface-card border border-white/10 rounded-[22px] sm:rounded-[28px] p-4 sm:p-6 space-y-5 sm:space-y-6 shadow-2xl relative overflow-hidden">
       <div className="absolute top-0 right-0 w-80 h-80 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
-        <div className="flex items-center gap-3">
+      <div className="activity-history-toolbar flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
+        {/* #249: classe estavel pra tela wrapper (ActivityHistoryPageNew) poder
+            esconder só o titulo/badge duplicados sem esconder o botao de
+            atualizar junto -- a pagina nova ja mostra seu proprio titulo
+            "HISTÓRICO DE ATIVIDADES" antes deste componente. A regra anterior
+            em ActivityHistoryPageNew.css usava `:first-of-type`, que na
+            verdade acertava o brilho decorativo acima (o primeiro <div>
+            filho), entao o cabecalho duplicado continuava visivel. */}
+        <div className="activity-history-title flex items-center gap-3">
           <div className="p-3 bg-primary/10 border border-primary/20 rounded-2xl text-primary shrink-0">
             <History size={24} />
           </div>
