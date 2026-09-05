@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, ArrowLeft, Bell, Building2, Check, CheckSquare, ChevronRight, FileText, Globe2, HelpCircle, Landmark, Languages, LockKeyhole, MapPin, Moon, Plus, RefreshCw, Search, Settings, ShieldCheck, Target, Trash2, Trophy, UserRound, Watch, Wifi, X } from 'lucide-react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { auth, db } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -130,7 +131,18 @@ export function ProfileSecondary() {
         // OAuth: saimos do app e voltamos pelo callback. O estado real so pode
         // ser afirmado quando /api/wearables confirmar o vinculo salvo.
         const url = await stravaService.authorize('/profile/wearables');
-        window.location.assign(url);
+        // #250: no app nativo (Capacitor), window.location.assign navegaria a
+        // PROPRIA WebView pra strava.com -- fora do allowNavigation do
+        // capacitor.config.ts, e mesmo se abrisse, strava.com nunca devolveria
+        // o usuario pro app (sem deep link de volta). Browser.open usa o
+        // navegador in-app do sistema (SFSafariViewController/Custom Tabs),
+        // que o /callback do backend fecha via redirect pro esquema
+        // invictus:// assim que a conexao termina (ver MobileBridge.tsx).
+        if (Capacitor.isNativePlatform()) {
+          await Browser.open({ url });
+        } else {
+          window.location.assign(url);
+        }
         return;
       }
       const autorizado = await manager.connectProvider(provider);
@@ -162,6 +174,26 @@ export function ProfileSecondary() {
     setSearchParams(proximos, { replace: true });
     void connectProvider(alvo);
   }, [page, searchParams, setSearchParams, connectProvider]);
+  // #250: no app nativo o retorno do OAuth do Strava chega como um deep link
+  // (invictus://strava-callback?strava=connected|error), que o MobileBridge
+  // já intercepta pra fechar o navegador in-app -- e também dispara este
+  // evento pra quem estiver na tela de Dispositivos atualizar o status sem
+  // precisar puxar pra atualizar manualmente. Mesma exigência de ordem do
+  // efeito acima: precisa vir depois de setProv estar inicializado.
+  useEffect(() => {
+    if (page !== 'wearables') return;
+    const onStravaCallback = (event: Event) => {
+      const detail = (event as CustomEvent<{ outcome?: string }>).detail;
+      if (detail?.outcome === 'error') {
+        setProv('strava', 'error', 'Não foi possível concluir a conexão com o Strava.');
+        return;
+      }
+      setProv('strava', 'connected', 'Strava conectado.');
+      void loadWearables();
+    };
+    window.addEventListener('invictus:strava-callback', onStravaCallback);
+    return () => window.removeEventListener('invictus:strava-callback', onStravaCallback);
+  }, [page, loadWearables]);
   // #248: a ingestao segura de HealthKit/Health Connect agora existe no
   // servidor (api/_handlers/wearables.ts, action "sync"). Sincroniza cada
   // fonte conectada e junta os resultados numa unica mensagem -- o usuario

@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { auth, onAuthStateChanged } from '../firebase';
 import { API_CONFIG } from '../config';
 
@@ -76,7 +77,11 @@ export const stravaService = {
     const user = await this.getAuthUser();
 
     const idToken = await user.getIdToken();
-    const url = `${getApiBase()}/auth?returnPath=${encodeURIComponent(returnPath)}`;
+    // #250: avisa o backend se é o app nativo -- ele usa isso pra decidir se
+    // o /callback devolve o controle por deep link (invictus://) ou por
+    // redirect HTTPS normal (ver ProfileSecondary.connectProvider).
+    const platform = Capacitor.isNativePlatform() ? 'native' : 'web';
+    const url = `${getApiBase()}/auth?returnPath=${encodeURIComponent(returnPath)}&platform=${platform}`;
     const res = await fetch(url, {
       headers: { 'Authorization': `Bearer ${idToken}` }
     });

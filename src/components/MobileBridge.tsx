@@ -71,6 +71,15 @@ export function MobileBridge() {
         // Browser was not open or already closed
       }
 
+      // #250: retorno do OAuth do Strava (ver api/_handlers/strava.ts,
+      // buildStravaRedirectUrl) -- avisa quem estiver na tela de Dispositivos
+      // (ProfileSecondary) pra atualizar o status sem exigir refresh manual.
+      if (data.url.includes('strava-callback')) {
+        const outcome = data.url.includes('strava=error') ? 'error' : 'connected';
+        window.dispatchEvent(new CustomEvent('invictus:strava-callback', { detail: { outcome } }));
+        return;
+      }
+
       // Check if this is an auth redirect
       if (
         data.url.includes('access_token') || 

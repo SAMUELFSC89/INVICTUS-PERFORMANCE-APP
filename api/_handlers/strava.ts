@@ -22,6 +22,30 @@ function sanitizeReturnPath(value: unknown): string {
   return /^\/[a-zA-Z0-9_/?=&.-]{0,256}$/.test(candidate) ? candidate : '/profile/wearables';
 }
 
+// #250: o app nativo (Capacitor) carrega o bundle local (webDir 'dist', sem
+// server.url) -- window.location.assign/uma navegacao comum pra strava.com
+// tanto pode ser bloqueada pelo allowNavigation da WebView quanto, mesmo
+// quando abre num navegador in-app (Browser.open), nunca devolve o controle
+// pro app: strava.com nao conhece nosso esquema de URL, entao so um redirect
+// FINAL para um deep link (invictus://, ja registrado no Info.plist/Android
+// Manifest) aciona appUrlOpen e fecha o navegador de volta pro app. Na web o
+// redirect HTTPS normal continua funcionando (mesma aba do navegador real).
+function sanitizeClientPlatform(value: unknown): 'native' | 'web' {
+  return value === 'native' ? 'native' : 'web';
+}
+
+function buildStravaRedirectUrl(platform: 'native' | 'web', returnPath: string, outcome: 'connected' | 'error'): string {
+  if (platform === 'native') {
+    return `invictus://strava-callback?strava=${outcome}`;
+  }
+  let appUrl = process.env.APP_URL || 'https://www.invictusperformance.app.br';
+  appUrl = appUrl.replace(/\/$/, '');
+  if (appUrl.includes('sem-desculpa.vercel.app')) {
+    appUrl = appUrl.replace('sem-desculpa.vercel.app', 'www.invictusperformance.app.br');
+  }
+  return `${appUrl}${returnPath}?strava=${outcome}`;
+}
+
 // 1. Rewrite middleware to support unified query-based / body-based actions (for backwards compatibility)
 router.use((req: any, res: any, next: any) => {
   if (cors(req, res)) return;
@@ -163,6 +187,11 @@ router.post('/webhook', async (req: any, res: any) => {
 
 // --- Callback Handler (GET /callback) ---
 router.get('/callback', async (req: any, res: any) => {
+  // #250: resolvido assim que o state OAuth é lido, para o catch abaixo
+  // também poder mandar o app nativo de volta via deep link em vez de deixar
+  // o usuário preso numa página de erro em JSON dentro do navegador in-app.
+  let resolvedPlatform: 'native' | 'web' = 'web';
+  let resolvedReturnPath = '/profile/wearables';
   try {
     const { code, state } = req.query;
     if (!state) return res.status(400).json({ error: 'Estado OAuth inválido ou expirado.' });
@@ -186,6 +215,9 @@ router.get('/callback', async (req: any, res: any) => {
     }
     const userId = String(stateData.userId);
     const returnPath = sanitizeReturnPath(stateData.returnPath);
+    const clientPlatform = sanitizeClientPlatform(stateData.clientPlatform);
+    resolvedPlatform = clientPlatform;
+    resolvedReturnPath = returnPath;
 
     console.log('[Strava Callback] Recebido retorno OAuth para usuário autenticado previamente.');
 
@@ -193,6 +225,7 @@ router.get('/callback', async (req: any, res: any) => {
 
     if (!STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET) {
       console.error('[Strava Callback] Credenciais Strava ausentes no servidor.');
+      if (clientPlatform === 'native') return res.redirect(buildStravaRedirectUrl('native', returnPath, 'error'));
       return res.status(503).json({ error: 'A conexão com o Strava está indisponível no momento.' });
     }
 
@@ -229,17 +262,14 @@ router.get('/callback', async (req: any, res: any) => {
       console.warn('[Strava Callback] Initial historical sync completed with warning/error:', err.message || err);
     });
 
-    let appUrl = process.env.APP_URL || 'https://www.invictusperformance.app.br';
-    appUrl = appUrl.replace(/\/$/, '');
-    
-    if (appUrl.includes('sem-desculpa.vercel.app')) {
-      appUrl = appUrl.replace('sem-desculpa.vercel.app', 'www.invictusperformance.app.br');
-    }
-    
-    console.log('[Strava Callback] Successfully connected. Redirecting to:', `${appUrl}${returnPath}?strava=connected`);
-    return res.redirect(`${appUrl}${returnPath}?strava=connected`);
+    const redirectUrl = buildStravaRedirectUrl(clientPlatform, returnPath, 'connected');
+    console.log('[Strava Callback] Successfully connected. Redirecting to:', redirectUrl);
+    return res.redirect(redirectUrl);
   } catch (error: any) {
     console.error('[Strava Callback Error]:', error);
+    if (resolvedPlatform === 'native') {
+      return res.redirect(buildStravaRedirectUrl('native', resolvedReturnPath, 'error'));
+    }
     return res.status(500).json({ error: 'Não foi possível concluir a conexão com o Strava.' });
   }
 });
@@ -266,6 +296,10 @@ router.get('/auth', requireUserAuth, async (req: any, res: any) => {
       userId,
       returnPath: sanitizeReturnPath(returnPath),
       provider: 'strava',
+      // #250: o cliente (stravaService.authorize) informa se é o app nativo
+      // via ?platform=native -- o /callback usa isso pra decidir se devolve
+      // o controle por deep link (invictus://) ou por redirect HTTPS normal.
+      clientPlatform: sanitizeClientPlatform(req.query.platform),
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
     });
