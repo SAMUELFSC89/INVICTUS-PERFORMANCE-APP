@@ -1,5 +1,5 @@
-import { getModalityConfig } from '../../config/cardioConfig';
-import type { HealthWorkoutInput } from './healthViewModel';
+import { getModalityConfig } from '../../config/cardioConfig.js';
+import type { HealthWorkoutInput } from './healthViewModel.js';
 
 /** Input must already be scoped to the signed-in user's eligible health history.
  * Competition approval is deliberately not a requirement of this summary. */

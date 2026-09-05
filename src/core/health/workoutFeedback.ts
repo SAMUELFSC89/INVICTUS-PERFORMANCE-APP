@@ -1,4 +1,4 @@
-import type { RecordedExerciseSet, WorkoutFeedback, WorkoutFeedbackInsight, WorkoutHealthRecord } from './workoutHealthTypes';
+import type { RecordedExerciseSet, WorkoutFeedback, WorkoutFeedbackInsight, WorkoutHealthRecord } from './workoutHealthTypes.js';
 
 /** Product evidence requirements, not medical thresholds or validated clinical scores. */
 export const WORKOUT_FEEDBACK_RULES = Object.freeze({
