@@ -26,7 +26,13 @@ export function Layout() {
   const isHome = location.pathname === '/' || location.pathname === '/invite';
   // Power Lift owns the whole viewport and ships its own footer. Keeping the
   // legacy shell mounted here produced two navigation bars on the same screen.
-  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity';
+  // #241: Musculação (Meu Plano e todo o fluxo de criação de treino) tambem
+  // desenha o proprio cabecalho em tela cheia (.mus-header, .mus-screen com
+  // z-index proprio) -- faltava aqui, entao o badge LVL + sino fixo deste
+  // Layout (z-50, canto superior direito) continuava renderizado por cima/
+  // por baixo do cabecalho da tela, causando a sobreposicao reportada pelo
+  // usuario ("sino e level por baixo ainda aparecendo" na tela Meu Plano).
+  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao';
 
   const [theme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
