@@ -1,0 +1,334 @@
+{
+  "scope": "Independent static framing and identification review of 13 retained original assets. Original files read only.",
+  "count": 13,
+  "allOriginalsUnchanged": true,
+  "mandatoryRegenerations": 0,
+  "importantQualification": "Do not claim every item has every scene/equipment part fully framed. Four originals contain border-cropped background or bench-base details, without losing the exercise identification.",
+  "summary": {
+    "bodyCropsObserved": 0,
+    "primaryEquipmentMinorBaseCrops": 1,
+    "secondaryBackgroundEquipmentCropOnly": 3,
+    "noPhysicalCropObserved": 9
+  },
+  "items": [
+    {
+      "id": "dumbbell_bench_press",
+      "reviewStatus": "RETAIN_ORIGINAL_STATIC_VISUAL_REVIEWED",
+      "observations": [
+        "Full body, both dumbbells and complete flat bench visible.",
+        "No physically cropped exercise equipment observed."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/dumbbell_bench_press/thumb.png",
+      "sha256": "086e5eb1eb33d02b98242ce7be47df61d55f50983f4a48e8a4e94782b173aae2",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "incline_dumbbell_press",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Body, both dumbbells and incline bench including its supporting bases remain visible.",
+        "Two secondary rack uprights extend out of the top edge."
+      ],
+      "physicalCropClassification": "SECONDARY_BACKGROUND_EQUIPMENT_CROP",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Do not claim the whole rack is visible. Rack is not necessary to identify the dumbbell incline press; preserving original remains reasonable."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/incline_dumbbell_press/thumb.png",
+      "sha256": "88f4b46fa10de87e2ebeb8992e41ce331ac13324d2044abf4ead9311f8543f1e",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "pec_deck_fly",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full woman, both handles, upper pivots and machine base within frame.",
+        "Low-contrast dark machine edges remain visible."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Top machine margin is small, about 2–3%, without observed physical cropping."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/pec_deck_fly/thumb.png",
+      "sha256": "7b81938c841849353409484398520c9b27eda7c5a0a11905bffa5a53ba9b0684",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "classic_push_up",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full body, hands, feet and ground support visible.",
+        "Background rack reaches beyond top/left edge and dumbbell shelf extends beyond right edge."
+      ],
+      "physicalCropClassification": "SECONDARY_BACKGROUND_EQUIPMENT_CROP",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "No participant anatomy cropped. Background gym equipment is intentionally partial; do not describe this as an isolated full-equipment cutout."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/classic_push_up/thumb.png",
+      "sha256": "78abbdb344da6fb63c4d244e0c1af0d38431c75589dfabe3b36a5de6a840cc3e",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "decline_push_up",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full woman, both hands, full feet and bench top supporting feet are visible.",
+        "Right tip of the bench ground base is clipped by the right image edge.",
+        "Background squat rack uprights also extend beyond top edge."
+      ],
+      "physicalCropClassification": "PRIMARY_EQUIPMENT_MINOR_BASE_CROP",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "The supporting bench is not completely framed. Cut is at the distal ground-base tip, not the foot-support surface, so exercise identification remains intact.",
+        "Optional reframe could meet strict entire-bench aesthetic, but mandatory regeneration is not justified by identification alone."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/decline_push_up/thumb.png",
+      "sha256": "8d16ec0c0431355ec3a394363bf3a9a44e258a01d375f7d251b3795dee76736c",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "incline_push_up",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full body, both hands on bench, both feet on floor and entire bench top visible.",
+        "Bench bases appear inside frame; leftmost foot lies very close to left edge."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Left base margin only about 1%; do not apply cover rendering. No definite physically missing bench tip observed."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/incline_push_up/thumb.png",
+      "sha256": "aaea4a59e96ce68fd252d1b7e1769d73d26cd43e517686718e4bb6445387a8f3",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "barbell_bent_over_row",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full body, whole bar with both ends and both plates inside frame.",
+        "Background rack uprights and storage parts extend beyond image edges."
+      ],
+      "physicalCropClassification": "SECONDARY_BACKGROUND_EQUIPMENT_CROP",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Secondary background rack is cropped; working bar and participant are complete."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/barbell_bent_over_row/thumb.png",
+      "sha256": "6c162119e106fb69f92bd698e47d917dc173a5b5dfc6cae04daac212bd274bb6",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "t_bar_row",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full participant, shoes, plate, handles, foot platform and compact T-bar apparatus bases visible.",
+        "No definite physical crop observed."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Minimum base/head margins below 8% visual target."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/t_bar_row/thumb.png",
+      "sha256": "400a64a2f9358c55312800c65fa8c243219b697b652375a3db71953936ea6c49",
+      "dimensions": [
+        640,
+        640
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "leg_curl",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full participant and complete lying leg-curl machine structure inside image.",
+        "One shoe is partially occluded by leg roller; this is internal occlusion, not border clipping."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Nearest shoe and front machine handle have only about 1% border clearance.",
+        "Background has gray/brown glow and is not uniform black."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/leg_curl/thumb.png",
+      "sha256": "8455c322a237b7d555c8ab0ef3aa143d4fe26f2a3429e0b0d3abcef246c8397d",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "seated_leg_curl",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full head, feet, seat, leg mechanism, weight stack and ground bases inside frame.",
+        "No definite body or machine crop observed."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Several equipment edges have small margins below 8%.",
+        "Background glow and machine artwork/labels differ from newer simpler black-background assets."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/seated_leg_curl/thumb.png",
+      "sha256": "c1fab44da4981c4ca1b45f9e657acb717535ee4d1dde77cedbfbdbbde3f44fce",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "barbell_stiff_deadlift",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full hair silhouette, body, both dumbbells and both shoes are inside frame.",
+        "No actual lateral equipment crop observed despite tight framing."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Top and bottom margins are very small, approximately 0.5–1%; contain with padding required.",
+        "Legacy ID says barbell, but actual image depicts dumbbells; catalogue naming/equipment must acknowledge this historical mismatch.",
+        "Background contains gray/brown glow, not uniform black."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "sha256": "e234c529c8d3b9c696202b543a9687ebb051fd340b9e7a9c14d1c5830bb8d4d0",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "dumbbell_lunge",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full body, both shoes and two dumbbells inside frame.",
+        "Far dumbbell partly occluded by front leg; no border crop observed."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Front shoe left margin about 1%; rear shoe right margin also small.",
+        "Static image cannot establish whether stepping occurs. Background gray/brown glow retained."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/dumbbell_lunge/thumb.png",
+      "sha256": "863db95cc8928d2e28ef65cbb915482ece37294106fd41f034057771e5bacd92",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    },
+    {
+      "id": "dumbbell_walking_lunge",
+      "reviewStatus": "RETAIN_ORIGINAL_WITH_DOCUMENTED_LIMITATIONS",
+      "observations": [
+        "Full body, both complete shoes and both dumbbells within image.",
+        "No definite physical crop observed."
+      ],
+      "physicalCropClassification": "NONE_OBSERVED",
+      "identificationCompromisedByCrop": false,
+      "mandatoryRegeneration": false,
+      "limitations": [
+        "Ponytail top margin about 1%; close framing requires contain.",
+        "A still cannot distinguish the ongoing walking sequence from a stationary lunge.",
+        "Background gray/brown glow retained."
+      ],
+      "path": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/dumbbell_walking_lunge/thumb.png",
+      "sha256": "9b48f55aad6a4a44f0c9e13f7c565cfb902d3af11f6ca240bffe7ce756ee22e2",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "reviewMethod": "Individual view_image inspection of retained source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING",
+      "unchangedFromHead": true
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+{
+  "scope": "Independent static visual QA only; no clinical, biomechanical or motion certification",
+  "reviewer": "images_shoulders independent second pass",
+  "count": 7,
+  "mandatoryCorrections": 0,
+  "decisionRule": "Only concrete important defects require regeneration; small margins without physical crops are documented rather than rejected.",
+  "items": [
+    {
+      "id": "standing_cable_pallof_press",
+      "reviewStatus": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "identification": "Standing cable press identification is plausible from lateral anchor and hands held together in front of torso.",
+      "observations": [
+        "Cable is one continuous segment from pulley connection to handle, without split or duplicate segment.",
+        "Cable overlaps upper arms in the image plane, but remains visibly continuous in front; this view does not establish an actual body penetration.",
+        "Hands and forearms overlap strongly in perspective; individual grips cannot be fully assessed.",
+        "Full body and complete tower, overhead attachment and base feet visible."
+      ],
+      "limitations": [
+        "Oblique camera view makes exact transverse alignment of torso relative to anchor ambiguous. Do not use this still to certify anti-rotation technique.",
+        "Top margin about 3–4%, below visual target, but no physical crop."
+      ],
+      "needsCorrection": false,
+      "path": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/standing_cable_pallof_press.png",
+      "sha256": "1741b936093093342d2e2e299931914c695e27fca3b521d79702ab0b91ebd127",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "reviewMethod": "Individual view_image inspection of final source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING"
+    },
+    {
+      "id": "lying_leg_raise",
+      "reviewStatus": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "identification": "Supine straight-leg raise intermediate position is recognizable.",
+      "observations": [
+        "Two complete extended legs and two shoes visible, torso on mat, nearer arm beside body with hand on mat.",
+        "Far arm is mostly occluded by torso; no extra limb observed.",
+        "Entire head, hair, body and mat are within frame."
+      ],
+      "limitations": [
+        "Head is slightly lifted or supported by gathered hair, and lumbar contact cannot be measured from this still. It does not certify head/neck or back positioning.",
+        "Small visible light halo around subject means background is black with subtle near-black shading, not a mathematically uniform color."
+      ],
+      "needsCorrection": false,
+      "path": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/lying_leg_raise.png",
+      "sha256": "d97d2e10cca931c5f89345d77a18c9eaf167b03efad13f44d1b3f85846b8545a",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "reviewMethod": "Individual view_image inspection of final source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING"
+    },
+    {
+      "id": "dead_bug",
+      "reviewStatus": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "identification": "Initial tabletop position for dead bug is recognizable, with both arms raised and hips/knees bent.",
+      "observations": [
+        "Two full arms and hands, two knees and shoes visible.",
+        "No moving unilateral phase shown, so no incorrect same-side movement is depicted.",
+        "Body and entire mat are inside frame."
+      ],
+      "limitations": [
+        "This still does not show the alternating arm/leg movement and cannot validate coordination or execution.",
+        "Head appears slightly lifted; neck and lumbar contact cannot be certified from image.",
+        "Mat side margins about 6%, below target without cropping."
+      ],
+      "needsCorrection": false,
+      "path": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/dead_bug.png",
+      "sha256": "f8c76df95f9d05cb61984229f1b624556220aa6aa11f38131aecd0cc05ca5c07",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "reviewMethod": "Individual view_image inspection of final source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING"
+    },
+    {
+      "id": "reverse_crunch",
+      "reviewStatus": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "identification": "Bent-knee starting position for reverse crunch is recognizable with arms beside torso.",
+      "observations": [
+        "Two bent knees and full feet, full body and entire mat visible.",
+        "Far arm mostly occluded by body; no concrete anatomical duplication observed.",
+        "Hip curl is not shown; current image is a starting position."
+      ],
+      "limitations": [
+        "Do not describe the still as proof of the concentric hip-lift phase or complete execution.",
+        "Head/neck support is partly obscured by hair; professional technique review remains required for instruction."
+      ],
+      "needsCorrection": false,
+      "path": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/reverse_crunch.png",
+      "sha256": "e6524a5d942ca1189743e3a4a7cdbdf73c9d1fa485da7c388e7ea291ecb91457",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "reviewMethod": "Individual view_image inspection of final source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING"
+    },
+    {
+      "id": "dumbbell_concentration_curl",
+      "reviewStatus": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "identification": "Seated concentration curl identifiable from single supinated dumbbell, working arm between thighs and opposite hand on thigh.",
+      "observations": [
+        "Working upper arm/elbow is near inner thigh; no clear floating-support error is established in this view.",
+        "Single dumbbell complete, distinct hands, full legs/shoes, bench top and bases visible.",
+        "No physical crop or duplicated limb observed."
+      ],
+      "limitations": [
+        "Long-sleeved top and full-length leggings differ from the shorts/sports-top outfit in other catalogue illustrations. Colors and gold motif remain consistent.",
+        "Exact elbow pressure/contact and motion are not validated by a still."
+      ],
+      "needsCorrection": false,
+      "path": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/dumbbell_concentration_curl.png",
+      "sha256": "7b0925462ed4c0a1749328fad201d71ff066bd6cdcc513086baedf22f1cf566c",
+      "dimensions": [
+        1024,
+        1536
+      ],
+      "reviewMethod": "Individual view_image inspection of final source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING"
+    },
+    {
+      "id": "lying_ez_bar_triceps_extension",
+      "reviewStatus": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "identification": "Lying EZ-bar triceps extension in an intermediate elbow-flexed position is recognizable.",
+      "observations": [
+        "Entire continuous EZ bar, both plates and sleeves visible.",
+        "Two distinct hands grip bar; both arms connect naturally to shoulders without apparent extra limbs.",
+        "Back and head supported by bench, both feet visible at floor, complete bench top and legs within frame."
+      ],
+      "limitations": [
+        "Exact grip width, elbow angles, movement range and safety cannot be certified from a still.",
+        "Bar right margin about 5%, below target but no cropping."
+      ],
+      "needsCorrection": false,
+      "path": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/lying_ez_bar_triceps_extension.png",
+      "sha256": "9443c2ca7afda2e8128427f8fdd43a29baec5a795d28e9dc426629aaa7755e08",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "reviewMethod": "Individual view_image inspection of final source PNG",
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING"
+    },
+    {
+      "id": "single_arm_cable_triceps_extension",
+      "path": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/single_arm_cable_triceps_extension.png",
+      "sha256": "09d682205ea51aae9c9d966d2df0f618417a25868472c884262a8e30c12cc702",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "reviewMethod": "Individual view_image inspection of final source PNG",
+      "reviewStatus": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "identification": "Standing single-arm high-cable triceps extension or pressdown in near-extended position is recognizable.",
+      "observations": [
+        "Working hand alone grips the single D-handle; free hand is open at side, clearly separate from handle and carabiner.",
+        "One continuous cable runs from high pulley to stopper, carabiner and handle.",
+        "Cable visually overlaps the free forearm, with stopper/cable visibly drawn in front of skin; foreground projection is plausible and no clear physical fusion is established.",
+        "Full body, both complete shoes, full cable tower and all base feet are within frame."
+      ],
+      "limitations": [
+        "A single oblique image cannot establish full depth clearance between free forearm and cable, but does not justify mandatory regeneration on its own.",
+        "Top margin about 2%, below target without physical cropping.",
+        "Professional grip, alignment and movement assessment remain pending."
+      ],
+      "needsCorrection": false,
+      "professionalReview": "PENDING",
+      "dynamicReview": "PENDING"
+    }
+  ]
+}

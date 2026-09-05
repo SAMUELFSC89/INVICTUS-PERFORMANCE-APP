@@ -6,10 +6,11 @@ import {
   Dumbbell, Info, ListFilter, Pencil, Play, Plus,
   Search, ShieldCheck, Sparkles, Target, Trophy, UserRound
 } from 'lucide-react';
+import { OfficialExerciseMedia } from '../components/OfficialExerciseMedia';
 import { InvictusLogo } from '../components/InvictusLogo';
 import { useUser } from '../UserContext';
-import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID } from '../data/exerciseCatalog';
-import { workoutPlanService, FALLBACK_REQUIREMENTS } from '../services/workoutPlanService';
+import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_MUSCLE_GROUP_LABELS, type OfficialMuscleGroup, isOfficialExerciseCompatible } from '../data/exerciseCatalog';
+import { workoutPlanService } from '../services/workoutPlanService';
 import { activityService } from '../services/activityService';
 import type { PlannedExercise, PlannedWorkout, WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
 import './Musculation.css';
@@ -33,7 +34,7 @@ const equipmentOptions = [
 // determina o plano de contingencia (buildLocalFallbackPlan), garantindo
 // que os dois nunca fiquem fora de sincronia de novo.
 const availableAiExerciseCount = (equipment: string[]) => OFFICIAL_EXERCISES_BATCH_01.filter((exercise) =>
-  (FALLBACK_REQUIREMENTS[exercise.id] || []).every((item) => equipment.includes(item))
+  isOfficialExerciseCompatible(exercise.id, equipment)
 ).length;
 
 const emptyWorkout = (index: number): PlannedWorkout => ({
@@ -90,19 +91,9 @@ function Choice({ selected, onClick, icon, title, detail }: { selected: boolean;
 function ExerciseRow({ exerciseId, onAdd }: { exerciseId: string; onAdd?: () => void }) {
   const exercise = OFFICIAL_EXERCISE_BY_ID.get(exerciseId);
   if (!exercise) return null;
-  // #326: exercicios novos (ex: Pernas) entram no catalogo com
-  // thumbStatus 'waiting_for_thumb' antes da ilustracao real existir em
-  // public/assets/exercise-library/v1/<id>/thumb.png. Sem isto, <img>
-  // simplesmente quebrava (icone de imagem quebrada do navegador) --
-  // agora cai num placeholder com o icone de peso, deixando claro que e
-  // proposital, nao um bug.
-  const thumbReady = exercise.thumbStatus === 'ready';
   return <article className="mus-exercise-row">
-    {thumbReady
-      ? <img src={exercise.thumbUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; event.currentTarget.nextElementSibling?.classList.add('is-visible'); }} />
-      : null}
-    <span className={`mus-exercise-thumb-pending ${thumbReady ? '' : 'is-visible'}`} aria-hidden="true"><Dumbbell /></span>
-    <div><strong>{exercise.name}</strong><span>{exercise.muscleGroup}</span></div>
+    <OfficialExerciseMedia exercise={exercise} className="mus-exercise-media" />
+    <div><strong>{exercise.name}</strong><span>{exercise.muscleSubgroup === 'biceps' ? 'Bíceps' : exercise.muscleSubgroup === 'triceps' ? 'Tríceps' : OFFICIAL_MUSCLE_GROUP_LABELS[exercise.muscleGroup]}</span></div>
     {onAdd ? <button type="button" aria-label={`Adicionar ${exercise.name}`} onClick={onAdd}><Plus /></button> : null}
   </article>;
 }
@@ -117,7 +108,7 @@ export function Musculation() {
   const [manual, setManual] = useState<ManualDraft>(() => workoutPlanService.loadDraft<ManualDraft>() || initialManual());
   const [ai, setAi] = useState<AiDraft>(initialAi);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'todos' | 'peito' | 'costas' | 'pernas'>('todos');
+  const [filter, setFilter] = useState<'todos' | OfficialMuscleGroup | 'biceps' | 'triceps'>('todos');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -146,7 +137,7 @@ export function Musculation() {
     return activePlan.workouts.find(workout => workout.weekdays.includes(today)) || activePlan.workouts[0] || null;
   }, [activePlan]);
   const filteredExercises = useMemo(() => OFFICIAL_EXERCISES_BATCH_01.filter(exercise =>
-    (filter === 'todos' || exercise.muscleGroup === filter) && exercise.name.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))
+    (filter === 'todos' || exercise.muscleGroup === filter || exercise.muscleSubgroup === filter) && exercise.name.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))
   ), [filter, query]);
 
   const updateManualWorkout = (index: number, next: Partial<PlannedWorkout>) => setManual(current => ({
@@ -215,7 +206,7 @@ export function Musculation() {
 function Hub({ userName, plan, today, loading, onManual, onAi, onPlan, onWorkout, onStart }: any) {
   return <><Header /><section className="mus-hero"><div><h1>MUSCULAÇÃO</h1><p>Organize seus treinos, acompanhe sua evolução e supere seus limites.</p></div></section>
     {plan && today ? <section><h2 className="mus-section-title"><CalendarDays /> TREINO DE HOJE</h2><article className="mus-today-card">
-      {today.exercises[0] ? <img src={OFFICIAL_EXERCISE_BY_ID.get(today.exercises[0].exerciseId)?.thumbUrl} alt="" /> : null}
+      {today.exercises[0] ? <OfficialExerciseMedia exercise={OFFICIAL_EXERCISE_BY_ID.get(today.exercises[0].exerciseId)} label={today.exercises[0].exerciseId} className="mus-today-media" /> : null}
       <div><h3>{today.focus || today.name}</h3><span>{today.name}</span><p><Dumbbell /> {today.exercises.length} exercícios</p><p><Clock3 /> ~{plan.durationMinutes} min</p><button onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></div>
     </article></section> : <section className="mus-empty-plan"><h2>COMECE SEU PLANO</h2><p>{userName.split(' ')[0]}, escolha como deseja montar seus treinos.</p></section>}
     {plan ? <section><div className="mus-title-line"><h2>MEUS TREINOS</h2><button onClick={onPlan}>VER TODOS <ChevronRight /></button></div><div className="mus-workout-list">{plan.workouts.map((workout: PlannedWorkout, index: number) => <button key={workout.id} onClick={() => onWorkout(workout)}><i>{String.fromCharCode(65 + index)}</i><span><b>{workout.name}</b><small>{workout.focus}</small></span><em>{workout.exercises.length} exercícios</em><ChevronRight /></button>)}</div></section> : null}
@@ -229,7 +220,7 @@ function ManualFlow({ draft, setDraft, query, setQuery, filter, setFilter, filte
   return <><Header onBack={onBack} /><Steps current={draft.step} mode="manual" /><section className="mus-flow">
     {draft.step === 1 ? <><h1>CRIAR MANUALMENTE</h1><p>Monte seu treino escolhendo exercícios, séries, repetições, cargas e descansos.</p><h2>1. DADOS DO TREINO</h2><div className="mus-form-card"><label>NOME DO PLANO<input maxLength={60} value={draft.name} placeholder="Ex.: Meu plano de hipertrofia" onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><label>DESCRIÇÃO (OPCIONAL)<textarea maxLength={240} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label></div><h2>2. CONFIGURAÇÕES DO TREINO</h2><div className="mus-setting-grid"><label>DIAS POR SEMANA<div>{[1,2,3,4,5,6].map(n => <button key={n} className={draft.daysPerWeek === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, daysPerWeek: n, workouts: Array.from({length:n}, (_,i) => draft.workouts[i] || emptyWorkout(i)) })}>{n}</button>)}</div></label><label>TEMPO ESTIMADO<div>{[30,45,60,90].map(n => <button key={n} className={draft.durationMinutes === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, durationMinutes: n })}>{n}{n === 90 ? '+' : ''} min</button>)}</div></label><label>NÍVEL DO TREINO<select value={draft.experienceLevel || ''} onChange={event => setDraft({ ...draft, experienceLevel: event.target.value })}><option value="">Selecione</option><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select></label><label>OBJETIVO PRINCIPAL<select value={draft.objective} onChange={event => setDraft({ ...draft, objective: event.target.value })}><option>Hipertrofia</option><option>Força</option><option>Condicionamento</option><option>Saúde e qualidade de vida</option></select></label></div></> : null}
     {draft.step === 2 ? <><h1>2. DIVISÃO SEMANAL</h1><p>Defina quantos treinos e como eles serão distribuídos na semana.</p><div className="mus-form-card"><h3>SELECIONE OS DIAS DE CADA TREINO</h3>{draft.workouts.map((item: PlannedWorkout, index: number) => <article className="mus-split-row" key={item.id}><i>{index + 1}</i><input value={item.name} onChange={event => updateWorkout(index, { name: event.target.value })} /><input placeholder="Grupo muscular" value={item.focus} onChange={event => updateWorkout(index, { focus: event.target.value })} /><div>{weekdays.map((day, dayIndex) => <button key={day} className={item.weekdays.includes(dayIndex) ? 'is-selected' : ''} onClick={() => updateWorkout(index, { weekdays: item.weekdays.includes(dayIndex) ? item.weekdays.filter((n:number) => n !== dayIndex) : [...item.weekdays, dayIndex] })}>{day}</button>)}</div></article>)}</div></> : null}
-    {draft.step === 3 ? <><h1>3. EXERCÍCIOS</h1><p>Adicione os exercícios e configure séries, repetições e descanso.</p><div className="mus-workout-tabs">{draft.workouts.map((item: PlannedWorkout, index: number) => <button key={item.id} className={draft.selectedWorkout === index ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, selectedWorkout: index })}>{item.name}</button>)}</div><div className="mus-library"><div className="mus-search"><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar exercício na biblioteca" /><ListFilter /></div><div className="mus-filters">{['todos','peito','costas','pernas'].map(item => <button key={item} className={filter === item ? 'is-selected' : ''} onClick={() => setFilter(item)}>{item}</button>)}</div>{filteredExercises.map((exercise: any) => <ExerciseRow key={exercise.id} exerciseId={exercise.id} onAdd={() => addExercise(exercise.id)} />)}</div><h2>EXERCÍCIOS ADICIONADOS</h2><div className="mus-configured">{workout.exercises.map((exercise: PlannedExercise, index: number) => <article key={exercise.exerciseId}><ExerciseRow exerciseId={exercise.exerciseId} /><label>Séries<input type="number" value={exercise.sets} onChange={event => updateExercise(index, { sets: Number(event.target.value) })} /></label><label>Reps mín.<input type="number" value={exercise.repsMin} onChange={event => updateExercise(index, { repsMin: Number(event.target.value) })} /></label><label>Reps máx.<input type="number" value={exercise.repsMax} onChange={event => updateExercise(index, { repsMax: Number(event.target.value) })} /></label><label>Descanso<input type="number" value={exercise.restSeconds} onChange={event => updateExercise(index, { restSeconds: Number(event.target.value) })} /></label><label>Carga opcional<input type="number" value={exercise.initialLoadKg ?? ''} onChange={event => updateExercise(index, { initialLoadKg: event.target.value === '' ? undefined : Number(event.target.value) })} /></label></article>)}</div></> : null}
+    {draft.step === 3 ? <><h1>3. EXERCÍCIOS</h1><p>Adicione os exercícios e configure séries, repetições e descanso.</p><div className="mus-workout-tabs">{draft.workouts.map((item: PlannedWorkout, index: number) => <button key={item.id} className={draft.selectedWorkout === index ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, selectedWorkout: index })}>{item.name}</button>)}</div><div className="mus-library"><div className="mus-search"><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar exercício na biblioteca" /><ListFilter /></div><div className="mus-filters">{[['todos','Todos'],...Object.entries(OFFICIAL_MUSCLE_GROUP_LABELS),['biceps','Bíceps'],['triceps','Tríceps']].map(([item,label]) => <button key={item} className={filter === item ? 'is-selected' : ''} onClick={() => setFilter(item)}>{label}</button>)}</div>{filteredExercises.map((exercise: any) => <ExerciseRow key={exercise.id} exerciseId={exercise.id} onAdd={() => addExercise(exercise.id)} />)}</div><h2>EXERCÍCIOS ADICIONADOS</h2><div className="mus-configured">{workout.exercises.map((exercise: PlannedExercise, index: number) => <article key={exercise.exerciseId}><ExerciseRow exerciseId={exercise.exerciseId} /><label>Séries<input type="number" value={exercise.sets} onChange={event => updateExercise(index, { sets: Number(event.target.value) })} /></label><label>Reps mín.<input type="number" value={exercise.repsMin} onChange={event => updateExercise(index, { repsMin: Number(event.target.value) })} /></label><label>Reps máx.<input type="number" value={exercise.repsMax} onChange={event => updateExercise(index, { repsMax: Number(event.target.value) })} /></label><label>Descanso<input type="number" value={exercise.restSeconds} onChange={event => updateExercise(index, { restSeconds: Number(event.target.value) })} /></label><label>Carga opcional<input type="number" value={exercise.initialLoadKg ?? ''} onChange={event => updateExercise(index, { initialLoadKg: event.target.value === '' ? undefined : Number(event.target.value) })} /></label></article>)}</div></> : null}
     {draft.step === 4 ? <><h1>4. REVISÃO</h1><p>Confira a estrutura antes de salvar.</p>{draft.workouts.map((item: PlannedWorkout, index: number) => <article className="mus-review-card" key={item.id}><i>{String.fromCharCode(65 + index)}</i><div><h3>{item.name}</h3><p>{item.focus || 'Foco não informado'}</p><span>{item.exercises.length} exercícios · {item.exercises.reduce((sum:number, exercise:PlannedExercise) => sum + exercise.sets, 0)} séries</span></div><button onClick={() => setDraft({ ...draft, selectedWorkout:index, step:3 })}><Pencil /></button></article>)}</> : null}
     {draft.step === 5 ? <><h1>5. SALVAR TREINO</h1><p>Finalize seu treino e comece a evoluir.</p><div className="mus-final-data"><h2>DADOS FINAIS</h2><p><Dumbbell /><span>Nome do treino<b>{draft.name || 'Meu plano'}</b></span></p><p><CalendarDays /><span>Divisão<b>{draft.daysPerWeek} treinos por semana</b></span></p><p><Target /><span>Objetivo principal<b>{draft.objective}</b></span></p><p><Clock3 /><span>Tempo estimado<b>~{draft.durationMinutes} min</b></span></p></div><div className="mus-tip"><ShieldCheck /><span><b>DICA INVICTUS</b>Registre suas cargas e evolua a cada sessão.</span></div></> : null}
     <div className="mus-flow-actions">{draft.step > 1 ? <button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button> : null}{draft.step < 5 ? <button className="is-primary" onClick={next} disabled={draft.step === 1 && !draft.name.trim()}>CONTINUAR <ArrowRight /></button> : <button className="is-primary" onClick={onSave} disabled={loading}>{loading ? 'SALVANDO…' : 'SALVAR E IR PARA MEUS TREINOS'} <Check /></button>}</div>
@@ -279,5 +270,5 @@ function PlanView({ plan, onBack, onWorkout }: { plan: WorkoutPlan; onBack: () =
 }
 
 function WorkoutView({ workout, onBack, onStart, loading }: { plan: WorkoutPlan; workout: PlannedWorkout; onBack: () => void; onStart: () => void; loading: boolean }) {
-  return <><Header onBack={onBack} /><section className="mus-flow"><h1>{workout.name}</h1><p>{workout.focus}</p><div className="mus-workout-detail">{workout.exercises.map((item,index) => { const exercise = OFFICIAL_EXERCISE_BY_ID.get(item.exerciseId); return <article key={`${item.exerciseId}-${index}`}><img src={exercise?.thumbUrl} alt="" /><i>{index+1}</i><span><b>{exercise?.name || item.exerciseId}</b><small>{item.sets} × {item.repsMin}–{item.repsMax} · {item.restSeconds}s descanso{item.initialLoadKg !== undefined ? ` · ${item.initialLoadKg} kg inicial` : ''}</small></span></article>; })}</div><button className="mus-start-workout" onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></section></>;
+  return <><Header onBack={onBack} /><section className="mus-flow"><h1>{workout.name}</h1><p>{workout.focus}</p><div className="mus-workout-detail">{workout.exercises.map((item,index) => { const exercise = OFFICIAL_EXERCISE_BY_ID.get(item.exerciseId); return <article key={`${item.exerciseId}-${index}`}><OfficialExerciseMedia exercise={exercise} label={item.exerciseId} className="mus-detail-media" /><i>{index+1}</i><span><b>{exercise?.name || item.exerciseId}</b><small>{item.sets} × {item.repsMin}–{item.repsMax} · {item.restSeconds}s descanso{item.initialLoadKg !== undefined ? ` · ${item.initialLoadKg} kg inicial` : ''}</small></span></article>; })}</div><button className="mus-start-workout" onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></section></>;
 }

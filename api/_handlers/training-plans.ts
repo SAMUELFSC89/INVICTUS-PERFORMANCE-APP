@@ -5,19 +5,20 @@ import { classifyAiError, getAiApiKey, getAiWorkoutModel } from '../_lib/ai-conf
 import { isProUser } from '../_lib/entitlement.js';
 import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 
-const EXERCISES = [
-  { id: 'barbell_bench_press', group: 'peito', equipment: ['barra_anilhas', 'banco'] },
-  { id: 'dumbbell_bench_press', group: 'peito', equipment: ['halteres', 'banco'] },
-  { id: 'incline_dumbbell_press', group: 'peito', equipment: ['halteres', 'banco'] },
-  { id: 'standing_cable_fly', group: 'peito', equipment: ['crossover'] },
-  { id: 'pec_deck_fly', group: 'peito', equipment: ['maquinas'] },
-  { id: 'classic_push_up', group: 'peito', equipment: [] },
-  { id: 'decline_push_up', group: 'peito', equipment: ['banco'] },
-  { id: 'incline_push_up', group: 'peito', equipment: ['banco'] },
-  { id: 'barbell_bent_over_row', group: 'costas', equipment: ['barra_anilhas'] },
-  { id: 't_bar_row', group: 'costas', equipment: ['maquinas'] }
-] as const;
-const VALID_IDS = new Set(EXERCISES.map(item => item.id));
+import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS, isOfficialExerciseCompatible } from '../../src/data/exerciseCatalog.js';
+
+export class InvalidTrainingPlanError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidTrainingPlanError';
+  }
+}
+
+export function getCompatibleOfficialExercises(equipment: readonly string[]) {
+  return OFFICIAL_EXERCISES_BATCH_01
+    .filter(exercise => isOfficialExerciseCompatible(exercise.id, equipment))
+    .map(exercise => ({ id: exercise.id, name: exercise.name, group: exercise.muscleGroup, equipment: OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS[exercise.id] }));
+}
 
 const cleanText = (value: unknown, max = 120) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const clampInt = (value: unknown, min: number, max: number, fallback: number) => {
@@ -25,7 +26,7 @@ const clampInt = (value: unknown, min: number, max: number, fallback: number) =>
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
 };
 
-function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai' | 'imported') {
+export function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai' | 'imported', allowedIds?: ReadonlySet<string>) {
   const workouts = Array.isArray(raw?.workouts) ? raw.workouts.slice(0, 7).map((workout: any, workoutIndex: number) => ({
     id: cleanText(workout?.id, 64) || `workout_${workoutIndex + 1}`,
     name: cleanText(workout?.name, 40) || `Treino ${String.fromCharCode(65 + workoutIndex)}`,
@@ -33,7 +34,12 @@ function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai' | 'imp
     weekdays: Array.isArray(workout?.weekdays) ? workout.weekdays.map((day: unknown) => clampInt(day, 0, 6, 1)).slice(0, 7) : [],
     exercises: Array.isArray(workout?.exercises) ? workout.exercises.flatMap((exercise: any, index: number) => {
       const exerciseId = cleanText(exercise?.exerciseId, 80);
-      if (!VALID_IDS.has(exerciseId as any)) return [];
+      if (!OFFICIAL_EXERCISE_BY_ID.has(exerciseId)) {
+        throw new InvalidTrainingPlanError(`Exercício não reconhecido no catálogo oficial: ${exerciseId || '(sem ID)'}.`);
+      }
+      if (allowedIds && !allowedIds.has(exerciseId)) {
+        throw new InvalidTrainingPlanError(`O exercício ${exerciseId} exige equipamentos que não foram selecionados.`);
+      }
       return [{
         exerciseId,
         order: index,
@@ -45,7 +51,7 @@ function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai' | 'imp
       }];
     }).slice(0, 20) : []
   })).filter((workout: any) => workout.exercises.length > 0) : [];
-  if (!workouts.length) throw new Error('O plano precisa conter ao menos um exercício oficial.');
+  if (!workouts.length) throw new InvalidTrainingPlanError('O plano precisa conter ao menos um exercício oficial.');
   return {
     userId,
     name: cleanText(raw?.name, 60) || 'Meu plano',
@@ -64,7 +70,7 @@ function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai' | 'imp
 
 async function generatePlan(answers: any, userId: string) {
   const equipment = Array.isArray(answers?.equipment) ? answers.equipment.filter((item: unknown) => typeof item === 'string') : [];
-  const available = EXERCISES.filter(exercise => exercise.equipment.every(item => equipment.includes(item)) || exercise.equipment.length === 0);
+  const available = getCompatibleOfficialExercises(equipment);
   if (available.length < 3) throw new Error('Selecione equipamentos suficientes para montar um plano seguro com a biblioteca disponível.');
   const apiKey = getAiApiKey();
   if (!apiKey) throw new Error('AI_NOT_CONFIGURED');
@@ -110,8 +116,11 @@ async function generatePlan(answers: any, userId: string) {
   } catch {
     throw new Error('A IA não retornou um plano válido. Tente novamente.');
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new InvalidTrainingPlanError('A IA não retornou um plano válido. Tente novamente.');
+  }
   parsed.answers = answers;
-  return normalizePlan(parsed, userId, 'ai');
+  return normalizePlan(parsed, userId, 'ai', new Set(available.map(exercise => exercise.id)));
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -157,6 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Mantemos 422 para a interface orientar o atleta sem sugerir problema
       // de faturamento ou cota quando a resposta simplesmente não é válida.
       if (
+        error instanceof InvalidTrainingPlanError ||
         message.startsWith('Selecione equipamentos suficientes') ||
         message.startsWith('A IA não retornou um plano válido') ||
         message.startsWith('O plano precisa conter')
@@ -192,7 +202,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error('[API Training Plans] Falha de persistência:', error);
         return res.status(503).json({ error: 'O banco de planos está temporariamente indisponível.', code: 'DATABASE_UNAVAILABLE', retryable: true });
       }
-      return res.status(422).json({ error: message || 'Plano inválido.' });
+      return res.status(422).json({ error: message || 'Plano inválido.', code: 'INVALID_PLAN' });
     }
   }
   res.setHeader('Allow', 'GET, POST');

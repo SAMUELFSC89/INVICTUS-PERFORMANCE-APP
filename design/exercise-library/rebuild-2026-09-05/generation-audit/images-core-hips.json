@@ -1,0 +1,170 @@
+{
+  "generator": "image_gen builtin",
+  "background": "opaque black authorized",
+  "professionalReview": "PENDING",
+  "entries": [
+    {
+      "id": "abdominal_crunch",
+      "prompt": "Use case: stylized-concept. Create ONE production exercise-catalog still, abdominal_crunch. The attached adult athletic brunette woman is identity/style reference only; same face, high ponytail, black sports bra and fitted training shorts with small gold Spartan mark, black shoes with small gold details. Single woman doing a modest abdominal crunch on a plain dark fitness mat: knees bent, BOTH soles flat on mat, hands lightly crossed across chest, shoulders modestly lifted with neck aligned, lumbar region resting on mat. Clean full-body side-three-quarter camera, NOT glamour. Landscape canvas 1536x1024, entire head, hair, hands, knees, shoes and entire rectangular mat visible, generous 12% empty black border on ALL sides. Body and mat centered and occupy no more than 76% width. Background seamless opaque pure black, no transparency, no checkerboard, no scenery, soft studio rim lighting and realistic premium catalogue rendering. No text, no exercise labels, no diagrams, no arrows, no extra limbs, no cropped extremities.",
+      "reference": "public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "review": "Corpo completo, dois pés apoiados, mãos sobre o peito, posição identificável; margem do tapete aproximadamente 3%, abaixo do alvo de 8–12%, sem corte. Não representa avaliação profissional da execução.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-38bfa2e9-0e40-4668-9f7e-50f409d58333.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/abdominal_crunch.png",
+      "sha256": "3c3b1d3ae7d23381e7f6801044bcc14f1f4eacfc45832d6b6e1ececf70177f1c",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "cable_abdominal_crunch",
+      "prompt": "Use case: stylized-concept. ONE professional exercise library identification still: cable_abdominal_crunch. Adult female athlete matching reference face/ponytail, black and gold gym clothing and shoes. Kneeling cable abdominal crunch at compact black cable tower with gold details: both knees resting on a small full visible dark mat; rope from high pulley held just beside temples, torso mildly flexed downward, hips above heels. Rope mechanically connected and visible from tower upper pulley to hands. Full entire tower top, weight stack, base, athlete head/hair/hands and feet fully included, three-quarter side view. Square 1536x1536 image, pull camera back generously, combined machine+athlete occupies central 72% with 14% plain black empty border all edges. Opaque pure black seamless background, soft photographic studio rim lighting, realistic premium catalogue render. No diagrams, arrows, labels, weights text, watermark or extra limbs. Still only, not multiple frames.",
+      "reference": "public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "review": "Corpo, joelhos, pés, tapete e torre completos; corda visível ligada à polia. Margem superior da torre cerca de 1%, abaixo do alvo, sem corte. Pose de identificação, revisão profissional pendente.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-471525c5-d477-4d8e-a548-bc583ce84ba3.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/cable_abdominal_crunch.png",
+      "sha256": "6303e30b1b0fe98c6f35e930166ebe1e47cbd632f45a2670d6124478849ae481",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "reverse_crunch",
+      "prompt": "Use case: stylized-concept. ONE exercise-catalog still reverse_crunch, landscape 1536x1024. Adult female gym athlete, face and black-gold training uniform like attached reference, no exaggerated posing. She lies on a dark rectangular mat, showing a small reverse crunch identification position: upper back and rear of head REST visibly on mat, face directed upward, neck neutral, ponytail arranged away from head contact; arms alongside torso with palms pressing mat; both knees bent approximately 90 degrees, thighs drawn modestly toward torso, pelvis only slightly curled off mat. Side view with slight overhead angle so both knees, hands, face and shoes distinct. Complete head-to-toes and entire mat, NO CROPS. Distant camera: ALL content including mat confined to central 70% width and 65% height, huge 15% empty black border on left and right, at least 12% top and bottom. Opaque plain black background, subtle rim lighting, realistic premium 3D photographic fitness render. No labels, diagrams, arrows, text, watermarks, additional limbs. Thumbnail identification only, not tutorial.",
+      "reference": "public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "review": "Corpo e tapete completos com ampla margem; cabeça apoiada, joelhos flexionados, braços ao lado. Mostra posição inicial identificadora: elevação pélvica discreta não comprovada na imagem. Revisão de movimento e profissional pendentes.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-79bbf8f4-4b79-4aef-8354-86b46eff576b.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/reverse_crunch.png",
+      "sha256": "e6524a5d942ca1189743e3a4a7cdbdf73c9d1fa485da7c388e7ea291ecb91457",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "lying_leg_raise",
+      "prompt": "Use case: stylized-concept. ONE static exercise catalogue thumbnail, lying_leg_raise, horizontal 1536x1024. Match adult female athlete reference identity, face, dark ponytail, black fitted sports gym uniform with subtle gold Spartan emblem and black-gold shoes. Lying straight leg raise identification: athlete supine on a complete dark rectangular fitness mat, posterior head and upper back visibly supported, face looking straight up, arms alongside body palms resting flat. Both legs straight and close together raised at 75 degrees above mat, slight natural knee softness, legs visibly connected to pelvis, both shoes fully visible. Quiet starting/high position, no movement arrows. True side camera with slight overhead angle keeps face and both limbs visible. Camera DISTANT: mat and ALL body fit INSIDE central 70% canvas width and central 70% canvas height, minimum 15% empty black perimeter. Head/hair support visible, entire mat fully included, do not crop shoes, hands, head or mat. Opaque seamless solid black background with subtle rim lighting, premium realistic 3D catalogue render, no text, diagrams, watermark, floor panorama or other people.",
+      "reference": "public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "review": "Corpo e tapete completos, pernas estendidas elevadas e mãos apoiadas. A parte posterior da cabeça aparece parcialmente coberta pelo cabelo; revisar apoio com profissional antes de usar como instrução técnica. Margem lateral do tapete cerca de 7%, alvo 8–12%.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-19f14ed7-657c-400c-a98e-23790d65a517.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/lying_leg_raise.png",
+      "sha256": "d97d2e10cca931c5f89345d77a18c9eaf167b03efad13f44d1b3f85846b8545a",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "dead_bug",
+      "prompt": "Use case: stylized-concept. One exercise catalogue still for DEAD BUG starting tabletop position. Adult female athlete exactly in identity and premium rendering style of attached reference, dark ponytail, black sports bra, black gym shorts, black shoes and small gold Spartan marks. Side three-quarter full-body shot, lying supine on dark rectangular exercise mat; back and rear head supported, neck neutral, face looking upward; BOTH upper arms point vertically upward toward ceiling, BOTH elbows straight but soft, palms facing each other; BOTH thighs vertical, BOTH knees bent to 90 degrees and shins horizontal. Four separate correctly connected limbs, near/far arms and legs distinctly offset a little by camera perspective. Static initial position only, no limb movement, no asymmetrical extension. Landscape1536x1024, ENTIRE mat and body and hands and shoes fit within central 70% width and height, empty BLACK margin minimum 12% ALL sides; distant lens, no cropped body or mat. OPAQUE BLACK background, subtle studio rim lighting, realistic clean fitness catalogue rendering. No text, diagrams, arrows, floor panorama, extra limbs, collage or watermark.",
+      "reference": "public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "review": "Posição inicial tabletop, dois braços elevados e joelhos flexionados; corpo e tapete inteiros. Margem lateral do tapete cerca de 6%, abaixo do alvo. Ilustração estática não demonstra alternância contralateral ou ciclo de execução; revisão profissional pendente.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-0f83ee4d-9d83-4a80-aaa5-d5056483f7ac.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/dead_bug.png",
+      "sha256": "f8c76df95f9d05cb61984229f1b624556220aa6aa11f38131aecd0cc05ca5c07",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "bird_dog",
+      "prompt": "Use case: stylized-concept. One catalogue exercise identification image: BIRD DOG. Adult female athlete matching attached reference face, brunette ponytail, black sports gym uniform and shoes with small gold Spartan emblems. Entire athlete on dark rectangular mat. CLEAR contralateral bird dog: viewed from her left side, her LEFT arm reaches straight forward at shoulder height, her RIGHT leg extends straight back at hip height. Her RIGHT palm supports her directly beneath right shoulder; her LEFT knee and left shin support her directly beneath left hip. Four limbs visibly distinct and connected; torso horizontal neutral, hips square, eyes looking toward mat, not craned upward. Side view with slight overhead angle shows supports and opposite limbs without overlap. Landscape1536x1024, wide distant camera, full mat AND extended fingertip AND back shoe all fit inside central 70% canvas, generous 15% black perimeter. Opaque black seamless background, realistic premium 3D studio rendering, softly edged warm rimlight. No cropped fingers/feet/hair/mat, no duplicated limbs, no diagram, no motion arrows, no labels, no text or watermark.",
+      "reference": "public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "review": "Bird dog com braço e perna de lados opostos estendidos; palma e joelho de apoio visíveis. Corpo e tapete inteiros, porém margens das extremidades cerca de 3%, abaixo do alvo. Identificação estática, revisão profissional pendente.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-f20ad24a-3f9b-4e27-9414-79918ad6ff7b.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/bird_dog.png",
+      "sha256": "0d80c3963b454ed824db66348b1f2cb85e7b9e4c75cdd89d5a5f5a5a3004d309",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "standing_cable_pallof_press",
+      "prompt": "Use case: stylized-concept. ONE exercise-catalog identification still STANDING CABLE PALLOF PRESS. Female adult gym athlete matching attached reference face, dark ponytail, black sports bra and training shorts and shoes with subtle small gold Spartan marks. Standing SIDEWAYS to a cable tower, feet shoulder-width grounded, knees slightly soft, hips/shoulders square and level, torso upright. Both hands hold a SINGLE D handle in front of sternum, arms extended forward at chest height. Cable comes HORIZONTALLY FROM HER SIDE from pulley at chest height, visibly travels sideways to her joined hands; cable does NOT run from behind head or along arm toward front. Camera front-three-quarter wide so entire compact black cable tower at image left, its chest-level adjustable pulley and cable, entire athlete at right all visible. Black and gold machine with whole top, stack, base. Square 1536x1536 image; distant framing, ALL body including head, ponytail, hands and shoes AND all equipment inside central70%, at least12% empty black border ALL sides. Opaque pure black background, realistic premium gym studio render, no diagrams, arrows, text or watermark, no extra limbs.",
+      "reference": "public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "review": "Corpo, torre, pega única e cabo horizontal visíveis; pés apoiados e mãos à frente. Perspectiva faz cabo se sobrepor aos braços em imagem 2D; relação lateral do cabo requer revisão técnica antes de usar como demonstração. Margem superior da torre aproximadamente 4%, sem corte.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-54120db1-ad8b-4388-85be-2cbe5861275b.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/standing_cable_pallof_press.png",
+      "sha256": "1741b936093093342d2e2e299931914c695e27fca3b521d79702ab0b91ebd127",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "hip_adductor_machine",
+      "kind": "legacy-repair",
+      "prompt": "Use case: precise-object-edit. Reframe and clean the attached ADUTOR machine exercise catalogue image; image1 is exact edit target even though old filename is leg_press_calf_raise, pictured machine is hip ADDUCTION. Preserve adult woman's identity, black/gold uniform, seated upright position, hands on handles, inner-knee contact pads on INSIDE of thighs for hip adduction, feet on machine supports, actual type of selectorized adductor chair. Preserve entire weight tower, chair, knee pad arms, both shoes. Extend/reconstruct ONLY previously cropped machine edges and pull camera substantially back. Replace background by OPAQUE solid BLACK, user explicitly wants black. Full machine tower top and ALL base legs must have at least12% clear black empty border around them, square1536x1536 distant framing. Small clean gold accents; remove machine instructional diagrams and labels to avoid unreliable text, a small gold Spartan emblem may remain. Full athlete plus equipment inside central72% frame. No transparent checkerboard, no body crops, no equipment crops, no different exercise, no extra limbs. Realistic consistent premium studio render.",
+      "reference": "public/assets/exercise-library/v1/leg_press_calf_raise/thumb.png",
+      "review": "Fonte corrigida: arquivo legado leg_press_calf_raise/thumb.png representa adutora. Reenquadramento inclui torre e bases antes cortadas; apoios internos das pernas e ambos pés visíveis, postura sentada preservada. Margem superior aproximadamente 6%, sem corte. Revisão profissional pendente.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-f8037278-f542-4032-a859-503e61131d2f.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/hip_adductor_machine.png",
+      "sha256": "602b05cb14c41e097991127355760e0055325ff6a4c4da72099745713c6a8851",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "hip_abductor_machine",
+      "kind": "legacy-repair",
+      "prompt": "Use case: precise-object-edit. Reframe exact supplied exercise image HIP ABDUCTOR chair. Preserve adult woman's face/ponytail and black-gold gym clothing, seated upright posture, hands on handles, feet on foot supports. This is HIP ABDUCTION: padded resistance contacts must remain on OUTSIDE of both thighs/knees so the knees press outward against the pads. Preserve that machine type, not adduction. Show entire black selectorized tower, chair back, seat, knee-pad mechanism, footplates, full machine base and legs plus all athlete from head to shoes. Reconstruct missing cropped equipment edges, move camera farther back. Square1536x1536 canvas, equipment and athlete inside central70% frame, minimum12% plain black margin around ALL edges including tower top/base. Replace blurred brown background with OPAQUE solid black. Remove instructional text/diagrams from machine, retain small tasteful gold Spartan emblem and subtle gold details. Realistic premium studio catalogue render, no watermark, no captions, no additional limbs, no cropping, no transparency.",
+      "reference": "public/assets/exercise-library/v1/hip_abductor_machine/thumb.png",
+      "review": "Máquina abdutora com apoios externos dos joelhos, pés apoiados, corpo/tower/bases completos; fundo preto. Margem superior aproximadamente 5%, sem corte. Aparência de identificação preservada, revisão profissional pendente.",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-dc36a0b5-31e1-4303-a6c9-8736ce44763c.png",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/hip_abductor_machine.png",
+      "sha256": "010b715012ae3fcb7a3429ebdfc3df09803377f382585abff5d8d57a00c8a4b1",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    },
+    {
+      "id": "leg_press_calf_raise",
+      "source": "/workspace/scratch/9edd185f702c/generated_images/exec-866889de-91e2-4d07-acf8-a3c1c4865d67.png",
+      "prompt": "Use case: precise-object-edit. Correctly reframe this exact CALF RAISE ON LEG PRESS exercise picture. Input is the exact edit target: despite its historical filename hip_adductor_machine it shows CALF RAISE LEG PRESS. Preserve adult female athlete identity and black-gold uniform, seated reclining on leg press with back supported, hands holding seat handles, knees softly extended, balls of BOTH feet contacting lower edge of sled footplate with heels free so calf exercise is recognizable. Preserve this leg press style, whole rails, whole sled/footplate, plates, seat/backrest and all base supports. Reconstruct cropped top/left/right machine boundaries and pull camera substantially backward. Landscape1536x1024, full athlete AND entire machine must lie WITHIN central70% canvas width AND height with minimum12% EMPTY BLACK perimeter around all edges. OPAQUE pure black seamless background, no alpha/checkerboard, realistic premium gym catalogue studio rendering. Remove instructional machine text/diagrams rather than inventing labels, retain subtle small gold Spartan branding. No body/equipment cropping, no different exercise, no extra limbs, no floating feet, no captions/watermark.",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "review": "Fonte correta: legado hip_adductor_machine/thumb.png representa panturrilha no leg press. Máquina, trenó, trilhos, anilhas, encosto e bases inteiros; antepés na borda da plataforma e calcanhares livres visualmente identificáveis. Margens aproximadas 10% ou maiores. Revisão estática visual, execução dinâmica e profissional pendentes.",
+      "reference": "public/assets/exercise-library/v1/hip_adductor_machine/thumb.png",
+      "kind": "legacy-repair",
+      "destination": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/leg_press_calf_raise.png",
+      "sha256": "db5d59521a7ff1d54115113f1d52ca6f10b482c4c9be8f2b3877594c3b1a81d8",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "imageMode": "RGB",
+      "professionalReview": "PENDING"
+    }
+  ]
+}

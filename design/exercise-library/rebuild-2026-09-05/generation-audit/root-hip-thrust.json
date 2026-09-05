@@ -1,0 +1,7 @@
+{
+  "id": "barbell_hip_thrust",
+  "source": "/workspace/scratch/9edd185f702c/generated_images/exec-f3f83569-d59d-4269-aaf9-29747abd3fb3.png",
+  "prompt": "Use case: precise-object-edit. Reframe this INVICTUS hip thrust identification image. Preserve the same adult female athlete, face, black/gold training outfit and ponytail, the padded barbell over her hip crease, the bench behind her upper back and the existing initial lowered-hip setup. Pull the camera back to fit her ENTIRE body, both shoes, head and hair, both hands, both complete round plates, BOTH barbell ends beyond the plates and the WHOLE bench including every base foot, with at least 10% empty clearance on all four edges. Landscape 3:2 canvas is allowed to fit this wide apparatus naturally. Opaque neutral black background; remove any transparency halo/checkerboard. Maintain natural feet-on-floor support, knees bent, upper back supported on bench, hands steadying the padded bar, and coherent equipment geometry; do not change the exercise into a seated press or bench press. No stretched equipment, no extra limbs, no extra captions or new brand markings. One static identification frame, not a chart or a sequence.",
+  "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+  "notes": "Fonte horizontal, corpo, duas pontas da barra, anilhas e banco inteiros; margem direita/topo abaixo da meta de 10%, sem cortes. Posição inicial identificável, sem certificação do movimento."
+}

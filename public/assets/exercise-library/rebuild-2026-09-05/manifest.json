@@ -1,0 +1,738 @@
+{
+  "schemaVersion": 1,
+  "version": "rebuild-2026-09-05",
+  "background": "black",
+  "source": "src/data/exerciseCatalog.ts",
+  "animationPolicy": "only_real_reviewed_video_loaded_on_request",
+  "exercises": [
+    {
+      "id": "barbell_bench_press",
+      "name": "Supino Reto com Barra",
+      "muscleGroup": "peito",
+      "equipment": "barra e banco reto",
+      "equipmentRequirements": [
+        "barra_anilhas",
+        "banco"
+      ],
+      "thumb": "barbell_bench_press/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "dumbbell_bench_press",
+      "name": "Supino Reto com Halteres",
+      "muscleGroup": "peito",
+      "equipment": "halteres e banco reto",
+      "equipmentRequirements": [
+        "halteres",
+        "banco"
+      ],
+      "thumb": "dumbbell_bench_press/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/dumbbell_bench_press/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "incline_dumbbell_press",
+      "name": "Supino Inclinado com Halteres",
+      "muscleGroup": "peito",
+      "equipment": "halteres e banco inclinado",
+      "equipmentRequirements": [
+        "halteres",
+        "banco"
+      ],
+      "thumb": "incline_dumbbell_press/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/incline_dumbbell_press/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "standing_cable_fly",
+      "name": "Crucifixo Reto no Cabo",
+      "muscleGroup": "peito",
+      "equipment": "cross-over",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "standing_cable_fly/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "pec_deck_fly",
+      "name": "Voador / Peck Deck",
+      "muscleGroup": "peito",
+      "equipment": "máquina peck deck",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "pec_deck_fly/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/pec_deck_fly/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "classic_push_up",
+      "name": "Flexão de Braços Clássica",
+      "muscleGroup": "peito",
+      "equipment": "peso corporal",
+      "equipmentRequirements": [],
+      "thumb": "classic_push_up/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/classic_push_up/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "decline_push_up",
+      "name": "Flexão de Braços Declinada",
+      "muscleGroup": "peito",
+      "equipment": "banco e peso corporal",
+      "equipmentRequirements": [
+        "banco"
+      ],
+      "thumb": "decline_push_up/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/decline_push_up/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "incline_push_up",
+      "name": "Flexões com Mãos no Banco",
+      "muscleGroup": "peito",
+      "equipment": "banco e peso corporal",
+      "equipmentRequirements": [
+        "banco"
+      ],
+      "thumb": "incline_push_up/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/incline_push_up/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "barbell_bent_over_row",
+      "name": "Remada Curvada com Barra",
+      "muscleGroup": "costas",
+      "equipment": "barra",
+      "equipmentRequirements": [
+        "barra_anilhas"
+      ],
+      "thumb": "barbell_bent_over_row/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/barbell_bent_over_row/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "t_bar_row",
+      "name": "Remada Cavalinho Neutra",
+      "muscleGroup": "costas",
+      "equipment": "barra T",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "t_bar_row/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/t_bar_row/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "barbell_back_squat",
+      "name": "Agachamento Livre",
+      "muscleGroup": "pernas",
+      "equipment": "barra e rack",
+      "equipmentRequirements": [
+        "barra_anilhas"
+      ],
+      "thumb": "barbell_back_squat/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "smith_machine_squat",
+      "name": "Agachamento no Smith",
+      "muscleGroup": "pernas",
+      "equipment": "máquina smith",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "smith_machine_squat/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "leg_press_45",
+      "name": "Leg Press 45°",
+      "muscleGroup": "pernas",
+      "equipment": "máquina leg press",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "leg_press_45/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "hack_squat",
+      "name": "Hack Squat",
+      "muscleGroup": "pernas",
+      "equipment": "máquina hack squat",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "hack_squat/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "leg_extension",
+      "name": "Cadeira Extensora",
+      "muscleGroup": "pernas",
+      "equipment": "máquina extensora",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "leg_extension/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "leg_curl",
+      "name": "Mesa Flexora",
+      "muscleGroup": "pernas",
+      "equipment": "máquina flexora",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "leg_curl/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/leg_curl/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "seated_leg_curl",
+      "name": "Cadeira Flexora",
+      "muscleGroup": "pernas",
+      "equipment": "máquina flexora sentado",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "seated_leg_curl/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/seated_leg_curl/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "barbell_stiff_deadlift",
+      "name": "Stiff / Romanian Deadlift",
+      "muscleGroup": "pernas",
+      "equipment": "halteres",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "barbell_stiff_deadlift/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "dumbbell_lunge",
+      "name": "Afundo com Halteres",
+      "muscleGroup": "pernas",
+      "equipment": "halteres",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "dumbbell_lunge/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/dumbbell_lunge/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "bulgarian_split_squat",
+      "name": "Agachamento Búlgaro",
+      "muscleGroup": "pernas",
+      "equipment": "halteres e banco",
+      "equipmentRequirements": [
+        "halteres",
+        "banco"
+      ],
+      "thumb": "bulgarian_split_squat/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "dumbbell_walking_lunge",
+      "name": "Passada com Halteres",
+      "muscleGroup": "pernas",
+      "equipment": "halteres",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "dumbbell_walking_lunge/thumb.webp",
+      "thumbFallbackUrl": "/assets/exercise-library/v1/dumbbell_walking_lunge/thumb.png",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "hip_adductor_machine",
+      "name": "Cadeira Adutora",
+      "muscleGroup": "pernas",
+      "equipment": "máquina adutora",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "hip_adductor_machine/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "hip_abductor_machine",
+      "name": "Cadeira Abdutora",
+      "muscleGroup": "pernas",
+      "equipment": "máquina abdutora",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "hip_abductor_machine/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "barbell_hip_thrust",
+      "name": "Elevação Pélvica / Hip Thrust",
+      "muscleGroup": "pernas",
+      "equipment": "barra e banco",
+      "equipmentRequirements": [
+        "barra_anilhas",
+        "banco"
+      ],
+      "thumb": "barbell_hip_thrust/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "standing_calf_raise_machine",
+      "name": "Panturrilha em Pé",
+      "muscleGroup": "pernas",
+      "equipment": "máquina de panturrilha",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "standing_calf_raise_machine/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "seated_calf_raise",
+      "name": "Panturrilha Sentado",
+      "muscleGroup": "pernas",
+      "equipment": "máquina de panturrilha sentado",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "seated_calf_raise/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "leg_press_calf_raise",
+      "name": "Panturrilha no Leg Press",
+      "muscleGroup": "pernas",
+      "equipment": "máquina leg press",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "leg_press_calf_raise/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "lat_pulldown",
+      "name": "Puxada Frontal na Polia",
+      "muscleGroup": "costas",
+      "equipment": "polia alta",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "lat_pulldown/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "neutral_grip_lat_pulldown",
+      "name": "Puxada Neutra na Polia",
+      "muscleGroup": "costas",
+      "equipment": "polia alta e puxador neutro",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "neutral_grip_lat_pulldown/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "straight_arm_cable_pulldown",
+      "name": "Pulldown com Braços Estendidos",
+      "muscleGroup": "costas",
+      "equipment": "polia alta",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "straight_arm_cable_pulldown/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "assisted_pull_up",
+      "name": "Barra Fixa Assistida no Graviton",
+      "muscleGroup": "costas",
+      "equipment": "máquina gravitacional",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "assisted_pull_up/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "pull_up",
+      "name": "Barra Fixa Pronada",
+      "muscleGroup": "costas",
+      "equipment": "barra fixa",
+      "equipmentRequirements": [
+        "barra_fixa"
+      ],
+      "thumb": "pull_up/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "seated_cable_row",
+      "name": "Remada Baixa no Cabo",
+      "muscleGroup": "costas",
+      "equipment": "polia baixa",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "seated_cable_row/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "single_arm_dumbbell_row",
+      "name": "Remada Unilateral com Halter",
+      "muscleGroup": "costas",
+      "equipment": "halter e banco",
+      "equipmentRequirements": [
+        "halteres",
+        "banco"
+      ],
+      "thumb": "single_arm_dumbbell_row/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "chest_supported_dumbbell_row",
+      "name": "Remada com Halteres e Peito Apoiado",
+      "muscleGroup": "costas",
+      "equipment": "halteres e banco inclinado",
+      "equipmentRequirements": [
+        "halteres",
+        "banco"
+      ],
+      "thumb": "chest_supported_dumbbell_row/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "seated_dumbbell_shoulder_press",
+      "name": "Desenvolvimento Sentado com Halteres",
+      "muscleGroup": "ombros",
+      "equipment": "halteres e banco",
+      "equipmentRequirements": [
+        "halteres",
+        "banco"
+      ],
+      "thumb": "seated_dumbbell_shoulder_press/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "standing_barbell_overhead_press",
+      "name": "Desenvolvimento Militar com Barra",
+      "muscleGroup": "ombros",
+      "equipment": "barra",
+      "equipmentRequirements": [
+        "barra_anilhas"
+      ],
+      "thumb": "standing_barbell_overhead_press/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "dumbbell_lateral_raise",
+      "name": "Elevação Lateral com Halteres",
+      "muscleGroup": "ombros",
+      "equipment": "halteres",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "dumbbell_lateral_raise/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "single_arm_cable_lateral_raise",
+      "name": "Elevação Lateral Unilateral no Cabo",
+      "muscleGroup": "ombros",
+      "equipment": "polia baixa",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "single_arm_cable_lateral_raise/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "bent_over_dumbbell_reverse_fly",
+      "name": "Crucifixo Inverso Curvado com Halteres",
+      "muscleGroup": "ombros",
+      "equipment": "halteres",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "bent_over_dumbbell_reverse_fly/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "cable_face_pull",
+      "name": "Face Pull na Polia",
+      "muscleGroup": "ombros",
+      "equipment": "polia e corda",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "cable_face_pull/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "reverse_pec_deck_fly",
+      "name": "Crucifixo Inverso no Peck Deck",
+      "muscleGroup": "ombros",
+      "equipment": "máquina peck deck",
+      "equipmentRequirements": [
+        "maquinas"
+      ],
+      "thumb": "reverse_pec_deck_fly/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "barbell_biceps_curl",
+      "name": "Rosca Direta com Barra",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "biceps",
+      "equipment": "barra",
+      "equipmentRequirements": [
+        "barra_anilhas"
+      ],
+      "thumb": "barbell_biceps_curl/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "alternating_dumbbell_curl",
+      "name": "Rosca Alternada com Halteres",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "biceps",
+      "equipment": "halteres",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "alternating_dumbbell_curl/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "dumbbell_hammer_curl",
+      "name": "Rosca Martelo com Halteres",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "biceps",
+      "equipment": "halteres",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "dumbbell_hammer_curl/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "cable_biceps_curl",
+      "name": "Rosca Direta no Cabo",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "biceps",
+      "equipment": "polia baixa e barra",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "cable_biceps_curl/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "dumbbell_concentration_curl",
+      "name": "Rosca Concentrada com Halter",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "biceps",
+      "equipment": "halter e banco",
+      "equipmentRequirements": [
+        "halteres",
+        "banco"
+      ],
+      "thumb": "dumbbell_concentration_curl/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "cable_triceps_pushdown",
+      "name": "Tríceps na Polia com Barra",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "triceps",
+      "equipment": "polia alta e barra",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "cable_triceps_pushdown/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "rope_triceps_pushdown",
+      "name": "Tríceps na Polia com Corda",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "triceps",
+      "equipment": "polia alta e corda",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "rope_triceps_pushdown/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "lying_ez_bar_triceps_extension",
+      "name": "Tríceps Testa com Barra EZ",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "triceps",
+      "equipment": "barra EZ e banco",
+      "equipmentRequirements": [
+        "barra_anilhas",
+        "banco"
+      ],
+      "thumb": "lying_ez_bar_triceps_extension/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "overhead_dumbbell_triceps_extension",
+      "name": "Tríceps Francês com Halter",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "triceps",
+      "equipment": "halter",
+      "equipmentRequirements": [
+        "halteres"
+      ],
+      "thumb": "overhead_dumbbell_triceps_extension/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "single_arm_cable_triceps_extension",
+      "name": "Tríceps Unilateral na Polia",
+      "muscleGroup": "bracos",
+      "muscleSubgroup": "triceps",
+      "equipment": "polia alta e puxador individual",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "single_arm_cable_triceps_extension/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "abdominal_crunch",
+      "name": "Abdominal Crunch",
+      "muscleGroup": "core",
+      "equipment": "peso corporal",
+      "equipmentRequirements": [],
+      "thumb": "abdominal_crunch/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "cable_abdominal_crunch",
+      "name": "Abdominal na Polia Alta",
+      "muscleGroup": "core",
+      "equipment": "polia alta e corda",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "cable_abdominal_crunch/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "reverse_crunch",
+      "name": "Abdominal Reverso",
+      "muscleGroup": "core",
+      "equipment": "peso corporal",
+      "equipmentRequirements": [],
+      "thumb": "reverse_crunch/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "lying_leg_raise",
+      "name": "Elevação de Pernas Deitado",
+      "muscleGroup": "core",
+      "equipment": "peso corporal",
+      "equipmentRequirements": [],
+      "thumb": "lying_leg_raise/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "dead_bug",
+      "name": "Dead Bug",
+      "muscleGroup": "core",
+      "equipment": "peso corporal",
+      "equipmentRequirements": [],
+      "thumb": "dead_bug/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "bird_dog",
+      "name": "Bird Dog",
+      "muscleGroup": "core",
+      "equipment": "peso corporal",
+      "equipmentRequirements": [],
+      "thumb": "bird_dog/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    },
+    {
+      "id": "standing_cable_pallof_press",
+      "name": "Pallof Press em Pé no Cabo",
+      "muscleGroup": "core",
+      "equipment": "polia e puxador individual",
+      "equipmentRequirements": [
+        "crossover"
+      ],
+      "thumb": "standing_cable_pallof_press/thumb.webp",
+      "thumbStatus": "ready",
+      "demoStatus": "waiting_for_demo"
+    }
+  ]
+}

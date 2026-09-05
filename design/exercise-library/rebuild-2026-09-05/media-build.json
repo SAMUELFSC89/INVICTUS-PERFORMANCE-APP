@@ -1,0 +1,2883 @@
+{
+  "schemaVersion": 1,
+  "version": "rebuild-2026-09-05",
+  "createdAt": "2026-09-05T13:48:29.340701+00:00",
+  "sourceCatalog": "design/exercise-library/rebuild-2026-09-05/exercise-catalog.json",
+  "sourceCatalogSha256": "8e8238e66a6a9b034740b66d67b42ae1462312dc87722d4af96711963cf6302a",
+  "sourceDirectory": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images",
+  "converter": "Version: ImageMagick 6.9.12-98 Q16 x86_64 18038 https://legacy.imagemagick.org",
+  "conversionOptions": [
+    "webp:lossless=true",
+    "webp:exact=true",
+    "webp:method=6"
+  ],
+  "operations": "format_conversion_only; no cropping, background removal, resizing or pixel editing",
+  "pillowUsage": "read_only_metadata_and_rgba_comparison",
+  "catalogStatesChanged": false,
+  "contentReview": "not_assessed_by_this_format_converter",
+  "legacySeedAllowlist": [
+    "barbell_bent_over_row",
+    "barbell_stiff_deadlift",
+    "classic_push_up",
+    "decline_push_up",
+    "dumbbell_bench_press",
+    "dumbbell_lunge",
+    "dumbbell_walking_lunge",
+    "incline_dumbbell_press",
+    "incline_push_up",
+    "leg_curl",
+    "pec_deck_fly",
+    "seated_leg_curl",
+    "t_bar_row"
+  ],
+  "totalCatalogEntries": 59,
+  "complete": true,
+  "counts": {
+    "verified": 59,
+    "missing_source": 0,
+    "failed": 0,
+    "not_selected": 0
+  },
+  "totalsForVerifiedAssets": {
+    "sourceBytes": 61570434,
+    "webpBytes": 36617566,
+    "savingsBytes": 24952868,
+    "savingsPercent": 40.5274,
+    "bytesIfSourcesAndDerivativesBothBundled": 98188000,
+    "note": "Asset-byte totals only. Keeping original PNGs plus WebP increases bundled bytes; this is not an APK-size reduction measurement."
+  },
+  "assets": [
+    {
+      "id": "barbell_bench_press",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/barbell_bench_press.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/barbell_bench_press/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/barbell_bench_press/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1458232,
+        "sha256": "067cce57525aee503476965b6a6a1a94d7349c9c55754447a7370735011c2f91",
+        "rgbaSha256": "d7ead98ea0008a627ff7d271f675eded8e4b7ab68c89a212acf1c7df303324f9",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 833776,
+        "sha256": "7c1622f4215a20dfaadbe1e156fc4c28dd44f31c61bb44a72c2c9b64db4c357f",
+        "rgbaSha256": "d7ead98ea0008a627ff7d271f675eded8e4b7ab68c89a212acf1c7df303324f9",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 624456
+    },
+    {
+      "id": "dumbbell_bench_press",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/dumbbell_bench_press/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/dumbbell_bench_press/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/dumbbell_bench_press/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 444072,
+        "sha256": "086e5eb1eb33d02b98242ce7be47df61d55f50983f4a48e8a4e94782b173aae2",
+        "rgbaSha256": "171c68fab54e201b32923644f685463c0a443e20db34786235f0f98d253bb73d",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 240494,
+        "sha256": "f6b2f9f265a644024905817f71b93af939f656184e17b74f364b4f476b572c9d",
+        "rgbaSha256": "171c68fab54e201b32923644f685463c0a443e20db34786235f0f98d253bb73d",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 203578
+    },
+    {
+      "id": "incline_dumbbell_press",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/incline_dumbbell_press/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/incline_dumbbell_press/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/incline_dumbbell_press/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 493266,
+        "sha256": "88f4b46fa10de87e2ebeb8992e41ce331ac13324d2044abf4ead9311f8543f1e",
+        "rgbaSha256": "920cf05826909cb55b65e455a68374c0da5120ae101c53e71240bdaa0e9c85d6",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 262282,
+        "sha256": "c3d8d91c57b33598df18735270741b31097a8a39dd57d8413d52b8fefa256b2f",
+        "rgbaSha256": "920cf05826909cb55b65e455a68374c0da5120ae101c53e71240bdaa0e9c85d6",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 230984
+    },
+    {
+      "id": "standing_cable_fly",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/standing_cable_fly.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/standing_cable_fly/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/standing_cable_fly/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 856614,
+        "sha256": "403a8214364dbfb3b9b28b573582af082ab857a1743f6e3a13cf087993612446",
+        "rgbaSha256": "17dfb358cbf54e0206c54507209cdc98ab550f826d79a215d41a8efcd81feb0f",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 488272,
+        "sha256": "e976262d493d8cd6b4f93ac730f5d115b897e58a86e9a14d1cb7e238ea2ec61b",
+        "rgbaSha256": "17dfb358cbf54e0206c54507209cdc98ab550f826d79a215d41a8efcd81feb0f",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 368342
+    },
+    {
+      "id": "pec_deck_fly",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/pec_deck_fly/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/pec_deck_fly/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/pec_deck_fly/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 531936,
+        "sha256": "7b81938c841849353409484398520c9b27eda7c5a0a11905bffa5a53ba9b0684",
+        "rgbaSha256": "94e742a7ac4d89d79cbe17ee4192b6b79566ee60a9e9a99f3cb9f9950cca162d",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 287826,
+        "sha256": "643e1c7c9c8305aa4498ef94d4f2ab7ce42a2fbb898597e2089e4396dff75b2a",
+        "rgbaSha256": "94e742a7ac4d89d79cbe17ee4192b6b79566ee60a9e9a99f3cb9f9950cca162d",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 244110
+    },
+    {
+      "id": "classic_push_up",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/classic_push_up/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/classic_push_up/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/classic_push_up/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 552180,
+        "sha256": "78abbdb344da6fb63c4d244e0c1af0d38431c75589dfabe3b36a5de6a840cc3e",
+        "rgbaSha256": "de5da0da75f72b7775100ff58de0221afbb1b9a146f82c24968426cf170eec5b",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 300206,
+        "sha256": "57fdbb7be813279cc6c919d567a3ae171bab2ca4a6349b983ccdc7f79dab5aa4",
+        "rgbaSha256": "de5da0da75f72b7775100ff58de0221afbb1b9a146f82c24968426cf170eec5b",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 251974
+    },
+    {
+      "id": "decline_push_up",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/decline_push_up/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/decline_push_up/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/decline_push_up/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 545769,
+        "sha256": "8d16ec0c0431355ec3a394363bf3a9a44e258a01d375f7d251b3795dee76736c",
+        "rgbaSha256": "2b1456a1244c88777d6c85590df3cb1fb2b387db6e5e35a73dfe858e17d4e4d4",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 300726,
+        "sha256": "531643973a6ab2db5a38587981fdbbc110f8650a0df269d84d4e65d6d62f808e",
+        "rgbaSha256": "2b1456a1244c88777d6c85590df3cb1fb2b387db6e5e35a73dfe858e17d4e4d4",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 245043
+    },
+    {
+      "id": "incline_push_up",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/incline_push_up/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/incline_push_up/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/incline_push_up/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 474059,
+        "sha256": "aaea4a59e96ce68fd252d1b7e1769d73d26cd43e517686718e4bb6445387a8f3",
+        "rgbaSha256": "5c905f40d58caa6bc108e816a9e0612701f93972d6b179add5dd8dda4735c6fc",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 249642,
+        "sha256": "5e47fddb76f08296711073f997a3560718a4e0e33e5c5d08a2b5178fd492b488",
+        "rgbaSha256": "5c905f40d58caa6bc108e816a9e0612701f93972d6b179add5dd8dda4735c6fc",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 224417
+    },
+    {
+      "id": "barbell_bent_over_row",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/barbell_bent_over_row/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/barbell_bent_over_row/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/barbell_bent_over_row/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 589472,
+        "sha256": "6c162119e106fb69f92bd698e47d917dc173a5b5dfc6cae04daac212bd274bb6",
+        "rgbaSha256": "69244b02fd3ee880cbfefb72ce2f44f7f2885e563012651d99b6bec832a5bd47",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 321450,
+        "sha256": "a5401357dfb31d5f6ac425b4e5a984fd3d38ca01b771b4d11eaf9fe1cafc7b10",
+        "rgbaSha256": "69244b02fd3ee880cbfefb72ce2f44f7f2885e563012651d99b6bec832a5bd47",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 268022
+    },
+    {
+      "id": "t_bar_row",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/t_bar_row/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/t_bar_row/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/t_bar_row/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 509928,
+        "sha256": "400a64a2f9358c55312800c65fa8c243219b697b652375a3db71953936ea6c49",
+        "rgbaSha256": "c185f5a9dc7c3cf94e010ffec30eda44de4bc7e56046acb17de047a1a7160f23",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 640,
+        "height": 640,
+        "bytes": 272418,
+        "sha256": "1883cf3f3e69e684f2c2ab70f538f52952eb5b600f83a937f1a7d4aeaa0b5599",
+        "rgbaSha256": "c185f5a9dc7c3cf94e010ffec30eda44de4bc7e56046acb17de047a1a7160f23",
+        "alphaExtrema": [
+          35,
+          255
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 237510
+    },
+    {
+      "id": "barbell_back_squat",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/barbell_back_squat.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/barbell_back_squat/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/barbell_back_squat/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 894690,
+        "sha256": "1c425034f507681cb648b7ca4a22219153b7f22d5e989db124c52ef92c9f571c",
+        "rgbaSha256": "9bb9dcb4179bd7dafbd9e11ce2f4b1dee1234fa4aca00203f6b193b21a8867ce",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 522448,
+        "sha256": "334bae13ef3ed61fc3b16731c4e7cb65e9faf7796ede6c31407a27d9f33e9522",
+        "rgbaSha256": "9bb9dcb4179bd7dafbd9e11ce2f4b1dee1234fa4aca00203f6b193b21a8867ce",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 372242
+    },
+    {
+      "id": "smith_machine_squat",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/smith_machine_squat.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/smith_machine_squat/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/smith_machine_squat/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 929509,
+        "sha256": "026c47100a6c3cfe2f6d4cb15dc18e17dc40644d7295e2f4f8b1932864f4efe1",
+        "rgbaSha256": "84666a260df60c809909f2e07fa1949e0501fed0eeff0eb66f1ec7c98dbeb4e2",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 546498,
+        "sha256": "ed25e6df2a8257934be78d76c12c4c5c1d0e865b57eee8bd7d86e33ebdb5bf91",
+        "rgbaSha256": "84666a260df60c809909f2e07fa1949e0501fed0eeff0eb66f1ec7c98dbeb4e2",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 383011
+    },
+    {
+      "id": "leg_press_45",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/leg_press_45.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/leg_press_45/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/leg_press_45/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1172228,
+        "sha256": "8b78df8f065ea40049ac973c6390d580573bee13b5833daced7f771f0dbde184",
+        "rgbaSha256": "29d5c5f834f149e50728cba325f826a417c66708c851ec0550923e7a6d37b93e",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 672710,
+        "sha256": "1675bc240148d26666c3cc71c10a14d4ef7d2beeb4d0d82669db07932eba3171",
+        "rgbaSha256": "29d5c5f834f149e50728cba325f826a417c66708c851ec0550923e7a6d37b93e",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 499518
+    },
+    {
+      "id": "hack_squat",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/hack_squat.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/hack_squat/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/hack_squat/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 853315,
+        "sha256": "e4a2561c691cb3408bf69560e5ed79980d7f9fa3a1782b9d2c1d98d9c7373c47",
+        "rgbaSha256": "9d890a871b3088f900a9f64498aa86c5a1b612c6d5fc9b2f02bc61d444ddf228",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 503796,
+        "sha256": "654973a509d182b11559d2843c1c82c7de825469b84a9b4e52eecb472a42e831",
+        "rgbaSha256": "9d890a871b3088f900a9f64498aa86c5a1b612c6d5fc9b2f02bc61d444ddf228",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 349519
+    },
+    {
+      "id": "leg_extension",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/leg_extension.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/leg_extension/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/leg_extension/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1237905,
+        "sha256": "78ccc1614e7feefbd42d11cc75dd9f4e9e0c95a30e2c914543f7abcef3a8cbaa",
+        "rgbaSha256": "a498cd4950e002a6834ea21037816be5ce8d3a87e82560d9cd7407bcbacd9019",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 768752,
+        "sha256": "63404d0767bd2e66320938c59dca96fc5ab3b27a1dbfb78f3454e28e613211ee",
+        "rgbaSha256": "a498cd4950e002a6834ea21037816be5ce8d3a87e82560d9cd7407bcbacd9019",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 469153
+    },
+    {
+      "id": "leg_curl",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/leg_curl/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/leg_curl/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/leg_curl/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 2119793,
+        "sha256": "8455c322a237b7d555c8ab0ef3aa143d4fe26f2a3429e0b0d3abcef246c8397d",
+        "rgbaSha256": "85594536b0c173e3b027536a90d7d8b280adc5b27dde2754fe7a663bd224c218",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1364990,
+        "sha256": "a5d85cb0b248af5e49e0f21ea35d8c083e2221b4da96b3518f04ef96824efc3c",
+        "rgbaSha256": "85594536b0c173e3b027536a90d7d8b280adc5b27dde2754fe7a663bd224c218",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 754803
+    },
+    {
+      "id": "seated_leg_curl",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/seated_leg_curl/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/seated_leg_curl/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/seated_leg_curl/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 2167373,
+        "sha256": "c1fab44da4981c4ca1b45f9e657acb717535ee4d1dde77cedbfbdbbde3f44fce",
+        "rgbaSha256": "d5f2285249792fde25ad7907c61794d08ec19f0ed3ae01c20344a74559c9d905",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1391624,
+        "sha256": "cf8028494a353ea185dc59caff6f43d6c6dcd9602182962314e8809540fa5f2d",
+        "rgbaSha256": "d5f2285249792fde25ad7907c61794d08ec19f0ed3ae01c20344a74559c9d905",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 775749
+    },
+    {
+      "id": "barbell_stiff_deadlift",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/barbell_stiff_deadlift/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/barbell_stiff_deadlift/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/barbell_stiff_deadlift/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1985599,
+        "sha256": "e234c529c8d3b9c696202b543a9687ebb051fd340b9e7a9c14d1c5830bb8d4d0",
+        "rgbaSha256": "e3c6933139c130c8fac11221aedd8e9fd75542e4b67b448d87ac13049b2f1ca6",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1243920,
+        "sha256": "d2933ec3e1921cda37a7c505e7754cbcc805a736fb96c9a532258c6a6d48fac1",
+        "rgbaSha256": "e3c6933139c130c8fac11221aedd8e9fd75542e4b67b448d87ac13049b2f1ca6",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 741679
+    },
+    {
+      "id": "dumbbell_lunge",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/dumbbell_lunge/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/dumbbell_lunge/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/dumbbell_lunge/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1839771,
+        "sha256": "863db95cc8928d2e28ef65cbb915482ece37294106fd41f034057771e5bacd92",
+        "rgbaSha256": "924a8e8a2a53f58cdf6b23b4c341db0dc8dc3220a6d4fde1c42be35d20a32dd2",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1145248,
+        "sha256": "38f2db7681ea7596c1e5aca0d617d8d38e12bdf90620df61b8a508dbd63084bf",
+        "rgbaSha256": "924a8e8a2a53f58cdf6b23b4c341db0dc8dc3220a6d4fde1c42be35d20a32dd2",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 694523
+    },
+    {
+      "id": "bulgarian_split_squat",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/bulgarian_split_squat.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/bulgarian_split_squat/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/bulgarian_split_squat/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 704216,
+        "sha256": "e92c971d3600b5acafd93c5e9b2fb86528bd057939f679a0461ef596f01e63c9",
+        "rgbaSha256": "681847af23e236a4bdb340dffa903bc7f250ba86d8fbb77336fd91ff602e638a",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 390084,
+        "sha256": "fd93b701669aaafb43771bec30bc05ec5b96c529ed4626e5f891d87145ee650d",
+        "rgbaSha256": "681847af23e236a4bdb340dffa903bc7f250ba86d8fbb77336fd91ff602e638a",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 314132
+    },
+    {
+      "id": "dumbbell_walking_lunge",
+      "sourcePath": "/workspace/scratch/9edd185f702c/INVICTUS-PERFORMANCE-APP/public/assets/exercise-library/v1/dumbbell_walking_lunge/thumb.png",
+      "sourceKind": "allowed_legacy_original",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/dumbbell_walking_lunge/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/dumbbell_walking_lunge/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1811056,
+        "sha256": "9b48f55aad6a4a44f0c9e13f7c565cfb902d3af11f6ca240bffe7ce756ee22e2",
+        "rgbaSha256": "6b68cfbf179da740578e28e5d0965e3e3266d14fbebdbc1f65feb8bc8af6da7d",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGBA",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1123338,
+        "sha256": "6baa79eb9d9b870c793a8a4fa047f1fe2ed7636f56119a12850b0eb84ea2ffba",
+        "rgbaSha256": "6b68cfbf179da740578e28e5d0965e3e3266d14fbebdbc1f65feb8bc8af6da7d",
+        "alphaExtrema": [
+          0,
+          254
+        ],
+        "containsTransparency": true
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 687718
+    },
+    {
+      "id": "hip_adductor_machine",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/hip_adductor_machine.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/hip_adductor_machine/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/hip_adductor_machine/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1204725,
+        "sha256": "602b05cb14c41e097991127355760e0055325ff6a4c4da72099745713c6a8851",
+        "rgbaSha256": "76c991ae544613b060873f41a8095417213507ee5146b698c56d0d56ee4cc14e",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 785808,
+        "sha256": "7388d3279e6862d13dcc0c4661852282dad325e3c145a84a1e3be827b24756b5",
+        "rgbaSha256": "76c991ae544613b060873f41a8095417213507ee5146b698c56d0d56ee4cc14e",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 418917
+    },
+    {
+      "id": "hip_abductor_machine",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/hip_abductor_machine.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/hip_abductor_machine/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/hip_abductor_machine/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1169390,
+        "sha256": "010b715012ae3fcb7a3429ebdfc3df09803377f382585abff5d8d57a00c8a4b1",
+        "rgbaSha256": "f950a07c42a3a7797be713cd80d8c893256f205e158f3d6171ce7454a9ba9742",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 757778,
+        "sha256": "4ea3d9f78e211d899c7db3ca6f8f629a9e25d775620702c03f2e5b9c9b369314",
+        "rgbaSha256": "f950a07c42a3a7797be713cd80d8c893256f205e158f3d6171ce7454a9ba9742",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 411612
+    },
+    {
+      "id": "barbell_hip_thrust",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/barbell_hip_thrust.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/barbell_hip_thrust/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/barbell_hip_thrust/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1135290,
+        "sha256": "0c088165c7c27b158c3798937826de907e02cd974bfa7b43ca149a9c486e082d",
+        "rgbaSha256": "a9960490d8e4294e12322cdb4466d03aa50e908e90e4551a338c1ef35213aba3",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 689874,
+        "sha256": "86549fdd7a4f18284367d3403e7abcafb59e3b6b08c7c6cbd85b429bef7bbed8",
+        "rgbaSha256": "a9960490d8e4294e12322cdb4466d03aa50e908e90e4551a338c1ef35213aba3",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 445416
+    },
+    {
+      "id": "standing_calf_raise_machine",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/standing_calf_raise_machine.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/standing_calf_raise_machine/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/standing_calf_raise_machine/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1144585,
+        "sha256": "452254e72b136a32e85865b536d3f85f8fdb2e136a9dfbeffd24c56595e536df",
+        "rgbaSha256": "3041eb369c25c06faa54468d702f318d79bb3a90d7ed6790f84ddc1cd3182f47",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 714602,
+        "sha256": "a4023a29175564ee431439e55d6609ccddac0a140e809d0d685a2eda0d78b329",
+        "rgbaSha256": "3041eb369c25c06faa54468d702f318d79bb3a90d7ed6790f84ddc1cd3182f47",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 429983
+    },
+    {
+      "id": "seated_calf_raise",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/seated_calf_raise.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/seated_calf_raise/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/seated_calf_raise/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1494158,
+        "sha256": "6f9e9532f61d9d8c55484e720ec1a4a34cd130986d907ead96a322333737488f",
+        "rgbaSha256": "00e93ce4c49da110c1b56b4d6beba985974da8af100ddeee39959d9060709333",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 948160,
+        "sha256": "5455d5b098d974362ecb91b98debaaf67dce0df323cc49b935b791a94e66430c",
+        "rgbaSha256": "00e93ce4c49da110c1b56b4d6beba985974da8af100ddeee39959d9060709333",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 545998
+    },
+    {
+      "id": "leg_press_calf_raise",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/leg_press_calf_raise.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/leg_press_calf_raise/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/leg_press_calf_raise/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1202011,
+        "sha256": "db5d59521a7ff1d54115113f1d52ca6f10b482c4c9be8f2b3877594c3b1a81d8",
+        "rgbaSha256": "8715d7df570d886d44b4a89b7765363dd3c1bc6a72b19f9a2c45feedc942f07e",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 708376,
+        "sha256": "28c48b518307be2d9794b88b8263af0eaefd289cfe24bd57fc9d200ff02fb4de",
+        "rgbaSha256": "8715d7df570d886d44b4a89b7765363dd3c1bc6a72b19f9a2c45feedc942f07e",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 493635
+    },
+    {
+      "id": "lat_pulldown",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/lat_pulldown.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/lat_pulldown/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/lat_pulldown/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1130420,
+        "sha256": "bfdce94e07baf2564167bcc2b6c6450333364187750d26768c88100b4dc5011a",
+        "rgbaSha256": "915b87b501563877fe2cec460af85649b9deeb527c9c26883077de045116e037",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 694014,
+        "sha256": "0aef0f60b7bef55b6b73499cdd2430222ecb95b8cd99dedfb1d9779d008d3fe3",
+        "rgbaSha256": "915b87b501563877fe2cec460af85649b9deeb527c9c26883077de045116e037",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 436406
+    },
+    {
+      "id": "neutral_grip_lat_pulldown",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/neutral_grip_lat_pulldown.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/neutral_grip_lat_pulldown/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/neutral_grip_lat_pulldown/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 929767,
+        "sha256": "868d1285561940c1327d94579f20a71970d1cea620ff10fb7f92d9544e586544",
+        "rgbaSha256": "758e4e9076af3fe5013b4628a216a1870c799de295bb67fd90e724446a38f100",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 550338,
+        "sha256": "45560069aaf2bec541d9ec39b7ba949e0e1d4eeb426da014c88b02ae41029c03",
+        "rgbaSha256": "758e4e9076af3fe5013b4628a216a1870c799de295bb67fd90e724446a38f100",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 379429
+    },
+    {
+      "id": "straight_arm_cable_pulldown",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/straight_arm_cable_pulldown.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/straight_arm_cable_pulldown/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/straight_arm_cable_pulldown/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1250147,
+        "sha256": "475a7580de9e241858aa46015eb9fe4ab92c65ca556536db54209c30f2f81600",
+        "rgbaSha256": "3a6d4c5cc8a8da49b52c3a50ed524dc957da8f42746767a81873efff2077caeb",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 756952,
+        "sha256": "2349ba83e5400d5916ec1ba394f267777e887f1c318fff2e88b8923d4f4b1274",
+        "rgbaSha256": "3a6d4c5cc8a8da49b52c3a50ed524dc957da8f42746767a81873efff2077caeb",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 493195
+    },
+    {
+      "id": "assisted_pull_up",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/assisted_pull_up.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/assisted_pull_up/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/assisted_pull_up/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 961017,
+        "sha256": "7badeaa83fb9ddae35354ca7254dd2c227ca4d8e8859de574293a4ae0530ec14",
+        "rgbaSha256": "28758410a6a793177f2ca477754a455d7a77e17a24f79b235524ab463f27561d",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 597156,
+        "sha256": "6a9f1031cc2035ed0b0c69d4c88a8edc4a5e10c5f737485541b50b7e4a8c3f7a",
+        "rgbaSha256": "28758410a6a793177f2ca477754a455d7a77e17a24f79b235524ab463f27561d",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 363861
+    },
+    {
+      "id": "pull_up",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/pull_up.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/pull_up/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/pull_up/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 843933,
+        "sha256": "d3a8d51419042a0ebe4fbab729258fdde5847c98dabe0d3f30799da92eb3552d",
+        "rgbaSha256": "a689bf2f3076d57f4d6ea80e45e9d49a36c1a06458b73faecf66c87c130292f9",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 515014,
+        "sha256": "9e125063e991790e5ba47c3ed73d08b54f074bb647fdd634c253012e50f3cbf8",
+        "rgbaSha256": "a689bf2f3076d57f4d6ea80e45e9d49a36c1a06458b73faecf66c87c130292f9",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 328919
+    },
+    {
+      "id": "seated_cable_row",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/seated_cable_row.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/seated_cable_row/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/seated_cable_row/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 676837,
+        "sha256": "b66be61ae9a942107b187f3c95178497aa22b63a3e2ec4ee7e752b502f93f169",
+        "rgbaSha256": "9cfe7e36886ed262468a160332aff91677ac63f944cb1fbbcc92ebe1145db00c",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 373934,
+        "sha256": "c575798aa7221b66e908da4940925a4052b6b32cba3d66db00147fb7d6652dc4",
+        "rgbaSha256": "9cfe7e36886ed262468a160332aff91677ac63f944cb1fbbcc92ebe1145db00c",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 302903
+    },
+    {
+      "id": "single_arm_dumbbell_row",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/single_arm_dumbbell_row.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/single_arm_dumbbell_row/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/single_arm_dumbbell_row/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1266463,
+        "sha256": "35e6dc4f96d934071bedcba487806287698475992679e29a74c42f2dd62f963d",
+        "rgbaSha256": "88f1e3d7f316e06f9c63ea4726f044a5289ce1e15686a3ee269e7a5c7dca6171",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 700612,
+        "sha256": "cfd783ac06451fbbafa2210a970876bd206729111a33e1cd6ffdccebd5230bc2",
+        "rgbaSha256": "88f1e3d7f316e06f9c63ea4726f044a5289ce1e15686a3ee269e7a5c7dca6171",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 565851
+    },
+    {
+      "id": "chest_supported_dumbbell_row",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/chest_supported_dumbbell_row.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/chest_supported_dumbbell_row/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/chest_supported_dumbbell_row/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 928355,
+        "sha256": "92850653c9e44a1271cf97429992497a10f115d017641f9401ff50f77e06a3c5",
+        "rgbaSha256": "732261ba9fc2bbee877d66d447658289354d21082bfb74d8a0373b6112c6ca3f",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 543468,
+        "sha256": "38b1d1ae0fed69331e2f6025bd6432a1ac2f6aba1bf54cfbf27fc0d4ae783366",
+        "rgbaSha256": "732261ba9fc2bbee877d66d447658289354d21082bfb74d8a0373b6112c6ca3f",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 384887
+    },
+    {
+      "id": "seated_dumbbell_shoulder_press",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/seated_dumbbell_shoulder_press.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/seated_dumbbell_shoulder_press/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/seated_dumbbell_shoulder_press/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1136045,
+        "sha256": "747d3986fb7578789d7825e7edeebe0acec540534bdf00a9eec2b4064bab8537",
+        "rgbaSha256": "333d57b40759c67ab1e78c764fa81da822d6b7c6530ad4acff7bbdce25632b4a",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 721360,
+        "sha256": "4f50fc9c60dae50bc78ee79ccb38c7c7edd033471f8f404387f9739202273e36",
+        "rgbaSha256": "333d57b40759c67ab1e78c764fa81da822d6b7c6530ad4acff7bbdce25632b4a",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 414685
+    },
+    {
+      "id": "standing_barbell_overhead_press",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/standing_barbell_overhead_press.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/standing_barbell_overhead_press/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/standing_barbell_overhead_press/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1448,
+        "height": 1086,
+        "bytes": 774133,
+        "sha256": "e34aef765338ad3cb83c787112e95141bea47444b19153cda15d944805c390ac",
+        "rgbaSha256": "fa9a64705894555545d7b127fbb7c0b72230d4b6603330b87945478d44f25296",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1448,
+        "height": 1086,
+        "bytes": 470136,
+        "sha256": "778e38d14373edd07af75847f04ad8737eb7c5fe5cd191795ecfb3640dda1469",
+        "rgbaSha256": "fa9a64705894555545d7b127fbb7c0b72230d4b6603330b87945478d44f25296",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 303997
+    },
+    {
+      "id": "dumbbell_lateral_raise",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/dumbbell_lateral_raise.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/dumbbell_lateral_raise/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/dumbbell_lateral_raise/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 753369,
+        "sha256": "6baea35beb2e8304a2000b2ec5fb128771560c1e09be7bd57acdfc0c6927af33",
+        "rgbaSha256": "04751e678e19b22703fece8e19307cbac6e7826d409e648b9a4c0286f7db1500",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 423454,
+        "sha256": "6f5c1c766940d6c63278a09b5a3272c8e7686a56b9be7fe50f0f1922b844bad1",
+        "rgbaSha256": "04751e678e19b22703fece8e19307cbac6e7826d409e648b9a4c0286f7db1500",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 329915
+    },
+    {
+      "id": "single_arm_cable_lateral_raise",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/single_arm_cable_lateral_raise.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/single_arm_cable_lateral_raise/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/single_arm_cable_lateral_raise/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 792063,
+        "sha256": "1db0e96365958aeedb06c318cef9677bfa43cd29c367a61dc36434dae4804acd",
+        "rgbaSha256": "149a19fb27946982b5c5ce1c272e1162a31d03f08dbeccfe485d715dc5425f2d",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 443406,
+        "sha256": "8cbb1a78a58057094ce17371011969d6e495974a63fb57c0d3711303f9ca8332",
+        "rgbaSha256": "149a19fb27946982b5c5ce1c272e1162a31d03f08dbeccfe485d715dc5425f2d",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 348657
+    },
+    {
+      "id": "bent_over_dumbbell_reverse_fly",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/bent_over_dumbbell_reverse_fly.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/bent_over_dumbbell_reverse_fly/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/bent_over_dumbbell_reverse_fly/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 702743,
+        "sha256": "d8e7405547d6ebe101a17585e2a9e1e64bed91a6b297507c7e757dd841d2711d",
+        "rgbaSha256": "1edae1a79a90785e06cdede2b5a5318b51e4fa7ad555e507272897ad9e7841d0",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 395536,
+        "sha256": "cc66a1e9d4b60a7965943066e8f49e6218507abe510991490d6715e4492b4600",
+        "rgbaSha256": "1edae1a79a90785e06cdede2b5a5318b51e4fa7ad555e507272897ad9e7841d0",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 307207
+    },
+    {
+      "id": "cable_face_pull",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/cable_face_pull.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/cable_face_pull/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/cable_face_pull/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 860015,
+        "sha256": "dc242940b67619fcc79b48742a7d9ce729a96f5b685a6618c1f3fcdc93a93654",
+        "rgbaSha256": "d0f7c61a5ee751b06032e1291ef8118495cdbfc33356db3340ee6c2bdff5f8c1",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 482320,
+        "sha256": "bf5b65b0ebbf06876c2af7d81027a0ca1fbf9c92fddb1fafd611b0a9a86133e3",
+        "rgbaSha256": "d0f7c61a5ee751b06032e1291ef8118495cdbfc33356db3340ee6c2bdff5f8c1",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 377695
+    },
+    {
+      "id": "reverse_pec_deck_fly",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/reverse_pec_deck_fly.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/reverse_pec_deck_fly/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/reverse_pec_deck_fly/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 937157,
+        "sha256": "6c873652c7bb3450db62aa843c23af1eed0712c8e44d1752f00c9197efb2a3e3",
+        "rgbaSha256": "2dd3df6b6d9266a61a404acfbe829f520f0fe9072f90108e617854b9da73bea8",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 546306,
+        "sha256": "63c819d46ca2e99ee8f6e67756a32f26c9ef4a3165f437651b9521f99ec3dd77",
+        "rgbaSha256": "2dd3df6b6d9266a61a404acfbe829f520f0fe9072f90108e617854b9da73bea8",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 390851
+    },
+    {
+      "id": "barbell_biceps_curl",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/barbell_biceps_curl.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/barbell_biceps_curl/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/barbell_biceps_curl/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1040400,
+        "sha256": "4d4e2f6828aa23bf2a92254a021af1e91c2f504679545850c164255b03d04825",
+        "rgbaSha256": "a94675f6aeaba824edf4360415d35ca28cfaccb5ba2862be329063973b079500",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 613802,
+        "sha256": "c46d0541ccc7c1bcaf7c5837dc073e5613e64912c9177c05ab78a9e1e3677c9f",
+        "rgbaSha256": "a94675f6aeaba824edf4360415d35ca28cfaccb5ba2862be329063973b079500",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 426598
+    },
+    {
+      "id": "alternating_dumbbell_curl",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/alternating_dumbbell_curl.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/alternating_dumbbell_curl/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/alternating_dumbbell_curl/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 934718,
+        "sha256": "a42aad8277cde4c19c1afe0390bc5cfd904ce84142aeb39171dd1c30f2e22c30",
+        "rgbaSha256": "8f4f3216324c8b2c327fa7c885879028b7d569c9f70f7d900e3d5a69c95f7752",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 552106,
+        "sha256": "c3739d2803ef02b8aa0bd35f3fac9a8b8364794c1859d93e1bf2f4d03f32888c",
+        "rgbaSha256": "8f4f3216324c8b2c327fa7c885879028b7d569c9f70f7d900e3d5a69c95f7752",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 382612
+    },
+    {
+      "id": "dumbbell_hammer_curl",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/dumbbell_hammer_curl.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/dumbbell_hammer_curl/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/dumbbell_hammer_curl/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 931559,
+        "sha256": "18dd647376847cae2368c96c6152a5ce7ebf96b9de944f6ea4fece8c1d0d427a",
+        "rgbaSha256": "60ee292a1919bcb58af5054304d5d38c37fb5f0e07b2bd4487e7533f8b989945",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 550994,
+        "sha256": "1aa9868f7ef8748ea44bcaf234d35d2fb17c089c3de697873a3b5ee45fe17914",
+        "rgbaSha256": "60ee292a1919bcb58af5054304d5d38c37fb5f0e07b2bd4487e7533f8b989945",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 380565
+    },
+    {
+      "id": "cable_biceps_curl",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/cable_biceps_curl.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/cable_biceps_curl/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/cable_biceps_curl/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 889494,
+        "sha256": "75efff4ddb7c3f654c65d92bde49026fac02a4c7bbd32f30a77489fc3f06bea5",
+        "rgbaSha256": "4f9ac0a6d1c9f9222255aca05d75eb1d089cddce7b81a0bf50c77d64ab9aa8bd",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 504578,
+        "sha256": "82773f2b8e666ae9cd321275c7072f4d04d41b8947ce7a599050ccb7203f87cf",
+        "rgbaSha256": "4f9ac0a6d1c9f9222255aca05d75eb1d089cddce7b81a0bf50c77d64ab9aa8bd",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 384916
+    },
+    {
+      "id": "dumbbell_concentration_curl",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/dumbbell_concentration_curl.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/dumbbell_concentration_curl/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/dumbbell_concentration_curl/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 1338687,
+        "sha256": "7b0925462ed4c0a1749328fad201d71ff066bd6cdcc513086baedf22f1cf566c",
+        "rgbaSha256": "2fb76394119670bf7d9982336d09379acddb8162ba7ce056663de9a2bb520971",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 772858,
+        "sha256": "51932e6cb7a246892f6b762bea98cb33c1baf76ad0fbd5c7cf8633eb2f5b59da",
+        "rgbaSha256": "2fb76394119670bf7d9982336d09379acddb8162ba7ce056663de9a2bb520971",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 565829
+    },
+    {
+      "id": "cable_triceps_pushdown",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/cable_triceps_pushdown.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/cable_triceps_pushdown/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/cable_triceps_pushdown/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 866992,
+        "sha256": "de4a6766520b459614e6bdbd71dd81acea41e3abfa7dd60a8a65e71fae01799c",
+        "rgbaSha256": "193fb2ce99edf736870a3b46c002a918d92906c677012e9341d5fee7c4dd85d6",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 488308,
+        "sha256": "5a43a4152aa0e69a0c47e564a41e7ac7eca448c340d82f59cda1dff0604a5ba9",
+        "rgbaSha256": "193fb2ce99edf736870a3b46c002a918d92906c677012e9341d5fee7c4dd85d6",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 378684
+    },
+    {
+      "id": "rope_triceps_pushdown",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/rope_triceps_pushdown.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/rope_triceps_pushdown/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/rope_triceps_pushdown/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 948834,
+        "sha256": "03c84ced6d47435ee3d32448edf1f1611fc171fe47715db457bc9e06f8b6fc38",
+        "rgbaSha256": "7e56f9dc9fe2a98c14fe5f8206b31928bca20d08560fcab638343579b68df635",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 585908,
+        "sha256": "d9fd0f9e730fcce7c0b34973a69dc6a098c552b2895b16f5e1fbdb0b31a7f944",
+        "rgbaSha256": "7e56f9dc9fe2a98c14fe5f8206b31928bca20d08560fcab638343579b68df635",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 362926
+    },
+    {
+      "id": "lying_ez_bar_triceps_extension",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/lying_ez_bar_triceps_extension.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/lying_ez_bar_triceps_extension/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/lying_ez_bar_triceps_extension/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1511004,
+        "sha256": "9443c2ca7afda2e8128427f8fdd43a29baec5a795d28e9dc426629aaa7755e08",
+        "rgbaSha256": "fc5d32b6ff9bea42ad38b303d69740f6062cf88b001df93f8b802d410bf5fb1c",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 833372,
+        "sha256": "33267846be484b1de2cfb0b12bdcb8e744d2a0032e1efe0e6e74b74129d4d3a7",
+        "rgbaSha256": "fc5d32b6ff9bea42ad38b303d69740f6062cf88b001df93f8b802d410bf5fb1c",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 677632
+    },
+    {
+      "id": "overhead_dumbbell_triceps_extension",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/overhead_dumbbell_triceps_extension.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/overhead_dumbbell_triceps_extension/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/overhead_dumbbell_triceps_extension/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 791197,
+        "sha256": "78047f0b8a6d3331f89fdbed0f6c20c98570695ef1ab1e1ae751e34fc6a33483",
+        "rgbaSha256": "1012219ba06f6d78255994849277c15c531a9b97342fc3f293fa354c46c1da3c",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1024,
+        "height": 1536,
+        "bytes": 458836,
+        "sha256": "f0710ee6f608b3ecc3266ecd229a175378c46be2d19a3cede86b71e273874571",
+        "rgbaSha256": "1012219ba06f6d78255994849277c15c531a9b97342fc3f293fa354c46c1da3c",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 332361
+    },
+    {
+      "id": "single_arm_cable_triceps_extension",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/single_arm_cable_triceps_extension.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/single_arm_cable_triceps_extension/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/single_arm_cable_triceps_extension/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1302216,
+        "sha256": "09d682205ea51aae9c9d966d2df0f618417a25868472c884262a8e30c12cc702",
+        "rgbaSha256": "852f85607ebaeb261fdf7066ea4ffcefc61158ebbb589c2b2bd5dfc7d39d2895",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 682678,
+        "sha256": "b8c047accf30bb636d845b78c2c06762c5dd8d51be4115b192298c217796e2ca",
+        "rgbaSha256": "852f85607ebaeb261fdf7066ea4ffcefc61158ebbb589c2b2bd5dfc7d39d2895",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 619538
+    },
+    {
+      "id": "abdominal_crunch",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/abdominal_crunch.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/abdominal_crunch/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/abdominal_crunch/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1188484,
+        "sha256": "3c3b1d3ae7d23381e7f6801044bcc14f1f4eacfc45832d6b6e1ececf70177f1c",
+        "rgbaSha256": "94ec7c3efa3fdc2a8ce02fa2dfc135fd0da1349c40cbab45ba10e8225ae8e812",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 681562,
+        "sha256": "1c657e0257545fb95ae7961449985d07b402933b328d30feb39699a58054addb",
+        "rgbaSha256": "94ec7c3efa3fdc2a8ce02fa2dfc135fd0da1349c40cbab45ba10e8225ae8e812",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 506922
+    },
+    {
+      "id": "cable_abdominal_crunch",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/cable_abdominal_crunch.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/cable_abdominal_crunch/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/cable_abdominal_crunch/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1050842,
+        "sha256": "6303e30b1b0fe98c6f35e930166ebe1e47cbd632f45a2670d6124478849ae481",
+        "rgbaSha256": "33937953c83193f6def91a40a0d74853b9dde8868d9f3d2295dd1b61e718a6e7",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 663342,
+        "sha256": "c352a3d1580cf8d683854f9a990754fb0bb1c286e867fc385c0c4a9e662b83f0",
+        "rgbaSha256": "33937953c83193f6def91a40a0d74853b9dde8868d9f3d2295dd1b61e718a6e7",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 387500
+    },
+    {
+      "id": "reverse_crunch",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/reverse_crunch.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/reverse_crunch/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/reverse_crunch/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 757671,
+        "sha256": "e6524a5d942ca1189743e3a4a7cdbdf73c9d1fa485da7c388e7ea291ecb91457",
+        "rgbaSha256": "aa828428ef8fbd8fea6759f44253deb1aabb5d057d22ffb1f3c61b98361e46c9",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 427058,
+        "sha256": "d7bc91f86d53e5a3d0ff74d3af0e9a135d4cfb06505e1dfb635fc25e83ddbdd9",
+        "rgbaSha256": "aa828428ef8fbd8fea6759f44253deb1aabb5d057d22ffb1f3c61b98361e46c9",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 330613
+    },
+    {
+      "id": "lying_leg_raise",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/lying_leg_raise.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/lying_leg_raise/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/lying_leg_raise/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1124692,
+        "sha256": "d97d2e10cca931c5f89345d77a18c9eaf167b03efad13f44d1b3f85846b8545a",
+        "rgbaSha256": "d29cc5a1b6e4d59aa772ec4296af90ce66482d233a60227caed0e1176610fe1a",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 657702,
+        "sha256": "c0ee4c5e66104105b661ece87590ad28428654d5053a992648b238462c231540",
+        "rgbaSha256": "d29cc5a1b6e4d59aa772ec4296af90ce66482d233a60227caed0e1176610fe1a",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 466990
+    },
+    {
+      "id": "dead_bug",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/dead_bug.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/dead_bug/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/dead_bug/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 985306,
+        "sha256": "f8c76df95f9d05cb61984229f1b624556220aa6aa11f38131aecd0cc05ca5c07",
+        "rgbaSha256": "1877493262dac3a01ecd6dd4e85385d482cf95e87064161a4839fc1d63609210",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 571112,
+        "sha256": "b4e418fa29ec3a3b94ad78b6dd61d9fdddafdddd6cc3c28186765ee9d1d45dae",
+        "rgbaSha256": "1877493262dac3a01ecd6dd4e85385d482cf95e87064161a4839fc1d63609210",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 414194
+    },
+    {
+      "id": "bird_dog",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/bird_dog.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/bird_dog/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/bird_dog/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 1360645,
+        "sha256": "0d80c3963b454ed824db66348b1f2cb85e7b9e4c75cdd89d5a5f5a5a3004d309",
+        "rgbaSha256": "1172f4189bc97cf1732193263d20b8dfdd5da39c4fdcb5344e75628971028c66",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 811692,
+        "sha256": "d535979ad931a1debbce926b0730d9b54b1785b440de68adeb1b78757d05da82",
+        "rgbaSha256": "1172f4189bc97cf1732193263d20b8dfdd5da39c4fdcb5344e75628971028c66",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 548953
+    },
+    {
+      "id": "standing_cable_pallof_press",
+      "sourcePath": "/workspace/scratch/9edd185f702c/rebuild-exercises/source-images/standing_cable_pallof_press.png",
+      "sourceKind": "generated_source_directory",
+      "webpPath": "public/assets/exercise-library/rebuild-2026-09-05/standing_cable_pallof_press/thumb.webp",
+      "webpUrl": "/assets/exercise-library/rebuild-2026-09-05/standing_cable_pallof_press/thumb.webp",
+      "contentReview": "not_assessed_by_this_format_converter",
+      "source": {
+        "format": "PNG",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 1084087,
+        "sha256": "1741b936093093342d2e2e299931914c695e27fca3b521d79702ab0b91ebd127",
+        "rgbaSha256": "758de1508ca1daab31549c84008e4f270030e852bcc50266dd90eabb01c403db",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "status": "verified",
+      "action": "reused",
+      "webp": {
+        "format": "WEBP",
+        "mode": "RGB",
+        "width": 1254,
+        "height": 1254,
+        "bytes": 712554,
+        "sha256": "2b81a77a003cf984646cc1d4ce76a6713768dba869a114b14f6abeabeb97801e",
+        "rgbaSha256": "758de1508ca1daab31549c84008e4f270030e852bcc50266dd90eabb01c403db",
+        "alphaExtrema": [
+          255,
+          255
+        ],
+        "containsTransparency": false
+      },
+      "verification": {
+        "dimensionsMatch": true,
+        "rgbaMatch": true,
+        "differentPixels": 0,
+        "differentRgbPixels": 0,
+        "differentAlphaPixels": 0,
+        "publishedHashMatches": true,
+        "sourceHashUnchanged": true
+      },
+      "savingsBytes": 371533
+    }
+  ]
+}

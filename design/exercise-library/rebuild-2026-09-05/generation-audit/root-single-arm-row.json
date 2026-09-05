@@ -1,0 +1,8 @@
+{
+  "id": "single_arm_dumbbell_row",
+  "source": "/workspace/scratch/9edd185f702c/generated_images/exec-50a7e254-a718-401a-b65a-aa2298964c15.png",
+  "prompt": "Use case: product-mockup. Create one professional sports equipment catalogue image for SINGLE-ARM DUMBBELL ROW, a static identification pose. The reference supplies only the same adult athlete's face, dark ponytail and fully covering black-and-gold outfit: long-sleeve high-neck black training shirt, full-length black sports trousers and black/gold shoes. Change the exercise and setting to a one-arm dumbbell row supported by a flat bench: left palm and left knee rest on the padded bench, right foot rests on the floor, back naturally level, neck aligned with spine; right hand grips ONE dumbbell in a neutral grip, right elbow bent and tracking beside torso. Make the support geometry clearly readable from a side three-quarter camera without hiding the grounded foot, supporting hand or knee. Show the entire athlete, full dumbbell and all legs/corners of the bench with generous empty black clearance around the silhouette. Landscape 3:2 composition on opaque plain black background. Coherent anatomy, equipment proportions and visible hand grip. No additional people, extra limbs, arrows, motion trails, captions or numbers.",
+  "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+  "notes": "Remada unilateral identificável, uma mão e um joelho apoiados no banco, pé oposto no chão e halter íntegro. Vestuário alternativo preto com mangas compridas e calça, após bloqueio automático da tentativa original. Margem superior abaixo da meta de 8%, sem cortes. Sem certificação da execução dinâmica.",
+  "supersedes": "images-back.json: blocked original generation"
+}

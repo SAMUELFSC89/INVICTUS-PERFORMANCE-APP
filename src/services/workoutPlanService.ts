@@ -1,7 +1,7 @@
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
 import type { WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
-import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_MUSCLE_GROUP_LABELS } from '../data/exerciseCatalog';
+import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_MUSCLE_GROUP_LABELS, OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS, isOfficialExerciseCompatible } from '../data/exerciseCatalog';
 
 const DRAFT_KEY = 'invictus_workout_plan_draft_v1';
 const LOCAL_PLANS_KEY = 'invictus_workout_plans_local_v1';
@@ -28,41 +28,8 @@ function isAiAvailabilityFailure(error: unknown): boolean {
   return /gemini|invictus ia|faturamento|billing|quota|modelo|ia está indisponível|ia esta indisponivel|fetch failed|network|timeout/.test(message);
 }
 
-// #326: exportado para Musculation.tsx reaproveitar a mesma tabela na
-// contagem de "quantos exercicios a IA consegue usar com este equipamento"
-// (availableAiExerciseCount) -- antes disso era uma formula numerica escrita
-// a mao, duplicando esta tabela em outro arquivo. Cada exercicio novo tinha
-// que ser somado nos dois lugares manualmente, sem nenhum aviso se alguem
-// esquecesse; adicionar Pernas aqui e so aqui evita esse risco.
-export const FALLBACK_REQUIREMENTS: Record<string, string[]> = {
-  barbell_bench_press: ['barra_anilhas', 'banco'],
-  dumbbell_bench_press: ['halteres', 'banco'],
-  incline_dumbbell_press: ['halteres', 'banco'],
-  standing_cable_fly: ['crossover'],
-  pec_deck_fly: ['maquinas'],
-  classic_push_up: [],
-  decline_push_up: ['banco'],
-  incline_push_up: ['banco'],
-  barbell_bent_over_row: ['barra_anilhas'],
-  t_bar_row: ['maquinas'],
-  barbell_back_squat: ['barra_anilhas'],
-  smith_machine_squat: ['maquinas'],
-  leg_press_45: ['maquinas'],
-  hack_squat: ['maquinas'],
-  leg_extension: ['maquinas'],
-  leg_curl: ['maquinas'],
-  seated_leg_curl: ['maquinas'],
-  barbell_stiff_deadlift: ['halteres'],
-  dumbbell_lunge: ['halteres'],
-  bulgarian_split_squat: ['halteres', 'banco'],
-  dumbbell_walking_lunge: ['halteres'],
-  hip_adductor_machine: ['maquinas'],
-  hip_abductor_machine: ['maquinas'],
-  barbell_hip_thrust: ['barra_anilhas', 'banco'],
-  standing_calf_raise_machine: ['maquinas'],
-  seated_calf_raise: ['maquinas'],
-  leg_press_calf_raise: ['maquinas']
-};
+// Compatibility export: every consumer uses the same requirements as the API.
+export const FALLBACK_REQUIREMENTS = OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS;
 
 /**
  * Geração determinística de contingência. Ela não chama a IA nem inventa
@@ -73,7 +40,7 @@ export const FALLBACK_REQUIREMENTS: Record<string, string[]> = {
 export function buildLocalFallbackPlan(answers: WorkoutPlanAnswers): WorkoutPlanDraft {
   const equipment = Array.isArray(answers?.equipment) ? answers.equipment : [];
   const available = OFFICIAL_EXERCISES_BATCH_01.filter((exercise) =>
-    (FALLBACK_REQUIREMENTS[exercise.id] || []).every((item) => equipment.includes(item))
+    isOfficialExerciseCompatible(exercise.id, equipment)
   );
   if (available.length < 3) {
     throw new Error('Selecione equipamentos suficientes para montar um plano seguro com a biblioteca disponível.');

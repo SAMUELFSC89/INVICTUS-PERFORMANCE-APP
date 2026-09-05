@@ -1,0 +1,559 @@
+{
+  "generator": "built-in image_gen",
+  "counts": {
+    "new": 32,
+    "repaired": 14,
+    "retained": 13
+  },
+  "background": "opaque black authorized by user",
+  "entries": [
+    {
+      "id": "barbell_biceps_curl",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "4d4e2f6828aa23bf2a92254a021af1e91c2f504679545850c164255b03d04825",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Use case: stylized-concept. Individual exercise identification thumbnail for INVICTUS exercise catalogue, premium realistic 3D/photographic illustration. Reference images define same adult athletic woman, same face, dark high ponytail, black fitted sports top and shorts, black training shoes with restrained gold accents. Opaque solid black background, subtle lighting on subject only, no transparency, no checkerboard, no floor horizon, no added writing, logos, watermarks, diagrams, arrows, duplicated figures or motion trails. Single full body woman and ALL relevant equipment visible, camera comfortably pulled back, generous 8–12% black margins around entire combined subject and equipment; never cut shoes, head, ponytail, bar tips, bench feet or cable machine. Natural human anatomy with exactly two arms/two hands, correct load-bearing contact, readable separation of grips and equipment. Image identifies ONE exercise in a static phase; not a movement sequence. Exercise ID barbell_biceps_curl. Woman standing upright, front three-quarter view, feet hip-width evenly planted, elbows close to torso. Holding a single straight SHORT exercise barbell at about waist height in the middle of a biceps curl, shoulder-width SUPINATED palms-up grip. Two symmetrical small plain dark plates, entire straight bar and both exposed sleeve tips visible. Hands actually wrap bar, thumbs opposed. Wrists neutral, shoulders relaxed. Portrait composition. Output one PNG image.",
+      "notes": [
+        "Corpo e barra completos; pegada supinada legível; ombros e apoios aparentes coerentes.",
+        "Margem superior de aproximadamente 2%, inferior de 7%; alvo de 8–12% não foi atingido em todos os lados. Aplicar object-fit:contain e padding no componente.",
+        "Revisão visual estática, sem certificação profissional ou de movimento."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "alternating_dumbbell_curl",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "a42aad8277cde4c19c1afe0390bc5cfd904ce84142aeb39171dd1c30f2e22c30",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Use case: stylized-concept. Individual exercise identification thumbnail for INVICTUS exercise catalogue, premium realistic 3D/photographic illustration. Reference images define same adult athletic woman, same face, dark high ponytail, black fitted sports top and shorts, black training shoes with restrained gold accents. Opaque solid black background, subtle lighting on subject only, no transparency, no checkerboard, no floor horizon, no added writing, logos, watermarks, diagrams, arrows, duplicated figures or motion trails. Single full body woman and ALL relevant equipment visible, camera comfortably pulled back, generous 8–12% black margins around entire combined subject and equipment; never cut shoes, head, ponytail, bar tips, bench feet or cable machine. Natural human anatomy with exactly two arms/two hands, correct load-bearing contact, readable separation of grips and equipment. Image identifies ONE exercise in a static phase; not a movement sequence. Exercise ID alternating_dumbbell_curl. Woman standing upright, three-quarter front view, feet hip-width, holds TWO separate compact dumbbells, one per hand. One elbow bent about90degrees in mid-curl with palm supinated upward; other arm relaxed down by opposite thigh holding other dumbbell, neutral wrist. Elbows near torso, no rocking. Entire figure at most80% frame height with generous black space ABOVE ponytail and BELOW shoes. Portrait framing deliberately wide. Output one PNG image.",
+      "notes": [
+        "Corpo, dois halteres e apoios completos; diferenciação visível entre braço flexionado e braço estendido.",
+        "Margem superior aproximada de 6%, abaixo do alvo 8%; não há corte e componente deve usar contain com padding.",
+        "Revisão estática de identificação, sem validação profissional do ciclo."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "dumbbell_hammer_curl",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "18dd647376847cae2368c96c6152a5ce7ebf96b9de944f6ea4fece8c1d0d427a",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Use case: stylized-concept. Individual exercise identification thumbnail for INVICTUS exercise catalogue, premium realistic 3D/photographic illustration. Reference images define same adult athletic woman, same face, dark high ponytail, black fitted sports top and shorts, black training shoes with restrained gold accents. Opaque solid black background, subtle lighting on subject only, no transparency, no checkerboard, no floor horizon, no added writing, logos, watermarks, diagrams, arrows, duplicated figures or motion trails. Single full body woman and ALL relevant equipment visible, camera comfortably pulled back, generous 8–12% black margins around entire combined subject and equipment; never cut shoes, head, ponytail, bar tips, bench feet or cable machine. Natural human anatomy with exactly two arms/two hands, correct load-bearing contact, readable separation of grips and equipment. Image identifies ONE exercise in a static phase; not a movement sequence. Exercise ID dumbbell_hammer_curl. Upright woman front three-quarter view. Two separate compact dumbbells held in NEUTRAL grips, palms facing inward toward each other and thumbs pointing upward, dumbbell axes approximately vertical when forearms horizontal. Both elbows bent about90degrees at sides, forearms forward at waist, no barbell, not supinated. Feet hip-width planted, shoulders relaxed, wrists straight. Entire figure and weights occupy CENTRAL75% frame height so top and bottom black margins each12%. Portrait framing. Output one PNG image.",
+      "notes": [
+        "Pegada neutra diferenciada e halteres verticais legíveis; corpo e pesos completos.",
+        "Margem superior aproximada de 3%, abaixo do alvo 8%; objeto completo. Usar contain e padding.",
+        "Revisão visual estática, sem validação profissional do movimento."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "cable_biceps_curl",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "75efff4ddb7c3f654c65d92bde49026fac02a4c7bbd32f30a77489fc3f06bea5",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Use case: stylized-concept. Individual exercise identification thumbnail for INVICTUS exercise catalogue, premium realistic 3D/photographic illustration. Reference images define same adult athletic woman, same face, dark high ponytail, black fitted sports top and shorts, black training shoes with restrained gold accents. Opaque solid black background, subtle lighting on subject only, no transparency, no checkerboard, no floor horizon, no added writing, logos, watermarks, diagrams, arrows, duplicated figures or motion trails. Single full body woman and ALL relevant equipment visible, camera comfortably pulled back, generous 8–12% black margins around entire combined subject and equipment; never cut shoes, head, ponytail, bar tips, bench feet or cable machine. Natural human anatomy with exactly two arms/two hands, correct load-bearing contact, readable separation of grips and equipment. Image identifies ONE exercise in a static phase; not a movement sequence. Exercise ID cable_biceps_curl. Wide full scene of woman standing facing a compact SINGLE low cable tower, side three-quarter view. Straight short cable curl bar held in both hands palms-up, elbows at sides bent around90degrees, bar at waist height. A SINGLE taut steel cable runs visibly diagonally DOWN from the bar center eyelet to LOW pulley near floor in front of her. Low pulley, whole compact tower top, weight stack, base feet and entire woman all INSIDE central75% of image with wide black border. Cable clear of legs/body, hands at distinct grips away from center eyelet. Feet hip-width. NO overhead cable. Landscape3:2 composition deliberately pulled back enough for entire tower. Output one PNG.",
+      "notes": [
+        "Corpo, torre compacta e base inteiros; cabo visível da barra até polia inferior, sem atravessar atleta.",
+        "Barra gerada levemente curva; identificação da rosca no cabo preservada.",
+        "Topo da torre com aproximadamente 2% de margem e base 6%, abaixo do alvo 8%; sem cortes.",
+        "Revisão estática de identificação, sem validação técnica do mecanismo ou movimento."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "cable_triceps_pushdown",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "de4a6766520b459614e6bdbd71dd81acea41e3abfa7dd60a8a65e71fae01799c",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Use case: stylized-concept. Individual exercise identification thumbnail for INVICTUS exercise catalogue, premium realistic 3D/photographic illustration. Reference images define same adult athletic woman, same face, dark high ponytail, black fitted sports top and shorts, black training shoes with restrained gold accents. Opaque solid black background, subtle lighting on subject only, no transparency, no checkerboard, no floor horizon, no added writing, logos, watermarks, diagrams, arrows, duplicated figures or motion trails. Single full body woman and ALL relevant equipment visible, camera comfortably pulled back, generous 8–12% black margins around entire combined subject and equipment; never cut shoes, head, ponytail, bar tips, bench feet or cable machine. Natural human anatomy with exactly two arms/two hands, correct load-bearing contact, readable separation of grips and equipment. Image identifies ONE exercise in a static phase; not a movement sequence. Exercise ID cable_triceps_pushdown. Woman standing facing compact cable tower with HIGH pulley, front-side three-quarter view. Slight forward incline at hips, neutral back, feet hip-width, elbows tucked beside torso; at bottom of a pushdown with arms nearly straight, holding a SINGLE short STRAIGHT cable bar palms down in pronated grip, bar in front of upper thighs. A single taut cable runs from bar CENTER attachment diagonally UP and FORWARD to high pulley; it passes in open black space ahead of woman, never through face or arms. Full compact tower including top crosspiece, weight stack, pulley and all base feet. All body and equipment in central70% landscape3:2 frame, generous black space above tower and below shoes. Output one PNG.",
+      "notes": [
+        "Corpo e torre completos; pegada pronada e conexão central da barra visíveis; cabo alto fora do corpo.",
+        "Margem superior da torre aproximadamente 1% e inferior 3%; não há corte. Usar contain com padding.",
+        "Revisão estática de identificação, sem validação profissional de técnica ou mecanismo."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "rope_triceps_pushdown",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "03c84ced6d47435ee3d32448edf1f1611fc171fe47715db457bc9e06f8b6fc38",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Use case: stylized-concept. Individual exercise identification thumbnail for INVICTUS exercise catalogue, premium realistic 3D/photographic illustration. Reference images define same adult athletic woman, same face, dark high ponytail, black fitted sports top and shorts, black training shoes with restrained gold accents. Opaque solid black background, subtle lighting on subject only, no transparency, no checkerboard, no floor horizon, no added writing, logos, watermarks, diagrams, arrows, duplicated figures or motion trails. Single full body woman and ALL relevant equipment visible, camera comfortably pulled back, generous 8–12% black margins around entire combined subject and equipment; never cut shoes, head, ponytail, bar tips, bench feet or cable machine. Natural human anatomy with exactly two arms/two hands, correct load-bearing contact, readable separation of grips and equipment. Image identifies ONE exercise in a static phase; not a movement sequence. Exercise ID rope_triceps_pushdown. Woman standing beside and facing one compact HIGH cable tower, front-side three-quarter view. Both elbows close to torso, arms nearly extended in bottom phase of a triceps ROPE pushdown. ONE bifurcated black rope attachment attached at its CENTER to a taut steel cable and high pulley. Woman holds one rope END in each hand in neutral grip at sides of upper thighs; two rubber stops clearly visible BELOW respective hands, rope branches separated, no metal bar. Cable travels diagonally upward forward outside her body, clear of head and arms. Full tower top, weightstack, base feet and whole woman. Wide pulled-back square composition with entire assembly only central70% of frame, minimum10% outer black frame border. Output one PNG.",
+      "notes": [
+        "Duas extremidades da corda nas mãos e batentes visíveis; conexão central à polia alta sem atravessar corpo.",
+        "Corpo, torre e base completos; margem superior da torre aproximada 3%, abaixo do alvo 8%; usar contain+padding.",
+        "Revisão estática de identificação, sem certificação do movimento ou do mecanismo da torre."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "lying_ez_bar_triceps_extension",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "9443c2ca7afda2e8128427f8fdd43a29baec5a795d28e9dc426629aaa7755e08",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Edit target: attached exercise thumbnail of lying EZ bar triceps extension. Change ONLY head/neck posture: the posterior skull rests directly on the flat bench padding, neck neutral and face looking straight upward at the ceiling. Show obvious head-to-bench support with her ponytail hanging to the side, NOT a lifted head/abdominal crunch. Preserve exact woman identity, clothing, every limb and grip, EZ bar with both complete ends, feet planted, full bench geometry, landscape composition, black opaque background and all existing margins. Do not crop, zoom or add text. One PNG.",
+      "notes": [
+        "Editada para cabeça apoiada no banco; cabeça orientada para cima e apoio aparente preservado.",
+        "Banco, corpo e barra EZ com duas pontas completos; barra afastada do rosto.",
+        "Margem direita aproximadamente 5% e superior 7%, abaixo da meta 8%; usar contain+padding.",
+        "Revisão estática de identificação; ângulos articulares e ciclo requerem avaliação profissional antes de demonstrativo."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "overhead_dumbbell_triceps_extension",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "78047f0b8a6d3331f89fdbed0f6c20c98570695ef1ab1e1ae751e34fc6a33483",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Use case: stylized-concept. Individual exercise identification thumbnail for INVICTUS exercise catalogue, premium realistic 3D/photographic illustration. Reference images define same adult athletic woman, same face, dark high ponytail, black fitted sports top and shorts, black training shoes with restrained gold accents. Opaque solid black background, subtle lighting on subject only, no transparency, no checkerboard, no floor horizon, no added writing, logos, watermarks, diagrams, arrows, duplicated figures or motion trails. Single full body woman and ALL relevant equipment visible, camera comfortably pulled back, generous 8–12% black margins around entire combined subject and equipment; never cut shoes, head, ponytail, bar tips, bench feet or cable machine. Natural human anatomy with exactly two arms/two hands, correct load-bearing contact, readable separation of grips and equipment. Image identifies ONE exercise in a static phase; not a movement sequence. Exercise ID overhead_dumbbell_triceps_extension. Woman STANDING upright, full-body side three-quarter view. Two upper arms raised alongside ears, elbows flexed pointing upward, BOTH hands visibly cradling underside of upper plate of ONE vertically oriented compact dumbbell BEHIND upper head. Dumbbell does not intersect skull or ponytail; clear visible space between head and weight. Two forearms and two distinct hands naturally support same upper plate, no extra dumbbell, no third arm. Feet hip-width, ribs controlled, neutral neck and back. Camera side view chosen so entire dumbbell and grip are visible behind head without hair occlusion. No bench/machine. Wide pulled-back portrait composition, all figure plus raised weight only CENTRAL70% height, 15% black headroom above dumbbell and space below shoes. One PNG.",
+      "notes": [
+        "Corpo e halter completos; halter vertical atrás da cabeça com separação aparente e duas mãos no apoio superior.",
+        "Margem superior aproximada de 5,5%, inferior 10%; alvo 8% não atingido acima. Usar contain e padding.",
+        "Revisão apenas estática de identificação; postura de tronco e amplitude devem ser revisadas profissionalmente antes de vídeo ou instrução técnica."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "single_arm_cable_triceps_extension",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "09d682205ea51aae9c9d966d2df0f618417a25868472c884262a8e30c12cc702",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Edit target: attached SINGLE ARM cable triceps pushdown thumbnail. Change ONLY the inactive arm and its empty hand (currently on image right side of athlete): let that free arm relax slightly outward to her side, with hand beside outer thigh, so entire forearm and hand have an OBVIOUS BLACK AIR GAP from the steel cable and carabiner. The idle forearm must not visually cross, touch or align with the cable/hardware anywhere. It is acceptable for inactive arm to angle gently outward 15degrees, fingers relaxed; keep shoulder anatomy natural. Preserve working arm gripping D-handle, cable's continuous high-pulley connection, woman identity/clothing, full tower, all feet, body proportions, landscape framing and opaque black background. No extra hands, no text, no crop. One PNG.",
+      "notes": [
+        "Mão de trabalho segurando D-handle, mão livre vazia com espaço visível até mosquetão; edição afastou braço inativo.",
+        "RESSALVA: cabo ainda cruza a projeção do antebraço livre, embora mão não toque equipamento. Não usar como instrução de trajeto do cabo sem revisão.",
+        "Corpo, torre e base completos; margem superior da torre aproximada 2%, inferior 6%; usar contain+padding.",
+        "Revisão estática de identificação; nenhuma certificação profissional do movimento ou mecanismo."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "barbell_bench_press",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "067cce57525aee503476965b6a6a1a94d7349c9c55754447a7370735011c2f91",
+      "sourceReport": "generation-audit/images-arms.json",
+      "prompt": "Correct the exercise identity in this thumbnail to FLAT BARBELL BENCH PRESS, not incline. Current backrest appears raised: LOWER BACKREST COMPLETELY into ONE perfectly horizontal flat pad, parallel to floor, so woman lies SUPINE with head and upper back supported and upper torso essentially horizontal. Reposition camera to a CLEAR SIDE THREE-QUARTER VIEW to visibly show flat horizontal bench. Keep same adult woman face/clothing, same barbell and full rack style, both feet planted and hands slightly wider than shoulders holding bar vertically ABOVE SHOULDERS with elbows near extension. Entire straight bar with both plates and both metallic sleeve tips, whole rack top/bases, bench and complete body must all remain uncropped with generous black margins. Opaque black background, same realistic render lighting, landscape3:2. No added words/diagrams. One PNG.",
+      "notes": [
+        "Reenquadramento inclui duas pontas metálicas da barra, duas anilhas, topo e bases do rack, banco inteiro e corpo completo.",
+        "Edição adicional corrigiu encosto inclinado da primeira geração para banco plano horizontal visível.",
+        "Margem superior dos montantes aproximadamente 4%, abaixo do alvo 8%; nenhum corte visível, usar contain+padding.",
+        "Revisão estática de identificação; sem validação profissional de técnica ou ciclo. Original preservado."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "lat_pulldown",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "bfdce94e07baf2564167bcc2b6c6450333364187750d26768c88100b4dc5011a",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: stylized-concept. Asset type: INVICTUS exercise catalogue thumbnail, lat_pulldown (wide overhand front lat pulldown). Use image 1 only as the adult female identity/outfit/render-quality reference; image 2 supports black and gold gym equipment styling. Generate ONE clean realistic 3D studio exercise identification still, opaque pure black background, no gradient or gym room. Same adult athletic woman, long dark ponytail, black sports bra and shorts with small gold emblem, black shoes, black watch. She sits facing a complete compact lat pulldown machine, thighs beneath thigh pads, both feet planted, holding the two outer ends of a long curved bar with a wide pronated grip, bar at upper chest in front of her, elbows down, upright torso with small backward lean. Cable visibly connects bar center to overhead pulley and weight stack. Three-quarter front-side view distinguishes wide overhand grip and complete machine. Show WHOLE body, head/hair, both hands and feet, WHOLE machine including overhead crossbar/pulleys, weight stack, seat, pads and all support feet. Pull camera far back: machine AND woman together fit within central 78% of canvas, 10–12% BLACK EMPTY MARGIN ON ALL FOUR SIDES. Portrait 1024x1536. No crops, no cut-off machine, no extra people, no instructional arrows, no text, no invented brands, no duplicate limbs. Static thumbnail only; no motion collage.",
+      "notes": "Corpo, mãos, pés e máquina completos; cabo visível, pegada pronada ampla na frente; fundo preto. Margens superior/direita inferiores à meta de 8–12%, sem corte. Ilustração estática para identificação, sem validação profissional de biomecânica.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "neutral_grip_lat_pulldown",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "868d1285561940c1327d94579f20a71970d1cea620ff10fb7f92d9544e586544",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: stylized-concept. Asset type: exercise catalogue identification still, neutral_grip_lat_pulldown. Reference1 is adult female identity/style/outfit; reference2 is equipment identity. Same adult athletic woman dark ponytail, black sportsbra/shorts small gold emblem, black shoes/watch. Create ONE realistic studio render on solid opaque black. Woman seated facing lat-pulldown machine, thighs under pads, feet planted, near upright torso, holding a compact V-shaped neutral-grip handle at upper chest in front of body; palms face EACH OTHER, elbows close to sides/down, cable visibly joins handle central top ring then overhead pulley and weight stack. Three-quarter frontal camera shows both hands wrapping parallel grips. Complete lat machine seat, pads, tower, pulley, whole base and complete body head hands feet. FRAMING CRITICAL: pull camera FAR BACK so the entire assembled machine and seated woman occupy only central 70% of the canvas height and width. At least 12% uninterrupted EMPTY BLACK margins on all four edges; nothing touches the edges. Portrait1024x1536. No cropping, no gradient, no text, no labels, no new brands, no extra limbs. A single static pose, no movement arrows or collage.",
+      "notes": "Pegada neutra identificável, palmas frente a frente, corpo e equipamento completos, cabo conectado e fundo preto; margens visuais amplas, superior aproximadamente 8%. Revisão estática sem certificação profissional ou de movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "straight_arm_cable_pulldown",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "475a7580de9e241858aa46015eb9fe4ab92c65ca556536db54209c30f2f81600",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: stylized-concept. Asset type: exercise catalogue thumbnail straight_arm_cable_pulldown, standing straight-arm cable pulldown. Reference images show ONLY the adult female identity, outfit and rendering style. Same woman dark ponytail, black sports bra and shorts with small gold emblem, black gym shoes/watch. New single realistic studio still, completely solid opaque black background. She stands about one step back from a compact full high-pulley cable tower, knees softly bent, slight hip hinge, spine/head aligned; both hands grasp a short straight bar with shoulder-width overhand grip. Both elbows have only a very slight soft bend and remain almost straight. Bar in front of thighs in late downward phase, cable visibly travels diagonally upward from the bar's center to the high front pulley, clear of head and body. Three-quarter side view shows her two long arms and no seated bench. Machine has whole overhead pulley, weight stack, posts and full stable base. Full body with both shoes, head and hands complete. FRAMING: entire apparatus PLUS woman inside central 70% of portrait1024x1536 canvas; generous 12–15% black empty margins on all four edges. No cropping any rails/base/cable/body, no text, no labels, no new logos, no anatomy exaggeration, no extra limbs, one still only.",
+      "notes": "Pulldown reto identificável, braços quase estendidos e cabo à frente livre da cabeça. Corpo e máquina completos, fundo preto. Margens superior/direita abaixo da meta de 8–12%, sem corte. Revisão estática sem certificação profissional ou de movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "assisted_pull_up",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "7badeaa83fb9ddae35354ca7254dd2c227ca4d8e8859de574293a4ae0530ec14",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: stylized-concept. Asset type: exercise identification thumbnail assisted_pull_up. Reference1 adult female identity and outfit ONLY; reference2 equipment style ONLY. Create single realistic studio render of same adult woman dark ponytail, black sportsbra and shorts small gold emblem, black shoes/watch, using a complete COUNTERWEIGHT ASSISTED PULL-UP MACHINE. Clearly show BOTH KNEES resting on raised rectangular knee assistance pad connected to sliding carriage and weight stack; lower legs bent behind, both feet visible floating. She grips overhead pull-up handles with both hands overhand grip a little wider than shoulders. Midrange pull-up, elbows bending down, chin below overhead handlebar. Body hangs vertically above knee support. Full whole machine frame including overhead bars, weight stack, knee pad mechanism, step platforms and full stable base. Front three-quarter view includes all of woman, both hands, both feet, whole head/hair, and equipment. Opaque black empty background, no studio horizon. Wide SQUARE 1024x1024 framing, camera far back; the whole machine/woman assembly SMALL INSIDE CENTER, no more than 76% total image height/width, at least 10–12% clean black margin all sides. No cuts on base/upper bars. Distinguish from free pull-up with obvious knee support. No text, new brands, arrows, collage or extra limbs.",
+      "notes": "Barra assistida distingue-se pelo apoio de ambos joelhos conectado ao aparelho. Corpo e máquina inteiros; pés sobrepostos pela perspectiva, o posterior parcialmente oculto. Margens superior/inferior aproximadamente 5%, abaixo da meta, sem corte. Revisão estática; nenhum ciclo ou certificação profissional.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "pull_up",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "d3a8d51419042a0ebe4fbab729258fdde5847c98dabe0d3f30799da92eb3552d",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: stylized-concept. Create ONE exercise catalogue thumbnail for unassisted pull_up. Adult female identity, black-gold outfit and high-quality realistic 3D render follow attached two references. Same athletic adult woman with long dark ponytail, black sportsbra, black shorts, small gold emblems, black shoes, black watch. She is suspended only by BOTH HANDS on a sturdy straight horizontal pull-up bar fixed to a complete freestanding two-post frame. Front three-quarter camera: wide overhand grip slightly wider than shoulders, elbows bent downward in midrange pull, torso nearly vertical, head below bar, legs bent slightly at knees and feet separate and clearly suspended above floor. NO knee support, NO pad touching legs, NO assisting band, NO weight stack. Show ENTIRE frame from horizontal top bar through both support posts and complete broad base feet, all body parts and both shoes, no crops or off-frame ends. Scene solid opaque BLACK; no gym background, glow or gradient. Frame and woman composition occupies only central 70% of a square canvas: at least 12% uninterrupted black space outside all extremities on every side. No text, no arrows, no added brands, no extra limbs. Static identification image, not a motion sequence.",
+      "notes": "Barra livre identificável; corpo suspenso pelas mãos sem joelheira/faixa/pilha de pesos. Ambos pés visíveis e distantes do solo. Corpo e estrutura completos; margem superior/inferior abaixo da meta, sem corte. Revisão estática sem certificação profissional ou de movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "seated_cable_row",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "b66be61ae9a942107b187f3c95178497aa22b63a3e2ec4ee7e752b502f93f169",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: stylized-concept. Asset type: exercise catalogue image seated_cable_row. Reference1 ONLY adult female identity/outfit and polished realistic render; reference2 ONLY equipment style. One complete seated low-cable-row scene on pure opaque BLACK. Same adult woman dark ponytail, black sportsbra/shorts small gold emblem, black shoes/watch. Seated on flat bench facing the low cable pulley, both feet braced on angled footplates, knees gently bent, torso tall almost vertical, neutral spine, both hands grasp a close neutral V handle near abdomen, elbows next to torso pulled backward. Cable visibly continuous from handle center horizontally forward to LOW pulley then weight stack. A full compact seated row station: full bench, both footplates, low pulley, whole cable tower/weight stack and entire stable base. Side three-quarter view makes handle connection and all limb positions clear. Landscape1536x1024. Pull camera BACK to show full body including head/hair, hands and both feet, and WHOLE machine inside central 70% image width and height, at least 12% EMPTY BLACK MARGIN all four sides. Nothing at frame edges, no cropped rails/base. No text, no captions, no added brands, no extra people/limbs, no arrows. Static identification pose only.",
+      "notes": "Remada baixa sentada com cabo conectado, apoio dos pés e pegada neutra; corpo e equipamento completos. Reenquadramento corrigiu o topo cortado e deixou margens amplas em preto. Revisão estática sem certificação profissional ou de movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "chest_supported_dumbbell_row",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "92850653c9e44a1271cf97429992497a10f115d017641f9401ff50f77e06a3c5",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: stylized-concept. Asset type: static exercise catalogue thumbnail chest_supported_dumbbell_row. Reference1 shows the adult athlete identity and black/gold sports uniform; reference2 shows equipment rendering style. Generate a neutral educational gym exercise identification still: same adult female athlete, dark ponytail, black athletic sportsbra and shorts, small gold emblems, black gym shoes/watch. She lies chest-down against the padded backrest of a complete adjustable incline bench tilted about40degrees, feet planted behind/straddling support base. Chest supported on pad, neck neutral aligned with torso, face looking toward floor ahead. Two dumbbells held in hands just below ribcage, elbows bent close to torso and drawn backward in midrow. Three-quarter SIDE view shows the contact of upper torso on inclined bench pad, both dumbbells and hands, and both feet. Whole body and entire bench including adjustment rack, backrest, seat and all base feet, no crops. Background solid opaque black. Landscape3:2, zoomed far back with complete subject/equipment occupying center70% maximum; substantial 12–15% uninterrupted BLACK margins on all edges. No text, no arrows, no added brands, no extra people or limbs. Athletic instructional context, neutral anatomy, not a motion sequence.",
+      "notes": "Remada com dois halteres e peito apoiado no banco inclinado; mãos e pés visíveis, ambos halteres e banco completo. Cabeça/parte superior com margem aproximadamente 5%; inferior aproximadamente 7%, abaixo da meta sem corte. Lado distante parcialmente ocluído pelo banco/perspectiva. Revisão estática sem certificação profissional ou de movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "standing_cable_fly",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "403a8214364dbfb3b9b28b573582af082ab857a1743f6e3a13cf087993612446",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: precise-object-edit. EDIT TARGET is attached original INVICTUS standing cable fly image. Preserve EXACT existing exercise, athlete identity, clothing, body proportions and static arm/leg position, handles and cable routing. Fix only background and framing: the two tall cable towers and upper bridge currently run beyond top edge. Expand canvas / pull camera much FARTHER BACK to reveal the entire same dual-cable machine from COMPLETE TOP ENDS AND CROSSBAR through ALL BASE FEET and weight stacks. The whole assembly and whole woman should fit SMALL in central 70% of a LANDSCAPE3:2 image. At least 12% uninterrupted BLACK EMPTY SPACE on all four edges, particularly ABOVE highest machine point. Reconstruct only the previously cropped machine parts consistently; no equipment redesign. Background solid opaque BLACK, no transparency/checkerboard/gray glow. Woman full head/hair, hands/handles and both feet remain complete. No new text, no new logos, no extra limbs, no additional people. Preserve pose: standing cable chest fly at open/mid position, soft elbows and hands in front of chest plane.",
+      "notes": "Reenquadramento do original preservou identificação, mulher, pose e configuração do crossover; ambas torres, topo e bases completos, cabos e empunhaduras visíveis. Margens amplas; superior cerca de 9%. Fundo preto opaco. Original intacto. Revisão estática sem certificação profissional ou de movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "leg_press_45",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "8b78df8f065ea40049ac973c6390d580573bee13b5833daced7f771f0dbde184",
+      "sourceReport": "generation-audit/images-back.json",
+      "prompt": "Use case: precise-object-edit. EDIT TARGET attached original 45-DEGREE LEG PRESS identification image. Preserve exact same adult female athlete identity, face, dark ponytail, black/gold outfit, body proportions, exercise pose, foot position and the SAME existing plate-loaded 45-degree sled machine configuration. Do not redesign into another machine. Current image crops the ends of the inclined rails and right-side apparatus/plates. Fix by pulling camera FAR BACK and EXPANDING framing to reveal complete machine: full inclined guide rails INCLUDING UPPER STOPS AND ENDS, both weight horns and all plates with clear ends, complete footplate and its upper handle, full backrest/headrest and seat, both side handgrips, WHOLE lower foundation frame and all base feet. Whole woman head/hair, hands and both shoes remain visible as pose/perspective allow; shoulders/back supported, bent knees same position. Change background to SOLID OPAQUE BLACK with no gradient. Wide LANDSCAPE3:2 canvas; entire machine AND athlete fit small in center70% width and height, at least 12–15% empty black margin ALL FOUR edges. Highest rail end must be well below top edge; nothing touches any edge. Preserve existing emblems if present but add no new text or branding. No extra parts, no extra limbs, no motion arrows.",
+      "notes": "Reenquadramento preservou atleta, pose e configuração do leg press45; trilhos completos com batentes superiores, anilhas, plataforma, encosto e bases completos. Fundo preto. Margem direita aproximadamente 7%, ligeiramente inferior à meta8%, sem corte; demais margens amplas. Mão distante ocluída pela perspectiva original. Original intacto. Revisão estática sem certificação profissional ou de movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "abdominal_crunch",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "3c3b1d3ae7d23381e7f6801044bcc14f1f4eacfc45832d6b6e1ececf70177f1c",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: stylized-concept. Create ONE production exercise-catalog still, abdominal_crunch. The attached adult athletic brunette woman is identity/style reference only; same face, high ponytail, black sports bra and fitted training shorts with small gold Spartan mark, black shoes with small gold details. Single woman doing a modest abdominal crunch on a plain dark fitness mat: knees bent, BOTH soles flat on mat, hands lightly crossed across chest, shoulders modestly lifted with neck aligned, lumbar region resting on mat. Clean full-body side-three-quarter camera, NOT glamour. Landscape canvas 1536x1024, entire head, hair, hands, knees, shoes and entire rectangular mat visible, generous 12% empty black border on ALL sides. Body and mat centered and occupy no more than 76% width. Background seamless opaque pure black, no transparency, no checkerboard, no scenery, soft studio rim lighting and realistic premium catalogue rendering. No text, no exercise labels, no diagrams, no arrows, no extra limbs, no cropped extremities.",
+      "notes": "Corpo completo, dois pés apoiados, mãos sobre o peito, posição identificável; margem do tapete aproximadamente 3%, abaixo do alvo de 8–12%, sem corte. Não representa avaliação profissional da execução.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "cable_abdominal_crunch",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "6303e30b1b0fe98c6f35e930166ebe1e47cbd632f45a2670d6124478849ae481",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: stylized-concept. ONE professional exercise library identification still: cable_abdominal_crunch. Adult female athlete matching reference face/ponytail, black and gold gym clothing and shoes. Kneeling cable abdominal crunch at compact black cable tower with gold details: both knees resting on a small full visible dark mat; rope from high pulley held just beside temples, torso mildly flexed downward, hips above heels. Rope mechanically connected and visible from tower upper pulley to hands. Full entire tower top, weight stack, base, athlete head/hair/hands and feet fully included, three-quarter side view. Square 1536x1536 image, pull camera back generously, combined machine+athlete occupies central 72% with 14% plain black empty border all edges. Opaque pure black seamless background, soft photographic studio rim lighting, realistic premium catalogue render. No diagrams, arrows, labels, weights text, watermark or extra limbs. Still only, not multiple frames.",
+      "notes": "Corpo, joelhos, pés, tapete e torre completos; corda visível ligada à polia. Margem superior da torre cerca de 1%, abaixo do alvo, sem corte. Pose de identificação, revisão profissional pendente.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "reverse_crunch",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "e6524a5d942ca1189743e3a4a7cdbdf73c9d1fa485da7c388e7ea291ecb91457",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: stylized-concept. ONE exercise-catalog still reverse_crunch, landscape 1536x1024. Adult female gym athlete, face and black-gold training uniform like attached reference, no exaggerated posing. She lies on a dark rectangular mat, showing a small reverse crunch identification position: upper back and rear of head REST visibly on mat, face directed upward, neck neutral, ponytail arranged away from head contact; arms alongside torso with palms pressing mat; both knees bent approximately 90 degrees, thighs drawn modestly toward torso, pelvis only slightly curled off mat. Side view with slight overhead angle so both knees, hands, face and shoes distinct. Complete head-to-toes and entire mat, NO CROPS. Distant camera: ALL content including mat confined to central 70% width and 65% height, huge 15% empty black border on left and right, at least 12% top and bottom. Opaque plain black background, subtle rim lighting, realistic premium 3D photographic fitness render. No labels, diagrams, arrows, text, watermarks, additional limbs. Thumbnail identification only, not tutorial.",
+      "notes": "Corpo e tapete completos com ampla margem; cabeça apoiada, joelhos flexionados, braços ao lado. Mostra posição inicial identificadora: elevação pélvica discreta não comprovada na imagem. Revisão de movimento e profissional pendentes.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "lying_leg_raise",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "d97d2e10cca931c5f89345d77a18c9eaf167b03efad13f44d1b3f85846b8545a",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: stylized-concept. ONE static exercise catalogue thumbnail, lying_leg_raise, horizontal 1536x1024. Match adult female athlete reference identity, face, dark ponytail, black fitted sports gym uniform with subtle gold Spartan emblem and black-gold shoes. Lying straight leg raise identification: athlete supine on a complete dark rectangular fitness mat, posterior head and upper back visibly supported, face looking straight up, arms alongside body palms resting flat. Both legs straight and close together raised at 75 degrees above mat, slight natural knee softness, legs visibly connected to pelvis, both shoes fully visible. Quiet starting/high position, no movement arrows. True side camera with slight overhead angle keeps face and both limbs visible. Camera DISTANT: mat and ALL body fit INSIDE central 70% canvas width and central 70% canvas height, minimum 15% empty black perimeter. Head/hair support visible, entire mat fully included, do not crop shoes, hands, head or mat. Opaque seamless solid black background with subtle rim lighting, premium realistic 3D catalogue render, no text, diagrams, watermark, floor panorama or other people.",
+      "notes": "Corpo e tapete completos, pernas estendidas elevadas e mãos apoiadas. A parte posterior da cabeça aparece parcialmente coberta pelo cabelo; revisar apoio com profissional antes de usar como instrução técnica. Margem lateral do tapete cerca de 7%, alvo 8–12%.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "dead_bug",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "f8c76df95f9d05cb61984229f1b624556220aa6aa11f38131aecd0cc05ca5c07",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: stylized-concept. One exercise catalogue still for DEAD BUG starting tabletop position. Adult female athlete exactly in identity and premium rendering style of attached reference, dark ponytail, black sports bra, black gym shorts, black shoes and small gold Spartan marks. Side three-quarter full-body shot, lying supine on dark rectangular exercise mat; back and rear head supported, neck neutral, face looking upward; BOTH upper arms point vertically upward toward ceiling, BOTH elbows straight but soft, palms facing each other; BOTH thighs vertical, BOTH knees bent to 90 degrees and shins horizontal. Four separate correctly connected limbs, near/far arms and legs distinctly offset a little by camera perspective. Static initial position only, no limb movement, no asymmetrical extension. Landscape1536x1024, ENTIRE mat and body and hands and shoes fit within central 70% width and height, empty BLACK margin minimum 12% ALL sides; distant lens, no cropped body or mat. OPAQUE BLACK background, subtle studio rim lighting, realistic clean fitness catalogue rendering. No text, diagrams, arrows, floor panorama, extra limbs, collage or watermark.",
+      "notes": "Posição inicial tabletop, dois braços elevados e joelhos flexionados; corpo e tapete inteiros. Margem lateral do tapete cerca de 6%, abaixo do alvo. Ilustração estática não demonstra alternância contralateral ou ciclo de execução; revisão profissional pendente.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "bird_dog",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "0d80c3963b454ed824db66348b1f2cb85e7b9e4c75cdd89d5a5f5a5a3004d309",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: stylized-concept. One catalogue exercise identification image: BIRD DOG. Adult female athlete matching attached reference face, brunette ponytail, black sports gym uniform and shoes with small gold Spartan emblems. Entire athlete on dark rectangular mat. CLEAR contralateral bird dog: viewed from her left side, her LEFT arm reaches straight forward at shoulder height, her RIGHT leg extends straight back at hip height. Her RIGHT palm supports her directly beneath right shoulder; her LEFT knee and left shin support her directly beneath left hip. Four limbs visibly distinct and connected; torso horizontal neutral, hips square, eyes looking toward mat, not craned upward. Side view with slight overhead angle shows supports and opposite limbs without overlap. Landscape1536x1024, wide distant camera, full mat AND extended fingertip AND back shoe all fit inside central 70% canvas, generous 15% black perimeter. Opaque black seamless background, realistic premium 3D studio rendering, softly edged warm rimlight. No cropped fingers/feet/hair/mat, no duplicated limbs, no diagram, no motion arrows, no labels, no text or watermark.",
+      "notes": "Bird dog com braço e perna de lados opostos estendidos; palma e joelho de apoio visíveis. Corpo e tapete inteiros, porém margens das extremidades cerca de 3%, abaixo do alvo. Identificação estática, revisão profissional pendente.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "standing_cable_pallof_press",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "1741b936093093342d2e2e299931914c695e27fca3b521d79702ab0b91ebd127",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: stylized-concept. ONE exercise-catalog identification still STANDING CABLE PALLOF PRESS. Female adult gym athlete matching attached reference face, dark ponytail, black sports bra and training shorts and shoes with subtle small gold Spartan marks. Standing SIDEWAYS to a cable tower, feet shoulder-width grounded, knees slightly soft, hips/shoulders square and level, torso upright. Both hands hold a SINGLE D handle in front of sternum, arms extended forward at chest height. Cable comes HORIZONTALLY FROM HER SIDE from pulley at chest height, visibly travels sideways to her joined hands; cable does NOT run from behind head or along arm toward front. Camera front-three-quarter wide so entire compact black cable tower at image left, its chest-level adjustable pulley and cable, entire athlete at right all visible. Black and gold machine with whole top, stack, base. Square 1536x1536 image; distant framing, ALL body including head, ponytail, hands and shoes AND all equipment inside central70%, at least12% empty black border ALL sides. Opaque pure black background, realistic premium gym studio render, no diagrams, arrows, text or watermark, no extra limbs.",
+      "notes": "Corpo, torre, pega única e cabo horizontal visíveis; pés apoiados e mãos à frente. Perspectiva faz cabo se sobrepor aos braços em imagem 2D; relação lateral do cabo requer revisão técnica antes de usar como demonstração. Margem superior da torre aproximadamente 4%, sem corte.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "hip_adductor_machine",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "602b05cb14c41e097991127355760e0055325ff6a4c4da72099745713c6a8851",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: precise-object-edit. Reframe and clean the attached ADUTOR machine exercise catalogue image; image1 is exact edit target even though old filename is leg_press_calf_raise, pictured machine is hip ADDUCTION. Preserve adult woman's identity, black/gold uniform, seated upright position, hands on handles, inner-knee contact pads on INSIDE of thighs for hip adduction, feet on machine supports, actual type of selectorized adductor chair. Preserve entire weight tower, chair, knee pad arms, both shoes. Extend/reconstruct ONLY previously cropped machine edges and pull camera substantially back. Replace background by OPAQUE solid BLACK, user explicitly wants black. Full machine tower top and ALL base legs must have at least12% clear black empty border around them, square1536x1536 distant framing. Small clean gold accents; remove machine instructional diagrams and labels to avoid unreliable text, a small gold Spartan emblem may remain. Full athlete plus equipment inside central72% frame. No transparent checkerboard, no body crops, no equipment crops, no different exercise, no extra limbs. Realistic consistent premium studio render.",
+      "notes": "Fonte corrigida: arquivo legado leg_press_calf_raise/thumb.png representa adutora. Reenquadramento inclui torre e bases antes cortadas; apoios internos das pernas e ambos pés visíveis, postura sentada preservada. Margem superior aproximadamente 6%, sem corte. Revisão profissional pendente.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "hip_abductor_machine",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "010b715012ae3fcb7a3429ebdfc3df09803377f382585abff5d8d57a00c8a4b1",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: precise-object-edit. Reframe exact supplied exercise image HIP ABDUCTOR chair. Preserve adult woman's face/ponytail and black-gold gym clothing, seated upright posture, hands on handles, feet on foot supports. This is HIP ABDUCTION: padded resistance contacts must remain on OUTSIDE of both thighs/knees so the knees press outward against the pads. Preserve that machine type, not adduction. Show entire black selectorized tower, chair back, seat, knee-pad mechanism, footplates, full machine base and legs plus all athlete from head to shoes. Reconstruct missing cropped equipment edges, move camera farther back. Square1536x1536 canvas, equipment and athlete inside central70% frame, minimum12% plain black margin around ALL edges including tower top/base. Replace blurred brown background with OPAQUE solid black. Remove instructional text/diagrams from machine, retain small tasteful gold Spartan emblem and subtle gold details. Realistic premium studio catalogue render, no watermark, no captions, no additional limbs, no cropping, no transparency.",
+      "notes": "Máquina abdutora com apoios externos dos joelhos, pés apoiados, corpo/tower/bases completos; fundo preto. Margem superior aproximadamente 5%, sem corte. Aparência de identificação preservada, revisão profissional pendente.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "leg_press_calf_raise",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "db5d59521a7ff1d54115113f1d52ca6f10b482c4c9be8f2b3877594c3b1a81d8",
+      "sourceReport": "generation-audit/images-core-hips.json",
+      "prompt": "Use case: precise-object-edit. Correctly reframe this exact CALF RAISE ON LEG PRESS exercise picture. Input is the exact edit target: despite its historical filename hip_adductor_machine it shows CALF RAISE LEG PRESS. Preserve adult female athlete identity and black-gold uniform, seated reclining on leg press with back supported, hands holding seat handles, knees softly extended, balls of BOTH feet contacting lower edge of sled footplate with heels free so calf exercise is recognizable. Preserve this leg press style, whole rails, whole sled/footplate, plates, seat/backrest and all base supports. Reconstruct cropped top/left/right machine boundaries and pull camera substantially backward. Landscape1536x1024, full athlete AND entire machine must lie WITHIN central70% canvas width AND height with minimum12% EMPTY BLACK perimeter around all edges. OPAQUE pure black seamless background, no alpha/checkerboard, realistic premium gym catalogue studio rendering. Remove instructional machine text/diagrams rather than inventing labels, retain subtle small gold Spartan branding. No body/equipment cropping, no different exercise, no extra limbs, no floating feet, no captions/watermark.",
+      "notes": "Fonte correta: legado hip_adductor_machine/thumb.png representa panturrilha no leg press. Máquina, trenó, trilhos, anilhas, encosto e bases inteiros; antepés na borda da plataforma e calcanhares livres visualmente identificáveis. Margens aproximadas 10% ou maiores. Revisão estática visual, execução dinâmica e profissional pendentes.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "seated_dumbbell_shoulder_press",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "747d3986fb7578789d7825e7edeebe0acec540534bdf00a9eec2b4064bab8537",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: stylized-concept. Asset type: exercise catalogue thumbnail for INVICTUS. Reference image defines the same adult athletic woman with brown ponytail, black athletic top and shorts, black shoes and subtle gold Spartan detailing. Create a realistic premium studio fitness illustration of SEATED DUMBBELL SHOULDER PRESS, woman seated on an upright black bench with supported back, feet flat, holding two separate dumbbells at shoulder-height, forearms vertical, palms forward, elbows beneath weights. Three-quarter front view. Pure opaque black backdrop, no transparency, no checkerboard, no text, no arrows, no watermark. FULL BODY plus complete bench including feet and both complete dumbbells visible. Zoom out: subject and equipment occupy only 70-75 percent of canvas; 10-12 percent empty black margin at all edges. Safe calm static identification pose, natural anatomy, realistic hands gripping handles; no invented limbs, no cropped head/feet/bench/weights. Landscape or square composition whichever keeps everything fully visible.",
+      "notes": [
+        "Full body, both dumbbells and complete bench visible; arms and hands consistent with static lower position.",
+        "Top margin about 5%, below requested 8%; no physical cropping observed. Render with contain and padding.",
+        "Static identification only; professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "standing_barbell_overhead_press",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "e34aef765338ad3cb83c787112e95141bea47444b19153cda15d944805c390ac",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: stylized-concept. INVICTUS exercise catalogue static identification illustration. Reference image is same adult athletic woman brown ponytail, black athletic top and shorts, black shoes and subtle gold Spartan details. Create STANDING BARBELL OVERHEAD PRESS, lower starting position with bar held at upper chest/collarbone level just below chin, palms forward, elbows slightly in front of bar, hands slightly wider than shoulders. One continuous straight bar with small matching plates at each end and visible complete collars. Full standing woman, feet hip width, neutral back, no rack. Three-quarter front view. Premium realistic studio illustration, pure opaque black background, no transparency/checkerboard, no labels or arrows or watermark. CRITICAL wide landscape full-object composition: full body head-to-toe and ALL weights visible with generous 10-12% black margins on EVERY side; entire subject/equipment only 70-75% of canvas. Clear distinct hands gripping handles. Natural anatomy. No duplicate limbs or crop. This is one still identification pose, not a sequence.",
+      "notes": [
+        "Full body and complete weights visible; static identification pose recognizable.",
+        "Top margin approximately 1–3%, below requested 8%; no physical cropping observed. Use contain and padding.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "dumbbell_lateral_raise",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "6baea35beb2e8304a2000b2ec5fb128771560c1e09be7bd57acdfc0c6927af33",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: stylized-concept. INVICTUS exercise catalogue static identification illustration. Reference image is same adult athletic woman brown ponytail, black athletic top and shorts, black shoes and subtle gold Spartan details. Create DUMBBELL LATERAL RAISE, standing woman holding two distinct compact dumbbells, arms raised out to sides about 60 degrees below shoulder height, slight elbow bend. Front three-quarter view, neutral torso, feet hip width and both full shoes visible. Both complete dumbbells well inside frame. Premium realistic studio illustration, pure opaque black background, no transparency/checkerboard, no labels or arrows or watermark. CRITICAL wide landscape full-object composition: full body head-to-toe and ALL weights visible with generous 10-12% black margins on EVERY side; entire subject/equipment only 70-75% of canvas. Clear distinct hands gripping handles. Natural anatomy. No duplicate limbs or crop. This is one still identification pose, not a sequence.",
+      "notes": [
+        "Full body and complete weights visible; static identification pose recognizable.",
+        "Top margin approximately 1–3%, below requested 8%; no physical cropping observed. Use contain and padding.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "single_arm_cable_lateral_raise",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "1db0e96365958aeedb06c318cef9677bfa43cd29c367a61dc36434dae4804acd",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: stylized-concept. Exercise catalogue INVICTUS, one static identification illustration, no labels. Reference defines adult athletic woman with brown ponytail, black athletic top/shorts, black shoes and gold Spartan details. Create SINGLE ARM CABLE LATERAL RAISE. Woman stands on right beside a complete compact black cable column on left. The far/right hand holds one D-handle attached to low pulley on left, right arm raised sideways about 50 degrees. Free left arm relaxed by torso clearly separate from cable. The cable must run from visible low pulley across front of hips to working hand, continuous taut line, never through body. Full head-to-toe woman and entire cable column INCLUDING top cap, weightstack and all base feet. Front three-quarter view. Realistic premium studio illustration. OPAQUE PURE BLACK background. Compose as if inside an invisible inner rectangle occupying the central 70% width AND 70% height: add a continuous EMPTY BLACK BAND 15% of total image dimension across top, bottom, left and right. Subject/equipment must never enter those empty bands. Camera much farther away than reference. Wide landscape. Full objects, no crop, no transparency, no checkerboard, no watermark, no arrows, no duplicate limbs. Hands naturally grip separate handles, no fused equipment/body.",
+      "notes": [
+        "Entire cable column, pulley, line, single handle and full body visible; working arm is nearest column, a different side setup from prompt but no cable/body intersection observed.",
+        "Black margins approximately 9–11% vertically or more; no physical cropping observed.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "bent_over_dumbbell_reverse_fly",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "d8e7405547d6ebe101a17585e2a9e1e64bed91a6b297507c7e757dd841d2711d",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: stylized-concept. Exercise catalogue INVICTUS, one static identification illustration, no labels. Reference defines adult athletic woman with brown ponytail, black athletic top/shorts, black shoes and gold Spartan details. Create BENT OVER DUMBBELL REVERSE FLY. Woman facing diagonally toward camera, hip hinge with knees gently bent, natural neutral back and head in line, both arms opened sideways with slight elbow bend, holding two distinct compact dumbbells. Both full arms, both dumbbells and entire body head-to-toe visible. Three-quarter front view making both arms and weights distinct, without extreme perspective. Wide horizontal composition. Realistic premium studio illustration. OPAQUE PURE BLACK background. Compose as if inside an invisible inner rectangle occupying the central 70% width AND 70% height: add a continuous EMPTY BLACK BAND 15% of total image dimension across top, bottom, left and right. Subject/equipment must never enter those empty bands. Camera much farther away than reference. Wide landscape. Full objects, no crop, no transparency, no checkerboard, no watermark, no arrows, no duplicate limbs. Hands naturally grip separate handles, no fused equipment/body.",
+      "notes": [
+        "Full body and two separate complete dumbbells visible; rear shoulder static pose recognizable.",
+        "Black margins approximately 9–11% vertically or more; no physical cropping observed.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "cable_face_pull",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "dc242940b67619fcc79b48742a7d9ce729a96f5b685a6618c1f3fcdc93a93654",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: stylized-concept. One static INVICTUS exercise identification catalogue illustration. Reference defines same ADULT athletic woman, brown ponytail, black athletic top and shorts, black shoes with gold Spartan accents. CABLE FACE PULL. Woman stands on right facing cable column on left. Strict near-side profile three-quarter view. Show INTERMEDIATE PHASE with arms still reaching forward, elbows flexed slightly and raised near shoulder level. She holds the two black stopper ends of one rope attachment, one in each hand. The rope forms a clear small V ENTIRELY IN FRONT OF FACE with a wide empty-air gap between V and nose. A single continuous cable connects the V apex to a visible eye-height pulley on compact cable column. Nothing passes behind or through head. Entire cable tower top, pulley, weightstack, base feet and full woman head-to-shoes visible. Stable staggered stance, neutral torso. No extra handles, no second cable. Realistic premium studio fitness style, black and subtle gold equipment. OPAQUE BLACK BACKGROUND. Full object composition with continuous EMPTY BLACK BAND 15% image height at top/bottom and 15% image width left/right, woman and machine must stay inside central 70%. Landscape. Camera far away. No crop of any body/equipment parts, no transparency/checkerboard, no text, arrows or watermark. Natural anatomy and mechanically clear simple geometry. This is a still illustration, not a certified movement tutorial.",
+      "notes": [
+        "Full body and cable column visible. Rope V remains entirely in front of face with a visible gap; no line crosses head. Intermediate phase, not terminal position.",
+        "Top margin approximately 3–5%, below requested 8%; no physical cropping observed. Use contain and padding.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "reverse_pec_deck_fly",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "6c873652c7bb3450db62aa843c23af1eed0712c8e44d1752f00c9197efb2a3e3",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: stylized-concept. One static INVICTUS exercise identification catalogue illustration. Reference defines same ADULT athletic woman, brown ponytail, black athletic top and shorts, black shoes with gold Spartan accents. REVERSE PEC DECK FLY on a compact reverse butterfly machine. Woman sits facing the machine, chest against narrow upright chest pad, back toward camera in rear three-quarter view. Arms open sideways slightly below shoulder height, each hand holds one independent handle of the two symmetrical jointed machine arms. Machine includes entire seat, chest pad, overhead pivots, weight stack and all base feet, fully visible. Both of her full legs and feet visible around seat. Wide view shows entire machine geometry; hands distinctly connected to separate handles, no fused body/machine. Realistic premium studio fitness style, black and subtle gold equipment. OPAQUE BLACK BACKGROUND. Full object composition with continuous EMPTY BLACK BAND 15% image height at top/bottom and 15% image width left/right, woman and machine must stay inside central 70%. Landscape. Camera far away. No crop of any body/equipment parts, no transparency/checkerboard, no text, arrows or watermark. Natural anatomy and mechanically clear simple geometry. This is a still illustration, not a certified movement tutorial.",
+      "notes": [
+        "Full body and entire compact reverse pec deck visible, facing chest pad, two distinct machine handles.",
+        "Top margin approximately 3–5%, below requested 8%; no physical cropping observed. Use contain and padding.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "barbell_back_squat",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "1c425034f507681cb648b7ca4a22219153b7f22d5e989db124c52ef92c9f571c",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: precise-object-edit. Reference is EDIT TARGET. Repair framing and background only for INVICTUS exercise catalogue. Preserve woman, black-gold outfit, front three-quarter view and recognizable BARBELL BACK SQUAT. Expand field of view a lot. Bar lies across upper back with hands around it, complete bar ends and every plate within frame. Body full head-to-toe in controlled squat, natural feet planted, neutral back. No rack necessary. Change large exaggerated plate lettering to minimal gold emblem without numbers. Do not crop hair, toes or bar. Keep realistic athletic adult woman identity, black sports top/shorts/shoes and restrained gold accents. PURE OPAQUE BLACK backdrop, no transparency or checkerboard, no text overlays. Critical: complete body and equipment in central 70% canvas. Continuous empty black border band 15% on top, bottom, left, right; this is additional usable space, not a visible border line. Landscape composition. Do not enlarge person to fill canvas. No duplicated equipment or limbs. Full equipment illustration for identification, not certified biomechanics.",
+      "notes": [
+        "Full body and entire bar, sleeves and plates visible, retained squat type. Minimum margins approximately 8–12%.",
+        "Opaque black background; original source preserved separately.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "smith_machine_squat",
+      "status": "STATIC_VISUAL_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "026c47100a6c3cfe2f6d4cb15dc18e17dc40644d7295e2f4f8b1932864f4efe1",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: precise-object-edit. Reference is EDIT TARGET. Repair framing and background only for INVICTUS exercise catalogue. Preserve same woman, black-gold outfit, rear three-quarter view and SMITH MACHINE SQUAT, but reconstruct previously cropped rack fully. Woman squatting under bar across upper back inside machine. Show the ENTIRE machine: both tall uprights, upper connecting crossbar, both straight chrome guide rods, bar carriage, both complete weight stacks of plates and projecting sleeves, lower crosspieces and EVERY base foot. All ends inside the frame, no cut rail tops. Keep original squat type and rear viewpoint. Wider camera at a distance. Keep realistic athletic adult woman identity, black sports top/shorts/shoes and restrained gold accents. PURE OPAQUE BLACK backdrop, no transparency or checkerboard, no text overlays. Critical: complete body and equipment in central 70% canvas. Continuous empty black border band 15% on top, bottom, left, right; this is additional usable space, not a visible border line. Landscape composition. Do not enlarge person to fill canvas. No duplicated equipment or limbs. Full equipment illustration for identification, not certified biomechanics.",
+      "notes": [
+        "Entire Smith rack including upper crossbar and base feet visible, full woman and bar/plates retained. Top margin approximately 2%, below requested 8%; no physical cropping observed.",
+        "Opaque black background; original source preserved separately.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "hack_squat",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "e4a2561c691cb3408bf69560e5ed79980d7f9fa3a1782b9d2c1d98d9c7373c47",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: precise-object-edit. Reference is EDIT TARGET. Repair framing and background only for INVICTUS static exercise catalogue. Preserve same woman, black-gold outfit, front three-quarter view and HACK SQUAT machine exercise: back supported on angled sled, shoulders beneath paired shoulder pads, hands hold corresponding handles, both feet on large angled foot platform. Preserve this equipment type, not leg press. Reconstruct ENTIRE angled hack machine around original: both long guide rails from top caps to bottom stops, backrest and shoulder pads, weight pegs and complete plates, whole foot platform and all ground bases. No part may extend outside frame. Keep realistic athletic adult woman identity, brown ponytail, black sports top/shorts/shoes and restrained gold accents. PURE OPAQUE BLACK backdrop; replace original glow with black. No transparency or checkerboard, no text overlays. Critical: woman plus complete equipment collectively only 70% of canvas. Continuous EMPTY BLACK SPACE 15% at top, bottom, left, right. Landscape image, camera much farther away than original. Do not enlarge subject to fill frame, no duplicated limbs/equipment. Natural distinct hands on real handles. Static identification illustration, not a certified movement tutorial.",
+      "notes": [
+        "Entire hack squat machine, rail ends, footplate, plates and ground bases visible with complete body; retains original equipment type.",
+        "Minimum visual margins approximately 9–12% or more; no physical cropping observed. Opaque black background.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "bulgarian_split_squat",
+      "status": "STATIC_VISUAL_REVIEWED",
+      "sourcePngSha256": "e92c971d3600b5acafd93c5e9b2fb86528bd057939f679a0461ef596f01e63c9",
+      "sourceReport": "generation-audit/images-shoulders.json",
+      "prompt": "Use case: precise-object-edit. Reference is EDIT TARGET. Repair framing and background only for INVICTUS static exercise catalogue. Preserve same woman, black-gold outfit and BULGARIAN SPLIT SQUAT holding two separate dumbbells at sides. Rear foot top supported on black flat bench behind; front foot planted on ground, front knee flexed, rear knee lowered, torso slightly inclined naturally. Reconstruct entire bench including full padded top end-to-end and all feet. Show both hands/weights, full head, full front shoe and full rear shoe; no part may extend outside frame. Zoom camera away from original. Keep realistic athletic adult woman identity, brown ponytail, black sports top/shorts/shoes and restrained gold accents. PURE OPAQUE BLACK backdrop; replace original glow with black. No transparency or checkerboard, no text overlays. Critical: woman plus complete equipment collectively only 70% of canvas. Continuous EMPTY BLACK SPACE 15% at top, bottom, left, right. Landscape image, camera much farther away than original. Do not enlarge subject to fill frame, no duplicated limbs/equipment. Natural distinct hands on real handles. Static identification illustration, not a certified movement tutorial.",
+      "notes": [
+        "Entire bench end-to-end, both feet, both dumbbells and full body visible; retains original rear-foot-supported split squat type.",
+        "Minimum visual margins approximately 9–12% or more; no physical cropping observed. Opaque black background.",
+        "Professional biomechanics and motion review pending."
+      ],
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "standing_calf_raise_machine",
+      "status": "STATIC_REVIEWED",
+      "sourcePngSha256": "452254e72b136a32e85865b536d3f85f8fdb2e136a9dfbeffd24c56595e536df",
+      "sourceReport": "generation-audit/root-generation-inputs.json",
+      "prompt": "Use case: precise-object-edit. Edit the supplied standing calf raise exercise thumbnail for the INVICTUS exercise catalogue. Preserve the same adult female athlete, her face, ponytail, black and gold training outfit, standing calf raise machine and visible pose. Replace the baked-in white checkerboard with a clean opaque black background. Pull the camera back enough to include the ENTIRE athlete and ENTIRE machine: hair, head, both hands, both feet, shoulder pads, tower, all platform corners and all base feet. Leave a generous 10% empty black margin on every edge. Keep the forefeet supported on the platform and heels raised, shoulder pads making natural contact; do not change the type of exercise. Retain coherent geometry and realistic anatomy. Preserve the reference aspect ratio, portrait 2:3. No surrounding gym, no new lettering, no instructional arrows or charts, no transparent checkerboard. This is a static identification asset, not a motion diagram.",
+      "notes": "Fundo preto opaco; corpo e máquina inteiros, incluindo base. Inspeção estática, sem certificação do movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "leg_extension",
+      "status": "STATIC_REVIEWED",
+      "sourcePngSha256": "78ccc1614e7feefbd42d11cc75dd9f4e9e0c95a30e2c914543f7abcef3a8cbaa",
+      "sourceReport": "generation-audit/root-leg-extension.json",
+      "prompt": "Use case: precise-object-edit. Reframe the attached leg extension machine thumbnail for INVICTUS. Keep exactly the same adult female athlete, face, ponytail, black/gold training clothes and this seated leg extension machine, side-front angle and readable preparation pose. Pull back the camera and make the ENTIRE athlete and ENTIRE machine visible: both shoes, head and hair, both handles, the full backrest, stack tower, all steel base feet and the lower-leg roller. Add 12% empty black border clearance on every edge by framing wider; portrait 2:3. Opaque neutral BLACK studio background with no brown gradient, no checkerboard. Feet and shins remain in the anatomically coherent leg extension setup with the roller against the front of the lower shins just above the ankles, knees aligned with machine pivot, back naturally supported. Preserve equipment proportions; do not compress or warp. No new labels, no arrows, no overlays, no additional equipment or people. This is one static identification image.",
+      "notes": "Corpo, calçados e máquina inteiros, fundo preto; posição estática de preparação. Não certifica técnica em movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "barbell_hip_thrust",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "0c088165c7c27b158c3798937826de907e02cd974bfa7b43ca149a9c486e082d",
+      "sourceReport": "generation-audit/root-hip-thrust.json",
+      "prompt": "Use case: precise-object-edit. Reframe this INVICTUS hip thrust identification image. Preserve the same adult female athlete, face, black/gold training outfit and ponytail, the padded barbell over her hip crease, the bench behind her upper back and the existing initial lowered-hip setup. Pull the camera back to fit her ENTIRE body, both shoes, head and hair, both hands, both complete round plates, BOTH barbell ends beyond the plates and the WHOLE bench including every base foot, with at least 10% empty clearance on all four edges. Landscape 3:2 canvas is allowed to fit this wide apparatus naturally. Opaque neutral black background; remove any transparency halo/checkerboard. Maintain natural feet-on-floor support, knees bent, upper back supported on bench, hands steadying the padded bar, and coherent equipment geometry; do not change the exercise into a seated press or bench press. No stretched equipment, no extra limbs, no extra captions or new brand markings. One static identification frame, not a chart or a sequence.",
+      "notes": "Fonte horizontal, corpo, duas pontas da barra, anilhas e banco inteiros; margem direita/topo abaixo da meta de 10%, sem cortes. Posição inicial identificável, sem certificação do movimento.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "seated_calf_raise",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "6f9e9532f61d9d8c55484e720ec1a4a34cd130986d907ead96a322333737488f",
+      "sourceReport": "generation-audit/root-seated-calf.json",
+      "prompt": "Use case: precise-object-edit. Repair only the framing and background of the supplied seated calf raise exercise asset. Preserve the same adult woman, face, ponytail, black/gold sports outfit, seated posture, thigh pads, hand handles and the same black seated calf raise machine. Render the whole person and whole machine centered with clear 10% black border clearance: complete head/hair, both hands, both shoes, tower top, every base corner and foot platform must fit inside the canvas. Zoom out; do NOT cut anything off. Opaque plain black studio background; no white checkerboard, no brown glow or surrounding gym. Keep knees bent and forefeet supported with heels free to raise, thigh pads naturally on the thighs above the knees. Preserve the anatomy and machine geometry, use uniform proportions. Portrait 2:3 image. No new brands or captions, no arrows, no extra people, no multi-frame movement or charts. One clean static thumbnail for exercise identification.",
+      "notes": "Máquina, atleta e base inteiras. Imagem de identificação em posição inicial; margem lateral direita e superior abaixo da meta de 10%, sem cortes. Não certifica execução dinâmica.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "dumbbell_concentration_curl",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "7b0925462ed4c0a1749328fad201d71ff066bd6cdcc513086baedf22f1cf566c",
+      "sourceReport": "generation-audit/root-concentration-curl.json",
+      "prompt": "Use case: product-mockup. Create one neutral professional exercise-catalogue illustration of a seated dumbbell concentration curl. Use the reference only for the adult athlete's face, hair and INVICTUS black/gold visual style. In this new illustration she wears a fully covering black long-sleeve high-neck athletic shirt and full-length black training trousers, black sports shoes with small gold details. She sits upright on the edge of a plain flat weight bench, feet firmly on the floor, left free hand resting on left thigh. Her right upper arm is supported against the inside of her right thigh, and she holds one clearly visible dumbbell with a supinated hand, elbow partially flexed. The dumbbell does not touch the leg. Show the entire person, both shoes, all of the bench including legs, and the whole dumbbell, centered with generous black margins on all edges. Opaque black studio background, fixed three-quarter camera, natural proportions and anatomically coherent visible hand grip. Straightforward sports equipment demonstration thumbnail, no captions, no numerical claims, no additional people, no arrows, no collages, no movement sequence. Portrait 2:3.",
+      "notes": "Imagem de identificação de rosca concentrada com halter, braço apoiado na face interna da coxa, corpo/banco/halter completos. Vestuário alternativo preto com mangas compridas e calça, após bloqueio automático da tentativa original. Limite: margem lateral do banco abaixo de 8%; sem cortes. Sem certificação profissional.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    },
+    {
+      "id": "single_arm_dumbbell_row",
+      "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+      "sourcePngSha256": "35e6dc4f96d934071bedcba487806287698475992679e29a74c42f2dd62f963d",
+      "sourceReport": "generation-audit/root-single-arm-row.json",
+      "prompt": "Use case: product-mockup. Create one professional sports equipment catalogue image for SINGLE-ARM DUMBBELL ROW, a static identification pose. The reference supplies only the same adult athlete's face, dark ponytail and fully covering black-and-gold outfit: long-sleeve high-neck black training shirt, full-length black sports trousers and black/gold shoes. Change the exercise and setting to a one-arm dumbbell row supported by a flat bench: left palm and left knee rest on the padded bench, right foot rests on the floor, back naturally level, neck aligned with spine; right hand grips ONE dumbbell in a neutral grip, right elbow bent and tracking beside torso. Make the support geometry clearly readable from a side three-quarter camera without hiding the grounded foot, supporting hand or knee. Show the entire athlete, full dumbbell and all legs/corners of the bench with generous empty black clearance around the silhouette. Landscape 3:2 composition on opaque plain black background. Coherent anatomy, equipment proportions and visible hand grip. No additional people, extra limbs, arrows, motion trails, captions or numbers.",
+      "notes": "Remada unilateral identificável, uma mão e um joelho apoiados no banco, pé oposto no chão e halter íntegro. Vestuário alternativo preto com mangas compridas e calça, após bloqueio automático da tentativa original. Margem superior abaixo da meta de 8%, sem cortes. Sem certificação da execução dinâmica.",
+      "professionalReview": "PENDING",
+      "motionReview": "NOT_PERFORMED"
+    }
+  ]
+}

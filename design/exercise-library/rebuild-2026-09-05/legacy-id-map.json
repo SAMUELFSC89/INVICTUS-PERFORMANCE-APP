@@ -1,0 +1,33 @@
+{
+  "sourceCommit": "1181433d85da9a389772c70a94a52a4e662e6225",
+  "note": "Identity map. No ID migration is necessary.",
+  "ids": {
+    "barbell_bench_press": "barbell_bench_press",
+    "dumbbell_bench_press": "dumbbell_bench_press",
+    "incline_dumbbell_press": "incline_dumbbell_press",
+    "standing_cable_fly": "standing_cable_fly",
+    "pec_deck_fly": "pec_deck_fly",
+    "classic_push_up": "classic_push_up",
+    "decline_push_up": "decline_push_up",
+    "incline_push_up": "incline_push_up",
+    "barbell_bent_over_row": "barbell_bent_over_row",
+    "t_bar_row": "t_bar_row",
+    "barbell_back_squat": "barbell_back_squat",
+    "smith_machine_squat": "smith_machine_squat",
+    "leg_press_45": "leg_press_45",
+    "hack_squat": "hack_squat",
+    "leg_extension": "leg_extension",
+    "leg_curl": "leg_curl",
+    "seated_leg_curl": "seated_leg_curl",
+    "barbell_stiff_deadlift": "barbell_stiff_deadlift",
+    "dumbbell_lunge": "dumbbell_lunge",
+    "bulgarian_split_squat": "bulgarian_split_squat",
+    "dumbbell_walking_lunge": "dumbbell_walking_lunge",
+    "hip_adductor_machine": "hip_adductor_machine",
+    "hip_abductor_machine": "hip_abductor_machine",
+    "barbell_hip_thrust": "barbell_hip_thrust",
+    "standing_calf_raise_machine": "standing_calf_raise_machine",
+    "seated_calf_raise": "seated_calf_raise",
+    "leg_press_calf_raise": "leg_press_calf_raise"
+  }
+}

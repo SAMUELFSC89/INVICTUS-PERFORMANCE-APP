@@ -1,0 +1,10 @@
+[
+  {
+    "id": "standing_calf_raise_machine",
+    "source": "/workspace/scratch/9edd185f702c/generated_images/exec-68e2abf9-45a4-469f-b83b-d52f87e3c31b.png",
+    "reference": "public/assets/exercise-library/v1/standing_calf_raise_machine/thumb.png",
+    "prompt": "Use case: precise-object-edit. Edit the supplied standing calf raise exercise thumbnail for the INVICTUS exercise catalogue. Preserve the same adult female athlete, her face, ponytail, black and gold training outfit, standing calf raise machine and visible pose. Replace the baked-in white checkerboard with a clean opaque black background. Pull the camera back enough to include the ENTIRE athlete and ENTIRE machine: hair, head, both hands, both feet, shoulder pads, tower, all platform corners and all base feet. Leave a generous 10% empty black margin on every edge. Keep the forefeet supported on the platform and heels raised, shoulder pads making natural contact; do not change the type of exercise. Retain coherent geometry and realistic anatomy. Preserve the reference aspect ratio, portrait 2:3. No surrounding gym, no new lettering, no instructional arrows or charts, no transparent checkerboard. This is a static identification asset, not a motion diagram.",
+    "status": "STATIC_REVIEWED",
+    "notes": "Fundo preto opaco; corpo e máquina inteiros, incluindo base. Inspeção estática, sem certificação do movimento."
+  }
+]

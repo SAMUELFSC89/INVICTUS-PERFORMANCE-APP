@@ -1,0 +1,7 @@
+{
+  "id": "seated_calf_raise",
+  "source": "/workspace/scratch/9edd185f702c/generated_images/exec-41213b7f-7724-4e89-b27f-039b070392bd.png",
+  "prompt": "Use case: precise-object-edit. Repair only the framing and background of the supplied seated calf raise exercise asset. Preserve the same adult woman, face, ponytail, black/gold sports outfit, seated posture, thigh pads, hand handles and the same black seated calf raise machine. Render the whole person and whole machine centered with clear 10% black border clearance: complete head/hair, both hands, both shoes, tower top, every base corner and foot platform must fit inside the canvas. Zoom out; do NOT cut anything off. Opaque plain black studio background; no white checkerboard, no brown glow or surrounding gym. Keep knees bent and forefeet supported with heels free to raise, thigh pads naturally on the thighs above the knees. Preserve the anatomy and machine geometry, use uniform proportions. Portrait 2:3 image. No new brands or captions, no arrows, no extra people, no multi-frame movement or charts. One clean static thumbnail for exercise identification.",
+  "status": "STATIC_REVIEWED_WITH_LIMITATIONS",
+  "notes": "Máquina, atleta e base inteiras. Imagem de identificação em posição inicial; margem lateral direita e superior abaixo da meta de 10%, sem cortes. Não certifica execução dinâmica."
+}
