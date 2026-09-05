@@ -78,6 +78,14 @@ test.each(['approved', 'not-eligible', 'security-pending', 'geofence-pending'] a
 });
 
 test('adicionar saúde não modifica entrada do antifraude, XP, IGA, evidência ou competições', async () => {
+  // #249: sem stakes ativos (campeonato pago ou ranking da comunidade), a
+  // atividade e' salva mas nao pontua nem recalcula IGA -- ver
+  // hasActiveChampionshipEnrollment/competitivelyEligible em
+  // validate-activity-service.ts. Este teste existe pra provar que ANEXAR
+  // dados de saude nao muda o resultado competitivo; isso so e' observavel
+  // com stakes ativos, senao os dois lados (com/sem saude) simplesmente
+  // pulam a pontuacao e a comparacao fica vazia.
+  championshipActive = true;
   const baseline = await service.execute(request());
   const baselineSaved = activities.create.mock.calls[0][0];
   const baselineSecurity = (SecurityPipeline.runPipeline as jest.Mock).mock.calls[0];
