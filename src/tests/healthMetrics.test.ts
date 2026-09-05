@@ -3,7 +3,8 @@ import { buildHealthInsights } from '../core/health/healthInsights';
 import { processUserPerformance } from '../core/performance/performanceEngine';
 
 function point(day: number, value: number) {
-  return { timestamp: `2026-08-${String(day).padStart(2, '0')}T08:00:00.000Z`, value, source: 'apple_health' };
+  return { timestamp: `2026-08-${String(day).padStart(2, '0')}T08:00:00.000Z`, value, source: 'apple_health', unit: 'passos',
+    confidenceAtMeasurement: { confidenceLevel: 'B' as const, confidenceScore: 75, confidenceReason: 'Fixture', limitations: [], evidenceReferences: [], confidenceEngineVersion: 'test', measurementContext: 'daily', provenanceStatus: 'identified', assessedAt: '2026-08-26T12:00:00Z' } };
 }
 
 describe('métricas cruzadas de saúde', () => {
@@ -68,7 +69,7 @@ describe('métricas cruzadas de saúde', () => {
     expect(state.heartRateCoverageMinutes).toBe(2);
   });
 
-  test('gera parabéns apenas com comparação de sessões semelhantes e tendência de passos', () => {
+  test('descreve comparação de sessões semelhantes e tendência de passos com evidência', () => {
     const summary = {
       windowDays: 30,
       latest: {},
@@ -84,7 +85,7 @@ describe('métricas cruzadas de saúde', () => {
       avgHeartRate: [150, 148, 138, 136][index]
     }));
 
-    const insights = buildHealthInsights({ summary, workouts });
+    const insights = buildHealthInsights({ summary, workouts, now: Date.parse('2026-08-26T12:00:00Z') });
     expect(insights.some((insight) => insight.id === 'heart-rate-response-improved')).toBe(true);
     expect(insights.some((insight) => insight.id === 'steps-improved')).toBe(true);
     expect(insights.find((insight) => insight.id === 'heart-rate-response-improved')?.message).toContain('mesmo ritmo');

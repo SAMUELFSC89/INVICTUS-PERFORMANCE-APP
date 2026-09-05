@@ -9,7 +9,7 @@ import {
   Lock, ThumbsUp
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { auth, db, onAuthStateChanged } from '../firebase';
 import { cn } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import { ActivityMapView } from './ActivityMapView';
@@ -18,6 +18,10 @@ import { InvictusLogo } from './InvictusLogo';
 import { API_CONFIG } from '../config';
 import { VALIDATION_MESSAGES } from '../services/validationMessages';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { useUser } from '../UserContext';
+import { WorkoutFeedbackPanel } from './health/WorkoutFeedbackPanel';
+import { loadWorkoutFeedbackHistory, readWorkoutHealthRecord, type WorkoutFeedbackHistory } from '../services/workoutFeedbackHistoryService';
+import { workoutHealthRefreshService } from '../services/workoutHealthRefreshService';
 
 export interface ActivityHistoryItem {
   id: string;
@@ -142,33 +146,46 @@ function normalizePaceLabel(value: unknown): string | undefined {
   return value.trim().replace(/\s*\/\s*km\s*$/i, '').trim() || undefined;
 }
 
-function caloriesTier(kcal?: number) {
-  if (kcal === undefined) return '';
-  if (kcal >= 500) return 'Muito bom';
-  if (kcal >= 250) return 'Bom';
-  return 'Leve';
-}
-function hrZoneTier(hr?: number, age?: number) {
-  if (hr === undefined) return '';
-  const maxHr = 220 - (age || 30);
-  const pct = hr / maxHr;
-  if (pct >= 0.9) return 'Zona 5';
-  if (pct >= 0.8) return 'Zona 4';
-  if (pct >= 0.7) return 'Zona 3';
-  if (pct >= 0.6) return 'Zona 2';
-  return 'Zona 1';
-}
-function cadenceTier(spm?: number) {
-  if (spm === undefined) return '';
-  if (spm >= 170) return 'Ótima';
-  if (spm >= 150) return 'Boa';
-  return 'Regular';
-}
 function elevationTier(m?: number) {
   if (m === undefined) return '';
   if (m > 0) return 'Ganho positivo';
   if (m < 0) return 'Descida';
   return 'Plano';
+}
+
+/** Keep health observations private even when a detail stays open during an account change. */
+function ActivityWorkoutFeedback({ item }: { item: ActivityHistoryItem }) {
+  const { user } = useUser();
+  const [ownerUid] = useState(() => auth.currentUser?.uid ?? null);
+  const [authUid, setAuthUid] = useState(() => auth.currentUser?.uid ?? null);
+  const [history, setHistory] = useState<WorkoutFeedbackHistory | null>(null);
+  const sameOwner = !!ownerUid && authUid === ownerUid && auth.currentUser?.uid === ownerUid
+    && user?.uid === ownerUid && (!item.details?.userId || item.details.userId === ownerUid);
+  const isPro = sameOwner && ['performance', 'pro'].includes(String(user?.subscriptionTier));
+  const record = useMemo(() => readWorkoutHealthRecord(item.details?.healthSession), [item.details?.healthSession]);
+
+  useEffect(() => onAuthStateChanged(auth, account => setAuthUid(account?.uid ?? null)), []);
+  useEffect(() => {
+    let cancelled = false;
+    setHistory(null);
+    if (sameOwner && ownerUid && isPro && record) {
+      void loadWorkoutFeedbackHistory(ownerUid).then(result => {
+        if (!cancelled && auth.currentUser?.uid === ownerUid) setHistory(result);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [sameOwner, ownerUid, isPro, record?.sessionId]);
+
+  const refresh = useCallback(async () => {
+    if (!sameOwner || !record || auth.currentUser?.uid !== ownerUid) return null;
+    const next = await workoutHealthRefreshService.refresh(record, item.id);
+    return auth.currentUser?.uid === ownerUid ? next : null;
+  }, [sameOwner, record, ownerUid, item.id]);
+
+  if (!sameOwner) return null;
+  return <WorkoutFeedbackPanel record={record} fallbackAverageBpm={item.avgHeartRate} isPro={isPro}
+    history={history?.records} historyStatus={history}
+    onRefresh={record && !item.id.startsWith('local_') ? refresh : undefined} />;
 }
 
 // #202/#204/#215/#217: tela de detalhe da atividade, estilo Strava, seguindo o layout de
@@ -178,13 +195,20 @@ function elevationTier(m?: number) {
 // acoes reais -- Parabens persistido + Compartilhar). EXPORTADA para poder ser reaproveitada
 // tambem logo apos finalizar uma atividade em Challenges.tsx (nao so no historico).
 export function ActivityDetailScreen({ item, onClose, onShare }: { item: ActivityHistoryItem; onClose: () => void; onShare: () => void }) {
+  const [detailOwnerUid] = useState(() => auth.currentUser?.uid ?? null);
+  useEffect(() => onAuthStateChanged(auth, account => {
+    if (detailOwnerUid && account?.uid !== detailOwnerUid) onClose();
+  }), [detailOwnerUid, onClose]);
   const isHomologada = item.status === 'homologada';
   const isRejeitada = item.status === 'rejeitada';
   const isPendente = item.status === 'pendente';
-  const cadence = (item.steps && item.durationMins) ? Math.round(item.steps / item.durationMins) : undefined;
+  const cadence = Number.isFinite(item.steps) && item.steps! > 0 && Number.isFinite(item.durationMins) && item.durationMins! > 0
+    ? Math.round(item.steps! / item.durationMins!) : undefined;
   const pace = item.pace || computePace(item.distanceKm, item.durationMins);
   const hasMap = Array.isArray(item.trajectory) && item.trajectory.length >= 2;
-  const hasPerf = item.calories !== undefined || item.avgHeartRate !== undefined || cadence !== undefined || item.elevationGain !== undefined;
+  const hasPrivateHealthRecord = !!readWorkoutHealthRecord(item.details?.healthSession);
+  const hasHeartRate = !hasPrivateHealthRecord && Number.isFinite(item.avgHeartRate) && item.avgHeartRate! >= 30 && item.avgHeartRate! <= 240;
+  const hasPerf = item.calories !== undefined || hasHeartRate || cadence !== undefined || item.elevationGain !== undefined;
 
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
@@ -338,6 +362,8 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
           </div>
         )}
 
+        {item.source === 'workout' && (item.type === 'workout' || item.type === 'cardio') && <ActivityWorkoutFeedback key={item.id} item={item} />}
+
         {/* Desempenho */}
         {isHomologada && <div>
           <div className="flex items-center justify-between mb-3">
@@ -349,21 +375,21 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
                 <div className="bg-surface-container-low/60 border border-white/10 rounded-2xl p-3.5">
                   <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wide mb-1"><Flame size={12} /> Gasto energético</div>
                   <p className="text-white font-black text-xl">{Math.round(item.calories)}<span className="text-xs ml-1 text-white/40">kcal</span></p>
-                  <p className="text-primary text-[10px] font-mono mt-0.5">{caloriesTier(item.calories)}</p>
+                  <p className="text-white/50 text-[10px] mt-0.5">Estimativa registrada; não mede a qualidade do treino.</p>
                 </div>
               )}
-              {item.avgHeartRate !== undefined && (
+              {hasHeartRate && (
                 <div className="bg-surface-container-low/60 border border-white/10 rounded-2xl p-3.5">
                   <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wide mb-1"><Heart size={12} /> FC média</div>
                   <p className="text-white font-black text-xl">{Math.round(item.avgHeartRate)}<span className="text-xs ml-1 text-white/40">bpm</span></p>
-                  <p className="text-primary text-[10px] font-mono mt-0.5">{hrZoneTier(item.avgHeartRate)}</p>
+                  <p className="text-white/50 text-[10px] mt-0.5">Média salva da sessão, não é uma medição atual.</p>
                 </div>
               )}
               {cadence !== undefined && (
                 <div className="bg-surface-container-low/60 border border-white/10 rounded-2xl p-3.5">
                   <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-bold uppercase tracking-wide mb-1"><Gauge size={12} /> Cadência média</div>
                   <p className="text-white font-black text-xl">{cadence}<span className="text-xs ml-1 text-white/40">spm</span></p>
-                  <p className="text-primary text-[10px] font-mono mt-0.5">{cadenceTier(cadence)}</p>
+                  <p className="text-white/50 text-[10px] mt-0.5">Passos registrados ÷ duração; não avalia sua técnica.</p>
                 </div>
               )}
               {item.elevationGain !== undefined && (
@@ -579,7 +605,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             steps: data.steps !== undefined && data.steps !== null ? Number(data.steps) : undefined,
             trajectory: trajectoryRaw,
             congratulated: !!data.congratulated,
-            details: data.validation || data
+            details: { ...(data.validation || data), userId: data.userId, healthSession: data.healthSession ?? data.details?.healthSession }
           });
         });
       } catch (err) {

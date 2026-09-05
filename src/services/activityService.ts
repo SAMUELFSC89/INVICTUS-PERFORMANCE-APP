@@ -8,6 +8,9 @@ import { HealthDataCollector, type CollectedHealthMetrics } from "./healthDataCo
 import { API_CONFIG } from "../config";
 import { getModalityConfig } from "../config/cardioConfig";
 import { nativeBackgroundLocationService } from "./nativeBackgroundLocationService";
+import { workoutSetJournal } from './workoutSetJournal';
+import { sessionHeartRateService } from './sessionHeartRateService';
+import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
 import { communityChampionshipService } from "./communityChampionshipService";
 import { championshipService } from "./championshipService";
 
@@ -25,6 +28,9 @@ const MAX_SESSION_MINUTES = {
  */
 export interface EndSessionResult {
   workout?: Workout;
+  healthSession?: WorkoutHealthRecord;
+  healthSessionStatus?: 'available' | 'partial' | 'unavailable';
+  healthSessionReason?: string;
   validation?: any;
   message?: string;
   userMessage?: string;
@@ -586,6 +592,8 @@ export const activityService = {
 
     session.isPaused = true;
     session.pauseStartedAt = new Date().toISOString();
+    try { workoutSetJournal.interrupt(session.userId, session.id, Date.parse(session.pauseStartedAt)); }
+    catch (error) { console.warn('[ActivityService] Não foi possível interromper o registro da série:', error); }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
     // O coletor nativo pode continuar recebendo pontos com a tela bloqueada.
@@ -676,6 +684,19 @@ export const activityService = {
     // leituras finais/consultas de saúde não podem inflar a duração enquanto
     // aguardam GPS, HealthKit/Health Connect ou rede.
     const endTime = new Date();
+    if (session.userId !== user.uid) throw new Error('Esta atividade pertence a outra conta.');
+    let recordedSets: WorkoutHealthRecord['sets'] = [];
+    let journalIncomplete = false;
+    try { recordedSets = workoutSetJournal.finish(user.uid, session.id, endTime.getTime()); }
+    catch (error) {
+      journalIncomplete = true;
+      console.warn('[ActivityService] Séries indisponíveis; a atividade será salva sem inferir sua execução:', error);
+    }
+    // Private physiological evidence. It never replaces the inputs used by
+    // competitive validation, and does not require a native workout record.
+    const heartRatePromise = sessionHeartRateService.read(user.uid, session.startTime, endTime.toISOString(), externalSignal)
+      .catch(() => ({ status: 'unavailable' as const, source: null, sourceKey: null, samples: [], fetchedAt: null,
+        truncated: false, reason: 'Não foi possível consultar os batimentos desta sessão.' }));
 
     let nativeMockDetected = false;
     let recoveredNativePointCount = 0;
@@ -863,7 +884,13 @@ export const activityService = {
         } : {})
       } as CollectedHealthMetrics;
     });
-    const [idToken, collectedHealth] = await Promise.all([idTokenPromise, collectedHealthPromise]);
+    const [idToken, collectedHealth, heartRate] = await Promise.all([idTokenPromise, collectedHealthPromise, heartRatePromise]);
+    if (auth.currentUser?.uid !== user.uid) throw new Error('A conta mudou durante a finalização. Entre novamente na conta desta atividade.');
+    const healthSession: WorkoutHealthRecord = {
+      version: 1, sessionId: session.id, startedAt: session.startTime, endedAt: endTime.toISOString(),
+      sets: recordedSets, heartRate,
+      ...(journalIncomplete ? { integrity: { status: 'partial' as const, discardedSets: 0, discardedHeartRateSamples: 0 } } : {}),
+    };
 
     const pedometerSteps = collectedHealth.healthTelemetry?.steps ?? initialPedometerSteps;
     const avgHeartRate = collectedHealth.healthTelemetry?.avgHeartRate ??
@@ -911,6 +938,7 @@ export const activityService = {
           requiresGpsDistance: session.requiresGpsDistance,
           smartwatchData,
           healthTelemetry: collectedHealth.healthTelemetry,
+          healthSession,
           metricSources: collectedHealth.metricSources,
           durationMins,
           distanceKm,
@@ -972,9 +1000,13 @@ export const activityService = {
     } catch {
       throw new Error('O servidor respondeu em formato inválido. Sua atividade continua salva; tente finalizar novamente.');
     }
+    if (auth.currentUser?.uid !== user.uid) throw new Error('A conta mudou. Consulte esta atividade no histórico da conta original.');
 
     if (respData.presenceCheckRequired) {
       return {
+        healthSession: respData.healthSession,
+        healthSessionStatus: respData.healthSessionStatus,
+        healthSessionReason: respData.healthSessionReason,
         presenceCheckRequired: true,
         presenceCheckId: respData.presenceCheckId,
         livenessPrompt: respData.livenessPrompt,
@@ -1015,6 +1047,7 @@ export const activityService = {
         // Agora sim limpamos o estado local. Nao usamos cancelSession() aqui
         // porque ele dispararia status 'cancelled' por cima do 'completed'.
         this.limparEstadoLocal();
+        try { workoutSetJournal.clear(user.uid, session.id); } catch { /* Server already acknowledged the activity. */ }
 
     const finalUserMessage = userMessage || message || 'Não conseguimos validar esta atividade no momento. Tente novamente seguindo as regras do desafio.';
 
@@ -1029,6 +1062,9 @@ export const activityService = {
 
     return {
       workout,
+      healthSession: respData.healthSession ?? workout?.healthSession,
+      healthSessionStatus: respData.healthSessionStatus ?? workout?.healthSessionStatus,
+      healthSessionReason: respData.healthSessionReason ?? workout?.healthSessionReason,
       validation: enrichedValidation,
       message: finalUserMessage,
       isScoringEligible,
@@ -1081,6 +1117,7 @@ export const activityService = {
     if (data) {
       try {
         const session = JSON.parse(data) as ActivitySession;
+        try { workoutSetJournal.clear(session.userId, session.id); } catch { /* Local cancellation remains available. */ }
         updateDoc(doc(db, 'active_sessions', session.id), {
           status: 'cancelled',
           endTime: new Date().toISOString(),
@@ -1118,6 +1155,7 @@ export const activityService = {
       }
     }
     this.limparEstadoLocal();
+    try { workoutSetJournal.clear(session.userId, session.id); } catch { /* Presence decision is already persisted. */ }
   },
 
   // #230: limpeza puramente local. Separada do cancelSession para que o

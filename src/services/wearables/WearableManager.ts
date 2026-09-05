@@ -22,8 +22,6 @@ const READ_HEALTH_PERMISSIONS = [
   'read_respiratory_rate',
   'read_vo2_max',
   'read_blood_pressure',
-  'read_blood_glucose',
-  'read_body_temperature',
   'read_body_composition',
   'read_total_calories',
   'read_exercise_time',
@@ -35,11 +33,18 @@ const CONFIG_PERMISSION_BY_NATIVE_TYPE: Record<string, string> = {
   heartRate: 'read_heart_rate', restingHeartRate: 'read_resting_heart_rate', heartRateVariability: 'read_heart_rate_variability',
   steps: 'read_steps', distance: 'read_distance', calories: 'read_calories', workouts: 'read_workouts', sleep: 'read_sleep',
   weight: 'read_weight', oxygenSaturation: 'read_oxygen_saturation', respiratoryRate: 'read_respiratory_rate', vo2Max: 'read_vo2_max',
-  bloodPressure: 'read_blood_pressure', bloodGlucose: 'read_blood_glucose', bodyTemperature: 'read_body_temperature', bodyFat: 'read_body_composition',
+  bloodPressure: 'read_blood_pressure', bodyFat: 'read_body_composition',
   totalCalories: 'read_total_calories', exerciseTime: 'read_exercise_time', dietaryWater: 'read_hydration', mindfulness: 'read_mindfulness'
 };
 
 const wearablesEndpoint = () => `${API_CONFIG.baseUrl || ''}/api/wearables`;
+
+async function requestWithTimeout(url: string, options: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
 
 type ServerWearableConfig = Partial<WearableConfig>;
 
@@ -64,7 +69,7 @@ function emptyConfig(userId: string): WearableConfig {
 }
 
 function configuredPermissionsFromSnapshot(snapshot: HealthPermissionSnapshot | null): string[] {
-  if (!snapshot) return [...READ_HEALTH_PERMISSIONS];
+  if (!snapshot || snapshot.readStatusKnown === false) return [];
   const authorized = new Set(snapshot.readAuthorized);
   return READ_HEALTH_PERMISSIONS.filter((permission) => Object.entries(CONFIG_PERMISSION_BY_NATIVE_TYPE)
     .some(([nativeType, configPermission]) => configPermission === permission && authorized.has(nativeType)));
@@ -80,6 +85,8 @@ export class WearableManager {
   private static instance: WearableManager | null = null;
   private readonly providers = new Map<WearableSource, WearableProvider>();
   private config: WearableConfig | null = null;
+  private activeUserId: string | null = null;
+  private activeVitals: { userId: string; controller: AbortController; promise: Promise<{ savedCount: number; diagnostics?: HealthVitalsDiagnostics }> } | null = null;
 
   private constructor() {
     this.registerProvider(new HealthConnectProvider());
@@ -104,10 +111,52 @@ export class WearableManager {
     return this.providers.get(id);
   }
 
-  private async getToken(): Promise<string> {
+  private currentUserId(): string {
+    const userId = auth.currentUser?.uid || null;
+    if (this.activeUserId !== userId) {
+      this.activeVitals?.controller.abort();
+      this.activeVitals = null;
+      this.config = null;
+      this.activeUserId = userId;
+    }
+    if (!userId) throw new Error('Usuário não autenticado');
+    return userId;
+  }
+
+  private assertUser(userId: string) {
+    if (this.currentUserId() !== userId) throw new Error('A conta mudou. A sincronização foi cancelada.');
+  }
+
+  private async currentConfig(): Promise<WearableConfig> {
+    const userId = this.currentUserId();
+    const config = this.config?.userId === userId ? this.config : await this.loadConfig();
+    this.assertUser(userId);
+    return config;
+  }
+
+  /** Shared consent gate, including collection performed when ending a session. */
+  public async getConnectedNativeProviders(): Promise<WearableProvider[]> {
+    const config = await this.currentConfig();
+    const platform = Capacitor.getPlatform();
+    return this.getProviders().filter((provider) =>
+      (platform === 'ios' && provider.id === 'apple_health' && config.appleHealthConnected) ||
+      (platform === 'android' && provider.id === 'health_connect' && config.healthConnectConnected));
+  }
+
+  public isProviderEnabledForUser(providerId: WearableSource, userId: string): boolean {
+    if (auth.currentUser?.uid !== userId || this.config?.userId !== userId) return false;
+    return providerId === 'apple_health' ? this.config.appleHealthConnected
+      : providerId === 'health_connect' ? this.config.healthConnectConnected : false;
+  }
+
+  public getAuthenticatedUserId(): string { return this.currentUserId(); }
+
+  private async getToken(expectedUserId = this.currentUserId()): Promise<string> {
     const user = auth.currentUser;
-    if (!user) throw new Error('Usuário não autenticado');
-    return user.getIdToken();
+    if (!user || user.uid !== expectedUserId) throw new Error('A conta mudou. A sincronização foi cancelada.');
+    const token = await user.getIdToken();
+    this.assertUser(expectedUserId);
+    return token;
   }
 
   private normalizeConfig(input: ServerWearableConfig, userId: string): WearableConfig {
@@ -134,6 +183,8 @@ export class WearableManager {
         ? Number(input.healthVitalsVersion)
         : 0,
       lastVitalsSyncTime: typeof input.lastVitalsSyncTime === 'string' ? input.lastVitalsSyncTime : null,
+      lastVitalsSyncBySource: input.lastVitalsSyncBySource,
+      healthVitalsVersionBySource: input.healthVitalsVersionBySource,
       createdAt: typeof input.createdAt === 'string' ? input.createdAt : '',
       updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : ''
     };
@@ -141,8 +192,9 @@ export class WearableManager {
 
   private async requestConfig(method: 'GET' | 'POST' | 'PUT', body?: unknown): Promise<WearableConfig> {
     const user = auth.currentUser;
-    const token = await this.getToken();
-    const response = await fetch(wearablesEndpoint(), {
+    const userId = this.currentUserId();
+    const token = await this.getToken(userId);
+    const response = await requestWithTimeout(wearablesEndpoint(), {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -151,6 +203,7 @@ export class WearableManager {
       ...(body ? { body: JSON.stringify(body) } : {})
     });
     const payload = await response.json().catch(() => ({}));
+    this.assertUser(userId);
     if (!response.ok) {
       throw new Error(payload?.error || 'Não foi possível atualizar as conexões agora.');
     }
@@ -166,13 +219,21 @@ export class WearableManager {
   public async loadConfig(): Promise<WearableConfig> {
     const user = auth.currentUser;
     const fallback = emptyConfig(user?.uid || '');
-    if (!user) return fallback;
+    if (!user) {
+      this.activeVitals?.controller.abort();
+      this.activeVitals = null;
+      this.activeUserId = null;
+      this.config = null;
+      return fallback;
+    }
+    this.currentUserId();
 
     try {
       return await this.requestConfig('GET');
     } catch (err) {
       console.warn('[WearableManager] Usando configuração local de fallback:', err);
-      if (this.config) return this.config;
+      this.assertUser(user.uid);
+      if (this.config?.userId === user.uid) return this.config;
       this.config = fallback;
       return fallback;
     }
@@ -198,11 +259,14 @@ export class WearableManager {
    * validada pelo backend é quem decide ranking/score.
    */
   public async connectProvider(providerId: WearableSource): Promise<boolean> {
+    const userId = this.currentUserId();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provedor ${providerId} não registrado.`);
 
     const authorized = await provider.requestPermissions();
-    if (!authorized) return false;
+    const nativeProvider = providerId === 'apple_health' || providerId === 'health_connect';
+    this.assertUser(userId);
+    if (!authorized && !nativeProvider) return false;
 
     // O provedor de atividades cobre treinos/rota/FC por sessão. O provedor
     // de vitais cobre sono, passos diários, FC de repouso, HRV e peso. Ambos
@@ -213,6 +277,8 @@ export class WearableManager {
       vitalsAuthorized = await HealthVitalsProvider.requestPermissions();
       confirmedHealthPermissions = configuredPermissionsFromSnapshot(await HealthVitalsProvider.checkPermissions());
     }
+    this.assertUser(userId);
+    if (!authorized && !vitalsAuthorized) return false;
 
     if (providerId === 'health_connect') {
       await this.updateConfig({
@@ -245,6 +311,10 @@ export class WearableManager {
   }
 
   public async disconnectProvider(providerId: WearableSource): Promise<void> {
+    this.currentUserId();
+    this.activeVitals?.controller.abort();
+    if (this.config && providerId === 'apple_health') this.config.appleHealthConnected = false;
+    if (this.config && providerId === 'health_connect') this.config.healthConnectConnected = false;
     const provider = this.getProvider(providerId);
     if (provider) await provider.disconnect();
 
@@ -261,11 +331,13 @@ export class WearableManager {
 
   /** Reabre o consentimento granular somente após ação explícita na tela Saúde. */
   public async refreshHealthPermissions(): Promise<boolean> {
-    const config = this.config || (await this.loadConfig());
+    const config = await this.currentConfig();
+    const userId = this.currentUserId();
     if (!config.appleHealthConnected && !config.healthConnectConnected) return false;
     const authorized = await HealthVitalsProvider.requestPermissions();
     if (!authorized) return false;
     const confirmedPermissions = configuredPermissionsFromSnapshot(await HealthVitalsProvider.checkPermissions());
+    this.assertUser(userId);
     await this.updateConfig({
       ...(config.appleHealthConnected ? { appleHealthPermissions: confirmedPermissions } : {}),
       ...(config.healthConnectConnected ? { healthConnectPermissions: confirmedPermissions } : {})
@@ -287,8 +359,9 @@ export class WearableManager {
    * server-side (/api/strava/sync, StravaService.sync()).
    */
   public async syncAll(options: { forceActivityTelemetryBackfill?: boolean } = {}): Promise<{ syncedCount: number; duplicatesSkipped: number; blockedCount: number; logs: WearableSyncLog[] }> {
-    const token = await this.getToken();
-    const config = this.config || (await this.loadConfig());
+    const userId = this.currentUserId();
+    const token = await this.getToken(userId);
+    const config = await this.currentConfig();
 
     const needsActivityTelemetryBackfill = options.forceActivityTelemetryBackfill === true || (config.activityTelemetryVersion || 0) < 2;
     const lastSyncMs = config.lastSyncTime ? new Date(config.lastSyncTime).getTime() : Number.NaN;
@@ -334,7 +407,9 @@ export class WearableManager {
     const logs: WearableSyncLog[] = [];
 
     for (let index = 0; index < batches.length; index += 1) {
-      const response = await fetch(wearablesEndpoint(), {
+      this.assertUser(userId);
+      if (atividades.some((activity) => !this.isProviderEnabledForUser(activity.source, userId))) throw new Error('A conexão de saúde foi desativada.');
+      const response = await requestWithTimeout(wearablesEndpoint(), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -345,6 +420,7 @@ export class WearableManager {
         })
       });
       const payload = await response.json().catch(() => ({}));
+      this.assertUser(userId);
       if (!response.ok) {
         throw new Error(payload?.error || 'Não foi possível sincronizar as atividades agora.');
       }
@@ -397,38 +473,82 @@ export class WearableManager {
    * entregou com atraso. IDs nativos tornam essa sobreposição idempotente.
    */
   public async syncVitals(options: { forceVitalsBackfill?: boolean } = {}): Promise<{ savedCount: number; diagnostics?: HealthVitalsDiagnostics }> {
-    const available = await HealthVitalsProvider.isAvailable();
-    if (!available) return { savedCount: 0 };
+    const userId = this.currentUserId();
+    if (this.activeVitals?.userId === userId) return this.activeVitals.promise;
+    const controller = new AbortController();
+    const promise = this.performVitalsSync(options, userId, controller).finally(() => {
+      if (this.activeVitals?.controller === controller) this.activeVitals = null;
+    });
+    this.activeVitals = { userId, controller, promise };
+    return promise;
+  }
 
-    const config = this.config || (await this.loadConfig());
-    const needsVitalsBackfill = options.forceVitalsBackfill === true || (config.healthVitalsVersion || 0) < 1;
-    const lastVitalsMs = config.lastVitalsSyncTime ? new Date(config.lastVitalsSyncTime).getTime() : Number.NaN;
+  private async performVitalsSync(
+    options: { forceVitalsBackfill?: boolean }, userId: string, controller: AbortController
+  ): Promise<{ savedCount: number; diagnostics?: HealthVitalsDiagnostics }> {
+    const config = await this.currentConfig();
+    const source = Capacitor.getPlatform() === 'ios' ? 'apple_health' : 'health_connect';
+    const assertContext = () => {
+      this.assertUser(userId);
+      if (controller.signal.aborted || !this.isProviderEnabledForUser(source, userId)) {
+        throw new Error('A conexão de saúde foi desativada. Sincronização cancelada.');
+      }
+    };
+    // Viewing Health never overrides the connection choice made in the profile.
+    if (!this.isProviderEnabledForUser(source, userId)) return { savedCount: 0 };
+    assertContext();
+    if (!(await HealthVitalsProvider.isAvailable())) return { savedCount: 0 };
+    assertContext();
+    const permissions = await HealthVitalsProvider.checkPermissions();
+    assertContext();
+    const until = new Date();
+    const sourceCursor = config.lastVitalsSyncBySource?.[source];
+    const needsVitalsBackfill = options.forceVitalsBackfill === true || (config.healthVitalsVersionBySource?.[source] || 0) < 2 || !sourceCursor;
+    const lastVitalsMs = sourceCursor ? new Date(sourceCursor).getTime() : Number.NaN;
     const since = !needsVitalsBackfill && Number.isFinite(lastVitalsMs)
-      ? new Date(Math.max(Date.now() - 30 * 24 * 60 * 60 * 1000, lastVitalsMs - 24 * 60 * 60 * 1000))
-      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const { samples: vitals, diagnostics } = await HealthVitalsProvider.fetchVitalsWithDiagnostics(since);
-    const token = await this.getToken();
-    const source: WearableSource = Capacitor.getPlatform() === 'ios' ? 'apple_health' : 'health_connect';
+      ? new Date(Math.max(until.getTime() - 30 * 86400000, lastVitalsMs - 24 * 3600000))
+      : new Date(until.getTime() - 30 * 86400000);
+    const { samples: vitals, diagnostics } = await HealthVitalsProvider.fetchVitalsWithDiagnostics(since, {
+      until, signal: controller.signal, permissions
+    });
+    assertContext();
     const batches = vitals.length ? Array.from({ length: Math.ceil(vitals.length / 500) }, (_, index) => vitals.slice(index * 500, (index + 1) * 500)) : [[]];
     let savedCount = 0;
     let lastVitalsSyncTime: string | undefined;
     let healthVitalsVersion: number | undefined;
-    const coreReadTypes = new Set(['heartRate', 'steps']);
-    const readComplete = diagnostics.failedTypes.every((type) => !coreReadTypes.has(type))
-      && diagnostics.emptyTypes.every((type) => !coreReadTypes.has(type));
+    // Empty and denied types are valid partial-permission states. Any actual
+    // failed/truncated read retains the cursor so the next foreground sync retries.
+    const readComplete = diagnostics.readComplete ?? diagnostics.failedTypes.length === 0;
     for (let index = 0; index < batches.length; index += 1) {
-      const response = await fetch(wearablesEndpoint(), {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'sync-vitals', source, vitals: batches[index], finalBatch: index === batches.length - 1, readComplete })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.error || 'Não foi possível sincronizar os dados de saúde agora.');
-      savedCount += Number(payload.savedCount) || 0;
-      if (typeof payload.lastVitalsSyncTime === 'string') lastVitalsSyncTime = payload.lastVitalsSyncTime;
-      if (Number.isFinite(Number(payload.healthVitalsVersion))) healthVitalsVersion = Number(payload.healthVitalsVersion);
+      const token = await this.getToken(userId);
+      assertContext();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      try {
+        const response = await fetch(wearablesEndpoint(), {
+          method: 'POST', signal: controller.signal,
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'sync-vitals', source, vitals: batches[index], normalizationVersion: 2,
+            syncWindowEnd: diagnostics.until, finalBatch: index === batches.length - 1, readComplete
+          })
+        });
+        const payload = await response.json().catch(() => ({}));
+        assertContext();
+        if (!response.ok) throw new Error(payload?.error || 'Não foi possível sincronizar os dados de saúde agora.');
+        if (Number(payload.rejectedCount) > 0) throw new Error('Algumas amostras foram recusadas; a sincronização permanece pendente.');
+        savedCount += Number(payload.savedCount) || 0;
+        if (typeof payload.lastVitalsSyncTime === 'string') lastVitalsSyncTime = payload.lastVitalsSyncTime;
+        if (Number.isFinite(Number(payload.healthVitalsVersion))) healthVitalsVersion = Number(payload.healthVitalsVersion);
+        if (this.config?.userId === userId && payload.lastVitalsSyncBySource) {
+          this.config.lastVitalsSyncBySource = { ...this.config.lastVitalsSyncBySource, ...payload.lastVitalsSyncBySource };
+        }
+        if (this.config?.userId === userId && payload.healthVitalsVersionBySource) {
+          this.config.healthVitalsVersionBySource = { ...this.config.healthVitalsVersionBySource, ...payload.healthVitalsVersionBySource };
+        }
+      } finally { clearTimeout(timer); }
     }
-    if (this.config) {
+    assertContext();
+    if (this.config?.userId === userId) {
       if (lastVitalsSyncTime) this.config.lastVitalsSyncTime = lastVitalsSyncTime;
       if (healthVitalsVersion !== undefined) this.config.healthVitalsVersion = healthVitalsVersion;
     }

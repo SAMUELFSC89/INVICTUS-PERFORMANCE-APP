@@ -4,6 +4,7 @@ import { recalculateAllUserScores } from './igaService.js';
 import { registrarAmostrasDeAtividade } from './health-data-layer.js';
 import { submitActivityToActiveChampionships } from './championship-scoring-service.js';
 import { estimateCalories, formatPace } from './activity-metrics.js';
+import { sanitizeWorkoutHealthRecord, type SanitizedWorkoutHealth } from './workout-health-record.js';
 
 /**
  * Commit de uma atividade que o SecurityPipeline marcou UNDER_REVIEW e que
@@ -26,10 +27,11 @@ export async function commitActivityAfterPresenceCheck(params: {
   rawActivity: any;
   presenceOutcome: 'approved' | 'pending';
   presenceSelfieBase64?: string;
-}): Promise<{ activityId: string; pointsAwarded: number; weeklyIgaScore: number }> {
+}): Promise<{ activityId: string; pointsAwarded: number; weeklyIgaScore: number } & SanitizedWorkoutHealth> {
   const activityRepository = new ActivityRepository();
   const userRepository = new UserRepository();
   const { userId, rawActivity, presenceOutcome } = params;
+  const workoutHealth = sanitizeWorkoutHealthRecord(rawActivity.healthSession);
 
   const rawDuration = rawActivity.duration ?? rawActivity.durationMins;
   const durationForMetrics = rawDuration === undefined
@@ -50,6 +52,7 @@ export async function commitActivityAfterPresenceCheck(params: {
     : 0;
 
   const savedActivity = await activityRepository.create({
+    ...workoutHealth,
     userId,
     type: rawActivity.type,
     muscleGroup: rawActivity.muscleGroup,
@@ -125,5 +128,5 @@ export async function commitActivityAfterPresenceCheck(params: {
     }
   }
 
-  return { activityId: savedActivity.id || '', pointsAwarded, weeklyIgaScore };
+  return { activityId: savedActivity.id || '', pointsAwarded, weeklyIgaScore, ...workoutHealth };
 }

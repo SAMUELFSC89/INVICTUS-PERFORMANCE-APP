@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { db } from './common.js';
 import { assessHealthConfidence, ConfidenceAssessment, deriveProvenanceStatus, HealthProvenance } from './health-confidence-engine.js';
 import type { MeasurementContext } from './health-evidence-registry.js';
 import { loadHealthConfidenceRuntime } from './health-confidence-runtime.js';
+import { healthSampleLocalDate } from './health-source-priority.js';
 
 /**
  * HEALTH DATA LAYER (Fase 1 -- fundacao).
@@ -43,6 +45,7 @@ export type HealthMetricType =
   | 'heart_rate_max'
   | 'heart_rate_resting'   // #253: coletado via HealthVitalsProvider (@capgo/capacitor-health), sync separado de atividade (action 'sync-vitals')
   | 'heart_rate'
+  | 'hrv_sdnn'
   | 'hrv_rmssd'            // #253: idem
   | 'vo2max_estimate'      // calculado no cliente (performanceEngine.ts), nao no servidor -- integracao futura
   | 'sleep_duration_min'   // #253: idem (agregado por noite a partir dos segmentos de estagio)
@@ -115,46 +118,97 @@ export interface HealthSample {
   derivedFrom?: string[];
   sourceConfidence?: number[];
   createdAt: string;
+  schemaVersion?: number;
+  normalizationVersion?: number;
+  aggregation?: 'daily_total' | 'sleep_session' | 'sample';
+  localDate?: string;
+  timeZone?: string;
+  revision?: number;
+  updatedAt?: string;
+  legacyId?: string;
+  sampleCount?: number;
+  aggregationMethod?: 'mean' | 'sum' | 'latest' | 'daily_total';
+  normalizationCorrection?: { previousVersion: number; currentVersion: number; correctedAt: string; historicalConfidencePreserved: true };
 }
 
 const HEALTH_SAMPLES_COLLECTION = 'health_samples';
 
-/**
- * Grava uma amostra normalizada. Nunca lanca: chamado de dentro de um
- * pipeline de ingestao que ja tem seu proprio resultado principal (a
- * atividade em si) -- uma falha aqui e uma falha de telemetria auxiliar,
- * nao pode derrubar o fluxo real.
- */
-export async function gravarAmostraSaude(sample: Omit<HealthSample, 'id' | 'createdAt'>): Promise<void> {
-  try {
-    const provenance = sample.provenance || provenanceFromLegacySample(sample.source, sample.sourceId, sample.device);
-    const runtime = sample.confidenceAtMeasurement ? null : await loadHealthConfidenceRuntime();
-    const confidenceAtMeasurement = sample.confidenceAtMeasurement || assessHealthConfidence({
-      metricType: sample.metricType,
-      provenance,
-      measurementContext: sample.measurementContext,
-      completeness: provenance.status === 'VERIFIED_DEVICE' ? 'complete' : 'partial',
-      derivedFrom: sample.derivedFrom,
-      sourceConfidence: sample.sourceConfidence
-    }, runtime!.registry, runtime!.config);
-    const rawId = sample.sampleId || sample.sourceActivityId || sample.timestamp;
-    const safeId = Buffer.from(rawId).toString('base64url').slice(0, 900);
-    const id = `${sample.source}_${sample.metricType}_${safeId}`;
-    // Classificação histórica é imutável. A mesma amostra resincronizada não
-    // recebe silenciosamente uma nova versão/nota; evidência atual aparece em
-    // `currentEvidenceConfidence` somente na leitura.
-    await db.collection(HEALTH_SAMPLES_COLLECTION).doc(id).create({
-      ...sample,
-      provenance,
-      confidenceAtMeasurement,
-      measurementContext: confidenceAtMeasurement.measurementContext,
-      id,
-      createdAt: new Date().toISOString()
-    });
-  } catch (err: any) {
-    if (err?.code === 6 || err?.code === 'already-exists' || err?.code === 'ALREADY_EXISTS') return;
-    console.error('[HealthDataLayer] Falha ao gravar amostra (nao-fatal):', err);
-  }
+export type HealthSampleInput = Omit<HealthSample, 'id' | 'createdAt'>;
+export type HealthWriteStatus = 'created' | 'updated' | 'duplicate';
+export interface HealthIngestionResult {
+  receivedCount: number;
+  savedCount: number;
+  createdCount: number;
+  updatedCount: number;
+  duplicateCount: number;
+  rejectedCount: number;
+}
+
+/** Identidade inclui o proprietário; nenhuma amostra de outra conta é reutilizada. */
+export function healthSampleDocumentId(sample: HealthSampleInput): string {
+  const identity = sample.sampleId || sample.sourceActivityId || sample.timestamp;
+  return `v2_${createHash('sha256').update(JSON.stringify([sample.userId, sample.source, sample.metricType, identity])).digest('hex')}`;
+}
+function legacyDocumentId(sample: HealthSampleInput): string {
+  const rawId = sample.sampleId || sample.sourceActivityId || sample.timestamp;
+  return `${sample.source}_${sample.metricType}_${Buffer.from(rawId).toString('base64url').slice(0, 900)}`;
+}
+
+/** Escrita estrita para saúde passiva. Transação torna revisões e migração idempotentes. */
+export async function persistirAmostraSaude(sample: HealthSampleInput): Promise<HealthWriteStatus> {
+  const provenance = sample.provenance || provenanceFromLegacySample(sample.source, sample.sourceId, sample.device);
+  const runtime = sample.confidenceAtMeasurement ? null : await loadHealthConfidenceRuntime();
+  const confidenceAtMeasurement = sample.confidenceAtMeasurement || assessHealthConfidence({
+    metricType: sample.metricType, provenance, measurementContext: sample.measurementContext,
+    completeness: provenance.status === 'VERIFIED_DEVICE' ? 'complete' : 'partial',
+    derivedFrom: sample.derivedFrom, sourceConfidence: sample.sourceConfidence
+  }, runtime!.registry, runtime!.config);
+  const id = healthSampleDocumentId(sample);
+  const ref = db.collection(HEALTH_SAMPLES_COLLECTION).doc(id);
+  const legacyId = legacyDocumentId(sample);
+  const legacyRef = db.collection(HEALTH_SAMPLES_COLLECTION).doc(legacyId);
+  return db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(ref);
+    const legacy = existing.exists ? null : await transaction.get(legacyRef);
+    const old = (existing.exists ? existing.data() : legacy?.data()) as HealthSample | undefined;
+    // Hash collisions or corrupt documents never grant access to another owner.
+    if (existing.exists && old?.userId !== sample.userId) throw new Error('HEALTH_SAMPLE_OWNER_MISMATCH');
+    const previous = old?.userId === sample.userId ? old : undefined;
+    const now = new Date().toISOString();
+    const revisable = sample.aggregation === 'daily_total' || sample.aggregation === 'sleep_session'
+      || (sample.normalizationVersion || 1) > (previous?.normalizationVersion || 1);
+    const changed = previous && revisable && (
+      previous.value !== sample.value || previous.unit !== sample.unit
+      || previous.timestamp !== sample.timestamp || previous.startDate !== sample.startDate || previous.endDate !== sample.endDate
+      || (sample.normalizationVersion || 1) > (previous.normalizationVersion || 1)
+    );
+    if (existing.exists && !changed) return 'duplicate';
+    const next: HealthSample = {
+      ...(previous || sample),
+      ...(previous && !changed ? {} : sample),
+      id, userId: sample.userId, schemaVersion: 2,
+      provenance: previous?.provenance || provenance,
+      confidenceAtMeasurement: previous?.confidenceAtMeasurement || confidenceAtMeasurement,
+      measurementContext: previous?.measurementContext || confidenceAtMeasurement.measurementContext,
+      createdAt: previous?.createdAt || now,
+      revision: previous ? (previous.revision || 1) + (changed ? 1 : 0) : 1,
+      ...(previous ? { legacyId: previous.legacyId || (legacy?.exists ? legacyId : undefined) } : {}),
+      ...(changed ? { updatedAt: now } : {}),
+      ...(previous && (sample.normalizationVersion || 1) > (previous.normalizationVersion || 1) ? {
+        normalizationCorrection: { previousVersion: previous.normalizationVersion || 1, currentVersion: sample.normalizationVersion || 1, correctedAt: now, historicalConfidencePreserved: true as const }
+      } : {})
+    };
+    if (existing.exists) transaction.set(ref, next);
+    else transaction.create(ref, next);
+    // O legado permanece intacto. Leituras preferem a identidade v2 e removem duplicatas.
+    return previous ? (changed ? 'updated' : 'duplicate') : 'created';
+  });
+}
+
+/** Compatibilidade: falha da telemetria auxiliar nunca altera o resultado competitivo. */
+export async function gravarAmostraSaude(sample: HealthSampleInput): Promise<void> {
+  try { await persistirAmostraSaude(sample); }
+  catch { console.error('[HealthDataLayer] Falha na persistência de telemetria auxiliar.'); }
 }
 
 function integrationForSource(source: HealthSampleSource): HealthProvenance['integration'] {
@@ -244,42 +298,30 @@ export async function registrarAmostrasDeAtividade(params: {
  * do schema legado; origem por integração não prova hardware. Proveniência e
  * confiança são classificadas separadamente pelo Confidence Engine.
  *
- * Deduplicacao: `gravarAmostraSaude` usa `source + (sourceActivityId ||
- * timestamp) + metricType` como id do documento e criação imutável. Vitais nao tem
- * sourceActivityId, entao o `timestamp` da propria leitura garante que
- * resincronizar uma janela sobreposta encontra o mesmo doc e não duplica nem
- * reclassifica silenciosamente a serie temporal.
+ * Deduplicação inclui usuário, integração, métrica e identidade da leitura.
+ * Totais diários/sessões e correções versionadas podem revisar o valor;
+ * a confiança histórica permanece identificada separadamente da evidência atual.
  */
 export async function registrarAmostrasPassivas(params: {
   userId: string;
   source: HealthSampleSource;
-  amostras: Array<{
-    metricType: HealthMetricType; value: number; unit: string; timestamp: string;
-    startDate?: string; endDate?: string; sampleId?: string; sourceId?: string; platformId?: string; device?: string;
-    provenance?: HealthProvenance; measurementContext?: MeasurementContext; derivedFrom?: string[]; sourceConfidence?: number[];
-  }>;
-}): Promise<number> {
-  const validas = params.amostras.filter((a) => typeof a.value === 'number' && Number.isFinite(a.value) && a.value > 0);
-  await Promise.all(validas.map((a) => gravarAmostraSaude({
-    userId: params.userId,
-    source: params.source,
-    timestamp: a.timestamp,
-    startDate: a.startDate,
-    endDate: a.endDate,
-    sampleId: a.sampleId,
-    sourceId: a.sourceId,
-    platformId: a.platformId,
-    device: a.device,
-    provenance: a.provenance,
-    measurementContext: a.measurementContext,
-    derivedFrom: a.derivedFrom,
-    sourceConfidence: a.sourceConfidence,
-    quality: 'sensor_verified',
-    metricType: a.metricType,
-    value: a.value,
-    unit: a.unit
-  })));
-  return validas.length;
+  amostras: Array<Omit<HealthSampleInput, 'userId' | 'source' | 'quality'>>;
+}): Promise<HealthIngestionResult> {
+  const validas = params.amostras.filter((a) => typeof a.value === 'number' && Number.isFinite(a.value) && a.value >= 0);
+  const result: HealthIngestionResult = { receivedCount: params.amostras.length, savedCount: 0, createdCount: 0, updatedCount: 0, duplicateCount: 0, rejectedCount: params.amostras.length - validas.length };
+  // Limita concorrência por requisição; um erro impede ACK/cursor e o retry é idempotente.
+  for (let offset = 0; offset < validas.length; offset += 16) {
+    const statuses = await Promise.all(validas.slice(offset, offset + 16).map((a) => persistirAmostraSaude({
+      ...a, userId: params.userId, source: params.source, quality: 'sensor_verified'
+    })));
+    for (const status of statuses) {
+      if (status === 'created') result.createdCount += 1;
+      else if (status === 'updated') result.updatedCount += 1;
+      else result.duplicateCount += 1;
+    }
+  }
+  result.savedCount = result.createdCount + result.updatedCount;
+  return result;
 }
 
 /**
@@ -288,33 +330,102 @@ export async function registrarAmostrasPassivas(params: {
  * healthBaseline) -- ainda sem UI conectada nesta fase, mas a leitura ja
  * funciona de verdade contra dados reais gravados por registrarAmostrasDeAtividade.
  */
-export async function lerSerieTemporalMetrica(
-  userId: string,
-  metricType: HealthMetricType,
-  desde: Date,
-  ate: Date = new Date()
-): Promise<HealthSample[]> {
+export interface BoundedHealthSeries {
+  samples: HealthSample[];
+  partial: boolean;
+  scannedCount: number;
+  limit: number;
+  excludedLegacyCount: number;
+  unusableLegacyCount: number;
+}
+
+/** Exact Android point identity, used only to bridge the old record-level HR ID. */
+function androidHeartRatePointKey(sample: HealthSample, includeValue = true): string | null {
+  if (sample.source !== 'health_connect' || sample.metricType !== 'heart_rate'
+    || !sample.platformId || sample.unit !== 'bpm' || !Number.isFinite(sample.value)) return null;
+  const at = Date.parse(sample.timestamp);
+  if (!Number.isFinite(at) || (sample.startDate && Date.parse(sample.startDate) !== at)
+    || (sample.endDate && Date.parse(sample.endDate) !== at)) return null;
+  const origin = sample.provenance?.dataOrigin || sample.sourceId || '';
+  return JSON.stringify([sample.userId, sample.source, sample.metricType, sample.platformId,
+    sample.sourceId || origin, origin, at, sample.unit, ...(includeValue ? [sample.value] : [])]);
+}
+
+/** Migração de leitura: não mistura snapshots antigos com a versão corrigida. */
+export function deduplicateHealthSamples(samples: HealthSample[], timeZone = 'UTC'): { samples: HealthSample[]; excludedLegacyCount: number; unusableLegacyCount: number } {
+  const identity = new Map<string, HealthSample>();
+  let excludedLegacyCount = 0;
+  let unusableLegacyCount = 0;
+  const normalizedIdentities = new Set(samples.filter(s => (s.normalizationVersion || 1) >= 2).map(healthSampleDocumentId));
+  const normalizedDays = new Set(samples.filter(s => (s.normalizationVersion || 1) >= 2)
+    .map(s => `${s.userId}:${s.source}:${s.metricType}:${healthSampleLocalDate(s, timeZone)}`));
+  // Previous Android collection saved one reading per HeartRateRecord. A new
+  // sync can recover its individual points; the old surviving point must not
+  // count twice. Never reconstruct readings that were already lost.
+  const newHeartRatePoints = samples.filter(sample => (sample.normalizationVersion || 1) >= 2
+    && sample.sampleId?.startsWith('hr-point:v1:'));
+  const newPointKeys = new Set(newHeartRatePoints.map(sample => androidHeartRatePointKey(sample)).filter(Boolean));
+  const newPointTimes = new Set(newHeartRatePoints.map(sample => androidHeartRatePointKey(sample, false)).filter(Boolean));
+  for (const sample of samples) {
+    if (sample.platformId && sample.sampleId === sample.platformId) {
+      const pointKey = androidHeartRatePointKey(sample);
+      if (pointKey && newPointKeys.has(pointKey)) { excludedLegacyCount += 1; continue; }
+      // Preserve conflicting raw evidence, but do not present the series as
+      // complete when old/new versions disagree at the same source instant.
+      const timeKey = androidHeartRatePointKey(sample, false);
+      if (timeKey && newPointTimes.has(timeKey)) unusableLegacyCount += 1;
+    }
+    // SDNN iOS legado era rotulado RMSSD. Não inventar conversão nem baseline.
+    const unsafeLegacy = (sample.normalizationVersion || 1) < 2 && (
+      (sample.source === 'apple_health' && ['hrv_rmssd', 'oxygen_saturation', 'body_fat_percent'].includes(sample.metricType))
+      || (sample.source === 'health_connect' && sample.metricType === 'calories_basal')
+      || sample.metricType === 'sleep_duration_min'
+    );
+    if (unsafeLegacy) {
+      const replacementDay = `${sample.userId}:${sample.source}:${sample.metricType}:${healthSampleLocalDate(sample, timeZone)}`;
+      const replaced = normalizedIdentities.has(healthSampleDocumentId(sample)) || normalizedDays.has(replacementDay);
+      excludedLegacyCount += 1; if (!replaced) unusableLegacyCount += 1; continue;
+    }
+    const dayKey = `${sample.userId}:${sample.source}:${sample.metricType}:${healthSampleLocalDate(sample, timeZone)}`;
+    const legacyAggregate = sample.metricType === 'steps_daily' || sample.metricType === 'sleep_duration_min'
+      || ((!sample.sourceActivityId) && ['calories_active', 'distance_km'].includes(sample.metricType));
+    if ((sample.normalizationVersion || 1) < 2 && legacyAggregate && normalizedDays.has(dayKey)) {
+      excludedLegacyCount += 1; continue;
+    }
+    const key = healthSampleDocumentId(sample);
+    const current = identity.get(key);
+    if (!current || (sample.schemaVersion || 1) > (current.schemaVersion || 1)
+      || ((sample.schemaVersion || 1) === (current.schemaVersion || 1) && (sample.revision || 1) > (current.revision || 1))) identity.set(key, sample);
+  }
+  return { samples: [...identity.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp)), excludedLegacyCount, unusableLegacyCount };
+}
+
+export async function lerSerieTemporalMetricaComLimite(
+  userId: string, metricType: HealthMetricType, desde: Date, ate: Date = new Date(), limit = 1000, timeZone = 'UTC'
+): Promise<BoundedHealthSeries> {
+  const boundedLimit = Math.max(1, Math.min(5000, Math.floor(limit)));
   const snap = await db.collection(HEALTH_SAMPLES_COLLECTION)
-    .where('userId', '==', userId)
-    .where('metricType', '==', metricType)
-    .where('timestamp', '>=', desde.toISOString())
-    .where('timestamp', '<=', ate.toISOString())
-    .orderBy('timestamp', 'asc')
-    .get();
+    .where('userId', '==', userId).where('metricType', '==', metricType)
+    .where('timestamp', '>=', desde.toISOString()).where('timestamp', '<=', ate.toISOString())
+    .orderBy('timestamp', 'desc').limit(boundedLimit + 1).get();
   const runtime = await loadHealthConfidenceRuntime();
-  return snap.docs.map((d) => {
-    const sample = d.data() as HealthSample;
+  const deduplicated = deduplicateHealthSamples(snap.docs.slice(0, boundedLimit).map((d) => ({ ...d.data(), id: d.id } as HealthSample)), timeZone);
+  const samples = deduplicated.samples.map((sample) => {
     const provenance = sample.provenance || { ...provenanceFromLegacySample(sample.source, sample.sourceId, undefined), status: 'LEGACY_UNKNOWN_SOURCE' as const };
-    return {
-      ...sample,
-      provenance,
-      currentEvidenceConfidence: assessHealthConfidence({
-        metricType: sample.metricType, provenance, measurementContext: sample.measurementContext,
-        completeness: sample.confidenceAtMeasurement ? 'complete' : 'minimal', assessedAt: new Date().toISOString(),
-        derivedFrom: sample.derivedFrom, sourceConfidence: sample.sourceConfidence
-      }, runtime.registry, runtime.config)
-    };
+    return { ...sample, provenance, currentEvidenceConfidence: assessHealthConfidence({
+      metricType: sample.metricType, provenance, measurementContext: sample.measurementContext,
+      completeness: sample.confidenceAtMeasurement ? 'complete' : 'minimal', assessedAt: new Date().toISOString(),
+      derivedFrom: sample.derivedFrom, sourceConfidence: sample.sourceConfidence
+    }, runtime.registry, runtime.config) };
   });
+  return { samples, partial: snap.docs.length > boundedLimit || deduplicated.unusableLegacyCount > 0, scannedCount: snap.docs.length, limit: boundedLimit, excludedLegacyCount: deduplicated.excludedLegacyCount, unusableLegacyCount: deduplicated.unusableLegacyCount };
+}
+
+/** Compatibilidade de callers antigos: nunca entrega silenciosamente uma janela truncada. */
+export async function lerSerieTemporalMetrica(userId: string, metricType: HealthMetricType, desde: Date, ate: Date = new Date()): Promise<HealthSample[]> {
+  const result = await lerSerieTemporalMetricaComLimite(userId, metricType, desde, ate);
+  if (result.partial) throw new Error('HEALTH_SERIES_PARTIAL');
+  return result.samples;
 }
 
 /**
@@ -352,7 +463,7 @@ export interface HealthAccessAuditEntry {
  */
 export const metricsGravadasHoje: HealthMetricType[] = [
   'heart_rate_avg', 'heart_rate_max', 'calories_active', 'steps_activity', 'distance_km', 'duration_min',
-  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily',
+  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'hrv_sdnn', 'sleep_duration_min', 'weight_kg', 'steps_daily',
   'calories_total', 'calories_basal', 'distance_cycling_km', 'respiratory_rate', 'oxygen_saturation',
   'blood_pressure_systolic', 'blood_pressure_diastolic', 'blood_glucose', 'body_temperature', 'height_cm', 'flights_climbed', 'exercise_duration_min',
   'body_fat_percent', 'mindfulness_duration_min', 'stand_hours', 'hydration_l', 'dietary_energy_kcal'

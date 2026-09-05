@@ -2,9 +2,10 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHash } from 'node:crypto';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { processarLoteWearable, WearableActivityPayload } from '../_lib/wearable-sync-service.js';
-import { registrarAmostrasPassivas, HealthMetricType, HealthSampleSource } from '../_lib/health-data-layer.js';
+import { registrarAmostrasPassivas, HealthMetricType, HealthSampleSource, HealthSampleInput } from '../_lib/health-data-layer.js';
 import { deriveProvenanceStatus, HealthProvenance } from '../_lib/health-confidence-engine.js';
 import { applyUserDeclaredDeviceFromList, getUserDeviceDeclarations } from '../_lib/health-device-registry.js';
+import { sanitizeWorkoutHealthRecord } from '../_lib/workout-health-record.js';
 
 const ALLOWED_PERMISSION_VALUES = new Set([
   'read_heart_rate',
@@ -59,7 +60,7 @@ const MIN_BPM = 30;
 const MAX_BPM = 240;
 const MAX_AMOSTRAS_FC_POR_ATIVIDADE = 12000;
 const TOLERANCIA_AMOSTRA_FC_MS = 5 * 60 * 1000;
-const HEALTH_VITALS_VERSION = 1;
+const HEALTH_VITALS_VERSION = 2;
 
 type WearableHeartRateSamplePayload = {
   timestamp: string;
@@ -196,7 +197,7 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
 // @capgo/capacitor-health (HealthVitalsProvider) -- distinto do payload de
 // atividades acima, que continua vindo do "capacitor-health" (mley).
 const VITAL_METRIC_TYPES = new Set([
-  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'sleep_duration_min', 'weight_kg', 'steps_daily',
+  'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'hrv_sdnn', 'sleep_duration_min', 'weight_kg', 'steps_daily',
   'calories_active', 'calories_total', 'calories_basal', 'distance_km', 'distance_cycling_km',
   'respiratory_rate', 'oxygen_saturation', 'vo2max_estimate', 'blood_glucose', 'body_temperature',
   'blood_pressure_systolic', 'blood_pressure_diastolic',
@@ -208,7 +209,7 @@ const VITAL_METRIC_TYPES = new Set([
 // restante do histórico.
 const MAX_VITAIS_POR_SYNC = 800;
 
-type VitalPayload = { metricType: HealthMetricType; value: number; unit: string; timestamp: string; startDate?: string; endDate?: string; sampleId?: string; sourceId?: string; platformId?: string; device?: string; provenance: HealthProvenance };
+type VitalPayload = Omit<HealthSampleInput, 'userId' | 'source' | 'quality'> & { provenance: HealthProvenance };
 
 function safeText(value: unknown, max = 160): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined;
@@ -219,17 +220,43 @@ function hashLocalIdentifier(value: unknown): string | undefined {
   return normalized ? `sha256:${createHash('sha256').update(normalized).digest('hex')}` : undefined;
 }
 
+const VITAL_UNITS: Partial<Record<HealthMetricType, string>> = {
+  heart_rate: 'bpm', heart_rate_resting: 'bpm', hrv_rmssd: 'ms', hrv_sdnn: 'ms', sleep_duration_min: 'min',
+  weight_kg: 'kg', steps_daily: 'passos', calories_active: 'kcal', calories_total: 'kcal', calories_basal: 'kcal',
+  distance_km: 'km', distance_cycling_km: 'km', respiratory_rate: 'resp/min', oxygen_saturation: '%', vo2max_estimate: 'mL/min/kg',
+  blood_glucose: 'mg/dL', body_temperature: '°C', blood_pressure_systolic: 'mmHg', blood_pressure_diastolic: 'mmHg',
+  height_cm: 'cm', flights_climbed: 'andares', exercise_duration_min: 'min', body_fat_percent: '%',
+  mindfulness_duration_min: 'min', stand_hours: 'h', hydration_l: 'L', dietary_energy_kcal: 'kcal'
+};
+
 function sanitizarVitais(input: unknown, source: HealthSampleSource): VitalPayload[] {
   if (!Array.isArray(input)) return [];
   const validas: VitalPayload[] = [];
-  for (const item of input.slice(0, MAX_VITAIS_POR_SYNC)) {
+  for (const item of input) {
     if (!item || typeof item !== 'object') continue;
     const a = item as Record<string, unknown>;
     if (!VITAL_METRIC_TYPES.has(String(a.metricType))) continue;
-    const value = Number(a.value);
-    if (!Number.isFinite(value) || value <= 0) continue;
-    if (typeof a.unit !== 'string' || !a.unit) continue;
+    if (typeof a.value !== 'number') continue;
+    const value = a.value;
+    const zeroAllowed = ['steps_daily', 'calories_active', 'calories_total', 'calories_basal', 'distance_km', 'distance_cycling_km', 'flights_climbed', 'exercise_duration_min', 'hydration_l', 'dietary_energy_kcal', 'mindfulness_duration_min', 'stand_hours'].includes(String(a.metricType));
+    if (!Number.isFinite(value) || value < 0 || (value === 0 && !zeroAllowed)) continue;
+    if (typeof a.unit !== 'string' || a.unit !== VITAL_UNITS[String(a.metricType) as HealthMetricType]) continue;
     if (typeof a.timestamp !== 'string' || isNaN(new Date(a.timestamp).getTime())) continue;
+    const timestamp = new Date(a.timestamp).toISOString();
+    if (Date.parse(timestamp) > Date.now() + 5 * 60 * 1000) continue;
+    if (a.startDate !== undefined && (typeof a.startDate !== 'string' || !Number.isFinite(Date.parse(a.startDate)))) continue;
+    if (a.endDate !== undefined && (typeof a.endDate !== 'string' || !Number.isFinite(Date.parse(a.endDate)))) continue;
+    const startDate = typeof a.startDate === 'string' && Number.isFinite(Date.parse(a.startDate)) ? new Date(a.startDate).toISOString() : timestamp;
+    const endDate = typeof a.endDate === 'string' && Number.isFinite(Date.parse(a.endDate)) ? new Date(a.endDate).toISOString() : timestamp;
+    if (Date.parse(endDate) < Date.parse(startDate)) continue;
+    const localDate = typeof a.localDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(a.localDate)
+      && Number.isFinite(Date.parse(a.localDate)) ? a.localDate : undefined;
+    if (a.localDate !== undefined && (!localDate || new Date(`${localDate}T00:00:00.000Z`).toISOString().slice(0, 10) !== localDate)) continue;
+    let timeZone: string | undefined;
+    if (typeof a.timeZone === 'string') {
+      try { timeZone = new Intl.DateTimeFormat('en-US', { timeZone: a.timeZone }).resolvedOptions().timeZone; }
+      catch { continue; }
+    }
     const partial: Omit<HealthProvenance, 'status'> = {
       integration: source === 'apple_health' ? 'APPLE_HEALTH' : 'HEALTH_CONNECT',
       dataOrigin: safeText(a.dataOrigin || a.sourceId, 200),
@@ -246,9 +273,10 @@ function sanitizarVitais(input: unknown, source: HealthSampleSource): VitalPaylo
       metricType: a.metricType as HealthMetricType,
       value,
       unit: a.unit,
-      timestamp: a.timestamp,
-      startDate: typeof a.startDate === 'string' && !isNaN(new Date(a.startDate).getTime()) ? a.startDate : a.timestamp,
-      endDate: typeof a.endDate === 'string' && !isNaN(new Date(a.endDate).getTime()) ? a.endDate : a.timestamp,
+      timestamp, startDate, endDate, localDate, timeZone,
+      normalizationVersion: a.normalizationVersion === 2 ? 2 : 1,
+      aggregation: a.aggregation === 'daily_total' || a.aggregation === 'sleep_session' ? a.aggregation : 'sample',
+      derivedFrom: Array.isArray(a.derivedFrom) ? a.derivedFrom.filter((x): x is string => typeof x === 'string').slice(0, 100).map(x => x.slice(0, 300)) : undefined,
       sampleId: typeof a.sampleId === 'string' ? a.sampleId.slice(0, 500) : undefined,
       sourceId: typeof a.sourceId === 'string' ? a.sourceId.slice(0, 200) : undefined,
       platformId: typeof a.platformId === 'string' ? a.platformId.slice(0, 300) : undefined,
@@ -292,6 +320,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!auth) {
     return res.status(401).json({ error: 'Autenticação necessária.' });
   }
+  if (req.body?.action === 'refresh-session-heart-rate' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'A atualização dos batimentos exige POST.' });
+  }
 
   const configRef = db.collection('wearable_configs').doc(auth.uid);
 
@@ -320,6 +351,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const action = String(req.body?.action || 'update-config');
+
+  // Delayed HealthKit/Health Connect samples can enrich the private report
+  // after completion. This never revalidates or rescores the workout.
+  if (action === 'refresh-session-heart-rate') {
+    const workoutId = req.body?.workoutId;
+    if (typeof workoutId !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(workoutId)) {
+      return res.status(400).json({ error: 'Identificação do treino inválida.' });
+    }
+    try {
+      const result = await db.runTransaction(async transaction => {
+        const ref = db.collection('workouts').doc(workoutId);
+        const snap = await transaction.get(ref);
+        const workout = snap.data();
+        if (!snap.exists || workout?.userId !== auth.uid) {
+          return { code: 404, body: { error: 'Treino não encontrado.' } };
+        }
+        const current = sanitizeWorkoutHealthRecord(workout.healthSession);
+        if (!current.healthSession) {
+          return { code: 409, body: { error: 'Este treino não possui um registro de saúde com horários válidos.' } };
+        }
+        // All set identities, entered results and interval boundaries come
+        // from the stored workout. Extra request fields have no authority.
+        const candidate = sanitizeWorkoutHealthRecord({
+          ...current.healthSession,
+          heartRate: req.body?.heartRate,
+          integrity: {
+            ...current.healthSession.integrity,
+            discardedHeartRateSamples: 0
+          }
+        });
+        const next = candidate.healthSession?.heartRate;
+        const previous = current.healthSession.heartRate;
+        const usefulNext = next && next.samples.length > 0 && ['available', 'partial'].includes(next.status);
+        const usefulPrevious = previous.samples.length > 0 && ['available', 'partial'].includes(previous.status);
+        // A denied permission, a delayed empty read, older response or less
+        // complete query must never erase already collected evidence.
+        if (!usefulNext || (usefulPrevious && (
+          Date.parse(next.fetchedAt || '') < Date.parse(previous.fetchedAt || '')
+          || next.samples.length < previous.samples.length
+          || (previous.status === 'available' && next.status !== 'available')
+        ))) {
+          return { code: 200, body: current };
+        }
+        // Keep this allowlist explicit: avgHeartRate, duration, evidence,
+        // validationStatus, XP and IGA fields are deliberately absent.
+        const update = {
+          healthSession: candidate.healthSession!,
+          healthSessionStatus: candidate.healthSessionStatus!,
+          healthSessionReason: candidate.healthSessionReason ?? null
+        };
+        transaction.update(ref, update);
+        return { code: 200, body: update };
+      });
+      return res.status(result.code).json(result.body);
+    } catch {
+      return res.status(503).json({ error: 'Não foi possível atualizar os batimentos agora. As leituras anteriores foram preservadas.', retryable: true });
+    }
+  }
 
   // #248: ingestão real de HealthKit/Health Connect. O cliente só leu do
   // aparelho (WearableManager.syncAll) -- quem decide se aquilo pontua é o
@@ -377,28 +466,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // alegação competitiva, vão direto pra Health Data Layer. Separado da
   // action 'sync' de propósito (ver HealthVitalsProvider.ts).
   if (action === 'sync-vitals') {
-    const source: HealthSampleSource = req.body?.source === 'health_connect' ? 'health_connect' : 'apple_health';
-    const vitais = sanitizarVitais(req.body?.vitals, source);
+    if (!FONTES_PERMITIDAS.has(req.body?.source)) return res.status(400).json({ error: 'Fonte de saúde inválida.' });
+    if (!Array.isArray(req.body?.vitals) || req.body.vitals.length > MAX_VITAIS_POR_SYNC) {
+      return res.status(400).json({ error: `Envie um lote de até ${MAX_VITAIS_POR_SYNC} amostras.` });
+    }
+    const source = req.body.source as HealthSampleSource;
+    const vitais = sanitizarVitais(req.body.vitals, source);
+    const rejectedCount = req.body.vitals.length - vitais.length;
+    // Uma requisição inválida nunca é transformada em sincronização vazia bem sucedida.
+    if (rejectedCount > 0) return res.status(422).json({ error: 'O lote contém amostras inválidas. Corrija antes de tentar novamente.', receivedCount: req.body.vitals.length, rejectedCount, savedCount: 0 });
     const finalBatch = req.body?.finalBatch !== false;
     const readComplete = req.body?.readComplete !== false;
-    if (vitais.length === 0) {
-      const now = new Date().toISOString();
-      if (finalBatch && readComplete) await configRef.set({ lastVitalsSyncTime: now, healthVitalsVersion: HEALTH_VITALS_VERSION, updatedAt: now }, { merge: true }).catch(() => undefined);
-      return res.status(200).json({ savedCount: 0, lastVitalsSyncTime: finalBatch && readComplete ? now : undefined, healthVitalsVersion: finalBatch && readComplete ? HEALTH_VITALS_VERSION : undefined });
+    const now = new Date().toISOString();
+    const rawWindowEnd = req.body?.syncWindowEnd;
+    if (rawWindowEnd !== undefined && (typeof rawWindowEnd !== 'string' || !Number.isFinite(Date.parse(rawWindowEnd)) || Date.parse(rawWindowEnd) > Date.now() + 5 * 60 * 1000)) {
+      return res.status(400).json({ error: 'Fim da janela de sincronização inválido.' });
     }
+    const syncWindowEnd = typeof rawWindowEnd === 'string' ? new Date(rawWindowEnd).toISOString() : now;
+    const version = req.body?.normalizationVersion === 2 || (vitais.length > 0 && vitais.every(a => a.normalizationVersion === 2)) ? HEALTH_VITALS_VERSION : 1;
     try {
       const declarations = await getUserDeviceDeclarations(auth.uid).catch(() => []);
       const enrichedVitals = vitais.map((sample) => ({
-        ...sample,
-        provenance: applyUserDeclaredDeviceFromList(sample.provenance, sample.timestamp, declarations)
+        ...sample, provenance: applyUserDeclaredDeviceFromList(sample.provenance, sample.timestamp, declarations)
       }));
-      const savedCount = await registrarAmostrasPassivas({ userId: auth.uid, source, amostras: enrichedVitals });
-      const now = new Date().toISOString();
-      if (finalBatch && readComplete) await configRef.set({ lastVitalsSyncTime: now, healthVitalsVersion: HEALTH_VITALS_VERSION, updatedAt: now }, { merge: true });
-      return res.status(200).json({ savedCount, lastVitalsSyncTime: finalBatch && readComplete ? now : undefined, healthVitalsVersion: finalBatch && readComplete ? HEALTH_VITALS_VERSION : undefined });
-    } catch (err: any) {
-      console.error('[Wearables Handler] Falha ao sincronizar vitais:', err);
-      return res.status(500).json({ error: 'Não foi possível sincronizar os dados de saúde agora.' });
+      const result = await registrarAmostrasPassivas({ userId: auth.uid, source, amostras: enrichedVitals });
+      let cursorResult: { lastVitalsSyncTime: string; lastVitalsSyncBySource: Record<string, string>; healthVitalsVersionBySource: Record<string, number>; healthVitalsVersion: number } | undefined;
+      if (finalBatch && readComplete) {
+        // Concorrência entre uploads não pode fazer o cursor retroceder.
+        cursorResult = await db.runTransaction(async transaction => {
+          const current = await transaction.get(configRef);
+          const data = current.exists ? current.data() : undefined;
+          const previous = data?.lastVitalsSyncTime;
+          const next = typeof previous === 'string' && Date.parse(previous) > Date.parse(syncWindowEnd) ? previous : syncWindowEnd;
+          const previousSource = data?.lastVitalsSyncBySource?.[source];
+          const sourceCursor = typeof previousSource === 'string' && Date.parse(previousSource) > Date.parse(syncWindowEnd) ? previousSource : syncWindowEnd;
+          const lastVitalsSyncBySource = { ...(data?.lastVitalsSyncBySource || {}), [source]: sourceCursor };
+          const healthVitalsVersion = Math.max(Number(data?.healthVitalsVersion) || 0, version);
+          const healthVitalsVersionBySource = { ...(data?.healthVitalsVersionBySource || {}), [source]: Math.max(Number(data?.healthVitalsVersionBySource?.[source]) || 0, version) };
+          transaction.set(configRef, { lastVitalsSyncTime: next, lastVitalsSyncBySource, healthVitalsVersionBySource, healthVitalsVersion, updatedAt: now }, { merge: true });
+          return { lastVitalsSyncTime: next, lastVitalsSyncBySource, healthVitalsVersionBySource, healthVitalsVersion };
+        });
+      }
+      return res.status(200).json({ ...result, ...(cursorResult || {}) });
+    } catch {
+      console.error('[Wearables Handler] Falha de persistência de dados de saúde; lote deve ser reenviado.');
+      return res.status(503).json({ error: 'Não foi possível confirmar a sincronização. Tente novamente.', retryable: true });
     }
   }
 

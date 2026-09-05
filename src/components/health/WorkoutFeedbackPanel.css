@@ -1,0 +1,42 @@
+.workout-feedback{border:1px solid rgba(229,181,62,.28);border-radius:20px;background:linear-gradient(150deg,#17150f,#0e0f10 55%);padding:18px;color:#f4f3ef;min-width:0;font-size:13px;line-height:1.55}
+.workout-feedback button,.workout-feedback summary{cursor:pointer}
+.workout-feedback button:disabled{cursor:wait;opacity:.55}
+.workout-feedback button:focus-visible,.workout-feedback summary:focus-visible,.workout-feedback a:focus-visible{outline:2px solid #e9b937;outline-offset:4px}
+.workout-feedback__heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.workout-feedback__eyebrow{display:flex;align-items:center;gap:7px;color:#e9bd4e;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:0 0 5px}
+.workout-feedback h3{font-size:18px;line-height:1.3;font-weight:700;margin:0;overflow-wrap:break-word}
+.workout-feedback__private{display:flex;align-items:center;gap:4px;color:#b7b8b9;font-size:10px;white-space:nowrap;padding-top:3px}
+.workout-feedback__status{display:flex;align-items:center;gap:6px;margin:14px 0 10px;color:#d6d4cc;font-size:12px}
+.workout-feedback__metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.workout-feedback__metrics>div{padding:11px 8px;border:1px solid #33322d;background:#111212;border-radius:12px;min-width:0}
+.workout-feedback__metrics span{display:block;font-size:10px;line-height:1.3;color:#bcbdb8;min-height:26px}
+.workout-feedback__metrics strong{display:block;font-size:23px;line-height:1.2;margin-top:5px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.workout-feedback__metrics small{font-size:10px;color:#bcbdb8;font-weight:400;margin-left:4px}
+.workout-feedback__explanation,.workout-feedback__scope{font-size:11px;color:#b9bab5;margin:12px 0;line-height:1.55}
+.workout-feedback__refresh{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 12px;border:1px solid #4b4027;border-radius:10px;background:#221d12;color:#efc563;font-size:11px;text-align:left;line-height:1.4}
+.workout-feedback__message{font-size:11px;color:#e9cd89;margin:10px 0}
+.workout-feedback__insights{display:grid;gap:10px;margin-top:16px}
+.workout-feedback__insight{border:1px solid #333535;background:#131515;border-radius:13px;padding:13px}
+.workout-feedback__insight--achievement{border-color:#385136;background:#152014}
+.workout-feedback__insight h4{display:flex;align-items:flex-start;gap:7px;font-weight:650;font-size:13px;line-height:1.4;margin:0 0 9px}
+.workout-feedback__insight h4 svg{flex-shrink:0;color:#dbb95a;margin-top:2px}
+.workout-feedback__insight--achievement h4 svg{color:#91bf76}
+.workout-feedback__insight p{margin:7px 0 0;font-size:12px;color:#e0e1da;overflow-wrap:anywhere}
+.workout-feedback__insight .workout-feedback__meaning{color:#adb1ab}
+.workout-feedback__insight .workout-feedback__next{border-top:1px solid #333832;padding-top:9px;color:#ddd9c8}
+.workout-feedback__pro{margin:14px 0;padding:13px;border:1px solid #514221;border-radius:13px;background:#211b11}
+.workout-feedback__pro strong{font-size:12px;font-weight:650;line-height:1.4;display:block}
+.workout-feedback__pro span{font-size:9px;border-radius:4px;background:#e8b63f;padding:2px 5px;color:#171309;margin-left:4px;vertical-align:middle}
+.workout-feedback__pro p{font-size:11px;color:#c8c1af;margin:7px 0 10px}
+.workout-feedback__pro button{border:0;background:#e8b63f;color:#171309;border-radius:8px;font-weight:700;font-size:11px;padding:9px 12px}
+.workout-feedback__details{border-top:1px solid #30312c;margin-top:13px;padding-top:12px;color:#b8bab2;font-size:11px}
+.workout-feedback__details summary{color:#d4d6cc;font-weight:600;line-height:1.45}
+.workout-feedback__details p{margin:10px 0 0}
+.workout-feedback__details a{color:#ebc265;text-decoration:underline;text-underline-offset:2px}
+.workout-feedback__sets,.workout-feedback__samples{list-style:none;padding:0;margin:10px 0}
+.workout-feedback__sets li{padding:9px 0;border-bottom:1px solid #292c27;display:grid;gap:2px;overflow-wrap:anywhere}
+.workout-feedback__sets strong{font-weight:650;font-size:12px;color:#eceee4}
+.workout-feedback__samples{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 14px;max-height:250px;overflow:auto}
+.workout-feedback__samples li{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #292c27;font-variant-numeric:tabular-nums}
+.workout-feedback__samples strong{color:#dcdfd6;font-weight:500}
+@media(max-width:360px){.workout-feedback{padding:13px}.workout-feedback h3{font-size:16px}.workout-feedback__metrics strong{font-size:20px}.workout-feedback__metrics>div{padding:10px 6px}.workout-feedback__samples{grid-template-columns:minmax(0,1fr)}}

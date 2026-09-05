@@ -29,6 +29,7 @@ import { ChallengesHubNew } from '../components/ChallengesHubNew';
 import { ActivityHistoryPageNew } from '../components/ActivityHistoryPageNew';
 import { communityChampionshipService } from '../services/communityChampionshipService';
 import { championshipService } from '../services/championshipService';
+import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
 
 export type ChallengeCategory =
   | 'all'
@@ -128,7 +129,7 @@ export function Challenges() {
   const [finishedActivityItem, setFinishedActivityItem] = useState<ActivityHistoryItem | null>(null);
   // A primeira resposta da validacao de presenca ainda nao contem o registro
   // final. Guardamos o snapshot para montar o banner depois da selfie.
-  const pendingPresenceSessionRef = useRef<{ session: ActivitySession; finishedAt: number } | null>(null);
+  const pendingPresenceSessionRef = useRef<{ session: ActivitySession; finishedAt: number; healthSession?: WorkoutHealthRecord } | null>(null);
 
   // Card premium de compartilhamento pós-atividade.
   const [shareCardData, setShareCardData] = useState<any>(null);
@@ -618,7 +619,8 @@ export function Challenges() {
   const buildFinishedItemFromPresence = (
     session: ActivitySession,
     finishedAt: number,
-    result: { status: string; pointsAwarded?: number; commitResult?: any }
+    result: { status: string; pointsAwarded?: number; commitResult?: any },
+    healthSession?: WorkoutHealthRecord
   ): ActivityHistoryItem => {
     const startMs = Date.parse(session.startTime);
     const durationMins = Number.isFinite(startMs)
@@ -668,6 +670,7 @@ export function Challenges() {
       steps: Number.isFinite(rawSteps) && rawSteps > 0 ? rawSteps : undefined,
       pace,
       trajectory: validTrajectory,
+      details: { healthSession: result.commitResult?.healthSession ?? healthSession },
     };
   };
 
@@ -709,7 +712,8 @@ export function Challenges() {
             ...sessionBeforeEnd,
             checkpoints: [...(sessionBeforeEnd.checkpoints || [])]
           },
-          finishedAt: Date.now()
+          finishedAt: res.healthSession ? Date.parse(res.healthSession.endedAt) : Date.now(),
+          healthSession: res.healthSession,
         };
         setPresenceCheckData({ id: res.presenceCheckId, prompt: res.livenessPrompt || 'Siga o gesto indicado' });
         setPresenceCheckRequired(true);
@@ -782,15 +786,11 @@ export function Challenges() {
           pace,
           trajectory,
           photoUrl: (res.workout as any).photoUrl || (res.workout as any).verificationPhotoUrl,
+          details: { healthSession: res.healthSession, healthSessionStatus: res.healthSessionStatus, healthSessionReason: res.healthSessionReason },
         };
-        // Cardio nao passa mais pela conclusao antiga nem pela tela Spartan de
-        // detalhes: o banner novo e a propria tela final, com os icones de
-        // compartilhar/baixar sobre a arte.
-        if (sessionType === 'cardio') {
-          setShareCardData(buildShareableFromItem(finishedItem));
-        } else {
-          setFinishedActivityItem(finishedItem);
-        }
+        // The athlete reviews private health feedback before choosing whether
+        // to share the existing public card, which contains no health record.
+        setFinishedActivityItem(finishedItem);
         setHistoryRefreshKey((key) => key + 1);
       }
 
@@ -1178,12 +1178,8 @@ export function Challenges() {
               setCompletion({ status: 'approved', message: result.userMessage, pointsAwarded: points });
               if (points !== undefined) triggerXPToast(points, 'Atividade validada.');
               if (pendingPresence) {
-                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result);
-                if (sessionType === 'cardio') {
-                  setShareCardData(buildShareableFromItem(finishedItem));
-                } else {
-                  setFinishedActivityItem(finishedItem);
-                }
+                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
+                setFinishedActivityItem(finishedItem);
                 setHistoryRefreshKey((key) => key + 1);
               }
               setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
@@ -1193,12 +1189,8 @@ export function Challenges() {
               setActiveSession(null);
               setCompletion({ status: 'pending', message: result.userMessage });
               if (pendingPresence) {
-                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result);
-                if (sessionType === 'cardio') {
-                  setShareCardData(buildShareableFromItem(finishedItem));
-                } else {
-                  setFinishedActivityItem(finishedItem);
-                }
+                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
+                setFinishedActivityItem(finishedItem);
                 setHistoryRefreshKey((key) => key + 1);
               }
               setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
@@ -1222,7 +1214,7 @@ export function Challenges() {
 
       {/* Card premium de compartilhamento pós-atividade (estilo Strava) */}
       {shareCardData && (
-        <RunShareCard session={shareCardData} onClose={() => { setShareCardData(null); closeFlow(); }} />
+        <RunShareCard session={shareCardData} onClose={() => { setShareCardData(null); if (!finishedActivityItem) closeFlow(); }} />
       )}
       {finishedActivityItem && !shareCardData && (
         <ActivityDetailScreen

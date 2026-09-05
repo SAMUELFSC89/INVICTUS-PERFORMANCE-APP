@@ -52,6 +52,7 @@ const METRIC_LIMITATIONS: Partial<Record<HealthMetricType, string[]>> = {
   calories_total: ['Gasto energético total combina medições e estimativas; não é um valor exato.'],
   calories_basal: ['Metabolismo basal é estimado a partir de dados corporais e algoritmos.'],
   hrv_rmssd: ['HRV varia com horário, postura, respiração, sono, estresse e qualidade do sinal.'],
+  hrv_sdnn: ['HRV SDNN varia com duração da janela, horário, postura e qualidade do sinal; não é intercambiável com RMSSD.'],
   sleep_duration_min: ['Wearables inferem sono a partir de sinais indiretos e podem confundir repouso e sono.'],
   oxygen_saturation: ['Movimento, perfusão, temperatura e ajuste do sensor podem afetar SpO2.'],
   vo2max_estimate: ['VO2máx do wearable é uma estimativa e não substitui teste cardiopulmonar.']
@@ -86,7 +87,7 @@ export function inferMeasurementContext(metricType: HealthMetricType): Measureme
   if (metricType === 'heart_rate_resting') return 'resting';
   if (metricType === 'heart_rate_avg' || metricType === 'heart_rate_max' || metricType === 'duration_min' || metricType === 'exercise_duration_min') return 'exercise';
   if (metricType === 'sleep_duration_min') return 'sleep';
-  if (metricType === 'hrv_rmssd') return 'recovery';
+  if (metricType === 'hrv_rmssd' || metricType === 'hrv_sdnn') return 'recovery';
   return 'daily_living';
 }
 

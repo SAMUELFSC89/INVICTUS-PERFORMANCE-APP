@@ -1,7 +1,7 @@
 import type { HealthSummaryResponse, PontoTendencia } from '../../services/healthSummaryService';
+import { healthLocalDate } from './healthViewModel';
 
 export type HealthInsightKind = 'congratulations' | 'improvement' | 'decline' | 'alert' | 'tip';
-
 export interface HealthInsight {
   id: string;
   metric: 'heart_rate_response' | 'steps' | 'sleep' | 'calories_active';
@@ -11,7 +11,6 @@ export interface HealthInsight {
   message: string;
   evidence: string;
 }
-
 export interface InsightWorkout {
   timestamp: number;
   durationMinutes: number;
@@ -19,230 +18,194 @@ export interface InsightWorkout {
   distanceKm?: number;
   workoutType?: string;
 }
-
 export interface HealthInsightInput {
   summary: HealthSummaryResponse | null;
   workouts?: InsightWorkout[];
+  now?: number;
+  trainingPartial?: boolean;
 }
-
 interface Comparison {
   before: number;
   after: number;
-  percent: number;
+  percent: number | null;
   beforeCount: number;
   afterCount: number;
-  samePaceEvidence?: boolean;
 }
-
-function validPoints(points: PontoTendencia[] | undefined): PontoTendencia[] {
-  return (points || [])
-    .filter((point) => Number.isFinite(Number(point.value)) && Number(point.value) > 0 && Number.isFinite(new Date(point.timestamp).getTime()))
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-}
+const DAY_MS = 86400000;
+const UNITS = { steps_daily: 'passos', sleep_duration_min: 'min', calories_active: 'kcal' } as const;
+type InsightMetric = keyof typeof UNITS;
 
 function average(values: number[]): number {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
-
-function compareHalves(points: PontoTendencia[] | undefined, minimumPerHalf = 2): Comparison | null {
-  const valid = validPoints(points);
-  if (valid.length < minimumPerHalf * 2) return null;
-  const middle = Math.floor(valid.length / 2);
-  const before = valid.slice(0, middle).map((point) => Number(point.value));
-  const after = valid.slice(middle).map((point) => Number(point.value));
+function comparison(before: number[], after: number[]): Comparison {
   const beforeAverage = average(before);
   const afterAverage = average(after);
-  if (!beforeAverage || !afterAverage) return null;
-  return {
-    before: beforeAverage,
-    after: afterAverage,
-    percent: ((afterAverage - beforeAverage) / beforeAverage) * 100,
-    beforeCount: before.length,
-    afterCount: after.length
-  };
+  return { before: beforeAverage, after: afterAverage,
+    percent: beforeAverage > 0 ? (afterAverage - beforeAverage) / beforeAverage * 100 : null,
+    beforeCount: before.length, afterCount: after.length };
 }
-
+function compareHalves(points: PontoTendencia[], minimumPerHalf = 3): Comparison | null {
+  if (points.length < minimumPerHalf * 2) return null;
+  const middle = Math.floor(points.length / 2);
+  return comparison(points.slice(0, middle).map(p => p.value), points.slice(middle).map(p => p.value));
+}
+function canonicalUnit(point: PontoTendencia, metric: InsightMetric): string {
+  const unit = (point.unit || '').trim().toLowerCase();
+  return metric === 'steps_daily' && ['count', 'steps', 'passos'].includes(unit) ? 'passos' : unit;
+}
+function hasComparableConfidence(point: PontoTendencia): boolean {
+  const grades = [point.confidenceAtMeasurement?.confidenceLevel, point.currentEvidenceConfidence?.confidenceLevel].filter(Boolean);
+  return grades.length > 0 && grades.every(grade => ['A', 'B', 'C'].includes(grade!));
+}
+function sourceKey(point: PontoTendencia, metric: InsightMetric): string {
+  return JSON.stringify([point.source, point.device || '', canonicalUnit(point, metric),
+    point.provenance?.integration || '', point.provenance?.dataOrigin || '', point.provenance?.deviceModel || '',
+    point.measurementContext || point.confidenceAtMeasurement?.measurementContext || '',
+    point.provenance?.recordingMethod || '', point.aggregationMethod || '']);
+}
+/** The endpoint supplies daily values. Duplicate snapshots of a day must never
+ * create extra days, inflate a total, or weight one day more than another. */
+function comparableDailySeries(summary: HealthSummaryResponse, metric: InsightMetric, now: number, timeZone: string): PontoTendencia[] {
+  const partial = summary.metadata?.metrics?.[metric]?.partial;
+  if (partial === true || (summary.metadata?.partial && partial !== false)) return [];
+  const today = healthLocalDate(now, timeZone);
+  const windowDays = Math.min(90, Math.max(1, Math.floor(summary.windowDays || 30)));
+  const firstDay = new Date(Date.parse(`${today}T00:00:00Z`) - (windowDays - 1) * DAY_MS).toISOString().slice(0, 10);
+  const dated = (summary.trends[metric] || []).filter(point => {
+    const timestamp = Date.parse(point.timestamp);
+    const day = point.localDate || healthLocalDate(timestamp, timeZone);
+    return Number.isFinite(timestamp) && timestamp <= now && day >= firstDay && day <= today
+      // An unfinished day is not comparable to a completed daily total.
+      && (metric === 'sleep_duration_min' || day < today);
+  }).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  const usable = (point: PontoTendencia) => typeof point.value === 'number' && Number.isFinite(point.value)
+    && (metric === 'sleep_duration_min' ? point.value > 0 : point.value >= 0)
+    && Boolean(point.source && point.source !== 'unknown') && canonicalUnit(point, metric) === UNITS[metric]
+    && hasComparableConfidence(point);
+  const latest = dated.at(-1);
+  // Do not silently fall back to an older, better-rated device when the current
+  // origin or quality cannot support a comparison.
+  if (!latest || !usable(latest)) return [];
+  const key = sourceKey(latest, metric);
+  const byDay = new Map<string, PontoTendencia>();
+  for (const point of dated) {
+    if (usable(point) && sourceKey(point, metric) === key) {
+      byDay.set(point.localDate || healthLocalDate(point.timestamp, timeZone), point);
+    }
+  }
+  return [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, point]) => point);
+}
 function formatNumber(value: number, maximumFractionDigits = 0): string {
   return value.toLocaleString('pt-BR', { maximumFractionDigits });
 }
-
 function formatPercent(value: number): string {
-  return `${value >= 0 ? '+' : ''}${formatNumber(value, 0)}%`;
+  return `${value >= 0 ? '+' : ''}${formatNumber(value)}%`;
 }
-
+function daysEvidence(change: Comparison): string {
+  return `${change.beforeCount} dias iniciais → ${change.afterCount} dias finais com registro`;
+}
 function coefficientOfVariation(points: PontoTendencia[]): number | null {
-  const values = validPoints(points).map((point) => Number(point.value));
-  if (values.length < 4) return null;
+  if (points.length < 4) return null;
+  const values = points.map(p => p.value);
   const mean = average(values);
-  if (!mean) return null;
-  const variance = average(values.map((value) => Math.pow(value - mean, 2)));
-  return Math.sqrt(variance) / mean;
+  return mean > 0 ? Math.sqrt(average(values.map(value => (value - mean) ** 2))) / mean : null;
 }
-
 function normalizedType(value?: string): string {
-  return String(value || 'atividade').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
 }
-
-function comparableHeartRateChange(workouts: InsightWorkout[]): Comparison | null {
-  const valid = workouts
-    .filter((workout) => Number.isFinite(workout.timestamp) && workout.timestamp > 0
-      && Number(workout.durationMinutes) >= 10 && Number(workout.avgHeartRate) >= 40 && Number(workout.avgHeartRate) <= 240)
-    .sort((a, b) => a.timestamp - b.timestamp);
-  if (valid.length < 4) return null;
-
+function similarRecordedPace(a: InsightWorkout, b: InsightWorkout): boolean {
+  if (!(Number(a.distanceKm) > 0) || !(Number(b.distanceKm) > 0)) return false;
+  const paceA = a.durationMinutes / Number(a.distanceKm);
+  const paceB = b.durationMinutes / Number(b.distanceKm);
+  return Math.abs(paceA - paceB) / Math.max(paceA, paceB) <= 0.1
+    && Math.abs(a.durationMinutes - b.durationMinutes) / Math.max(a.durationMinutes, b.durationMinutes) <= 0.2
+    && Math.abs(Number(a.distanceKm) - Number(b.distanceKm)) / Math.max(Number(a.distanceKm), Number(b.distanceKm)) <= 0.2;
+}
+function comparableHeartRateChange(workouts: InsightWorkout[], now: number, windowDays: number, timeZone: string): Comparison | null {
   const groups = new Map<string, InsightWorkout[]>();
-  for (const workout of valid) {
-    const key = normalizedType(workout.workoutType);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(workout);
+  const seen = new Set<string>();
+  for (const workout of [...workouts].sort((a, b) => a.timestamp - b.timestamp)) {
+    const type = normalizedType(workout.workoutType);
+    const key = `${workout.timestamp}:${type}`;
+    if (!type || seen.has(key) || !Number.isFinite(workout.timestamp) || workout.timestamp > now || now - workout.timestamp > windowDays * DAY_MS
+      || !Number.isFinite(workout.durationMinutes) || workout.durationMinutes < 10
+      || !Number.isFinite(workout.avgHeartRate) || Number(workout.avgHeartRate) < 40 || Number(workout.avgHeartRate) > 240
+      || !Number.isFinite(workout.distanceKm) || Number(workout.distanceKm) <= 0) continue;
+    seen.add(key);
+    groups.set(type, [...(groups.get(type) || []), workout]);
   }
-
   let best: Comparison | null = null;
   for (const group of groups.values()) {
-    if (group.length < 4) continue;
-    const middle = Math.floor(group.length / 2);
-    const before = group.slice(0, middle).filter((workout) => Number(workout.avgHeartRate) > 0);
-    const after = group.slice(middle).filter((workout) => Number(workout.avgHeartRate) > 0);
-    if (before.length < 2 || after.length < 2) continue;
-
-    // Mantém somente sessões de duração parecida. Quando existe distância nas
-    // duas sessões, ela também precisa ser parecida para sustentar "mesmo
-    // ritmo aproximado"; caso contrário a mensagem usa linguagem mais curta.
-    const beforeComparable = before.filter((workout) => after.some((candidate) => {
-      const durationRatio = Math.abs(workout.durationMinutes - candidate.durationMinutes) / Math.max(workout.durationMinutes, candidate.durationMinutes);
-      const distanceAvailable = Number(workout.distanceKm) > 0 && Number(candidate.distanceKm) > 0;
-      const distanceRatio = distanceAvailable
-        ? Math.abs((workout.distanceKm || 0) - (candidate.distanceKm || 0)) / Math.max(workout.distanceKm || 1, candidate.distanceKm || 1)
-        : 0;
-      return durationRatio <= 0.2 && distanceRatio <= 0.2;
-    }));
-    const afterComparable = after.filter((workout) => beforeComparable.some((candidate) => {
-      const durationRatio = Math.abs(workout.durationMinutes - candidate.durationMinutes) / Math.max(workout.durationMinutes, candidate.durationMinutes);
-      const distanceAvailable = Number(workout.distanceKm) > 0 && Number(candidate.distanceKm) > 0;
-      const distanceRatio = distanceAvailable
-        ? Math.abs((workout.distanceKm || 0) - (candidate.distanceKm || 0)) / Math.max(workout.distanceKm || 1, candidate.distanceKm || 1)
-        : 0;
-      return durationRatio <= 0.2 && distanceRatio <= 0.2;
-    }));
-    if (beforeComparable.length < 2 || afterComparable.length < 2) continue;
-
-    const candidate = {
-      before: average(beforeComparable.map((workout) => Number(workout.avgHeartRate))),
-      after: average(afterComparable.map((workout) => Number(workout.avgHeartRate))),
-      percent: 0,
-      beforeCount: beforeComparable.length,
-      afterCount: afterComparable.length,
-      samePaceEvidence: beforeComparable.some((workout) => Number(workout.distanceKm) > 0)
-        && afterComparable.some((workout) => Number(workout.distanceKm) > 0)
-    };
-    candidate.percent = ((candidate.after - candidate.before) / candidate.before) * 100;
-    if (!best || Math.abs(candidate.percent) > Math.abs(best.percent)) best = candidate;
+    const days = [...new Set(group.map(w => healthLocalDate(w.timestamp, timeZone)))];
+    if (days.length < 4) continue;
+    const cutoff = days[Math.floor(days.length / 2)];
+    const before = group.filter(w => healthLocalDate(w.timestamp, timeZone) < cutoff);
+    const after = group.filter(w => healthLocalDate(w.timestamp, timeZone) >= cutoff);
+    const beforeComparable = before.filter(w => after.some(candidate => similarRecordedPace(w, candidate)));
+    const afterComparable = after.filter(w => beforeComparable.some(candidate => similarRecordedPace(w, candidate)));
+    if (new Set(beforeComparable.map(w => healthLocalDate(w.timestamp, timeZone))).size < 2
+      || new Set(afterComparable.map(w => healthLocalDate(w.timestamp, timeZone))).size < 2) continue;
+    const candidate = comparison(beforeComparable.map(w => Number(w.avgHeartRate)), afterComparable.map(w => Number(w.avgHeartRate)));
+    // Prefer the most supported modality, not the largest observed swing.
+    if (!best || candidate.beforeCount + candidate.afterCount > best.beforeCount + best.afterCount) best = candidate;
   }
   return best;
 }
 
-/**
- * Interpreta tendências de saúde e sessões comparáveis. As mensagens são
- * educativas: descrevem o que mudou nos dados do próprio atleta e não fazem
- * diagnóstico nem transformam calorias em promessa de emagrecimento.
- */
-export function buildHealthInsights({ summary, workouts = [] }: HealthInsightInput): HealthInsight[] {
-  if (!summary) return [];
+/** Describes changes in recorded observations. No clinical interpretation,
+ * automatic claim of better conditioning, or energy-burn goal. */
+export function buildHealthInsights({ summary, workouts = [], now = Date.now(), trainingPartial = false }: HealthInsightInput): HealthInsight[] {
+  if (!summary || !Number.isFinite(now) || ['stale', 'error'].includes(summary.availability || '')) return [];
   const insights: HealthInsight[] = [];
-  const add = (insight: HealthInsight) => insights.push(insight);
-
-  const heartRateChange = comparableHeartRateChange(workouts);
+  const timeZone = summary.timeZone || 'UTC';
+  const windowDays = Math.min(90, Math.max(1, Math.floor(summary.windowDays || 30)));
+  const heartRateChange = trainingPartial ? null : comparableHeartRateChange(workouts, now, windowDays, timeZone);
   if (heartRateChange && Math.abs(heartRateChange.after - heartRateChange.before) >= 5) {
-    if (heartRateChange.after < heartRateChange.before) {
-      add({
-        id: 'heart-rate-response-improved',
-        metric: 'heart_rate_response',
-        kind: 'congratulations',
-        priority: 100,
-        title: 'Resposta cardíaca mais eficiente',
-        message: `Parabéns, sua resposta cardíaca melhorou: a FC média caiu de ${formatNumber(heartRateChange.before)} para ${formatNumber(heartRateChange.after)} bpm em sessões de duração semelhante. ${heartRateChange.samePaceEvidence ? 'Isso sugere que você está realizando a atividade no mesmo ritmo aproximado, com mais facilidade que antes.' : 'Isso sugere que o mesmo tempo de atividade está exigindo menos do coração que antes; o ritmo exato não foi medido em todas as sessões.'}`,
-        evidence: `${heartRateChange.beforeCount + heartRateChange.afterCount} sessões comparáveis · ${formatPercent(heartRateChange.percent)}`
-      });
-    } else {
-      add({
-        id: 'heart-rate-response-attention',
-        metric: 'heart_rate_response',
-        kind: 'alert',
-        priority: 95,
-        title: 'Resposta cardíaca merece observação',
-        message: `A FC média subiu de ${formatNumber(heartRateChange.before)} para ${formatNumber(heartRateChange.after)} bpm em sessões de duração semelhante. Isso pode acontecer por diferença de ritmo, calor, sono ou recuperação; observe as próximas sessões antes de tirar uma conclusão.`,
-        evidence: `${heartRateChange.beforeCount + heartRateChange.afterCount} sessões comparáveis · ${formatPercent(heartRateChange.percent)}`
-      });
-    }
-  }
-
-  const stepsChange = compareHalves(summary.trends.steps_daily, 3);
-  if (stepsChange && Math.abs(stepsChange.percent) >= 10) {
-    const increased = stepsChange.percent > 0;
-    add({
-      id: increased ? 'steps-improved' : 'steps-declined',
-      metric: 'steps',
-      kind: increased ? 'congratulations' : 'decline',
-      priority: increased ? 80 : 78,
-      title: increased ? 'Passos em evolução' : 'Passos abaixo da sua base',
-      message: increased
-        ? `Parabéns: sua média diária de passos aumentou ${formatPercent(stepsChange.percent)}. Você está acumulando mais movimento no dia a dia do que no início deste período.`
-        : `Sua média diária de passos caiu ${formatNumber(Math.abs(stepsChange.percent))}%. Tente retomar pequenos deslocamentos ao longo do dia, respeitando sua rotina e seu corpo.`,
-      evidence: `${formatNumber(stepsChange.before)} → ${formatNumber(stepsChange.after)} passos/dia · ${stepsChange.beforeCount + stepsChange.afterCount} dias com registro`
+    const lower = heartRateChange.after < heartRateChange.before;
+    insights.push({
+      id: lower ? 'heart-rate-response-improved' : 'heart-rate-response-attention',
+      metric: 'heart_rate_response', kind: 'tip', priority: 90,
+      title: lower ? 'FC menor em sessões comparáveis' : 'FC maior em sessões comparáveis',
+      message: `A FC média registrada ${lower ? 'caiu' : 'subiu'} de ${formatNumber(heartRateChange.before)} para ${formatNumber(heartRateChange.after)} bpm em sessões da mesma modalidade e no mesmo ritmo aproximado. Temperatura, terreno e cobertura do sensor podem diferir. Confira o contexto e observe se a mudança se repete; ela não comprova melhora ou piora do condicionamento.`,
+      evidence: `${heartRateChange.beforeCount} sessões iniciais → ${heartRateChange.afterCount} finais · ${formatPercent(heartRateChange.percent!)}`
     });
   }
-
-  const sleepPoints = validPoints(summary.trends.sleep_duration_min);
-  const sleepChange = compareHalves(sleepPoints, 3);
-  const firstSleepRegularity = coefficientOfVariation(sleepPoints.slice(0, Math.floor(sleepPoints.length / 2)));
-  const secondSleepRegularity = coefficientOfVariation(sleepPoints.slice(Math.floor(sleepPoints.length / 2)));
-  const regularityImproved = firstSleepRegularity !== null && secondSleepRegularity !== null
-    && secondSleepRegularity < firstSleepRegularity * 0.85;
-  const regularityDeclined = firstSleepRegularity !== null && secondSleepRegularity !== null
-    && secondSleepRegularity > firstSleepRegularity * 1.2;
-  if (sleepChange && (Math.abs(sleepChange.percent) >= 10 || regularityImproved || regularityDeclined)) {
-    if (regularityImproved || (sleepChange.percent >= 10 && !regularityDeclined)) {
-      add({
-        id: 'sleep-improved',
-        metric: 'sleep',
-        kind: 'improvement',
-        priority: 72,
-        title: regularityImproved ? 'Sono mais consistente' : 'Mais sono registrado',
-        message: regularityImproved
-          ? `Seu horário/tempo de sono ficou mais consistente. A variação entre as noites caiu em relação à primeira metade do período; manter uma rotina parecida pode ajudar sua recuperação.`
-          : `Seu tempo médio de sono registrado aumentou ${formatPercent(sleepChange.percent)}. Acompanhe também a regularidade e como você se sente ao acordar.`,
-        evidence: `${formatNumber(sleepChange.before / 60, 1)}h → ${formatNumber(sleepChange.after / 60, 1)}h por noite · ${sleepChange.beforeCount + sleepChange.afterCount} noites`
-      });
-    } else {
-      add({
-        id: 'sleep-declined',
-        metric: 'sleep',
-        kind: 'alert',
-        priority: 76,
-        title: regularityDeclined ? 'Sono menos regular' : 'Sono registrado em queda',
-        message: regularityDeclined
-          ? 'As noites ficaram mais irregulares do que no início deste período. Tente proteger horários de descanso e observe se isso acompanha mudanças no seu treino ou rotina.'
-          : `Seu tempo médio de sono registrado caiu ${formatNumber(Math.abs(sleepChange.percent))}%. Priorize uma rotina de descanso e observe as próximas noites.`,
-        evidence: `${formatNumber(sleepChange.before / 60, 1)}h → ${formatNumber(sleepChange.after / 60, 1)}h por noite · ${sleepChange.beforeCount + sleepChange.afterCount} noites`
-      });
-    }
-  }
-
-  const caloriesChange = compareHalves(summary.trends.calories_active, 2);
-  if (caloriesChange && Math.abs(caloriesChange.percent) >= 15) {
-    const increased = caloriesChange.percent > 0;
-    add({
-      id: increased ? 'active-calories-up' : 'active-calories-down',
-      metric: 'calories_active',
-      kind: increased ? 'improvement' : 'decline',
-      priority: increased ? 55 : 60,
-      title: increased ? 'Mais atividade registrada' : 'Menos atividade registrada',
-      message: increased
-        ? `O gasto energético ativo registrado aumentou ${formatPercent(caloriesChange.percent)}. Isso indica mais atividade capturada pelo dispositivo, mas calorias são uma estimativa e não medem sozinhas a qualidade do treino.`
-        : `O gasto energético ativo registrado caiu ${formatNumber(Math.abs(caloriesChange.percent))}%. Verifique se houve menos atividade ou se o dispositivo deixou de registrar alguma sessão.`,
-      evidence: `${formatNumber(caloriesChange.before)} → ${formatNumber(caloriesChange.after)} kcal/dia · ${caloriesChange.beforeCount + caloriesChange.afterCount} dias com registro`
+  const stepsChange = compareHalves(comparableDailySeries(summary, 'steps_daily', now, timeZone));
+  if (stepsChange && ((stepsChange.percent !== null && Math.abs(stepsChange.percent) >= 10) || (stepsChange.before === 0 && stepsChange.after > 0))) {
+    const increased = stepsChange.after > stepsChange.before;
+    insights.push({
+      id: increased ? 'steps-improved' : 'steps-declined', metric: 'steps', kind: 'tip', priority: 80,
+      title: increased ? 'Mais passos registrados' : 'Menos passos registrados',
+      message: `Sua média nos dias com registro ${increased ? 'aumentou' : 'diminuiu'}${stepsChange.percent === null ? '' : ` ${formatNumber(Math.abs(stepsChange.percent))}%`} entre os dois grupos de dias. Confira se o uso do dispositivo foi semelhante e como sua rotina mudou; dias sem leitura não entram como zero.`,
+      evidence: `${formatNumber(stepsChange.before)} → ${formatNumber(stepsChange.after)} passos/dia · ${daysEvidence(stepsChange)}`
     });
   }
-
+  const sleepPoints = comparableDailySeries(summary, 'sleep_duration_min', now, timeZone);
+  const sleepChange = compareHalves(sleepPoints);
+  const middle = Math.floor(sleepPoints.length / 2);
+  const firstVariation = coefficientOfVariation(sleepPoints.slice(0, middle));
+  const lastVariation = coefficientOfVariation(sleepPoints.slice(middle));
+  const steadier = firstVariation !== null && lastVariation !== null && lastVariation < firstVariation * 0.85;
+  const moreVariable = firstVariation !== null && lastVariation !== null && lastVariation > firstVariation * 1.2;
+  if (sleepChange && (Math.abs(sleepChange.percent || 0) >= 10 || steadier || moreVariable)) {
+    const increased = sleepChange.after > sleepChange.before;
+    insights.push({
+      id: increased || steadier ? 'sleep-improved' : 'sleep-declined', metric: 'sleep', kind: 'tip', priority: 75,
+      title: moreVariable ? 'Duração do sono mais variável' : steadier ? 'Duração do sono mais estável' : increased ? 'Mais sono registrado' : 'Menos sono registrado',
+      message: `A média do sono registrado ${increased ? 'aumentou' : sleepChange.after < sleepChange.before ? 'diminuiu' : 'se manteve'}${Math.abs(sleepChange.percent || 0) >= 1 ? ` ${formatNumber(Math.abs(sleepChange.percent!))}%` : ''}.${steadier ? ' A duração também variou menos entre os dias.' : moreVariable ? ' A duração também variou mais entre os dias.' : ''} Isso não mede a qualidade do sono nem a regularidade dos horários. Compare com como você se sente ao acordar e com a cobertura do dispositivo.`,
+      evidence: `${formatNumber(sleepChange.before / 60, 1)}h → ${formatNumber(sleepChange.after / 60, 1)}h/dia · ${daysEvidence(sleepChange)}`
+    });
+  }
+  const caloriesChange = compareHalves(comparableDailySeries(summary, 'calories_active', now, timeZone));
+  if (caloriesChange && ((caloriesChange.percent !== null && Math.abs(caloriesChange.percent) >= 15) || (caloriesChange.before === 0 && caloriesChange.after > 0))) {
+    const increased = caloriesChange.after > caloriesChange.before;
+    insights.push({
+      id: increased ? 'active-calories-up' : 'active-calories-down', metric: 'calories_active', kind: 'tip', priority: 55,
+      title: increased ? 'Estimativa de gasto em alta' : 'Estimativa de gasto em queda',
+      message: `A estimativa diária de gasto energético ativo ${increased ? 'aumentou' : 'diminuiu'}${caloriesChange.percent === null ? '' : ` ${formatNumber(Math.abs(caloriesChange.percent))}%`}. Algoritmo, cobertura do dispositivo e atividade podem alterar esse valor. Confira essas condições; gastar mais calorias não comprova um treino melhor nem é uma meta por si só.`,
+      evidence: `${formatNumber(caloriesChange.before)} → ${formatNumber(caloriesChange.after)} kcal/dia · ${daysEvidence(caloriesChange)}`
+    });
+  }
   return insights.sort((a, b) => b.priority - a.priority).slice(0, 4);
 }

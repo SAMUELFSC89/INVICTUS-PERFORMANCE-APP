@@ -45,6 +45,8 @@ export interface WearableConfig {
   /** Versão do backfill de vitais passivas (FC, passos, sono e energia). */
   healthVitalsVersion?: number;
   lastVitalsSyncTime: string | null;
+  lastVitalsSyncBySource?: { apple_health?: string; health_connect?: string };
+  healthVitalsVersionBySource?: { apple_health?: number; health_connect?: number };
   createdAt: string;
   updatedAt: string;
 }
