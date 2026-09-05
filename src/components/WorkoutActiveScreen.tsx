@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, Check, ChevronRight, Flame, HeartPulse, MoreVertical, Pause, Play, Square } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bell, Check, ChevronRight, Flame, HeartPulse, MoreVertical, Pause, Play, Plus, SkipForward, Square } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_MUSCLE_GROUP_LABELS } from '../data/exerciseCatalog';
 import { ExerciseDemoDialog, OfficialExerciseMedia } from './OfficialExerciseMedia';
@@ -10,6 +10,51 @@ import { workoutSetJournal, type WorkoutSetJournalState } from '../services/work
 import './WorkoutSetRecorder.css';
 
 const formatElapsed = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+const formatRest = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+// #REST_TIMER: quando o plano da IA não define restSeconds para o exercício
+// (ex.: treino montado localmente sem plano), usamos um padrão razoável de
+// academia em vez de não oferecer descanso nenhum.
+const DEFAULT_REST_SECONDS = 90;
+
+// Alerta sonoro/vibração são best-effort: nunca devem quebrar o registro do
+// treino. O AudioContext só é criado/retomado dentro de um gesto do usuário
+// (toque em "Concluir série"), porque navegadores bloqueiam áudio programático
+// fora de uma interação -- por isso desbloqueamos aqui e o beep em si acontece
+// depois, quando o cronômetro de descanso chega a zero.
+let restAudioContext: AudioContext | null = null;
+function unlockRestAudio() {
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    if (!restAudioContext) restAudioContext = new Ctor();
+    if (restAudioContext.state === 'suspended') void restAudioContext.resume();
+  } catch { /* alerta sonoro é um extra, nunca bloqueia o registro da série */ }
+}
+function playRestAlertSound() {
+  try {
+    const ctx = restAudioContext;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [0, 0.18, 0.36].forEach((offset, index) => {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = index === 2 ? 1050 : 840;
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.32, now + offset + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+      oscillator.connect(gain).connect(ctx.destination);
+      oscillator.start(now + offset);
+      oscillator.stop(now + offset + 0.18);
+    });
+  } catch { /* alerta sonoro é um extra, nunca bloqueia o registro da série */ }
+}
+function vibrateRestAlert() {
+  // #REST_TIMER: navigator.vibrate não existe no iOS (Safari/WKWebView nunca
+  // implementou a API) -- por isso este alerta é só um reforço no Android/web,
+  // nunca o único aviso (o beep sonoro e o card visual cobrem os dois).
+  try { navigator.vibrate?.([200, 100, 200, 100, 400]); } catch { /* best-effort */ }
+}
 
 interface WorkoutProgress {
   activeIndex: number;
@@ -56,6 +101,11 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
   const [resultSetId, setResultSetId] = useState<string | null>(null);
   const [recordNotice, setRecordNotice] = useState<string | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
+  // #REST_TIMER: restSecondsLeft === null significa "nenhum descanso ativo".
+  // Contagem por segundo (não por timestamp) para respeitar a pausa do treino
+  // sem drift -- ver useEffect abaixo.
+  const [restSecondsLeft, setRestSecondsLeft] = useState<number | null>(null);
+  const [restDone, setRestDone] = useState(false);
 
   useEffect(() => {
     setJournal(workoutSetJournal.read(session.userId, session.id));
@@ -64,7 +114,37 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
     setResultSetId(null);
     setRecordError(null);
     setRecordNotice(null);
+    setRestSecondsLeft(null);
+    setRestDone(false);
   }, [session.userId, session.id, ownsSession]);
+
+  useEffect(() => {
+    if (restSecondsLeft === null || restSecondsLeft <= 0 || session.isPaused) return;
+    const timeout = window.setTimeout(() => setRestSecondsLeft((current) => (current !== null ? current - 1 : current)), 1000);
+    return () => window.clearTimeout(timeout);
+  }, [restSecondsLeft, session.isPaused]);
+
+  useEffect(() => {
+    if (restSecondsLeft === 0 && !restDone) {
+      setRestDone(true);
+      playRestAlertSound();
+      vibrateRestAlert();
+    }
+  }, [restSecondsLeft, restDone]);
+
+  const startRest = (seconds: number) => {
+    unlockRestAudio();
+    setRestSecondsLeft(Math.max(5, Math.round(seconds)));
+    setRestDone(false);
+  };
+  const extendRest = (extraSeconds: number) => {
+    setRestSecondsLeft((current) => (current !== null ? current + extraSeconds : extraSeconds));
+    setRestDone(false);
+  };
+  const skipRest = () => {
+    setRestSecondsLeft(null);
+    setRestDone(false);
+  };
 
   useEffect(() => {
     // The session service also closes a set when a native pause/end action
@@ -91,6 +171,10 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
   const recordedSets = ownsSession ? journal.sets.filter(set => set.status === 'completed' && set.exerciseId === currentExercise?.id) : [];
 
   const interruptOpenSet = () => {
+    // Sair do exercício atual (trocar de exercício, pausar ou finalizar) torna
+    // o descanso deste exercício irrelevante -- mesmo para quem não é dono da
+    // sessão (ex.: espectador), então isto roda antes do early-return abaixo.
+    skipRest();
     if (!ownsSession) return;
     try {
       const before = workoutSetJournal.read(session.userId, session.id);
@@ -108,6 +192,8 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
     if (!currentExercise || !ownsSession || session.isPaused || loading) return;
     setRecordError(null);
     setRecordNotice(null);
+    // Voltou a treinar: o descanso anterior (se ainda contando) não faz mais sentido.
+    skipRest();
     try {
       setJournal(workoutSetJournal.start(session.userId, session.id, {
         exerciseId: currentExercise.id,
@@ -134,6 +220,10 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
       setActualReps('');
       setActualLoad('');
       setRecordNotice('Horário da série registrado. Você pode informar as repetições e a carga agora.');
+      // #REST_TIMER: descanso começa assim que a execução para, independente
+      // de o atleta preencher reps/carga depois. Usa o restSeconds do plano da
+      // IA para este exercício quando existir; senão, um padrão de academia.
+      startRest(currentExercise?.planned?.restSeconds ?? DEFAULT_REST_SECONDS);
     } catch (error) {
       setRecordError(error instanceof Error ? error.message : 'Não foi possível concluir o registro da série.');
     }
@@ -185,6 +275,22 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
         <button onClick={() => setDemoOpen(true)} aria-label={`Ver execução de ${currentExercise.name}`}><Play /><span>VER EXECUÇÃO</span></button>
       </article>
       <ExerciseDemoDialog exercise={currentExercise} open={demoOpen} onClose={() => setDemoOpen(false)} />
+
+      <div className="workout-exercise-advance">
+        <button type="button" onClick={completeCurrent}>
+          <Check size={17} />
+          <span>{nextExercise ? 'Concluir exercício e ir para o próximo' : 'Concluir exercício'}</span>
+        </button>
+      </div>
+
+      {restSecondsLeft !== null ? <div className={`workout-rest-timer${restDone ? ' is-done' : ''}`} role="status" aria-live="polite">
+        <div className="workout-rest-timer-head"><Bell size={18} /><span>{restDone ? 'Descanso concluído! Hora da próxima série.' : 'Descansando entre séries'}</span></div>
+        <strong className="workout-rest-timer-clock">{formatRest(Math.max(0, restSecondsLeft))}</strong>
+        <div className="workout-rest-timer-actions">
+          <button type="button" onClick={() => extendRest(15)}><Plus size={14} />15s</button>
+          <button type="button" onClick={skipRest}><SkipForward size={14} />Pular descanso</button>
+        </div>
+      </div> : null}
 
       <section className="workout-set-recorder" aria-labelledby="workout-set-title">
         <div className="workout-set-heading"><div><small>REGISTRO OPCIONAL</small><h2 id="workout-set-title">Registre a série que você fizer</h2></div><span>{recordedSets.length} {recordedSets.length === 1 ? 'série registrada' : 'séries registradas'}</span></div>
