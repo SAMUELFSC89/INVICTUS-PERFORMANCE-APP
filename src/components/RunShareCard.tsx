@@ -325,19 +325,41 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
   };
 
-  // #202: "modo 2" -- em vez de exportar 1 PNG fechado (handleExport acima),
-  // captura só o bloco de estatísticas (stickerRef, fora da tela, fundo
-  // transparente) e manda direto pro editor de Stories do Instagram via
-  // plugin nativo. O mapa atual (se já carregado) vai junto como fundo
-  // opcional; o sticker continua uma camada separada e móvel por cima.
+  // #202/#238: "modo 2" -- em vez de exportar 1 PNG fechado (handleExport
+  // acima), captura só o bloco de estatísticas (stickerRef, fora da tela,
+  // fundo transparente) e manda direto pro editor de Stories do Instagram
+  // via plugin nativo, pro usuario escolher a PROPRIA foto/video de fundo la
+  // dentro e arrastar o sticker por cima -- exatamente como o Strava faz.
+  //
+  // #238: a versao anterior TAMBEM mandava o mapa da rota como
+  // "backgroundImage"/"background_asset_uri" simultaneo ao sticker. O
+  // proprio comentario do plugin Android (InstagramStoriesSharePlugin.java)
+  // ja registrava que essa combinacao "fundo + sticker ao mesmo tempo" tem
+  // muito menos exemplos confirmados que os dois caminhos isolados
+  // (so-sticker ou so-fundo) -- e foi exatamente isso que o usuario reportou
+  // ao vivo: abria o Instagram Stories só com o mapa, sem nenhum dado da
+  // atividade nem a logo (ou seja, o sticker "sumia" quando ia junto com uma
+  // imagem de fundo). Trocado para NUNCA mandar o mapa como imagem de fundo
+  // -- só o sticker (transparente, sempre confirmado) + uma cor de fundo
+  // solida/gradiente da marca (tambem documentada oficialmente junto com
+  // stickerImage), que e só um pano de fundo enquanto o usuario nao escolhe
+  // a propria foto/video dentro do Instagram.
   const handleShareToInstagramStories = async () => {
     if (!stickerRef.current) return;
     setFeedback(null);
     setIsGenerating(true);
     try {
+      // Mesma espera defensiva que handleExport ja usa antes de capturar o
+      // card principal -- da tempo da logo (img) e do layout cqw assentarem
+      // antes do toPng serializar o DOM, evitando uma captura parcial/em
+      // branco por corrida com o paint do navegador.
+      await new Promise(resolve => setTimeout(resolve, 150));
       const stickerDataUrl = await toPng(stickerRef.current, { pixelRatio: 2, cacheBust: true });
-      const backgroundDataUrl = hasRoute && mapBackgroundAvailable ? currentMapImage ?? undefined : undefined;
-      await instagramStoriesShareService.share({ stickerDataUrl, backgroundDataUrl });
+      await instagramStoriesShareService.share({
+        stickerDataUrl,
+        topColor: '#11151a',
+        bottomColor: '#050608',
+      });
       setFeedback('Aberto no Instagram Stories.');
     } catch (error) {
       console.error('[RunShareCard] Instagram Stories share error:', error);
