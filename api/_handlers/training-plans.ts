@@ -78,7 +78,11 @@ async function generatePlan(answers: any, userId: string) {
   const model = getAiWorkoutModel();
   const requestId = newAiRequestId();
   const startedAt = Date.now();
-  const prompt = `Monte um plano de musculação em JSON usando SOMENTE os exerciseIds permitidos. Respostas do atleta: ${JSON.stringify(answers)}. IDs permitidos: ${JSON.stringify(available)}. Formato: {name,description,objective,experienceLevel,durationMinutes,daysPerWeek,workouts:[{id,name,focus,weekdays:number[],exercises:[{exerciseId,sets,repsMin,repsMax,restSeconds}]}]}. Não diagnostique lesões.`;
+  // #245: instrucao explicita para o modelo de fato USAR primaryGoal e
+  // preferredSplit na estrutura do plano -- antes o prompt so despejava o
+  // JSON das respostas sem dizer que esses dois campos deveriam moldar
+  // series/reps/descanso e quais grupos musculares caem em cada dia.
+  const prompt = `Monte um plano de musculação em JSON usando SOMENTE os exerciseIds permitidos. Respostas do atleta: ${JSON.stringify(answers)}. IDs permitidos: ${JSON.stringify(available)}. Use "primaryGoal" para calibrar sets/repsMin/repsMax/restSeconds (ex: força = poucas reps e descanso longo; perda de gordura/condicionamento = mais reps e descanso curto; hipertrofia/massa = faixa intermediária). Use "preferredSplit" para decidir quais grupos musculares entram em cada dia de "workouts" (ex: Bro split = um grupo por dia; Upper/Lower = alterna superior e inferior; PPL = empurrar/puxar/pernas; Full body = todos os grupos em cada dia). Formato: {name,description,objective,experienceLevel,durationMinutes,daysPerWeek,workouts:[{id,name,focus,weekdays:number[],exercises:[{exerciseId,sets,repsMin,repsMax,restSeconds}]}]}. Não diagnostique lesões.`;
   let response;
   try {
     response = await ai.models.generateContent({
