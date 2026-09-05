@@ -50,6 +50,21 @@ describe('buildLocalFallbackPlan — objetivo do usuario', () => {
   });
 });
 
+// #246: o plano de contingência precisa explicar o "porquê" das escolhas de
+// série/reps/descanso/divisão, não só entregá-las prontas.
+describe('buildLocalFallbackPlan — explicação do "porquê" (rationale)', () => {
+  it('inclui um rationale não vazio mencionando o objetivo escolhido', () => {
+    const plan = buildLocalFallbackPlan({ ...baseAnswers, primaryGoal: 'forca' });
+    expect(plan.rationale).toBeTruthy();
+    expect(plan.rationale).toMatch(/força/i);
+  });
+
+  it('menciona a divisão escolhida quando preferredSplit está definido', () => {
+    const plan = buildLocalFallbackPlan({ ...baseAnswers, preferredSplit: 'Bro split' });
+    expect(plan.rationale).toMatch(/Bro split/);
+  });
+});
+
 describe('buildLocalFallbackPlan — divisão preferida (preferredSplit)', () => {
   it('"Bro split" concentra cada dia num único grupo muscular quando há exercícios suficientes', () => {
     const plan = buildLocalFallbackPlan({

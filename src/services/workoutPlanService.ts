@@ -60,6 +60,18 @@ const SPLIT_DAY_GROUPS: Record<string, MuscleGroup[][]> = {
   PPL: [['peito', 'ombros', 'bracos'], ['costas', 'bracos'], ['pernas', 'core']],
 };
 
+// #246: rótulo em português de cada objetivo, usado só para montar a
+// explicação do "porquê" desse plano -- não afeta o esquema de treino em si.
+const OBJECTIVE_LABELS: Record<string, string> = {
+  forca: 'ganhar força',
+  massa: 'ganhar massa muscular',
+  gordura: 'reduzir gordura corporal',
+  condicionamento: 'melhorar condicionamento',
+  definicao: 'melhorar definição muscular',
+  retorno: 'retomar os treinos com segurança',
+  saude: 'saúde e qualidade de vida',
+};
+
 /**
  * Geração determinística de contingência. Ela não chama a IA nem inventa
  * exercícios: apenas distribui a biblioteca oficial compatível com os
@@ -117,9 +129,16 @@ export function buildLocalFallbackPlan(answers: WorkoutPlanAnswers): WorkoutPlan
     };
   });
 
+  // #246: explicação curta do porquê desse esquema/divisão, mostrada na tela
+  // "Meu Plano" -- assim o atleta entende a lógica, não só recebe números.
+  const objectiveLabel = OBJECTIVE_LABELS[answers.primaryGoal || ''] || 'evoluir fisicamente de forma consistente';
+  const splitLabel = answers.preferredSplit && answers.preferredSplit !== 'Outro' ? answers.preferredSplit : null;
+  const rationale = `Séries de ${repsMin}–${repsMax} repetições e ${restSeconds}s de descanso porque seu objetivo é ${objectiveLabel}. ${splitLabel ? `Os dias seguem a divisão "${splitLabel}" que você escolheu, priorizando grupos musculares diferentes a cada sessão.` : 'Os exercícios são distribuídos entre os grupos musculares cobertos pelo equipamento que você selecionou.'}`;
+
   return {
     name: 'Plano Invictus de contingência',
     description: 'Plano montado localmente com exercícios oficiais. A Invictus IA será reativada quando o serviço Gemini estiver disponível.',
+    rationale,
     source: 'ai',
     generationMode: 'local_fallback',
     objective: answers.primaryGoal || 'Evolução física',

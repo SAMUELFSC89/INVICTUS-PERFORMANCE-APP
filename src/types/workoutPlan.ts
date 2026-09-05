@@ -44,6 +44,9 @@ export interface WorkoutPlan {
   userId: string;
   name: string;
   description?: string;
+  /** #246: explicação curta do "porquê" desse plano -- por que essas
+   * séries/reps/descanso e essa divisão de dias, dado o objetivo do atleta. */
+  rationale?: string;
   source: WorkoutPlanSource;
   /** Indica quando a IA externa estava indisponível e o plano foi montado
    * deterministicamente a partir da biblioteca oficial. */
@@ -62,6 +65,7 @@ export interface WorkoutPlan {
 export interface WorkoutPlanDraft {
   name: string;
   description?: string;
+  rationale?: string;
   source: WorkoutPlanSource;
   generationMode?: WorkoutPlanGenerationMode;
   objective: string;

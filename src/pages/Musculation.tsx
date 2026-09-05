@@ -188,7 +188,11 @@ export function Musculation() {
   const saveManual = async () => {
     setError(null); setLoading(true);
     try {
-      const saved = await workoutPlanService.save({ ...manual, workouts: manual.workouts.filter(workout => workout.exercises.length) });
+      // #246: plano manual nao passa pela IA nem pelo fallback determinístico
+      // (que já geram seu próprio "rationale") -- aqui o "porquê" é só um
+      // resumo das escolhas que o próprio atleta fez nas etapas anteriores.
+      const rationale = `Treino manual configurado por você: ${manual.daysPerWeek} dia(s) por semana com foco em ${manual.objective.toLowerCase()}${manual.experienceLevel ? `, nível ${manual.experienceLevel.toLowerCase()}` : ''}. Ajuste séries, repetições e descanso sempre que quiser evoluir a carga.`;
+      const saved = await workoutPlanService.save({ ...manual, rationale, workouts: manual.workouts.filter(workout => workout.exercises.length) });
       setPlans(current => [saved, ...current]); setSelectedPlan(saved); setView('plan');
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
@@ -320,7 +324,11 @@ function AiSuccess({ plan, onReview, onPlan }: { plan: WorkoutPlan; onReview: ()
 
 function PlanView({ plan, onBack, onWorkout }: { plan: WorkoutPlan; onBack: () => void; onWorkout: (workout: PlannedWorkout) => void }) {
   const origin = plan.generationMode === 'local_fallback' ? 'Contingência oficial (IA indisponível)' : plan.source === 'ai' ? 'Invictus IA' : 'Criado manualmente';
-  return <><Header onBack={onBack} /><section className="mus-flow"><h1>MEU PLANO</h1><p>{plan.description || 'Seu plano de musculação atual.'}</p><div className="mus-final-data"><h2>VISÃO GERAL</h2><p><Target /><span>Objetivo<b>{plan.objective}</b></span></p><p><CalendarDays /><span>Frequência<b>{plan.daysPerWeek} dias por semana</b></span></p><p><Clock3 /><span>Duração média<b>{plan.durationMinutes} min</b></span></p><p><Brain /><span>Origem<b>{origin}</b></span></p></div><h2>PROGRAMAÇÃO SEMANAL</h2><div className="mus-workout-list">{plan.workouts.map((workout,index) => <button key={workout.id} onClick={() => onWorkout(workout)}><i>{String.fromCharCode(65+index)}</i><span><b>{workout.name}</b><small>{workout.focus}</small></span><em>{workout.exercises.length} exercícios</em><ChevronRight /></button>)}</div></section></>;
+  // #246: planos salvos antes desse campo existir não têm "rationale" -- em
+  // vez de esconder a seção, mostramos um texto padrão honesto (não inventa
+  // um motivo específico que não foi realmente calculado para aquele plano).
+  const rationale = plan.rationale || 'Este plano foi montado com a biblioteca oficial de exercícios de acordo com as respostas do seu questionário. Gere um novo plano para ver a explicação detalhada do porquê de cada escolha.';
+  return <><Header onBack={onBack} /><section className="mus-flow"><h1>MEU PLANO</h1><p>{plan.description || 'Seu plano de musculação atual.'}</p><div className="mus-final-data"><h2>VISÃO GERAL</h2><p><Target /><span>Objetivo<b>{plan.objective}</b></span></p><p><CalendarDays /><span>Frequência<b>{plan.daysPerWeek} dias por semana</b></span></p><p><Clock3 /><span>Duração média<b>{plan.durationMinutes} min</b></span></p><p><Brain /><span>Origem<b>{origin}</b></span></p></div><div className="mus-tip mus-plan-rationale"><Info /><span><b>POR QUE ESSE TREINO</b>{rationale}</span></div><h2>PROGRAMAÇÃO SEMANAL</h2><div className="mus-workout-list">{plan.workouts.map((workout,index) => <button key={workout.id} onClick={() => onWorkout(workout)}><i>{String.fromCharCode(65+index)}</i><span><b>{workout.name}</b><small>{workout.focus}</small></span><em>{workout.exercises.length} exercícios</em><ChevronRight /></button>)}</div></section></>;
 }
 
 function WorkoutView({ workout, onBack, onStart, loading }: { plan: WorkoutPlan; workout: PlannedWorkout; onBack: () => void; onStart: () => void; loading: boolean }) {
