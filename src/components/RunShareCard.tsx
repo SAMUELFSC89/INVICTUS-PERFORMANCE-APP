@@ -6,6 +6,7 @@ import {
   Flame,
   Gauge,
   Image as ImageIcon,
+  Instagram,
   Map,
   MapPin,
   Mountain,
@@ -27,6 +28,7 @@ import { cn } from '../lib/utils';
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
 import { InvictusLogo } from './InvictusLogo';
+import { instagramStoriesShareService } from '../services/instagramStoriesShareService';
 import './RunShareCard.css';
 
 // Aceita tanto as sessoes do rastreador quanto itens do historico. O card nao
@@ -95,8 +97,19 @@ function formatPaceForCard(value: unknown): string {
 
 export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const stickerRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // #202: "modo 2" (Stats Stickers do Strava) -- so aparece em iOS/Android
+  // nativos com o Instagram instalado (ver instagramStoriesShareService).
+  const [igAvailable, setIgAvailable] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    instagramStoriesShareService.isAvailable().then((available) => {
+      if (!cancelled) setIgAvailable(available);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const [mapImages, setMapImages] = useState<Record<MapVariant, string | null>>({
     satellite: null,
     roadmap: null,
@@ -301,6 +314,28 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
   };
 
+  // #202: "modo 2" -- em vez de exportar 1 PNG fechado (handleExport acima),
+  // captura só o bloco de estatísticas (stickerRef, fora da tela, fundo
+  // transparente) e manda direto pro editor de Stories do Instagram via
+  // plugin nativo. O mapa atual (se já carregado) vai junto como fundo
+  // opcional; o sticker continua uma camada separada e móvel por cima.
+  const handleShareToInstagramStories = async () => {
+    if (!stickerRef.current) return;
+    setFeedback(null);
+    setIsGenerating(true);
+    try {
+      const stickerDataUrl = await toPng(stickerRef.current, { pixelRatio: 2, cacheBust: true });
+      const backgroundDataUrl = hasRoute && mapBackgroundAvailable ? currentMapImage ?? undefined : undefined;
+      await instagramStoriesShareService.share({ stickerDataUrl, backgroundDataUrl });
+      setFeedback('Aberto no Instagram Stories.');
+    } catch (error) {
+      console.error('[RunShareCard] Instagram Stories share error:', error);
+      setFeedback(error instanceof Error ? error.message : 'Não foi possível abrir o Instagram Stories.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   // Overlay de rota sob a FOTO sempre usa o estilo escuro (roadmap), igual
   // antes -- so o fundo em tela cheia (satellite/roadmap/etc.) muda com a
   // selecao do usuario.
@@ -424,6 +459,18 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           >
             {isGenerating ? <RefreshCw size={20} className="share-spin" /> : <Download size={20} />}
           </button>
+          {igAvailable ? (
+            <button
+              type="button"
+              className="share-icon-button share-icon-button--instagram"
+              onClick={() => void handleShareToInstagramStories()}
+              disabled={isGenerating}
+              aria-label="Enviar sticker para o Instagram Stories"
+              title="Enviar sticker para o Instagram Stories"
+            >
+              {isGenerating ? <RefreshCw size={20} className="share-spin" /> : <Instagram size={20} />}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -501,6 +548,62 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           </div>
         </div>
       </div>
+
+      {/* #202: sticker de estatísticas capturado à parte (transparente, fora
+          da tela) -- é o que vai pro Instagram Stories no "modo 2". Reusa as
+          mesmas classes/estilos do bloco de estatísticas do card principal
+          (inclusive as unidades cqw, via container-type próprio em
+          .share-sticker no CSS) pra manter a MESMA aparência, só sem o mapa
+          de fundo. */}
+      {igAvailable ? (
+        <div ref={stickerRef} className="share-sticker" aria-hidden="true">
+          <div className="share-card-brand">
+            <InvictusLogo size={64} />
+            <div className="share-card-brand-copy">
+              <strong>INVICTUS</strong>
+              <span>PERFORMANCE</span>
+            </div>
+          </div>
+          <div className="share-card-content">
+            <div className="share-card-activity-heading">
+              <span className="share-card-activity-icon"><Flame size={31} strokeWidth={2.4} /></span>
+              <h1>{titleUpper}</h1>
+              {validationState === 'approved' ? (
+                <ShieldCheck className="share-card-validation-icon is-approved" size={27} />
+              ) : validationState === 'pending' ? (
+                <Clock className="share-card-validation-icon is-pending" size={26} />
+              ) : (
+                <ShieldAlert className="share-card-validation-icon is-rejected" size={26} />
+              )}
+            </div>
+
+            <div className="share-card-divider" />
+
+            <div className="share-card-metrics">
+              <div className="share-card-metric">
+                <MapPin className="share-card-metric-icon" size={25} />
+                <span className="share-card-metric-label">DISTÂNCIA</span>
+                <strong>{hasDistance ? distanceLabel : '—'} <small>KM</small></strong>
+              </div>
+              <div className="share-card-metric">
+                <Timer className="share-card-metric-icon" size={25} />
+                <span className="share-card-metric-label">TEMPO</span>
+                <strong>{duration}</strong>
+              </div>
+              <div className="share-card-metric">
+                <Gauge className="share-card-metric-icon" size={25} />
+                <span className="share-card-metric-label">{isSpeedActivity ? 'VELOCIDADE' : 'RITMO MÉDIO'}</span>
+                <strong>{isSpeedActivity ? speedLabel : sharePace} <small>{isSpeedActivity ? 'KM/H' : '/KM'}</small></strong>
+              </div>
+            </div>
+
+            <div className={cn('share-card-status', `is-${validationState}`)}>
+              {validationState === 'approved' ? <ShieldCheck size={25} /> : validationState === 'pending' ? <Clock size={24} /> : <ShieldAlert size={24} />}
+              <span>{statusLabel}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {feedback ? <div className="share-feedback" role="status" aria-live="polite">{feedback}</div> : null}
     </div>,

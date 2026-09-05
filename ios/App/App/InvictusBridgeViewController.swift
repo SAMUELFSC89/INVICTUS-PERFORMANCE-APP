@@ -7,5 +7,6 @@ final class InvictusBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(InvictusActivityPlugin())
+        bridge?.registerPluginInstance(InstagramStoriesSharePlugin())
     }
 }

@@ -59,6 +59,12 @@
   color: #090909;
 }
 
+.share-icon-button--instagram {
+  border-color: rgba(255, 255, 255, .3);
+  background: linear-gradient(45deg, #f9ce34, #ee2a7b, #6228d7);
+  color: #fff;
+}
+
 .share-screen-actions {
   display: flex;
   align-items: center;
@@ -437,6 +443,31 @@
   text-align: center;
   transform: translateX(-50%);
   backdrop-filter: blur(12px);
+}
+
+/* #202: sticker capturado fora da tela pro "modo 2" (Instagram Stories).
+   Reusa .share-card-brand/.share-card-content, que normalmente são
+   position:absolute dentro de .share-card-art (o card 9:16 inteiro) -- aqui
+   viram fluxo normal (position:static) dentro de um container próprio, com
+   o mesmo container-name "share-card" para que as unidades cqw dos filhos
+   continuem proporcionais à largura REAL do sticker, e não à do card grande. */
+.share-sticker {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 40px 34px;
+  background: transparent;
+  container-type: inline-size;
+  container-name: share-card;
+}
+
+.share-sticker .share-card-brand,
+.share-sticker .share-card-content {
+  position: static;
 }
 
 .share-spin {
