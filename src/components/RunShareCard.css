@@ -78,12 +78,12 @@
   display: flex;
   max-width: calc(100vw - 28px);
   align-items: center;
-  gap: 6px;
-  padding: 5px;
+  gap: 4px;
+  padding: 4px;
   overflow-x: auto;
   border: 1px solid rgba(255, 255, 255, .15);
   border-radius: 999px;
-  background: rgba(5, 6, 8, .68);
+  background: rgba(5, 6, 8, .76);
   box-shadow: 0 8px 30px rgba(0, 0, 0, .26);
   transform: translateX(-50%);
   scrollbar-width: none;
@@ -113,6 +113,31 @@
   text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.share-map-style select {
+  min-height: 31px;
+  padding: 0 27px 0 10px;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, .12);
+  border-right: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: rgba(255, 255, 255, .76);
+  font: 900 9px/1 inherit;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.share-map-style select:focus-visible {
+  box-shadow: inset 0 0 0 1px #f6a916;
+}
+
+.share-map-style select:disabled {
+  cursor: not-allowed;
+  opacity: .35;
 }
 
 .share-background-option:hover,
@@ -227,18 +252,6 @@
   container-name: share-card;
 }
 
-/* #251: as duas manchas de cor caiam nas faixas MAIS escuras do vignette
-   (0-22% e 57-100% da altura, ver .share-card-vignette abaixo) -- sobrava só
-   um card praticamente preto, sem a variação de cor pretendida. Reposicionadas
-   pra dentro da faixa central do vignette (22%-48%, onde ele é transparente) e
-   com opacidade maior pra sobreviver ao overlay. */
-.share-card-art--solid {
-  background:
-    radial-gradient(circle at 78% 30%, rgba(212, 139, 17, .38), transparent 34%),
-    radial-gradient(circle at 18% 40%, rgba(18, 117, 83, .3), transparent 30%),
-    linear-gradient(145deg, #11151a 0%, #050608 62%, #0c0b08 100%);
-}
-
 .share-card-background,
 .share-card-vignette,
 .share-card-map,
@@ -262,34 +275,37 @@
 }
 
 .share-card-map {
-  filter: brightness(.58) saturate(.82) contrast(1.12);
+  height: 74%;
+  object-position: center center;
+  filter: brightness(.46) saturate(.82) contrast(1.18);
 }
 
 .share-card-photo {
-  filter: brightness(.72) saturate(.88) contrast(1.05);
+  filter: brightness(.76) saturate(.9) contrast(1.05);
 }
 
 .share-card-route-overlay {
-  left: 40%;
+  bottom: 27%;
+  left: 0;
   z-index: 1;
-  opacity: .82;
+  opacity: .88;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, .22) 18%, #000 52%);
-  mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, .22) 18%, #000 52%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, transparent 38%, rgba(0, 0, 0, .3) 47%, #000 62%);
+  mask-image: linear-gradient(to right, transparent 0%, transparent 38%, rgba(0, 0, 0, .3) 47%, #000 62%);
 }
 
 .share-card-route-overlay img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: brightness(.82) saturate(.75) contrast(1.12);
+  filter: brightness(.7) saturate(.72) contrast(1.2);
 }
 
 .share-card-vignette {
   z-index: 2;
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, .42) 0%, transparent 22%, transparent 48%, rgba(0, 0, 0, .87) 77%, #050608 100%),
-    linear-gradient(90deg, rgba(0, 0, 0, .16), transparent 38%, rgba(0, 0, 0, .12));
+    linear-gradient(180deg, rgba(0, 0, 0, .22) 0%, transparent 17%, transparent 52%, rgba(3, 4, 5, .75) 66%, #030405 74%, #030405 100%),
+    linear-gradient(90deg, rgba(0, 0, 0, .12), transparent 40%, rgba(0, 0, 0, .1));
 }
 
 .share-card-loading-map,
@@ -308,11 +324,11 @@
 .share-card-brand {
   position: absolute;
   z-index: 3;
-  top: 25px;
-  left: 6.2%;
+  top: 6.5cqw;
+  left: 5.8%;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2.2cqw;
 }
 
 /* #200: InvictusLogo (componente compartilhado, usado em varias telas do app
@@ -333,8 +349,8 @@
    imagem compartilhada. Piso mais baixo mantém a mesma % em qualquer tamanho
    de tela.  */
 .share-card-brand img {
-  width: clamp(16px, 7cqw, 48px) !important;
-  height: clamp(16px, 7cqw, 48px) !important;
+  width: 8.5cqw !important;
+  height: 8.5cqw !important;
 }
 
 .share-card-brand-copy {
@@ -346,7 +362,8 @@
 
 .share-card-brand-copy strong {
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(20px, 5cqw, 32px);
+  font-size: 4.4cqw;
+  font-style: italic;
   font-style: normal;
   font-weight: 900;
   letter-spacing: .06em;
@@ -355,7 +372,7 @@
 
 .share-card-brand-copy span {
   color: rgba(255, 255, 255, .68);
-  font-size: clamp(8px, 1.8cqw, 12px);
+  font-size: 1.45cqw;
   font-weight: 700;
   letter-spacing: .34em;
 }
@@ -364,20 +381,20 @@
   position: absolute;
   z-index: 3;
   right: 6.2%;
-  bottom: max(28px, 6.5%);
+  bottom: 8.2%;
   left: 6.2%;
 }
 
 .share-card-activity-heading {
   display: flex;
   align-items: center;
-  gap: clamp(9px, 2.6cqw, 17px);
+  gap: 3.2cqw;
 }
 
 .share-card-activity-icon {
   display: inline-flex;
-  width: clamp(60px, 14cqw, 96px);
-  height: clamp(60px, 14cqw, 96px);
+  width: 12cqw;
+  height: 12cqw;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -387,39 +404,30 @@
   box-shadow: 0 0 28px rgba(255, 171, 20, .22);
 }
 
+.share-card-activity-icon svg {
+  width: 5.8cqw;
+  height: 5.8cqw;
+}
+
+.share-card-activity-copy {
+  min-width: 0;
+}
+
 .share-card-activity-heading h1 {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(27px, 7.2cqw, 50px);
+  font-size: 6.2cqw;
   font-weight: 900;
   letter-spacing: .01em;
-  line-height: .9;
-}
-
-.share-card-validation-icon {
-  flex: 0 0 auto;
-}
-
-.share-card-validation-icon.is-approved,
-.share-card-status.is-approved {
-  color: #00dc82;
-}
-
-.share-card-validation-icon.is-pending,
-.share-card-status.is-pending {
-  color: #ffc044;
-}
-
-.share-card-validation-icon.is-rejected,
-.share-card-status.is-rejected {
-  color: #ff6b70;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .share-card-divider {
   height: 1px;
-  margin: clamp(18px, 4.3cqw, 28px) 0 clamp(17px, 4cqw, 26px);
+  margin: 3.5cqw 0 4cqw;
   background: linear-gradient(90deg, rgba(232, 155, 18, .78), rgba(232, 155, 18, .18), transparent);
 }
 
@@ -430,7 +438,7 @@
 
 .share-card-metric {
   min-width: 0;
-  padding: 0 clamp(9px, 2.7cqw, 20px);
+  padding: 0 2.5cqw;
 }
 
 .share-card-metric:first-child {
@@ -447,7 +455,9 @@
 
 .share-card-metric-icon {
   display: block;
-  margin-bottom: clamp(8px, 2cqw, 13px);
+  width: 4.8cqw;
+  height: 4.8cqw;
+  margin-bottom: 1.8cqw;
   color: #f6a816;
 }
 
@@ -455,7 +465,7 @@
   display: block;
   overflow: hidden;
   color: rgba(255, 255, 255, .62);
-  font-size: clamp(10px, 2.4cqw, 16px);
+  font-size: 2.15cqw;
   font-weight: 800;
   letter-spacing: .12em;
   line-height: 1.2;
@@ -466,11 +476,11 @@
 
 .share-card-metric strong {
   display: block;
-  margin-top: 7px;
+  margin-top: 1.5cqw;
   overflow: hidden;
   color: #fff;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(29px, 7.8cqw, 54px);
+  font-size: 6.9cqw;
   font-weight: 900;
   letter-spacing: .01em;
   line-height: .9;
@@ -481,19 +491,8 @@
 .share-card-metric strong small {
   color: #f6a816;
   font-family: inherit;
-  font-size: clamp(10px, 2.4cqw, 17px);
+  font-size: 2.1cqw;
   letter-spacing: .05em;
-}
-
-.share-card-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: clamp(25px, 6cqw, 40px);
-  font-size: clamp(11px, 2.8cqw, 17px);
-  font-weight: 900;
-  letter-spacing: .18em;
-  line-height: 1;
 }
 
 .share-feedback {
@@ -540,6 +539,11 @@
   position: static;
 }
 
+.share-sticker .share-card-content {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .share-spin {
   animation: share-spin 1s linear infinite;
 }
@@ -562,15 +566,4 @@
     box-shadow: 0 24px 80px rgba(0, 0, 0, .72);
   }
 
-  .share-card-brand-copy strong {
-    font-size: 36px;
-  }
-
-  .share-card-activity-heading h1 {
-    font-size: 38px;
-  }
-
-  .share-card-metric strong {
-    font-size: 54px;
-  }
 }

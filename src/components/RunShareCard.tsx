@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Clock,
   Download,
   Flame,
   Gauge,
@@ -9,14 +8,8 @@ import {
   Instagram,
   Map,
   MapPin,
-  Mountain,
-  Navigation,
   RefreshCw,
-  Route,
-  Satellite,
   Share2,
-  ShieldAlert,
-  ShieldCheck,
   Timer,
   Upload,
   X,
@@ -71,16 +64,14 @@ interface RunShareCardProps {
   onClose: () => void;
 }
 
-// #201: 4 estilos novos (pedido do usuario apos ver a lista de Classic Styles
-// do Mapbox) somados aos 2 originais. "satellite"/"roadmap" mantem o nome
-// historico (ja usados no backend e no ActivityMapView) -- os 4 novos usam o
-// mesmo nome do mapType aceito por api/activity-map.ts.
-type MapVariant = 'satellite' | 'roadmap' | 'satellite-plain' | 'streets' | 'outdoors' | 'navigation-night';
-type BackgroundMode = MapVariant | 'photo' | 'solid';
-const MAP_VARIANTS: MapVariant[] = ['satellite', 'roadmap', 'satellite-plain', 'streets', 'outdoors', 'navigation-night'];
-function isMapVariant(mode: BackgroundMode): mode is MapVariant {
-  return (MAP_VARIANTS as string[]).includes(mode);
-}
+// #254: antes eram 6 variantes de mapa (#199) + fundo "Sólido" (#236) como
+// modos de fundo separados. O usuário pediu para reduzir para só os 3
+// estilos abaixo (removendo Satélite Puro/Mapa Escuro/Ruas/Sólido) e separar
+// "que fundo mostrar" (mapa vs foto) de "qual estilo de mapa usar" -- assim
+// o estilo pode ser trocado mesmo com uma foto selecionada (o mapa continua
+// como overlay da rota por cima da foto).
+type MapVariant = 'satellite' | 'outdoors' | 'navigation-night';
+type BackgroundMode = 'map' | 'photo';
 
 function hasValidLatLng(point: any): boolean {
   if (!point) return false;
@@ -95,6 +86,19 @@ function formatPaceForCard(value: unknown): string {
     .replace("'", ':')
     .replace('"', '')
     .trim();
+}
+
+async function waitForCardAssets(node: HTMLElement): Promise<void> {
+  if ('fonts' in document) await document.fonts.ready;
+  const images = Array.from(node.querySelectorAll('img'));
+  await Promise.all(images.map(async (image) => {
+    if (image.complete && image.naturalWidth > 0) return;
+    try {
+      await image.decode();
+    } catch {
+      // A captura ainda pode continuar com o fallback visual do card.
+    }
+  }));
 }
 
 export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps) {
@@ -164,12 +168,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       ? session.checkpoints
       : [];
   const title = String(session.title || session.cardioTypeLabel || 'Corrida ao ar livre');
-  const rawStatus = String(session.status || session.validationStatus || '').toLowerCase();
-  const validationState: 'approved' | 'pending' | 'rejected' = ['validated', 'valid', 'approved', 'homologada'].includes(rawStatus)
-    ? 'approved'
-    : ['rejected', 'invalid', 'not_eligible', 'rejeitada', 'suspicious'].includes(rawStatus)
-      ? 'rejected'
-      : 'pending';
   const existingPhoto = session.photoProof || session.photoUrl || null;
   const hasRoute = trajectory.filter(hasValidLatLng).length >= 2;
   const hasDistance = distanceKm > 0.05;
@@ -183,14 +181,10 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     ? Number(speedKmH).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     : '—';
   const sharePace = formatPaceForCard(pace);
-  const statusLabel = validationState === 'approved'
-    ? 'ATIVIDADE VALIDADA'
-    : validationState === 'pending'
-      ? 'ATIVIDADE EM ANÁLISE'
-      : 'ATIVIDADE NÃO PONTUOU';
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto);
+  const [selectedMapVariant, setSelectedMapVariant] = useState<MapVariant>('satellite');
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() =>
-    hasRoute ? 'satellite' : existingPhoto ? 'photo' : 'solid',
+    hasRoute ? 'map' : 'photo',
   );
 
   const handlePhotoSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -217,14 +211,10 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     let cancelled = false;
     let requestStarted = false;
     const points = trajectory.filter(hasValidLatLng);
-    // #251: "FOTO + MAPA" usa a foto como fundo e o mapa (roadmap) como overlay
-    // da rota por cima (ver JSX abaixo, share-card-route-overlay) -- mas esse
-    // efeito só buscava a imagem do mapa quando backgroundMode ERA um dos
-    // MapVariant. Como 'photo' não é um MapVariant, o fetch nunca disparava a
-    // menos que o usuário tivesse visitado a aba "MAPA ESCURO" antes -- por
-    // isso a opção aparecia só com a foto, sem o mapa por cima nunca.
-    if (!hasRoute || backgroundMode === 'solid') return undefined;
-    const variant: MapVariant = isMapVariant(backgroundMode) ? backgroundMode : 'roadmap';
+    // O mesmo mapa é usado em tela cheia ou integrado à foto, por isso o
+    // carregamento depende do estilo selecionado e não do tipo de fundo.
+    if (!hasRoute) return undefined;
+    const variant = selectedMapVariant;
     const cacheKey = `${variant}:${zoomAdjust}`;
     if (mapImages[cacheKey]) return undefined;
 
@@ -236,6 +226,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          // O endpoint usa @2x no provedor principal: 720x1280 resulta em
+          // 1440x2560, acima do PNG final e sem ultrapassar o limite da API.
           body: JSON.stringify({ trajectory: points, width: 720, height: 1280, mapType: variant, zoomAdjust }),
         });
         if (!response.ok) throw new Error(`activity-map respondeu ${response.status}`);
@@ -263,29 +255,25 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       cancelled = true;
       unsubscribe();
     };
-  }, [backgroundMode, hasRoute, mapImages, trajectory, zoomAdjust]);
+  }, [hasRoute, mapImages, selectedMapVariant, trajectory, zoomAdjust]);
 
   const handleExport = async (mode: 'download' | 'share') => {
     if (!cardRef.current) return;
     setFeedback(null);
     setIsGenerating(true);
     try {
-      // #169: com pixelRatio fixo em 1, a captura saia do tamanho real do
-      // card na tela (ex: ~360px de largura num iPhone) e so depois era
-      // esticada ate 1080x1920 pelo canvas final -- essa ampliacao de ~3x em
-      // cima de uma captura de baixa resolucao era a causa da perda de
-      // qualidade relatada. Agora calculamos o pixelRatio a partir do
-      // tamanho real do card (agora sempre 9:16, ver RunShareCard.css) para
-      // que a captura ja nasca perto da resolucao final, sem depender de
-      // esticar a imagem depois. O teto de 2 preserva a mesma cautela de
-      // memoria do Safari/iPhone que o valor fixo anterior tentava garantir.
-      const cardRect = cardRef.current.getBoundingClientRect();
-      const pixelRatio = cardRect.width > 0 ? Math.min(2, 1080 / cardRect.width) : 2;
+      // Fontes e imagens precisam estar decodificadas antes de serializar o
+      // DOM. A biblioteca rasteriza o SVG diretamente no canvas final, então
+      // texto e vetores continuam nítidos mesmo quando o preview é pequeno.
       await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForCardAssets(cardRef.current);
       const dataUrl = await toPng(cardRef.current, {
         canvasWidth: 1080,
         canvasHeight: 1920,
-        pixelRatio,
+        // canvasWidth/Height ja definem a resolucao final. Somar pixelRatio 2
+        // gerava um arquivo 2160x3840, pesado e depois recomprimido pelos apps.
+        pixelRatio: 1,
+        skipAutoScale: true,
         cacheBust: true,
         backgroundColor: '#050608',
       });
@@ -369,20 +357,16 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
   };
 
-  // Overlay de rota sob a FOTO sempre usa o estilo escuro (roadmap), igual
-  // antes -- so o fundo em tela cheia (satellite/roadmap/etc.) muda com a
-  // selecao do usuario.
-  const currentMapVariant: MapVariant = isMapVariant(backgroundMode) ? backgroundMode : 'roadmap';
-  const currentMapImage: string | null = mapImages[`${currentMapVariant}:${zoomAdjust}`] ?? null;
+  // O estilo escolhido também vale para a sobreposição sobre a foto.
+  const currentMapImage: string | null = mapImages[`${selectedMapVariant}:${zoomAdjust}`] ?? null;
   const mapBackgroundAvailable = Boolean(currentMapImage);
-  const showsMap = backgroundMode !== 'solid';
 
   const adjustZoom = (delta: number) => {
     setZoomAdjust((current) => Math.max(ZOOM_ADJUST_MIN, Math.min(ZOOM_ADJUST_MAX, current + delta)));
   };
 
   const selectBackground = (mode: BackgroundMode) => {
-    if (isMapVariant(mode) && !hasRoute) return;
+    if (mode === 'map' && !hasRoute) return;
     setFeedback(null);
     setMapError(false);
     setBackgroundMode(mode);
@@ -395,87 +379,45 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           <X size={21} />
         </button>
 
-        <div className="share-background-picker" aria-label="Escolha o plano de fundo">
+        <div className="share-background-picker" aria-label="Personalizar card">
           <button
             type="button"
-            className={cn('share-background-option', backgroundMode === 'satellite' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => selectBackground('satellite')}
+            className={cn('share-background-option', backgroundMode === 'map' && 'is-selected', !hasRoute && 'is-disabled')}
+            onClick={() => selectBackground('map')}
             disabled={!hasRoute}
-            aria-pressed={backgroundMode === 'satellite'}
+            aria-pressed={backgroundMode === 'map'}
           >
             <Map size={14} />
             <span>MAPA</span>
           </button>
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'roadmap' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => selectBackground('roadmap')}
-            disabled={!hasRoute}
-            aria-pressed={backgroundMode === 'roadmap'}
-          >
-            <MapPin size={14} />
-            <span>MAPA ESCURO</span>
-          </button>
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'satellite-plain' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => selectBackground('satellite-plain')}
-            disabled={!hasRoute}
-            aria-pressed={backgroundMode === 'satellite-plain'}
-          >
-            <Satellite size={14} />
-            <span>SATÉLITE PURO</span>
-          </button>
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'streets' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => selectBackground('streets')}
-            disabled={!hasRoute}
-            aria-pressed={backgroundMode === 'streets'}
-          >
-            <Route size={14} />
-            <span>RUAS</span>
-          </button>
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'outdoors' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => selectBackground('outdoors')}
-            disabled={!hasRoute}
-            aria-pressed={backgroundMode === 'outdoors'}
-          >
-            <Mountain size={14} />
-            <span>TRILHA</span>
-          </button>
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'navigation-night' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => selectBackground('navigation-night')}
-            disabled={!hasRoute}
-            aria-pressed={backgroundMode === 'navigation-night'}
-          >
-            <Navigation size={14} />
-            <span>GPS NOITE</span>
-          </button>
+          <label className="share-map-style">
+            <span className="sr-only">Estilo do mapa</span>
+            <select
+              value={selectedMapVariant}
+              onChange={(event) => {
+                setFeedback(null);
+                setMapError(false);
+                setSelectedMapVariant(event.target.value as MapVariant);
+              }}
+              disabled={!hasRoute}
+              aria-label="Estilo do mapa"
+            >
+              <option value="satellite">Satélite</option>
+              <option value="outdoors">Trilha</option>
+              <option value="navigation-night">GPS noite</option>
+            </select>
+          </label>
           <label
             className={cn('share-background-option', backgroundMode === 'photo' && 'is-selected')}
             onClick={() => { setFeedback(null); setBackgroundMode('photo'); }}
           >
             {selectedPhoto ? <ImageIcon size={14} /> : <Upload size={14} />}
-            <span>FOTO + MAPA</span>
+            <span>FOTO</span>
             <input type="file" accept="image/*" className="sr-only" onChange={handlePhotoSelection} />
           </label>
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'solid' && 'is-selected')}
-            onClick={() => selectBackground('solid')}
-            aria-pressed={backgroundMode === 'solid'}
-          >
-            <Flame size={14} />
-            <span>SÓLIDO</span>
-          </button>
         </div>
 
-        {hasRoute && showsMap ? (
+        {hasRoute ? (
           // #234: controle manual de zoom do mapa do card, no mesmo espirito do
           // mapa ao vivo (que deixa o usuario reenquadrar). O valor eh enviado
           // pro backend (api/activity-map.ts) como zoomAdjust e cacheado por
@@ -550,7 +492,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
               <img src={selectedPhoto} alt="" className="share-card-photo" />
             ) : null}
 
-            {backgroundMode !== 'solid' && backgroundMode !== 'photo' && currentMapImage ? (
+            {backgroundMode === 'map' && currentMapImage ? (
               <img src={currentMapImage} alt="" className="share-card-map" crossOrigin="anonymous" />
             ) : null}
 
@@ -561,7 +503,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
             ) : null}
 
             <div className="share-card-vignette" />
-            {!mapBackgroundAvailable && backgroundMode !== 'photo' && backgroundMode !== 'solid' ? (
+            {!mapBackgroundAvailable && backgroundMode === 'map' ? (
               <div className="share-card-loading-map">{mapError ? 'MAPA INDISPONÍVEL' : 'CARREGANDO MAPA...'}</div>
             ) : null}
             {backgroundMode === 'photo' && !selectedPhoto ? (
@@ -580,6 +522,9 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           <div className="share-card-content">
             <div className="share-card-activity-heading">
               <span className="share-card-activity-icon"><Flame size={31} strokeWidth={2.4} /></span>
+              <div className="share-card-activity-copy">
+                <h1>{title}</h1>
+              </div>
             </div>
 
             <div className="share-card-divider" />
@@ -602,10 +547,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
               </div>
             </div>
 
-            <div className={cn('share-card-status', `is-${validationState}`)}>
-              {validationState === 'approved' ? <ShieldCheck size={25} /> : validationState === 'pending' ? <Clock size={24} /> : <ShieldAlert size={24} />}
-              <span>{statusLabel}</span>
-            </div>
           </div>
         </div>
       </div>
@@ -628,6 +569,9 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           <div className="share-card-content">
             <div className="share-card-activity-heading">
               <span className="share-card-activity-icon"><Flame size={31} strokeWidth={2.4} /></span>
+              <div className="share-card-activity-copy">
+                <h1>{title}</h1>
+              </div>
             </div>
 
             <div className="share-card-divider" />
@@ -650,10 +594,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
               </div>
             </div>
 
-            <div className={cn('share-card-status', `is-${validationState}`)}>
-              {validationState === 'approved' ? <ShieldCheck size={25} /> : validationState === 'pending' ? <Clock size={24} /> : <ShieldAlert size={24} />}
-              <span>{statusLabel}</span>
-            </div>
           </div>
         </div>
       ) : null}
