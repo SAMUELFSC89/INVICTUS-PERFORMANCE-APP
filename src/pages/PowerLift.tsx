@@ -56,6 +56,65 @@ const framesFromVideo = (file: File) => new Promise<string[]>((resolve) => {
   video.onerror = finish;
 });
 
+export type ReconcileOutcome =
+  | { status: 'confirmed'; record: RecordRow }
+  | { status: 'uncertain' }
+  | { status: 'rejected'; message?: string };
+
+// ACT-09 (auditoria 6167c8f): quando a resposta de action=submit se perde
+// (timeout, rede caindo) depois que o servidor já concluiu a transação, o
+// cliente não pode concluir sozinho que "nada foi registrado". O handler do
+// servidor (api/_handlers/powerlift.ts) já é idempotente para a combinação
+// usuário+path do vídeo -- reenviar a MESMA requisição nunca cria um
+// registro duplicado, apenas confirma o que já existe ou cria o que faltou.
+// Só tratamos como "uncertain" (não apagar o vídeo) quando nem essa segunda
+// tentativa consegue uma resposta definitiva do servidor.
+export async function reconcilePowerLiftSubmission(uploadedRef: StorageReference, exercise: Exercise, weight: number): Promise<ReconcileOutcome> {
+  try {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return { status: 'uncertain' };
+    const token = await Promise.race([
+      firebaseUser.getIdToken(),
+      new Promise<undefined>((resolve) => window.setTimeout(() => resolve(undefined), 12000))
+    ]);
+    if (!token) return { status: 'uncertain' };
+
+    const videoUrl = await getDownloadURL(uploadedRef);
+
+    const controller = new AbortController();
+    const requestTimeout = window.setTimeout(() => controller.abort(), 20000);
+    let response: Response;
+    try {
+      response = await fetch(`${API_CONFIG.baseUrl}/api/powerlift?action=submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ exercise, weight, videoUrl }),
+        signal: controller.signal
+      });
+    } catch {
+      // Sem resposta alguma (rede caiu de novo, timeout) -- continuamos sem
+      // saber se o registro existe. Não é seguro apagar o vídeo aqui.
+      return { status: 'uncertain' };
+    } finally {
+      window.clearTimeout(requestTimeout);
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (response.ok && payload?.record) {
+      // Idempotente no servidor: tanto faz se foi criado agora ou se já
+      // existia da tentativa anterior -- os dois casos retornam o mesmo
+      // formato de registro.
+      return { status: 'confirmed', record: payload.record as RecordRow };
+    }
+    // O servidor respondeu de forma definitiva e recusou -- seguro tratar
+    // como rejeição real (ex.: vídeo inválido).
+    return { status: 'rejected', message: payload?.error };
+  } catch (unexpectedError) {
+    console.warn('[PowerLift] Erro inesperado ao reconciliar envio:', unexpectedError);
+    return { status: 'uncertain' };
+  }
+}
+
 export function PowerLift() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -244,14 +303,55 @@ export function PowerLift() {
       }
     } catch (error: any) {
       console.warn('[PowerLift] Falha no envio seguro:', error);
-      if (uploadedRef && !recordPersisted) {
-        await deleteObject(uploadedRef).catch((cleanupError) => console.warn('[PowerLift] Falha ao remover upload incompleto:', cleanupError));
-      }
       if (recordPersisted) {
         // A falha ocorreu só na auditoria automática. O upload permanece no
         // histórico para revisão manual; não voltamos para uma tela de erro.
         return;
       }
+
+      if (uploadedRef) {
+        // ACT-09 (auditoria 6167c8f): a resposta de action=submit pode se
+        // perder (AbortError após 30s, rede caindo) DEPOIS que o servidor já
+        // concluiu a transação -- recordPersisted continuava false no
+        // cliente mesmo com o registro já existindo no servidor. Apagar o
+        // vídeo aqui destruía a única prova do levantamento e deixava o
+        // registro do servidor apontando para um arquivo inexistente,
+        // enquanto o atleta via "nenhum registro foi criado" -- uma mentira.
+        //
+        // Em vez de limpar direto, reconciliamos reenviando a MESMA
+        // requisição: o handler já é idempotente pela combinação
+        // usuário+path do vídeo (recordId determinístico = hash do path no
+        // Storage), então repetir NUNCA duplica -- ou cria o registro agora,
+        // ou devolve o que a tentativa anterior já criou.
+        const outcome = await reconcilePowerLiftSubmission(uploadedRef, selected, weight);
+        if (outcome.status === 'confirmed') {
+          const pendingRecord = outcome.record as RecordRow;
+          recordPersisted = true;
+          setMyRecords((current) => [pendingRecord, ...current.filter((item) => item.id !== pendingRecord.id)]);
+          setView('manual-review');
+          setVideoFile(null);
+          setUploadProgress(100);
+          return;
+        }
+        if (outcome.status === 'uncertain') {
+          // A própria reconciliação falhou por rede -- não sabemos se o
+          // servidor tem o registro. Preferimos manter um upload órfão
+          // recuperável a destruir a prova de um levantamento que pode já
+          // estar salvo. O atleta pode conferir em "Meus Vídeos" antes de
+          // tentar de novo.
+          setSubmissionError('Não foi possível confirmar se o seu levantamento foi registrado. Verifique "Meus Vídeos" antes de enviar novamente -- por segurança, o vídeo enviado não foi apagado.');
+          setView('record');
+          return;
+        }
+        // outcome.status === 'rejected': o servidor respondeu de forma
+        // definitiva dizendo que este vídeo não pode virar um registro
+        // (ex.: formato inválido) -- aí sim é seguro remover o upload.
+        await deleteObject(uploadedRef).catch((cleanupError) => console.warn('[PowerLift] Falha ao remover upload incompleto:', cleanupError));
+        setSubmissionError(outcome.message || 'Não foi possível concluir o envio. Tente novamente com conexão estável.');
+        setView('record');
+        return;
+      }
+
       const message = error?.name === 'AbortError'
         ? 'O servidor demorou demais para concluir. Tente novamente; nenhum levantamento foi registrado.'
         : error?.message;
