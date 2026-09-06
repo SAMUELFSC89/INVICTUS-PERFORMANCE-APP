@@ -76,7 +76,15 @@ export async function buildHealthSummary(userId: string, days = 30, timeZone = '
           // Latest mantém a leitura atual; trends contém estatísticas por dia.
           const useDailyValue = ['steps_daily', 'sleep_duration_min', 'calories_active', 'distance_km', 'hydration_l'].includes(metric);
           const latest = (useDailyValue ? completeDays : series.samples).filter(sample => Date.parse(sample.timestamp) >= latestSince).at(-1);
-          result.latest[metric] = latest ? point(latest) : null;
+          const latestPoint = latest ? point(latest) : null;
+          if (latestPoint && latest?.aggregation === 'daily_total') {
+            // O timestamp do bucket diário é meia-noite por definição. Para o
+            // cartão "última leitura", porém, o usuário precisa ver quando o
+            // total realmente chegou/foi revisado. Mantemos meia-noite nas
+            // trends e usamos a revisão real somente no objeto latest.
+            latestPoint.timestamp = latest.updatedAt || latest.createdAt || latest.timestamp;
+          }
+          result.latest[metric] = latestPoint;
         }
       } catch {
         result.metadata.partial = true;
