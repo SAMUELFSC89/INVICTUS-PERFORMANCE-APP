@@ -38,9 +38,6 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
         if let saved = UserDefaults(suiteName: InvictusActivityIPC.appGroupId)?.array(forKey: trackedLocationsKey) as? [[String: Any]] {
             trackedLocations = saved
         }
-        // #328: observer de baixo nível (Darwin notification center) --
-        // funciona entre processos diferentes (app <-> widget extension),
-        // ao contrário do NotificationCenter.default comum.
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             Unmanaged.passUnretained(self).toOpaque(),
@@ -55,22 +52,55 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
         )
     }
 
+    private func authorizationLabel(_ status: CLAuthorizationStatus) -> String {
+        switch status {
+        case .authorizedAlways: return "authorizedAlways"
+        case .authorizedWhenInUse: return "authorizedWhenInUse"
+        case .denied: return "denied"
+        case .restricted: return "restricted"
+        case .notDetermined: return "notDetermined"
+        @unknown default: return "unknown"
+        }
+    }
+
+    private func configureLocationManager() -> CLLocationManager {
+        let manager = self.locationManager ?? CLLocationManager()
+        self.locationManager = manager
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        manager.distanceFilter = kCLDistanceFilterNone
+        manager.activityType = .fitness
+        manager.pausesLocationUpdatesAutomatically = false
+        manager.allowsBackgroundLocationUpdates = true
+        if #available(iOS 11.0, *) { manager.showsBackgroundLocationIndicator = true }
+        return manager
+    }
+
     @objc func startLocationTracking(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { call.resolve(); return }
             self.trackedLocations = []
             self.persistTrackedLocations()
-            let manager = self.locationManager ?? CLLocationManager()
-            self.locationManager = manager
-            manager.delegate = self
-            manager.desiredAccuracy = kCLLocationAccuracyBest
-            manager.distanceFilter = 5
-            manager.activityType = .fitness
-            manager.pausesLocationUpdatesAutomatically = false
-            manager.allowsBackgroundLocationUpdates = true
-            if #available(iOS 11.0, *) { manager.showsBackgroundLocationIndicator = true }
-            if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
+            let manager = self.configureLocationManager()
+            let status = manager.authorizationStatus
+
+            if status == .denied || status == .restricted {
+                self.notifyListeners("locationAuthorization", data: ["status": self.authorizationLabel(status)])
+                self.notifyListeners("locationError", data: ["code": "permission_denied", "message": "Permissão de localização indisponível."])
+                call.resolve()
+                return
+            }
+
+            if status == .notDetermined {
+                manager.requestWhenInUseAuthorization()
+            }
+
+            // Core Location mantém esta solicitação e começa a entregar fixes
+            // assim que o usuário concede a permissão. A tela JS recebe cada
+            // atualização via `locationUpdate`, em vez de ficar presa no
+            // snapshot web (que não roda em um app Capacitor nativo).
             manager.startUpdatingLocation()
+            self.notifyListeners("locationAuthorization", data: ["status": self.authorizationLabel(manager.authorizationStatus)])
             call.resolve()
         }
     }
@@ -86,26 +116,51 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
         }
     }
 
+    public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        notifyListeners("locationAuthorization", data: ["status": authorizationLabel(status)])
+        if status == .authorizedAlways || status == .authorizedWhenInUse {
+            manager.startUpdatingLocation()
+        } else if status == .denied || status == .restricted {
+            notifyListeners("locationError", data: ["code": "permission_denied", "message": "Permissão de localização indisponível."])
+        }
+    }
+
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         for location in locations where location.horizontalAccuracy >= 0 && location.horizontalAccuracy <= 100 {
             var point: [String: Any] = [
                 "lat": location.coordinate.latitude,
                 "lng": location.coordinate.longitude,
                 "accuracy": location.horizontalAccuracy,
-                "timestamp": ISO8601DateFormatter().string(from: location.timestamp),
-                "speedKmH": max(0, location.speed * 3.6)
+                "timestamp": ISO8601DateFormatter().string(from: location.timestamp)
             ]
+
+            // CLLocation.speed < 0 significa "velocidade indisponível". O
+            // código anterior transformava isso em 0 e o JS tentava derivar
+            // uma velocidade a partir do drift das coordenadas. Agora 0 real
+            // continua 0 e valor inválido simplesmente não é enviado.
+            if location.speed >= 0 {
+                let speedKmH = location.speed * 3.6
+                point["speedKmH"] = speedKmH < 1.0 ? 0 : speedKmH
+            }
             if #available(iOS 15.0, *) {
                 point["isSimulated"] = location.sourceInformation?.isSimulatedBySoftware ?? false
             }
+
             trackedLocations.append(point)
+            notifyListeners("locationUpdate", data: point)
         }
         if trackedLocations.count > 5000 { trackedLocations.removeFirst(trackedLocations.count - 5000) }
         persistTrackedLocations()
     }
 
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let nsError = error as NSError
         print("[InvictusActivityPlugin] background location falhou: \(error)")
+        notifyListeners("locationError", data: [
+            "code": nsError.code,
+            "message": nsError.localizedDescription
+        ])
     }
 
     private func persistTrackedLocations() {
@@ -127,21 +182,12 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
             return
         }
         defaults.removeObject(forKey: InvictusActivityIPC.pendingActionKey)
-        // notifyListeners precisa rodar na main thread (é o que aciona o
-        // bridge JS) -- a Darwin notification pode chegar em qualquer thread.
         DispatchQueue.main.async { [weak self] in
             self?.notifyListeners("activityAction", data: ["action": raw])
         }
     }
 
     @objc func isSupported(_ call: CAPPluginCall) {
-        // #328 fix: o resto do plugin usa a API baseada em ActivityContent
-        // (request/update/end com .init(state:staleDate:)), que só existe a
-        // partir do iOS 16.2 -- iOS 16.1 tinha só a API antiga com
-        // ContentState puro. Reportar "supported" com base em 16.1 faria o JS
-        // achar que dá pra chamar start()/update() num 16.1 real, onde o
-        // build nem compilaria essas chamadas. Por isso o gate aqui também é
-        // 16.2, para bater com o que o resto do arquivo realmente usa.
         if #available(iOS 16.2, *) {
             call.resolve(["supported": ActivityAuthorizationInfo().areActivitiesEnabled])
         } else {
@@ -155,8 +201,6 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            // Usuário desativou Live Activities nas Configurações do sistema
-            // -- não é um erro do app, só não há nada pra mostrar.
             call.resolve()
             return
         }
@@ -184,8 +228,6 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
             call.resolve()
         } catch {
             print("[InvictusActivityPlugin] start falhou: \(error)")
-            // O serviço JS captura essa rejeição sem interromper o treino,
-            // mas o erro deixa de ficar invisível nos logs do dispositivo.
             call.reject("Não foi possível iniciar a Live Activity.", nil, error)
         }
     }
@@ -232,10 +274,6 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
     }
 }
 
-/// Pequeno estado auxiliar em memória -- hoje só guarda o id da activity
-/// atual para eventual depuração; a fonte de verdade de "existe uma
-/// activity rodando" é sempre `Activity<InvictusActivityAttributes>.activities`
-/// (a API oficial da ActivityKit), nunca esse cache.
 final class InvictusActivityStore {
     static let shared = InvictusActivityStore()
     var currentActivityId: String?
