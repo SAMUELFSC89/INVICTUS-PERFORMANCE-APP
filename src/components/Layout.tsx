@@ -30,12 +30,13 @@ export function Layout() {
     || location.pathname.startsWith('/profile')
     || location.pathname.startsWith('/store')
     || location.pathname.startsWith('/admin')
-    || location.pathname === '/activity'
+    || location.pathname.startsWith('/activity')
+    || location.pathname === '/running'
     || location.pathname === '/musculacao'
     || location.pathname === '/ai'
     || location.pathname === '/notifications'
     || location.pathname === '/achievements'
-    || location.pathname.startsWith('/payment/');
+    || location.pathname.startsWith('/pagamento/');
 
   // Mantém o comportamento já estabilizado do indicador de sessão: ele não
   // compete com as telas que já possuem a própria UI de atividade. O indicador
@@ -44,7 +45,8 @@ export function Layout() {
     || location.pathname.startsWith('/health')
     || location.pathname.startsWith('/championships')
     || location.pathname.startsWith('/challenges')
-    || location.pathname === '/activity'
+    || location.pathname.startsWith('/activity')
+    || location.pathname === '/running'
     || location.pathname === '/musculacao';
 
   // Several full-screen routes are rendered in document.body through portals.
