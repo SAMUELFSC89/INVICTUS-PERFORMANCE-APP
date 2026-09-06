@@ -49,6 +49,10 @@ export interface EndSessionResult {
 let sensorSamples: { accel: number[]; gyro: number[] } = { accel: [], gyro: [] };
 let activeMotionHandler: ((event: DeviceMotionEvent) => void) | null = null;
 let lastCheckpointRemoteSyncAt = 0;
+// ACT-05 (auditoria 6167c8f): rastreia o drenar-do-buffer-nativo disparado por
+// pauseSession() para que resumeSession() possa aguardá-lo antes de chamar
+// start() de novo -- ver comentário detalhado em pauseSession().
+let pendingNativeDrain: Promise<void> | null = null;
 
 function computeVariance(samples: number[]): number | undefined {
   if (!samples || samples.length < 3) return undefined;
@@ -661,8 +665,59 @@ export const activityService = {
     // Interrompê-lo durante a pausa evita que esses pontos voltem no lote final
     // como se fossem deslocamento ativo. A operação é best-effort e não muda
     // a resposta síncrona usada pelos botões da interface.
+    //
+    // ACT-05 (auditoria 6167c8f): antes disto chamava stop() e IGNORAVA os
+    // pontos retornados -- e como resumeSession() reinicia o coletor nativo do
+    // zero (start() zera o buffer no próprio plugin Swift/Android), qualquer
+    // ponto que só existisse no lado nativo (tela bloqueada/app minimizado
+    // entre o início e a pausa) era perdido para sempre, nunca aparecendo nem
+    // nos checkpoints locais nem no lote final do endSession(). Agora
+    // drenamos (collectAndStop) e importamos esses pontos para
+    // session.checkpoints ANTES de considerar a pausa concluída no nativo --
+    // o mesmo padrão que endSession() já usa ao encerrar, aplicado também a
+    // cada pausa.
     if (session.requiresGpsDistance) {
-      void nativeBackgroundLocationService.stop().catch((error) => console.warn('[ActivityService] Failed to stop native tracking during pause:', error));
+      const segmentIdAtPause = session.gpsSegmentId || 0;
+      pendingNativeDrain = nativeBackgroundLocationService.collectAndStop()
+        .then((nativePoints) => {
+          if (!nativePoints.length) return;
+          // Relê o estado atual em vez de fechar sobre a variável `session`
+          // capturada acima: a drenagem é assíncrona e o atleta pode ter
+          // mexido no app nesse meio-tempo (embora addCheckpoint() já
+          // ignore pontos novos durante a pausa).
+          const current = this.getCurrentSession();
+          if (!current || current.id !== session.id) return;
+          const existingTimestamps = new Set(current.checkpoints.map((point) => point.timestamp));
+          let imported = false;
+          for (const point of nativePoints) {
+            if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng) || existingTimestamps.has(point.timestamp)) continue;
+            current.checkpoints.push({
+              timestamp: point.timestamp,
+              segmentId: segmentIdAtPause,
+              location: {
+                lat: point.lat,
+                lng: point.lng,
+                ...(typeof point.accuracy === 'number' ? { accuracy: point.accuracy } : {})
+              }
+            });
+            if (typeof point.speedKmH === 'number') {
+              current.gpsSpeedSampleCount = (current.gpsSpeedSampleCount || 0) + 1;
+              current.maxObservedSpeedKmH = Math.max(current.maxObservedSpeedKmH || 0, point.speedKmH);
+            }
+            imported = true;
+          }
+          if (!imported) return;
+          current.checkpoints.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          localStorage.setItem(SESSION_KEY, JSON.stringify(current));
+          updateDoc(doc(db, 'active_sessions', current.id), {
+            checkpoints: current.checkpoints,
+            maxObservedSpeedKmH: current.maxObservedSpeedKmH || 0,
+            gpsSpeedSampleCount: current.gpsSpeedSampleCount || 0,
+            updatedAt: new Date().toISOString()
+          }).catch((error) => console.warn('[ActivityService] Failed to sync drained native points to Firestore:', error));
+        })
+        .catch((error) => console.warn('[ActivityService] Failed to stop native tracking during pause:', error))
+        .finally(() => { pendingNativeDrain = null; });
     }
 
     updateDoc(doc(db, 'active_sessions', session.id), {
@@ -687,7 +742,22 @@ export const activityService = {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
     if (session.requiresGpsDistance) {
-      void nativeBackgroundLocationService.start().catch((error) => console.warn('[ActivityService] Failed to restart native tracking after pause:', error));
+      // ACT-05 (auditoria 6167c8f): se a pausa acabou de disparar a
+      // drenagem do buffer nativo (pendingNativeDrain) e o atleta retomar
+      // rápido demais, chamar start() antes dessa drenagem terminar arrisca
+      // uma corrida entre stopLocationTracking() (da pausa) e
+      // startLocationTracking() (do resume) na ponte nativa. Esperamos o
+      // drain em andamento (com teto de segurança) antes de reiniciar.
+      const drainInFlight = pendingNativeDrain;
+      void (async () => {
+        if (drainInFlight) {
+          await Promise.race([
+            drainInFlight,
+            new Promise((resolve) => setTimeout(resolve, 4000))
+          ]).catch(() => {});
+        }
+        await nativeBackgroundLocationService.start();
+      })().catch((error) => console.warn('[ActivityService] Failed to restart native tracking after pause:', error));
     }
 
     updateDoc(doc(db, 'active_sessions', session.id), {
