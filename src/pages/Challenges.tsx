@@ -1,12 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  Dumbbell,
-  Clock, Flame, Trophy, X,
-  Zap, AlertCircle, ArrowRight,
-  Info, Footprints
-} from 'lucide-react';
+import { Dumbbell, Footprints } from 'lucide-react';
 import { useLocation, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
-import { motion } from 'motion/react';
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
 import { activityLiveActivityService } from '../services/activityLiveActivityService';
@@ -14,32 +8,19 @@ import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
 import { auth, db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivitySession } from '../types';
-import { cn } from '../lib/utils';
 import { calculateDistance, formatPaceValue } from '../lib/runUtils';
 import { hapticNotification } from '../lib/haptics';
 import { useUser } from '../UserContext';
-import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
-import { ActivityDetailScreen, ActivityHistorySection, ActivityHistoryItem } from '../components/ActivityHistorySection';
-import { PowerLift } from './PowerLift';
+import { ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
 import { RunShareCard } from '../components/RunShareCard';
 import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption, ActivityCompletion } from '../components/ChallengeActivityFlow';
-import { getXPProgress } from '../lib/levelUtils';
 import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
-import { ACHIEVEMENTS } from '../achievements';
 import { ChallengesHubNew } from '../components/ChallengesHubNew';
 import { ActivityHistoryPageNew } from '../components/ActivityHistoryPageNew';
+import { PrivateChallengesPageNew } from '../components/PrivateChallengesPageNew';
 import { communityChampionshipService } from '../services/communityChampionshipService';
 import { championshipService } from '../services/championshipService';
 import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
-
-export type ChallengeCategory =
-  | 'all'
-  | 'em_andamento'
-  | 'diarios'
-  | 'powerlift'
-  | 'privados'
-  | 'ranking'
-  | 'conquistas';
 
 interface CoreChallenge {
   id: 'workout' | 'cardio';
@@ -72,17 +53,11 @@ const CORE_CHALLENGES: CoreChallenge[] = [
   }
 ];
 
-const DAILY_CHALLENGES_ORDER = ['workout', 'cardio'] as const;
-
 export function Challenges() {
   const { user: profile, refreshUser } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-
-  // Selected Category State
-  const initialCategory = (searchParams.get('category') as ChallengeCategory) || 'all';
-  const [selectedCategory, setSelectedCategory] = useState<ChallengeCategory>(initialCategory);
 
   const { triggerXPToast, setRouteOwnsFooter, setRouteOwnsHeader } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void; setRouteOwnsFooter?: (v: boolean) => void; setRouteOwnsHeader?: (v: boolean) => void }>();
 
@@ -137,7 +112,11 @@ export function Challenges() {
 
   // Today's completed submissions
   const [submissions, setSubmissions] = useState<Record<string, any>>({});
-  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  // #257: o valor (nao so o setter) so era lido pelo <ActivityHistorySection
+  // refreshKey={...}> do catalogo antigo, removido nesta limpeza. O setter
+  // continua chamado nos mesmos pontos de sempre (fim de atividade) --
+  // inofensivo mesmo sem leitor, mas sem valor pra guardar/exportar aqui.
+  const [, setHistoryRefreshKey] = useState(0);
 
   // Modals & Pending Operations
   // #234: HOME -> MUSCULACAO / CARDIO SEM ETAPA INTERMEDIARIA.
@@ -213,12 +192,16 @@ export function Challenges() {
   }, [profile?.uid]);
   const [presenceCheckData, setPresenceCheckData] = useState<{ id: string; prompt: string } | null>(null);
   const [completion, setCompletion] = useState<ActivityCompletion | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // #257: mesmo caso de historyRefreshKey acima -- o valor so era exibido no
+  // banner "Status da atividade" do catalogo antigo, removido nesta limpeza
+  // (na pratica ja ficava encoberto por ChallengeActivityFlow/
+  // ActivityDetailScreen, que cobrem a tela inteira nos mesmos estados em que
+  // este banner seria mostrado -- ver comentario #257 no return abaixo). Os
+  // setNotice(...) continuam nos mesmos pontos reais de sempre.
+  const [, setNotice] = useState<string | null>(null);
 
   // Cardio States
   const [selectedCardioType, setSelectedCardioType] = useState<string>(initialActive?.cardioType || 'running');
-  const levelProgress = getXPProgress(profile?.xp || 0);
-  const unlockedBadges = ACHIEVEMENTS.filter((achievement) => profile?.achievements?.includes(achievement.id));
 
   // Se a tela foi aberta depois de o app ser encerrado, o estado local pode
   // estar vazio mesmo com uma sessão ativa no servidor. Recuperar aqui faz as
@@ -930,23 +913,28 @@ export function Challenges() {
   };
 
   const isHistoryView = !flowScreen && searchParams.get('view') === 'history';
+  // #255 (pedido do usuario: "adicione a entrada na hub nova e refaça a tela
+  // de desafios pagos conforme o layout novo"): mesmo padrao de ?view=history
+  // acima, agora para a tela de Desafios Privados (PrivateChallengesPageNew).
+  const isPrivateView = !flowScreen && searchParams.get('view') === 'private';
 
   const showNewChallengesHub = !flowScreen
     && !finishedActivityItem
     && !shareCardData
     && !presenceCheckRequired
-    && selectedCategory === 'all'
-    && !isHistoryView;
+    && !isHistoryView
+    && !isPrivateView;
 
-  // #248: ChallengesHubNew e ActivityHistoryPageNew desenham o proprio rodape
-  // (.dc-footer / .ah-new-footer) -- sem isso, o nav antigo do Layout.tsx
-  // ficava vazando por baixo desses rodapes novos sempre que essa era a tela
-  // mostrada (o caso mais comum, ja que e a tela padrao ao abrir "Desafios").
-  // Ver comentario "routeOwnsFooter" em Layout.tsx para o mecanismo completo.
+  // #248: ChallengesHubNew, ActivityHistoryPageNew e PrivateChallengesPageNew
+  // desenham o proprio rodape (.dc-footer / .ah-new-footer) -- sem isso, o
+  // nav antigo do Layout.tsx ficava vazando por baixo desses rodapes novos
+  // sempre que essa era a tela mostrada (o caso mais comum, ja que e a tela
+  // padrao ao abrir "Desafios"). Ver comentario "routeOwnsFooter" em
+  // Layout.tsx para o mecanismo completo.
   useEffect(() => {
-    setRouteOwnsFooter?.(showNewChallengesHub || isHistoryView);
+    setRouteOwnsFooter?.(showNewChallengesHub || isHistoryView || isPrivateView);
     return () => setRouteOwnsFooter?.(false);
-  }, [showNewChallengesHub, isHistoryView, setRouteOwnsFooter]);
+  }, [showNewChallengesHub, isHistoryView, isPrivateView, setRouteOwnsFooter]);
 
   // #248 (achado ao vivo, screenshot real do usuario): ChallengeActivityFlow
   // (.challenge-flow-screen) desenha o proprio cabecalho no topo
@@ -966,224 +954,42 @@ export function Challenges() {
     return <ActivityHistoryPageNew />;
   }
 
+  if (isPrivateView) {
+    return <PrivateChallengesPageNew />;
+  }
+
   if (showNewChallengesHub) {
     const cardioChallenge = CORE_CHALLENGES.find(item => item.id === 'cardio');
     return <ChallengesHubNew
       onCardio={() => { if (cardioChallenge) handleOpenChallenge(cardioChallenge); }}
       onHistory={() => setSearchParams({ view: 'history' })}
+      onPrivate={() => setSearchParams({ view: 'private' })}
     />;
   }
 
+  // #257 (pedido do usuario, verbatim: "porque é necessario existir ainda?
+  // quero excluir essas telas antigas"): o catalogo antigo (cabecalho
+  // duplicado "Desafios"/"Seu nivel atual", abas de categoria powerlift/
+  // privados/ranking/conquistas e a lista padrao de desafios com historico
+  // embutido) foi REMOVIDO daqui. Ele nunca era alcancavel de verdade: a
+  // ChallengesHubNew (mostrada acima quando showNewChallengesHub) ja cobre
+  // powerlift (/power) e ranking (/rankings) com navegacao real, e o unico
+  // setSelectedCategory('powerlift') que existia no app inteiro estava DENTRO
+  // deste mesmo catalogo morto -- confirmado por grep antes de apagar (ver
+  // #257 no relatorio). "Desafios Privados" (selectedCategory 'privados') e a
+  // unica peca real que dependia deste catalogo como ponto de entrada; ela
+  // ganhou uma entrada propria em ChallengesHubNew ("DESAFIOS PRIVADOS") que
+  // abre PrivateChallengesPageNew (?view=private) -- ver #255/#256.
+  //
+  // O que sobra abaixo (VerifiedPresenceModal/RunShareCard/
+  // ActivityDetailScreen/ChallengeActivityFlow) e o que de fato ficava por
+  // CIMA do catalogo como overlay de tela cheia -- exatamente a peca que
+  // causou a regressao real relatada pelo usuario (#253: "voltou toda tela
+  // antiga por baixo" no cardio), porque o catalogo continuava montado por
+  // baixo mesmo sem nunca ser visivel. Sem o catalogo morto, esses overlays
+  // continuam funcionando identicos, so que sem nada por baixo deles.
   return (
-    <div className="challenge-screen min-h-screen bg-transparent pb-28 text-on-surface pt-4 px-0 max-w-[430px] mx-auto space-y-5">
-
-      {/* CABEÇALHO MOBILE */}
-      <header className="challenge-header space-y-4">
-        <div>
-          <h1 className="text-[30px] leading-[.9] font-headline tracking-tight uppercase text-white">Desafios</h1>
-          <p className="mt-1.5 text-[12px] leading-none text-white/65 uppercase tracking-wide">Supere seus limites</p>
-        </div>
-
-        <div className="challenge-level-card">
-          <div className="challenge-icon challenge-icon--level"><Zap size={31} strokeWidth={2.4} /></div>
-          <div className="min-w-0 flex-1">
-            <span className="block text-[12px] font-bold uppercase tracking-wide text-white/80">Seu nível atual</span>
-            <p className="mt-1 font-headline text-[18px] leading-none italic uppercase text-white">Nível {levelProgress.currentLevel} <span className="text-primary">· {profile?.xp || 0} XP</span></p>
-          </div>
-          <div className="challenge-level-progress">
-            <div className="challenge-progress-track"><div className="challenge-progress-value" style={{ width: `${levelProgress.percentage}%` }} /></div>
-            <span>{Math.round(levelProgress.percentage)}%</span>
-          </div>
-        </div>
-      </header>
-
-      {/* MENSAGEM REAL DE APROVAÇÃO/REJEIÇÃO DA ÚLTIMA ATIVIDADE ENCERRADA */}
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-2xl text-xs shadow-sm flex items-start gap-3"
-        >
-          <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
-          <div className="flex-1 space-y-1">
-            <p className="font-bold uppercase tracking-wider text-[11px] text-rose-400">Atividade Não Homologada</p>
-            <p className="whitespace-pre-line leading-relaxed text-[12px] text-rose-200">{error}</p>
-          </div>
-          <button onClick={() => setError(null)} className="text-rose-400/60 hover:text-rose-300 p-1 shrink-0 cursor-pointer">
-            <X size={16} />
-          </button>
-        </motion.div>
-      )}
-
-      {notice && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-sky-500/10 border border-sky-500/30 text-sky-100 p-4 rounded-2xl text-xs shadow-sm flex items-start gap-3"
-        >
-          <Info size={18} className="text-sky-300 shrink-0 mt-0.5" />
-          <div className="flex-1 space-y-1">
-            <p className="font-bold uppercase tracking-wider text-[11px] text-sky-300">Status da atividade</p>
-            <p className="whitespace-pre-line leading-relaxed text-[12px] text-sky-100/85">{notice}</p>
-          </div>
-          <button onClick={() => setNotice(null)} className="text-sky-300/60 hover:text-sky-200 p-1 shrink-0 cursor-pointer" aria-label="Fechar aviso">
-            <X size={16} />
-          </button>
-        </motion.div>
-      )}
-
-      {/* DYNAMIC VIEW CONTENT BASED ON SELECTED CATEGORY */}
-
-      {/* 1. POWER LIFT CATEGORY VIEW */}
-      {selectedCategory === 'powerlift' ? (
-        <div className="w-full">
-          <PowerLift />
-        </div>
-      ) : selectedCategory === 'privados' ? (
-        /* 2. PRIVATE CHALLENGES CATEGORY VIEW */
-        <PrivateChallengesTab />
-      ) : selectedCategory === 'ranking' ? (
-        <div className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-5 text-center">
-          <Trophy className="mx-auto text-primary" size={34} />
-          <div>
-            <h2 className="text-xl font-headline italic font-black text-white uppercase">Ranking</h2>
-            <p className="mt-2 text-sm text-on-surface-variant">A classificação é carregada apenas na tela oficial de ranking, com dados verificados do servidor.</p>
-          </div>
-          <button onClick={() => navigate('/rankings')} className="challenge-powerlift-button w-full rounded-xl bg-primary px-4 py-3 font-headline text-sm italic uppercase text-black">
-            Abrir ranking
-          </button>
-        </div>
-      ) : selectedCategory === 'conquistas' ? (
-        /* 4. CONQUISTAS CONFIRMADAS PELO PERFIL */
-        <div className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-6">
-          <div>
-            <span className="text-[10px] font-mono font-black text-primary uppercase tracking-widest block">
-              🎖️ GALERIA DE TROFÉUS E CONQUISTAS
-            </span>
-            <h2 className="text-xl font-headline italic font-black text-white uppercase">
-              Badges & Medalhas Desbloqueadas
-            </h2>
-          </div>
-
-          {unlockedBadges.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-5 py-8 text-center text-sm text-on-surface-variant">
-              Nenhuma conquista validada foi registrada ainda.
-            </div>
-          ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {unlockedBadges.map((badge) => (
-              <div
-                key={badge.id}
-                className="p-4 rounded-2xl border flex flex-col justify-between gap-3 text-center transition-all bg-primary/5 border-primary/30"
-              >
-                <div className="space-y-2">
-                  <div className="text-4xl mx-auto">{badge.icon}</div>
-                  <h4 className="font-headline italic font-black text-sm text-white uppercase">{badge.name}</h4>
-                  <p className="text-[11px] text-on-surface-variant line-clamp-3">{badge.description}</p>
-                </div>
-
-                <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-emerald-400 font-bold">Desbloqueado ✓</span>
-                  <span className="text-on-surface-variant">Verificado</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          )}
-        </div>
-      ) : (
-        /* 5. DEFAULT CHALLENGES CATALOGUE VIEW */
-        <div className="challenge-catalogue flex flex-col gap-4">
-
-          {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
-          {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="challenge-powerlift order-2 relative min-h-[214px] overflow-hidden rounded-[22px] border border-primary/60 bg-[#100c06] shadow-[0_18px_40px_rgba(0,0,0,.50)]">
-              <img src="/invictus-power-lift-badge-v2.png" alt="Emblema dourado do Invictus Power Lift" className="challenge-powerlift-art" />
-              <div className="challenge-powerlift-shade" />
-              <div className="relative flex min-h-[214px] flex-col justify-between p-3.5">
-                <div className="max-w-[80%]">
-                  <div className="challenge-icon challenge-icon--fire"><Flame size={20} fill="currentColor" /></div>
-                  <h3 className="mt-2 font-headline text-[21px] leading-none italic uppercase text-white">Invictus Power Lift</h3>
-                  <p className="mt-2 text-[10px] leading-snug text-white/75">Supino · Agachamento · Levantamento Terra.</p>
-                  <p className="mt-2 max-w-[230px] text-[12px] leading-snug text-white/80">Registre marcas pessoais de carga com homologação de vídeo por IA e dispute o cinturão da sua academia!</p>
-                </div>
-                <button onClick={() => { setSelectedCategory('powerlift'); setSearchParams({ category: 'powerlift' }); }} className="challenge-powerlift-button flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-headline text-[12px] leading-none italic uppercase tracking-wide text-black transition-colors hover:bg-[#ffc13d]">
-                  <span>Acessar desafios de carga</span><ArrowRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* CORE DAILY CHALLENGES SECTION */}
-          {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
-            <div className="order-1 space-y-3">
-              <div className="flex items-center justify-between px-0.5">
-                <div>
-                  <h2 className="text-[18px] leading-none font-headline text-white uppercase tracking-wide">Desafios principais do dia</h2>
-                  <span className="mt-1 block text-[12px] leading-none text-white/65">Atividades validadas atualizam seu progresso</span>
-                </div>
-                <Info size={22} strokeWidth={1.7} className="text-white/60" />
-              </div>
-
-              <div className="grid grid-cols-1 gap-2.5">
-                {CORE_CHALLENGES.slice().sort((a, b) => DAILY_CHALLENGES_ORDER.indexOf(a.id) - DAILY_CHALLENGES_ORDER.indexOf(b.id)).map((ch) => {
-                  const isCompletedToday = Boolean(submissions[ch.id]);
-                  const isRunning = activeSession?.type === ch.id;
-
-                  return (
-                    <React.Fragment key={ch.id}>
-                    <div
-                      key={ch.id}
-                      className={cn(
-                        "challenge-card relative overflow-hidden rounded-[23px] border bg-[#101010] p-4 transition-all group hover:border-primary/50",
-                        isCompletedToday
-                          ? "border-emerald-500/30 bg-emerald-950/10"
-                          : isRunning
-                            ? "border-primary/50 bg-primary/5"
-                            : "border-white/10"
-                      )}
-                    >
-                      <div className={ch.id === 'workout' ? 'min-h-[144px]' : 'min-h-[74px]'}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="challenge-icon grid h-[50px] w-[50px] shrink-0 place-items-center group-hover:scale-105 transition-transform">
-                              {ch.icon}
-                            </div>
-                            <div>
-                              {isRunning && <span className="challenge-running">Em andamento</span>}
-                              <h3 className="text-[16px] leading-none font-headline uppercase text-white group-hover:text-primary transition-colors">
-                                {ch.title}
-                              </h3>
-                              <p className="mt-1.5 text-[12px] leading-snug text-white/65">{ch.subtitle}</p>
-                            </div>
-                          </div>
-
-                          <div className="shrink-0 text-right">
-                            <button onClick={() => handleOpenChallenge(ch)} disabled={isCompletedToday} className="challenge-xp-action disabled:opacity-50">
-                              {isCompletedToday ? 'VALIDADO' : 'INICIAR'} <ArrowRight size={26} />
-                            </button>
-                            {ch.id !== 'workout' && <span className="challenge-mini-progress">{isCompletedToday ? '1 / 1' : '0 / 1'}</span>}
-                          </div>
-                        </div>
-
-                        {ch.id === 'workout' && <div className="challenge-day-progress"><span><Clock size={19} /> Progresso do dia</span><strong>{isCompletedToday ? '1 / 1' : '0 / 1'}</strong><div className="challenge-day-progress-track"><i style={{ width: isCompletedToday ? '100%' : '0%' }} /></div></div>}
-                      </div>
-                    </div>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {selectedCategory === 'all' && (
-            <div className="order-3 mt-2">
-              <ActivityHistorySection refreshKey={historyRefreshKey} />
-            </div>
-          )}
-        </div>
-      )}
-
+    <>
       {/* Anti-cheat presence modal if required */}
       {presenceCheckRequired && presenceCheckData && (
         <VerifiedPresenceModal
@@ -1287,6 +1093,6 @@ export function Challenges() {
           onCancel={handleCancelActivity}
         />
       )}
-    </div>
+    </>
   );
 }
