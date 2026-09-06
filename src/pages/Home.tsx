@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, BarChart3, Bell, Brain, Dumbbell, Flame, HeartPulse, Plus, ShieldCheck, Target, Trophy, UserRound } from 'lucide-react';
+import { ArrowRight, Bell, Brain, Dumbbell, Flame, HeartPulse, Plus, ShieldCheck, Target, Trophy, UserRound } from 'lucide-react';
 import { InvictusLogo } from '../components/InvictusLogo';
 import { useUser } from '../UserContext';
 import { workoutService } from '../services/workoutService';
@@ -54,7 +54,17 @@ export function Home() {
     <h2 className="nh-title">HOJE</h2><section className={`nh-next ${plan && nextWorkout ? '' : 'is-empty'}`}><span><Dumbbell /></span><div><small>SEU PRÓXIMO TREINO</small><h3>{nextWorkout?.focus || nextWorkout?.name || 'PLANO AINDA NÃO CRIADO'}</h3><p>{plan && nextWorkout ? `${nextWorkout.name} · ~${plan.durationMinutes} min · ${nextWorkout.exercises.length} exercícios` : 'Crie manualmente ou com a Invictus IA.'}</p></div><button onClick={() => navigate('/musculacao')}>{plan ? 'INICIAR TREINO' : 'CRIAR PLANO'} <ArrowRight /></button></section>
     <section className="nh-progress-grid"><article className="nh-week"><h3>SUA SEMANA</h3><div className="nh-days">{['SEG','TER','QUA','QUI','SEX','SÁB','DOM'].map((label,index) => { const jsDay = index === 6 ? 0 : index + 1; const done = weekActivities.some(item => item.type === 'workout' && new Date(item.timestamp).getDay() === jsDay); return <span key={label}><b>{label}</b><i className={done ? 'is-done' : ''}>{done ? '✓' : ''}</i></span>; })}</div><p><b>{weekDays} treino{weekDays === 1 ? '' : 's'} realizado{weekDays === 1 ? '' : 's'}</b>{target ? `Meta: ${target} treinos` : 'Defina um plano para acompanhar a meta'}</p><strong>{targetPercent !== null ? `${targetPercent}%` : '—'}</strong><div className="nh-bar"><i style={{width:`${targetPercent || 0}%`}} /></div></article><article className="nh-rank"><h3>CAMPEONATO DA ACADEMIA</h3><Trophy /><strong>{championship?.rank ? `#${championship.rank}` : Number.isFinite(gymPosition) && gymPosition > 0 ? `#${gymPosition}` : '—'}</strong><span>SUA POSIÇÃO</span><em>1º LUGAR — {(championship?.prizes[1] || 2500).toLocaleString('pt-BR')} COINS</em><small>{Number.isFinite(iga) ? `${Math.round(iga)} IGA · mesma regra FREE e PRO` : 'Entre no ranking para acompanhar'}</small><button onClick={() => navigate('/championships/community')}>VER CAMPEONATO <ArrowRight /></button></article></section>
     <section className="nh-metrics"><article><Flame /><b>{calories > 0 ? Math.round(calories).toLocaleString('pt-BR') : '—'}</b><span>KCAL GASTAS</span></article><article><HeartPulse /><b>{activeMinutes > 0 ? `${Math.floor(activeMinutes / 60)}h${String(Math.round(activeMinutes % 60)).padStart(2,'0')}` : '—'}</b><span>TEMPO ATIVO</span></article><article><Target /><b>{targetPercent !== null ? `${targetPercent}%` : '—'}</b><span>FOCO DA META</span></article></section>
-    <h2 className="nh-title">ACESSOS RÁPIDOS</h2><section className="nh-quick"><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/performance')}><BarChart3 /><span>Progresso</span></button><button onClick={() => navigate('/health')}><HeartPulse /><span>Saúde</span></button><button onClick={() => navigate('/ai')}><Brain /><span>Invictus IA</span></button></section>
+    {/* #252: o botao "Progresso" apontava pra /performance -- uma tela
+        antiga (pre-reescrita da aba Saude) que fazia sua propria leitura do
+        Firestore e recalculava com o mesmo motor (processUserPerformance)
+        que a Saude ja usa, so que numa UI mais simples e sem nenhum outro
+        ponto de entrada no app (nem no menu do Perfil, nem na navegacao).
+        O usuario confirmou nao lembrar que essa tela existia -- resquicio
+        de antes da Saude virar a tela de referencia pra esses dados.
+        Removido o botao (a rota /performance agora redireciona pra /health,
+        entao um deep link antigo ainda funciona) pra nao duplicar o botao
+        "Saude" logo ao lado apontando essencialmente pro mesmo conteudo. */}
+    <h2 className="nh-title">ACESSOS RÁPIDOS</h2><section className="nh-quick"><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/health')}><HeartPulse /><span>Saúde</span></button><button onClick={() => navigate('/ai')}><Brain /><span>Invictus IA</span></button></section>
   </div><nav className="nh-footer"><button className="is-active"><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav></main>, document.body);
 }
 

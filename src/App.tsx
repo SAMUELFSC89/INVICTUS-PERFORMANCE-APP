@@ -32,7 +32,6 @@ const AdminRankingSimulator = lazyNamed(() => import('./pages/AdminRankingSimula
 const AdminSecurityAudit = lazyNamed(() => import('./pages/AdminSecurityAudit'), 'AdminSecurityAudit');
 const AdminIGATesteOriginal = lazyNamed(() => import('./pages/AdminIGATesteOriginal'), 'AdminIGATesteOriginal');
 const AdminFlaggedActivities = lazyNamed(() => import('./pages/AdminFlaggedActivities'), 'AdminFlaggedActivities');
-const Performance = lazyNamed(() => import('./pages/Performance'), 'Performance');
 const PowerLift = lazyNamed(() => import('./pages/PowerLift'), 'PowerLift');
 const Health = lazyNamed(() => import('./pages/Health'), 'Health');
 const HealthReport = lazyNamed(() => import('./pages/HealthReport'), 'HealthReport');
@@ -125,7 +124,19 @@ export default function App() {
                 <Route path="/championships/:id" element={<Navigate to="/championships" replace />} />
                 <Route path="/achievements" element={<Achievements />} />
                 <Route path="/wallet" element={<Navigate to="/store" replace />} />
-                <Route path="/performance" element={<Performance />} />
+                {/* #252: "Sua Performance" era uma tela antiga, anterior a
+                    reescrita da aba Saude, que recalculava os mesmos dados
+                    (mesmo motor processUserPerformance) com sua propria
+                    leitura do Firestore. So tinha um unico ponto de entrada
+                    em todo o app (botao "Progresso" na Home) e o proprio
+                    usuario confirmou nao lembrar que ela existia -- resquicio
+                    de uma consolidacao que nunca foi terminada. Removida a
+                    pagina e os 4 componentes exclusivos dela
+                    (MetricMatrixModal/TimelineView/PerformanceAIModal/
+                    ModuleDetailModal); a rota continua existindo como
+                    redirecionamento (mesmo padrao ja usado em /wallet e
+                    /gym) para nao quebrar links antigos/favoritos. */}
+                <Route path="/performance" element={<Navigate to="/health" replace />} />
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />

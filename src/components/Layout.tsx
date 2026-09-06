@@ -56,10 +56,12 @@ export function Layout() {
   // (PublicProfile, .ppn-footer -- mas NAO nas sub-rotas fixas do
   // ProfileSecondary como /profile/academy, que nao tem rodape proprio),
   // /championships exato (ChampionshipsHub, .ch-new-footer -- mas NAO em
-  // /championships/community, que tambem nao tem rodape proprio), /achievements
-  // (.an-footer) e /performance (.pfn-footer). Confirmado via inspecao de DOM
-  // ao vivo (getElementById('bottom-nav') presente+visible ao mesmo tempo que
-  // o rodape novo) em cada uma dessas rotas antes desta correcao.
+  // /championships/community, que tambem nao tem rodape proprio) e
+  // /achievements (.an-footer). Confirmado via inspecao de DOM ao vivo
+  // (getElementById('bottom-nav') presente+visible ao mesmo tempo que o
+  // rodape novo) em cada uma dessas rotas antes desta correcao.
+  // (/performance tinha o mesmo problema mas a pagina inteira foi removida
+  // -- ver App.tsx -- por ser uma tela antiga superada pela aba Saude.)
   const PROFILE_SECONDARY_PREFIXES = ['/profile/academy', '/profile/wearables', '/profile/goals', '/profile/security', '/profile/preferences'];
   const isProfileSecondary = PROFILE_SECONDARY_PREFIXES.some(p => location.pathname === p || location.pathname.startsWith(`${p}/`));
   const isOwnFooterScreen = location.pathname === '/store'
@@ -67,7 +69,6 @@ export function Layout() {
     || location.pathname === '/profile'
     || location.pathname === '/championships'
     || location.pathname === '/achievements'
-    || location.pathname === '/performance'
     || (location.pathname.startsWith('/profile/') && !isProfileSecondary);
   const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao' || routeOwnsFooter || isOwnFooterScreen;
 
