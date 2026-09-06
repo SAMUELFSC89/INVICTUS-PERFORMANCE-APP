@@ -48,7 +48,28 @@ export function Layout() {
   // Layout quando ela propria desenha um rodape e o nav antigo deve sumir.
   const [routeOwnsFooter, setRouteOwnsFooter] = useState(false);
   useEffect(() => { setRouteOwnsFooter(false); }, [location.pathname]);
-  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao' || routeOwnsFooter;
+  // #252: auditoria pedida pelo usuario apos o fix acima -- confirmado ao vivo
+  // em producao que o MESMO bug (nav antigo #bottom-nav montado por baixo de
+  // um rodape novo proprio da tela) tambem acontecia, de forma estatica (sem
+  // precisar do mecanismo de Outlet context acima), em: /store (.store-footer),
+  // /ai (.iai-footer), /profile exato (ProfileNew, .np-footer), /profile/:userId
+  // (PublicProfile, .ppn-footer -- mas NAO nas sub-rotas fixas do
+  // ProfileSecondary como /profile/academy, que nao tem rodape proprio),
+  // /championships exato (ChampionshipsHub, .ch-new-footer -- mas NAO em
+  // /championships/community, que tambem nao tem rodape proprio), /achievements
+  // (.an-footer) e /performance (.pfn-footer). Confirmado via inspecao de DOM
+  // ao vivo (getElementById('bottom-nav') presente+visible ao mesmo tempo que
+  // o rodape novo) em cada uma dessas rotas antes desta correcao.
+  const PROFILE_SECONDARY_PREFIXES = ['/profile/academy', '/profile/wearables', '/profile/goals', '/profile/security', '/profile/preferences'];
+  const isProfileSecondary = PROFILE_SECONDARY_PREFIXES.some(p => location.pathname === p || location.pathname.startsWith(`${p}/`));
+  const isOwnFooterScreen = location.pathname === '/store'
+    || location.pathname === '/ai'
+    || location.pathname === '/profile'
+    || location.pathname === '/championships'
+    || location.pathname === '/achievements'
+    || location.pathname === '/performance'
+    || (location.pathname.startsWith('/profile/') && !isProfileSecondary);
+  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao' || routeOwnsFooter || isOwnFooterScreen;
 
   const [theme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
