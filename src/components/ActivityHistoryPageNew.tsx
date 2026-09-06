@@ -19,7 +19,7 @@ export function ActivityHistoryPageNew() {
 
         <section className="ah-new-title">
           <span><History /></span>
-          <div><small>SUA JORNADA</small><h1>HISTÓRICO DE ATIVIDADES</h1><p>Acompanhe cada treino, a validação antifraude e a pontuação recebida.</p></div>
+          <div><small>SUA JORNADA</small><h1>HISTÓRICO DE ATIVIDADES</h1><p>Acompanhe seus treinos, cardios, métricas e, quando participar, o resultado competitivo.</p></div>
         </section>
 
         <div className="ah-new-content"><ActivityHistorySection /></div>

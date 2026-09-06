@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config({ override: true });
 import express from 'express';
 import helmet from 'helmet';
-import { globalLimiter } from './_lib/rate-limit.js';
+import { activityLimiter, globalLimiter } from './_lib/rate-limit.js';
 import { RequestLogger } from './_lib/logger.js';
 import { initSentry, captureException } from './_lib/sentry.js';
 import { cors } from './_lib/common.js';
@@ -27,6 +27,7 @@ import gymsPhotoHandler from './_handlers/gyms_photo.js';
 import runningHandler from './_handlers/running.js';
 import habitsHandler from './_handlers/habits.js';
 import validateActivityHandler from './_handlers/validate-activity.js';
+import activityPolicyHandler from './_handlers/activity-policy.js';
 import validatePresenceHandler from './_handlers/validate-presence.js';
 import whatsappHandler from './_handlers/whatsapp.js';
 import notificationsHandler from './_handlers/notifications.js';
@@ -149,6 +150,7 @@ assertHandler('gymsCheckinHandler', gymsCheckinHandler);
 assertHandler('gymsPhotoHandler', gymsPhotoHandler);
 assertHandler('runningHandler', runningHandler);
 assertHandler('validateActivityHandler', validateActivityHandler);
+assertHandler('activityPolicyHandler', activityPolicyHandler);
 assertHandler('validatePresenceHandler', validatePresenceHandler);
 assertHandler('stravaHandler', stravaHandler);
 assertHandler('whatsappHandler', whatsappHandler);
@@ -205,7 +207,7 @@ console.log('[ROUTE] /gyms/join', typeof gymsJoinHandler);
 router.all('/gyms/join', wrap(gymsJoinHandler));
 
 console.log('[ROUTE] /gyms/checkin', typeof gymsCheckinHandler);
-router.all('/gyms/checkin', wrap(gymsCheckinHandler));
+router.all('/gyms/checkin', activityLimiter, wrap(gymsCheckinHandler));
 
 console.log('[ROUTE] /gyms/photo', typeof gymsPhotoHandler);
 router.all('/gyms/photo', wrap(gymsPhotoHandler));
@@ -224,7 +226,10 @@ console.log('[ROUTE] /habits', typeof habitsHandler);
 router.all('/habits', wrap(habitsHandler));
 
 console.log('[ROUTE] /validate-activity', typeof validateActivityHandler);
-router.all('/validate-activity', wrap(validateActivityHandler));
+router.all('/validate-activity', activityLimiter, wrap(validateActivityHandler));
+
+console.log('[ROUTE] /activity-policy', typeof activityPolicyHandler);
+router.all('/activity-policy', activityLimiter, wrap(activityPolicyHandler));
 
 console.log('[ROUTE] /validate-presence', typeof validatePresenceHandler);
 router.all('/validate-presence', wrap(validatePresenceHandler));
@@ -281,7 +286,7 @@ console.log('[ROUTE] /wallet/redeem', typeof walletRedeemHandler);
 router.all('/wallet/redeem', wrap(walletRedeemHandler));
 
 console.log('[ROUTE] /wearables', typeof wearablesHandler);
-router.all('/wearables', wrap(wearablesHandler));
+router.all('/wearables', activityLimiter, wrap(wearablesHandler));
 
 console.log('[ROUTE] /health-summary', typeof healthSummaryHandler);
 router.all('/health-summary', wrap(healthSummaryHandler));
@@ -356,7 +361,13 @@ router.get('/share/:id', (req, res) => {
 });
 
 // 2. The Unified Endpoint
-router.all('/app', wrap(async (req: any, res: any) => {
+router.all('/app', (req: any, res: any, next: any) => {
+  const action = String(req.query?.action || req.body?.action || '');
+  if (['validate-activity', 'activity-policy', 'wearables', 'gyms-checkin'].includes(action)) {
+    return activityLimiter(req, res, next);
+  }
+  return next();
+}, wrap(async (req: any, res: any) => {
   const action = (req.query.action || req.body.action) as string;
   
   switch (action) {
@@ -371,6 +382,7 @@ router.all('/app', wrap(async (req: any, res: any) => {
     case 'gyms-join': return await gymsJoinHandler(req as any, res as any);
     case 'gyms-checkin': return await gymsCheckinHandler(req as any, res as any);
     case 'validate-activity': return await validateActivityHandler(req as any, res as any);
+    case 'activity-policy': return await activityPolicyHandler(req as any, res as any);
     case 'validate-presence': return await validatePresenceHandler(req as any, res as any);
     case 'strava': return await stravaHandler(req as any, res as any, () => {});
     case 'whatsapp-send': return await whatsappHandler(req as any, res as any);

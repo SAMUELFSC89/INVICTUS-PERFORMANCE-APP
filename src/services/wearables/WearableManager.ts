@@ -363,7 +363,7 @@ export class WearableManager {
     const token = await this.getToken(userId);
     const config = await this.currentConfig();
 
-    const needsActivityTelemetryBackfill = options.forceActivityTelemetryBackfill === true || (config.activityTelemetryVersion || 0) < 2;
+    const needsActivityTelemetryBackfill = options.forceActivityTelemetryBackfill === true || (config.activityTelemetryVersion || 0) < 3;
     const lastSyncMs = config.lastSyncTime ? new Date(config.lastSyncTime).getTime() : Number.NaN;
     const since = needsActivityTelemetryBackfill
       ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -448,7 +448,7 @@ export class WearableManager {
     }
 
     if (this.config) {
-      this.config.lastSyncTime = lastSyncTime || new Date().toISOString();
+      if (lastSyncTime) this.config.lastSyncTime = lastSyncTime;
       if (telemetryVersion !== undefined) this.config.activityTelemetryVersion = telemetryVersion;
     }
 

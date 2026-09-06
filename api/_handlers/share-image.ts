@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../_lib/common.js';
 import Jimp from 'jimp';
+import { resolveActivityState } from '../../src/lib/workoutData.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { id } = req.query;
@@ -26,6 +27,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             distance: Number.isFinite(Number(sessionData.totalDistance)) ? Number(sessionData.totalDistance) / 1000 : undefined,
             points: Number.isFinite(Number(sessionData.pointsEarned)) ? Number(sessionData.pointsEarned) : 0,
             status: sessionData.validationStatus,
+            recordStatus: sessionData.recordStatus || (sessionData.endTime ? 'completed' : undefined),
+            activityMode: sessionData.activityMode,
+            competitionReviewStatus: sessionData.competitionReviewStatus,
             photoUrl: sessionData.photoProof || null
           };
         }
@@ -86,19 +90,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     image.print(fontLabel, 60, 130, `@${user.displayName.toLowerCase().replace(/\s+/g, '')}`);
 
     // 5. Draw Main Stats (XP)
-    const rawStatus = String(workout.status || workout.validationStatus || '').toLowerCase();
-    const approved = ['valid', 'validated', 'approved', 'homologada'].includes(rawStatus);
-    const rejected = ['invalid', 'rejected', 'not_eligible', 'rejeitada', 'suspicious'].includes(rawStatus);
-    const points = approved && Number.isFinite(Number(workout.points)) ? Number(workout.points) : 0;
-    const xpText = approved ? (points > 0 ? `+${points} XP` : 'APROVADA') : rejected ? 'NAO PONTUOU' : 'EM ANALISE';
+    const activityState = resolveActivityState(workout);
+    const points = Number.isFinite(Number(workout.activityXpAwarded ?? workout.points)) ? Number(workout.activityXpAwarded ?? workout.points) : 0;
+    const xpText = points > 0 ? `+${points} XP` : activityState.isCompleted ? 'CONCLUIDA' : 'ATIVIDADE';
     // Background for XP badge (using moove green #00E676)
     const xpBg = new Jimp(200, 60, '#00E676');
     image.composite(xpBg, 60, height - 120);
     image.print(fontXP, 80, height - 110, xpText);
 
     // 6. Draw Activity Type & Details
-    const typeLabel = (workout.type === 'workout' ? 'TREINO 🔥' : 
-                      workout.type === 'cardio' ? 'CORRIDA 🏃' : 
+    const typeLabel = (workout.type === 'workout' ? 'TREINO 🔥' :
+                      workout.type === 'cardio' ? 'CARDIO 🏃' :
                       workout.type === 'diet' ? 'DIETA 🥗' : 'ATIVIDADE').toUpperCase();
     
     image.print(fontLabel, 300, height - 110, typeLabel);

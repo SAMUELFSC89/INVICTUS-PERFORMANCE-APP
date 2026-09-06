@@ -101,6 +101,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const actionType: string = checkData.actionType || 'workout_commit';
+    if (!['championship_registration', 'withdrawal'].includes(actionType)) {
+      await pendingCheckRef.update({
+        status: 'unsupported_activity_flow',
+        completedAt: new Date().toISOString(),
+      });
+      return res.status(409).json({
+        success: false,
+        userMessage: 'Esta confirmação pertence a uma versão antiga do fluxo de atividades. Atualize o app; atividades novas são salvas antes da revisão competitiva.',
+      });
+    }
+
     // Check expiry
     const now = new Date();
     if (new Date(checkData.expiredAt) < now) {
@@ -307,8 +319,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const workoutPayload = checkData.workoutPayload || {};
-    const actionType: string = checkData.actionType || 'workout_commit';
-
     // 4. APPROVED PATH: cada actionType tem seu proprio commit -- ver
     // api/_lib/presence-check-service.ts (criarPresenceCheck) para onde cada
     // um e disparado.

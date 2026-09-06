@@ -310,13 +310,13 @@ export const BarbellLifter: React.FC<BarbellLifterProps> = ({ level }) => {
           <div className="h-40 relative bg-black/50 border border-white/[0.03] rounded-xl overflow-hidden flex items-center justify-center">
             
             {/* Height target markings on background showing professional benchmarks */}
-            <div className="absolute inset-x-2 top-3 flex items-center justify-between opacity-30">
+            <div className="absolute inset-x-2 top-3 flex items-center justify-between">
               <span className="text-[6px] font-mono text-primary font-bold">🎯 OVERHEAD MAX (100% XP)</span>
               <div className="flex-grow mx-2 border-t border-dashed border-primary/40 h-[1.5px]" />
               <span className="text-[5.5px] font-mono text-on-surface-variant">CEILING</span>
             </div>
 
-            <div className="absolute inset-x-2 top-[55%] flex items-center justify-between opacity-25">
+            <div className="absolute inset-x-2 top-[55%] flex items-center justify-between">
               <span className="text-[6px] font-mono text-white">🏋️ CHEST POSITION (CLEAN)</span>
               <div className="flex-grow mx-2 border-t border-dashed border-white/20 h-[1.5px]" />
               <span className="text-[5.5px] font-mono text-on-surface-variant">HALF</span>

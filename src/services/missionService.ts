@@ -29,5 +29,5 @@ export const missionService = {
       coinWallet: data.coinWallet || { userId: auth.currentUser?.uid || '', balance: 0, lifetimeEarned: 0, lifetimeSpent: 0, updatedAt: new Date().toISOString() },
     };
   },
-  claim(missionId: string) { return request('POST', { missionId }); },
+  claim(missionId: string, progressId?: string) { return request('POST', { missionId, progressId }); },
 };

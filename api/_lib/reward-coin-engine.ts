@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { db } from './common.js';
 import { IVCoinLedgerType, IVCoinTransactionOrigin, RewardCoinTransaction, RewardCoinWallet } from '../../src/types.js';
 
@@ -21,6 +22,18 @@ const EMPTY_WALLET = (userId: string): RewardCoinWallet => ({
   lifetimeSpent: 0,
   updatedAt: new Date().toISOString(),
 });
+
+function coinTransactionId(userId: string, idempotencyKey: string): string {
+  const digest = createHash('sha256')
+    .update(`${userId}\u0000${idempotencyKey}`)
+    .digest('hex');
+  return `coin_${digest}`;
+}
+
+function legacyCoinTransactionId(userId: string, idempotencyKey: string): string {
+  const safeKey = Buffer.from(idempotencyKey).toString('base64url').slice(0, 180);
+  return `coin_${userId}_${safeKey}`;
+}
 
 export class RewardCoinEngine {
   static async getWallet(userId: string): Promise<RewardCoinWallet> {
@@ -50,26 +63,52 @@ export class RewardCoinEngine {
     if (!Number.isFinite(amount) || amount <= 0) throw new Error('Quantidade de Invictus Coins inválida.');
     if (!params.idempotencyKey) throw new Error('Chave de idempotência obrigatória.');
 
-    const safeKey = Buffer.from(params.idempotencyKey).toString('base64url').slice(0, 180);
-    const transactionId = `coin_${params.userId}_${safeKey}`;
+    const transactionId = coinTransactionId(params.userId, params.idempotencyKey);
+    const legacyTransactionId = legacyCoinTransactionId(params.userId, params.idempotencyKey);
     const walletRef = db.collection('reward_coin_wallets').doc(params.userId);
     const transactionRef = db.collection('reward_coin_transactions').doc(transactionId);
+    const legacyTransactionRef = db.collection('reward_coin_transactions').doc(legacyTransactionId);
     const policyRef = db.collection('reward_coin_economy').doc('global');
     const monthKey = new Date().toISOString().slice(0, 7);
     const monthlyCounterRef = db.collection('reward_coin_monthly_counters').doc(`${params.userId}_${monthKey}`);
     const ledgerType = params.ledgerType || defaultLedger(params.origin);
-    let duplicated = false;
-
-    await db.runTransaction(async transaction => {
-      const [walletSnap, existingTransaction, policySnap, monthlyCounterSnap] = await Promise.all([
+    const settlement = await db.runTransaction(async transaction => {
+      const [walletSnap, existingTransaction, legacyTransaction, policySnap, monthlyCounterSnap] = await Promise.all([
         transaction.get(walletRef),
         transaction.get(transactionRef),
+        transaction.get(legacyTransactionRef),
         transaction.get(policyRef),
         transaction.get(monthlyCounterRef),
       ]);
+
+      const matchesRequest = (value: Record<string, any>): boolean => (
+        value.userId === params.userId
+        && value.idempotencyKey === params.idempotencyKey
+        && Number(value.amount) === amount
+        && value.origin === params.origin
+        && value.type === 'credit'
+        && value.ledgerType === ledgerType
+      );
       if (existingTransaction.exists) {
-        duplicated = true;
-        return;
+        const existing = existingTransaction.data() || {};
+        if (!matchesRequest(existing)) {
+          throw new Error('Conflito no ledger de Coins para a chave de idempotência informada.');
+        }
+        return { duplicated: true, storedTransactionId: transactionId };
+      }
+      const legacyValue = legacyTransaction.exists ? legacyTransaction.data() || {} : null;
+      if (legacyValue?.idempotencyAlias === true) {
+        // IDs legados truncavam a chave e podem colidir. Alias de outro hash
+        // não suprime o crédito novo; apenas deixa de criar outro alias.
+        if (legacyValue.canonicalTransactionId === transactionId) {
+          throw new Error('Alias legado de Coins sem transação canônica válida.');
+        }
+      }
+      // Compatibilidade com créditos feitos antes do ID em SHA-256. O legado
+      // só é idempotente quando todo o contrato coincide; uma colisão causada
+      // pelo antigo truncamento não pode suprimir o novo pagamento.
+      if (legacyValue && matchesRequest(legacyValue)) {
+        return { duplicated: true, storedTransactionId: legacyTransactionId };
       }
       const current = walletSnap.exists ? walletSnap.data() || {} : EMPTY_WALLET(params.userId);
       const policy = policySnap.data() || {};
@@ -105,6 +144,18 @@ export class RewardCoinEngine {
         updatedAt: createdAt,
       }, { merge: true });
       transaction.set(transactionRef, coinTransaction);
+      // Alias sem `userId`: instâncias da versão anterior encontram o ID
+      // legado e não creditam de novo durante um rollout misto, enquanto as
+      // consultas de extrato (filtradas por userId) exibem só o lançamento
+      // canônico SHA-256. Não sobrescrevemos uma colisão legada preexistente.
+      if (!legacyTransaction.exists) {
+        transaction.set(legacyTransactionRef, {
+          id: legacyTransactionId,
+          idempotencyAlias: true,
+          canonicalTransactionId: transactionId,
+          createdAt,
+        });
+      }
       transaction.set(monthlyCounterRef, {
         userId: params.userId,
         monthKey,
@@ -118,11 +169,18 @@ export class RewardCoinEngine {
         pilotUserLimit: Number(policy.pilotUserLimit) > 0 ? Number(policy.pilotUserLimit) : 1000,
         updatedAt: createdAt,
       }, { merge: true });
+      return { duplicated: false, storedTransactionId: transactionId };
     });
 
     const wallet = await this.getWallet(params.userId);
-    const transactionSnap = await transactionRef.get();
-    return { wallet, transaction: transactionSnap.data() as RewardCoinTransaction, duplicated };
+    const transactionSnap = await db.collection('reward_coin_transactions')
+      .doc(settlement.storedTransactionId).get();
+    if (!transactionSnap.exists) throw new Error('Transação de Coins não encontrada após a conciliação.');
+    return {
+      wallet,
+      transaction: transactionSnap.data() as RewardCoinTransaction,
+      duplicated: settlement.duplicated,
+    };
   }
 
   static async getTransactions(userId: string, limit = 40): Promise<RewardCoinTransaction[]> {

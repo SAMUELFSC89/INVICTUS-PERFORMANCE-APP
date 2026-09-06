@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ValidateActivityRequest, ValidateActivityResponse } from '../../_dto/activity-dto.js';
 import { ActivityRepository } from '../../_repositories/activity-repository.js';
 import { UserRepository } from '../../_repositories/user-repository.js';
@@ -10,61 +11,88 @@ import { buscarHistoricoRecente } from '../../_lib/user-activity-history.js';
 import { estimateCalories, formatPace } from '../../_lib/activity-metrics.js';
 import { registrarAmostrasDeAtividade, HealthSampleSource } from '../../_lib/health-data-layer.js';
 import { submitActivityToActiveChampionships } from '../../_lib/championship-scoring-service.js';
-import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from '../../_lib/geofence-engine.js';
-import { resolverPerfilValidacao, resolveModality } from '../../_lib/modality-config.js';
+import { resolveModality } from '../../_lib/modality-config.js';
 import { GpsEngine } from '../../_lib/gps-engine.js';
 import { db } from '../../_lib/common.js';
 import { sanitizeWorkoutHealthRecord } from '../../_lib/workout-health-record.js';
+import { MissionEngine } from '../../_lib/mission-engine.js';
+import { getLevelFromXP } from '../../_lib/xpConfig.js';
+import {
+  ACTIVITY_ECONOMY_VERSION,
+  calculateCompletedActivityXP,
+  isActivityEconomyEligible,
+} from '../../_lib/activity-economy.js';
+import { encontrarAtividadeDuplicada } from '../../_lib/activity-dedup.js';
+import {
+  ActivityIdentityInput,
+  ActivityIdentityReservation,
+  reserveActivityIdentity,
+} from '../../_lib/activity-identity.js';
+import { resolveMissionAccessSnapshot } from '../../_lib/mission-access.js';
+import { promoteCanonicalCompetitionProjection } from '../../_lib/activity-competition-promotion.js';
+import {
+  ActivityCompetitionPolicy,
+  loadActivityCompetitionPolicySnapshot,
+  persistActivityCompetitionEntries,
+} from '../../_lib/activity-competition-policy.js';
 
-async function hasActiveChampionshipEnrollment(userId: string): Promise<boolean> {
-  if (!db) return false;
-  const [community, paid] = await Promise.all([
-    db.collection('community_championship_enrollments').doc(`community_friends_v1_${userId}`).get(),
-    db.collection('championship_registrations').where('userId', '==', userId).get(),
-  ]);
-  return community.data()?.status === 'active' || paid.docs.some((item) => item.data()?.status === 'paga');
+type CompetitionReviewStatus =
+  | 'not_required'
+  | 'approved'
+  | 'pending_review'
+  | 'ineligible';
+
+function normalizeTimestamp(value: Date | string | undefined | null): string {
+  if (!value) return new Date().toISOString();
+  return typeof value === 'string' ? value : value.toISOString();
 }
 
-// ACT-08 (auditoria 6167c8f): o TTL de 15 minutos do check-in (gyms_checkin.ts)
-// existe para garantir que o atleta acabou de confirmar presenca -- ele deve
-// valer para VINCULAR o check-in a uma sessao (no inicio do treino), nao para
-// o treino inteiro. A checagem antiga comparava expiresAt com Date.now() no
-// FINAL do treino (quando este metodo e chamado, via /api/validate-activity),
-// entao qualquer treino de duracao normal (>15min) via HTTP400 pedindo um
-// novo check-in mesmo com a prova de presenca legitima. Agora comparamos com
-// o horario de INICIO da sessao (sessionStartTime), quando o vinculo de fato
-// acontece; e marcamos o check-in com a sessao a que foi vinculado, para que
-// o mesmo checkInId nao sirva de prova para duas sessoes distintas.
-async function validateCheckInOwnership(userId: string, checkInId: string, sessionStartTime?: string): Promise<void> {
-  if (!db) throw new AppError('Não foi possível validar o check-in agora.', 503);
-  const checkInRef = db.collection('gym_checkins').doc(checkInId);
-  const snap = await checkInRef.get();
-  const data = snap.data();
-  const expiresAt = data?.expiresAt ? new Date(data.expiresAt).getTime() : 0;
-  const referenceTime = sessionStartTime ? new Date(sessionStartTime).getTime() : Date.now();
-  const linkedSessionStartMs = data?.linkedSessionStartAt ? new Date(data.linkedSessionStartAt).getTime() : null;
-  const linkedToAnotherSession = linkedSessionStartMs !== null && Math.abs(linkedSessionStartMs - referenceTime) > 60000;
-
-  if (!snap.exists || data?.userId !== userId || !['confirmed', 'suspicious'].includes(data?.status)
-    || !Number.isFinite(referenceTime) || expiresAt < referenceTime || linkedToAnotherSession) {
-    throw new AppError('Este check-in não é válido ou expirou. Faça um novo check-in presencial.', 400);
-  }
-
-  if (linkedSessionStartMs === null) {
-    await checkInRef.set({ linkedSessionStartAt: new Date(referenceTime).toISOString() }, { merge: true }).catch((err) => {
-      console.warn('[ValidateActivityService] Falha ao gravar vinculo check-in/sessao (nao-fatal):', err);
-    });
-  }
+function readDate(value: unknown, fallback = new Date()): Date {
+  const parsed = value instanceof Date ? value : new Date(value as any);
+  return Number.isFinite(parsed.getTime()) ? parsed : fallback;
 }
 
-// #71: request.activityData.startTime e tipado como `Date | string` (DTO),
-// mas registrarAmostrasDeAtividade exige `timestamp: string`. O padrao
-// `startTime || new Date().toISOString()` ja usado neste arquivo pra outros
-// campos (que aceitam Date|string) nao tipa como string aqui -- o TS reclama
-// (CI: "Lint & Type Check" pegou, esbuild nao, por nao fazer typecheck real).
-function normalizarTimestamp(valor: Date | string | undefined | null): string {
-  if (!valor) return new Date().toISOString();
-  return typeof valor === 'string' ? valor : valor.toISOString();
+function buildActivityId(userId: string, sessionId: unknown): string | undefined {
+  const rawSessionId = String(sessionId || '').trim();
+  if (!rawSessionId) return undefined;
+  const digest = createHash('sha256').update(`${userId}\u0000${rawSessionId}`).digest('hex');
+  return `activity_${digest}`;
+}
+
+async function validateCheckInOwnership(params: {
+  userId: string;
+  checkInId: string;
+  policySnapshotId?: string;
+  activitySessionId?: string;
+  expectedGymIds?: string[];
+  activityStart: Date;
+}): Promise<{ valid: boolean; reason?: string }> {
+  try {
+    const snap = await db.collection('gym_checkins').doc(params.checkInId).get();
+    const data = snap.data() || {};
+    if (!snap.exists || data.userId !== params.userId || data.status !== 'confirmed') {
+      return { valid: false, reason: 'Check-in presencial inválido ou pertencente a outra sessão.' };
+    }
+    if (params.policySnapshotId && data.activityPolicySnapshotId !== params.policySnapshotId) {
+      return { valid: false, reason: 'O check-in não pertence a esta atividade competitiva.' };
+    }
+    if (params.activitySessionId && data.activitySessionId !== params.activitySessionId) {
+      return { valid: false, reason: 'O check-in não pertence a esta sessão.' };
+    }
+    if (params.expectedGymIds?.length
+      && params.expectedGymIds.some((gymId) => gymId !== String(data.gymId || ''))) {
+      return { valid: false, reason: 'O check-in foi realizado em outra academia.' };
+    }
+    const confirmedAt = readDate(data.confirmedAt, new Date(0));
+    const expiresAt = readDate(data.expiresAt, new Date(0));
+    const distanceFromStart = Math.abs(params.activityStart.getTime() - confirmedAt.getTime());
+    if (distanceFromStart > 20 * 60 * 1000 || params.activityStart > expiresAt) {
+      return { valid: false, reason: 'O check-in deve ser realizado próximo ao início do treino.' };
+    }
+    return { valid: true };
+  } catch (error: any) {
+    return { valid: false, reason: error?.message || 'Não foi possível confirmar o check-in.' };
+  }
 }
 
 export class ValidateActivityService {
@@ -76,867 +104,931 @@ export class ValidateActivityService {
   ) {}
 
   private generateTraceId(): string {
-    return `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `trace_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   }
 
   private validateInput(data: ValidateActivityRequest['activityData']): void {
-    if (!data) {
-      throw new AppError('Dados da atividade sao obrigatorios', 400);
-    }
-    if (!data.type || typeof data.type !== 'string') {
-      throw new AppError('Tipo da atividade e obrigatorio', 400);
-    }
-    const durationValue = (data as any).duration ?? (data as any).durationMins;
-    if (durationValue !== undefined && (typeof durationValue !== 'number' || !Number.isFinite(durationValue) || durationValue < 0)) {
-      throw new AppError('Duracao da atividade deve ser um numero valido de minutos', 400);
-    }
-    const validIntensities = ['low', 'moderate', 'high'];
-    if (data.intensity && !validIntensities.includes(data.intensity)) {
-      throw new AppError('Intensidade invalida. Opcoes aceitas: low, moderate, high', 400);
-    }
-  }
-
-  private calculateScore(data: ValidateActivityRequest['activityData']): number {
-    const profile = resolverPerfilValidacao(data);
-    const rawDuration = Number((data as any).duration ?? (data as any).durationMins) || 0;
-    const duration = profile.maxMinutosContabilizados > 0
-      ? Math.min(rawDuration, profile.maxMinutosContabilizados)
-      : rawDuration;
-    const basePointsPerMinute = data.type === 'power_video' ? 10 : 2;
-    const intensityMultiplier = data.intensity === 'high' ? 1.5 : data.intensity === 'moderate' ? 1.2 : 1.0;
-
-    let totalScore = Math.round(duration * basePointsPerMinute * intensityMultiplier);
-    if (data.type === 'power_video') {
-      totalScore = Math.min(totalScore, 100);
-    }
-    return Math.max(totalScore, 10);
-  }
-
-  private detectFraud(data: ValidateActivityRequest['activityData']): { isFraud: boolean; reason?: string } {
-    // O app atual envia `durationMins`; integrações antigas enviavam
-    // `duration`. A checagem anterior só olhava o nome legado e permitia
-    // contornar o limite de seis horas usando o formato novo.
+    if (!data) throw new AppError('Dados da atividade são obrigatórios', 400);
+    if (!data.type || typeof data.type !== 'string') throw new AppError('Tipo da atividade é obrigatório', 400);
     const duration = Number((data as any).duration ?? (data as any).durationMins);
-    const steps = Number(data.evidence?.steps);
-    if (Number.isFinite(duration) && duration > 360) {
-      return { isFraud: true, reason: 'Duracao excessiva e nao crivel (> 6 horas continuas)' };
+    if (!Number.isFinite(duration) || duration < 0) {
+      throw new AppError('Duração da atividade deve ser um número válido de minutos', 400);
     }
-    if (Number.isFinite(steps) && steps > 0 && Number.isFinite(duration) && duration > 0) {
-      const stepsPerMinute = steps / duration;
-      if (stepsPerMinute > 300) {
-        return { isFraud: true, reason: 'Cadencia de passos por minuto sobre-humana (> 300 spm)' };
+    // Limite técnico do gravador, não uma análise antifraude.
+    if (duration > 360) throw new AppError('Duração excessiva (> 6 horas contínuas)', 422);
+    if (data.intensity && !['low', 'moderate', 'high'].includes(data.intensity)) {
+      throw new AppError('Intensidade inválida. Opções aceitas: low, moderate, high', 400);
+    }
+  }
+
+  private calculateActivityXP(data: ValidateActivityRequest['activityData']): number {
+    const duration = Number((data as any).duration ?? (data as any).durationMins) || 0;
+    return calculateCompletedActivityXP({
+      type: data.type,
+      durationMinutes: duration,
+      intensity: data.intensity,
+    });
+  }
+
+  private async promoteStoredNativeDuplicate(existing: any): Promise<void> {
+    const activityId = String(existing?.id || '').trim();
+    const canonicalActivityId = String(existing?.canonicalActivityId || '').trim();
+    const beforeStatus = String(existing?.competitionReviewStatusBeforeDedup || '');
+    if (existing?.dataQualityStatus !== 'duplicate' || !activityId || !canonicalActivityId
+      || !['approved', 'pending_review', 'rejected', 'ineligible'].includes(beforeStatus)
+      || !existing.competitionPolicySnapshotId || !existing.sessionId) return;
+
+    // Recarregar o snapshot assinado impede que um registro legado com
+    // metadata de modalidade manipulada seja promovido em um retry.
+    const policy = await loadActivityCompetitionPolicySnapshot({
+      snapshotId: existing.competitionPolicySnapshotId,
+      userId: existing.userId,
+      activityType: existing.type,
+      cardioType: existing.cardioType,
+      isIndoorCardio: existing.isIndoorCardio,
+      sessionId: existing.sessionId,
+    });
+    if (!policy?.contexts.length) return;
+    await promoteCanonicalCompetitionProjection({
+      userId: existing.userId,
+      canonicalActivityId,
+      evidenceActivityId: activityId,
+      evidenceSource: 'invictus_native',
+      startTime: existing.startTime || existing.createdAt,
+      endTime: existing.endTime,
+      durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+      distanceKm: Number(existing.distance ?? existing.distanceKm) || 0,
+      activityType: policy.activityType,
+      cardioType: policy.cardioType,
+      isIndoorCardio: policy.isIndoorCardio,
+      calories: Number(existing.calories) || undefined,
+      avgHeartRate: Number(existing.avgHeartRate) || undefined,
+      maxHeartRate: Number(existing.maxHeartRate) || undefined,
+      policy,
+      outcome: {
+        status: beforeStatus as 'approved' | 'pending_review' | 'rejected' | 'ineligible',
+        decision: existing.securityDecisionBeforeDedup || existing.securityDecision || null,
+        reason: existing.nonScoringReasonBeforeDedup || null,
+        riskScore: existing.securityRiskScoreBeforeDedup ?? existing.securityRiskScore,
+        reportId: existing.securityReportIdBeforeDedup || existing.securityReportId || null,
+        reviewApplied: existing.securityReviewAppliedBeforeDedup === true,
+      },
+      score: calculateCompletedActivityXP({
+        type: policy.activityType,
+        durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+        intensity: existing.intensity,
+      }),
+    });
+  }
+
+  private detectCompetitiveFraud(data: ValidateActivityRequest['activityData']): string | null {
+    const duration = Number((data as any).duration ?? (data as any).durationMins);
+    const steps = Number(data.evidence?.steps ?? (data as any).pedometerSteps);
+    if (steps > 0 && duration > 0 && steps / duration > 300) {
+      return 'Cadência de passos incompatível com atividade humana (> 300 spm).';
+    }
+    return null;
+  }
+
+  private async awardActivityXP(
+    userId: string,
+    activityId: string,
+    amount: number,
+  ): Promise<{ newXP: number; newLevel: number; credited: boolean }> {
+    if (amount <= 0) {
+      const user = await this.userRepository.findById(userId);
+      const currentXP = Number((user as any)?.xp ?? (user as any)?.totalXp) || 0;
+      return {
+        newXP: currentXP,
+        newLevel: Number((user as any)?.level) || getLevelFromXP(currentXP),
+        credited: false,
+      };
+    }
+
+    // Ledger e usuário na mesma transação: repetir o mesmo sessionId não
+    // duplica XP. O fallback mantém repositórios falsos de testes compatíveis.
+    if (typeof (db as any).runTransaction === 'function') {
+      return db.runTransaction(async (transaction: any) => {
+        const ledgerRef = db.collection('activity_reward_ledger').doc(activityId);
+        const userRef = db.collection('users').doc(userId);
+        const [ledgerSnap, userSnap] = await Promise.all([
+          transaction.get(ledgerRef),
+          transaction.get(userRef),
+        ]);
+        const userData = userSnap.data() || {};
+        const currentXP = Number(userData.xp ?? userData.totalXp) || 0;
+        if (ledgerSnap.exists) {
+          const ledger = ledgerSnap.data() || {};
+          if (ledger.userId !== userId || ledger.origin !== 'completed_activity') {
+            throw new Error('Ledger de atividade pertence a outro usuário ou origem.');
+          }
+          return {
+            newXP: currentXP,
+            newLevel: Number(userData.level) || getLevelFromXP(currentXP),
+            credited: false,
+          };
+        }
+        const newXP = currentXP + amount;
+        const newLevel = getLevelFromXP(newXP);
+        transaction.set(userRef, {
+          xp: newXP,
+          totalXp: newXP,
+          level: newLevel,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        transaction.create(ledgerRef, {
+          activityId,
+          userId,
+          xp: amount,
+          origin: 'completed_activity',
+          economyVersion: ACTIVITY_ECONOMY_VERSION,
+          createdAt: new Date().toISOString(),
+        });
+        return { newXP, newLevel, credited: true };
+      });
+    }
+
+    const result = await this.userRepository.addXP(userId, amount);
+    return { ...result, credited: true };
+  }
+
+  /**
+   * Concilia todos os efeitos derivados de uma atividade que já está salva.
+   * Cada destino usa o ID determinístico da atividade, portanto repetir esta
+   * rotina recupera uma falha parcial sem duplicar XP ou placares.
+   */
+  private async reconcileCompletedActivity(
+    existing: any,
+    user: any,
+  ): Promise<{
+    xpResult: { newXP: number; newLevel: number; credited: boolean };
+    recalculated: Awaited<ReturnType<typeof recalculateAllUserScores>> | null;
+  }> {
+    const activityId = String(existing?.id || '').trim();
+    if (!activityId) throw new AppError('Atividade salva sem identificador para conciliação.', 500);
+
+    const rawType = String(existing.type || '').toLowerCase();
+    const activityType: 'workout' | 'cardio' = rawType === 'cardio' ? 'cardio' : 'workout';
+    const contexts = Array.isArray(existing.competitionContexts) ? existing.competitionContexts : [];
+    let competitionStatus = String(existing.competitionReviewStatus || existing.competitionStatus || 'not_required');
+    const policy: ActivityCompetitionPolicy = {
+      version: 'activity-competition-v2',
+      activityType,
+      ...(existing.cardioType ? { cardioType: String(existing.cardioType) } : {}),
+      isIndoorCardio: existing.isIndoorCardio === true,
+      resolvedAt: normalizeTimestamp(existing.competitionPolicyResolvedAt || existing.startTime || existing.createdAt),
+      effectiveAt: normalizeTimestamp(existing.competitionPolicyEffectiveAt || existing.startTime || existing.createdAt),
+      contexts,
+      requiresSecurityReview: contexts.length > 0,
+      requiresGymCheckIn: contexts.some((context: any) => context?.requiresGymCheckIn === true),
+      requiresContinuousGps: contexts.some((context: any) => context?.requiresContinuousGps === true),
+      requiresMotionSensors: contexts.some((context: any) => context?.requiresMotionSensors === true),
+      snapshotId: existing.competitionPolicySnapshotId || undefined,
+      sessionId: existing.sessionId || existing.activitySessionId || undefined,
+    };
+    if (existing.dataQualityStatus === 'dedup_pending') {
+      try {
+        const identityInput: ActivityIdentityInput = {
+          userId: existing.userId,
+          activityId,
+          type: existing.type,
+          cardioType: existing.cardioType,
+          startTime: existing.startTime || existing.createdAt,
+          endTime: existing.endTime,
+          durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+          source: String(existing.source || 'invictus'),
+        };
+        const identity = await reserveActivityIdentity(identityInput);
+        if (identity.status === 'pending') throw new Error('Outra origem ainda está reservando esta atividade.');
+        const duplicate = identity.status === 'duplicate';
+        const eligible = !duplicate && isActivityEconomyEligible({
+          type: activityType,
+          durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+        });
+        const recoveredXP = eligible
+          ? calculateCompletedActivityXP({
+              type: activityType,
+              durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+              intensity: existing.intensity,
+            })
+          : 0;
+        const restoredCompetitionStatus = !duplicate
+          ? String(existing.competitionReviewStatusBeforeDedup || '')
+          : '';
+        const restoredCompetitionReason = existing.nonScoringReasonBeforeDedup ?? null;
+        const patch = {
+          dataQualityStatus: duplicate ? 'duplicate' : 'accepted',
+          canonicalActivityId: duplicate ? identity.canonicalActivityId : null,
+          economyEligible: eligible,
+          missionEligible: eligible,
+          activityXpAwarded: recoveredXP,
+          points: recoveredXP,
+          pointsEarned: recoveredXP,
+          scoreAwarded: recoveredXP,
+          economyVersion: ACTIVITY_ECONOMY_VERSION,
+          ...(restoredCompetitionStatus ? {
+            competitionReviewStatus: restoredCompetitionStatus,
+            competitionStatus: restoredCompetitionStatus,
+            validationStatus: restoredCompetitionStatus === 'approved' ? 'validated'
+              : restoredCompetitionStatus === 'not_required' ? 'recorded'
+                : restoredCompetitionStatus === 'ineligible' || restoredCompetitionStatus === 'rejected'
+                  ? 'not_eligible' : 'pending_review',
+            pendingReview: restoredCompetitionStatus === 'pending_review',
+            isScoringEligible: restoredCompetitionStatus === 'approved',
+            competitionPoints: restoredCompetitionStatus === 'approved' ? recoveredXP : 0,
+            nonScoringReason: restoredCompetitionReason,
+            rejectionReason: restoredCompetitionReason,
+          } : {}),
+          ...(duplicate ? {
+            competitionReviewStatus: 'ineligible',
+            competitionStatus: 'ineligible',
+            validationStatus: 'not_eligible',
+            pendingReview: false,
+            isScoringEligible: false,
+            competitionPoints: 0,
+            securityDecision: 'DUPLICATE',
+            nonScoringReason: 'DUPLICATE_ACTIVITY',
+          } : {}),
+        };
+        if (!duplicate && identity.status === 'claimed'
+          && typeof (this.activityRepository as any).updateWithIdentity === 'function') {
+          const committed = await (this.activityRepository as any).updateWithIdentity(
+            activityId,
+            patch,
+            { input: identityInput, reservation: identity },
+          );
+          if (!committed) throw new Error('A reserva econômica foi assumida por outra origem.');
+        } else if (typeof (this.activityRepository as any).update === 'function') {
+          await this.activityRepository.update(activityId, patch as any);
+        }
+        Object.assign(existing, patch);
+        const beforeStatus = String(existing.competitionReviewStatusBeforeDedup || '');
+        if (duplicate && contexts.length > 0
+          && ['approved', 'pending_review', 'rejected', 'ineligible'].includes(beforeStatus)) {
+          await promoteCanonicalCompetitionProjection({
+            userId: existing.userId,
+            canonicalActivityId: identity.canonicalActivityId,
+            evidenceActivityId: activityId,
+            evidenceSource: 'invictus_native',
+            startTime: existing.startTime || existing.createdAt,
+            endTime: existing.endTime,
+            durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+            distanceKm: Number(existing.distance ?? existing.distanceKm) || 0,
+            activityType,
+            cardioType: existing.cardioType,
+            isIndoorCardio: existing.isIndoorCardio === true,
+            calories: Number(existing.calories) || undefined,
+            avgHeartRate: Number(existing.avgHeartRate) || undefined,
+            maxHeartRate: Number(existing.maxHeartRate) || undefined,
+            policy,
+            outcome: {
+              status: beforeStatus as 'approved' | 'pending_review' | 'rejected' | 'ineligible',
+              decision: existing.securityDecisionBeforeDedup || existing.securityDecision || null,
+              reason: existing.nonScoringReasonBeforeDedup || null,
+              riskScore: existing.securityRiskScoreBeforeDedup ?? existing.securityRiskScore,
+              reportId: existing.securityReportIdBeforeDedup || existing.securityReportId || null,
+              reviewApplied: existing.securityReviewAppliedBeforeDedup === true,
+            },
+            score: calculateCompletedActivityXP({
+              type: activityType,
+              durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+              intensity: existing.intensity,
+            }),
+          });
+        }
+        competitionStatus = String(existing.competitionReviewStatus || existing.competitionStatus || 'not_required');
+      } catch {
+        // O registro pessoal já existe, mas a resposta pede retry para que a
+        // reserva econômica não fique abandonada indefinidamente.
+        throw new AppError('Atividade salva; não foi possível conciliar XP e desafios agora. Tente finalizar novamente.', 503);
       }
     }
-    return { isFraud: false };
-  }
+    const activityXP = existing.economyEligible === false
+      ? 0
+      : Math.max(0, Number(existing.activityXpAwarded ?? existing.points ?? existing.scoreAwarded) || 0);
+    const approved = competitionStatus === 'approved';
 
-  // #325 (pedido do usuario): o atleta precisa de uma mensagem SIMPLES e
-  // amigavel, nunca do relatorio tecnico interno (score de risco, trust,
-  // reputacao, nome do driver em ingles etc). O detalhe tecnico completo
-  // continua indo pro audit log e pro campo `rejectionReason` salvo no
-  // documento da atividade -- so nao vai mais para a tela do usuario.
-  private buildSecurityUserMessage(decision: string): string {
-    if (decision === 'UNDER_REVIEW') {
-      return 'Recebemos sua atividade. Ela está em análise de segurança e ainda não gerou pontos.';
-    }
-    // BLOCKED (e qualquer outro motivo tecnico que caia aqui): a atividade
-    // NAO trava mais o atleta numa tela de erro pedindo pra tentar de novo.
-    // Ela e recebida, fica pendente de revisao, e o status muda depois que a
-    // checagem terminar (resposta passa a ser 200/pending, nao mais 422).
-    return 'Recebemos sua atividade! Estamos concluindo a verificação de segurança e você será avisado assim que ela for confirmada.';
-  }
-
-  // Motivo tecnico completo (score, driver, decisao) -- so para uso interno
-  // (audit log, rejectionReason no documento, fila de revisao do admin).
-  // Nunca deve ser exibido diretamente ao atleta.
-  private buildInternalSecurityReason(decision: string, explanationSummary?: string, primaryRiskDriver?: string): string {
-    if (explanationSummary) return `Decisão ${decision}: ${explanationSummary}`;
-    if (primaryRiskDriver) return `Decisão ${decision}. Principal fator de risco: ${primaryRiskDriver}.`;
-    return `Decisão ${decision}. Inconsistências entre GPS, sensores do aparelho e o tipo de atividade declarado.`;
-  }
-
-  // ACT-02 (auditoria 6167c8f): monta a resposta de um retry confirmado
-  // (mesmo sessionId ja gravado) inteiramente a partir do documento ja
-  // persistido -- nunca recalcula pontuacao nem concede XP de novo. Cobre os
-  // tres formatos possiveis (pending_review, not_eligible, validated) com o
-  // mesmo formato de resposta que a primeira chamada devolveu.
-  private buildReplayResponse(existing: any, traceId: string): ValidateActivityResponse {
-    const validationStatus = existing.validationStatus;
-    const displayStatus = validationStatus === 'validated'
-      ? 'valid'
-      : validationStatus === 'not_eligible'
-        ? 'not_eligible'
-        : 'pending_review';
-    const isPending = displayStatus === 'pending_review';
-
-    const message = existing.userMessage || (
-      displayStatus === 'valid'
-        ? 'Esta atividade ja havia sido registrada com sucesso.'
-        : displayStatus === 'not_eligible'
-          ? 'Esta atividade ja havia sido registrada; sem pontuacao competitiva.'
-          : 'Esta atividade ja foi recebida e esta em analise.'
+    const xpPromise = this.awardActivityXP(existing.userId, activityId, activityXP);
+    const missionOccurredAt = existing.endTime ?? existing.startTime ?? existing.timestamp ?? existing.createdAt;
+    const missionPromise = MissionEngine.syncUserProgressFromCompletedActivities(
+      existing.userId,
+      missionOccurredAt ? [missionOccurredAt] : [],
     );
+    const entryPromise = contexts.length > 0
+      ? persistActivityCompetitionEntries({
+          activityId,
+          userId: existing.userId,
+          policy,
+          reviewStatus: approved
+            ? 'approved'
+            : competitionStatus === 'ineligible'
+              ? 'ineligible'
+              : competitionStatus === 'rejected'
+                ? 'rejected'
+                : 'pending_review',
+          score: Number(existing.competitionPoints ?? activityXP) || 0,
+          riskScore: existing.securityRiskScore,
+          securityDecision: existing.securityDecision,
+          securityReportId: existing.securityReportId,
+          reasonCode: existing.nonScoringReason || existing.rejectionReason || null,
+        })
+      : Promise.resolve();
+    const hasGymRanking = contexts.some((context: any) => context?.type === 'gym_ranking');
+    const rankingPromise = approved && hasGymRanking
+      ? recalculateAllUserScores(existing.userId)
+      : Promise.resolve(null);
+    const championshipPromise = approved
+      ? submitActivityToActiveChampionships({
+          userId: existing.userId,
+          userName: user?.name || user?.displayName,
+          userGymName: user?.gymName,
+          activityId,
+          activityType,
+          isIndoorCardio: existing.isIndoorCardio,
+          durationMinutes: Number(existing.duration ?? existing.durationMins) || 0,
+          distanceKm: Number(existing.distance ?? existing.distanceKm) || 0,
+          score: Number(existing.competitionPoints ?? activityXP) || 0,
+          when: readDate(existing.endTime || existing.startTime || existing.createdAt),
+          riskScore: existing.securityRiskScore,
+          securityDecision: existing.securityDecision,
+          securityReportId: existing.securityReportId,
+          contexts,
+        })
+      : Promise.resolve();
 
+    const [xpResult, recalculated] = await Promise.all([
+      xpPromise,
+      rankingPromise,
+      championshipPromise,
+      entryPromise,
+      missionPromise,
+    ]);
+    const previousRankingPoints = Number(existing.rankingPointsEarned);
+    const rankingPointsEarned = recalculated?.weekly.igaRanking
+      ?? (Number.isFinite(previousRankingPoints) ? previousRankingPoints : 0);
+    const completionPatch = {
+      processingStatus: 'complete',
+      processingCompletedAt: new Date().toISOString(),
+      level: xpResult.newLevel,
+      rankingPointsEarned,
+    };
+    if (typeof (this.activityRepository as any).update === 'function') {
+      await this.activityRepository.update(activityId, completionPatch as any);
+    }
+    Object.assign(existing, completionPatch);
+    return { xpResult, recalculated };
+  }
+
+  private responseFromExisting(existing: any, traceId: string): ValidateActivityResponse {
+    const competitionStatus = String(existing.competitionReviewStatus || existing.competitionStatus || 'not_required');
+    const message = existing.userMessage || (competitionStatus === 'pending_review'
+      ? 'Atividade concluída e salva. Somente a pontuação competitiva está em análise.'
+      : 'Atividade já registrada e disponível no seu histórico.');
     return {
       success: true,
-      activityId: existing.id || '',
-      scoreAwarded: existing.scoreAwarded || 0,
-      rankingPointsEarned: 0,
+      activityId: existing.id,
+      scoreAwarded: Number(existing.activityXpAwarded ?? existing.scoreAwarded) || 0,
+      rankingPointsEarned: Number(existing.rankingPointsEarned) || 0,
+      level: Number(existing.level) || 1,
       message,
-      userMessage: message,
-      pending: isPending || undefined,
-      status: isPending ? 'pending_review' : undefined,
-      isScoringEligible: existing.isScoringEligible ?? (displayStatus === 'valid'),
-      nonScoringReason: existing.nonScoringReason || undefined,
-      reasonCode: existing.nonScoringReason || undefined,
-      canRetry: isPending || undefined,
       traceId,
+      status: existing.validationStatus || 'recorded',
+      recordStatus: existing.recordStatus || 'completed',
+      activityMode: existing.activityMode || 'personal',
+      competitionReviewStatus: competitionStatus,
       workout: {
-        id: existing.id,
-        points: existing.scoreAwarded || 0,
-        rankingPointsEarned: 0,
-        status: displayStatus,
-        type: existing.type,
-        muscleGroup: existing.muscleGroup,
-        cardioType: existing.cardioType,
-        cardioTypeLabel: existing.cardioTypeLabel,
-        distance: existing.distance || 0,
-        duration: existing.duration || 0,
-        calories: existing.calories,
-        avgHeartRate: existing.avgHeartRate,
-        steps: existing.steps,
-        timestamp: existing.createdAt
+        ...existing,
+        timestamp: existing.createdAt || existing.endTime || new Date().toISOString(),
       },
       validation: {
         success: true,
-        status: displayStatus,
-        score: existing.scoreAwarded || 0,
-        reasonCode: existing.nonScoringReason || null
-      }
+        status: existing.validationStatus || 'recorded',
+        score: competitionStatus === 'approved' ? 100 : 0,
+        reasonCode: existing.nonScoringReason || null,
+      },
+      isScoringEligible: competitionStatus === 'approved',
     } as any;
   }
 
   async execute(request: ValidateActivityRequest): Promise<ValidateActivityResponse> {
     const traceId = this.generateTraceId();
-    console.log(`[ValidateActivityService] [${traceId}] Iniciando validacao para usuario ${request.userId}`);
-
     this.validateInput(request.activityData);
-    console.log(`[ValidateActivityService] [${traceId}] Entrada de dados validada com sucesso`);
 
     const user = await this.userRepository.findById(request.userId);
-    if (!user) {
-      console.warn(`[ValidateActivityService] [${traceId}] Usuario ${request.userId} nao encontrado no Firestore`);
-      throw new AppError('Usuario nao encontrado no sistema', 404);
-    }
+    if (!user) throw new AppError('Usuário não encontrado no sistema', 404);
 
     const rawActivity: any = request.activityData || {};
-
-    // ACT-01/ACT-02 (auditoria 6167c8f): ate aqui, um retry de finalizacao
-    // (rede caiu, resposta se perdeu, tela travou) recalculava duracao/hora de
-    // fim do zero no cliente e so era deduplicado por um heuristico fragil
-    // (mesmo tipo + mesma duracao dentro de 10s) -- um retry com duracao
-    // levemente diferente furava a deduplicacao e criava um SEGUNDO workout
-    // (ActivityRepository.create() sem customId sempre usa .add(), ID novo a
-    // cada chamada). Agora o cliente envia um `sessionId` estavel (congelado
-    // no inicio da sessao, o mesmo em toda tentativa de finalizar -- ver
-    // activityService.ts) e essa chave vira o ID do documento no Firestore:
-    // toda tentativa com o mesmo sessionId bate no MESMO documento. Se ele ja
-    // existir, esta chamada e um retry confirmado -- devolvemos o resultado
-    // ja gravado, sem rodar fraude/seguranca/pontuacao de novo (nunca concede
-    // XP duas vezes) e sem gerar um segundo documento.
-    const sessionKey = typeof rawActivity.sessionId === 'string' && rawActivity.sessionId.trim()
-      ? rawActivity.sessionId.trim().slice(0, 128)
-      : null;
-    const customActivityId = sessionKey ? `${request.userId}_${sessionKey}` : undefined;
-
-    if (customActivityId) {
-      const existingActivity = await this.activityRepository.findById(customActivityId);
-      if (existingActivity) {
-        console.log(`[ValidateActivityService] [${traceId}] Retry idempotente detectado para sessionId=${sessionKey}, devolvendo resultado ja gravado (ID: ${existingActivity.id})`);
-        return this.buildReplayResponse(existingActivity, traceId);
-      }
-    }
-    // Health observations are sanitized separately and never enter competitive evidence.
     const workoutHealth = sanitizeWorkoutHealthRecord(rawActivity.healthSession);
-    // Keep the private time series out of competition audit payloads and their
-    // document size limits. The surrounding workout is its only persistence.
     const { healthSession: _privateHealthSession, ...activityDataForAudit } = rawActivity;
-    const durationValue = rawActivity.duration ?? rawActivity.durationMins;
-    const durationForMetrics = Number(durationValue) || 0;
+    const duration = Number(rawActivity.duration ?? rawActivity.durationMins) || 0;
+    const activityStart = readDate(rawActivity.startTime);
+    const activityEnd = readDate(rawActivity.endTime, new Date());
+    const activityId = buildActivityId(request.userId, rawActivity.sessionId || rawActivity.activitySessionId);
 
-    const fraudCheck = this.detectFraud(request.activityData);
-    if (fraudCheck.isFraud) {
-      console.warn(`[ValidateActivityService] [${traceId}] Suspeita de fraude: ${fraudCheck.reason}`);
-      await this.auditRepository.log({
-        traceId,
-        userId: request.userId,
-        action: 'VALIDATE_ACTIVITY_FRAUD_DETECTED',
-        details: { activityData: activityDataForAudit, reason: fraudCheck.reason },
-        result: 'FLAGGED'
-      });
-      throw new AppError(`Atividade recusada: ${fraudCheck.reason}.`, 422);
+    if (activityId && typeof (this.activityRepository as any).findById === 'function') {
+      const existing = await this.activityRepository.findById(activityId);
+      if (existing) {
+        await this.promoteStoredNativeDuplicate(existing).catch((error) => {
+          console.error(`[ValidateActivityService] [${traceId}] Promoção competitiva pendente no retry:`, error);
+        });
+        if (existing.processingStatus === 'complete') {
+          return this.responseFromExisting(existing, traceId);
+        }
+        const reconciliation = await this.reconcileCompletedActivity(existing, user);
+        return this.responseFromExisting({
+          ...existing,
+          level: reconciliation.xpResult.newLevel,
+          rankingPointsEarned: reconciliation.recalculated?.weekly.igaRanking
+            ?? existing.rankingPointsEarned,
+        }, traceId);
+      }
     }
 
-    // ACT-02: quando o cliente ja manda um sessionId estavel, a checagem acima
-    // (customActivityId) e a fonte de verdade de idempotencia -- este
-    // heuristico fuzzy (tipo+duracao+10s) fica só como rede de segurança para
-    // clientes antigos que ainda nao enviam sessionId.
-    if (!customActivityId) {
-      const recentActivities = await this.activityRepository.findRecentByUser(request.userId, 0.1);
-      const tenSecondsAgo = Date.now() - 10000;
-      const isDuplicateSubmission = recentActivities.some(a => {
-        const createdAtMs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const previousDuration = Number((a as any).duration ?? (a as any).durationMins);
-        const submittedDuration = durationValue === undefined ? 30 : Number(durationValue);
-        return createdAtMs >= tenSecondsAgo &&
-          a.type === request.activityData.type &&
-          Number.isFinite(previousDuration) && Number.isFinite(submittedDuration) &&
-          previousDuration === submittedDuration;
+    if (!activityId) {
+      const recent = await this.activityRepository.findRecentByUser(request.userId, 0.1);
+      const duplicate = recent.some((item) => {
+        const createdAt = item.createdAt ? new Date(item.createdAt).getTime() : 0;
+        return createdAt >= Date.now() - 10_000
+          && item.type === rawActivity.type
+          && Number((item as any).duration ?? (item as any).durationMins) === duration;
       });
-      if (isDuplicateSubmission) {
-        console.warn(`[ValidateActivityService] [${traceId}] Envio duplicado detectado e bloqueado (mesma atividade nos ultimos 10s)`);
-        throw new AppError('Esta atividade ja foi registrada. Aguarde alguns segundos antes de tentar novamente.', 409);
+      if (duplicate) throw new AppError('Esta atividade já foi registrada.', 409);
+    }
+
+    const requiresSessionPolicy = ['workout', 'cardio'].includes(String(rawActivity.type).toLowerCase());
+    let policy: ActivityCompetitionPolicy;
+    if (requiresSessionPolicy) {
+      // O snapshot é obrigatório para atividades pessoais e competitivas. A
+      // decisão não pode depender de um marcador opcional enviado pelo cliente,
+      // pois isso permitiria omitir a versão e recalcular a participação no fim.
+      if (!rawActivity.competitionPolicySnapshotId || !rawActivity.sessionId) {
+        throw new AppError('A autorização desta sessão está ausente. A atividade continua no aparelho; atualize o app e tente finalizar novamente.', 409);
       }
+      const frozenPolicy = await loadActivityCompetitionPolicySnapshot({
+        snapshotId: rawActivity.competitionPolicySnapshotId,
+        userId: request.userId,
+        activityType: rawActivity.type,
+        cardioType: rawActivity.cardioType,
+        isIndoorCardio: rawActivity.isIndoorCardio,
+        sessionId: rawActivity.sessionId,
+      });
+      if (!frozenPolicy) {
+        throw new AppError('A autorização desta sessão é inválida ou expirou. A atividade não foi descartada; contate o suporte para recuperar o envio.', 409);
+      }
+      policy = frozenPolicy;
+
+      const resolvedAt = readDate(policy.resolvedAt, new Date(0));
+      const startBy = readDate(policy.startBy, new Date(0));
+      const expiresAt = readDate(policy.expiresAt, new Date(0));
+      const now = new Date();
+      const hasValidActivityTimestamps = Number.isFinite(new Date(rawActivity.startTime).getTime())
+        && Number.isFinite(new Date(rawActivity.endTime).getTime());
+      if (!hasValidActivityTimestamps
+        || activityEnd < activityStart
+        || activityStart < new Date(resolvedAt.getTime() - 60_000)
+        || activityStart > startBy
+        || activityEnd > expiresAt
+        || activityEnd > new Date(now.getTime() + 2 * 60_000)) {
+        throw new AppError('Os horários desta sessão não correspondem à autorização emitida no início.', 422);
+      }
+      const wallClockMinutes = Math.max(0, (activityEnd.getTime() - activityStart.getTime()) / 60_000);
+      if (duration > wallClockMinutes + 2) {
+        throw new AppError('A duração informada é maior que o tempo real desta sessão.', 422);
+      }
+    } else {
+      const now = new Date().toISOString();
+      policy = {
+        version: 'activity-competition-v2',
+        activityType: 'workout',
+        isIndoorCardio: false,
+        resolvedAt: now,
+        effectiveAt: now,
+        contexts: [],
+        requiresSecurityReview: false,
+        requiresGymCheckIn: false,
+        requiresContinuousGps: false,
+        requiresMotionSensors: false,
+      };
+    }
+
+    if (requiresSessionPolicy) {
+      // Daqui em diante a policy assinada é a fonte de verdade. Usar outra
+      // vez strings cruas do payload reabriria divergências de case/espaço e
+      // permitiria avaliar uma corrida outdoor como CARDIO genérico.
+      rawActivity.type = policy.activityType;
+      rawActivity.cardioType = policy.cardioType;
+      rawActivity.isIndoorCardio = policy.isIndoorCardio;
     }
 
     const modality = resolveModality(rawActivity);
-    // Para cardio externo, distancia/velocidade competitivas nunca sao
-    // aceitas diretamente do aparelho. O servidor refaz a trilha ponto a
-    // ponto, descartando baixa precisao e outliers, como processamento
-    // posterior de um arquivo GPS. O valor do cliente permanece apenas no
-    // payload bruto de auditoria.
-    const routeReport = modality?.requiresGps ? GpsEngine.evaluate(rawActivity) : null;
-    const effectiveDistanceKm = routeReport
-      ? routeReport.verifiedDistanceKm
-      : (Number(rawActivity.distanceKm) || 0);
-    const userWeightKg = (user as any).weight || (user as any).weightKg;
-    // #204: calorias/ritmo nao sao enviados pelo cliente nesta rota legada -- estimamos
-    // server-side (MET x peso x tempo) para que o historico sempre tenha algo util,
-    // em vez de deixar o card de atividade vazio quando o dispositivo nao informa isso.
-    const estimatedCalories = estimateCalories({
-      type: request.activityData.type,
-      cardioType: rawActivity.cardioType,
-      durationMins: durationForMetrics,
-      weightKg: userWeightKg
-    });
-    const estimatedPace = formatPace(effectiveDistanceKm, durationForMetrics);
-    const finalCalories = (rawActivity.healthTelemetry && typeof rawActivity.healthTelemetry.calories === 'number' && rawActivity.healthTelemetry.calories > 0)
-      ? rawActivity.healthTelemetry.calories
-      : estimatedCalories;
-    // #71: Health Data Layer -- fonte 'invictus_gps' quando ha percurso real
-    // (distancia/checkpoints), 'invictus_manual' quando nao ha (musculacao,
-    // cardio indoor sem GPS). So decide a FONTE da amostra de saude, nao
-    // influencia pontuacao/IGA.
-    const healthSampleSource: HealthSampleSource = (effectiveDistanceKm > 0 || Array.isArray(rawActivity.checkpoints) && rawActivity.checkpoints.length > 0)
+    // Reconstruir e validar a rota faz parte da análise competitiva. Uma
+    // atividade casual usa as métricas registradas pelo aparelho sem passar
+    // pelo motor antifraude.
+    const routeReport = policy.requiresSecurityReview && policy.requiresContinuousGps
+      ? GpsEngine.evaluate(rawActivity)
+      : null;
+    const distanceKm = routeReport ? routeReport.verifiedDistanceKm : Number(rawActivity.distanceKm) || 0;
+    const calories = rawActivity.healthTelemetry?.calories > 0
+      ? Number(rawActivity.healthTelemetry.calories)
+      : estimateCalories({
+          type: rawActivity.type,
+          cardioType: rawActivity.cardioType,
+          durationMins: duration,
+          weightKg: (user as any).weight || (user as any).weightKg,
+        });
+    const pace = formatPace(distanceKm, duration);
+    const healthSampleSource: HealthSampleSource = distanceKm > 0
+      || (Array.isArray(rawActivity.checkpoints) && rawActivity.checkpoints.length > 0)
       ? 'invictus_gps'
       : 'invictus_manual';
 
-    // Geofence de academia -- RE-VALIDACAO NO SERVIDOR.
-    //
-    // Ate agora a unica checagem de "o atleta esta mesmo na academia" para
-    // musculacao rodava so no cliente (src/services/activityService.ts,
-    // startSession) usando uma copia local do motor de geofence. O motor de
-    // verdade, testado (api/_lib/geofence-engine.ts, 10/10 em
-    // geofenceEngine.test.ts), so era chamado por api/_handlers/gyms_checkin.ts
-    // -- um endpoint que NENHUM fluxo real do app invoca (checkInId nunca e
-    // preenchido por handleStartActivity em Challenges.tsx). Ou seja: nada
-    // impedia uma chamada direta a este endpoint (fora do app, sem passar pelo
-    // client) com `startLocation` fabricado ou ausente de creditar pontos de
-    // musculacao sem o atleta jamais ter estado na academia. Nunca confiar no
-    // cliente para uma checagem antifraude que o proprio cliente decide se
-    // roda -- reaproveita aqui o mesmo motor/limites (80m raio, 30m precisao)
-    // ja usado no check-in.
-    // #249: mesmo sinal usado abaixo so pra geofence de musculacao, agora
-    // tambem decide se a atividade (qualquer tipo, nao so musculacao) tem
-    // ALGUM premio/ranking real em jogo -- ver uso em `competitivelyEligible`
-    // e no desvio da fila de revisao manual mais abaixo. `hasActiveChampionshipEnrollment`
-    // ja e 100% servidor (le Firestore, nunca confia no cliente): true se o
-    // atleta pagou inscricao num campeonato ('paga') OU entrou por opcao
-    // propria no ranking da comunidade (`community_championship_enrollments`,
-    // que exige um toque explicito em "participar" -- nao e automatico).
-    const hasActiveScoringStakes = await hasActiveChampionshipEnrollment(request.userId);
+    let competitionReviewStatus: CompetitionReviewStatus = policy.requiresSecurityReview ? 'approved' : 'not_required';
+    let competitionReason: string | null = null;
+    let securityDecision: string | null = null;
+    let securityRiskScore: number | undefined;
+    let securityReportId: string | null = null;
+    let securityReviewApplied = false;
 
-    if (request.activityData.type === 'workout' && rawActivity.checkInId) {
-      await validateCheckInOwnership(
-        request.userId,
-        rawActivity.checkInId,
-        request.activityData.startTime ? normalizarTimestamp(request.activityData.startTime) : undefined
-      );
-    }
-
-    if (request.activityData.type === 'workout' && hasActiveScoringStakes && !rawActivity.checkInId) {
-      const gymId = (user as any).gymId;
-      const gymLocation = (user as any).gymLocation;
-      const geofenceResult = validateGeofenceCheckin(
-        gymId ? {
-          id: gymId,
-          name: (user as any).gymName || 'Sua Academia',
-          latitude: gymLocation?.lat,
-          longitude: gymLocation?.lng
-        } : null,
-        rawActivity.startLocation ? {
-          latitude: rawActivity.startLocation.lat,
-          longitude: rawActivity.startLocation.lng,
-          accuracy: rawActivity.startLocation.accuracy,
-          isMock: !!rawActivity.isMockLocation
-        } : null,
-        MAX_GEOFENCE_RADIUS_METERS,
-        MAX_GPS_ACCURACY_METERS
-      );
-
-      if (!geofenceResult.approved) {
-        console.warn(`[ValidateActivityService] [${traceId}] Geofence de academia recusada: ${geofenceResult.reason}`);
-
-        // #325 (pedido do usuario): mesmo tratamento do bloqueio do
-        // SecurityPipeline abaixo -- a musculacao tambem nao trava mais numa
-        // tela de erro. Fecha a sessao normalmente, sem pontos, com status
-        // pending_review (fica na fila de revisao do admin).
-        const geofenceReasonCode = 'GEOFENCE_' + geofenceResult.status.toUpperCase();
-        let pendingActivityId: string | undefined;
-        let pendingActivityTimestamp = request.activityData.endTime || new Date().toISOString();
-        try {
-          const pendingActivity = await this.activityRepository.create({
-            ...workoutHealth,
-            userId: request.userId,
-            type: request.activityData.type,
-            muscleGroup: rawActivity.muscleGroup,
-            duration: durationForMetrics,
-            intensity: request.activityData.intensity || 'moderate',
-            startTime: request.activityData.startTime || new Date().toISOString(),
-            endTime: request.activityData.endTime || new Date().toISOString(),
-            points: 0,
-            pointsEarned: 0,
-            scoreAwarded: 0,
-            rankingPointsEarned: 0,
-            status: 'pending_review',
-            validationStatus: 'pending_review',
-            pendingReview: true,
-            nonScoringReason: geofenceReasonCode,
-            rejectionReason: geofenceResult.reason,
-            userMessage: geofenceResult.userFacingMessage,
-            evidence: request.activityData.evidence || {},
-            sessionId: sessionKey || undefined,
-            traceId
-          }, customActivityId);
-          pendingActivityId = pendingActivity.id;
-          pendingActivityTimestamp = pendingActivity.createdAt || pendingActivityTimestamp;
-        } catch (persistErr) {
-          // ACT-01: absorver esta falha e devolver 200/pending sem ID fazia o
-          // cliente encerrar a sessao e apagar a copia local acreditando que a
-          // atividade estava na fila -- quando na verdade nada foi gravado.
-          // Falha de persistencia agora e um erro real (503): o cliente deve
-          // preservar o envio local e tentar de novo.
-          console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade de musculacao pendente de revisao:`, persistErr);
-          throw new AppError('Não foi possível registrar sua atividade agora. Tente novamente em instantes.', 503);
-        }
-
-        await this.auditRepository.log({
-          traceId,
-          userId: request.userId,
-          action: 'VALIDATE_ACTIVITY_GEOFENCE_PENDING_REVIEW',
-          details: { activityData: activityDataForAudit, reason: geofenceResult.reason, status: geofenceResult.status, activityId: pendingActivityId },
-          result: 'FLAGGED'
-        });
-
-        return {
-          success: true,
-          ...workoutHealth,
-          pending: true,
-          status: 'pending_review',
-          activityId: pendingActivityId,
-          message: geofenceResult.userFacingMessage,
-          userMessage: geofenceResult.userFacingMessage,
-          isScoringEligible: false,
-          nonScoringReason: geofenceReasonCode,
-          reasonCode: geofenceReasonCode,
-          canRetry: true,
-          traceId,
-          workout: pendingActivityId ? {
-            ...workoutHealth,
-            id: pendingActivityId,
-            points: 0,
-            rankingPointsEarned: 0,
-            status: 'pending_review',
-            type: request.activityData.type,
-            muscleGroup: rawActivity.muscleGroup,
-            distance: 0,
-            duration: durationForMetrics,
-            calories: finalCalories,
-            avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
-            steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
-            timestamp: pendingActivityTimestamp
-          } : undefined,
-          validation: {
-            success: true,
-            status: 'pending_review',
-            score: 0,
-            reasonCode: geofenceReasonCode
-          }
-        } as any;
+    if (policy.requiresSecurityReview) {
+      const simpleFraudReason = this.detectCompetitiveFraud(request.activityData);
+      if (simpleFraudReason) {
+        competitionReviewStatus = 'pending_review';
+        competitionReason = 'COMPETITIVE_SANITY_CHECK';
+        securityDecision = 'UNDER_REVIEW';
       }
-    }
 
-    let securityBlocked = false;
-    let securityReason: string | null = null;
-    let securityUserMessage: string | null = null;
-    // Detalhe tecnico (score/driver/decisao) -- so pro audit log e pra fila
-    // de revisao do admin, nunca mostrado ao atleta (ver buildSecurityUserMessage).
-    let securityInternalReason: string | null = null;
-    let securityCanRetry = true;
-    let competitivelyEligible = true;
-    let competitiveIneligibleReason: string | null = null;
-    // Guardado a parte de securityReason (que ja vem prefixado 'SECURITY_PIPELINE_')
-    // para decidir, logo abaixo, se este e o caso especifico UNDER_REVIEW que
-    // oferece uma segunda chance via selfie em vez de bloquear direto.
-    // #237: historico real do atleta -- sem ele, BehaviorEngine e
-    // ReputationEngine ficam no ramo neutro e nunca comparam o atleta com ele
-    // mesmo. Ver api/_lib/user-activity-history.ts.
-    const userHistory = await buscarHistoricoRecente(request.userId);
-    try {
-      const securityResult = await SecurityPipeline.runPipeline(
-        {
-          activityType: modality?.antiFraudProfile || (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
-          type: (rawActivity.type || 'WORKOUT').toString().toUpperCase(),
-          muscleGroup: rawActivity.muscleGroup,
-          cardioType: rawActivity.cardioType,
-          durationMins: Number(rawActivity.durationMins ?? rawActivity.duration) || 0,
-          distanceKm: effectiveDistanceKm,
-          checkpoints: rawActivity.checkpoints,
-          timestamp: rawActivity.startTime || new Date().toISOString(),
-          source: 'UNIFIED_ACTIVITY_ENGINE',
-          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
-          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps,
-          calories: finalCalories,
-          smartwatchData: rawActivity.smartwatchData,
-          healthTelemetry: rawActivity.healthTelemetry,
-          metricSources: rawActivity.metricSources,
-          sensorTelemetry: rawActivity.sensorTelemetry,
-          isMockLocation: rawActivity.isMockLocation,
-          isEmulator: rawActivity.isEmulator,
-          isRooted: rawActivity.isRooted,
-          isDeveloperMode: rawActivity.isDeveloperMode
-        },
-        request.userId,
-        user || {},
-        userHistory
-      );
-      competitivelyEligible = securityResult.report.validation.competitivelyEligible;
-      competitiveIneligibleReason = securityResult.report.validation.ineligibleReason || null;
-      if (!securityResult.shouldScore) {
-        // #249: sem NENHUM premio/ranking em jogo, uma decisao so "ambigua"
-        // (UNDER_REVIEW/PARTIALLY_APPROVED -- nao um bloqueio forte tipo mock
-        // location/teleporte) nao precisa mais travar a atividade numa fila de
-        // revisao manual pra render 0 pontos de qualquer jeito (a pontuacao ja
-        // fica zerada abaixo, fora deste bloco, so por nao ter stakes). O
-        // relatorio de seguranca completo (security_reports/security_audit_log)
-        // continua gravado do mesmo jeito DENTRO do proprio
-        // SecurityPipeline.runPipeline (nao depende do que este metodo faz com
-        // a decisao) -- reputacao/historico do atleta nao perdem nada, so a
-        // experiencia dele muda: fecha na hora, sem espera.
-        // BLOCKED continua sempre indo pra fila, com ou sem stakes: e o unico
-        // nivel que indica dado tecnicamente fabricado (GPS falso, teleporte),
-        // e isso vale a pena um humano ver mesmo sem premio em disputa.
-        if (!hasActiveScoringStakes && securityResult.decision !== 'BLOCKED') {
-          console.log(`[ValidateActivityService] [${traceId}] Decisao ${securityResult.decision} sem stakes ativos -- liberado sem fila de revisao (sem pontuacao de qualquer forma)`);
+      if (competitionReviewStatus === 'approved' && policy.requiresGymCheckIn) {
+        if (!rawActivity.checkInId) {
+          competitionReviewStatus = 'pending_review';
+          competitionReason = 'GEOFENCE_CHECKIN_REQUIRED';
         } else {
-          securityBlocked = true;
-          securityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
-          securityCanRetry = securityResult.decision !== 'BLOCKED';
-          securityUserMessage = this.buildSecurityUserMessage(securityResult.decision);
-          securityInternalReason = this.buildInternalSecurityReason(
-            securityResult.decision,
-            securityResult.report?.explanation?.summaryText,
-            securityResult.report?.explanation?.primaryRiskDriver
-          );
-        }
-      }
-    } catch (secErr) {
-      // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, a
-      // atividade NAO e aprovada automaticamente -- mas tambem nao trava mais
-      // o atleta numa tela de erro. Cai no mesmo fluxo "pendente de revisao"
-      // do BLOCKED (ver #325): a sessao fecha normalmente, sem pontos, e o
-      // status muda depois que alguem revisar manualmente.
-      securityBlocked = true;
-      securityReason = 'SECURITY_PIPELINE_ERROR';
-      securityCanRetry = true;
-      securityUserMessage = this.buildSecurityUserMessage('BLOCKED');
-      securityInternalReason = 'Falha tecnica no motor antifraude (fail-closed): ' + (secErr instanceof Error ? secErr.message : String(secErr));
-      console.error(`[ValidateActivityService] [${traceId}] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):`, secErr);
-    }
-
-    // #249: sem inscricao paga NEM participacao no ranking da comunidade, a
-    // atividade nao vale premio nenhum -- entao nao gera XP/IGA, pedido
-    // explicito do usuario (mesma decisao ja tomada pra duracao minima
-    // abaixo). Aplicado depois do bloco de seguranca acima (nao antes) pra
-    // nao mudar o resultado do `if (securityBlocked)`: BLOCKED e falha tecnica
-    // do pipeline continuam indo pra fila de revisao normalmente, com ou sem
-    // stakes -- so a PONTUACAO que fica zerada aqui.
-    if (competitivelyEligible && !hasActiveScoringStakes) {
-      competitivelyEligible = false;
-      competitiveIneligibleReason = 'Atividade registrada, mas sem pontuação: você não está participando de nenhuma competição no momento.';
-    }
-
-    if (securityBlocked) {
-      console.warn(`[ValidateActivityService] [${traceId}] SecurityPipeline recusou pontuacao automatica: ${securityReason}`);
-
-      // #325 (pedido do usuario, cardio E musculacao): a atividade NAO fica
-      // mais travada numa tela de erro pedindo retry -- ela e recebida e
-      // encerrada normalmente do lado do atleta, com status "pendente de
-      // revisao" (pending_review). O antifraude continua rodando exatamente
-      // igual (nada foi enfraquecido); so muda O QUE o atleta ve na hora: uma
-      // mensagem simples de "em analise" em vez do relatorio tecnico, e a
-      // sessao fecha (nao precisa mais tentar de novo). Zero pontos ate a
-      // revisao mudar o status -- ver `pendingReview: true`, consumido pela
-      // fila de revisao do admin (api/_handlers/admin.ts, action
-      // 'list-flagged-activities') e pelo endpoint ja existente
-      // 'review-activity', que flipa o status manualmente depois.
-      let pendingActivityId: string | undefined;
-      let pendingActivityTimestamp = request.activityData.endTime || new Date().toISOString();
-      try {
-        const pendingActivity = await this.activityRepository.create({
-          ...workoutHealth,
-          userId: request.userId,
-          type: request.activityData.type,
-          muscleGroup: rawActivity.muscleGroup,
-          cardioType: rawActivity.cardioType,
-          cardioTypeLabel: rawActivity.cardioTypeLabel,
-          duration: durationForMetrics,
-          distance: effectiveDistanceKm,
-          trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
-          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate ?? undefined,
-          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps ?? undefined,
-          calories: finalCalories,
-          healthTelemetry: rawActivity.healthTelemetry ?? undefined,
-          metricSources: rawActivity.metricSources ?? undefined,
-          smartwatchData: rawActivity.smartwatchData ?? undefined,
-          pace: estimatedPace ?? undefined,
-          intensity: request.activityData.intensity || 'moderate',
-          startTime: request.activityData.startTime || new Date().toISOString(),
-          endTime: request.activityData.endTime || new Date().toISOString(),
-          points: 0,
-          pointsEarned: 0,
-          scoreAwarded: 0,
-          rankingPointsEarned: 0,
-          status: 'pending_review',
-          validationStatus: 'pending_review',
-          pendingReview: true,
-          nonScoringReason: securityReason,
-          rejectionReason: securityInternalReason,
-          userMessage: securityUserMessage,
-          evidence: request.activityData.evidence || {},
-          sessionId: sessionKey || undefined,
-          traceId
-        }, customActivityId);
-        pendingActivityId = pendingActivity.id;
-        pendingActivityTimestamp = pendingActivity.createdAt || pendingActivityTimestamp;
-
-        // #71: Health Data Layer -- ADITIVO. Uma atividade pendente de revisao
-        // ainda pode ter uma leitura biometrica REAL por baixo (o sensor nao
-        // mentiu so porque o GPS/padrao de movimento pareceu suspeito) --
-        // por isso quality='sensor_flagged' em vez de descartar a leitura.
-        // Nunca afeta pontuacao/IGA; falha aqui nunca derruba a resposta
-        // principal (ja calculada abaixo).
-        try {
-          await registrarAmostrasDeAtividade({
+          const checkIn = await validateCheckInOwnership({
             userId: request.userId,
-            source: healthSampleSource,
-            sourceActivityId: pendingActivity.id!,
-            timestamp: normalizarTimestamp(request.activityData.startTime),
-            aprovadoPeloAntifraude: false,
-            pularDuplicata: false,
-            avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
-            calories: finalCalories,
-            distanceKm: effectiveDistanceKm > 0 ? effectiveDistanceKm : undefined,
-            durationMin: durationForMetrics > 0 ? durationForMetrics : undefined
+            checkInId: rawActivity.checkInId,
+            policySnapshotId: rawActivity.competitionPolicySnapshotId,
+            activitySessionId: rawActivity.sessionId,
+            expectedGymIds: policy.contexts
+              .filter((context) => context.requiresGymCheckIn && context.gymId)
+              .map((context) => String(context.gymId)),
+            activityStart,
           });
-        } catch (healthLayerErr) {
-          console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
+          if (!checkIn.valid) {
+            competitionReviewStatus = 'pending_review';
+            competitionReason = 'GEOFENCE_CHECKIN_INVALID';
+          }
         }
-      } catch (persistErr) {
-        // ACT-01: mesma correcao do ramo de geofence acima -- nunca devolver
-        // sucesso/pending sem um ID real gravado.
-        console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade pendente de revisao:`, persistErr);
-        throw new AppError('Não foi possível registrar sua atividade agora. Tente novamente em instantes.', 503);
       }
 
-      await this.auditRepository.log({
-        traceId,
-        userId: request.userId,
-        action: 'VALIDATE_ACTIVITY_SECURITY_PIPELINE_PENDING_REVIEW',
-        details: { activityData: activityDataForAudit, reason: securityReason, internalReason: securityInternalReason, activityId: pendingActivityId },
-        result: 'FLAGGED'
-      });
+      if (competitionReviewStatus === 'approved') {
+        securityReviewApplied = true;
+        try {
+          const userHistory = await buscarHistoricoRecente(request.userId);
+          const securityResult = await SecurityPipeline.runPipeline({
+            id: activityId,
+            activityType: modality?.antiFraudProfile || String(rawActivity.type || 'WORKOUT').toUpperCase(),
+            type: String(rawActivity.type || 'WORKOUT').toUpperCase(),
+            muscleGroup: rawActivity.muscleGroup,
+            cardioType: rawActivity.cardioType,
+            durationMins: duration,
+            distanceKm,
+            checkpoints: rawActivity.checkpoints,
+            timestamp: rawActivity.startTime || new Date().toISOString(),
+            source: 'UNIFIED_ACTIVITY_ENGINE',
+            avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+            steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps,
+            calories,
+            smartwatchData: rawActivity.smartwatchData,
+            healthTelemetry: rawActivity.healthTelemetry,
+            metricSources: rawActivity.metricSources,
+            sensorTelemetry: rawActivity.sensorTelemetry,
+            requiresMotionEvidence: policy.requiresMotionSensors,
+            isMockLocation: rawActivity.isMockLocation,
+            isEmulator: rawActivity.isEmulator,
+            isRooted: rawActivity.isRooted,
+            isDeveloperMode: rawActivity.isDeveloperMode,
+          }, request.userId, user || {}, userHistory);
 
-      return {
-        success: true,
-        ...workoutHealth,
-        pending: true,
-        status: 'pending_review',
-        activityId: pendingActivityId,
-        message: securityUserMessage,
-        userMessage: securityUserMessage,
-        isScoringEligible: false,
-        nonScoringReason: securityReason,
-        reasonCode: securityReason,
-        canRetry: securityCanRetry,
-        traceId,
-        workout: pendingActivityId ? {
-          ...workoutHealth,
-          id: pendingActivityId,
-          points: 0,
-          rankingPointsEarned: 0,
-          status: 'pending_review',
-          type: request.activityData.type,
-          muscleGroup: rawActivity.muscleGroup,
-          cardioType: rawActivity.cardioType,
-          cardioTypeLabel: rawActivity.cardioTypeLabel,
-          distance: effectiveDistanceKm,
-          duration: durationForMetrics,
-          calories: finalCalories,
-          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
-          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
-          timestamp: pendingActivityTimestamp
-        } : undefined,
-        validation: {
-          success: true,
-          status: 'pending_review',
-          score: 0,
-          reasonCode: securityReason
+          securityDecision = securityResult.decision;
+          securityRiskScore = Number(securityResult.report?.risk?.riskScore);
+          securityReportId = securityResult.report?.activityId || activityId || null;
+          if (!securityResult.shouldScore) {
+            competitionReviewStatus = 'pending_review';
+            competitionReason = `SECURITY_PIPELINE_${securityResult.decision}`;
+          } else if (!securityResult.report.validation.competitivelyEligible) {
+            competitionReviewStatus = 'ineligible';
+            competitionReason = securityResult.report.validation.ineligibleReason || 'COMPETITION_RULE_NOT_MET';
+          }
+        } catch (error: any) {
+          competitionReviewStatus = 'pending_review';
+          competitionReason = 'SECURITY_PIPELINE_ERROR';
+          securityDecision = 'ERROR';
+          console.error(`[ValidateActivityService] [${traceId}] Falha no pipeline competitivo:`, error);
         }
-      } as any;
+      }
     }
 
-    const scoreAwarded = competitivelyEligible ? this.calculateScore(request.activityData) : 0;
-    console.log(`[ValidateActivityService] [${traceId}] Pontuacao calculada: +${scoreAwarded} XP`);
+    const competitionReviewStatusBeforeDedup = competitionReviewStatus;
+    const nonScoringReasonBeforeDedup = competitionReason;
 
-    // PONTOS DE RANKING (competicao) -- distinto do XP acima. Ate 2026-08 este
-    // endpoint calculava pontos de ranking com uma formula propria (calculateRankingPoints)
-    // e gravava direto em users.score via addRankingScore -- uma das 5 formulas
-    // independentes de pontuacao identificadas em AUDITORIA-CORE-INVICTUS.md (secao 1).
-    // Agora o ranking (semana/mes/temporada) e recalculado pela FONTE UNICA (IGA,
-    // api/_lib/igaService.ts) logo apos a atividade ser persistida -- ver abaixo.
-    // "rankingPointsEarned" no documento da atividade fica 0: nao existe mais um
-    // "delta" de pontos por atividade, o IGA recalcula a pontuacao inteira da janela
-    // a partir das atividades validas do usuario.
-    const rankingPointsEarned = 0;
+    let economyEligible = isActivityEconomyEligible({
+      type: rawActivity.type,
+      durationMinutes: duration,
+    });
+    let activityXP = economyEligible ? this.calculateActivityXP(request.activityData) : 0;
+    let dataQualityStatus: 'accepted' | 'duplicate' | 'dedup_pending' = 'accepted';
+    let canonicalActivityId: string | null = null;
+    let identityInput: ActivityIdentityInput | null = null;
+    let identityReservation: Extract<ActivityIdentityReservation, { status: 'claimed' }> | null = null;
+    if (economyEligible && activityId) {
+      const knownDuplicate = await encontrarAtividadeDuplicada(request.userId, {
+        inicio: activityStart,
+        duracaoMin: duration,
+        distanciaKm: distanceKm > 0 ? distanceKm : undefined,
+        tipo: rawActivity.type,
+        fonte: 'invictus',
+        sourceActivityId: rawActivity.sessionId || rawActivity.activitySessionId,
+      });
+      if (knownDuplicate && knownDuplicate.id !== activityId) {
+        dataQualityStatus = 'duplicate';
+        canonicalActivityId = knownDuplicate.id;
+      } else {
+        try {
+          const reservationInput: ActivityIdentityInput = {
+            userId: request.userId,
+            activityId,
+            type: rawActivity.type,
+            cardioType: rawActivity.cardioType,
+            startTime: activityStart,
+            endTime: activityEnd,
+            durationMinutes: duration,
+            source: 'invictus',
+          };
+          const identity = await reserveActivityIdentity(reservationInput);
+          if (identity.status === 'duplicate') {
+            dataQualityStatus = 'duplicate';
+            canonicalActivityId = identity.canonicalActivityId;
+          } else if (identity.status === 'pending') {
+            dataQualityStatus = 'dedup_pending';
+            canonicalActivityId = identity.canonicalActivityId;
+          } else {
+            identityInput = reservationInput;
+            identityReservation = identity;
+          }
+        } catch (error) {
+          console.warn(`[ValidateActivityService] [${traceId}] Reserva de identidade pendente:`, error);
+          dataQualityStatus = 'dedup_pending';
+        }
+      }
+      if (dataQualityStatus !== 'accepted') {
+        economyEligible = false;
+        activityXP = 0;
+        if (policy.requiresSecurityReview) {
+          competitionReviewStatus = dataQualityStatus === 'duplicate' ? 'ineligible' : 'pending_review';
+          competitionReason = dataQualityStatus === 'duplicate' ? 'DUPLICATE_ACTIVITY' : 'DEDUPLICATION_UNAVAILABLE';
+        }
+      }
+    }
+    const competitionApproved = competitionReviewStatus === 'approved';
+    const validationStatus = competitionReviewStatus === 'not_required'
+      ? 'recorded'
+      : competitionReviewStatus === 'approved'
+        ? 'validated'
+        : competitionReviewStatus === 'ineligible'
+          ? 'not_eligible'
+          : 'pending_review';
+    const activityMode = policy.requiresSecurityReview ? 'competitive' : 'personal';
 
-    // NOTA: alem de pointsEarned/scoreAwarded (campos "oficiais" de XP usados pelo
-    // restante do backend), tambem gravamos "points" aqui -- e o nome de campo que
-    // ActivityHistorySection.tsx (frontend) le para exibir o XP ganho no historico de
-    // atividades. Sem isso, uma atividade homologada por este endpoint aparecia
-    // corretamente como "HOMOLOGADA" no historico mas sempre mostrando "0 XP".
-    // #204: tambem gravamos avgHeartRate/steps/calories/pace -- ate 2026-08 esses
-    // dados eram usados so para analise antifraude e descartados antes de chegar
-    // no documento salvo, entao o historico nunca tinha nada alem de duracao/distancia.
-    const savedActivity = await this.activityRepository.create({
+    const activityPayload = {
       ...workoutHealth,
+      ...resolveMissionAccessSnapshot(user as any),
+      schemaVersion: 2,
       userId: request.userId,
-      type: request.activityData.type,
+      type: rawActivity.type,
       muscleGroup: rawActivity.muscleGroup,
       cardioType: rawActivity.cardioType,
       cardioTypeLabel: rawActivity.cardioTypeLabel,
       isIndoorCardio: rawActivity.isIndoorCardio,
       requiresGpsDistance: rawActivity.requiresGpsDistance,
-      duration: durationForMetrics,
-      distance: effectiveDistanceKm,
+      duration,
+      distance: distanceKm,
       trajectory: Array.isArray(rawActivity.checkpoints) ? rawActivity.checkpoints : undefined,
       avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate ?? undefined,
       steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps ?? undefined,
-      calories: finalCalories,
+      calories,
       healthTelemetry: rawActivity.healthTelemetry ?? undefined,
       metricSources: rawActivity.metricSources ?? undefined,
       smartwatchData: rawActivity.smartwatchData ?? undefined,
-      pace: estimatedPace ?? undefined,
+      pace: pace ?? undefined,
       photoUrl: rawActivity.photoBase64 || undefined,
-      intensity: request.activityData.intensity || 'moderate',
-      startTime: request.activityData.startTime || new Date().toISOString(),
-      endTime: request.activityData.endTime || new Date().toISOString(),
-      points: scoreAwarded,
-      pointsEarned: scoreAwarded,
-      scoreAwarded,
-      rankingPointsEarned,
+      intensity: rawActivity.intensity || 'moderate',
+      startTime: rawActivity.startTime || activityStart.toISOString(),
+      endTime: rawActivity.endTime || activityEnd.toISOString(),
+      sessionId: rawActivity.sessionId || rawActivity.activitySessionId || null,
+      competitionPolicySnapshotId: rawActivity.competitionPolicySnapshotId || policy.snapshotId || null,
+      competitionPolicyVersion: policy.version,
+      competitionPolicyResolvedAt: policy.resolvedAt,
+      competitionPolicyEffectiveAt: policy.effectiveAt,
+      competitionContexts: policy.contexts,
+      activityMode,
+      recordStatus: 'completed',
+      competitionReviewStatus,
+      competitionStatus: competitionReviewStatus,
+      securityReviewApplied,
+      securityDecision,
+      securityRiskScore: Number.isFinite(securityRiskScore) ? securityRiskScore : null,
+      securityReportId,
+      economyEligible,
+      missionEligible: economyEligible,
+      economyVersion: ACTIVITY_ECONOMY_VERSION,
+      dataQualityStatus,
+      canonicalActivityId,
+      processingStatus: 'pending',
+      activityXpAwarded: activityXP,
+      points: activityXP,
+      pointsEarned: activityXP,
+      scoreAwarded: activityXP,
+      competitionPoints: competitionApproved ? activityXP : 0,
+      rankingPointsEarned: 0,
       status: 'completed',
-      validationStatus: competitivelyEligible ? 'validated' : 'not_eligible',
-      isScoringEligible: competitivelyEligible,
-      nonScoringReason: competitivelyEligible ? null : competitiveIneligibleReason,
-      userMessage: competitivelyEligible ? null : competitiveIneligibleReason,
-      evidence: request.activityData.evidence || {},
-      sessionId: sessionKey || undefined,
-      traceId
-    }, customActivityId);
-    console.log(`[ValidateActivityService] [${traceId}] Atividade registrada no repositorio (ID: ${savedActivity.id})`);
-
-    // #71: Health Data Layer -- registro ADITIVO, alem da pontuacao acima.
-    // Alimenta a serie temporal de saude independente da competicao; nunca
-    // influencia XP/ranking e uma falha aqui nunca derruba a resposta
-    // principal (ja calculada).
-    const healthRegistrationPromise = registrarAmostrasDeAtividade({
-        userId: request.userId,
-        source: healthSampleSource,
-        sourceActivityId: savedActivity.id!,
-        timestamp: normalizarTimestamp(request.activityData.startTime),
-        aprovadoPeloAntifraude: true,
-        pularDuplicata: false,
-        avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
-        calories: finalCalories,
-        distanceKm: effectiveDistanceKm > 0 ? effectiveDistanceKm : undefined,
-        durationMin: durationForMetrics > 0 ? durationForMetrics : undefined
-      }).catch((healthLayerErr) => {
-      console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
-      });
-
-    // Uma sessao curta pode ser perfeitamente real e passar pelo antifraude,
-    // mas nao deve gerar XP, IGA ou inscricao automatica em campeonato. Ela
-    // permanece no historico para saude/consulta, sem prejudicar a reputacao
-    // do atleta e com uma explicacao simples do requisito nao atendido.
-    if (!competitivelyEligible) {
-      const message = competitiveIneligibleReason
-        || 'Atividade concluida, mas sem pontuacao porque nao atingiu o tempo minimo da modalidade.';
-      await Promise.all([healthRegistrationPromise, this.auditRepository.log({
-        traceId,
-        userId: request.userId,
-        action: 'VALIDATE_ACTIVITY_NOT_COMPETITIVELY_ELIGIBLE',
-        details: { activityId: savedActivity.id, reason: message, duration: durationForMetrics },
-        result: 'SUCCESS'
-      })]);
-      return {
-        success: true,
-        ...workoutHealth,
-        activityId: savedActivity.id || '',
-        scoreAwarded: 0,
-        rankingPointsEarned: 0,
-        message,
-        userMessage: message,
-        traceId,
-        workout: {
-          ...workoutHealth,
-          id: savedActivity.id,
-          points: 0,
-          rankingPointsEarned: 0,
-          status: 'not_eligible',
-          type: request.activityData.type,
-          muscleGroup: rawActivity.muscleGroup,
-          cardioType: rawActivity.cardioType,
-          cardioTypeLabel: rawActivity.cardioTypeLabel,
-          distance: effectiveDistanceKm,
-          duration: durationForMetrics,
-          calories: finalCalories,
-          avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
-          steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
-          timestamp: savedActivity.createdAt || new Date().toISOString()
-        },
-        validation: {
-          success: true,
-          status: 'not_eligible',
-          score: 100,
-          reasonCode: 'MINIMUM_COMPETITIVE_DURATION_NOT_MET'
-        },
-        isScoringEligible: false,
-        nonScoringReason: message
-      } as any;
-    }
-
-    const xpPromise = this.userRepository.addXP(request.userId, scoreAwarded);
-
-    // Recalcula weeklyScore/monthlyScore/score (temporada) a partir da FONTE UNICA
-    // (IGA) agora que a atividade ja esta persistida no Firestore -- a query interna
-    // de recalculateAllUserScores ja vai encontrar este workout. Roda DEPOIS do
-    // create() de proposito: rodar antes contaria a atividade duas vezes (uma pela
-    // query, outra por extraSession).
-    const rankingPromise = recalculateAllUserScores(request.userId).catch((rankingErr) => {
-      console.error(`[ValidateActivityService] [${traceId}] Falha ao recalcular pontuacao IGA, atividade permanece salva mas ranking pode ficar desatualizado:`, rankingErr);
-      return null;
-    });
-
-    // Submissao automatica a campeonatos (Arena/Run Elite) em que o usuario
-    // tenha inscricao PAGA e ativa -- ver championship-scoring-service.ts.
-    // E um no-op de custo minimo (uma leitura por campeonato compativel, e
-    // so 2 campeonatos existem hoje) para quem nao esta inscrito em nenhum,
-    // e nunca pode derrubar a resposta principal da atividade.
-    const championshipPromise = submitActivityToActiveChampionships({
-        userId: request.userId,
-        userName: user.name || user.displayName,
-        userGymName: user.gymName,
-        activityId: savedActivity.id || '',
-        activityType: request.activityData.type,
-        isIndoorCardio: rawActivity.isIndoorCardio,
-        durationMinutes: durationForMetrics,
-        distanceKm: effectiveDistanceKm,
-        score: scoreAwarded,
-        when: new Date(request.activityData.endTime || request.activityData.startTime || Date.now()),
-      }).catch((championshipErr) => {
-      console.error(`[ValidateActivityService] [${traceId}] Falha ao submeter atividade a campeonatos (nao-fatal):`, championshipErr);
-      });
-
-    // As quatro tarefas dependem apenas da atividade já persistida e não umas
-    // das outras. Executá-las em série fazia o atleta esperar várias viagens
-    // ao Firestore depois de a decisão antifraude já estar pronta.
-    const [{ newXP, newLevel }, recalculated] = await Promise.all([
-      xpPromise,
-      rankingPromise,
-      championshipPromise,
-      healthRegistrationPromise
-    ]);
-    console.log(`[ValidateActivityService] [${traceId}] XP do usuario atualizado para ${newXP} (Nivel ${newLevel})`);
-    const weeklyIgaScore = recalculated?.weekly.igaRanking || 0;
-    const newRankingScore = recalculated?.season.average;
-    if (recalculated) {
-      console.log(`[ValidateActivityService] [${traceId}] Pontuacao IGA recalculada: semana=${recalculated.weekly.igaRanking} mes=${recalculated.monthly.average} temporada=${recalculated.season.average}`);
-    }
-
-    const successUserMessage = `Atividade homologada com sucesso! Voce ganhou +${scoreAwarded} XP. Seu IGA da semana agora e ${weeklyIgaScore}.`;
-
-    await Promise.all([this.auditRepository.log({
+      validationStatus,
+      pendingReview: competitionReviewStatus === 'pending_review',
+      isScoringEligible: competitionApproved,
+      nonScoringReason: competitionReason,
+      rejectionReason: competitionReason,
+      ...(dataQualityStatus !== 'accepted' && policy.requiresSecurityReview ? {
+        competitionReviewStatusBeforeDedup,
+        nonScoringReasonBeforeDedup,
+        securityReviewAppliedBeforeDedup: securityReviewApplied,
+        securityDecisionBeforeDedup: securityDecision,
+        securityRiskScoreBeforeDedup: Number.isFinite(securityRiskScore) ? securityRiskScore : null,
+        securityReportIdBeforeDedup: securityReportId,
+      } : {}),
+      evidence: rawActivity.evidence || {},
       traceId,
+    };
+
+    if (activityId && dataQualityStatus === 'duplicate' && canonicalActivityId
+      && policy.contexts.length > 0 && competitionReviewStatusBeforeDedup !== 'not_required') {
+      await promoteCanonicalCompetitionProjection({
+        userId: request.userId,
+        canonicalActivityId,
+        evidenceActivityId: activityId,
+        evidenceSource: 'invictus_native',
+        startTime: activityStart,
+        endTime: activityEnd,
+        durationMinutes: duration,
+        distanceKm,
+        activityType: rawActivity.type === 'cardio' ? 'cardio' : 'workout',
+        cardioType: rawActivity.cardioType,
+        isIndoorCardio: rawActivity.isIndoorCardio === true,
+        calories,
+        avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+        maxHeartRate: rawActivity.maxHeartRate ?? rawActivity.healthTelemetry?.maxHeartRate,
+        policy,
+        outcome: {
+          status: competitionReviewStatusBeforeDedup,
+          decision: securityDecision,
+          reason: nonScoringReasonBeforeDedup,
+          riskScore: securityRiskScore,
+          reportId: securityReportId,
+          reviewApplied: securityReviewApplied,
+        },
+        score: this.calculateActivityXP(request.activityData),
+      });
+    }
+
+    let savedActivity: any;
+    if (activityId && typeof (this.activityRepository as any).createIfAbsent === 'function') {
+      const result = await (this.activityRepository as any).createIfAbsent(
+        activityPayload,
+        activityId,
+        identityInput && identityReservation
+          ? { input: identityInput, reservation: identityReservation }
+          : undefined,
+      );
+      if (!result.created) {
+        if (result.activity.processingStatus === 'complete') {
+          return this.responseFromExisting(result.activity, traceId);
+        }
+        const reconciliation = await this.reconcileCompletedActivity(result.activity, user);
+        return this.responseFromExisting({
+          ...result.activity,
+          level: reconciliation.xpResult.newLevel,
+          rankingPointsEarned: reconciliation.recalculated?.weekly.igaRanking
+            ?? result.activity.rankingPointsEarned,
+        }, traceId);
+      }
+      savedActivity = result.activity;
+    } else {
+      savedActivity = await this.activityRepository.create(activityPayload, activityId);
+    }
+
+    const reconciliation = await this.reconcileCompletedActivity(savedActivity, user);
+    await registrarAmostrasDeAtividade({
       userId: request.userId,
-      action: 'VALIDATE_ACTIVITY_SUCCESS',
-      details: { activityId: savedActivity.id, scoreAwarded, weeklyIgaScore, newXP, newLevel },
-      result: 'SUCCESS'
-    }), this.notificationService.send({
-      userId: request.userId,
-      title: 'Atividade Validada!',
-      body: `Sua atividade de ${request.activityData.type} foi concluida com sucesso. Voce ganhou +${scoreAwarded} XP! Seu IGA da semana agora e ${weeklyIgaScore}.`,
-      type: 'activity_validated',
-      data: { activityId: savedActivity.id, scoreAwarded, weeklyIgaScore, traceId }
-    })]);
+      source: healthSampleSource,
+      sourceActivityId: savedActivity.id!,
+      timestamp: normalizeTimestamp(rawActivity.startTime),
+      // Personal health provenance is independent of the ranking projection.
+      aprovadoPeloAntifraude: true,
+      pularDuplicata: savedActivity.dataQualityStatus !== 'accepted',
+      avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+      calories,
+      distanceKm: distanceKm > 0 ? distanceKm : undefined,
+      durationMin: duration > 0 ? duration : undefined,
+    }).catch((error) => console.error(`[ValidateActivityService] [${traceId}] Saúde não persistida (não fatal):`, error));
+    const { xpResult, recalculated } = reconciliation;
+    const weeklyIgaScore = recalculated?.weekly.igaRanking || 0;
+
+    const rewardMessage = economyEligible
+      ? `Você ganhou +${activityXP} XP e a atividade conta para seus desafios.`
+      : 'Sessões com menos de 1 minuto ficam no histórico, mas não geram XP, missão ou Coins.';
+    const message = competitionReviewStatus === 'not_required'
+      ? `Atividade concluída e salva! ${rewardMessage}`
+      : competitionReviewStatus === 'approved'
+        ? `Atividade concluída! ${rewardMessage} Sua pontuação competitiva foi validada.`
+        : competitionReviewStatus === 'ineligible'
+          ? `Atividade concluída e salva! ${rewardMessage} Ela não entrou na pontuação desta competição.`
+          : `Atividade concluída e salva! ${rewardMessage} Somente a pontuação competitiva está em análise.`;
+
+    await Promise.all([
+      this.auditRepository.log({
+        traceId,
+        userId: request.userId,
+        action: policy.requiresSecurityReview ? 'REGISTER_COMPETITIVE_ACTIVITY' : 'REGISTER_PERSONAL_ACTIVITY',
+        details: {
+          activityId: savedActivity.id,
+          activityData: activityDataForAudit,
+          activityXP,
+          activityMode,
+          competitionReviewStatus,
+          competitionContexts: policy.contexts.map((context) => ({ type: context.type, id: context.id })),
+        },
+        result: competitionReviewStatus === 'pending_review' ? 'FLAGGED' : 'SUCCESS',
+      }).catch((error) => {
+        console.error(`[ValidateActivityService] [${traceId}] Log de auditoria não persistido (não fatal):`, error);
+      }),
+      this.notificationService.send({
+        userId: request.userId,
+        title: competitionReviewStatus === 'pending_review' ? 'Atividade salva' : 'Atividade concluída!',
+        body: message,
+        type: 'activity_validated',
+        data: { activityId: savedActivity.id, activityXP, competitionReviewStatus, traceId },
+      }).catch(() => undefined),
+    ]);
 
     return {
       success: true,
       ...workoutHealth,
       activityId: savedActivity.id || '',
-      scoreAwarded,
+      scoreAwarded: activityXP,
       rankingPointsEarned: weeklyIgaScore,
-      newRankingScore,
-      level: newLevel,
-      message: successUserMessage,
-      userMessage: successUserMessage,
+      newRankingScore: recalculated?.season.average,
+      level: xpResult.newLevel,
+      message,
+      userMessage: message,
       traceId,
+      recordStatus: 'completed',
+      activityMode,
+      competitionReviewStatus,
+      competitionContexts: policy.contexts,
+      pending: competitionReviewStatus === 'pending_review',
       workout: {
         ...workoutHealth,
         id: savedActivity.id,
-        points: scoreAwarded,
+        points: activityXP,
+        activityXpAwarded: activityXP,
+        competitionPoints: competitionApproved ? activityXP : 0,
         rankingPointsEarned: weeklyIgaScore,
-        level: newLevel,
-        status: 'valid',
-        type: request.activityData.type,
+        level: xpResult.newLevel,
+        status: 'completed',
+        recordStatus: 'completed',
+        validationStatus,
+        activityMode,
+        competitionReviewStatus,
+        competitionContexts: policy.contexts,
+        type: rawActivity.type,
         muscleGroup: rawActivity.muscleGroup,
         cardioType: rawActivity.cardioType,
         cardioTypeLabel: rawActivity.cardioTypeLabel,
-        distance: effectiveDistanceKm,
-        duration: durationForMetrics,
-        calories: finalCalories,
+        distance: distanceKm,
+        duration,
+        calories,
         avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
         steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps,
-        timestamp: savedActivity.createdAt || new Date().toISOString()
+        timestamp: savedActivity.createdAt || activityEnd.toISOString(),
       },
       validation: {
         success: true,
-        status: 'approved',
-        score: 100,
-        reasonCode: null
+        status: validationStatus,
+        competitionStatus: competitionReviewStatus,
+        score: competitionApproved ? 100 : 0,
+        reasonCode: competitionReason,
       },
-      isScoringEligible: true,
-      nonScoringReason: null
+      isScoringEligible: competitionApproved,
+      nonScoringReason: competitionReason,
+      reasonCode: competitionReason,
+      canRetry: false,
     } as any;
   }
 }

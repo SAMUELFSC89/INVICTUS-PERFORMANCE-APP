@@ -2,6 +2,11 @@ import { db } from './common.js';
 import { matchActiveChampionshipsForActivity } from './championship-catalog.js';
 import { getUserRegistration } from './championship-inscription-service.js';
 import { RewardCoinEngine } from './reward-coin-engine.js';
+import type { ActivityCompetitionContext } from './activity-competition-policy.js';
+import {
+  hasTrustedCompetitionEvidence,
+  readCompetitionEvidenceMetrics,
+} from './competition-evidence.js';
 
 const COMMUNITY_EVENT_ID = 'community_friends_v1';
 
@@ -11,28 +16,32 @@ function communityCycleKey(when = new Date()): string {
 
 async function submitActivityToCommunityGymChampionship(input: ChampionshipActivityInput): Promise<void> {
   if (!db || !input.activityId || !['workout', 'cardio'].includes(input.activityType)) return;
-  const enrollmentRef = db.collection('community_championship_enrollments').doc(`${COMMUNITY_EVENT_ID}_${input.userId}`);
+  const frozenContext = input.contexts?.find((context) => context.type === 'community_championship' && context.id === COMMUNITY_EVENT_ID);
+  if (input.contexts && !frozenContext) return;
   const [enrollmentSnap, userSnap] = await Promise.all([
-    enrollmentRef.get(),
+    input.contexts ? Promise.resolve(null) : db.collection('community_championship_enrollments').doc(`${COMMUNITY_EVENT_ID}_${input.userId}`).get(),
     db.collection('users').doc(input.userId).get(),
   ]);
-  if (enrollmentSnap.data()?.status !== 'active') return;
+  if (!input.contexts && enrollmentSnap?.data()?.status !== 'active') return;
   const user = userSnap.data() || {};
-  const gymId = String(user.gymId || user.academyId || 'community_global');
+  const gymId = String(frozenContext?.gymId || user.gymId || user.academyId || 'community_global');
   const gymName = String(user.gymName || input.userGymName || 'Comunidade Invictus');
-  const cycleKey = communityCycleKey(input.when);
+  const cycleKey = frozenContext?.cycleKey || communityCycleKey(input.when);
   const scoreId = `${cycleKey}_${input.activityId}`;
   const ref = db.collection('gym_championship_scores').doc(scoreId);
-  if ((await ref.get()).exists) return;
+  const existing = await ref.get();
+  const existingData = existing.exists ? existing.data() || {} : {};
   await ref.set({
     id: scoreId, eventId: COMMUNITY_EVENT_ID, cycleKey, gymId, gymName,
     userId: input.userId, userName: input.userName || user.name || user.displayName || 'Atleta Invictus',
     activityId: input.activityId, activityType: input.activityType,
     score: Math.max(0, Number(input.score) || 0), validationStatus: 'VALIDATED',
-    auditStatus: 'APPROVED', riskScore: 0,
+    auditStatus: 'APPROVED', riskScore: Number.isFinite(Number(input.riskScore)) ? Number(input.riskScore) : null,
+    securityDecision: input.securityDecision || 'APPROVED', securityReportId: input.securityReportId || null,
     metrics: { durationMinutes: input.durationMinutes, distanceKm: input.distanceKm || 0 },
-    createdAt: input.when.toISOString(),
-  });
+    createdAt: existingData.createdAt || input.when.toISOString(),
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
 }
 
 /**
@@ -72,6 +81,11 @@ export interface ChampionshipActivityInput {
   distanceKm?: number;
   score: number;
   when: Date;
+  riskScore?: number;
+  securityDecision?: string | null;
+  securityReportId?: string | null;
+  /** Allowlist congelada no início. Ausente apenas em writers legados. */
+  contexts?: ActivityCompetitionContext[];
 }
 
 /**
@@ -79,62 +93,136 @@ export interface ChampionshipActivityInput {
  * validate-activity-service.ts; e um no-op (sem nenhuma leitura extra
  * relevante) para qualquer usuario sem inscricao paga em nenhum campeonato
  * ativo -- ou seja, hoje, para todo mundo, ate a primeira inscricao real
- * acontecer. Nunca lanca: falha aqui nao pode derrubar a resposta da
- * atividade principal.
+ * acontecer. Escritas usam IDs determinísticos e propagam falhas: o chamador
+ * pode repetir a conciliação sem duplicar a pontuação.
  */
 export async function submitActivityToActiveChampionships(input: ChampionshipActivityInput): Promise<void> {
-  await submitActivityToCommunityGymChampionship(input).catch(err => {
-    console.error(`[Community Championship] falha ao registrar atividade ${input.activityId}:`, err);
-  });
-  const candidatos = matchActiveChampionshipsForActivity({
-    activityType: input.activityType,
-    isIndoorCardio: input.isIndoorCardio,
-    when: input.when,
-  });
+  await submitActivityToCommunityGymChampionship(input);
+  const candidatos = input.contexts
+    ? input.contexts
+        .filter((context) => context.type === 'paid_championship')
+        .map((context) => ({
+          id: context.id,
+          context,
+          minDurationMinutes: context.minDurationMinutes,
+          maxDurationMinutes: context.maxDurationMinutes,
+        }))
+    : matchActiveChampionshipsForActivity({
+        activityType: input.activityType,
+        isIndoorCardio: input.isIndoorCardio,
+        when: input.when,
+      }).map((championship) => ({
+        id: championship.id,
+        context: undefined,
+        minDurationMinutes: championship.antiFraudProfile?.minDurationMinutes,
+        maxDurationMinutes: championship.antiFraudProfile?.maxDurationMinutes,
+      }));
   if (candidatos.length === 0) return;
 
   for (const champ of candidatos) {
-    try {
+    if (!input.contexts) {
       const registration = await getUserRegistration(input.userId, champ.id);
       const ativo = !!registration && registration.status === 'paga' && registration.paymentStatus === 'PAID';
       if (!ativo) continue;
+    }
 
-      const profile = champ.antiFraudProfile || {};
-      const dentroDaDuracao =
-        (profile.minDurationMinutes == null || input.durationMinutes >= profile.minDurationMinutes) &&
-        (profile.maxDurationMinutes == null || input.durationMinutes <= profile.maxDurationMinutes);
+    const dentroDaDuracao =
+      (champ.minDurationMinutes == null || input.durationMinutes >= champ.minDurationMinutes) &&
+      (champ.maxDurationMinutes == null || input.durationMinutes <= champ.maxDurationMinutes);
 
-      const scoreId = `${input.activityId}_${champ.id}`;
-      const scoreRef = db.collection('championship_scores').doc(scoreId);
-      const jaExiste = await scoreRef.get();
-      if (jaExiste.exists) continue; // idempotencia: nunca soma a mesma atividade duas vezes
+    const scoreId = `${input.activityId}_${champ.id}`;
+    const scoreRef = db.collection('championship_scores').doc(scoreId);
+    const jaExiste = await scoreRef.get();
+    const existingData = jaExiste.exists ? jaExiste.data() || {} : {};
 
-      await scoreRef.set({
-        id: scoreId,
-        championshipId: champ.id,
-        userId: input.userId,
-        userName: input.userName || 'Atleta Invictus',
-        userGymName: input.userGymName || null,
-        activityId: input.activityId,
-        activityType: input.activityType,
-        score: dentroDaDuracao ? input.score : 0,
-        validationStatus: dentroDaDuracao ? 'VALIDATED' : 'REJECTED',
-        validationMotives: dentroDaDuracao ? [] : ['DURATION_OUTSIDE_CHAMPIONSHIP_PROFILE'],
-        championshipValidation: {
-          eligible: dentroDaDuracao,
-          riskScore: 0,
-          evaluatedAt: new Date().toISOString(),
-        },
-        metrics: {
-          durationMinutes: input.durationMinutes,
-          distanceKm: input.distanceKm || 0,
-        },
-        createdAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error(`[Championship Scoring] falha ao submeter atividade ${input.activityId} ao campeonato ${champ.id}:`, err);
+    await scoreRef.set({
+      id: scoreId,
+      championshipId: champ.id,
+      policyEpochId: champ.context?.epochId || null,
+      regulationVersion: champ.context?.regulationVersion || null,
+      regulationHash: champ.context?.regulationHash || null,
+      userId: input.userId,
+      userName: input.userName || 'Atleta Invictus',
+      userGymName: input.userGymName || null,
+      activityId: input.activityId,
+      activityType: input.activityType,
+      score: dentroDaDuracao ? input.score : 0,
+      validationStatus: dentroDaDuracao ? 'VALIDATED' : 'REJECTED',
+      validationMotives: dentroDaDuracao ? [] : ['DURATION_OUTSIDE_CHAMPIONSHIP_PROFILE'],
+      championshipValidation: {
+        eligible: dentroDaDuracao,
+        riskScore: Number.isFinite(Number(input.riskScore)) ? Number(input.riskScore) : null,
+        securityDecision: input.securityDecision || 'APPROVED',
+        securityReportId: input.securityReportId || null,
+        evaluatedAt: new Date().toISOString(),
+      },
+      metrics: {
+        durationMinutes: input.durationMinutes,
+        distanceKm: input.distanceKm || 0,
+      },
+      createdAt: existingData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  }
+}
+
+/**
+ * Reprojeta placares após uma decisão administrativa. O workout continua
+ * sendo a fonte do registro pessoal; estes documentos representam apenas o
+ * resultado competitivo e podem ser zerados sem apagar a atividade.
+ */
+export async function syncReviewedActivityCompetitionScores(activityId: string): Promise<void> {
+  if (!db || !activityId) return;
+  const workoutSnap = await db.collection('workouts').doc(activityId).get();
+  if (!workoutSnap.exists) return;
+  const workout: any = workoutSnap.data() || {};
+  const contexts = Array.isArray(workout.competitionContexts) ? workout.competitionContexts as ActivityCompetitionContext[] : [];
+  if (!contexts.length) return;
+  const promotedMetrics = readCompetitionEvidenceMetrics(workout);
+  const malformedTrustedEvidence = hasTrustedCompetitionEvidence(workout) && !promotedMetrics;
+  const approved = workout.competitionReviewStatus === 'approved'
+    && workout.isScoringEligible === true && !malformedTrustedEvidence;
+  if (approved) {
+    const userSnap = await db.collection('users').doc(workout.userId).get();
+    const user: any = userSnap.data() || {};
+    await submitActivityToActiveChampionships({
+      userId: workout.userId,
+      userName: user.name || user.displayName,
+      userGymName: user.gymName,
+      activityId,
+      activityType: promotedMetrics?.activityType || workout.type,
+      isIndoorCardio: promotedMetrics
+        ? promotedMetrics.isIndoorCardio === true : workout.isIndoorCardio,
+      durationMinutes: Number(promotedMetrics?.durationMinutes
+        ?? workout.duration ?? workout.durationMinutes) || 0,
+      distanceKm: Number(promotedMetrics?.distanceKm
+        ?? workout.distance ?? workout.distanceKm) || 0,
+      score: Math.max(0, Number(workout.competitionPoints) || 0),
+      when: new Date(promotedMetrics?.startTime || workout.startTime || workout.createdAt || Date.now()),
+      riskScore: workout.securityRiskScore,
+      securityDecision: workout.securityDecision,
+      securityReportId: workout.securityReportId,
+      contexts,
+    });
+    return;
+  }
+
+  const batch = db.batch();
+  for (const context of contexts) {
+    if (context.type === 'community_championship') {
+      const cycle = context.cycleKey || communityCycleKey(new Date(workout.startTime || workout.createdAt || Date.now()));
+      batch.set(db.collection('gym_championship_scores').doc(`${cycle}_${activityId}`), {
+        validationStatus: 'REJECTED', auditStatus: 'REJECTED', score: 0,
+        invalidatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } else if (context.type === 'paid_championship') {
+      batch.set(db.collection('championship_scores').doc(`${activityId}_${context.id}`), {
+        validationStatus: 'REJECTED', score: 0,
+        invalidatedAt: new Date().toISOString(),
+      }, { merge: true });
     }
   }
+  await batch.commit();
 }
 
 export async function getCommunityGymChampionshipStatus(userId: string, now = new Date()) {
@@ -201,10 +289,18 @@ export async function resolveGymChampionshipReview(params: {
 
 export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): Promise<{ gyms: number; payouts: number; reviews: number }> {
   if (!/^\d{4}-\d{2}$/.test(cycleKey)) throw new Error('Ciclo inválido. Use YYYY-MM.');
-  const [scoresSnap, configSnap] = await Promise.all([
+  const [scoresSnap, configSnap, competitionEntriesSnap] = await Promise.all([
     db.collection('gym_championship_scores').where('cycleKey', '==', cycleKey).get(),
     db.collection('gym_championship_config').doc('global').get(),
+    db.collection('activity_competition_entries').where('contextType', '==', 'community_championship').get(),
   ]);
+  const pendingEntries = competitionEntriesSnap.docs.filter((doc) => {
+    const data: any = doc.data();
+    return data.cycleKey === cycleKey && ['processing', 'pending_review'].includes(String(data.reviewStatus || ''));
+  });
+  if (pendingEntries.length > 0) {
+    throw new Error(`O ciclo ${cycleKey} ainda possui ${pendingEntries.length} atividade(s) competitiva(s) em análise.`);
+  }
   const config = configSnap.data() || {};
   const prizes = {
     1: Math.max(0, Number(config.top1Prize) || 2500),

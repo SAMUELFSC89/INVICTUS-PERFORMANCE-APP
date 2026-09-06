@@ -1,5 +1,4 @@
 import { db } from './common.js';
-import { resolverPerfilValidacao } from './modality-config.js';
 
 /**
  * DEDUPLICACAO ENTRE FONTES.
@@ -79,7 +78,6 @@ export async function encontrarAtividadeDuplicada(
 ): Promise<DuplicataEncontrada | null> {
   if (!db || !userId || !candidata?.inicio) return null;
 
-  const perfilCandidata = resolverPerfilValidacao({ type: candidata.tipo });
   const inicioMs = candidata.inicio.getTime();
   const janelaMs = TOLERANCIA_INICIO_MIN * 60 * 1000;
 
@@ -95,6 +93,12 @@ export async function encontrarAtividadeDuplicada(
         return { id: doc.id, fonte: String(dados.source || 'desconhecida'), motivo: 'MESMO_ID_DE_ORIGEM', detalhe: `Mesma atividade ${candidata.fonte} (${candidata.sourceActivityId}).` };
       }
 
+      // A record intentionally excluded from both personal economy and
+      // competition (manual import, old import, quota excess or an earlier
+      // duplicate) cannot suppress a later verifiable source of the session.
+      if (dados.economyEligible === false && dados.isScoringEligible !== true) continue;
+      if (['duplicate', 'discarded'].includes(String(dados.dataQualityStatus || '').toLowerCase())) continue;
+
       // Duplicata entre fontes: so interessa comparar registros de origens
       // DIFERENTES -- dois registros da mesma fonte ja sao tratados acima.
       if (String(dados.source || 'invictus') === candidata.fonte) continue;
@@ -103,13 +107,19 @@ export async function encontrarAtividadeDuplicada(
       if (!inicioExistente) continue;
       if (Math.abs(inicioExistente.getTime() - inicioMs) > janelaMs) continue;
 
-      // Modalidades diferentes na mesma janela sao possiveis de verdade
-      // (musculacao e depois uma corrida), entao nao acusamos duplicata.
-      const perfilExistente = resolverPerfilValidacao({ type: dados.type, cardioType: dados.cardioType });
-      if (perfilExistente.id !== perfilCandidata.id) continue;
-
       const duracaoExistente = Number(dados.duration) || Number(dados.durationMins) || 0;
       const distanciaExistente = Number(dados.distance) || Number(dados.distanceKm) || 0;
+
+      // Proximidade no relógio não basta: duas sessões legítimas podem ocorrer
+      // em sequência. Exija que os intervalos físicos realmente se sobreponham.
+      const fimExistenteMs = inicioExistente.getTime() + Math.max(0, duracaoExistente) * 60_000;
+      const fimCandidataMs = inicioMs + Math.max(0, candidata.duracaoMin) * 60_000;
+      const overlapMs = Math.min(fimExistenteMs, fimCandidataMs) - Math.max(inicioExistente.getTime(), inicioMs);
+      const minimumSubstantialOverlap = Math.min(
+        5 * 60_000,
+        Math.min(duracaoExistente, candidata.duracaoMin) * 60_000 * 0.25,
+      );
+      if (overlapMs < minimumSubstantialOverlap) continue;
 
       const duracaoBate = proximo(duracaoExistente, candidata.duracaoMin);
       // Distancia so entra na conta quando AMBOS os registros a possuem. Numa

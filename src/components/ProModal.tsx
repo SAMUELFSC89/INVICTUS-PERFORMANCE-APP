@@ -131,7 +131,7 @@ export function ProModal({ isOpen, onClose, reason }: ProModalProps) {
                   TENHO INTERESSE NO PRO
                 </button>
                 
-                <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest opacity-40">
+                <p className="text-[10px] font-black invictus-text-muted uppercase tracking-widest">
                   Plano Free grátis. Pro por R$ 29,90/mês
                 </p>
               </div>

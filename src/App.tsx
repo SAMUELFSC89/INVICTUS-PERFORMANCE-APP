@@ -9,9 +9,6 @@ import { UserProvider } from './UserContext';
 import { ProProvider } from './ProContext';
 import { API_CONFIG } from './config';
 import './styles/invictus.css';
-// #253: backdrop padronizado das telas internas (mesmo asset oficial da Home,
-// com blur + véu mais forte) -- ver src/styles/internal-page-backdrop.css e a
-// classe app-fundo--home/app-fundo--internal aplicada em Layout.tsx.
 import './styles/internal-page-backdrop.css';
 
 const lazyNamed = <T extends Record<string, unknown>, K extends keyof T>(
@@ -139,7 +136,9 @@ export default function App() {
                     (MetricMatrixModal/TimelineView/PerformanceAIModal/
                     ModuleDetailModal); a rota continua existindo como
                     redirecionamento (mesmo padrao ja usado em /wallet e
-                    /gym) para nao quebrar links antigos/favoritos. */}
+                    /gym) para nao quebrar links antigos/favoritos.
+                    (Checkpoint activity-competition-v2 trouxe de volta a
+                    versao antiga desta pagina; reaplicado #252 aqui.) */}
                 <Route path="/performance" element={<Navigate to="/health" replace />} />
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />

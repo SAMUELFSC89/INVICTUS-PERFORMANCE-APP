@@ -11,7 +11,7 @@ import { RawWorkoutSession, processUserPerformance, UserPerformanceState } from 
 import { buildHealthInsights } from '../core/health/healthInsights';
 import { TimeRange } from '../core/performance/metricCatalog';
 import { cn } from '../lib/utils';
-import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { isCompletedActivityRecord, readActivityTimestamp } from '../lib/workoutData';
 import { healthSummaryService, HealthSummaryResponse } from '../services/healthSummaryService';
 import type { HealthVitalsDiagnostics } from '../services/wearables/HealthVitalsProvider';
 import { normalizeHeartRateSamples } from '../services/wearables/heartRateSamples';
@@ -366,7 +366,7 @@ function useHealthData(range: TimeRange, revision: number, ready: boolean) {
         const rows = snapshot.docs.slice(0, 500).reduce<HealthWorkout[]>((result, entry) => {
           const item = entry.data();
           const timestamp = readActivityTimestamp(item.timestamp) ?? readActivityTimestamp(item.startTime) ?? readActivityTimestamp(item.createdAt);
-          const validationStatus = normalizeActivityValidationStatus(item.validationStatus ?? item.status ?? item.validation?.status);
+          const completed = isCompletedActivityRecord(item);
           const isWearable = item.source === 'apple_health' || item.source === 'health_connect';
           const healthRecord = readWorkoutHealthRecord(item.healthSession);
           const sessionReadings = healthRecord ? buildWorkoutFeedback(healthRecord).session : null;
@@ -376,18 +376,9 @@ function useHealthData(range: TimeRange, revision: number, ready: boolean) {
           const avgHeartRate = Number(sessionReadings?.averageBpm ?? item.avgHeartRate ?? item.averageHeartRate ?? item.avgHr ?? telemetry.avgHeartRate);
           const hasHealthTelemetry = heartRateSamples.length > 0 || Number(item.steps) > 0 || avgHeartRate > 0
             || Number(item.maxHeartRate ?? item.maxHr ?? telemetry.maxHeartRate) > 0 || Number(item.calories ?? item.caloriesBurned) > 0 || Number(item.distance ?? item.distanceKm) > 0;
-          // ACT-11 / HEALTH-08 (auditoria 6167c8f): `not_eligible` é uma
-          // atividade LEGÍTIMA -- o servidor já a distingue explicitamente de
-          // `rejected` (rejeitada = bloqueio por antifraude; not_eligible =
-          // sem estímulo competitivo ativo no momento, ex.: sem campeonato em
-          // andamento ou abaixo do tempo mínimo). Antes, esta tela só incluía
-          // atividades sem pontuação quando vinham de um wearable
-          // (`isWearable`) -- um treino LOCAL (GPS/manual) legítimo mas sem
-          // estímulo competitivo desaparecia inteiramente da aba Saúde, mesmo
-          // com telemetria real (FC, calorias, distância, passos).
-          const isNotEligible = validationStatus === 'not_eligible';
-          const isHealthOnly = (isWearable || isNotEligible) && validationStatus !== 'validated' && item.nonScoringReason !== 'DUPLICATE_ACTIVITY' && hasHealthTelemetry;
-          if (!timestamp || timestamp < since || timestamp > Date.now() || (validationStatus !== 'validated' && !isHealthOnly)) return result;
+          const duplicate = item.nonScoringReason === 'DUPLICATE_ACTIVITY' || item.dataQualityStatus === 'duplicate';
+          const isHealthOnly = isWearable && !completed && !duplicate && hasHealthTelemetry;
+          if (!timestamp || timestamp < since || timestamp > Date.now() || duplicate || (!completed && !isHealthOnly)) return result;
           result.push({
             id: entry.id, userId: uid, timestamp,
             durationMinutes: Number(item.durationMinutes ?? item.duration ?? 0),
@@ -400,7 +391,7 @@ function useHealthData(range: TimeRange, revision: number, ready: boolean) {
             workoutType: item.cardioType || item.workoutType || item.type || 'activity',
             cardioType: item.cardioType, muscleGroup: item.muscleGroup,
             workoutName: item.workoutName || item.title || item.cardioTypeLabel || (item.muscleGroup ? `Treino de ${item.muscleGroup}` : 'Atividade registrada'),
-            validationStatus: isHealthOnly ? 'health_only' : validationStatus || 'pending',
+            validationStatus: isHealthOnly ? 'health_only' : 'completed',
             source: typeof item.source === 'string' ? item.source : undefined,
             hasSensorData: Boolean(avgHeartRate > 0 || heartRateSamples.length),
             hasGPSData: Boolean(item.requiresGpsDistance || item.gpsTracked || item.trajectory?.length)

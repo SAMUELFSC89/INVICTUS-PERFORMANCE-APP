@@ -1,7 +1,9 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
+import { createHash } from 'node:crypto';
 import { db, cors, verifyAuth, serverTimestamp } from '../_lib/common.js';
 import { validateGeofenceCheckin, MAX_GEOFENCE_RADIUS_METERS, MAX_GPS_ACCURACY_METERS } from '../_lib/geofence-engine.js';
 import { ScoreEngine } from '../_lib/score-engine/index.js';
+import { loadActivityCompetitionPolicySnapshot } from '../_lib/activity-competition-policy.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -14,7 +16,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
   }
 
-  const { action, latitude, longitude, accuracy, isMock, deviceId, deviceFingerprint } = req.body;
+  const { action: rawAction, latitude, longitude, accuracy, isMock, deviceId, deviceFingerprint, activityPolicySnapshotId, activitySessionId } = req.body || {};
+  const action = String(rawAction || '');
+  if (!['verify', 'confirm', 'confirm_activity'].includes(action)) {
+    return res.status(400).json({ error: 'Ação de check-in inválida.' });
+  }
 
   if (latitude === undefined || longitude === undefined || accuracy === undefined) {
     return res.status(400).json({ 
@@ -26,6 +32,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (!db) {
       return res.status(500).json({ error: 'Banco de dados indisponível no momento.' });
+    }
+
+    let activityPolicy: Awaited<ReturnType<typeof loadActivityCompetitionPolicySnapshot>> = null;
+    if (action === 'confirm_activity') {
+      if (!activityPolicySnapshotId || !activitySessionId) {
+        return res.status(400).json({ error: 'A autorização e a sessão são obrigatórias para o check-in competitivo.' });
+      }
+      activityPolicy = await loadActivityCompetitionPolicySnapshot({
+        snapshotId: String(activityPolicySnapshotId),
+        userId: auth.uid,
+        activityType: 'workout',
+        sessionId: String(activitySessionId),
+      });
+      if (!activityPolicy || !activityPolicy.requiresSecurityReview || !activityPolicy.requiresGymCheckIn) {
+        return res.status(400).json({ error: 'O contexto competitivo deste treino é inválido ou expirou.' });
+      }
+      if (!activityPolicy.startBy || Date.parse(activityPolicy.startBy) < Date.now()) {
+        return res.status(409).json({ error: 'A autorização para iniciar este treino expirou. Atualize a tela e tente novamente.' });
+      }
     }
 
     // 1. Fetch user profile
@@ -41,6 +66,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({
         status: 'blocked_no_gym',
         error: 'Você precisa selecionar uma academia cadastrada antes de confirmar o check-in.'
+      });
+    }
+    const expectedGymIds = [...new Set((activityPolicy?.contexts || [])
+      .filter((context) => context.requiresGymCheckIn && context.gymId)
+      .map((context) => String(context.gymId)))];
+    if (expectedGymIds.length > 1) {
+      return res.status(409).json({
+        status: 'blocked_competition_gym_conflict',
+        error: 'Suas participações competitivas apontam para academias diferentes. Atualize as inscrições antes de iniciar.',
+      });
+    }
+    if (expectedGymIds.length > 0 && expectedGymIds[0] !== String(userData.gymId)) {
+      return res.status(409).json({
+        status: 'blocked_wrong_gym',
+        error: 'A academia do perfil não corresponde à academia desta participação competitiva.'
       });
     }
 
@@ -157,9 +197,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    if (isSuspicious && action === 'confirm_activity') {
+      return res.status(409).json({
+        status: 'blocked_suspicious_checkin',
+        error: 'Não foi possível confirmar este check-in competitivo agora. Aguarde alguns minutos e tente novamente.',
+        riskFlags,
+      });
+    }
+
     // 6. Record the manual check-in
-    const checkInId = db.collection('gym_checkins').doc().id;
     const now = new Date();
+    const localDay = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now);
+    const checkInId = action === 'confirm_activity'
+      ? `activity_${String(activitySessionId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 400)}`
+      : `manual_${createHash('sha256')
+          .update(`${auth.uid}\u0000${String(userData.gymId)}\u0000${localDay}`)
+          .digest('hex')}`;
     const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString(); // valid for 15 minutes
     const checkinStatus = isSuspicious ? 'suspicious' : 'confirmed';
     const checkinMessage = isSuspicious
@@ -181,37 +236,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       userMessage: checkinMessage,
       deviceId: deviceId || '',
       deviceFingerprint: deviceFingerprint || '',
+      activityPolicySnapshotId: activityPolicySnapshotId ? String(activityPolicySnapshotId) : null,
+      activitySessionId: activitySessionId ? String(activitySessionId) : null,
       mockLocationDetected: false,
       riskFlags,
       createdAt: serverTimestamp()
     };
 
-    await db.collection('gym_checkins').doc(checkInId).set(checkinDoc);
+    const checkInRef = db.collection('gym_checkins').doc(checkInId);
+    try {
+      await checkInRef.create(checkinDoc);
+    } catch (createError: any) {
+      const existing = await checkInRef.get();
+      const existingData = existing.data() || {};
+      const sameOwner = existing.exists && existingData.userId === auth.uid;
+      const sameSession = action !== 'confirm_activity'
+        || (existingData.activityPolicySnapshotId === String(activityPolicySnapshotId)
+          && existingData.activitySessionId === String(activitySessionId));
+      if (!sameOwner || !sameSession) throw createError;
+      return res.json({
+        success: true,
+        status: existingData.status,
+        checkInId,
+        expiresAt: existingData.expiresAt,
+        gymName: existingData.gymName,
+        distanceMeters: existingData.distanceMeters,
+        gpsAccuracy: existingData.gpsAccuracy,
+        riskFlags: existingData.riskFlags || [],
+        pointsAwarded: Math.max(0, Number(existingData.pointsAwarded) || 0),
+        scoringPending: existingData.scoringPending === true,
+        duplicate: true,
+      });
+    }
 
-    // O check-in é opcional fora de campeonatos, mas continua sendo uma ação
-    // válida e pontuável para quem escolhe registrar presença. O ScoreEngine é
-    // idempotente pelo checkInId, evitando crédito duplicado em retentativas.
+    // Check-in competitivo só comprova presença; a recompensa vem da atividade
+    // concluída. O check-in manual independente mantém sua regra legada.
     let pointsAwarded = 0;
     let scoringPending = false;
-    try {
-      pointsAwarded = await ScoreEngine.processCheckin(auth.uid, {
-        checkInId,
-        gymId: userData.gymId,
-        timestamp: now.toISOString(),
-        hasPhoto: false,
-      });
-      await db.collection('gym_checkins').doc(checkInId).set({ pointsAwarded }, { merge: true });
-    } catch (scoringError) {
-      // O check-in já foi confirmado. Uma indisponibilidade isolada do motor de
-      // pontos não pode transformar sucesso em HTTP 500 e induzir o cliente a
-      // repetir a presença. O documento fica marcado para reconciliação.
-      scoringPending = true;
-      console.error('[Gym Checkin] Check-in salvo; pontuação pendente de reconciliação:', scoringError);
-      await db.collection('gym_checkins').doc(checkInId).set({
-        pointsAwarded: 0,
-        scoringPending: true,
-        scoringErrorAt: now.toISOString(),
-      }, { merge: true });
+    if (action !== 'confirm_activity') {
+      try {
+        pointsAwarded = await ScoreEngine.processCheckin(auth.uid, {
+          checkInId,
+          gymId: userData.gymId,
+          timestamp: now.toISOString(),
+          hasPhoto: false,
+        });
+        await checkInRef.set({ pointsAwarded }, { merge: true });
+      } catch (scoringError) {
+        // O check-in já foi confirmado. Uma indisponibilidade isolada do motor
+        // não pode induzir o cliente a repetir a presença.
+        scoringPending = true;
+        console.error('[Gym Checkin] Check-in salvo; pontuação pendente de reconciliação:', scoringError);
+        await checkInRef.set({
+          pointsAwarded: 0,
+          scoringPending: true,
+          scoringErrorAt: now.toISOString(),
+        }, { merge: true });
+      }
     }
 
     // Log the event for forensic inspection / audit

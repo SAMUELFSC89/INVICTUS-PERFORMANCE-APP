@@ -34,7 +34,7 @@ class GlobalErrorBoundary extends Component<Props, State> {
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           </div>
           <h1 className="italic font-black text-2xl uppercase mb-2">Algo deu errado</h1>
-          <p className="opacity-60 text-xs max-w-xs uppercase tracking-widest mb-8">
+          <p className="invictus-text-muted text-xs max-w-xs uppercase tracking-widest mb-8">
             Ocorreu um erro inesperado. Por favor, tente recarregar a página.
           </p>
           {this.state.error && (

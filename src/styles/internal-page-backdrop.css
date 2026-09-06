@@ -2,9 +2,8 @@
  * Shared internal-page backdrop.
  *
  * Home keeps the original official banner exactly as authored in index.css.
- * Every other route reuses that same asset (.app-fundo::before/::after,
- * defined in index.css) with a single, consistent blur and a slightly
- * stronger veil so headings, controls and data remain legible.
+ * Every other route reuses that same asset with a single, consistent blur and
+ * a slightly stronger veil so headings, controls and data remain legible.
  */
 .app-fundo--internal::before {
   filter: blur(14px);
@@ -27,27 +26,10 @@
  * These route shells previously painted an opaque near-black canvas over the
  * global banner. Only their canvas color becomes transparent; their existing
  * gradients, cards, dialogs, footers and content surfaces stay unchanged.
- *
- * #253-fix (regressao real relatada pelo usuario em producao, tela de
- * cardio): .challenge-flow-screen e .challenge-cardio-live foram REMOVIDOS
- * desta lista depois de aplicados. Diferente das outras telas aqui (que sao
- * o UNICO conteudo daquela rota), Challenges.tsx mantem o catalogo antigo
- * (.challenge-screen, com bg-transparent) sempre montado no Outlet e desenha
- * o fluxo de atividade (ChallengeActivityFlow, portalled em
- * .challenge-flow-screen) por CIMA dele como overlay -- os dois ficam no DOM
- * ao mesmo tempo. .challenge-flow-screen so fica opaco por causa do
- * background:#030303 definido em index.css; zerar esse background (como essa
- * regra fazia com !important) expunha o catalogo antigo inteiro por baixo,
- * com o menu/rodape legado dele -- exatamente o "voltou toda tela antiga por
- * baixo" visto ao vivo no fluxo de cardio. Confirmado via getComputedStyle:
- * com a regra antiga, background-color computado virava rgba(0,0,0,0) apesar
- * do position:fixed;inset:0 cobrir a tela inteira.
- *
- * #253: os nomes abaixo foram conferidos contra o código atual (grep) antes
- * de aplicar -- "pfn-screen"/"pfn-page" do pacote original não existem mais
- * (ProfileNew.tsx hoje usa "np-screen"/"np-page"), corrigido aqui.
  */
 body[data-invictus-surface='internal'] :is(
+  .challenge-flow-screen,
+  .challenge-cardio-live,
   .activity-type-screen,
   .an-screen,
   .an-page,
@@ -61,8 +43,8 @@ body[data-invictus-surface='internal'] :is(
   .store-page,
   .notifications-screen-new,
   .payn-screen,
-  .np-screen,
-  .np-page,
+  .pfn-screen,
+  .pfn-page,
   .power-screen,
   .power-flow,
   .profile-flow-screen-new,

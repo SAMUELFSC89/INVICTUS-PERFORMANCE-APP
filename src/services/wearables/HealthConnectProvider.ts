@@ -32,13 +32,18 @@ export function hasAllReadPermissions(response: any): boolean {
 }
 
 function mapWorkoutType(hcType: string): string {
-  if (!hcType) return 'Cardio';
+  if (!hcType) return 'Desconhecido';
   const typeStr = String(hcType).toLowerCase();
   if (typeStr.includes('running') || typeStr.includes('run') || typeStr.includes('corrida')) return 'Corrida';
   if (typeStr.includes('cycling') || typeStr.includes('bike') || typeStr.includes('pedalada')) return 'Bike';
   if (typeStr.includes('strength') || typeStr.includes('musculacao') || typeStr.includes('weight')) return 'Musculação';
   if (typeStr.includes('walking') || typeStr.includes('caminhada')) return 'Caminhada';
-  return 'Cardio';
+  if (typeStr.includes('swim') || typeStr.includes('natacao')) return 'Natação';
+  if (typeStr.includes('elliptical') || typeStr.includes('eliptico')) return 'Elíptico';
+  if (typeStr.includes('rowing') || typeStr.includes('remo')) return 'Remo';
+  if (typeStr.includes('stair') || typeStr.includes('escada')) return 'Escada';
+  if (typeStr.includes('crossfit') || typeStr.includes('functional')) return 'Treino funcional';
+  return String(hcType).trim().slice(0, 120) || 'Desconhecido';
 }
 
 export class HealthConnectProvider implements WearableProvider {
@@ -200,6 +205,8 @@ export class HealthConnectProvider implements WearableProvider {
       source: 'health_connect',
       sourceActivityId: w.id,
       activityType: mapWorkoutType(w.workoutType),
+      isIndoorCardio: w.isIndoor === true || w.indoor === true
+        || /indoor|treadmill|esteira/i.test(String(w.workoutType || '')),
       startTime: w.startDate,
       durationSeconds: Math.round(w.duration || 0),
       distanceMeters: w.distance || 0,

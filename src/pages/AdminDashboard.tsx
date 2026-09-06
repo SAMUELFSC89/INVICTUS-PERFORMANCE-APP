@@ -542,7 +542,7 @@ export function AdminDashboard() {
               {adminFeedback.type === 'success' ? <UserCheck size={18} /> : <AlertTriangle size={18} />}
               <span>{adminFeedback.text}</span>
             </div>
-            <button onClick={() => setAdminFeedback(null)} className="opacity-60 hover:opacity-100 transition-opacity">
+            <button onClick={() => setAdminFeedback(null)} className="opacity-80 hover:opacity-100 transition-opacity">
               <X size={16} />
             </button>
           </motion.div>
@@ -801,7 +801,7 @@ export function AdminDashboard() {
             </div>
           )}
 
-          <p className="font-label text-[10px] font-black text-on-surface-variant uppercase tracking-widest opacity-60">
+          <p className="font-label text-[10px] font-black invictus-text-muted uppercase tracking-widest">
             Cuidado: Esta ação concede acesso total ao sistema ao usuário indicado.
           </p>
         </section>
@@ -1048,7 +1048,7 @@ function PoolCard({ label, value, icon, color, description }: { label: string, v
           <p className="font-headline italic font-black text-2xl text-on-surface">R$ {value.toLocaleString()}</p>
         </div>
       </div>
-      <p className="text-[9px] font-medium text-on-surface-variant leading-relaxed opacity-60 uppercase tracking-tight">{description}</p>
+      <p className="text-[9px] font-medium invictus-text-muted leading-relaxed uppercase tracking-tight">{description}</p>
     </div>
   );
 }
@@ -1084,7 +1084,7 @@ function UserRow({
             {user.isSubscribed && <span className="bg-secondary/20 text-secondary text-[8px] font-black px-1.5 py-0.5 rounded uppercase font-mono">PRO</span>}
             {user.role === 'admin' && <span className="bg-primary/20 text-primary text-[8px] font-black px-1.5 py-0.5 rounded uppercase border border-primary/20 font-mono">ADMIN</span>}
           </div>
-          <p className="text-[10px] text-on-surface-variant opacity-60 font-medium truncate max-w-[200px]">{user.email || 'Sem e-mail'}</p>
+          <p className="text-[10px] invictus-text-muted font-medium truncate max-w-[200px]">{user.email || 'Sem e-mail'}</p>
           {user.cpf && <p className="text-[9px] font-mono text-on-surface-variant/40 mt-0.5">CPF: {user.cpf}</p>}
         </div>
       </div>

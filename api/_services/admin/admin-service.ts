@@ -50,16 +50,30 @@ export class AdminService {
     if (!workout) {
       throw new AppError('Atividade física não encontrada.', 404);
     }
+    if (Number(workout.schemaVersion) >= 2 && workout.activityMode !== 'competitive') {
+      throw new AppError('Atividades pessoais não possuem análise competitiva para revisar.', 409);
+    }
+    const expectedCompetitionStatus = status === 'valid' ? 'approved' : 'rejected';
+    const isProjectionRetry = Number(workout.schemaVersion) >= 2
+      && workout.competitionProjectionStatus === 'pending'
+      && workout.adminReviewDecision === status
+      && workout.competitionReviewStatus === expectedCompetitionStatus;
+    if (Number(workout.schemaVersion) >= 2
+      && !isProjectionRetry
+      && (workout.pendingReview !== true || workout.competitionReviewStatus !== 'pending_review')) {
+      throw new AppError('Esta decisão competitiva já foi concluída e não está mais na fila de revisão.', 409);
+    }
 
     const athleteId = workout.userId;
-    const previousPoints = Number(workout.points || 0);
+    const previousPoints = Number(workout.competitionPoints ?? workout.points) || 0;
     const type = workout.type || 'workout';
 
     let adjustedPoints = 0;
     if (status === 'valid') {
-      adjustedPoints = type === 'recovery' ? 100 : 80;
+      adjustedPoints = Number(workout.activityXpAwarded ?? workout.scoreAwarded)
+        || (type === 'recovery' ? 100 : 80);
     } else if (status === 'suspicious') {
-      adjustedPoints = 20;
+      adjustedPoints = Number(workout.schemaVersion) >= 2 ? 0 : 20;
     } else {
       adjustedPoints = 0;
     }

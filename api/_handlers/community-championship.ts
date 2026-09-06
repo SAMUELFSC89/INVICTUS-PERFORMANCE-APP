@@ -20,7 +20,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ eventId: EVENT_ID, enrolled: own.data()?.status === 'active', participantCount: count.data().count, championship });
   }
   if (req.method === 'POST') {
-    await ref.set({ eventId: EVENT_ID, userId: auth.uid, status: 'active', consentVersion: 'community-friends-v1', joinedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    const current = await ref.get();
+    const keepEnrollmentEpoch = current.data()?.status === 'active' && current.data()?.joinedAt;
+    await ref.set({ eventId: EVENT_ID, userId: auth.uid, status: 'active', consentVersion: 'community-friends-v1', ...(!keepEnrollmentEpoch ? { joinedAt: FieldValue.serverTimestamp() } : {}), withdrawnAt: null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     return res.status(200).json({ eventId: EVENT_ID, enrolled: true });
   }
   if (req.method === 'DELETE') {

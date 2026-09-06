@@ -37,29 +37,7 @@ service cloud.firestore {
               (data.email == request.auth.token.email) &&
               (data.uid == request.auth.uid) && // Identity Integrity
               (data.get('isAdmin', false) == false) &&
-              (data.get('role', 'user') == 'user') &&
-              // SEC-01 (auditoria 6167c8f): os campos abaixo são exclusivamente
-              // calculados/atribuídos pelo servidor (Admin SDK, via
-              // /api/profile?action=onboard). Um create() do cliente nunca pode
-              // trazê-los -- sem isso, apagar o próprio perfil (delete() é
-              // permitido ao dono, abaixo) e recriá-lo seria uma forma de forjar
-              // pontuação, plano pago ou remover bloqueio/banimento, já que uma
-              // escrita nova não está sujeita à lista de campos protegidos do
-              // update() logo abaixo.
-              !data.keys().hasAny([
-                'score', 'weeklyScore', 'monthlyScore', 'streak',
-                'walletBalance', 'badges', 'achievements', 'positions', 'activeSeason',
-                'seasonBoost', 'seasonEntryStatus', 'totalEarnings', 'totalWins', 'rankingPosition',
-                'premiumStatus', 'subscriptionStatus', 'boostMultiplier', 'challengeProgress',
-                'isBanned', 'isSubscribed', 'status', 'seasonStatus', 'nextSeasonStart',
-                'isPro', 'pro', 'plan', 'entitlement',
-                'plano', 'assinatura', 'statusPagamento', 'premium', 'performance', 'currentPlan', 'subscriptionTier',
-                'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
-                'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
-                'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes',
-                'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt',
-                'isBlocked', 'isSuspended'
-              ]);
+              (data.get('role', 'user') == 'user');
     }
 
     function isValidWorkout(data) {
@@ -135,12 +113,7 @@ service cloud.firestore {
            'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
             'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
             'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes', 'isAdmin', 'email', 'uid',
-            'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt',
-            // SEC-01 (auditoria 6167c8f): isBlocked/isSuspended controlam acesso
-            // ao app e a liberação de saques (withdrawal-engine.ts) e estavam
-            // ausentes desta lista -- o próprio dono podia se desbloquear com um
-            // updateDoc(). isBanned já estava protegido acima.
-            'isBlocked', 'isSuspended'
+            'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt'
           ])
       );
       
@@ -166,6 +139,24 @@ service cloud.firestore {
       // pelo backend (Admin SDK), após validação.
       allow create, update: if isAdmin();
       allow delete: if isAdmin();
+    }
+
+    // O servidor decide se a sessão é pessoal ou competitiva e mantém cada
+    // resultado competitivo separado do registro pessoal da atividade.
+    match /activity_policy_snapshots/{snapshotId} {
+      allow read, write: if false;
+    }
+    match /activity_competition_entries/{entryId} {
+      allow read, write: if false;
+    }
+    match /activity_reward_ledger/{entryId} {
+      allow read, write: if false;
+    }
+    match /activity_identity_claims/{claimId} {
+      allow read, write: if false;
+    }
+    match /activity_reward_quotas/{quotaId} {
+      allow read, write: if false;
     }
 
     // Planos de musculação são escritos somente pelo backend, que valida
@@ -372,9 +363,18 @@ service cloud.firestore {
     // Active Activity Sessions
     match /active_sessions/{sessionId} {
       allow get, list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidId(sessionId) && incoming().userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && isValidId(sessionId)
+        && incoming().userId == request.auth.uid
+        && incoming().get('id', '') == sessionId
+        && incoming().get('competitionPolicy', {}).get('version', '') == 'activity-competition-v2'
+        && incoming().get('competitionPolicy', {}).get('snapshotId', '') == sessionId
+        && incoming().get('competitionPolicy', {}).get('sessionId', '') == sessionId;
       allow update: if isSignedIn() && isValidId(sessionId) && (
-        (resource.data.userId == request.auth.uid && incoming().userId == resource.data.userId) || isAdmin()
+        (resource.data.userId == request.auth.uid
+          && incoming().userId == resource.data.userId
+          && incoming().get('id', '') == sessionId
+          && incoming().get('competitionPolicy', {}) == existing().get('competitionPolicy', {})) || isAdmin()
       );
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }

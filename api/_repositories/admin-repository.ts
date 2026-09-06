@@ -2,6 +2,7 @@ import { BaseRepository } from './base-repository.js';
 import { db } from '../_lib/common.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { recalculateAllUserScores } from '../_lib/igaService.js';
+import { syncReviewedActivityCompetitionScores } from '../_lib/championship-scoring-service.js';
 
 export class AdminRepository extends BaseRepository<any> {
   constructor() {
@@ -73,8 +74,19 @@ export class AdminRepository extends BaseRepository<any> {
     const trustProfileRef = db.collection('user_trust_profiles').doc(athleteId);
 
     await db.runTransaction(async (transaction) => {
-      const athleteSnap = await transaction.get(athleteRef);
+      const entriesQuery = db.collection('activity_competition_entries').where('activityId', '==', workoutId);
+      const [athleteSnap, workoutSnap, trustSnap, entriesSnap] = await Promise.all([
+        transaction.get(athleteRef),
+        transaction.get(workoutRef),
+        transaction.get(trustProfileRef),
+        transaction.get(entriesQuery),
+      ]);
       const athleteData = athleteSnap.exists ? athleteSnap.data() || {} : {};
+      const workoutData = workoutSnap.data() || {};
+      const isVersionedActivity = Number(workoutData.schemaVersion) >= 2;
+      const retryingProjection = isVersionedActivity
+        && workoutData.competitionProjectionStatus === 'pending'
+        && workoutData.adminReviewDecision === status;
 
       // #228: score/weeklyScore NAO sao mais ajustados aqui por delta manual --
       // era mais uma fonte de escrita direta e paralela ao IGA (o motivo real
@@ -92,8 +104,21 @@ export class AdminRepository extends BaseRepository<any> {
       }
 
       transaction.update(workoutRef, {
-        status,
-        points: adjustedPoints,
+        ...(isVersionedActivity ? {
+          status: 'completed',
+          validationStatus: status === 'valid' ? 'validated' : 'rejected',
+          competitionReviewStatus: status === 'valid' ? 'approved' : 'rejected',
+          competitionStatus: status === 'valid' ? 'approved' : 'rejected',
+          competitionPoints: status === 'valid' ? adjustedPoints : 0,
+          isScoringEligible: status === 'valid',
+          nonScoringReason: status === 'valid' ? null : 'ADMIN_REJECTED',
+          rejectionReason: status === 'valid' ? null : 'ADMIN_REJECTED',
+          competitionProjectionStatus: 'pending',
+          adminReviewDecision: status,
+        } : {
+          status,
+          points: adjustedPoints,
+        }),
         'validation.status': status,
         'validation.reviewerId': reviewerId,
         'validation.reviewedAt': new Date().toISOString(),
@@ -104,17 +129,28 @@ export class AdminRepository extends BaseRepository<any> {
         pendingReview: false
       });
 
-      if (Object.keys(updates).length > 0) {
+      entriesSnap.docs.forEach((entry: any) => {
+        transaction.set(entry.ref, {
+          reviewStatus: status === 'valid' ? 'approved' : 'rejected',
+          competitionPoints: status === 'valid' ? adjustedPoints : 0,
+          reasonCode: status === 'valid' ? null : 'ADMIN_REJECTED',
+          reviewedBy: reviewerId,
+          reviewedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      });
+
+      if (!retryingProjection && Object.keys(updates).length > 0) {
         transaction.update(athleteRef, updates);
       }
 
-      const reviewId = db.collection('admin_reviews').doc().id;
-      transaction.set(db.collection('admin_reviews').doc(reviewId), {
+      const reviewId = `${workoutId}_competitive_decision`;
+      if (!retryingProjection) transaction.set(db.collection('admin_reviews').doc(reviewId), {
         id: reviewId,
         activityId: workoutId,
         userId: athleteId,
         reviewerId,
-        originalStatus: status,
+        originalStatus: workoutData.competitionReviewStatus || workoutData.status,
         newStatus: status,
         pointsBefore: previousPoints,
         pointsAfter: adjustedPoints,
@@ -124,15 +160,14 @@ export class AdminRepository extends BaseRepository<any> {
       });
 
       let trustScore = 100;
-      const tpSnap = await transaction.get(trustProfileRef);
-      if (tpSnap.exists) {
-        trustScore = tpSnap.data()?.trustScore ?? 100;
+      if (trustSnap.exists) {
+        trustScore = trustSnap.data()?.trustScore ?? 100;
       }
 
-      if (status === 'valid') trustScore = Math.min(100, trustScore + 5);
-      else if (status === 'invalid') trustScore = Math.max(0, trustScore - 25);
+      if (!retryingProjection && status === 'valid') trustScore = Math.min(100, trustScore + 5);
+      else if (!retryingProjection && status === 'invalid') trustScore = Math.max(0, trustScore - 25);
 
-      transaction.set(trustProfileRef, {
+      if (!retryingProjection) transaction.set(trustProfileRef, {
         trustScore,
         lastValidationReview: new Date().toISOString(),
         updatedAt: FieldValue.serverTimestamp()
@@ -142,11 +177,15 @@ export class AdminRepository extends BaseRepository<any> {
     // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA
     // (IGA) agora que o status do workout revisado ja esta commitado -- fora
     // da transaction acima pelo mesmo motivo dos outros pontos de entrada.
-    try {
-      await recalculateAllUserScores(athleteId);
-    } catch (rankingErr) {
-      console.error(`[AdminRepository] Falha ao recalcular pontuacao IGA para athleteId=${athleteId} apos revisao de workout ${workoutId}:`, rankingErr);
-    }
+    await Promise.all([
+      recalculateAllUserScores(athleteId),
+      syncReviewedActivityCompetitionScores(workoutId),
+    ]);
+    await workoutRef.set({
+      competitionProjectionStatus: 'complete',
+      competitionProjectionCompletedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
   }
 
   async getWithdrawals(status?: string): Promise<any[]> {

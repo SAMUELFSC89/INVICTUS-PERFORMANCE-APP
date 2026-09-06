@@ -31,11 +31,26 @@ const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorag
 const store = new Map<string, string>();
 const health = () => ({ status: 'available', source: 'health_connect', sourceKey: 'watch-a', fetchedAt: new Date(end).toISOString(), truncated: false,
   samples: [{ timestamp: iso(10), bpm: 198 }, { timestamp: iso(11), bpm: 204 }] });
+const personalPolicy = {
+  version: 'activity-competition-v2', activityType: 'workout', isIndoorCardio: false,
+  resolvedAt: iso(0), effectiveAt: iso(0), contexts: [], requiresSecurityReview: false,
+  requiresGymCheckIn: false, requiresContinuousGps: false, requiresMotionSensors: false,
+  snapshotId: SESSION, sessionId: SESSION, startBy: iso(30), expiresAt: iso(60 * 24),
+};
+const competitivePolicy = {
+  ...personalPolicy,
+  contexts: [{
+    type: 'gym_ranking', id: 'gym-a', label: 'Ranking da Academia', enrollmentId: UID,
+    requiresGymCheckIn: false, requiresContinuousGps: false, requiresMotionSensors: true,
+  }],
+  requiresSecurityReview: true,
+  requiresMotionSensors: true,
+};
 const saveSession = (overrides: Record<string, unknown> = {}) => localStorage.setItem('current_activity_session', JSON.stringify({
   id: SESSION, userId: UID, type: 'workout', status: 'active', startTime: iso(0), requiresGpsDistance: false,
   isPaused: false, pausedMs: 0, checkpoints: [], hasExercises: false,
   plannedExercises: [{ id: 'squat', sets: 8, reps: 99, loadKg: 999 }],
-  smartwatchData: { avgHeartRate: 155, pedometerSteps: 320 }, ...overrides,
+  smartwatchData: { avgHeartRate: 155, pedometerSteps: 320 }, competitionPolicy: personalPolicy, ...overrides,
 }));
 const startSet = (minute = 10) => workoutSetJournal.start(UID, SESSION, { exerciseId: 'squat', exerciseName: 'Agachamento', equipment: 'Barra' }, start + minute * 60_000);
 const completeSet = () => {
@@ -72,6 +87,7 @@ afterEach(() => {
 });
 
 test('sends actual sets and point heart rates only in the private record, preserving competitive inputs and server points', async () => {
+  saveSession({ competitionPolicy: competitivePolicy });
   const set = completeSet();
   const result = await activityService.endSession();
   const payload = requestBody();
@@ -103,6 +119,15 @@ test('planned exercises never create executed sets and private high heart rates 
   expect(payload.avgHeartRate).toBeUndefined();
   expect(payload.smartwatchData.avgHeartRate).toBeUndefined();
   expect(payload.hasExercises).toBe(false);
+  expect(payload.competitionPolicySnapshotId).toBe(SESSION);
+  expect(payload.competitionPolicyVersion).toBe('activity-competition-v2');
+  expect(payload.isMockLocation).toBeUndefined();
+  expect(payload.isEmulator).toBeUndefined();
+  expect(payload.isRooted).toBeUndefined();
+  expect(payload.isDeveloperMode).toBeUndefined();
+  expect(payload.hasSensorOscillation).toBeUndefined();
+  expect(payload.sensorStatus).toBeUndefined();
+  expect(payload.sensorTelemetry).toBeUndefined();
 });
 
 test('pause interrupts an open set and finishing never manufactures its results or counts paused duration', async () => {
