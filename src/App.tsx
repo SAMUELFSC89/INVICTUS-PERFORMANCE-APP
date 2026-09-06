@@ -66,11 +66,11 @@ export default function App() {
   }, []);
 
   return (
-    <UserProvider>
+    <BrowserRouter>
+      <UserProvider>
         <ProProvider>
-          <BrowserRouter>
-            <MobileBridge />
-            <AuthGuard>
+          <MobileBridge />
+          <AuthGuard>
             <Suspense fallback={<RouteLoading />}>
             <Routes>
               {/* Continue URLs de verificação/reset do Firebase apontam para
@@ -169,8 +169,8 @@ export default function App() {
             </Routes>
             </Suspense>
           </AuthGuard>
-        </BrowserRouter>
         </ProProvider>
-    </UserProvider>
+      </UserProvider>
+    </BrowserRouter>
   );
 }
