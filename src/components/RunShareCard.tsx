@@ -20,9 +20,7 @@ export interface ShareableSession {
 }
 interface RunShareCardProps { session: RunSession | AdvancedRunStats | ShareableSession; onClose: () => void; }
 type MapVariant = 'satellite' | 'outdoors';
-type BackgroundMode = MapVariant | 'photo';
-const MAP_VARIANTS: MapVariant[] = ['satellite', 'outdoors'];
-function isMapVariant(mode: BackgroundMode): mode is MapVariant { return (MAP_VARIANTS as string[]).includes(mode); }
+type CompositionMode = 'map' | 'photo-map';
 function hasValidLatLng(point: any): boolean { if (!point) return false; const lat = Number(point.lat ?? point.latitude ?? point.location?.lat ?? point.location?.latitude); const lng = Number(point.lng ?? point.longitude ?? point.location?.lng ?? point.location?.longitude); return Number.isFinite(lat) && Number.isFinite(lng); }
 function formatPaceForCard(value: unknown): string { return String(value || '—').replace(/\/km/i, '').replace("'", ':').replace('"', '').trim(); }
 function fileToDataUrl(file: File): Promise<string> { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(reader.error || new Error('Falha ao ler a imagem.')); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Imagem inválida.')); reader.readAsDataURL(file); }); }
@@ -60,9 +58,9 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const sharePace = formatPaceForCard(pace);
   const statusLabel = validationState === 'approved' ? 'ATIVIDADE VALIDADA' : validationState === 'pending' ? 'CONCLUÍDA · COMPETIÇÃO EM ANÁLISE' : validationState === 'rejected' ? 'CONCLUÍDA · FORA DA COMPETIÇÃO' : 'ATIVIDADE CONCLUÍDA';
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto);
-  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() => hasRoute ? 'satellite' : 'photo');
-  const requestedMapVariant: MapVariant = isMapVariant(backgroundMode) ? backgroundMode : 'satellite';
-  const cacheKey = `${requestedMapVariant}:${zoomAdjust}`;
+  const [compositionMode, setCompositionMode] = useState<CompositionMode>(() => hasRoute ? 'map' : 'photo-map');
+  const [mapVariant, setMapVariant] = useState<MapVariant>('satellite');
+  const cacheKey = `${mapVariant}:${zoomAdjust}`;
   const currentMapImage = mapImages[cacheKey] ?? null;
 
   useEffect(() => {
@@ -74,7 +72,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       if (started || cancelled) return; started = true;
       try {
         const idToken = await user.getIdToken();
-        const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` }, body: JSON.stringify({ trajectory: points, width: 720, height: 1280, mapType: requestedMapVariant, zoomAdjust }) });
+        const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` }, body: JSON.stringify({ trajectory: points, width: 720, height: 1280, mapType: mapVariant, zoomAdjust }) });
         if (!response.ok) throw new Error(`activity-map respondeu ${response.status}`);
         const json = await response.json(); if (cancelled) return;
         if (json.success && json.imageDataUrl) { setMapImages(current => ({ ...current, [cacheKey]: json.imageDataUrl })); setMapError(false); } else setMapError(true);
@@ -82,11 +80,11 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     };
     const unsubscribe = auth.onAuthStateChanged(user => { if (user) void fetchMap(user); }); if (auth.currentUser) void fetchMap(auth.currentUser);
     return () => { cancelled = true; unsubscribe(); };
-  }, [cacheKey, hasRoute, mapImages, requestedMapVariant, trajectory, zoomAdjust]);
+  }, [cacheKey, hasRoute, mapImages, mapVariant, trajectory, zoomAdjust]);
 
   const handlePhotoSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return; if (!file.type.startsWith('image/')) { setFeedback('Selecione uma imagem válida.'); return; }
-    try { setSelectedPhoto(await fileToDataUrl(file)); setBackgroundMode('photo'); setCustomizerOpen(false); setFeedback(null); } catch { setFeedback('Não foi possível carregar essa foto.'); }
+    try { setSelectedPhoto(await fileToDataUrl(file)); setCompositionMode('photo-map'); setCustomizerOpen(false); setFeedback(null); } catch { setFeedback('Não foi possível carregar essa foto.'); }
   };
 
   const handleExport = async (mode: 'download' | 'share') => {
@@ -99,26 +97,9 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     } catch (error) { console.error('[RunShareCard] Falha ao exportar:', error); setFeedback('Não foi possível gerar a imagem.'); } finally { setIsGenerating(false); }
   };
 
-  const chooseMap = (variant: MapVariant) => { if (!hasRoute) return; setBackgroundMode(variant); setCustomizerOpen(false); setMapError(false); };
-  const activePinch = () => {
-    const points = Array.from(pointersRef.current.values());
-    return points.length === 2 ? distanceBetween(points[0], points[1]) : null;
-  };
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== 'touch' || !hasRoute) return;
-    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointersRef.current.size === 2) pinchDistanceRef.current = activePinch();
-  };
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!pointersRef.current.has(event.pointerId) || !hasRoute) return;
-    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointersRef.current.size !== 2) return;
-    const distance = activePinch(); const base = pinchDistanceRef.current;
-    if (!distance || !base) { pinchDistanceRef.current = distance; return; }
-    const ratio = distance / base;
-    if (ratio > 1.16) { setZoomAdjust(value => Math.min(ZOOM_ADJUST_MAX, value + 1)); pinchDistanceRef.current = distance; }
-    else if (ratio < 0.86) { setZoomAdjust(value => Math.max(ZOOM_ADJUST_MIN, value - 1)); pinchDistanceRef.current = distance; }
-  };
+  const activePinch = () => { const points = Array.from(pointersRef.current.values()); return points.length === 2 ? distanceBetween(points[0], points[1]) : null; };
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => { if (event.pointerType !== 'touch' || !hasRoute) return; pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY }); if (pointersRef.current.size === 2) pinchDistanceRef.current = activePinch(); };
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => { if (!pointersRef.current.has(event.pointerId) || !hasRoute) return; pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY }); if (pointersRef.current.size !== 2) return; const distance = activePinch(), base = pinchDistanceRef.current; if (!distance || !base) { pinchDistanceRef.current = distance; return; } const ratio = distance / base; if (ratio > 1.16) { setZoomAdjust(value => Math.min(ZOOM_ADJUST_MAX, value + 1)); pinchDistanceRef.current = distance; } else if (ratio < 0.86) { setZoomAdjust(value => Math.max(ZOOM_ADJUST_MIN, value - 1)); pinchDistanceRef.current = distance; } };
   const endPointer = (event: React.PointerEvent<HTMLDivElement>) => { pointersRef.current.delete(event.pointerId); if (pointersRef.current.size < 2) pinchDistanceRef.current = null; };
 
   const statMarkup = useMemo(() => <>
@@ -133,8 +114,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
   return createPortal(<div className="share-screen" role="dialog" aria-modal="true" aria-label="Compartilhar atividade">
     <div className="share-screen-toolbar"><button type="button" onClick={onClose} className="share-icon-button" aria-label="Fechar"><X size={21} /></button><button type="button" className="share-icon-button" style={{ position: 'fixed', top: 'max(82px, calc(env(safe-area-inset-top) + 68px))', left: 12, width: 36, height: 36 }} onClick={() => setCustomizerOpen(true)} aria-label="Personalizar card"><Layers3 size={17} /></button><div className="share-screen-actions" style={{ position: 'fixed', top: 'max(82px, calc(env(safe-area-inset-top) + 68px))', right: 12, flexDirection: 'column', alignItems: 'center', gap: 7 }}><button type="button" className="share-icon-button share-icon-button--accent" style={{ width: 36, height: 36 }} onClick={() => void handleExport('share')} disabled={isGenerating} aria-label="Compartilhar imagem">{isGenerating ? <RefreshCw size={17} className="share-spin" /> : <Share2 size={17} />}</button><button type="button" className="share-icon-button" style={{ width: 36, height: 36 }} onClick={() => void handleExport('download')} disabled={isGenerating} aria-label="Baixar imagem">{isGenerating ? <RefreshCw size={17} className="share-spin" /> : <Download size={17} />}</button></div></div>
-    <div className="share-card-stage" style={{ touchAction: 'none' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}><div ref={cardRef} className={cn('share-card-art', `share-card-art--${backgroundMode}`)}><div className="share-card-background" aria-hidden="true">{backgroundMode === 'photo' && selectedPhoto ? <img src={selectedPhoto} alt="" className="share-card-photo" /> : null}{backgroundMode !== 'photo' && currentMapImage ? <img src={currentMapImage} alt="" className="share-card-map" /> : null}{backgroundMode === 'photo' && hasRoute && currentMapImage ? <div className="share-card-route-overlay"><img src={currentMapImage} alt="" /></div> : null}<div className="share-card-vignette" />{!currentMapImage && hasRoute && backgroundMode !== 'photo' ? <div className="share-card-loading-map">{mapError ? 'MAPA INDISPONÍVEL' : 'CARREGANDO MAPA...'}</div> : null}{backgroundMode === 'photo' && !selectedPhoto ? <div className="share-card-photo-empty">SELECIONE UMA FOTO</div> : null}</div><div className="share-card-brand"><InvictusLogo size={64} /><div className="share-card-brand-copy"><strong>INVICTUS</strong><span>PERFORMANCE</span></div></div><div className="share-card-content">{statMarkup}</div></div></div>
-    {customizerOpen ? <div style={sheetStyle} role="dialog" aria-label="Personalizar compartilhamento"><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}><div><div style={{ color: '#f6a916', fontSize: 10, fontWeight: 900, letterSpacing: '.16em' }}>PERSONALIZAR</div><strong style={{ fontSize: 16 }}>Escolha a composição</strong></div><button className="share-icon-button" style={{ width: 34, height: 34 }} onClick={() => setCustomizerOpen(false)} aria-label="Fechar opções"><X size={16} /></button></div><div style={rowStyle}><button style={{ ...optionStyle, borderColor: isMapVariant(backgroundMode) ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => chooseMap(requestedMapVariant)} disabled={!hasRoute}><Map size={16} />Mapa</button><label style={{ ...optionStyle, borderColor: backgroundMode === 'photo' ? '#f6a916' : 'rgba(255,255,255,.12)', cursor: 'pointer' }}>{selectedPhoto ? <ImageIcon size={16} /> : <Upload size={16} />}Foto + mapa<input type="file" accept="image/*" className="sr-only" onChange={handlePhotoSelection} /></label></div>{hasRoute ? <><div style={{ margin: '14px 0 8px', color: '#9d9d9d', fontSize: 10, fontWeight: 800, letterSpacing: '.12em' }}>ESTILO DO MAPA</div><div style={rowStyle}><button style={{ ...optionStyle, borderColor: requestedMapVariant === 'satellite' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => chooseMap('satellite')}><Map size={16} />Satélite</button><button style={{ ...optionStyle, borderColor: requestedMapVariant === 'outdoors' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => chooseMap('outdoors')}><Mountain size={16} />Terreno</button></div></> : null}</div> : null}
+    <div className="share-card-stage" style={{ touchAction: 'none' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}><div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`)}><div className="share-card-background" aria-hidden="true">{compositionMode === 'photo-map' && selectedPhoto ? <img src={selectedPhoto} alt="" className="share-card-photo" /> : null}{compositionMode === 'map' && currentMapImage ? <img src={currentMapImage} alt="" className="share-card-map" /> : null}{compositionMode === 'photo-map' && hasRoute && currentMapImage ? <div className="share-card-route-overlay"><img src={currentMapImage} alt="" /></div> : null}<div className="share-card-vignette" />{!currentMapImage && hasRoute && compositionMode === 'map' ? <div className="share-card-loading-map">{mapError ? 'MAPA INDISPONÍVEL' : 'CARREGANDO MAPA...'}</div> : null}{compositionMode === 'photo-map' && !selectedPhoto ? <div className="share-card-photo-empty">SELECIONE UMA FOTO</div> : null}</div><div className="share-card-brand"><InvictusLogo size={64} /><div className="share-card-brand-copy"><strong>INVICTUS</strong><span>PERFORMANCE</span></div></div><div className="share-card-content">{statMarkup}</div></div></div>
+    {customizerOpen ? <div style={sheetStyle} role="dialog" aria-label="Personalizar compartilhamento"><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}><div><div style={{ color: '#f6a916', fontSize: 10, fontWeight: 900, letterSpacing: '.16em' }}>PERSONALIZAR</div><strong style={{ fontSize: 16 }}>Escolha a composição</strong></div><button className="share-icon-button" style={{ width: 34, height: 34 }} onClick={() => setCustomizerOpen(false)} aria-label="Fechar opções"><X size={16} /></button></div><div style={rowStyle}><button style={{ ...optionStyle, borderColor: compositionMode === 'map' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => { if (hasRoute) { setCompositionMode('map'); setCustomizerOpen(false); } }} disabled={!hasRoute}><Map size={16} />Mapa</button><label style={{ ...optionStyle, borderColor: compositionMode === 'photo-map' ? '#f6a916' : 'rgba(255,255,255,.12)', cursor: 'pointer' }}>{selectedPhoto ? <ImageIcon size={16} /> : <Upload size={16} />}Foto + mapa<input type="file" accept="image/*" className="sr-only" onChange={handlePhotoSelection} /></label></div>{hasRoute ? <><div style={{ margin: '14px 0 8px', color: '#9d9d9d', fontSize: 10, fontWeight: 800, letterSpacing: '.12em' }}>ESTILO DO MAPA</div><div style={rowStyle}><button style={{ ...optionStyle, borderColor: mapVariant === 'satellite' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => setMapVariant('satellite')}><Map size={16} />Satélite</button><button style={{ ...optionStyle, borderColor: mapVariant === 'outdoors' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => setMapVariant('outdoors')}><Mountain size={16} />Terreno</button></div></> : null}</div> : null}
     {feedback ? <div className="share-feedback" role="status" aria-live="polite">{feedback}</div> : null}
   </div>, document.body);
 }
