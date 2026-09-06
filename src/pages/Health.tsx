@@ -376,7 +376,17 @@ function useHealthData(range: TimeRange, revision: number, ready: boolean) {
           const avgHeartRate = Number(sessionReadings?.averageBpm ?? item.avgHeartRate ?? item.averageHeartRate ?? item.avgHr ?? telemetry.avgHeartRate);
           const hasHealthTelemetry = heartRateSamples.length > 0 || Number(item.steps) > 0 || avgHeartRate > 0
             || Number(item.maxHeartRate ?? item.maxHr ?? telemetry.maxHeartRate) > 0 || Number(item.calories ?? item.caloriesBurned) > 0 || Number(item.distance ?? item.distanceKm) > 0;
-          const isHealthOnly = isWearable && validationStatus !== 'validated' && item.nonScoringReason !== 'DUPLICATE_ACTIVITY' && hasHealthTelemetry;
+          // ACT-11 / HEALTH-08 (auditoria 6167c8f): `not_eligible` é uma
+          // atividade LEGÍTIMA -- o servidor já a distingue explicitamente de
+          // `rejected` (rejeitada = bloqueio por antifraude; not_eligible =
+          // sem estímulo competitivo ativo no momento, ex.: sem campeonato em
+          // andamento ou abaixo do tempo mínimo). Antes, esta tela só incluía
+          // atividades sem pontuação quando vinham de um wearable
+          // (`isWearable`) -- um treino LOCAL (GPS/manual) legítimo mas sem
+          // estímulo competitivo desaparecia inteiramente da aba Saúde, mesmo
+          // com telemetria real (FC, calorias, distância, passos).
+          const isNotEligible = validationStatus === 'not_eligible';
+          const isHealthOnly = (isWearable || isNotEligible) && validationStatus !== 'validated' && item.nonScoringReason !== 'DUPLICATE_ACTIVITY' && hasHealthTelemetry;
           if (!timestamp || timestamp < since || timestamp > Date.now() || (validationStatus !== 'validated' && !isHealthOnly)) return result;
           result.push({
             id: entry.id, userId: uid, timestamp,

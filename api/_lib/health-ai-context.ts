@@ -45,7 +45,13 @@ export function prepareHealthReportWorkouts(records: Array<Record<string, unknow
     const hasTelemetry = normalizeHeartRateSamples(item.heartRateSamples).length > 0 || Number(item.steps) > 0 || avgHeartRate > 0
       || Number(item.maxHeartRate ?? item.maxHr ?? telemetry.maxHeartRate) > 0
       || Number(item.distance ?? item.distanceKm) > 0 || Number(item.calories ?? item.caloriesBurned) > 0;
-    const healthOnly = wearable && status !== 'validated' && item.nonScoringReason !== 'DUPLICATE_ACTIVITY' && hasTelemetry;
+    // ACT-11 / HEALTH-08 (auditoria 6167c8f): mesmo raciocínio do Health.tsx
+    // -- not_eligible é uma atividade legítima (sem estímulo competitivo
+    // ativo), diferente de rejected (bloqueio por antifraude). Um treino
+    // local com telemetria real não pode desaparecer do contexto que a IA
+    // usa para o relatório só porque não veio de um wearable.
+    const notEligible = status === 'not_eligible';
+    const healthOnly = (wearable || notEligible) && status !== 'validated' && item.nonScoringReason !== 'DUPLICATE_ACTIVITY' && hasTelemetry;
     if (status !== 'validated' && !healthOnly) continue;
     const durationMinutes = Number(item.durationMinutes ?? item.duration ?? 0);
     const positive = (value: unknown) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : undefined;

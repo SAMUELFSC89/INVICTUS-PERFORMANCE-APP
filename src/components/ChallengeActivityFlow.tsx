@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, Info, MapPin, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
@@ -42,7 +42,11 @@ const icon = (kind: CardioOption['icon'], size = 20) => kind === 'bike' ? <Bike 
 const time = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 
 export type ActivityCompletion = {
-  status: 'approved' | 'pending' | 'rejected';
+  // ACT-11 / HEALTH-08 (auditoria 6167c8f): 'not_eligible' é uma atividade
+  // legítima sem estímulo competitivo ativo -- diferente de 'rejected'
+  // (bloqueio por antifraude/geofence/GPS). Mantê-las no mesmo status fazia
+  // um treino normal, só sem campeonato ativo, parecer ter sido recusado.
+  status: 'approved' | 'pending' | 'rejected' | 'not_eligible';
   message?: string;
   pointsAwarded?: number;
 };
@@ -156,6 +160,7 @@ export function ChallengeActivityFlow({
     : null;
   const completionPending = completion?.status === 'pending';
   const completionRejected = completion?.status === 'rejected';
+  const completionNotEligible = completion?.status === 'not_eligible';
 
   // #116: .challenge-flow-screen e position:fixed;inset:0;z-index:70 pensado
   // pra cobrir a tela INTEIRA por cima de tudo, inclusive o menu inferior
@@ -522,10 +527,12 @@ export function ChallengeActivityFlow({
       {complete && (
         <section className="challenge-flow-complete">
           <div className="challenge-flow-confetti">✦ ✦ ✦ ✦ ✦</div>
-          <span className="challenge-flow-check">{completionRejected ? <XCircle /> : completionPending ? <Clock3 /> : <Check />}</span>
+          <span className="challenge-flow-check">{completionRejected ? <XCircle /> : completionNotEligible ? <Info /> : completionPending ? <Clock3 /> : <Check />}</span>
           <p>{completion?.message || 'Atividade validada pelo servidor.'}</p>
           {completionRejected ? (
             <strong className="text-[15px]">Nenhuma pontuação foi concedida</strong>
+          ) : completionNotEligible ? (
+            <strong className="text-[15px]">Registrada, sem estímulo competitivo ativo</strong>
           ) : completionPending ? (
             <strong className="text-[15px]">Aguardando validação do servidor</strong>
           ) : awardedPoints !== null ? (

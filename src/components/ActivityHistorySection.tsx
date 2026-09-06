@@ -33,7 +33,13 @@ export interface ActivityHistoryItem {
   dateStr: string;
   timeStr: string;
   rawTimestamp: number;
-  status: 'homologada' | 'rejeitada' | 'pendente';
+  // ACT-11 / HEALTH-08 (auditoria 6167c8f): `nao_elegivel` é uma atividade
+  // LEGÍTIMA sem estímulo competitivo ativo no momento (ex.: sem campeonato
+  // em andamento, ou abaixo do tempo mínimo) -- o servidor já distingue isso
+  // de `rejeitada` (bloqueio por antifraude/geofence/GPS). Antes, as duas
+  // caíam na mesma categoria "rejeitada", fazendo um treino normal parecer
+  // ter sido recusado por fraude.
+  status: 'homologada' | 'rejeitada' | 'nao_elegivel' | 'pendente';
   statusRaw: string;
   points: number;
   rankingPointsEarned?: number;
@@ -201,6 +207,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
   }), [detailOwnerUid, onClose]);
   const isHomologada = item.status === 'homologada';
   const isRejeitada = item.status === 'rejeitada';
+  const isNaoElegivel = item.status === 'nao_elegivel';
   const isPendente = item.status === 'pendente';
   const cadence = Number.isFinite(item.steps) && item.steps! > 0 && Number.isFinite(item.durationMins) && item.durationMins! > 0
     ? Math.round(item.steps! / item.durationMins!) : undefined;
@@ -336,6 +343,14 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
               <p className="text-rose-200/90 text-xs leading-relaxed">O registro continua disponível no seu histórico, mas não gerou pontos.</p>
             </div>
           </div>
+        ) : isNaoElegivel ? (
+          <div className="bg-sky-500/10 border border-sky-500/30 rounded-2xl p-4 flex items-start gap-3">
+            <Info size={18} className="text-sky-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sky-400 font-bold text-[10px] uppercase tracking-wider mb-1">Atividade válida, sem estímulo competitivo</p>
+              <p className="text-sky-200/90 text-xs leading-relaxed">Registrada normalmente, mas sem campeonato/desafio ativo (ou fora dos critérios mínimos) para gerar pontos agora.</p>
+            </div>
+          </div>
         ) : isPendente ? (
           <div className="border border-amber-500/30 bg-amber-500/5 rounded-2xl px-4 py-3 flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0">
@@ -447,11 +462,11 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         {/* Verificado -- com icones de privacidade e compartilhamento rapido */}
         <div className={cn(
           "flex items-center gap-2 border rounded-2xl px-4 py-3",
-          isHomologada ? "border-primary/20 bg-primary/5" : isRejeitada ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"
+          isHomologada ? "border-primary/20 bg-primary/5" : isRejeitada ? "border-rose-500/20 bg-rose-500/5" : isNaoElegivel ? "border-sky-500/20 bg-sky-500/5" : "border-amber-500/20 bg-amber-500/5"
         )}>
-          {isHomologada ? <ShieldCheck className="text-primary shrink-0" size={16} /> : <ShieldAlert className={cn("shrink-0", isRejeitada ? "text-rose-400" : "text-amber-400")} size={16} />}
+          {isHomologada ? <ShieldCheck className="text-primary shrink-0" size={16} /> : <ShieldAlert className={cn("shrink-0", isRejeitada ? "text-rose-400" : isNaoElegivel ? "text-sky-400" : "text-amber-400")} size={16} />}
           <p className="text-white text-[11px] font-bold flex-1">
-            {isHomologada ? 'Atividade verificada pelo Invictus' : isRejeitada ? 'Esta atividade não gerou pontos' : 'Atividade em análise'}
+            {isHomologada ? 'Atividade verificada pelo Invictus' : isRejeitada ? 'Esta atividade não gerou pontos' : isNaoElegivel ? 'Atividade válida, sem estímulo competitivo' : 'Atividade em análise'}
           </p>
           <Lock size={13} className="text-white/25 shrink-0" />
           <button onClick={onShare} className="text-white/40 hover:text-primary transition-colors cursor-pointer shrink-0">
@@ -489,7 +504,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<'all' | 'homologada' | 'rejeitada' | 'pendente'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'homologada' | 'rejeitada' | 'nao_elegivel' | 'pendente'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'workout' | 'cardio' | 'checkin' | 'power' | 'other'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [visibleCount, setVisibleCount] = useState<number>(10);
@@ -534,12 +549,16 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
           // `completed` como status técnico de persistência).
           const rawSt = String(data.validationStatus ?? data.status ?? data.validation?.status ?? '').toLowerCase();
           const statusFromEngine = normalizeActivityValidationStatus(rawSt);
-          let mappedStatus: 'homologada' | 'rejeitada' | 'pendente' = 'pendente';
+          let mappedStatus: 'homologada' | 'rejeitada' | 'nao_elegivel' | 'pendente' = 'pendente';
 
           if (statusFromEngine === 'validated' || (!statusFromEngine && String(data.status || '').toLowerCase() === 'completed')) {
             mappedStatus = 'homologada';
-          } else if (statusFromEngine === 'rejected' || statusFromEngine === 'not_eligible') {
+          } else if (statusFromEngine === 'rejected') {
             mappedStatus = 'rejeitada';
+          } else if (statusFromEngine === 'not_eligible') {
+            // ACT-11 / HEALTH-08: atividade legítima, só sem estímulo
+            // competitivo ativo -- nunca deve aparecer como "rejeitada".
+            mappedStatus = 'nao_elegivel';
           } else if (statusFromEngine === 'pending') {
             mappedStatus = 'pendente';
           } else if (data.isScoringEligible === false || data.nonScoringReason) {
@@ -772,10 +791,13 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
     const total = activities.length;
     const homologadas = activities.filter(a => a.status === 'homologada').length;
     const rejeitadas = activities.filter(a => a.status === 'rejeitada').length;
+    // ACT-11 / HEALTH-08: contada separadamente de `rejeitadas` -- não é uma
+    // recusa por fraude, é uma atividade legítima sem estímulo competitivo.
+    const naoElegiveis = activities.filter(a => a.status === 'nao_elegivel').length;
     const pendentes = activities.filter(a => a.status === 'pendente').length;
     const rate = total > 0 ? Math.round((homologadas / total) * 100) : 0;
 
-    return { total, homologadas, rejeitadas, pendentes, rate };
+    return { total, homologadas, rejeitadas, naoElegiveis, pendentes, rate };
   }, [activities]);
 
   const visibleItems = filteredActivities.slice(0, visibleCount);
@@ -894,6 +916,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
               { id: 'all', label: 'Todas' },
               { id: 'homologada', label: '🟢 Homologadas' },
               { id: 'rejeitada', label: '🔴 Rejeitadas' },
+              { id: 'nao_elegivel', label: '🔵 Sem Estímulo' },
               { id: 'pendente', label: '🟡 Em Análise' },
             ].map(pill => (
               <button
@@ -979,6 +1002,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
           {visibleItems.map((act) => {
             const isHomologada = act.status === 'homologada';
             const isRejeitada = act.status === 'rejeitada';
+            const isNaoElegivel = act.status === 'nao_elegivel';
             const isPendente = act.status === 'pendente';
             const pace = act.pace || computePace(act.distanceKm, act.durationMins);
 
@@ -991,7 +1015,9 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                     ? "bg-surface-container-low/60 border-emerald-500/20 hover:border-emerald-500/40"
                     : isRejeitada
                       ? "bg-rose-950/10 border-rose-500/30 hover:border-rose-500/50"
-                      : "bg-amber-950/10 border-amber-500/30 hover:border-amber-500/50"
+                      : isNaoElegivel
+                        ? "bg-sky-950/10 border-sky-500/30 hover:border-sky-500/50"
+                        : "bg-amber-950/10 border-amber-500/30 hover:border-amber-500/50"
                 )}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1020,12 +1046,14 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                           "text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md border flex items-center gap-1",
                           isHomologada && "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
                           isRejeitada && "bg-rose-500/15 text-rose-400 border-rose-500/30",
+                          isNaoElegivel && "bg-sky-500/15 text-sky-400 border-sky-500/30",
                           isPendente && "bg-amber-500/15 text-amber-400 border-amber-500/30"
                         )}>
                           {isHomologada && <CheckCircle2 size={12} />}
                           {isRejeitada && <XCircle size={12} />}
+                          {isNaoElegivel && <Info size={12} />}
                           {isPendente && <Clock size={12} />}
-                          <span>{isHomologada ? 'APROVADA' : isRejeitada ? 'NÃO PONTUOU' : 'EM ANÁLISE'}</span>
+                          <span>{isHomologada ? 'APROVADA' : isRejeitada ? 'NÃO PONTUOU' : isNaoElegivel ? 'SEM ESTÍMULO' : 'EM ANÁLISE'}</span>
                         </span>
                       </div>
 
@@ -1084,7 +1112,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                         : "bg-zinc-800 border-zinc-700 text-zinc-400"
                     )}>
                       <Award size={14} />
-                      <span>{isHomologada ? `+${act.points} XP` : isRejeitada ? 'Não pontuou' : 'Aguardando'}</span>
+                      <span>{isHomologada ? `+${act.points} XP` : isRejeitada ? 'Não pontuou' : isNaoElegivel ? 'Sem estímulo' : 'Aguardando'}</span>
                     </div>
                   </div>
                 </div>
@@ -1098,6 +1126,20 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                       </p>
                       <p className="leading-relaxed text-[11.5px] text-rose-200/90">
                         O registro permanece disponível no seu histórico para consulta.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {isNaoElegivel && (
+                  <div className="bg-sky-500/10 border border-sky-500/30 p-3 rounded-xl flex items-start gap-2.5 text-xs text-sky-300 font-sans">
+                    <Info size={16} className="text-sky-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-sky-400 uppercase tracking-wider text-[10px]">
+                        Atividade válida, sem estímulo competitivo
+                      </p>
+                      <p className="leading-relaxed text-[11.5px] text-sky-200/90">
+                        {act.rejectionReason || 'Sem campeonato/desafio ativo (ou fora dos critérios mínimos) para gerar pontos agora.'}
                       </p>
                     </div>
                   </div>

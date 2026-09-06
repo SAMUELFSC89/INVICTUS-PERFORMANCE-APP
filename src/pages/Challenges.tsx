@@ -621,11 +621,17 @@ export function Challenges() {
       ? formatPaceValue(distanceKm, durationMins * 60)
       : undefined;
     const rawStatus = normalizeActivityValidationStatus(result.status);
+    // ACT-11 / HEALTH-08 (auditoria 6167c8f): not_eligible é uma atividade
+    // legítima sem estímulo competitivo ativo -- diferente de rejected
+    // (bloqueio por antifraude). As duas não podem cair no mesmo balde
+    // "rejeitada", ou um treino normal parece ter sido recusado por fraude.
     const historyStatus: ActivityHistoryItem['status'] = rawStatus === 'validated'
       ? 'homologada'
-      : rawStatus === 'rejected' || rawStatus === 'not_eligible'
+      : rawStatus === 'rejected'
         ? 'rejeitada'
-        : 'pendente';
+        : rawStatus === 'not_eligible'
+          ? 'nao_elegivel'
+          : 'pendente';
     const completedAt = new Date(Number.isFinite(startMs) ? finishedAt : Date.now());
     const cardioLabel = session.cardioTypeLabel || selectedCardioOption.label || 'Cardio';
     const rawCalories = session.healthTelemetry?.calories;
@@ -746,7 +752,11 @@ export function Challenges() {
           ? 'homologada'
           : status === 'pending'
             ? 'pendente'
-            : 'rejeitada';
+            : status === 'not_eligible'
+              // ACT-11 / HEALTH-08: atividade legítima sem estímulo
+              // competitivo, não uma recusa por antifraude.
+              ? 'nao_elegivel'
+              : 'rejeitada';
 
         if (serverDistance !== undefined) setLiveDistanceKm(serverDistance);
 
@@ -795,9 +805,17 @@ export function Challenges() {
         setNotice(res.message || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
       } else if (status === 'rejected' || status === 'not_eligible') {
         setActiveSession(null);
-        setCompletion({ status: 'rejected', message: res.message });
+        // ACT-11 / HEALTH-08 (auditoria 6167c8f): not_eligible é uma
+        // atividade legítima sem estímulo competitivo -- não é uma recusa
+        // por antifraude, então não pode reaproveitar o mesmo status
+        // 'rejected' (que assusta o atleta com uma tela de erro).
+        setCompletion({ status: status === 'not_eligible' ? 'not_eligible' : 'rejected', message: res.message });
         setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
-        setError(res.message || 'A atividade não foi validada. Nenhuma pontuação foi concedida.');
+        if (status === 'not_eligible') {
+          setNotice(res.message || 'Atividade registrada normalmente, mas sem estímulo competitivo ativo no momento. Nenhuma pontuação foi concedida.');
+        } else {
+          setError(res.message || 'A atividade não foi validada. Nenhuma pontuação foi concedida.');
+        }
       } else {
         // Sem decisão explícita do servidor, falhamos de forma segura: não
         // marcamos a atividade como homologada e não concedemos XP.
