@@ -86,7 +86,15 @@ export function Layout() {
           um valor fixo: no iPhone o sino subia demais e encostava no relogio do
           sistema, e na web ficava colado na borda. env() vale 0px onde nao ha
           notch, entao na web o sino simplesmente desce para 1.5rem. */}
-      {!suppressLegacyChrome && location.pathname !== '/notifications' && <div
+      {/* #248: a Home ("/") desenha o proprio cabecalho com sino de notificacoes
+          e avatar (Home.tsx, .nh-header) -- igual ja acontecia com o bottom-nav
+          legado (ver comentario isHome mais abaixo). Esse sino+LVL fixo deste
+          Layout nunca tinha entrado na lista de telas suprimidas, entao ficava
+          duplicado por cima do cabecalho da Home (2 sinos + badge LVL solto),
+          confirmado ao vivo em producao. O modal "Nivel do haltere" continua
+          acessivel normalmente nas demais telas que nao desenham cabecalho
+          proprio. */}
+      {!suppressLegacyChrome && !isHome && location.pathname !== '/notifications' && <div
         className="fixed right-4 z-50 pointer-events-auto flex items-center gap-2"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.5rem)' }}>
         {/* #245: showBarbellModal e o BarbellLifter ja existiam prontos, mas
