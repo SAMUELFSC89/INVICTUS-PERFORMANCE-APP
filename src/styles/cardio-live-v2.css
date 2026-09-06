@@ -1,7 +1,7 @@
 /*
- * Cardio ao ar livre — layout compacto, sem rolagem.
- * Mantém mapa + métricas + status sempre dentro de 100dvh e desloca as
- * ações destrutivas/encerramento para o menu discreto de três pontos.
+ * Cardio ao ar livre — tela fixa, sem rolagem.
+ * O mapa ocupa o fundo inteiro e o painel de dados fica integrado na parte
+ * inferior do telefone, sem uma segunda faixa preta abaixo dele.
  */
 .challenge-flow-screen.is-cardio-live {
   height: 100dvh !important;
@@ -15,60 +15,62 @@
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live {
   position: relative;
-  display: flex;
+  display: block;
   width: min(100%, 30rem);
   height: 100dvh;
   min-height: 0 !important;
   max-height: 100dvh;
   margin: 0 auto;
-  flex-direction: column;
   overflow: hidden;
   background: #030403;
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live > .live-tracking-map {
+  position: absolute !important;
+  inset: 0 !important;
   width: 100% !important;
-  height: 56dvh !important;
-  min-height: 0 !important;
-  max-height: 56dvh !important;
-  flex: 1 1 auto;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-height: 100dvh !important;
   margin: 0 !important;
   border: 0 !important;
-  border-bottom: 1px solid rgba(245,160,0,.46) !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-content {
-  position: relative;
-  z-index: 4;
-  flex: 0 0 auto;
-  padding: .5rem .72rem calc(max(env(safe-area-inset-bottom), .45rem) + .15rem);
-  background: linear-gradient(180deg, rgba(4,4,4,.98), #050505 100%);
+  position: absolute;
+  z-index: 12;
+  right: .62rem;
+  bottom: max(env(safe-area-inset-bottom), .42rem);
+  left: .62rem;
+  padding: 0;
+  background: transparent;
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-stats {
   overflow: hidden;
-  border: 1px solid rgba(245,160,0,.72);
-  border-radius: 1rem;
-  background: rgba(4,4,4,.97);
-  box-shadow: 0 -10px 32px rgba(0,0,0,.28);
+  border: 1px solid rgba(245,160,0,.78);
+  border-radius: 1.05rem;
+  background: rgba(4,4,4,.965);
+  box-shadow: 0 -16px 42px rgba(0,0,0,.34);
+  backdrop-filter: blur(10px);
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-stats > header {
   display: grid;
-  min-height: 3rem;
-  grid-template-columns: 2.15rem 1fr 1.5rem;
+  min-height: 3.55rem;
+  grid-template-columns: 2.45rem 1fr 1.75rem;
   align-items: center;
-  gap: .55rem;
-  padding: .48rem .72rem;
-  border-bottom: 1px solid rgba(245,160,0,.28);
+  gap: .62rem;
+  padding: .55rem .8rem;
+  border-bottom: 1px solid rgba(245,160,0,.32);
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-stats > header > span {
   display: grid;
-  width: 2rem;
-  height: 2rem;
+  width: 2.35rem;
+  height: 2.35rem;
   place-items: center;
   border: 1px solid #f5a000;
   border-radius: 50%;
@@ -77,16 +79,16 @@
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-stats > header > span svg {
-  width: 1rem;
-  height: 1rem;
+  width: 1.18rem;
+  height: 1.18rem;
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-stats > header strong {
   overflow: hidden;
   color: #f5f5f5;
   font-family: "Roboto Condensed", sans-serif;
-  font-size: .92rem;
-  font-weight: 800;
+  font-size: 1rem;
+  font-weight: 900;
   line-height: 1;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -94,8 +96,8 @@
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-stats > header > svg {
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1.2rem;
+  height: 1.2rem;
   justify-self: end;
   color: #00c76f;
 }
@@ -104,18 +106,19 @@
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   padding: 0 !important;
+  background: rgba(3,3,3,.985);
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics > article {
   display: grid !important;
-  min-height: 4.4rem;
+  min-height: clamp(5rem, 12.2dvh, 6.25rem);
   grid-template-columns: 1fr;
   place-items: center;
   align-content: center;
-  gap: .12rem;
-  padding: .35rem .2rem;
-  border-right: 1px solid rgba(255,255,255,.10) !important;
-  border-bottom: 1px solid rgba(255,255,255,.10);
+  gap: .18rem;
+  padding: .48rem .25rem;
+  border-right: 1px solid rgba(255,255,255,.12) !important;
+  border-bottom: 1px solid rgba(255,255,255,.12);
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics > article:nth-child(2n) {
@@ -127,39 +130,49 @@
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics svg {
-  width: 1rem !important;
-  height: 1rem !important;
+  width: 1.16rem !important;
+  height: 1.16rem !important;
   color: #f5a000;
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics b {
-  color: #f7f7f7;
-  font-family: "Roboto Condensed", sans-serif;
-  font-size: clamp(1.35rem, 6vw, 1.8rem) !important;
-  font-weight: 800;
-  line-height: 1;
+  color: #fff;
+  font-family: "Bebas Neue", "Roboto Condensed", sans-serif;
+  font-size: clamp(1.75rem, 8.2vw, 2.4rem) !important;
+  font-weight: 400;
+  line-height: .92;
+  letter-spacing: .01em;
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics small {
+  max-width: 9rem;
   color: rgba(255,255,255,.58);
-  font-size: .57rem !important;
-  font-weight: 700;
+  font-size: clamp(.55rem, 2.25vw, .67rem) !important;
+  font-weight: 800;
   line-height: 1.05;
   text-align: center;
   text-transform: uppercase;
 }
 
+/* O estado fica flutuando SOBRE o mapa, acima do painel; não cria um bloco
+   adicional abaixo das métricas. */
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-status {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + .48rem);
+  left: 0;
   display: flex;
-  min-height: 2.45rem;
+  min-height: 2.35rem;
   align-items: center;
   gap: .5rem;
-  margin-top: .42rem;
-  padding: .38rem .55rem;
-  border: 1px solid rgba(0,199,111,.30);
+  margin: 0;
+  padding: .36rem .58rem;
+  border: 1px solid rgba(0,199,111,.34);
   border-radius: .72rem;
   color: #00c76f;
-  background: rgba(0,199,111,.055);
+  background: rgba(3,10,7,.78);
+  box-shadow: 0 8px 24px rgba(0,0,0,.24);
+  backdrop-filter: blur(10px);
 }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-status > svg {
@@ -182,21 +195,19 @@
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-status small {
   overflow: hidden;
-  color: rgba(255,255,255,.55);
+  color: rgba(255,255,255,.66);
   font-size: .56rem;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* O indicador textual duplicava o estado e empurrava o painel para cima. O
+   status flutuante acima já informa busca/sinal/erro de GPS. */
 .challenge-flow-screen.is-cardio-live .gps-signal-indicator {
-  margin-top: .32rem !important;
-  min-height: 1.55rem;
-  padding: .2rem .45rem !important;
-  font-size: .58rem !important;
+  display: none !important;
 }
 
-/* Segurança: os controles grandes antigos nunca devem reaparecer por CSS. */
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-actions,
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-cancel {
   display: none !important;
@@ -246,28 +257,10 @@
   backdrop-filter: blur(10px);
 }
 
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-topbar > div:nth-child(2) span {
-  display: flex;
-  flex-direction: column;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-topbar > div:nth-child(2) b {
-  color: #fff;
-  font-size: .67rem;
-  letter-spacing: .08em;
-  line-height: 1;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-topbar > div:nth-child(2) small {
-  color: #f5a000;
-  font-size: .42rem;
-  letter-spacing: .18em;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu-wrap {
-  position: relative;
-  justify-self: end;
-}
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-topbar > div:nth-child(2) span { display: flex; flex-direction: column; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-topbar > div:nth-child(2) b { color: #fff; font-size: .67rem; letter-spacing: .08em; line-height: 1; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-topbar > div:nth-child(2) small { color: #f5a000; font-size: .42rem; letter-spacing: .18em; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu-wrap { position: relative; justify-self: end; }
 
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu {
   position: absolute;
@@ -296,91 +289,39 @@
   font-size: .78rem;
   text-align: left;
 }
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu > button:last-child {
-  border-bottom: 0;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu > button svg {
-  width: 1rem;
-  height: 1rem;
-  color: #f5a000;
-}
-
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu > button:last-child { border-bottom: 0; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu > button svg { width: 1rem; height: 1rem; color: #f5a000; }
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu > button.is-danger,
 .challenge-flow-screen.is-cardio-live .challenge-cardio-live-menu > button.is-danger svg,
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm .is-danger {
-  color: #ff6464;
-}
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm .is-danger { color: #ff6464; }
 
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: .25rem;
-  padding: .8rem;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm strong {
-  color: #fff;
-  font-size: .8rem;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm small {
-  color: rgba(255,255,255,.58);
-  font-size: .66rem;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm > div {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: .45rem;
-  margin-top: .45rem;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm button {
-  min-height: 2.35rem;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: .65rem;
-  color: #ddd;
-  background: #111;
-  font-size: .7rem;
-}
-
-.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm button.is-danger {
-  border-color: rgba(255,100,100,.42);
-  background: rgba(255,70,70,.08);
-}
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm { display: flex; flex-direction: column; gap: .25rem; padding: .8rem; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm strong { color: #fff; font-size: .8rem; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm small { color: rgba(255,255,255,.58); font-size: .66rem; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm > div { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; margin-top: .45rem; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm button { min-height: 2.35rem; border: 1px solid rgba(255,255,255,.14); border-radius: .65rem; color: #ddd; background: #111; font-size: .7rem; }
+.challenge-flow-screen.is-cardio-live .challenge-cardio-live-discard-confirm button.is-danger { border-color: rgba(255,100,100,.42); background: rgba(255,70,70,.08); }
 
 .challenge-flow-screen.is-cardio-live .challenge-flow-end-error {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 3.15rem);
+  left: 0;
   max-height: 2.6rem;
-  margin: .35rem 0 0 !important;
+  margin: 0 !important;
   overflow: hidden;
   padding: .35rem .5rem !important;
   font-size: .6rem !important;
 }
 
 @media (max-height: 720px) {
-  .challenge-flow-screen.is-cardio-live .challenge-cardio-live > .live-tracking-map {
-    height: 52dvh !important;
-    max-height: 52dvh !important;
-  }
-  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics > article {
-    min-height: 3.85rem;
-  }
-  .challenge-flow-screen.is-cardio-live .gps-signal-indicator {
-    display: none !important;
-  }
+  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-content { right: .48rem; bottom: max(env(safe-area-inset-bottom), .25rem); left: .48rem; }
+  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics > article { min-height: 4.6rem; }
+  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-stats > header { min-height: 3.15rem; }
+  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics b { font-size: clamp(1.55rem, 7vw, 2rem) !important; }
 }
 
 @media (max-height: 640px) {
-  .challenge-flow-screen.is-cardio-live .challenge-cardio-live > .live-tracking-map {
-    height: 49dvh !important;
-    max-height: 49dvh !important;
-  }
-  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-content {
-    padding-top: .35rem;
-  }
-  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-status {
-    margin-top: .28rem;
-  }
+  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-metrics > article { min-height: 4.15rem; }
+  .challenge-flow-screen.is-cardio-live .challenge-cardio-live-status { min-height: 2.05rem; }
 }
