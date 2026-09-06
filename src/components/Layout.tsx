@@ -61,6 +61,21 @@ export function Layout() {
   // Layout quando ela propria desenha um rodape e o nav antigo deve sumir.
   const [routeOwnsFooter, setRouteOwnsFooter] = useState(false);
   useEffect(() => { setRouteOwnsFooter(false); }, [location.pathname]);
+  // #248 (achado ao vivo, reportado pelo usuario com screenshot real): o
+  // fluxo antigo de desafios (ChallengeActivityFlow, .challenge-flow-screen)
+  // desenha o proprio cabecalho (.challenge-flow-header, com botao de voltar
+  // e titulo tipo "SELECIONE O TIPO DE CARDIO") no topo da tela -- mas
+  // suppressLegacyChrome continua false ali de proposito, porque esse fluxo
+  // ainda PRECISA do nav antigo no rodape (fica escondido atras do proprio
+  // botao "INICIAR CARDIO" por z-index, sem duplicar nada). O problema e que
+  // o MESMO suppressLegacyChrome tambem controlava o badge fixo LVL+sino no
+  // topo, que fica na mesma faixa vertical do cabecalho da tela e colide
+  // visualmente com o titulo (confirmado com zoom: "LVL 3" sobrepondo o "O"
+  // de "CARDIO"). routeOwnsHeader separa esse caso: suprime so o badge do
+  // topo quando a tela filha avisa que ja desenha o proprio cabecalho, sem
+  // mexer no nav de baixo.
+  const [routeOwnsHeader, setRouteOwnsHeader] = useState(false);
+  useEffect(() => { setRouteOwnsHeader(false); }, [location.pathname]);
   // #252: auditoria pedida pelo usuario apos o fix acima -- confirmado ao vivo
   // em producao que o MESMO bug (nav antigo #bottom-nav montado por baixo de
   // um rodape novo proprio da tela) tambem acontecia, de forma estatica (sem
@@ -148,7 +163,7 @@ export function Layout() {
           confirmado ao vivo em producao. O modal "Nivel do haltere" continua
           acessivel normalmente nas demais telas que nao desenham cabecalho
           proprio. */}
-      {!suppressLegacyChrome && !isHome && location.pathname !== '/notifications' && <div
+      {!suppressLegacyChrome && !routeOwnsHeader && !isHome && location.pathname !== '/notifications' && <div
         className="fixed right-4 z-50 pointer-events-auto flex items-center gap-2"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.5rem)' }}>
         {/* #245: showBarbellModal e o BarbellLifter ja existiam prontos, mas
@@ -216,6 +231,7 @@ export function Layout() {
             <Outlet context={{
               triggerXPToast: (p: number, m?: string, rankingPoints?: number) => setXpToast({ visible: true, points: p, message: m, rankingPoints }),
               setRouteOwnsFooter,
+              setRouteOwnsHeader,
             }} />
           </motion.div>
         </AnimatePresence>

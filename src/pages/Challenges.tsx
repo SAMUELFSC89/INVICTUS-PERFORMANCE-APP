@@ -84,7 +84,7 @@ export function Challenges() {
   const initialCategory = (searchParams.get('category') as ChallengeCategory) || 'all';
   const [selectedCategory, setSelectedCategory] = useState<ChallengeCategory>(initialCategory);
 
-  const { triggerXPToast, setRouteOwnsFooter } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void; setRouteOwnsFooter?: (v: boolean) => void }>();
+  const { triggerXPToast, setRouteOwnsFooter, setRouteOwnsHeader } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void; setRouteOwnsFooter?: (v: boolean) => void; setRouteOwnsHeader?: (v: boolean) => void }>();
 
   // Active activity session state
   const initialActive = activityService.getCurrentSession();
@@ -947,6 +947,20 @@ export function Challenges() {
     setRouteOwnsFooter?.(showNewChallengesHub || isHistoryView);
     return () => setRouteOwnsFooter?.(false);
   }, [showNewChallengesHub, isHistoryView, setRouteOwnsFooter]);
+
+  // #248 (achado ao vivo, screenshot real do usuario): ChallengeActivityFlow
+  // (.challenge-flow-screen) desenha o proprio cabecalho no topo
+  // (.challenge-flow-header com botao de voltar + titulo, ou
+  // .challenge-cardio-live-topbar durante a corrida ao vivo) -- o badge fixo
+  // LVL+sino do Layout ficava na mesma faixa vertical e colidia visualmente
+  // com o titulo (ex.: "LVL 3" sobrepondo "CARDIO" em "SELECIONE O TIPO DE
+  // CARDIO"). Suprime so o badge do topo enquanto o fluxo estiver aberto; o
+  // nav de baixo continua igual (ja fica escondido atras do botao proprio do
+  // fluxo por z-index, entao nao precisa mudar).
+  useEffect(() => {
+    setRouteOwnsHeader?.(Boolean(flowScreen));
+    return () => setRouteOwnsHeader?.(false);
+  }, [flowScreen, setRouteOwnsHeader]);
 
   if (isHistoryView) {
     return <ActivityHistoryPageNew />;
