@@ -12,7 +12,7 @@ import {
   sendPasswordResetEmail,
   sendEmailVerification
 } from '../firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { purchasePerformanceSubscription } from '../lib/revenuecat';
 import { UserProfile } from '../types';
 import { Lock, User, MapPin, CheckCircle, Calendar, Fingerprint, AlertTriangle, Loader2, LogOut, Sparkles } from 'lucide-react';
@@ -21,24 +21,6 @@ import { useUser } from '../UserContext';
 import { InvictusLogo } from './InvictusLogo';
 import { AuthExperience, RegistrationField } from './AuthExperience';
 import { CURRENT_LEGAL_VERSION } from '../lib/legalDocuments';
-
-const normalizeString = (str: string) => 
-  str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-
-const generateSearchKeywords = (name: string, username?: string): string[] => {
-  const keywords = new Set<string>();
-  const normalizedName = normalizeString(name);
-  const parts = normalizedName.split(/\s+/);
-  parts.forEach(part => {
-    for (let i = 1; i <= part.length; i++) keywords.add(part.substring(0, i));
-  });
-  for (let i = 1; i <= normalizedName.length; i++) keywords.add(normalizedName.substring(0, i));
-  if (username) {
-    const normalizedUsername = username.toLowerCase();
-    for (let i = 1; i <= normalizedUsername.length; i++) keywords.add(normalizedUsername.substring(0, i));
-  }
-  return Array.from(keywords).slice(0, 100);
-};
 
 async function isCpfAlreadyInUse(firebaseUser: { getIdToken: () => Promise<string> }, cpf: string): Promise<boolean> {
   const token = await firebaseUser.getIdToken();
@@ -53,6 +35,49 @@ async function isCpfAlreadyInUse(firebaseUser: { getIdToken: () => Promise<strin
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || 'Não foi possível validar o CPF agora.');
   return Boolean(payload.exists);
+}
+
+// SEC-01 / AP-01 (auditoria 6167c8f): única forma de criar ou concluir o
+// cadastro do perfil. O cliente nunca mais grava score/xp/plano/bloqueio
+// direto no Firestore -- só declara os campos abaixo, e o servidor (Admin
+// SDK) decide os campos privilegiados de forma idempotente. Chamar de novo,
+// com qualquer subconjunto de campos, é sempre seguro (cobre reload no meio
+// do cadastro e onboarding incompleto do login social).
+type OnboardPayload = Partial<{
+  displayName: string;
+  cpf: string;
+  birthDate: string;
+  height: string | number;
+  weight: string | number;
+  sex: string;
+  weeklyFrequency: string;
+  bodySelfAssessment: string;
+  objective: string;
+  preferredPlan: string;
+  city: string;
+  state: string;
+  whatsappEnabled: boolean;
+  phoneNumber: string;
+  termsAccepted: boolean;
+  termsVersionAccepted: string | number;
+}>;
+
+async function completeOnboarding(
+  firebaseUser: { getIdToken: () => Promise<string> },
+  fields: OnboardPayload
+): Promise<{ success: boolean; alreadyOnboarded: boolean; onboardingComplete: boolean }> {
+  const token = await firebaseUser.getIdToken();
+  const response = await fetch('/api/profile?action=onboard', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(fields)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Não foi possível concluir o cadastro agora.');
+  return payload;
 }
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -340,72 +365,27 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const keywords = generateSearchKeywords(fullName);
-      const refCode = referralService.generateReferralCode(res.user.uid);
-      
-      const newUser: any = {
-        uid: res.user.uid,
-        email: email.toLowerCase(),
+      // SEC-01 / AP-01 (auditoria 6167c8f): o perfil não é mais gravado direto
+      // pelo cliente (setDoc) -- só o servidor decide campos privilegiados
+      // (score, xp, plano, bloqueio etc.), de forma idempotente.
+      await completeOnboarding(res.user, {
         displayName: fullName,
-        displayNameLower: fullName.toLowerCase(),
-        searchKeywords: keywords,
-        createdAt: new Date().toISOString(),
         cpf: cleanCpf,
         birthDate,
-        age: birthDate ? new Date().getFullYear() - new Date(birthDate).getFullYear() : 0,
-        height: parseInt(height) || 0,
-        weight: parseInt(weight) || 0,
+        height,
+        weight,
         sex,
-        imc: ((parseInt(weight) || 0) / (((parseInt(height) || 0)/100) * ((parseInt(height) || 0)/100))) || 0,
         weeklyFrequency,
         bodySelfAssessment: physicalSelfAssessment,
         objective,
         preferredPlan,
         city,
         state: state.toUpperCase(),
-        termsAccepted: true,
-        termsVersionAccepted: CURRENT_LEGAL_VERSION,
-        termsAcceptedAt: new Date().toISOString(),
         whatsappEnabled: whatsappOptIn,
         phoneNumber: whatsapp,
-        plano: preferredPlan === 'open' ? 'Invictus Open' : 'Nenhum',
-        currentPlan: preferredPlan === 'open' ? 'invictus_open' : 'Nenhum',
-        assinatura: preferredPlan === 'open' ? 'Ativa' : 'Inativa',
-        subscriptionStatus: preferredPlan === 'open' ? 'active_basic' : 'inactive',
-        status: 'Ativo',
-        paymentStatus: 'Não aplicável',
-        statusPagamento: 'Não aplicável',
-        premium: false,
-        performance: false,
-        isSubscribed: preferredPlan === 'open',
-        subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
-        role: 'user',
-        league: 'Comunidade Invictus',
-        score: 10,
-        xp: 10,
-        level: 1,
-        streak: 0,
-        weeklyScore: 0,
-        monthlyScore: 0,
-        achievements: [],
-        lastCheckIn: null,
-        positions: { global: 0, city: 0, gym: 0, national: 0, league: 0, region: 0 },
-        country: 'Brasil',
-        appCredits: 0,
-        badges: [],
-        referralCode: refCode,
-        referralStats: { totalReferrals: 0, validReferrals: 0, bonusBalance: 0, referralPoints: 0 },
-        referralMilestones: [],
-        isBlocked: false,
-        isBanned: false,
-        infractions: 0,
-        profileLikes: [],
-        totalActiveDays: 0,
-        totalWorkouts: 0,
-        walletBalance: 0
-      };
-
-      await setDoc(doc(db, 'users', res.user.uid), newUser);
+        termsAccepted: true,
+        termsVersionAccepted: CURRENT_LEGAL_VERSION
+      });
       console.log(`[AUTH] [CREATE_PROFILE] [${res.user.uid}] [SUCCESS] Perfil do usuário criado com sucesso no Firestore`);
       
       if (referralCodeInput) {
@@ -432,69 +412,26 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
           if (!userDocSnap.exists() || !userDocSnap.data()?.termsAccepted) {
             console.log(`[AUTH] [REGISTER] Perfil no Firestore não encontrado para UID ${activeUid}. Recriando perfil...`);
-            const keywords = generateSearchKeywords(fullName);
-            const refCode = referralService.generateReferralCode(activeUid);
-            const newUser: any = {
-              uid: activeUid,
-              email: email.toLowerCase(),
+            // SEC-01 / AP-01: mesma migração acima -- o servidor decide os
+            // campos privilegiados, o cliente só declara os dados informados.
+            await completeOnboarding(signInRes.user, {
               displayName: fullName,
-              displayNameLower: fullName.toLowerCase(),
-              searchKeywords: keywords,
-              createdAt: new Date().toISOString(),
               cpf: cleanCpf,
               birthDate,
-              age: birthDate ? new Date().getFullYear() - new Date(birthDate).getFullYear() : 0,
-              height: parseInt(height) || 0,
-              weight: parseInt(weight) || 0,
+              height,
+              weight,
               sex,
-              imc: ((parseInt(weight) || 0) / (((parseInt(height) || 0)/100) * ((parseInt(height) || 0)/100))) || 0,
               weeklyFrequency,
               bodySelfAssessment: physicalSelfAssessment,
               objective,
               preferredPlan,
               city,
               state: state.toUpperCase(),
-              termsAccepted: true,
               whatsappEnabled: whatsappOptIn,
               phoneNumber: whatsapp,
-              plano: preferredPlan === 'open' ? 'Invictus Open' : 'Nenhum',
-              currentPlan: preferredPlan === 'open' ? 'invictus_open' : 'Nenhum',
-              assinatura: preferredPlan === 'open' ? 'Ativa' : 'Inativa',
-              subscriptionStatus: preferredPlan === 'open' ? 'active_basic' : 'inactive',
-              status: 'Ativo',
-              paymentStatus: 'Não aplicável',
-              statusPagamento: 'Não aplicável',
-              premium: false,
-              performance: false,
-              isSubscribed: preferredPlan === 'open',
-              subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
-              role: 'user',
-              league: 'Comunidade Invictus',
-              score: 10,
-              xp: 10,
-              level: 1,
-              streak: 0,
-              weeklyScore: 0,
-              monthlyScore: 0,
-              achievements: [],
-              lastCheckIn: null,
-              positions: { global: 0, city: 0, gym: 0, national: 0, league: 0, region: 0 },
-              country: 'Brasil',
-              appCredits: 0,
-              badges: [],
-              referralCode: refCode,
-              referralStats: { totalReferrals: 0, validReferrals: 0, bonusBalance: 0, referralPoints: 0 },
-              referralMilestones: [],
-              isBlocked: false,
-              isBanned: false,
-              infractions: 0,
-              profileLikes: [],
-              totalActiveDays: 0,
-              totalWorkouts: 0,
-              walletBalance: 0
-            };
-
-            await setDoc(doc(db, 'users', activeUid), newUser);
+              termsAccepted: true,
+              termsVersionAccepted: CURRENT_LEGAL_VERSION
+            });
             sessionStorage.removeItem('is_registering_user');
             if (refreshUser) {
               await refreshUser();
@@ -717,58 +654,31 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                     return;
                   }
 
-                  await updateDoc(doc(db, 'users', user.uid), {
+                  // SEC-01 / AP-01 (auditoria 6167c8f): onboarding do login
+                  // social também passa pelo servidor -- antes este updateDoc()
+                  // enviava isSubscribed/subscriptionTier/xp/score/level direto
+                  // do cliente, que agora ficam bloqueados pelas Firestore
+                  // Rules e seriam negados (deixando o usuário travado aqui).
+                  await completeOnboarding(firebaseUser, {
+                    displayName: user.displayName,
                     cpf: cleanCpf,
                     birthDate,
-                    age: birthDate ? new Date().getFullYear() - new Date(birthDate).getFullYear() : 0,
-                    height: parseInt(height) || 0,
-                    weight: parseInt(weight) || 0,
+                    height,
+                    weight,
                     sex,
-                    imc: ((parseInt(weight) || 0) / (((parseInt(height) || 0)/100) * ((parseInt(height) || 0)/100))) || 0,
-                    isSubscribed: preferredPlan === 'open',
-                    subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
-                    currentPlan: preferredPlan === 'open' ? 'invictus_open' : 'Nenhum',
-                    plano: preferredPlan === 'open' ? 'Invictus Open' : 'Nenhum',
-                    assinatura: preferredPlan === 'open' ? 'Ativa' : 'Inativa',
-                    subscriptionStatus: preferredPlan === 'open' ? 'active_basic' : 'inactive',
-                    status: 'Ativo',
-                    paymentStatus: 'Não aplicável',
-                    statusPagamento: 'Não aplicável',
-                    premium: false,
-                    performance: false,
-                    city,
-                    state: state.toUpperCase(),
-                    termsAccepted: true,
-                    termsVersionAccepted: CURRENT_LEGAL_VERSION,
-                    termsAcceptedAt: new Date().toISOString(),
-                    whatsappEnabled: whatsappOptIn,
                     weeklyFrequency: user.weeklyFrequency || '3-4',
                     bodySelfAssessment: user.bodySelfAssessment || 'normal',
                     objective: user.objective || 'emagrecer',
-                    league: 'Comunidade Invictus',
-                    score: 10,
-                    xp: 10,
-                    level: 1,
-                    streak: 0,
-                    weeklyScore: 0,
-                    monthlyScore: 0,
-                    achievements: [],
-                    lastCheckIn: null,
-                    positions: { global: 0, city: 0, gym: 0, national: 0, league: 0, region: 0 },
-                    country: 'Brasil',
-                    appCredits: 0,
-                    badges: [],
-                    referralCode: user.referralCode || referralService.generateReferralCode(user.uid),
-                    referralStats: user.referralStats || { totalReferrals: 0, validReferrals: 0, bonusBalance: 0, referralPoints: 0 },
-                    referralMilestones: user.referralMilestones || [],
-                    isBlocked: false,
-                    isBanned: false,
-                    infractions: 0,
-                    profileLikes: user.profileLikes || [],
-                    totalActiveDays: 0,
-                    totalWorkouts: 0,
-                    walletBalance: 0
+                    preferredPlan,
+                    city,
+                    state: state.toUpperCase(),
+                    whatsappEnabled: whatsappOptIn,
+                    termsAccepted: true,
+                    termsVersionAccepted: CURRENT_LEGAL_VERSION
                   });
+                  if (refreshUser) {
+                    await refreshUser();
+                  }
                   setShowTerms(false);
                   console.log(`[AUTH] [COMPLETE_ONBOARDING] [${user.uid}] [SUCCESS] Onboarding do perfil concluído com sucesso`);
                 } catch (err: any) {

@@ -4,6 +4,32 @@ import NodeCache from 'node-cache';
 
 const cache = new NodeCache({ stdTTL: 300 }); // Cache for 5 minutes
 
+// AP-01 / SEC-01 (auditoria 6167c8f): mesma normalização de
+// src/components/AuthGuard.tsx (generateSearchKeywords), reimplementada aqui
+// porque o onboarding agora é decidido pelo servidor -- aceitar um array de
+// keywords vindo do cliente permitiria poluir o índice de busca com valores
+// arbitrários e sem relação com o nome real.
+function computeSearchKeywords(name: string): string[] {
+  const normalized = name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+  const keywords = new Set<string>();
+  normalized.split(/\s+/).forEach(part => {
+    for (let i = 1; i <= part.length; i++) keywords.add(part.substring(0, i));
+  });
+  for (let i = 1; i <= normalized.length; i++) keywords.add(normalized.substring(0, i));
+  return Array.from(keywords).slice(0, 100);
+}
+
+// Mesma lógica de src/services/referralService.ts#generateReferralCode,
+// reimplementada no servidor pelo mesmo motivo acima.
+function generateServerReferralCode(uid: string): string {
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${uid.substring(0, 4).toUpperCase()}-${random}`;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
@@ -237,6 +263,149 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
         displayName: String(referrerData.displayName || 'Atleta Invictus')
       }
     });
+  }
+
+  if (action === 'onboard') {
+    // AP-01 / SEC-01 (auditoria 6167c8f): única forma legítima de criar ou
+    // concluir o cadastro de um perfil. O cliente só declara os campos abaixo
+    // (nunca score, xp, nível, plano, bloqueio, etc.) -- o servidor (Admin SDK)
+    // decide, de forma idempotente, todos os campos privilegiados. Isso fecha
+    // ao mesmo tempo a forja de plano/pontuação na criação do perfil (SEC-01)
+    // e o onboarding que travava no login social/e-mail (AP-01), incluindo o
+    // caso de reload no meio do cadastro (AP-03): chamar esta ação de novo,
+    // com qualquer subconjunto de campos, é sempre seguro e nunca reseta o
+    // que já foi concedido.
+    const displayName = String(body.displayName || '').trim().slice(0, 128) || 'Atleta';
+    const cpf = String(body.cpf || '').replace(/\D/g, '');
+    if (cpf && cpf.length !== 11) {
+      return res.status(400).json({ error: 'CPF inválido.' });
+    }
+    const birthDate = /^\d{4}-\d{2}-\d{2}$/.test(String(body.birthDate || '')) ? String(body.birthDate) : '';
+    const height = Math.min(300, Math.max(0, parseInt(body.height, 10) || 0));
+    const weight = Math.min(400, Math.max(0, parseInt(body.weight, 10) || 0));
+    const sex = String(body.sex || '').slice(0, 32);
+    const weeklyFrequency = String(body.weeklyFrequency || '').slice(0, 32);
+    const bodySelfAssessment = String(body.bodySelfAssessment || '').slice(0, 64);
+    const objective = String(body.objective || '').slice(0, 64);
+    const preferredPlan = body.preferredPlan === 'open' ? 'open' : 'none';
+    const city = String(body.city || '').slice(0, 128);
+    const state = String(body.state || '').slice(0, 2).toUpperCase();
+    const whatsappEnabled = body.whatsappEnabled === true;
+    const whatsappDeclared = Object.prototype.hasOwnProperty.call(body, 'whatsappEnabled');
+    const phoneNumber = String(body.phoneNumber || '').slice(0, 32);
+    const termsVersionAccepted = String(body.termsVersionAccepted || '').slice(0, 32) || 'unknown';
+
+    if (cpf) {
+      const dup = await db.collection('users').where('cpf', '==', cpf).limit(2).get();
+      if (dup.docs.some((docSnap: any) => docSnap.id !== auth.uid)) {
+        return res.status(409).json({ error: 'Este CPF já está em uso por outra conta.' });
+      }
+    }
+
+    // Onboarding só é concluído quando o cliente pede E existem os dados
+    // mínimos de identidade -- nunca por uma afirmação isolada do cliente
+    // (ex.: enviar termsAccepted:true sem CPF/data de nascimento reais).
+    const wantsToComplete = body.termsAccepted === true && Boolean(cpf) && Boolean(birthDate);
+
+    const userRef = db.collection('users').doc(auth.uid);
+    const result = await db.runTransaction(async (transaction: any) => {
+      const snap = await transaction.get(userRef);
+      const existing: any = snap.exists ? (snap.data() || {}) : {};
+
+      if (existing.termsAccepted === true) {
+        // Já onboarded: chamada idempotente não toca em nenhum campo
+        // privilegiado nem repete a concessão inicial de score/xp.
+        return { alreadyOnboarded: true, onboardingComplete: true };
+      }
+
+      const now = new Date().toISOString();
+      const imc = height > 0 && weight > 0 ? weight / ((height / 100) * (height / 100)) : 0;
+
+      const declaredFields: Record<string, unknown> = {
+        displayName,
+        displayNameLower: displayName.toLowerCase(),
+        searchKeywords: computeSearchKeywords(displayName),
+        cpf: cpf || existing.cpf || '',
+        birthDate: birthDate || existing.birthDate || '',
+        age: birthDate ? (new Date().getFullYear() - new Date(birthDate).getFullYear()) : (existing.age || 0),
+        height: height || existing.height || 0,
+        weight: weight || existing.weight || 0,
+        sex: sex || existing.sex || '',
+        imc: imc || existing.imc || 0,
+        weeklyFrequency: weeklyFrequency || existing.weeklyFrequency || '',
+        bodySelfAssessment: bodySelfAssessment || existing.bodySelfAssessment || '',
+        objective: objective || existing.objective || '',
+        city: city || existing.city || '',
+        state: state || existing.state || '',
+        whatsappEnabled: whatsappDeclared ? whatsappEnabled : Boolean(existing.whatsappEnabled),
+        phoneNumber: phoneNumber || existing.phoneNumber || ''
+      };
+
+      const privilegedFields: Record<string, unknown> = {
+        uid: auth.uid,
+        email: String(auth.email || existing.email || '').toLowerCase(),
+        role: existing.role === 'admin' ? 'admin' : 'user',
+        isAdmin: false,
+        termsAccepted: wantsToComplete ? true : Boolean(existing.termsAccepted),
+        createdAt: existing.createdAt || now
+      };
+
+      if (wantsToComplete) {
+        // Concessão inicial de score/xp/plano só acontece uma vez, na
+        // conclusão real do onboarding -- nunca em uma chamada repetida.
+        Object.assign(privilegedFields, {
+          termsVersionAccepted,
+          termsAcceptedAt: now,
+          plano: preferredPlan === 'open' ? 'Invictus Open' : 'Nenhum',
+          currentPlan: preferredPlan === 'open' ? 'invictus_open' : 'Nenhum',
+          assinatura: preferredPlan === 'open' ? 'Ativa' : 'Inativa',
+          subscriptionStatus: preferredPlan === 'open' ? 'active_basic' : 'inactive',
+          status: 'Ativo',
+          paymentStatus: 'Não aplicável',
+          statusPagamento: 'Não aplicável',
+          premium: false,
+          performance: false,
+          isSubscribed: preferredPlan === 'open',
+          subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
+          league: 'Comunidade Invictus',
+          score: 10,
+          xp: 10,
+          level: 1,
+          streak: 0,
+          weeklyScore: 0,
+          monthlyScore: 0,
+          achievements: [],
+          lastCheckIn: null,
+          positions: { global: 0, city: 0, gym: 0, national: 0, league: 0, region: 0 },
+          country: 'Brasil',
+          appCredits: 0,
+          badges: [],
+          referralCode: existing.referralCode || generateServerReferralCode(auth.uid),
+          referralStats: existing.referralStats || { totalReferrals: 0, validReferrals: 0, bonusBalance: 0, referralPoints: 0 },
+          referralMilestones: existing.referralMilestones || [],
+          isBlocked: false,
+          isBanned: false,
+          infractions: 0,
+          profileLikes: [],
+          totalActiveDays: 0,
+          totalWorkouts: 0,
+          walletBalance: 0
+        });
+      }
+
+      const finalDoc = { ...existing, ...declaredFields, ...privilegedFields };
+
+      if (snap.exists) {
+        transaction.update(userRef, finalDoc);
+      } else {
+        transaction.set(userRef, finalDoc);
+      }
+
+      return { alreadyOnboarded: false, onboardingComplete: Boolean(finalDoc.termsAccepted) };
+    });
+
+    cache.del(`profile_${auth.uid}`);
+    return res.status(200).json({ success: true, ...result });
   }
 
   if (action === 'device-token' || action === 'remove-device-token') {

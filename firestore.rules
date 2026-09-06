@@ -37,7 +37,29 @@ service cloud.firestore {
               (data.email == request.auth.token.email) &&
               (data.uid == request.auth.uid) && // Identity Integrity
               (data.get('isAdmin', false) == false) &&
-              (data.get('role', 'user') == 'user');
+              (data.get('role', 'user') == 'user') &&
+              // SEC-01 (auditoria 6167c8f): os campos abaixo são exclusivamente
+              // calculados/atribuídos pelo servidor (Admin SDK, via
+              // /api/profile?action=onboard). Um create() do cliente nunca pode
+              // trazê-los -- sem isso, apagar o próprio perfil (delete() é
+              // permitido ao dono, abaixo) e recriá-lo seria uma forma de forjar
+              // pontuação, plano pago ou remover bloqueio/banimento, já que uma
+              // escrita nova não está sujeita à lista de campos protegidos do
+              // update() logo abaixo.
+              !data.keys().hasAny([
+                'score', 'weeklyScore', 'monthlyScore', 'streak',
+                'walletBalance', 'badges', 'achievements', 'positions', 'activeSeason',
+                'seasonBoost', 'seasonEntryStatus', 'totalEarnings', 'totalWins', 'rankingPosition',
+                'premiumStatus', 'subscriptionStatus', 'boostMultiplier', 'challengeProgress',
+                'isBanned', 'isSubscribed', 'status', 'seasonStatus', 'nextSeasonStart',
+                'isPro', 'pro', 'plan', 'entitlement',
+                'plano', 'assinatura', 'statusPagamento', 'premium', 'performance', 'currentPlan', 'subscriptionTier',
+                'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
+                'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
+                'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes',
+                'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt',
+                'isBlocked', 'isSuspended'
+              ]);
     }
 
     function isValidWorkout(data) {
@@ -113,7 +135,12 @@ service cloud.firestore {
            'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
             'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
             'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes', 'isAdmin', 'email', 'uid',
-            'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt'
+            'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt',
+            // SEC-01 (auditoria 6167c8f): isBlocked/isSuspended controlam acesso
+            // ao app e a liberação de saques (withdrawal-engine.ts) e estavam
+            // ausentes desta lista -- o próprio dono podia se desbloquear com um
+            // updateDoc(). isBanned já estava protegido acima.
+            'isBlocked', 'isSuspended'
           ])
       );
       
