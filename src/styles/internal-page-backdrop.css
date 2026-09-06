@@ -1,0 +1,80 @@
+/*
+ * Shared internal-page backdrop.
+ *
+ * Home keeps the original official banner exactly as authored in index.css.
+ * Every other route reuses that same asset (.app-fundo::before/::after,
+ * defined in index.css) with a single, consistent blur and a slightly
+ * stronger veil so headings, controls and data remain legible.
+ */
+.app-fundo--internal::before {
+  filter: blur(14px);
+  transform: scale(1.08);
+  transform-origin: center;
+  will-change: filter, transform;
+}
+
+.app-fundo--internal::after {
+  background: linear-gradient(
+    180deg,
+    rgba(10, 8, 6, 0.62) 0%,
+    rgba(10, 8, 6, 0.56) 28%,
+    rgba(10, 8, 6, 0.70) 58%,
+    rgba(10, 8, 6, 0.90) 100%
+  );
+}
+
+/*
+ * These route shells previously painted an opaque near-black canvas over the
+ * global banner. Only their canvas color becomes transparent; their existing
+ * gradients, cards, dialogs, footers and content surfaces stay unchanged.
+ *
+ * #253: os nomes abaixo foram conferidos contra o código atual (grep) antes
+ * de aplicar -- "pfn-screen"/"pfn-page" do pacote original não existem mais
+ * (ProfileNew.tsx hoje usa "np-screen"/"np-page"), corrigido aqui.
+ */
+body[data-invictus-surface='internal'] :is(
+  .challenge-flow-screen,
+  .challenge-cardio-live,
+  .activity-type-screen,
+  .an-screen,
+  .an-page,
+  .health-screen,
+  .health-report-shell,
+  .health-new-shell,
+  .health-new-shell .health-content,
+  .iai-screen,
+  .iai-page,
+  .store-screen,
+  .store-page,
+  .notifications-screen-new,
+  .payn-screen,
+  .np-screen,
+  .np-page,
+  .power-screen,
+  .power-flow,
+  .profile-flow-screen-new,
+  .ppn-screen,
+  .ppn-page,
+  .store-checkout-screen,
+  .store-orders-screen,
+  .product-detail-screen,
+  .product-detail-page,
+  .ah-new-screen,
+  .ah-new-page,
+  .admin-new-shell
+) {
+  background-color: transparent !important;
+}
+
+/* Preserve the exact Home rendering even if a future route transition leaves
+   an internal screen mounted for its exit animation. */
+body[data-invictus-surface='home'] :is(.nh-screen, .nh-page) {
+  background-color: transparent !important;
+}
+
+@media (max-width: 430px) {
+  .app-fundo--internal::before {
+    filter: blur(12px);
+    transform: scale(1.1);
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Gauge, Trophy, Award, User, Dumbbell, Bell } from 'lucide-react';
@@ -24,6 +24,19 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === '/' || location.pathname === '/invite';
+
+  // #253: varias telas em tela cheia sao renderizadas via portal direto no
+  // document.body (createPortal), fora da arvore deste Layout -- por isso o
+  // backdrop padronizado (internal-page-backdrop.css) precisa de um sinal no
+  // proprio body, nao so numa classe deste componente, pra alcancar tanto as
+  // rotas normais do Outlet quanto essas telas portalled.
+  useLayoutEffect(() => {
+    document.body.dataset.invictusSurface = isHome ? 'home' : 'internal';
+    return () => {
+      delete document.body.dataset.invictusSurface;
+    };
+  }, [isHome]);
+
   // Power Lift owns the whole viewport and ships its own footer. Keeping the
   // legacy shell mounted here produced two navigation bars on the same screen.
   // #241: Musculação (Meu Plano e todo o fluxo de criação de treino) tambem
@@ -102,7 +115,10 @@ export function Layout() {
   const unreadCount = user?.notifications?.filter(n => !n.read).length || 0;
 
   return (
-    <div className="min-h-screen app-fundo text-on-surface font-body flex flex-col">
+    <div className={cn(
+      "min-h-screen app-fundo text-on-surface font-body flex flex-col",
+      isHome ? "app-fundo--home" : "app-fundo--internal"
+    )}>
       <TermsAndConsent />
       <AchievementTracker />
       {/* #246: removido o acesso flutuante da Invictus IA (ficava duplicado com

@@ -9,6 +9,10 @@ import { UserProvider } from './UserContext';
 import { ProProvider } from './ProContext';
 import { API_CONFIG } from './config';
 import './styles/invictus.css';
+// #253: backdrop padronizado das telas internas (mesmo asset oficial da Home,
+// com blur + véu mais forte) -- ver src/styles/internal-page-backdrop.css e a
+// classe app-fundo--home/app-fundo--internal aplicada em Layout.tsx.
+import './styles/internal-page-backdrop.css';
 
 const lazyNamed = <T extends Record<string, unknown>, K extends keyof T>(
   loader: () => Promise<T>,
