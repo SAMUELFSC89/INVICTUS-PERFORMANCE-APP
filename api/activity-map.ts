@@ -132,6 +132,27 @@ function drawFallbackCircle(image, cx, cy, radius, color) {
   }
 }
 
+// #254: bandeira quadriculada no ponto de partida, pedida pelo usuario pra
+// diferenciar visualmente inicio/fim no mapa do card de compartilhamento
+// (antes os dois pontos eram so circulos, um mais claro e um mais escuro).
+function drawFallbackStartFlag(image, cx, cy) {
+  const black = Jimp.rgbaToInt(16, 16, 16, 255);
+  const white = Jimp.rgbaToInt(255, 255, 255, 255);
+  drawFallbackCircle(image, cx, cy, 18, white);
+  drawFallbackCircle(image, cx, cy, 13, Jimp.rgbaToInt(255, 173, 18, 255));
+  for (let y = -8; y <= 9; y += 1) image.setPixelColor(black, Math.round(cx - 6), Math.round(cy + y));
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      const color = (row + col) % 2 === 0 ? black : white;
+      for (let y = 0; y < 4; y += 1) {
+        for (let x = 0; x < 4; x += 1) {
+          image.setPixelColor(color, Math.round(cx - 5 + col * 4 + x), Math.round(cy - 8 + row * 4 + y));
+        }
+      }
+    }
+  }
+}
+
 function drawFallbackLine(image, from, to, width, color) {
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
   const steps = Math.max(1, Math.ceil(distance));
@@ -260,10 +281,9 @@ async function renderFallbackMap(points, width, height, mapType) {
     }
     const start = projected[0];
     const end = projected[projected.length - 1];
-    drawFallbackCircle(routeLayer, start.x, start.y, 15, Jimp.rgbaToInt(255, 255, 255, 255));
-    drawFallbackCircle(routeLayer, start.x, start.y, 8, Jimp.rgbaToInt(255, 173, 18, 255));
+    drawFallbackStartFlag(routeLayer, start.x, start.y);
     drawFallbackCircle(routeLayer, end.x, end.y, 15, Jimp.rgbaToInt(255, 255, 255, 255));
-    drawFallbackCircle(routeLayer, end.x, end.y, 8, Jimp.rgbaToInt(18, 18, 18, 255));
+    drawFallbackCircle(routeLayer, end.x, end.y, 8, Jimp.rgbaToInt(255, 173, 18, 255));
     image.composite(routeLayer, 0, 0);
     const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
     return `data:image/png;base64,${buffer.toString('base64')}`;
@@ -424,14 +444,16 @@ export default async function handler(req, res) {
         const overlay = {
           type: 'FeatureCollection',
           features: [
-            { type: 'Feature', properties: { stroke: '#ffad12', 'stroke-width': 6, 'stroke-opacity': 1 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } },
-            // Duas camadas por ponto reproduzem os marcadores circulares da
-            // arte de referencia: aro claro + centro laranja no inicio e aro
-            // claro + centro escuro na chegada.
+            { type: 'Feature', properties: { stroke: '#ff9d00', 'stroke-width': 12, 'stroke-opacity': .35 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } },
+            { type: 'Feature', properties: { stroke: '#ffc13b', 'stroke-width': 6, 'stroke-opacity': 1 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } },
+            // #254: partida com bandeira quadriculada (marker-symbol: flag);
+            // chegada com marcador circular laranja -- pedido do usuario pra
+            // diferenciar visualmente inicio/fim (antes os dois pontos usavam
+            // so cor, sem simbolo).
             { type: 'Feature', properties: { 'marker-size': 'medium', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
-            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffad12' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
+            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffad12', 'marker-symbol': 'flag' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
             { type: 'Feature', properties: { 'marker-size': 'medium', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } },
-            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#151515' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
+            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffad12' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
           ]
         };
         return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/${centerParam}/${w}x${h}@2x?access_token=${encodeURIComponent(mapboxToken)}`;
