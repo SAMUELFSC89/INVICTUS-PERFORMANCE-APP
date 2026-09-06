@@ -8,6 +8,7 @@ import { HealthDataCollector, type CollectedHealthMetrics } from "./healthDataCo
 import { API_CONFIG } from "../config";
 import { getModalityConfig } from "../config/cardioConfig";
 import { nativeBackgroundLocationService } from "./nativeBackgroundLocationService";
+import { webGpsTrackingService } from "./webGpsTrackingService";
 import { workoutSetJournal } from './workoutSetJournal';
 import { sessionHeartRateService } from './sessionHeartRateService';
 import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
@@ -412,6 +413,13 @@ export const activityService = {
         2500,
         'Tempo limite ao iniciar rastreamento nativo.'
       ).catch((error) => console.warn('[ActivityService] Rastreamento nativo em segundo plano indisponível; mantendo GPS da tela:', error));
+      // ACT-10 (auditoria 6167c8f): no navegador/PWA não existe coletor
+      // nativo -- webGpsTrackingService é o dono único do watchPosition a
+      // partir de agora, iniciado aqui (não por um componente React) para
+      // sobreviver a qualquer navegação dentro do app enquanto a sessão
+      // estiver ativa. No app nativo isto é um no-op (ver supported() no
+      // próprio serviço).
+      webGpsTrackingService.start(session);
     }
 
     setDoc(doc(db, 'active_sessions', session.id), {
@@ -554,6 +562,9 @@ export const activityService = {
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
       if (session.requiresGpsDistance) {
         void nativeBackgroundLocationService.start().catch((error) => console.warn('[ActivityService] Não foi possível retomar o rastreamento nativo:', error));
+        // ACT-10: mesma reconciliação do lado web ao recuperar uma sessão
+        // ativa do servidor (app reaberto após perder o estado local).
+        webGpsTrackingService.start(session);
       }
       return session;
     } catch (error) {
@@ -661,6 +672,11 @@ export const activityService = {
     catch (error) { console.warn('[ActivityService] Não foi possível interromper o registro da série:', error); }
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
+    // ACT-10: o watcher web já ignora fixes durante a pausa (checa
+    // isPaused sozinho), mas o primeiro fix depois de retomar não pode
+    // herdar a velocidade/ponto de referência de antes do intervalo parado.
+    if (session.requiresGpsDistance) webGpsTrackingService.resetForPauseToggle(true);
+
     // O coletor nativo pode continuar recebendo pontos com a tela bloqueada.
     // Interrompê-lo durante a pausa evita que esses pontos voltem no lote final
     // como se fossem deslocamento ativo. A operação é best-effort e não muda
@@ -740,6 +756,12 @@ export const activityService = {
     session.pauseStartedAt = null;
     session.gpsSegmentId = (session.gpsSegmentId || 0) + 1;
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+
+    // ACT-10: espelha o reset feito em pauseSession() -- o watcher web (que
+    // continuou rodando durante toda a pausa, apenas ignorando fixes) não
+    // deve conectar o primeiro ponto pós-retomada com o último antes da
+    // pausa nem herdar uma velocidade obsoleta.
+    if (session.requiresGpsDistance) webGpsTrackingService.resetForPauseToggle(false);
 
     if (session.requiresGpsDistance) {
       // ACT-05 (auditoria 6167c8f): se a pausa acabou de disparar a
@@ -1116,6 +1138,13 @@ export const activityService = {
         void nativeBackgroundLocationService.start().catch((restartErr) => {
           console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após falha de envio:', restartErr);
         });
+        // ACT-10: mesmo raciocinio do restart nativo acima, para o watcher
+        // web -- ele nunca foi parado neste ponto (endSession não chama
+        // webGpsTrackingService.stop() antes de tentar a rede, diferente do
+        // coletor nativo que já foi drenado por collectAndStop()), mas
+        // start() aqui é idempotente e serve de garantia caso algo o tenha
+        // derrubado nesse meio-tempo.
+        webGpsTrackingService.start(session);
       }
       if (fetchErr?.name === 'AbortError') {
         if (externalSignal?.aborted) {
@@ -1140,6 +1169,9 @@ export const activityService = {
         void nativeBackgroundLocationService.start().catch((restartErr) => {
           console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após erro do servidor:', restartErr);
         });
+        // ACT-10: garantia idempotente equivalente do lado web -- ver
+        // comentário no catch de rede acima.
+        webGpsTrackingService.start(session);
       }
       const errorData = await response.json().catch(() => ({}));
       // BUG CONFIRMADO (achado ao vivo via Chrome): api/_middleware/error.ts
@@ -1352,5 +1384,11 @@ export const activityService = {
     sensorSamples = { accel: [], gyro: [] };
     lastCheckpointRemoteSyncAt = 0;
     void nativeBackgroundLocationService.stop().catch(() => {});
+    // ACT-10 (auditoria 6167c8f): limparEstadoLocal() é o único ponto que os
+    // três caminhos de encerramento (endSession, cancelSession,
+    // completeSessionAfterPresence) sempre atravessam -- lugar certo para
+    // também derrubar o watcher web (webGpsTrackingService), que agora vive
+    // fora do ciclo de vida de qualquer componente React.
+    webGpsTrackingService.stop();
   }
 };

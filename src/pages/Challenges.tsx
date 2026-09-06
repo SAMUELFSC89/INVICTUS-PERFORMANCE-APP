@@ -4,11 +4,12 @@ import { useLocation, useNavigate, useOutletContext, useSearchParams } from 'rea
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
 import { activityLiveActivityService } from '../services/activityLiveActivityService';
+import { webGpsTrackingService } from '../services/webGpsTrackingService';
 import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
 import { auth, db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivitySession } from '../types';
-import { calculateDistance, formatPaceValue } from '../lib/runUtils';
+import { formatPaceValue } from '../lib/runUtils';
 import { hapticNotification } from '../lib/haptics';
 import { useUser } from '../UserContext';
 import { ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
@@ -79,26 +80,27 @@ export function Challenges() {
   // atualização de distância.
   const liveDistanceKmRef = useRef(0);
   useEffect(() => { liveDistanceKmRef.current = liveDistanceKm; }, [liveDistanceKm]);
-  const gpsWatchIdRef = useRef<number | null>(null);
-  const lastCheckpointTimeRef = useRef<number>(0);
-  const lastRawGpsRef = useRef<{ lat: number; lng: number; timestamp: number; accuracy: number } | null>(null);
 
-  // #44: estado do sinal de GPS e wake lock para o mapa ao vivo (LiveTrackingMap).
-  // Antes a tela so mostrava numeros; agora tambem mostra o trajeto real sendo
-  // percorrido, igual o RunTracker.tsx (que ficava orfao) fazia -- mas
-  // continuando a alimentar activityService.addCheckpoint(), sem trocar o
-  // caminho de envio ja unificado (ver auditoria da task #44).
+  // #44 / ACT-10 (auditoria 6167c8f): estado do sinal de GPS e wake lock para
+  // o mapa ao vivo (LiveTrackingMap). Antes o watchPosition/wake lock viviam
+  // NESTE componente -- "Minimizar atividade" navega para /activity/exit,
+  // que desmonta Challenges.tsx e derrubava o watcher junto (clearWatch no
+  // cleanup do efeito), perdendo a rota percorrida enquanto o atleta
+  // navegava por outras telas com o app aberto. Agora webGpsTrackingService
+  // (src/services/webGpsTrackingService.ts) é o dono único do watcher,
+  // iniciado/parado pelos mesmos pontos que controlam o coletor nativo em
+  // activityService.ts -- esta tela só assina o snapshot para exibir sinal/
+  // precisão/distância/velocidade ao vivo. Deixar de renderizá-la não para
+  // mais a coleta.
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsSignal, setGpsSignal] = useState<'SEARCHING' | 'WEAK' | 'STRONG'>('SEARCHING');
   const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
   // #168: sem isto, um GPS que nunca consegue um fix (indoors, prédio alto,
   // erro silencioso do provedor nativo) deixava a tela presa para sempre em
   // "Buscando sinal..." sem nenhuma saída -- só fechando e reabrindo a
-  // atividade. `gpsRetryKey` força o efeito de watchPosition a reiniciar do
-  // zero quando o atleta toca em "Tentar novamente".
+  // atividade. "Tentar novamente" agora chama webGpsTrackingService.retry()
+  // diretamente (handleRetryGps abaixo).
   const [gpsStalled, setGpsStalled] = useState(false);
-  const [gpsRetryKey, setGpsRetryKey] = useState(0);
-  const wakeLockRef = useRef<any>(null);
 
   // Tela de detalhe pos-atividade usada pelo fluxo de musculacao e pelo
   // historico. Cardio abre diretamente o banner novo de compartilhamento.
@@ -315,167 +317,53 @@ export function Challenges() {
   }, [flowScreen]);
 
   // GPS checkpoint tracking em tempo real para cardio ao ar livre (corrida/caminhada/bike).
-  // Antes addCheckpoint() nunca era chamado durante a sessao, entao a "rota" virava so
-  // uma linha reta entre inicio e fim, dando pouquissimo dado real pro antifraude
-  // (GpsEngine) e nenhuma info de distancia/pace ao vivo pro usuario -- ver auditoria
-  // antifraude 2026-08 (teste do onibus homologado sem dados).
+  // ACT-10 (auditoria 6167c8f): a coleta em si (watchPosition, wake lock,
+  // addCheckpoint/recordGpsSpeedSample) já não vive mais aqui -- vive em
+  // webGpsTrackingService, iniciada/parada pelos mesmos pontos que já
+  // controlam o coletor nativo em activityService.ts (startSession/
+  // endSession/cancelSession/pauseSession/resumeSession/restoreActiveSession),
+  // e portanto sobrevive a esta tela desmontar quando o atleta minimiza a
+  // atividade e navega para outras telas com o app aberto. Este efeito
+  // apenas ASSINA o snapshot já em andamento para exibir sinal, precisão,
+  // distância e velocidade -- é puramente apresentação, como pede o fix
+  // sugerido pela própria auditoria.
   useEffect(() => {
-    if (!activeSession || !activeSession.requiresGpsDistance || typeof navigator === 'undefined' || !navigator.geolocation) {
+    if (!activeSession || !activeSession.requiresGpsDistance) {
       setLiveDistanceKm(0);
       setLiveSpeedKmH(null);
       setLiveSpeedUpdatedAt(null);
+      setGpsAccuracy(null);
+      setGpsSignal('SEARCHING');
+      setGpsPermissionDenied(false);
+      setGpsStalled(false);
       return;
     }
 
-    setLiveDistanceKm(activityService.calculateSessionDistance(activeSession));
-    setLiveSpeedKmH(null);
-    setLiveSpeedUpdatedAt(null);
-    lastCheckpointTimeRef.current = 0;
-    lastRawGpsRef.current = null;
-    setGpsAccuracy(null);
-    setGpsSignal('SEARCHING');
-    setGpsPermissionDenied(false);
-    setGpsStalled(false);
-
-    // #168: se nenhum fix chegar em 20s (prédio, GPS travado no provedor
-    // nativo, callback perdido), a tela ficava presa para sempre em "Buscando
-    // sinal..." sem nenhuma saída visível além de fechar e reabrir a
-    // atividade. Isto dá ao atleta uma mensagem clara e um botão para
-    // reiniciar o watch sem perder a sessão em andamento.
-    const stallTimer = window.setTimeout(() => setGpsStalled(true), 20000);
-
-    // Tela ligada durante o cardio ao ar livre -- sem isto o celular apaga a
-    // tela no bolso e o atleta perde o mapa/cronometro no meio da corrida.
-    // Falha aqui (API indisponivel/negada) nunca deve travar o tracking.
-    if ('wakeLock' in navigator) {
-      (navigator as any).wakeLock.request('screen')
-        .then((lock: any) => { wakeLockRef.current = lock; })
-        .catch((err: any) => console.warn('[Challenges] Wake Lock request failed:', err));
-    }
-
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const rawAccuracy = Number(position.coords.accuracy);
-        // A browser GPS fix without a finite accuracy cannot support either
-        // route distance or a trustworthy live speed. Treat it as a weak fix
-        // instead of letting NaN slip into the UI and audit payload.
-        const accuracy = Number.isFinite(rawAccuracy) && rawAccuracy >= 0 ? rawAccuracy : 999;
-        const { speed } = position.coords;
-        // Qualquer fix real (mesmo fraco) prova que o GPS voltou a responder.
-        clearTimeout(stallTimer);
-        setGpsStalled(false);
-        setGpsAccuracy(accuracy);
-        setGpsSignal(accuracy < 20 ? 'STRONG' : accuracy < 50 ? 'WEAK' : 'SEARCHING');
-
-        // #98: amostra a velocidade INSTANTANEA (Doppler do chip de GPS -- o
-        // mesmo dado que Strava/Garmin usam pro pace ao vivo) em TODO fix
-        // recebido, independente do throttle de checkpoints abaixo. Um pico
-        // real de velocidade (ex: 60-70km/h dentro de um onibus) podia nunca
-        // aparecer no calculo por distancia/tempo entre dois checkpoints
-        // espaçados de ~10s, que naturalmente suaviza picos curtos.
-        // `speed` vem em m/s e pode ser null (nem todo dispositivo/navegador
-        // reporta); so propaga quando e um numero valido.
-        let instantSpeedKmH = accuracy <= 50 && typeof speed === 'number' && Number.isFinite(speed) && speed >= 0
-          ? speed * 3.6
-          : null;
-        // Alguns aparelhos Android não expõem coords.speed. Nesse caso,
-        // deriva a velocidade entre fixes consecutivos, preservando a leitura
-        // ao vivo em vez de cair na média da sessão inteira.
-        const currentRaw = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          timestamp: position.timestamp || Date.now(),
-          accuracy
-        };
-        const previousRaw = lastRawGpsRef.current;
-        const currentSession = activityService.getCurrentSession();
-        // Durante uma pausa o aparelho pode continuar entregando fixes, mas
-        // eles não representam esforço da atividade. Não atualizamos a
-        // velocidade nem a rota até o atleta retomar.
-        if (currentSession?.isPaused) {
-          setLiveSpeedKmH(null);
-          setLiveSpeedUpdatedAt(null);
-          return;
-        }
-        // Alguns bridges Android informam `0` quando a velocidade Doppler não
-        // está disponível (em vez de `null`). Nesse caso o código antigo
-        // aceitava zero para sempre e nunca executava o fallback, reproduzindo
-        // exatamente a tela observada no teste de bike. Derivamos entre fixes
-        // quando a leitura veio ausente/zerada e o deslocamento supera o ruído
-        // compatível com a precisão dos dois pontos.
-        if ((instantSpeedKmH === null || instantSpeedKmH <= 0.5) && previousRaw && accuracy <= 30) {
-          const deltaSec = (currentRaw.timestamp - previousRaw.timestamp) / 1000;
-          if (deltaSec > 0 && deltaSec <= 15) {
-            const distanceMeters = calculateDistance(previousRaw.lat, previousRaw.lng, currentRaw.lat, currentRaw.lng);
-            const noiseFloorMeters = Math.max(2.5, Math.min(8, (previousRaw.accuracy + accuracy) * 0.12));
-            if (distanceMeters >= noiseFloorMeters) {
-              instantSpeedKmH = (distanceMeters / deltaSec) * 3.6;
-            }
-          }
-        }
-        if (accuracy <= 30) lastRawGpsRef.current = currentRaw;
-        // O mesmo teto de sanidade aplicado no acumulador da sessão evita
-        // que um valor espúrio do bridge GPS apareça na tela ou seja salvo no
-        // checkpoint, mesmo que a distância oficial do servidor descarte
-        // esse pico depois.
-        if (instantSpeedKmH !== null && instantSpeedKmH > 300) instantSpeedKmH = null;
-        if (instantSpeedKmH !== null) {
-          activityService.recordGpsSpeedSample(instantSpeedKmH, accuracy);
-          // Suavizacao curta apenas para leitura ao vivo. A auditoria recebe
-          // todas as amostras/checkpoints e nao confia neste valor visual.
-          setLiveSpeedKmH((previous) => previous === null ? instantSpeedKmH : previous * 0.65 + instantSpeedKmH * 0.35);
-          setLiveSpeedUpdatedAt(Date.now());
-        }
-
-        const now = Date.now();
-        // Dois segundos preservam curvas, aceleração e velocidade como um
-        // fluxo GPS esportivo. O servidor refaz distância e elimina outliers.
-        if (now - lastCheckpointTimeRef.current < 2000) return;
-        lastCheckpointTimeRef.current = now;
-
-        activityService.addCheckpoint({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy,
-          ...(instantSpeedKmH !== null ? { speedKmH: instantSpeedKmH } : {})
-        }, position.timestamp);
-
-        const current = activityService.getCurrentSession();
-        if (current) {
-          // addCheckpoint persiste no localStorage e devolve um novo snapshot;
-          // sem atualizar o estado React, a tela continuava recebendo o array
-          // antigo em `liveCheckpoints` e o Mapbox nunca desenhava a rota nem
-          // o marcador da posição atual.
-          setActiveSession(current);
-          setLiveDistanceKm(activityService.calculateSessionDistance(current));
-        }
-      },
-      (err) => {
-        console.warn('[Challenges] GPS watchPosition error during cardio session:', err);
-        if (err.code === 1) setGpsPermissionDenied(true);
-        // #168: erro de posição indisponível/timeout (code 2/3) não travava
-        // nada visualmente antes -- o indicador continuava "Buscando sinal..."
-        // e o atleta não tinha como saber se era só demora ou uma falha real.
-        // O timer de estagnação acima cobre o caso de nenhum callback chegar;
-        // isto cobre o caso de o provedor nativo desistir e reportar erro.
-        else if (err.code === 2 || err.code === 3) setGpsStalled(true);
-      },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
-    );
-    gpsWatchIdRef.current = watchId;
-
-    return () => {
-      clearTimeout(stallTimer);
-      if (gpsWatchIdRef.current !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-        gpsWatchIdRef.current = null;
-      }
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release().catch(() => {});
-        wakeLockRef.current = null;
-      }
+    const applySnapshot = (snap: ReturnType<typeof webGpsTrackingService.getSnapshot>) => {
+      // Um snapshot de uma sessão diferente (ex.: o watcher ainda está
+      // encerrando a anterior) nunca deve pintar a tela da sessão atual.
+      if (snap.sessionId !== activeSession.id) return;
+      setGpsAccuracy(snap.accuracy);
+      setGpsSignal(snap.signal);
+      setGpsPermissionDenied(snap.permissionDenied);
+      setGpsStalled(snap.stalled);
+      setLiveDistanceKm(snap.liveDistanceKm);
+      setLiveSpeedKmH(snap.liveSpeedKmH);
+      setLiveSpeedUpdatedAt(snap.liveSpeedUpdatedAt);
     };
-  }, [activeSession?.id, activeSession?.requiresGpsDistance, gpsRetryKey]);
+
+    // Hidrata imediatamente com o estado atual -- cobre tanto o caso normal
+    // (watcher já rodando desde o startSession) quanto reabrir esta tela
+    // depois de minimizar: o snapshot reflete tudo que foi coletado enquanto
+    // o atleta estava em outras telas, sem esperar o próximo fix chegar.
+    applySnapshot(webGpsTrackingService.getSnapshot());
+    const unsubscribe = webGpsTrackingService.subscribe(applySnapshot);
+
+    // NUNCA chama stop() aqui: encerrar esta assinatura ao desmontar não
+    // pode derrubar a coleta -- só quem realmente encerra a sessão
+    // (activityService.endSession/cancelSession) tem autoridade para isso.
+    return unsubscribe;
+  }, [activeSession?.id, activeSession?.requiresGpsDistance]);
 
   // Open Challenge Modal
   const handleOpenChallenge = (challenge: CoreChallenge) => {
@@ -866,12 +754,12 @@ export function Challenges() {
     }
   };
 
-  // #168: reinicia o watch de GPS do zero sem descartar a sessão em
-  // andamento -- o efeito acima reage a `gpsRetryKey` e refaz toda a
-  // configuração (wake lock, watchPosition, timer de estagnação).
+  // #168 / ACT-10: reinicia o watch de GPS do zero sem descartar a sessão em
+  // andamento. webGpsTrackingService.retry() já faz stop()+start() e notifica
+  // os assinantes com o snapshot limpo -- não precisa mais de uma chave de
+  // efeito para forçar o React a refazer nada.
   const handleRetryGps = () => {
-    setGpsStalled(false);
-    setGpsRetryKey((key) => key + 1);
+    if (activeSession) webGpsTrackingService.retry(activeSession);
   };
 
   // #324: pausa/retoma a sessao ativa. So existia no componente orfao
@@ -882,14 +770,6 @@ export function Challenges() {
       : activityService.pauseSession();
     if (updated) {
       setActiveSession(updated);
-      // O primeiro fix depois de uma pausa não pode derivar velocidade nem
-      // conectar o trajeto com o ponto anterior ao intervalo parado.
-      lastRawGpsRef.current = null;
-      lastCheckpointTimeRef.current = updated.isPaused ? Date.now() : 0;
-      if (updated.isPaused) {
-        setLiveSpeedKmH(null);
-        setLiveSpeedUpdatedAt(null);
-      }
       // #328: mudança de estado (pausar/retomar) atualiza a notificação na
       // hora -- não espera o próximo tick de 5s do throttle normal.
       activityNotificationService.update(updated, elapsedTime, liveDistanceKmRef.current, true);
