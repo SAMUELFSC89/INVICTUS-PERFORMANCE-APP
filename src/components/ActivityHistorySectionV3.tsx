@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -156,6 +156,7 @@ export function ActivityHistorySectionV3() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [detail, setDetail] = useState<ActivityHistoryItem | null>(null);
   const [share, setShare] = useState<ActivityHistoryItem | null>(null);
+  const lastReconcileAt = useRef(0);
 
   const load = useCallback(async (silent = false) => {
     const user = auth.currentUser;
@@ -279,12 +280,43 @@ export function ActivityHistorySectionV3() {
     }
   }, []);
 
+  const reconcilePending = useCallback(async (force = false): Promise<number> => {
+    const user = auth.currentUser;
+    if (!user) return 0;
+    const now = Date.now();
+    if (!force && now - lastReconcileAt.current < 60_000) return 0;
+    lastReconcileAt.current = now;
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/audit-fraud', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Falha ao atualizar análises.');
+      return Math.max(0, Number(payload.pendingResolved) || 0);
+    } catch (cause) {
+      console.warn('[ActivityHistorySectionV3] Reconciliação de análises indisponível:', cause);
+      return 0;
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, () => { void load(); });
     return unsubscribe;
   }, [load]);
 
   const pendingCount = activities.filter(item => item.status === 'pendente').length;
+
+  useEffect(() => {
+    if (!pendingCount) return;
+    let cancelled = false;
+    void reconcilePending().then((resolved) => {
+      if (!cancelled && resolved > 0) void load(true);
+    });
+    return () => { cancelled = true; };
+  }, [load, pendingCount, reconcilePending]);
+
   useEffect(() => {
     if (!pendingCount) return;
     const timer = window.setInterval(() => void load(true), 20_000);
@@ -322,7 +354,10 @@ export function ActivityHistorySectionV3() {
 
   const refresh = () => {
     setRefreshing(true);
-    void load(true);
+    void (async () => {
+      await reconcilePending(true);
+      await load(true);
+    })();
   };
 
   return <section className="ahv3-shell">
