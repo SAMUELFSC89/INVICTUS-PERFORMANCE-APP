@@ -1,12 +1,53 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../_lib/common.js';
 
+// SEC-03 (auditoria 6167c8f): displayName/city/photoUrl sao dados do proprio
+// usuario (editaveis no perfil) e antes eram interpolados sem escape direto
+// em title/meta/corpo HTML e em background-image: url(...) -- um nome como
+// `</title><script>...` fechava a tag e injetava marcacao executavel na
+// pagina publica de compartilhamento. A mesma funcao serve tanto para texto
+// quanto para valores dentro de atributos (mesma regra de escape).
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// photoUrl vai dentro de `url('...')` em CSS -- aspas/parenteses sem escape
+// permitem fechar o url() e injetar CSS/expressoes arbitrarias. Alem de
+// escapar, so aceitamos http(s) explicito; qualquer outro esquema (ex.:
+// `javascript:`, `data:text/html`) é descartado silenciosamente.
+function safeImageUrl(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return escapeHtml(raw);
+  } catch {
+    return '';
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Captura o ID tanto de query param quanto de rota customizada se o server passar
   const id = req.query.id || (req as any).params?.id;
 
   if (!id) {
     return res.status(400).send('<h1>ID não fornecido</h1>');
+  }
+
+  // SEC-03: `id` vem direto da query string (nenhuma autenticacao envolvida)
+  // e antes ia sem validacao para shareUrl/imageUrl, que por sua vez eram
+  // interpolados sem escape em atributos HTML (og:url, twitter:url, etc.) --
+  // um id malicioso conseguiria fechar o atributo e injetar marcacao so
+  // pedindo /api/share?id=... com o payload. Mesmo padrao ja usado em
+  // firestore.rules (isValidId): alfanumerico + _/- , ate 128 chars.
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    return res.status(400).send('<h1>ID inválido</h1>');
   }
 
   try {
@@ -48,6 +89,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     const userDoc = await db.collection('users').doc(workout.userId).get();
     const user = userDoc.data() || { displayName: 'Atleta' };
+    // SEC-03: nome/cidade sao editaveis pelo proprio usuario -- nunca confiar
+    // neles como HTML pronto. rawDisplayName so serve para derivar o "@handle"
+    // (que tambem passa por escapeHtml antes de entrar no corpo da pagina).
+    const rawDisplayName = typeof user.displayName === 'string' && user.displayName.trim() ? user.displayName : 'Atleta';
+    const displayName = escapeHtml(rawDisplayName);
+    const handle = escapeHtml(rawDisplayName.toLowerCase().replace(/\s+/g, ''));
+    const city = escapeHtml(user.city || 'Ranking Geral');
+    const safePhotoUrl = safeImageUrl(workout.photoUrl);
 
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const baseUrl = appUrl || `${protocol}://${req.headers.host}`;
@@ -66,7 +115,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const approved = ['valid', 'validated', 'approved', 'homologada'].includes(rawStatus);
     const rejected = ['invalid', 'rejected', 'not_eligible', 'rejeitada', 'suspicious'].includes(rawStatus);
     const points = approved && Number.isFinite(Number(workout.points)) ? Number(workout.points) : 0;
-    const title = `${user.displayName} concluiu um ${typeLabel}!`;
+    // displayName ja vem escapado (ver acima) -- title fica seguro para
+    // reaparecer sem escape adicional em <title>/og:title/twitter:title.
+    const title = `${displayName} concluiu um ${typeLabel}!`;
     const resultText = approved
       ? (points > 0 ? `Atividade aprovada com +${points} XP.` : 'Atividade aprovada.')
       : rejected
@@ -225,11 +276,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 <img src="${baseUrl}/capacete.webp" alt="INVICTUS">
                 <span>INVICTUS</span>
             </div>
-            <div class="user-tag">@${user.displayName.toLowerCase().replace(/\s+/g, '')}</div>
+            <div class="user-tag">@${handle}</div>
         </div>
-        
-        <div class="photo-container" style="background-image: url('${workout.photoUrl || ''}')">
-            ${!workout.photoUrl ? '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ffffff1a;font-size:80px">🔥</div>' : ''}
+
+        <div class="photo-container" style="background-image: url('${safePhotoUrl}')">
+            ${!safePhotoUrl ? '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ffffff1a;font-size:80px">🔥</div>' : ''}
         </div>
         
         <div class="stats">
@@ -257,7 +308,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 ` : `
                 <div class="stat-item" style="text-align: right;">
                     <div class="stat-label">Cidade</div>
-                    <div class="stat-value">${user.city || 'Ranking Geral'}</div>
+                    <div class="stat-value">${city}</div>
                 </div>
                 `}
             </div>
@@ -276,6 +327,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache 1h
+    // SEC-03: defesa em profundidade -- o escape acima ja impede a injecao,
+    // mas esta pagina publica nao precisa executar nenhum script nem carregar
+    // recursos de fora de fontes/imagens conhecidas. helmet global desativa
+    // CSP (api/app.ts) porque outras rotas da API nao servem HTML; aplicar
+    // aqui, so nesta resposta, nao afeta o resto do backend.
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; base-uri 'none'; form-action 'none'");
     return res.status(200).send(html);
   } catch (error) {
     console.error('Share API Error:', error);
