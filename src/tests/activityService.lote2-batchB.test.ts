@@ -42,6 +42,23 @@ jest.mock('firebase/firestore', () => ({
 }));
 jest.mock('../services/nativeBackgroundLocationService', () => ({
   nativeBackgroundLocationService: {
+    // O bridge de GPS ao vivo passou a consultar esta superfície também.
+    // Estes testes exercitam activityService, não a ponte nativa; portanto
+    // mantemos isSupported=false para preservar o cenário original e evitar
+    // uma segunda coleta visual além do coletor explicitamente testado aqui.
+    isSupported: jest.fn(() => false),
+    getSnapshot: jest.fn(() => ({
+      sessionId: null,
+      accuracy: null,
+      signal: 'SEARCHING',
+      permissionDenied: false,
+      stalled: false,
+      liveSpeedKmH: null,
+      liveSpeedUpdatedAt: null,
+      latestPoint: null,
+    })),
+    subscribe: jest.fn(() => jest.fn()),
+    readBuffered: jest.fn(async () => [] as any[]),
     start: jest.fn(async () => {}),
     stop: jest.fn(async () => []),
     collectAndStop: jest.fn(async () => [] as any[]),
@@ -157,8 +174,6 @@ describe('ACT-04: uma sessão marcada como encerrada nunca ressuscita sozinha', 
     const restored = await activityService.restoreActiveSession();
 
     expect(restored).toBeNull();
-    // Best-effort: tenta fechar o documento remoto para não repetir a
-    // checagem, mas nunca grava de volta no localStorage nem retoma o GPS.
     expect(updateDoc).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 'completed' }));
     expect(nativeBackgroundLocationService.start).not.toHaveBeenCalled();
     expect(localStorage.getItem(SESSION_KEY)).toBeNull();
@@ -180,15 +195,10 @@ describe('ACT-04: uma sessão marcada como encerrada nunca ressuscita sozinha', 
     (updateDoc as jest.Mock).mockRejectedValue(new Error('Firestore indisponível'));
 
     activityService.cancelSession();
-    // updateDoc() é disparado sem await (fire-and-forget) dentro de
-    // cancelSession(); aguardamos o próximo tick para o .catch() rodar.
     await Promise.resolve();
     await Promise.resolve();
 
     expect(localStorage.getItem('sessao_encerrada_' + session.id)).not.toBeNull();
-    // O estado local já foi limpo de qualquer forma (cancelamento é sempre
-    // local-first); a marca é uma proteção adicional para qualquer outra
-    // aba/dispositivo que ainda tenha uma cópia da mesma sessão.
     expect(localStorage.getItem(SESSION_KEY)).toBeNull();
   });
 });
@@ -210,10 +220,6 @@ describe('ACT-03 / ACT-04: falha na escrita final de encerramento nunca trava ne
     const result = await activityService.endSession();
 
     expect(result.workout?.id).toBe('w1');
-    // ACT-04: mesmo com o cleanup local já tendo removido a sessão ativa,
-    // a marca de encerramento fica gravada -- protege qualquer restauração
-    // concorrente (outra aba, ou uma leitura que já estava em andamento)
-    // contra reviver esta mesma sessão.
     expect(localStorage.getItem('sessao_encerrada_session-final-fail')).not.toBeNull();
   });
 
