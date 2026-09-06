@@ -81,6 +81,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
+/**
+ * ACT-04 (auditoria 6167c8f): quando a escrita final que marca uma sessão
+ * como 'completed'/'cancelled' falha no Firestore, o código grava uma marca
+ * local ("tumba") só pra nunca ser lida em lugar nenhum -- getCurrentSession,
+ * restoreActiveSession e o loop de restauração de startSession() olhavam
+ * apenas o campo `status` do documento remoto, que continuava 'active'
+ * justamente porque a escrita que o mudaria foi a que falhou. Resultado: uma
+ * sessão que o atleta já encerrou (ou cancelou) podia "ressuscitar" sozinha
+ * na próxima abertura do app ou troca de aba, quando o app tentasse
+ * restaurar automaticamente uma atividade em andamento. Esta marca agora é
+ * efetivamente consultada antes de qualquer restauração, local ou remota.
+ */
+function isTombstoned(sessionId: string): boolean {
+  try {
+    return !!localStorage.getItem('sessao_encerrada_' + sessionId);
+  } catch {
+    return false;
+  }
+}
+
+function markTombstoned(sessionId: string) {
+  try {
+    localStorage.setItem('sessao_encerrada_' + sessionId, new Date().toISOString());
+  } catch {
+    // localStorage pode não estar disponível no ambiente nativo.
+  }
+}
+
 function sessionFromActiveDocument(data: Record<string, any>): ActivitySession {
   return {
     id: String(data.id || ''),
@@ -218,6 +246,18 @@ export const activityService = {
 
       for (const docSnap of activeSessionsSnap.docs) {
         const sessData = docSnap.data();
+        if (isTombstoned(sessData.id)) {
+          // ACT-04: esta sessão já foi encerrada/cancelada localmente (a
+          // escrita final no servidor que falhou é a única razão do
+          // documento ainda dizer 'active'). Não bloqueia o novo
+          // startSession nem a restaura -- só tenta, best-effort, fechar o
+          // documento remoto para não repetir esta checagem para sempre.
+          void withTimeout(updateDoc(docSnap.ref, {
+            status: 'completed',
+            updatedAt: new Date().toISOString()
+          }), 4000, 'Tempo limite ao confirmar encerramento de sessão anterior.').catch(() => {});
+          continue;
+        }
         const startTimeMs = new Date(sessData.startTime).getTime();
         const diffMs = Date.now() - startTimeMs;
 
@@ -408,6 +448,16 @@ export const activityService = {
       const session = JSON.parse(data) as ActivitySession;
       if (session.status !== 'active') return null;
 
+      // ACT-04: uma escrita final que falhou no servidor não pode virar uma
+      // sessão que ressuscita sozinha -- se este id já foi marcado como
+      // encerrado (endSession/cancelSession/completeSessionAfterPresence),
+      // trata como se não existisse mais estado local nenhum.
+      if (isTombstoned(session.id)) {
+        console.log('[ActivityService] Sessão local marcada como encerrada; descartando estado obsoleto.');
+        localStorage.removeItem(SESSION_KEY);
+        return null;
+      }
+
       const startTime = new Date(session.startTime).getTime();
       const now = new Date().getTime();
       // #324: tempo em pausa nao deve contar pro limite de expiracao -- sem
@@ -468,6 +518,17 @@ export const activityService = {
       if (!data) return null;
 
       const session = sessionFromActiveDocument(data);
+      if (isTombstoned(session.id)) {
+        // ACT-04: mesmo raciocínio do getCurrentSession() -- este documento
+        // remoto continua 'active' só porque a escrita que o fecharia falhou.
+        // Best-effort: tenta fechar o documento remoto agora que a rede pode
+        // estar de volta, mas não restaura a sessão de jeito nenhum.
+        void updateDoc(doc(db, 'active_sessions', session.id), {
+          status: 'completed',
+          updatedAt: new Date().toISOString()
+        }).catch(() => {});
+        return null;
+      }
       const startTimeMs = new Date(session.startTime).getTime();
       const now = Date.now();
       const pausedMs = (session.pausedMs || 0) + (session.pauseStartedAt
@@ -930,6 +991,13 @@ export const activityService = {
           'Authorization': `Bearer ${idToken}`
         },
         body: JSON.stringify({
+          // ACT-02 (auditoria 6167c8f): sessionId estavel (o mesmo em toda
+          // tentativa de finalizar esta sessao) -- o servidor usa esta chave
+          // como ID determinístico do documento, para que um retry (rede
+          // caiu, resposta se perdeu) nunca crie um segundo workout nem
+          // conceda XP duas vezes, mesmo que a duracao recalculada aqui saia
+          // levemente diferente entre tentativas.
+          sessionId: session.id,
           type: session.type,
           muscleGroup: session.muscleGroup,
           cardioType: session.cardioType,
@@ -967,6 +1035,18 @@ export const activityService = {
         signal: internalController.signal
       });
     } catch (fetchErr: any) {
+      // ACT-06 (auditoria 6167c8f): collectAndStop() (acima) ja parou o
+      // coletor nativo de GPS ANTES desta chamada de rede. Se a rede falhar,
+      // a sessao local continua "active" (nao limpamos estado aqui) mas sem
+      // NENHUM coletor rodando -- um novo trecho percorrido enquanto o atleta
+      // decide tentar de novo desaparecia silenciosamente. Reiniciar o
+      // coletor aqui e best-effort: garante que o proximo trecho continue
+      // sendo capturado ate a proxima tentativa de finalizar.
+      if (session.requiresGpsDistance) {
+        void nativeBackgroundLocationService.start().catch((restartErr) => {
+          console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após falha de envio:', restartErr);
+        });
+      }
       if (fetchErr?.name === 'AbortError') {
         if (externalSignal?.aborted) {
           const cancelledErr = new Error('Envio cancelado pelo atleta.');
@@ -982,6 +1062,15 @@ export const activityService = {
     }
 
     if (!response.ok) {
+      // ACT-06: mesmo raciocinio do catch de rede acima -- um erro HTTP (ex.:
+      // o novo 503 de ACT-01 quando a persistencia falhou no servidor)
+      // tambem significa que o atleta vai tentar de novo, e o coletor nativo
+      // ja foi parado antes desta chamada.
+      if (session.requiresGpsDistance) {
+        void nativeBackgroundLocationService.start().catch((restartErr) => {
+          console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após erro do servidor:', restartErr);
+        });
+      }
       const errorData = await response.json().catch(() => ({}));
       // BUG CONFIRMADO (achado ao vivo via Chrome): api/_middleware/error.ts
       // (errorHandler) devolve o motivo especifico do bloqueio (antifraude,
@@ -1030,18 +1119,26 @@ export const activityService = {
         // sessao -- era por isso que a corrida voltava como se nunca tivesse
         // sido finalizada.
         try {
-          await updateDoc(doc(db, 'active_sessions', session.id), {
-            status: 'completed',
-            endTime: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
+          // ACT-03: esta chamada não tinha NENHUM timeout -- diferente de
+          // quase todo outro acesso ao Firestore neste arquivo. Se a conexão
+          // travasse (nem fechava nem abria, mesma categoria do #118), o
+          // await ficava pendurado para sempre DEPOIS que o servidor já
+          // havia confirmado e persistido a atividade -- o atleta via a tela
+          // de finalização travada indefinidamente mesmo com tudo já salvo.
+          await withTimeout(
+            updateDoc(doc(db, 'active_sessions', session.id), {
+              status: 'completed',
+              endTime: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            }),
+            8000,
+            'Tempo limite ao confirmar encerramento da sessão no servidor.'
+          );
         } catch (erroFecho) {
           console.error('[activityService] Falha ao marcar a sessao como concluida no servidor:', erroFecho);
           // Marca local de ultimo recurso: impede que o startSession restaure
           // uma sessao que o usuario ja encerrou, mesmo se a escrita falhar.
-          try {
-            localStorage.setItem('sessao_encerrada_' + session.id, new Date().toISOString());
-          } catch (e) {}
+          markTombstoned(session.id);
         }
 
         // Agora sim limpamos o estado local. Nao usamos cancelSession() aqui
@@ -1122,7 +1219,13 @@ export const activityService = {
           status: 'cancelled',
           endTime: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }).catch(err => console.warn('[activityService] Falha ao cancelar a sessao no servidor:', err));
+        }).catch(err => {
+          console.warn('[activityService] Falha ao cancelar a sessao no servidor:', err);
+          // ACT-04: sem esta marca, um cancelamento cuja escrita falhou
+          // deixava o documento remoto 'active' -- exatamente o cenário que
+          // fazia uma sessão já descartada pelo atleta "ressuscitar" sozinha.
+          markTombstoned(session.id);
+        });
       } catch (e) {}
     }
     this.limparEstadoLocal();
@@ -1139,20 +1242,23 @@ export const activityService = {
 
     const now = new Date().toISOString();
     try {
-      await updateDoc(doc(db, 'active_sessions', session.id), {
-        status: 'completed',
-        endTime: now,
-        updatedAt: now
-      });
+      // ACT-03: mesmo problema do endSession() -- sem timeout, uma conexão
+      // travada prendia esta chamada para sempre depois que o servidor já
+      // havia decidido (aprovado ou pendente de análise) a atividade.
+      await withTimeout(
+        updateDoc(doc(db, 'active_sessions', session.id), {
+          status: 'completed',
+          endTime: now,
+          updatedAt: now
+        }),
+        8000,
+        'Tempo limite ao confirmar encerramento da sessão no servidor.'
+      );
     } catch (error) {
       console.error('[activityService] Falha ao fechar sessão após presença:', error);
       // Evita restauração automática de uma atividade que já foi recebida e
       // está sendo decidida pelo servidor.
-      try {
-        localStorage.setItem(`sessao_encerrada_${session.id}`, now);
-      } catch {
-        // localStorage pode não estar disponível no ambiente nativo.
-      }
+      markTombstoned(session.id);
     }
     this.limparEstadoLocal();
     try { workoutSetJournal.clear(session.userId, session.id); } catch { /* Presence decision is already persisted. */ }
