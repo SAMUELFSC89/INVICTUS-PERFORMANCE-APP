@@ -49,6 +49,33 @@ const availableAiExerciseCount = (equipment: string[]) => OFFICIAL_EXERCISES_BAT
   isOfficialExerciseCompatible(exercise.id, equipment)
 ).length;
 
+// ACT-07 (auditoria 6167c8f): quando ha stakes competitivos reais (ranking
+// da comunidade ou inscricao paga ativa), o servidor
+// (validate-activity-service.ts) SEMPRE exige um check-in de academia
+// homologado por geofence pra este treino contar -- mas iniciar um plano
+// pelo hub Musculacao nunca coletava um: startSession() recebia
+// location/checkInId undefined incondicionalmente. O atleta so descobria a
+// exigencia no ENCERRAMENTO da sessao, quando a atividade caia em fila de
+// revisao manual por falta de geofence -- mesmo tendo seguido o fluxo
+// principal do app do jeito esperado. Esta funcao reaproveita exatamente o
+// mesmo preflight que Challenges.tsx (handleStartActivity) ja usa pra
+// corrida/cardio com check-in: se ha stakes, confirma a presenca ANTES de
+// iniciar a sessao, nao depois de encerra-la. Extraida do componente pra
+// poder ser testada sem montar a tela inteira.
+export async function resolveWorkoutCheckIn(): Promise<{
+  hasStakes: boolean;
+  location?: { lat: number; lng: number; accuracy?: number };
+  checkInId?: string;
+}> {
+  const hasStakes = await activityService.hasActiveScoringStakes();
+  if (!hasStakes) return { hasStakes: false };
+  // #249: mesmo sinal usado pra decidir o pedido de permissao de sensor --
+  // so pede quando ha algo competitivo de verdade em jogo.
+  await activityService.requestMotionPermission();
+  const confirmed = await activityService.performGymCheckIn();
+  return { hasStakes: true, location: confirmed.location, checkInId: confirmed.checkInId };
+}
+
 const emptyWorkout = (index: number): PlannedWorkout => ({
   id: `workout_${index + 1}`,
   name: `Treino ${String.fromCharCode(65 + index)}`,
@@ -207,18 +234,18 @@ export function Musculation() {
   const startWorkout = async (plan: WorkoutPlan, workout: PlannedWorkout) => {
     setLoading(true); setError(null);
     try {
-      // #249: so vale pedir permissao de sensor (acelerometro/giroscopio, usado
-      // pelo antifraude de movimento) quando ha ALGUM premio/ranking real em
-      // jogo -- sem isso, quem so quer marcar os proprios exercicios feitos
-      // levava o mesmo pedido de permissao de quem esta competindo por
-      // dinheiro. A pontuacao de verdade continua 100% decidida no servidor
-      // (validate-activity-service.ts), isto e so pra nao incomodar a toa.
-      if (await activityService.hasActiveScoringStakes()) {
-        await activityService.requestMotionPermission();
-      }
-      await activityService.startSession('workout', undefined, undefined, undefined, undefined, workout.focus || 'Musculação', {
-        workoutPlanId: plan.id, workoutId: workout.id, plannedExercises: workout.exercises
-      });
+      // ACT-07: resolve o check-in de academia ANTES de iniciar a sessao
+      // quando ha stakes competitivos reais -- ver resolveWorkoutCheckIn().
+      const checkIn = await resolveWorkoutCheckIn();
+      await activityService.startSession(
+        'workout',
+        checkIn.location,
+        undefined,
+        undefined,
+        checkIn.checkInId,
+        workout.focus || 'Musculação',
+        { workoutPlanId: plan.id, workoutId: workout.id, plannedExercises: workout.exercises }
+      );
       navigate('/challenges', { replace: true });
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
