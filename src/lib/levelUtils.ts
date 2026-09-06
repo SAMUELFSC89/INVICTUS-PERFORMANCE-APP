@@ -42,17 +42,17 @@ export function getXPProgress(xp: number = 0) {
   const safeXP = Math.max(0, Number(xp) || 0);
   const currentLevel = getLevelFromXP(safeXP);
   const nextLevel = currentLevel + 1;
-  
+
   const xpFloor = getXPRequiredForLevel(currentLevel);
   const xpCeiling = getXPRequiredForLevel(nextLevel);
-  
+
   const xpInCurrentLevel = safeXP - xpFloor;
   const xpNeededForNextLevel = xpCeiling - xpFloor;
-  
-  const percentage = xpNeededForNextLevel > 0 
+
+  const percentage = xpNeededForNextLevel > 0
     ? Math.min(100, Math.max(0, (xpInCurrentLevel / xpNeededForNextLevel) * 100))
     : 100;
-    
+
   return {
     currentLevel,
     nextLevel,
@@ -62,17 +62,6 @@ export function getXPProgress(xp: number = 0) {
     xpNeededForNextLevel,
     percentage
   };
-}
-
-/**
- * Progressively calculates the barbell weight based on active level.
- * Level 1 starts with a 8 kilogram barbell.
- * Level 2 starts with a 10 kilogram barbell.
- * Progressive increase of 2 kg per level, capping at 220 kilograms.
- */
-export function getBarbellWeight(level: number): number {
-  const calculated = 8 + (level - 1) * 2;
-  return Math.min(220, calculated);
 }
 
 /**
@@ -92,15 +81,14 @@ export function getLevelTitle(level: number): string {
  * Level progression motivational phrases.
  */
 export const LEVEL_MOTIVATIONAL_PHRASES = [
-  "Você está ficando imparável.",
-  "Consistência gera evolução.",
-  "Mais forte que ontem.",
-  "Continue avançando.",
-  "Um novo nível foi conquistado."
+  'Você está ficando imparável.',
+  'Consistência gera evolução.',
+  'Mais forte que ontem.',
+  'Continue avançando.',
+  'Um novo nível foi conquistado.'
 ];
 
 export function getRandomMotivationalPhrase(): string {
   const idx = Math.floor(Math.random() * LEVEL_MOTIVATIONAL_PHRASES.length);
   return LEVEL_MOTIVATIONAL_PHRASES[idx];
 }
-
