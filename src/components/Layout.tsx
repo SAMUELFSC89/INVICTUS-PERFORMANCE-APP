@@ -32,7 +32,23 @@ export function Layout() {
   // Layout (z-50, canto superior direito) continuava renderizado por cima/
   // por baixo do cabecalho da tela, causando a sobreposicao reportada pelo
   // usuario ("sino e level por baixo ainda aparecendo" na tela Meu Plano).
-  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao';
+  //
+  // #248: "/challenges" (e as rotas que reusam o mesmo componente Challenges.tsx
+  // -- /activity/ongoing, /running, /challenges/cardio) e um caso especial: o
+  // MESMO pathname mostra 3 telas bem diferentes dependendo de estado interno
+  // do componente (nao refletido na URL) -- o hub novo (ChallengesHubNew, com
+  // .dc-footer proprio), o historico novo (ActivityHistoryPageNew, com
+  // .ah-new-footer proprio) ou a tela antiga de desafios/fluxo em andamento
+  // (sem footer proprio, que PRECISA do nav antigo). Como o pathname sozinho
+  // nao distingue os 3 casos, o Layout nao pode decidir isso so com
+  // location.pathname -- por isso o nav antigo continuava vazando por baixo
+  // do rodape novo sempre que o hub/historico era a tela mostrada (o caso mais
+  // comum, ja que e a tela padrao ao abrir "Desafios"). A correcao usa o mesmo
+  // Outlet context ja existente (triggerXPToast) para a tela filha avisar o
+  // Layout quando ela propria desenha um rodape e o nav antigo deve sumir.
+  const [routeOwnsFooter, setRouteOwnsFooter] = useState(false);
+  useEffect(() => { setRouteOwnsFooter(false); }, [location.pathname]);
+  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao' || routeOwnsFooter;
 
   const [theme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -159,7 +175,10 @@ export function Layout() {
             exit={{ opacity: 0, scale: 1.02, filter: 'blur(10px)' }}
             transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
           >
-            <Outlet context={{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => setXpToast({ visible: true, points: p, message: m, rankingPoints }) }} />
+            <Outlet context={{
+              triggerXPToast: (p: number, m?: string, rankingPoints?: number) => setXpToast({ visible: true, points: p, message: m, rankingPoints }),
+              setRouteOwnsFooter,
+            }} />
           </motion.div>
         </AnimatePresence>
       </main>

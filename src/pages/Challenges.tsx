@@ -84,7 +84,7 @@ export function Challenges() {
   const initialCategory = (searchParams.get('category') as ChallengeCategory) || 'all';
   const [selectedCategory, setSelectedCategory] = useState<ChallengeCategory>(initialCategory);
 
-  const { triggerXPToast } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void }>();
+  const { triggerXPToast, setRouteOwnsFooter } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void; setRouteOwnsFooter?: (v: boolean) => void }>();
 
   // Active activity session state
   const initialActive = activityService.getCurrentSession();
@@ -929,14 +929,26 @@ export function Challenges() {
     else closeFlow();
   };
 
+  const isHistoryView = !flowScreen && searchParams.get('view') === 'history';
+
   const showNewChallengesHub = !flowScreen
     && !finishedActivityItem
     && !shareCardData
     && !presenceCheckRequired
     && selectedCategory === 'all'
-    && searchParams.get('view') !== 'history';
+    && !isHistoryView;
 
-  if (!flowScreen && searchParams.get('view') === 'history') {
+  // #248: ChallengesHubNew e ActivityHistoryPageNew desenham o proprio rodape
+  // (.dc-footer / .ah-new-footer) -- sem isso, o nav antigo do Layout.tsx
+  // ficava vazando por baixo desses rodapes novos sempre que essa era a tela
+  // mostrada (o caso mais comum, ja que e a tela padrao ao abrir "Desafios").
+  // Ver comentario "routeOwnsFooter" em Layout.tsx para o mecanismo completo.
+  useEffect(() => {
+    setRouteOwnsFooter?.(showNewChallengesHub || isHistoryView);
+    return () => setRouteOwnsFooter?.(false);
+  }, [showNewChallengesHub, isHistoryView, setRouteOwnsFooter]);
+
+  if (isHistoryView) {
     return <ActivityHistoryPageNew />;
   }
 
