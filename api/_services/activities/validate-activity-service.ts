@@ -25,13 +25,35 @@ async function hasActiveChampionshipEnrollment(userId: string): Promise<boolean>
   return community.data()?.status === 'active' || paid.docs.some((item) => item.data()?.status === 'paga');
 }
 
-async function validateCheckInOwnership(userId: string, checkInId: string): Promise<void> {
+// ACT-08 (auditoria 6167c8f): o TTL de 15 minutos do check-in (gyms_checkin.ts)
+// existe para garantir que o atleta acabou de confirmar presenca -- ele deve
+// valer para VINCULAR o check-in a uma sessao (no inicio do treino), nao para
+// o treino inteiro. A checagem antiga comparava expiresAt com Date.now() no
+// FINAL do treino (quando este metodo e chamado, via /api/validate-activity),
+// entao qualquer treino de duracao normal (>15min) via HTTP400 pedindo um
+// novo check-in mesmo com a prova de presenca legitima. Agora comparamos com
+// o horario de INICIO da sessao (sessionStartTime), quando o vinculo de fato
+// acontece; e marcamos o check-in com a sessao a que foi vinculado, para que
+// o mesmo checkInId nao sirva de prova para duas sessoes distintas.
+async function validateCheckInOwnership(userId: string, checkInId: string, sessionStartTime?: string): Promise<void> {
   if (!db) throw new AppError('Não foi possível validar o check-in agora.', 503);
-  const snap = await db.collection('gym_checkins').doc(checkInId).get();
+  const checkInRef = db.collection('gym_checkins').doc(checkInId);
+  const snap = await checkInRef.get();
   const data = snap.data();
   const expiresAt = data?.expiresAt ? new Date(data.expiresAt).getTime() : 0;
-  if (!snap.exists || data?.userId !== userId || !['confirmed', 'suspicious'].includes(data?.status) || expiresAt < Date.now()) {
+  const referenceTime = sessionStartTime ? new Date(sessionStartTime).getTime() : Date.now();
+  const linkedSessionStartMs = data?.linkedSessionStartAt ? new Date(data.linkedSessionStartAt).getTime() : null;
+  const linkedToAnotherSession = linkedSessionStartMs !== null && Math.abs(linkedSessionStartMs - referenceTime) > 60000;
+
+  if (!snap.exists || data?.userId !== userId || !['confirmed', 'suspicious'].includes(data?.status)
+    || !Number.isFinite(referenceTime) || expiresAt < referenceTime || linkedToAnotherSession) {
     throw new AppError('Este check-in não é válido ou expirou. Faça um novo check-in presencial.', 400);
+  }
+
+  if (linkedSessionStartMs === null) {
+    await checkInRef.set({ linkedSessionStartAt: new Date(referenceTime).toISOString() }, { merge: true }).catch((err) => {
+      console.warn('[ValidateActivityService] Falha ao gravar vinculo check-in/sessao (nao-fatal):', err);
+    });
   }
 }
 
@@ -133,6 +155,67 @@ export class ValidateActivityService {
     return `Decisão ${decision}. Inconsistências entre GPS, sensores do aparelho e o tipo de atividade declarado.`;
   }
 
+  // ACT-02 (auditoria 6167c8f): monta a resposta de um retry confirmado
+  // (mesmo sessionId ja gravado) inteiramente a partir do documento ja
+  // persistido -- nunca recalcula pontuacao nem concede XP de novo. Cobre os
+  // tres formatos possiveis (pending_review, not_eligible, validated) com o
+  // mesmo formato de resposta que a primeira chamada devolveu.
+  private buildReplayResponse(existing: any, traceId: string): ValidateActivityResponse {
+    const validationStatus = existing.validationStatus;
+    const displayStatus = validationStatus === 'validated'
+      ? 'valid'
+      : validationStatus === 'not_eligible'
+        ? 'not_eligible'
+        : 'pending_review';
+    const isPending = displayStatus === 'pending_review';
+
+    const message = existing.userMessage || (
+      displayStatus === 'valid'
+        ? 'Esta atividade ja havia sido registrada com sucesso.'
+        : displayStatus === 'not_eligible'
+          ? 'Esta atividade ja havia sido registrada; sem pontuacao competitiva.'
+          : 'Esta atividade ja foi recebida e esta em analise.'
+    );
+
+    return {
+      success: true,
+      activityId: existing.id || '',
+      scoreAwarded: existing.scoreAwarded || 0,
+      rankingPointsEarned: 0,
+      message,
+      userMessage: message,
+      pending: isPending || undefined,
+      status: isPending ? 'pending_review' : undefined,
+      isScoringEligible: existing.isScoringEligible ?? (displayStatus === 'valid'),
+      nonScoringReason: existing.nonScoringReason || undefined,
+      reasonCode: existing.nonScoringReason || undefined,
+      canRetry: isPending || undefined,
+      traceId,
+      workout: {
+        id: existing.id,
+        points: existing.scoreAwarded || 0,
+        rankingPointsEarned: 0,
+        status: displayStatus,
+        type: existing.type,
+        muscleGroup: existing.muscleGroup,
+        cardioType: existing.cardioType,
+        cardioTypeLabel: existing.cardioTypeLabel,
+        distance: existing.distance || 0,
+        duration: existing.duration || 0,
+        calories: existing.calories,
+        avgHeartRate: existing.avgHeartRate,
+        steps: existing.steps,
+        timestamp: existing.createdAt
+      },
+      validation: {
+        success: true,
+        status: displayStatus,
+        score: existing.scoreAwarded || 0,
+        reasonCode: existing.nonScoringReason || null
+      }
+    } as any;
+  }
+
   async execute(request: ValidateActivityRequest): Promise<ValidateActivityResponse> {
     const traceId = this.generateTraceId();
     console.log(`[ValidateActivityService] [${traceId}] Iniciando validacao para usuario ${request.userId}`);
@@ -147,6 +230,32 @@ export class ValidateActivityService {
     }
 
     const rawActivity: any = request.activityData || {};
+
+    // ACT-01/ACT-02 (auditoria 6167c8f): ate aqui, um retry de finalizacao
+    // (rede caiu, resposta se perdeu, tela travou) recalculava duracao/hora de
+    // fim do zero no cliente e so era deduplicado por um heuristico fragil
+    // (mesmo tipo + mesma duracao dentro de 10s) -- um retry com duracao
+    // levemente diferente furava a deduplicacao e criava um SEGUNDO workout
+    // (ActivityRepository.create() sem customId sempre usa .add(), ID novo a
+    // cada chamada). Agora o cliente envia um `sessionId` estavel (congelado
+    // no inicio da sessao, o mesmo em toda tentativa de finalizar -- ver
+    // activityService.ts) e essa chave vira o ID do documento no Firestore:
+    // toda tentativa com o mesmo sessionId bate no MESMO documento. Se ele ja
+    // existir, esta chamada e um retry confirmado -- devolvemos o resultado
+    // ja gravado, sem rodar fraude/seguranca/pontuacao de novo (nunca concede
+    // XP duas vezes) e sem gerar um segundo documento.
+    const sessionKey = typeof rawActivity.sessionId === 'string' && rawActivity.sessionId.trim()
+      ? rawActivity.sessionId.trim().slice(0, 128)
+      : null;
+    const customActivityId = sessionKey ? `${request.userId}_${sessionKey}` : undefined;
+
+    if (customActivityId) {
+      const existingActivity = await this.activityRepository.findById(customActivityId);
+      if (existingActivity) {
+        console.log(`[ValidateActivityService] [${traceId}] Retry idempotente detectado para sessionId=${sessionKey}, devolvendo resultado ja gravado (ID: ${existingActivity.id})`);
+        return this.buildReplayResponse(existingActivity, traceId);
+      }
+    }
     // Health observations are sanitized separately and never enter competitive evidence.
     const workoutHealth = sanitizeWorkoutHealthRecord(rawActivity.healthSession);
     // Keep the private time series out of competition audit payloads and their
@@ -168,20 +277,26 @@ export class ValidateActivityService {
       throw new AppError(`Atividade recusada: ${fraudCheck.reason}.`, 422);
     }
 
-    const recentActivities = await this.activityRepository.findRecentByUser(request.userId, 0.1);
-    const tenSecondsAgo = Date.now() - 10000;
-    const isDuplicateSubmission = recentActivities.some(a => {
-      const createdAtMs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const previousDuration = Number((a as any).duration ?? (a as any).durationMins);
-      const submittedDuration = durationValue === undefined ? 30 : Number(durationValue);
-      return createdAtMs >= tenSecondsAgo &&
-        a.type === request.activityData.type &&
-        Number.isFinite(previousDuration) && Number.isFinite(submittedDuration) &&
-        previousDuration === submittedDuration;
-    });
-    if (isDuplicateSubmission) {
-      console.warn(`[ValidateActivityService] [${traceId}] Envio duplicado detectado e bloqueado (mesma atividade nos ultimos 10s)`);
-      throw new AppError('Esta atividade ja foi registrada. Aguarde alguns segundos antes de tentar novamente.', 409);
+    // ACT-02: quando o cliente ja manda um sessionId estavel, a checagem acima
+    // (customActivityId) e a fonte de verdade de idempotencia -- este
+    // heuristico fuzzy (tipo+duracao+10s) fica só como rede de segurança para
+    // clientes antigos que ainda nao enviam sessionId.
+    if (!customActivityId) {
+      const recentActivities = await this.activityRepository.findRecentByUser(request.userId, 0.1);
+      const tenSecondsAgo = Date.now() - 10000;
+      const isDuplicateSubmission = recentActivities.some(a => {
+        const createdAtMs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const previousDuration = Number((a as any).duration ?? (a as any).durationMins);
+        const submittedDuration = durationValue === undefined ? 30 : Number(durationValue);
+        return createdAtMs >= tenSecondsAgo &&
+          a.type === request.activityData.type &&
+          Number.isFinite(previousDuration) && Number.isFinite(submittedDuration) &&
+          previousDuration === submittedDuration;
+      });
+      if (isDuplicateSubmission) {
+        console.warn(`[ValidateActivityService] [${traceId}] Envio duplicado detectado e bloqueado (mesma atividade nos ultimos 10s)`);
+        throw new AppError('Esta atividade ja foi registrada. Aguarde alguns segundos antes de tentar novamente.', 409);
+      }
     }
 
     const modality = resolveModality(rawActivity);
@@ -242,7 +357,11 @@ export class ValidateActivityService {
     const hasActiveScoringStakes = await hasActiveChampionshipEnrollment(request.userId);
 
     if (request.activityData.type === 'workout' && rawActivity.checkInId) {
-      await validateCheckInOwnership(request.userId, rawActivity.checkInId);
+      await validateCheckInOwnership(
+        request.userId,
+        rawActivity.checkInId,
+        request.activityData.startTime ? normalizarTimestamp(request.activityData.startTime) : undefined
+      );
     }
 
     if (request.activityData.type === 'workout' && hasActiveScoringStakes && !rawActivity.checkInId) {
@@ -296,12 +415,19 @@ export class ValidateActivityService {
             rejectionReason: geofenceResult.reason,
             userMessage: geofenceResult.userFacingMessage,
             evidence: request.activityData.evidence || {},
+            sessionId: sessionKey || undefined,
             traceId
-          });
+          }, customActivityId);
           pendingActivityId = pendingActivity.id;
           pendingActivityTimestamp = pendingActivity.createdAt || pendingActivityTimestamp;
         } catch (persistErr) {
+          // ACT-01: absorver esta falha e devolver 200/pending sem ID fazia o
+          // cliente encerrar a sessao e apagar a copia local acreditando que a
+          // atividade estava na fila -- quando na verdade nada foi gravado.
+          // Falha de persistencia agora e um erro real (503): o cliente deve
+          // preservar o envio local e tentar de novo.
           console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade de musculacao pendente de revisao:`, persistErr);
+          throw new AppError('Não foi possível registrar sua atividade agora. Tente novamente em instantes.', 503);
         }
 
         await this.auditRepository.log({
@@ -498,8 +624,9 @@ export class ValidateActivityService {
           rejectionReason: securityInternalReason,
           userMessage: securityUserMessage,
           evidence: request.activityData.evidence || {},
+          sessionId: sessionKey || undefined,
           traceId
-        });
+        }, customActivityId);
         pendingActivityId = pendingActivity.id;
         pendingActivityTimestamp = pendingActivity.createdAt || pendingActivityTimestamp;
 
@@ -526,7 +653,10 @@ export class ValidateActivityService {
           console.error(`[ValidateActivityService] [${traceId}] Health Data Layer falhou (nao-fatal):`, healthLayerErr);
         }
       } catch (persistErr) {
+        // ACT-01: mesma correcao do ramo de geofence acima -- nunca devolver
+        // sucesso/pending sem um ID real gravado.
         console.error(`[ValidateActivityService] [${traceId}] Falha ao persistir atividade pendente de revisao:`, persistErr);
+        throw new AppError('Não foi possível registrar sua atividade agora. Tente novamente em instantes.', 503);
       }
 
       await this.auditRepository.log({
@@ -631,8 +761,9 @@ export class ValidateActivityService {
       nonScoringReason: competitivelyEligible ? null : competitiveIneligibleReason,
       userMessage: competitivelyEligible ? null : competitiveIneligibleReason,
       evidence: request.activityData.evidence || {},
+      sessionId: sessionKey || undefined,
       traceId
-    });
+    }, customActivityId);
     console.log(`[ValidateActivityService] [${traceId}] Atividade registrada no repositorio (ID: ${savedActivity.id})`);
 
     // #71: Health Data Layer -- registro ADITIVO, alem da pontuacao acima.
