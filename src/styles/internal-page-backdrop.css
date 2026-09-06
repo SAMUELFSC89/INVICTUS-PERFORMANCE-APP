@@ -27,10 +27,11 @@
  * global banner. Only their canvas color becomes transparent; their existing
  * gradients, cards, dialogs, footers and content surfaces stay unchanged.
  *
- * ChallengeActivityFlow is deliberately excluded. It is an overlay rendered
- * above Challenges.tsx, so making it transparent exposes the old challenge
- * catalogue and its navigation underneath. Its own #030303 canvas must stay
- * opaque for the whole viewport.
+ * ChallengeActivityFlow remains opaque on purpose because it is the current
+ * full-screen activity surface (cardio/workout in progress). The old
+ * Challenges catalogue that used to sit underneath it has been removed, so
+ * this is now purely a viewport/isolation requirement rather than a workaround
+ * for a legacy screen.
  */
 body[data-invictus-surface='internal'] :is(
   .activity-type-screen,
