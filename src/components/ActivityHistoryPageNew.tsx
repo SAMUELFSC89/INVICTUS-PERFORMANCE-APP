@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Bell, History, Plus, ShieldCheck, Trophy, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { ActivityHistorySection } from './ActivityHistorySection';
+import { ActivityHistorySectionV3 } from './ActivityHistorySectionV3';
 import { InvictusLogo } from './InvictusLogo';
 import './ActivityHistoryPageNew.css';
 
@@ -12,17 +12,21 @@ export function ActivityHistoryPageNew() {
     <main className="ah-new-screen">
       <div className="ah-new-page">
         <header className="ah-new-header">
-          <button onClick={() => navigate('/challenges')} aria-label="Voltar para desafios"><ArrowLeft /></button>
+          <button onClick={() => navigate('/challenges')} aria-label="Voltar"><ArrowLeft /></button>
           <div><InvictusLogo size={42} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div>
           <button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button>
         </header>
 
         <section className="ah-new-title">
           <span><History /></span>
-          <div><small>SUA JORNADA</small><h1>HISTÓRICO DE ATIVIDADES</h1><p>Acompanhe seus treinos, cardios, métricas e, quando participar, o resultado competitivo.</p></div>
+          <div>
+            <small>SUA JORNADA</small>
+            <h1>ATIVIDADES</h1>
+            <p>Treinos, cardio, métricas e validações em um único histórico.</p>
+          </div>
         </section>
 
-        <div className="ah-new-content"><ActivityHistorySection /></div>
+        <div className="ah-new-content"><ActivityHistorySectionV3 /></div>
       </div>
 
       <nav className="ah-new-footer">
