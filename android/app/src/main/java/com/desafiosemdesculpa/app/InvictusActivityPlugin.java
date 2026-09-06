@@ -41,6 +41,7 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
     private static final int MAX_POINTS = 5000;
     private static final long MIN_TIME_MS = 2000L;
     private static final float MIN_DISTANCE_METERS = 3f;
+    private static final double STATIONARY_SPEED_KMH = 1.0;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final JSONArray trackedLocations = new JSONArray();
@@ -56,6 +57,8 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
     @PluginMethod
     public void startLocationTracking(PluginCall call) {
         if (!hasLocationPermission()) {
+            notifyListeners("locationAuthorization", event("status", "denied"));
+            notifyListeners("locationError", errorEvent("permission_denied", "Permissão de localização não concedida."));
             call.reject("Permissão de localização não concedida.");
             return;
         }
@@ -85,11 +88,14 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
                     providerStarted = true;
                 }
                 if (!providerStarted) {
+                    notifyListeners("locationError", errorEvent("provider_disabled", "Ative a localização do aparelho para registrar a atividade."));
                     call.reject("Ative a localização do aparelho para registrar a atividade.");
                     return;
                 }
+                notifyListeners("locationAuthorization", event("status", "authorized"));
                 call.resolve();
             } catch (SecurityException error) {
+                notifyListeners("locationError", errorEvent("permission_denied", "Não foi possível iniciar a localização."));
                 call.reject("Não foi possível iniciar a localização.", error);
             }
         });
@@ -120,15 +126,31 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
         }
 
         try {
+            double speedKmH = location.hasSpeed() ? Math.max(0, location.getSpeed() * 3.6) : -1;
+            if (speedKmH >= 0 && speedKmH < STATIONARY_SPEED_KMH) speedKmH = 0;
+
             JSONObject point = new JSONObject();
             point.put("lat", location.getLatitude());
             point.put("lng", location.getLongitude());
             point.put("accuracy", location.getAccuracy());
             point.put("timestamp", isoTimestamp(location.getTime()));
-            point.put("speedKmH", location.hasSpeed() ? Math.max(0, location.getSpeed() * 3.6) : 0);
+            if (speedKmH >= 0) point.put("speedKmH", speedKmH);
             point.put("isSimulated", isMockLocation(location));
             trackedLocations.put(point);
             while (trackedLocations.length() > MAX_POINTS) trackedLocations.remove(0);
+
+            // A coleta continua persistida para background/encerramento, mas a
+            // mesma leitura agora também chega ao JS enquanto a tela está
+            // aberta. Assim Android e iOS alimentam o mesmo snapshot de mapa,
+            // distância, velocidade e pace em tempo real.
+            JSObject live = new JSObject();
+            live.put("lat", location.getLatitude());
+            live.put("lng", location.getLongitude());
+            live.put("accuracy", location.getAccuracy());
+            live.put("timestamp", isoTimestamp(location.getTime()));
+            if (speedKmH >= 0) live.put("speedKmH", speedKmH);
+            live.put("isSimulated", isMockLocation(location));
+            notifyListeners("locationUpdate", live);
 
             pointsSincePersist++;
             if (pointsSincePersist >= 5) persistLocations();
@@ -138,10 +160,14 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
     }
 
     @Override
-    public void onProviderEnabled(String provider) {}
+    public void onProviderEnabled(String provider) {
+        notifyListeners("locationAuthorization", event("status", "authorized"));
+    }
 
     @Override
-    public void onProviderDisabled(String provider) {}
+    public void onProviderDisabled(String provider) {
+        notifyListeners("locationError", errorEvent("provider_disabled", "O provedor de localização foi desativado."));
+    }
 
     @Override
     @SuppressWarnings("deprecation")
@@ -161,6 +187,19 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
         format.setTimeZone(TimeZone.getTimeZone("UTC"));
         return format.format(new Date(timestampMs));
+    }
+
+    private JSObject event(String key, String value) {
+        JSObject event = new JSObject();
+        event.put(key, value);
+        return event;
+    }
+
+    private JSObject errorEvent(String code, String message) {
+        JSObject event = new JSObject();
+        event.put("code", code);
+        event.put("message", message);
+        return event;
     }
 
     private synchronized JSObject locationResult() {
