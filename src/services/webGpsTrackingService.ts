@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { activityService } from './activityService';
+import { nativeBackgroundLocationService, type NativeGpsSnapshot } from './nativeBackgroundLocationService';
 import { calculateDistance } from '../lib/runUtils';
 import type { ActivitySession } from '../types';
 
@@ -29,6 +30,7 @@ const MIN_LIVE_SPEED_KMH = 1.0;
 const MAX_LIVE_SPEED_KMH = 300;
 
 let watchId: number | null = null;
+let nativeUnsubscribe: (() => void) | null = null;
 let stallTimer: ReturnType<typeof setTimeout> | null = null;
 let wakeLock: any = null;
 let snapshot: WebGpsSnapshot = { ...INITIAL_SNAPSHOT };
@@ -48,7 +50,7 @@ function setSnapshot(patch: Partial<WebGpsSnapshot>) {
   notify();
 }
 
-function supported(): boolean {
+function webSupported(): boolean {
   return typeof navigator !== 'undefined' && !!navigator.geolocation && !Capacitor.isNativePlatform();
 }
 
@@ -62,6 +64,42 @@ function releaseWakeLock() {
 
 function computeSignal(accuracy: number): WebGpsSnapshot['signal'] {
   return accuracy < 20 ? 'STRONG' : accuracy < 50 ? 'WEAK' : 'SEARCHING';
+}
+
+function ingestNativeSnapshot(session: ActivitySession, native: NativeGpsSnapshot) {
+  const currentSession = activityService.getCurrentSession();
+  if (!currentSession || currentSession.id !== session.id) return;
+
+  const point = native.latestPoint;
+  if (point && !currentSession.isPaused) {
+    const now = Date.now();
+    const accuracy = typeof point.accuracy === 'number' ? point.accuracy : undefined;
+    const speedKmH = typeof native.liveSpeedKmH === 'number' ? native.liveSpeedKmH : undefined;
+
+    if (typeof speedKmH === 'number') activityService.recordGpsSpeedSample(speedKmH, accuracy);
+    if (now - lastCheckpointTimeAt >= 2000) {
+      lastCheckpointTimeAt = now;
+      activityService.addCheckpoint({
+        lat: point.lat,
+        lng: point.lng,
+        ...(typeof accuracy === 'number' ? { accuracy } : {}),
+        ...(typeof speedKmH === 'number' ? { speedKmH } : {}),
+      }, Date.parse(point.timestamp));
+    }
+  }
+
+  const updated = activityService.getCurrentSession();
+  const distance = updated ? activityService.calculateSessionDistance(updated) : snapshot.liveDistanceKm;
+  setSnapshot({
+    sessionId: session.id,
+    accuracy: native.accuracy,
+    signal: native.signal,
+    permissionDenied: native.permissionDenied,
+    stalled: native.stalled,
+    liveDistanceKm: distance,
+    liveSpeedKmH: currentSession.isPaused ? null : native.liveSpeedKmH,
+    liveSpeedUpdatedAt: currentSession.isPaused ? null : native.liveSpeedUpdatedAt,
+  });
 }
 
 function handlePosition(session: ActivitySession, position: GeolocationPosition) {
@@ -78,10 +116,8 @@ function handlePosition(session: ActivitySession, position: GeolocationPosition)
     return;
   }
 
-  // Se o navegador forneceu speed=0, isso é uma observação válida de que o
-  // aparelho está parado. O código antigo tratava 0 como "sem velocidade" e
-  // recalculava a partir do deslocamento entre coordenadas, transformando o
-  // drift normal do GPS em paces gigantes que mudavam mesmo sem movimento.
+  // speed=0 é uma observação válida de repouso. Antes o zero acionava o
+  // fallback por deslocamento e o drift das coordenadas virava um pace enorme.
   const hasReportedSpeed = accuracy <= 50 && typeof speed === 'number' && Number.isFinite(speed) && speed >= 0;
   let instantSpeedKmH = hasReportedSpeed ? speed * 3.6 : null;
   if (instantSpeedKmH !== null) {
@@ -97,9 +133,8 @@ function handlePosition(session: ActivitySession, position: GeolocationPosition)
   };
   const previousRaw = lastRawGps;
 
-  // Só derivamos velocidade por deslocamento quando o provedor realmente NÃO
-  // informou coords.speed. Nunca substituímos um zero explícito por ruído de
-  // posição. Isso mantém Android/web compatível sem fabricar movimento parado.
+  // Só deriva velocidade se o navegador NÃO forneceu coords.speed. Nunca
+  // substitui zero explícito por ruído de posição.
   if (instantSpeedKmH === null && previousRaw && accuracy <= 30) {
     const deltaSec = (currentRaw.timestamp - previousRaw.timestamp) / 1000;
     if (deltaSec > 0 && deltaSec <= 15) {
@@ -119,9 +154,6 @@ function handlePosition(session: ActivitySession, position: GeolocationPosition)
   let nextLiveSpeedUpdatedAt = snapshot.liveSpeedUpdatedAt;
   if (instantSpeedKmH !== null) {
     activityService.recordGpsSpeedSample(instantSpeedKmH, accuracy);
-    // Zero deve zerar imediatamente. Suavizar zero junto com a velocidade
-    // anterior fazia a tela continuar mostrando 0,8/0,5/0,3 km/h e paces
-    // absurdos por vários segundos depois que o atleta já estava parado.
     if (instantSpeedKmH === 0) nextLiveSpeed = 0;
     else nextLiveSpeed = nextLiveSpeed === null || nextLiveSpeed < MIN_LIVE_SPEED_KMH
       ? instantSpeedKmH
@@ -171,9 +203,8 @@ export const webGpsTrackingService = {
   },
 
   start(session: ActivitySession) {
-    if (!supported()) return;
     if (!session.requiresGpsDistance) return;
-    if (watchId !== null && snapshot.sessionId === session.id) return;
+    if ((watchId !== null || nativeUnsubscribe !== null) && snapshot.sessionId === session.id) return;
     this.stop();
 
     snapshot = { ...INITIAL_SNAPSHOT, sessionId: session.id };
@@ -181,6 +212,35 @@ export const webGpsTrackingService = {
     lastCheckpointTimeAt = 0;
     lastRawGps = null;
 
+    // No iOS/Android Capacitor, o rastreador nativo é o dono da coleta. Antes
+    // esta função retornava sem fazer nada, mas Challenges.tsx só assinava ESTE
+    // snapshot; resultado: o iPhone coletava em segundo plano e a tela ficava
+    // eternamente em "Buscando GPS". Agora o mesmo snapshot recebe o stream
+    // nativo e alimenta mapa, distância, velocidade e pace em tempo real.
+    if (nativeBackgroundLocationService.isSupported()) {
+      const applyNative = (native: NativeGpsSnapshot) => ingestNativeSnapshot(session, native);
+      nativeUnsubscribe = nativeBackgroundLocationService.subscribe(applyNative);
+      applyNative(nativeBackgroundLocationService.getSnapshot());
+      void nativeBackgroundLocationService.readBuffered()
+        .then((points) => {
+          for (const point of points) {
+            const current = activityService.getCurrentSession();
+            if (!current || current.id !== session.id || current.isPaused) break;
+            activityService.addCheckpoint({
+              lat: point.lat,
+              lng: point.lng,
+              ...(typeof point.accuracy === 'number' ? { accuracy: point.accuracy } : {}),
+              ...(typeof point.speedKmH === 'number' ? { speedKmH: point.speedKmH < MIN_LIVE_SPEED_KMH ? 0 : point.speedKmH } : {}),
+            }, Date.parse(point.timestamp));
+          }
+          const updated = activityService.getCurrentSession();
+          if (updated) setSnapshot({ liveDistanceKm: activityService.calculateSessionDistance(updated) });
+        })
+        .catch((error) => console.warn('[webGpsTrackingService] Não foi possível ler o buffer nativo:', error));
+      return;
+    }
+
+    if (!webSupported()) return;
     stallTimer = setTimeout(() => setSnapshot({ stalled: true }), 20000);
 
     if ('wakeLock' in navigator) {
@@ -198,11 +258,19 @@ export const webGpsTrackingService = {
 
   retry(session: ActivitySession) {
     this.stop();
+    // O rastreador nativo continua sendo controlado pelo activityService. Em
+    // iOS/Android, retry reconecta a ponte visual e reinicia a coleta nativa.
+    if (nativeBackgroundLocationService.isSupported()) {
+      void nativeBackgroundLocationService.start(session.id)
+        .catch((error) => console.warn('[webGpsTrackingService] Retry nativo falhou:', error));
+    }
     this.start(session);
   },
 
   stop() {
     clearStallTimer();
+    nativeUnsubscribe?.();
+    nativeUnsubscribe = null;
     if (watchId !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchId);
     }
