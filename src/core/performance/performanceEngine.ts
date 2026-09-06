@@ -15,7 +15,10 @@ export interface RawWorkoutSession {
   caloriesBurned?: number;
   workoutType?: string;
   workoutName?: string;
-  validationStatus?: 'valid' | 'validated' | 'approved' | 'pending' | 'rejected' | 'not_eligible' | 'health_only';
+  validationStatus?: 'valid' | 'validated' | 'approved' | 'completed' | 'recorded' | 'not_required' | 'pending' | 'rejected' | 'not_eligible' | 'health_only';
+  recordStatus?: string;
+  activityMode?: 'personal' | 'competitive' | 'unresolved';
+  competitionStatus?: string;
   source?: string;
   distanceKm?: number;
   hasSensorData?: boolean;
@@ -175,15 +178,16 @@ export function processUserPerformance(
   const userIMC = Number(userProfile.imc) || (userHeight > 0 && userWeight > 0 ? Number((userWeight / Math.pow(userHeight / 100, 2)).toFixed(1)) : 0);
   const userMaxHR = Number(userProfile.maxHeartRate) > 0 ? Number(userProfile.maxHeartRate) : 0;
 
-  // Filter valid workouts
+  // Métricas pessoais usam todo registro concluído. Homologação é um eixo
+  // separado e só decide ranking/campeonato.
   const validAllWorkouts = allWorkouts
-    .filter(w => ['valid', 'validated', 'approved'].includes(String(w.validationStatus || '').toLowerCase()))
+    .filter(w => ['valid', 'validated', 'approved', 'completed', 'recorded', 'not_required'].includes(String(w.validationStatus || '').toLowerCase()))
     .filter(w => Number.isFinite(w.timestamp) && w.timestamp > 0)
     .sort((a, b) => a.timestamp - b.timestamp);
 
   const timeframeWorkouts = filterWorkoutsByRange(validAllWorkouts, selectedRange);
   const healthAllWorkouts = allWorkouts
-    .filter(w => ['valid', 'validated', 'approved', 'health_only'].includes(String(w.validationStatus || '').toLowerCase()))
+    .filter(w => ['valid', 'validated', 'approved', 'completed', 'recorded', 'not_required', 'health_only'].includes(String(w.validationStatus || '').toLowerCase()))
     .filter(w => Number.isFinite(w.timestamp) && w.timestamp > 0)
     .sort((a, b) => a.timestamp - b.timestamp);
   const healthTimeframeWorkouts = filterWorkoutsByRange(healthAllWorkouts, selectedRange);

@@ -1,4 +1,4 @@
-.workout-set-heart-note{margin:0 0 16px;color:#aaa79c;font-size:12px;line-height:1.5}
+.workout-set-heart-note{margin:0 0 16px;color:var(--invictus-text-secondary);font-size:12px;line-height:1.5}
 .workout-set-recorder{margin:18px 0;padding:18px;border:1px solid #5a4823;border-radius:16px;background:#15140f;color:#eee9df}
 .workout-set-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .workout-set-heading small{font-size:10px;letter-spacing:.08em;color:#d4ac52}
@@ -8,10 +8,10 @@
 .workout-set-recorder .workout-set-active{color:#f1d68e}
 .workout-set-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
 .workout-set-fields label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;min-width:0}
-.workout-set-fields label>span{color:#a29b8a;font-weight:400}
+.workout-set-fields label>span{color:var(--invictus-text-muted);font-weight:400}
 .workout-set-fields input{background:#080807;border:1px solid #5b5340;border-radius:9px;color:#fff;font-size:16px;padding:11px;width:100%;box-sizing:border-box}
-.workout-set-fields input::placeholder{color:#969084;font-size:13px}
-.workout-set-recorder .workout-set-hint{font-size:11px;color:#afa796}
+.workout-set-fields input::placeholder{color:var(--invictus-text-muted);font-size:13px}
+.workout-set-recorder .workout-set-hint{font-size:11px;color:var(--invictus-text-secondary)}
 .workout-set-recorder button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700;line-height:1.3;background:#27251c;border:1px solid #635637;color:#eee4cc;cursor:pointer}
 .workout-set-recorder button.is-primary{background:#e8b838;border-color:#e8b838;color:#191507}
 .workout-set-recorder button:disabled{opacity:.5;cursor:default}

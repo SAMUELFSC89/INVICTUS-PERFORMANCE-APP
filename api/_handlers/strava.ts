@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { db, cors, verifyAuth } from '../_lib/common.js';
 import { StravaApi } from '../_lib/strava-api.js';
 import { SyncService } from '../_lib/sync-service.js';
+import { MissionEngine } from '../_lib/mission-engine.js';
 
 const router = express.Router();
 
@@ -151,22 +152,6 @@ router.post('/webhook', async (req: any, res: any) => {
       if (athleteSnap.exists) {
         const userId = athleteSnap.data()?.userId;
         if (userId) {
-          // Check primary source wearable configuration
-          const configSnap = await db.collection('wearable_configs').doc(userId).get();
-          if (configSnap.exists) {
-            const config = configSnap.data();
-            if (config) {
-              if (config.appleHealthConnected) {
-                console.log(`[WEBHOOK] IGNORING event for user ${userId} because Apple Health (iOS) is connected.`);
-                return res.status(200).json({ success: true, message: 'Ignored: Apple Health (iOS) connected.' });
-              }
-              if (config.healthConnectConnected) {
-                console.log(`[WEBHOOK] IGNORING event for user ${userId} because Health Connect (Android) is connected.`);
-                return res.status(200).json({ success: true, message: 'Ignored: Health Connect (Android) connected.' });
-              }
-            }
-          }
-
           const strava = new StravaApi(userId);
           const activity = await strava.fetchActivity(event.object_id);
           await SyncService.processStravaActivity(userId, activity);
@@ -179,6 +164,9 @@ router.post('/webhook', async (req: any, res: any) => {
       }
     } catch (e: any) {
       console.error(`[Strava Webhook] Error processing activity ${event.object_id}:`, e);
+      // A non-2xx response asks Strava to retry. Returning 200 here used to
+      // abandon a workout created just before a transient XP/mission failure.
+      return res.status(503).json({ success: false, retryable: true });
     }
   }
 
@@ -394,15 +382,45 @@ router.post('/refresh', requireUserAuth, async (req: any, res: any) => {
 async function manualSyncInternal(strava: StravaApi) {
   const after = Math.floor(Date.now() / 1000) - (60 * 24 * 60 * 60);
   const activities = await strava.fetchActivities(after);
+  const userId = (strava as any).userId;
+  let missionAccessProfile: Record<string, any> | null = null;
+  let missionAccessProfileAvailable = false;
+  try {
+    const userSnap = await db.collection('users').doc(userId).get();
+    missionAccessProfileAvailable = userSnap.exists;
+    missionAccessProfile = userSnap.exists ? userSnap.data() || {} : null;
+  } catch (error) {
+    console.warn('[Strava Sync] Não foi possível congelar o plano do usuário:', error);
+  }
   
   let syncCount = 0;
+  const failures: string[] = [];
+  const affectedAt: string[] = [];
   for (const act of activities) {
-    if (await SyncService.processStravaActivity((strava as any).userId, act)) {
-      syncCount++;
+    try {
+      if (await SyncService.processStravaActivity(userId, act, {
+        syncMissions: false,
+        missionAccessProfile,
+        missionAccessProfileAvailable,
+      })) {
+        syncCount++;
+        const occurredAt = act?.start_date || act?.start_date_local || act?.created_at;
+        const durationSeconds = Number(act?.moving_time || act?.elapsed_time) || 0;
+        if (typeof occurredAt === 'string') {
+          const endMs = Date.parse(occurredAt) + durationSeconds * 1000;
+          if (Number.isFinite(endMs)) affectedAt.push(new Date(endMs).toISOString());
+        }
+      }
+    } catch (error: any) {
+      failures.push(`${String(act?.id || 'sem-id')}: ${error?.message || 'falha de processamento'}`);
+      console.error('[Strava Sync] Atividade isolada falhou; lote seguirá:', error);
     }
   }
 
-  const userId = (strava as any).userId;
+  await MissionEngine.syncUserProgressFromCompletedActivities(userId, affectedAt);
+  if (failures.length > 0) {
+    throw new Error(`Falha ao conciliar ${failures.length} atividade(s) do Strava; o cursor não foi avançado.`);
+  }
   await db.collection('strava_connections').doc(userId).update({
     lastSyncAt: new Date().toISOString()
   });

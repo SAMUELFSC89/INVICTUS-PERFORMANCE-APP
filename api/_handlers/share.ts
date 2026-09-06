@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../_lib/common.js';
+import { resolveActivityState } from '../../src/lib/workoutData.js';
 
 // SEC-03 (auditoria 6167c8f): displayName/city/photoUrl sao dados do proprio
 // usuario (editaveis no perfil) e antes eram interpolados sem escape direto
@@ -7,6 +8,8 @@ import { db } from '../_lib/common.js';
 // `</title><script>...` fechava a tag e injetava marcacao executavel na
 // pagina publica de compartilhamento. A mesma funcao serve tanto para texto
 // quanto para valores dentro de atributos (mesma regra de escape).
+// (Reaplicado aqui apos o checkpoint activity-competition-v2 ter revertido
+// esta correcao ao substituir este arquivo por uma versao anterior.)
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -77,6 +80,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             distance: Number.isFinite(Number(sessionData.totalDistance)) ? Number(sessionData.totalDistance) / 1000 : undefined,
             points: Number.isFinite(Number(sessionData.pointsEarned)) ? Number(sessionData.pointsEarned) : 0,
             status: sessionData.validationStatus,
+            recordStatus: sessionData.recordStatus || (sessionData.endTime ? 'completed' : undefined),
+            activityMode: sessionData.activityMode,
+            competitionReviewStatus: sessionData.competitionReviewStatus,
             photoUrl: sessionData.photoProof || null
           };
         }
@@ -102,8 +108,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const baseUrl = appUrl || `${protocol}://${req.headers.host}`;
     
     // Formatting
-    const typeLabel = workout.type === 'workout' ? 'Treino 🔥' : 
-                     workout.type === 'cardio' ? 'Corrida 🏃' : 
+    const typeLabel = workout.type === 'workout' ? 'Treino 🔥' :
+                     workout.type === 'cardio' ? 'Cardio 🏃' :
                      workout.type === 'diet' ? 'Dieta 🥗' : 'Atividade';
     
     const details = [
@@ -111,18 +117,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       Number.isFinite(Number(workout.duration)) ? `${Number(workout.duration)} min` : null,
     ].filter(Boolean).join(' em ');
 
-    const rawStatus = String(workout.status || workout.validationStatus || '').toLowerCase();
-    const approved = ['valid', 'validated', 'approved', 'homologada'].includes(rawStatus);
-    const rejected = ['invalid', 'rejected', 'not_eligible', 'rejeitada', 'suspicious'].includes(rawStatus);
-    const points = approved && Number.isFinite(Number(workout.points)) ? Number(workout.points) : 0;
+    const activityState = resolveActivityState(workout);
+    const points = Number.isFinite(Number(workout.activityXpAwarded ?? workout.points)) ? Number(workout.activityXpAwarded ?? workout.points) : 0;
+    const competitionPoints = Number.isFinite(Number(workout.competitionPoints ?? workout.rankingPointsEarned)) ? Number(workout.competitionPoints ?? workout.rankingPointsEarned) : 0;
     // displayName ja vem escapado (ver acima) -- title fica seguro para
     // reaparecer sem escape adicional em <title>/og:title/twitter:title.
     const title = `${displayName} concluiu um ${typeLabel}!`;
-    const resultText = approved
-      ? (points > 0 ? `Atividade aprovada com +${points} XP.` : 'Atividade aprovada.')
-      : rejected
-        ? 'Atividade registrada sem pontuação.'
-        : 'Atividade em análise.';
+    const xpText = points > 0 ? ` Ganhou +${points} XP.` : '';
+    const resultText = activityState.competitionStatus === 'approved'
+      ? `Atividade concluída com pontuação competitiva validada${competitionPoints > 0 ? `: +${competitionPoints} pontos` : ''}.${xpText}`
+      : activityState.competitionStatus === 'pending' || activityState.competitionStatus === 'resolution_pending'
+        ? `Atividade concluída.${xpText} Apenas a pontuação competitiva está em análise.`
+        : activityState.competitionStatus === 'rejected' || activityState.competitionStatus === 'ineligible'
+          ? `Atividade concluída.${xpText} O resultado ficou fora da pontuação competitiva.`
+          : `Atividade concluída e salva no histórico.${xpText}`;
     const description = `Atividade no INVICTUS. ${resultText}${details ? ` ${details}.` : ''}`;
 
     const html = `
@@ -291,7 +299,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 </div>
                 <div class="stat-item" style="text-align: right;">
                     <div class="stat-label">Recompensa</div>
-                    <div style="margin-top: 4px;"><span class="xp-badge">${approved ? (points > 0 ? `+${points} XP` : 'APROVADA') : rejected ? 'NÃO PONTUOU' : 'EM ANÁLISE'}</span></div>
+                    <div style="margin-top: 4px;"><span class="xp-badge">${points > 0 ? `+${points} XP` : 'CONCLUÍDA'}</span></div>
                 </div>
             </div>
             
@@ -327,12 +335,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache 1h
-    // SEC-03: defesa em profundidade -- o escape acima ja impede a injecao,
-    // mas esta pagina publica nao precisa executar nenhum script nem carregar
-    // recursos de fora de fontes/imagens conhecidas. helmet global desativa
-    // CSP (api/app.ts) porque outras rotas da API nao servem HTML; aplicar
-    // aqui, so nesta resposta, nao afeta o resto do backend.
-    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; base-uri 'none'; form-action 'none'");
     return res.status(200).send(html);
   } catch (error) {
     console.error('Share API Error:', error);

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { CacheManager } from './cache.js';
 import { buildHealthViewModel, DEFAULT_HEALTH_POLICY, healthLocalDate, type HealthSummaryInput, type HealthWorkoutInput } from '../../src/core/health/healthViewModel.js';
 import { buildHealthPeriodSummary } from '../../src/core/health/healthPeriodSummary.js';
-import { normalizeActivityValidationStatus, readActivityTimestamp } from '../../src/lib/workoutData.js';
+import { isCompletedActivityRecord, readActivityTimestamp } from '../../src/lib/workoutData.js';
 import { normalizeHeartRateSamples } from '../../src/services/wearables/heartRateSamples.js';
 import { readWorkoutHealthRecord } from '../../src/core/health/workoutHealthTypes.js';
 import { buildWorkoutFeedback, WORKOUT_FEEDBACK_RULES } from '../../src/core/health/workoutFeedback.js';
@@ -33,26 +33,20 @@ export function prepareHealthReportWorkouts(records: Array<Record<string, unknow
     const timestamp = readActivityTimestamp(item.timestamp) ?? readActivityTimestamp(item.startTime) ?? readActivityTimestamp(item.createdAt);
     if (!timestamp) { partial = true; continue; }
     if (timestamp < now - 90 * DAY_MS || timestamp > now) continue;
-    const validation = item.validation && typeof item.validation === 'object' ? item.validation as Record<string, unknown> : {};
     const telemetry = item.healthTelemetry && typeof item.healthTelemetry === 'object' ? item.healthTelemetry as Record<string, unknown> : {};
     const details = item.details && typeof item.details === 'object' ? item.details as Record<string, unknown> : {};
     const healthSession = readWorkoutHealthRecord(item.healthSession ?? details.healthSession);
     const sessionFeedback = healthSession ? buildWorkoutFeedback(healthSession, [], now) : null;
-    const status = normalizeActivityValidationStatus(item.validationStatus ?? item.status ?? validation.status);
+    const completed = isCompletedActivityRecord(item);
     const wearable = item.source === 'apple_health' || item.source === 'health_connect';
     const avgHeartRate = sessionFeedback?.session.averageBpm
       ?? Number(item.avgHeartRate ?? item.averageHeartRate ?? item.avgHr ?? telemetry.avgHeartRate);
     const hasTelemetry = normalizeHeartRateSamples(item.heartRateSamples).length > 0 || Number(item.steps) > 0 || avgHeartRate > 0
       || Number(item.maxHeartRate ?? item.maxHr ?? telemetry.maxHeartRate) > 0
       || Number(item.distance ?? item.distanceKm) > 0 || Number(item.calories ?? item.caloriesBurned) > 0;
-    // ACT-11 / HEALTH-08 (auditoria 6167c8f): mesmo raciocínio do Health.tsx
-    // -- not_eligible é uma atividade legítima (sem estímulo competitivo
-    // ativo), diferente de rejected (bloqueio por antifraude). Um treino
-    // local com telemetria real não pode desaparecer do contexto que a IA
-    // usa para o relatório só porque não veio de um wearable.
-    const notEligible = status === 'not_eligible';
-    const healthOnly = (wearable || notEligible) && status !== 'validated' && item.nonScoringReason !== 'DUPLICATE_ACTIVITY' && hasTelemetry;
-    if (status !== 'validated' && !healthOnly) continue;
+    const duplicate = item.nonScoringReason === 'DUPLICATE_ACTIVITY' || item.dataQualityStatus === 'duplicate';
+    const healthOnly = wearable && !completed && !duplicate && hasTelemetry;
+    if (duplicate || (!completed && !healthOnly)) continue;
     const durationMinutes = Number(item.durationMinutes ?? item.duration ?? 0);
     const positive = (value: unknown) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : undefined;
     workouts.push({

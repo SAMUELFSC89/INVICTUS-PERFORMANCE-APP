@@ -17,7 +17,7 @@ import { RunShareCard } from './RunShareCard';
 import { InvictusLogo } from './InvictusLogo';
 import { API_CONFIG } from '../config';
 import { VALIDATION_MESSAGES } from '../services/validationMessages';
-import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { readActivityTimestamp, resolveActivityState } from '../lib/workoutData';
 import { useUser } from '../UserContext';
 import { WorkoutFeedbackPanel } from './health/WorkoutFeedbackPanel';
 import { loadWorkoutFeedbackHistory, readWorkoutHealthRecord, type WorkoutFeedbackHistory } from '../services/workoutFeedbackHistoryService';
@@ -33,14 +33,12 @@ export interface ActivityHistoryItem {
   dateStr: string;
   timeStr: string;
   rawTimestamp: number;
-  // ACT-11 / HEALTH-08 (auditoria 6167c8f): `nao_elegivel` é uma atividade
-  // LEGÍTIMA sem estímulo competitivo ativo no momento (ex.: sem campeonato
-  // em andamento, ou abaixo do tempo mínimo) -- o servidor já distingue isso
-  // de `rejeitada` (bloqueio por antifraude/geofence/GPS). Antes, as duas
-  // caíam na mesma categoria "rejeitada", fazendo um treino normal parecer
-  // ter sido recusado por fraude.
-  status: 'homologada' | 'rejeitada' | 'nao_elegivel' | 'pendente';
+  status: 'registrada' | 'homologada' | 'rejeitada' | 'pendente';
   statusRaw: string;
+  recordStatus?: string;
+  activityMode?: 'personal' | 'competitive' | 'unresolved';
+  competitionStatus?: string;
+  competitionName?: string;
   points: number;
   rankingPointsEarned?: number;
   durationMins?: number;
@@ -207,8 +205,8 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
   }), [detailOwnerUid, onClose]);
   const isHomologada = item.status === 'homologada';
   const isRejeitada = item.status === 'rejeitada';
-  const isNaoElegivel = item.status === 'nao_elegivel';
   const isPendente = item.status === 'pendente';
+  const isRegistrada = item.status === 'registrada';
   const cadence = Number.isFinite(item.steps) && item.steps! > 0 && Number.isFinite(item.durationMins) && item.durationMins! > 0
     ? Math.round(item.steps! / item.durationMins!) : undefined;
   const pace = item.pace || computePace(item.distanceKm, item.durationMins);
@@ -227,6 +225,8 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
   // percentual, em vez de inventar um.
   const [percentile, setPercentile] = useState<number | null>(null);
   useEffect(() => {
+    setPercentile(null);
+    if (!isHomologada || item.activityMode !== 'competitive') return;
     let cancelled = false;
     async function fetchPercentile() {
       const authUser = auth.currentUser;
@@ -250,7 +250,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
     }
     fetchPercentile();
     return () => { cancelled = true; };
-  }, []);
+  }, [isHomologada, item.activityMode]);
 
   // #215: "Parabéns" real -- marcador persistido no proprio documento da
   // atividade (nao um contador social falso). Alterna e salva no Firestore.
@@ -339,16 +339,8 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
           <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-start gap-3">
             <AlertOctagon size={18} className="text-rose-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-rose-400 font-bold text-[10px] uppercase tracking-wider mb-1">Esta atividade não pontuou</p>
-              <p className="text-rose-200/90 text-xs leading-relaxed">O registro continua disponível no seu histórico, mas não gerou pontos.</p>
-            </div>
-          </div>
-        ) : isNaoElegivel ? (
-          <div className="bg-sky-500/10 border border-sky-500/30 rounded-2xl p-4 flex items-start gap-3">
-            <Info size={18} className="text-sky-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sky-400 font-bold text-[10px] uppercase tracking-wider mb-1">Atividade válida, sem estímulo competitivo</p>
-              <p className="text-sky-200/90 text-xs leading-relaxed">Registrada normalmente, mas sem campeonato/desafio ativo (ou fora dos critérios mínimos) para gerar pontos agora.</p>
+              <p className="text-rose-400 font-bold text-[10px] uppercase tracking-wider mb-1">Fora da pontuação competitiva</p>
+              <p className="text-rose-200/90 text-xs leading-relaxed">A atividade foi concluída e continua valendo para seu histórico, XP e desafios; apenas os pontos de ranking ou campeonato não foram liberados.</p>
             </div>
           </div>
         ) : isPendente ? (
@@ -357,21 +349,33 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
               <Clock className="text-amber-400" size={17} />
             </div>
             <div>
-              <p className="text-white font-bold text-xs">Atividade em análise</p>
-              <p className="text-amber-300/80 text-[10px] font-mono">A pontuação será exibida somente após a validação.</p>
+              <p className="text-white font-bold text-xs">Pontuação competitiva em análise</p>
+              <p className="text-amber-300/80 text-[10px] font-mono">Sua atividade já foi salva e conta para XP e desafios. Só o resultado competitivo aguarda validação.</p>
             </div>
           </div>
-        ) : (
+        ) : isHomologada ? (
           <div className="border border-primary/30 bg-primary/5 rounded-2xl px-4 py-3 flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
               <Gauge className="text-primary" size={17} />
             </div>
             <div>
               <p className="text-white font-bold text-xs">
-                {item.rankingPointsEarned ? `Você ganhou +${item.rankingPointsEarned} pontos de ranking!` : isHomologada ? `Atividade homologada -- +${item.points} XP` : 'Atividade em análise pela auditoria.'}
+                {item.rankingPointsEarned ? `Você ganhou +${item.rankingPointsEarned} pontos de ranking!` : `Atividade homologada — +${item.points} XP`}
               </p>
               <p className="text-primary text-[10px] font-mono">
                 {percentile !== null ? `Você está entre os Top ${percentile}% do ranking!` : 'Continue assim para subir no ranking.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="border border-emerald-500/30 bg-emerald-500/5 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="text-emerald-400" size={17} />
+            </div>
+            <div>
+              <p className="text-white font-bold text-xs">Atividade concluída</p>
+              <p className="text-emerald-300/80 text-[10px] font-mono">
+                Salva no histórico{item.points > 0 ? ` · +${item.points} XP` : ''} · válida para desafios e missões.
               </p>
             </div>
           </div>
@@ -380,7 +384,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         {item.source === 'workout' && (item.type === 'workout' || item.type === 'cardio') && <ActivityWorkoutFeedback key={item.id} item={item} />}
 
         {/* Desempenho */}
-        {isHomologada && <div>
+        <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-white font-bold text-sm flex items-center gap-1.5"><Info size={13} className="text-white/40" /> Desempenho</h3>
           </div>
@@ -420,10 +424,10 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
               Sem dados adicionais de sensores para esta atividade.
             </div>
           )}
-        </div>}
+        </div>
 
         {/* Ver análise completa -- expande verificacoes reais feitas pelo antifraude, nao dados inventados */}
-        {isHomologada && <div>
+        {isHomologada && item.activityMode === 'competitive' && <div>
           <button
             onClick={() => setShowFullAnalysis(v => !v)}
             className="w-full flex items-center justify-center gap-1.5 text-primary text-xs font-bold py-1.5 cursor-pointer"
@@ -462,11 +466,11 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         {/* Verificado -- com icones de privacidade e compartilhamento rapido */}
         <div className={cn(
           "flex items-center gap-2 border rounded-2xl px-4 py-3",
-          isHomologada ? "border-primary/20 bg-primary/5" : isRejeitada ? "border-rose-500/20 bg-rose-500/5" : isNaoElegivel ? "border-sky-500/20 bg-sky-500/5" : "border-amber-500/20 bg-amber-500/5"
+          isHomologada ? "border-primary/20 bg-primary/5" : isRejeitada ? "border-rose-500/20 bg-rose-500/5" : isPendente ? "border-amber-500/20 bg-amber-500/5" : "border-emerald-500/20 bg-emerald-500/5"
         )}>
-          {isHomologada ? <ShieldCheck className="text-primary shrink-0" size={16} /> : <ShieldAlert className={cn("shrink-0", isRejeitada ? "text-rose-400" : isNaoElegivel ? "text-sky-400" : "text-amber-400")} size={16} />}
+          {isHomologada ? <ShieldCheck className="text-primary shrink-0" size={16} /> : isRegistrada ? <CheckCircle2 className="text-emerald-400 shrink-0" size={16} /> : <ShieldAlert className={cn("shrink-0", isRejeitada ? "text-rose-400" : "text-amber-400")} size={16} />}
           <p className="text-white text-[11px] font-bold flex-1">
-            {isHomologada ? 'Atividade verificada pelo Invictus' : isRejeitada ? 'Esta atividade não gerou pontos' : isNaoElegivel ? 'Atividade válida, sem estímulo competitivo' : 'Atividade em análise'}
+            {isHomologada ? 'Resultado competitivo verificado pelo Invictus' : isRejeitada ? 'Atividade concluída; fora da pontuação competitiva' : isPendente ? 'Atividade concluída; pontuação competitiva em análise' : 'Atividade pessoal concluída e salva'}
           </p>
           <Lock size={13} className="text-white/25 shrink-0" />
           <button onClick={onShare} className="text-white/40 hover:text-primary transition-colors cursor-pointer shrink-0">
@@ -477,7 +481,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
 
       {/* Bottom action bar -- Parabéns (real, persistido) + Compartilhar (real) */}
       <div className="sticky bottom-0 bg-black/95 backdrop-blur-md border-t border-white/10 p-4 flex items-center gap-3">
-        {isHomologada && <button
+        <button
           onClick={handleCongrats}
           disabled={savingCongrats}
           className={cn(
@@ -487,7 +491,7 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
         >
           <ThumbsUp size={15} className={congratulated ? "fill-current" : ""} />
           {congratulated ? 'Parabéns! 🎉' : 'Parabéns'}
-        </button>}
+        </button>
         <button onClick={onShare} className="flex-1 bg-primary text-black py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer">
           <Share2 size={15} /> Compartilhar
         </button>
@@ -504,7 +508,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<'all' | 'homologada' | 'rejeitada' | 'nao_elegivel' | 'pendente'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'registrada' | 'homologada' | 'rejeitada' | 'pendente'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'workout' | 'cardio' | 'checkin' | 'power' | 'other'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [visibleCount, setVisibleCount] = useState<number>(10);
@@ -532,7 +536,9 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
         );
         const wSnap = await getDocs(wQuery);
 
-        const FAKE_WORKOUT_PREFIXES = ['strava_sim_', 'health_connect_'];
+        // `health_connect_*` também é um ID legado real; nunca o apague ou
+        // esconda apenas pelo prefixo. Simulações conhecidas usam marca própria.
+        const FAKE_WORKOUT_PREFIXES = ['strava_sim_'];
         const fakeWorkoutDocs = wSnap.docs.filter(wd => FAKE_WORKOUT_PREFIXES.some(p => wd.id.startsWith(p)));
         const cleanWorkoutDocs = wSnap.docs.filter(wd => !FAKE_WORKOUT_PREFIXES.some(p => wd.id.startsWith(p)));
         if (fakeWorkoutDocs.length > 0) {
@@ -542,36 +548,26 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
         }
         cleanWorkoutDocs.forEach(d => {
           const data = d.data();
+          if (data.dataQualityStatus === 'duplicate' || data.nonScoringReason === 'DUPLICATE_ACTIVITY') return;
           const { dateStr, timeStr, rawMs } = parseTimestamp(data.timestamp, data.createdAt);
 
-          // `validationStatus` é a fonte canônica do fluxo novo; `status`
-          // continua sendo aceito para documentos legados (que usavam
-          // `completed` como status técnico de persistência).
           const rawSt = String(data.validationStatus ?? data.status ?? data.validation?.status ?? '').toLowerCase();
-          const statusFromEngine = normalizeActivityValidationStatus(rawSt);
-          let mappedStatus: 'homologada' | 'rejeitada' | 'nao_elegivel' | 'pendente' = 'pendente';
+          const activityState = resolveActivityState(data);
+          let mappedStatus: 'registrada' | 'homologada' | 'rejeitada' | 'pendente' = 'registrada';
 
-          if (statusFromEngine === 'validated' || (!statusFromEngine && String(data.status || '').toLowerCase() === 'completed')) {
+          if (activityState.isCompetitionApproved) {
             mappedStatus = 'homologada';
-          } else if (statusFromEngine === 'rejected') {
+          } else if (activityState.competitionStatus === 'rejected' || activityState.competitionStatus === 'ineligible') {
             mappedStatus = 'rejeitada';
-          } else if (statusFromEngine === 'not_eligible') {
-            // ACT-11 / HEALTH-08: atividade legítima, só sem estímulo
-            // competitivo ativo -- nunca deve aparecer como "rejeitada".
-            mappedStatus = 'nao_elegivel';
-          } else if (statusFromEngine === 'pending') {
+          } else if (activityState.competitionStatus === 'pending' || activityState.competitionStatus === 'resolution_pending') {
             mappedStatus = 'pendente';
-          } else if (data.isScoringEligible === false || data.nonScoringReason) {
-            mappedStatus = 'rejeitada';
-          } else if (String(data.status || '').toLowerCase() === 'completed' && Number(data.points || data.pointsEarned || 0) > 0) {
-            mappedStatus = 'homologada';
           }
 
           let typeLabel = 'Treino';
           let title = 'Treino de Musculação';
           if (data.type === 'cardio') {
-            typeLabel = 'Cardio ao ar livre';
-            title = data.cardioTypeLabel ? `${data.cardioTypeLabel}` : 'Corrida ao ar livre';
+            typeLabel = data.cardioTypeLabel || (data.isIndoorCardio ? 'Cardio indoor' : 'Cardio ao ar livre');
+            title = data.cardioTypeLabel || (data.isIndoorCardio ? 'Cardio indoor' : 'Corrida ao ar livre');
           } else if (data.type === 'diet') {
             typeLabel = 'Dieta';
             title = 'Refeição Auditada por IA';
@@ -593,6 +589,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
           } else if (data.nonScoringReason === 'NO_MOVEMENT_DETECTED') {
             reason = VALIDATION_MESSAGES.NO_MOVEMENT_DETECTED;
           }
+          if (mappedStatus === 'registrada' || mappedStatus === 'homologada') reason = undefined;
 
           const durationMins = activityDurationMins(data);
           const distanceKm = activityDistanceKm(data);
@@ -610,8 +607,14 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             rawTimestamp: rawMs,
             status: mappedStatus,
             statusRaw: rawSt || mappedStatus,
-            points: Number(data.points || 0),
-            rankingPointsEarned: data.rankingPointsEarned ? Number(data.rankingPointsEarned) : undefined,
+            recordStatus: activityState.recordStatus,
+            activityMode: activityState.activityMode,
+            competitionStatus: activityState.competitionStatus,
+            competitionName: data.competitionName,
+            points: Number(data.activityXpAwarded ?? data.scoreAwarded ?? data.points ?? 0),
+            rankingPointsEarned: activityState.isCompetitionApproved
+              ? Number(data.competitionPoints ?? data.rankingPointsEarned ?? 0) || undefined
+              : undefined,
             durationMins,
             distanceKm,
             photoUrl: data.photoUrl || data.verificationPhotoUrl,
@@ -624,7 +627,7 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             steps: data.steps !== undefined && data.steps !== null ? Number(data.steps) : undefined,
             trajectory: trajectoryRaw,
             congratulated: !!data.congratulated,
-            details: { ...(data.validation || data), userId: data.userId, healthSession: data.healthSession ?? data.details?.healthSession }
+            details: { ...data, validation: data.validation, userId: data.userId, healthSession: data.healthSession ?? data.details?.healthSession }
           });
         });
       } catch (err) {
@@ -789,15 +792,14 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
 
   const stats = useMemo(() => {
     const total = activities.length;
+    const registradas = activities.filter(a => a.status === 'registrada').length;
     const homologadas = activities.filter(a => a.status === 'homologada').length;
     const rejeitadas = activities.filter(a => a.status === 'rejeitada').length;
-    // ACT-11 / HEALTH-08: contada separadamente de `rejeitadas` -- não é uma
-    // recusa por fraude, é uma atividade legítima sem estímulo competitivo.
-    const naoElegiveis = activities.filter(a => a.status === 'nao_elegivel').length;
     const pendentes = activities.filter(a => a.status === 'pendente').length;
-    const rate = total > 0 ? Math.round((homologadas / total) * 100) : 0;
+    const decidedCompetitive = homologadas + rejeitadas;
+    const rate = decidedCompetitive > 0 ? Math.round((homologadas / decidedCompetitive) * 100) : 0;
 
-    return { total, homologadas, rejeitadas, naoElegiveis, pendentes, rate };
+    return { total, registradas, homologadas, rejeitadas, pendentes, rate };
   }, [activities]);
 
   const visibleItems = filteredActivities.slice(0, visibleCount);
@@ -852,35 +854,35 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
           <span className="text-[10px] font-mono uppercase text-on-surface-variant font-bold">Total Registrado</span>
           <div className="flex items-baseline gap-1.5 mt-1">
             <span className="text-xl font-headline italic font-black text-white">{stats.total}</span>
-            <span className="text-[10px] text-on-surface-variant">atividades</span>
+            <span className="text-[10px] text-on-surface-variant">{stats.registradas} pessoais</span>
           </div>
         </div>
 
         <div className="bg-emerald-500/10 border border-emerald-500/20 p-3.5 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between text-emerald-400">
-            <span className="text-[10px] font-mono uppercase font-bold">Aprovadas</span>
+            <span className="text-[10px] font-mono uppercase font-bold">No ranking</span>
             <CheckCircle2 size={14} />
           </div>
           <div className="flex items-baseline gap-1.5 mt-1">
             <span className="text-xl font-headline italic font-black text-emerald-400">{stats.homologadas}</span>
-            <span className="text-[10px] text-emerald-300/80">({stats.rate}% de aprovação)</span>
+            <span className="text-[10px] text-emerald-300/80">{stats.rate}% das analisadas</span>
           </div>
         </div>
 
         <div className="bg-rose-500/10 border border-rose-500/20 p-3.5 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between text-rose-400">
-            <span className="text-[10px] font-mono uppercase font-bold">Não pontuaram</span>
+            <span className="text-[10px] font-mono uppercase font-bold">Fora do ranking</span>
             <XCircle size={14} />
           </div>
           <div className="flex items-baseline gap-1.5 mt-1">
             <span className="text-xl font-headline italic font-black text-rose-400">{stats.rejeitadas}</span>
-            <span className="text-[10px] text-rose-300/80">não pontuaram</span>
+            <span className="text-[10px] text-rose-300/80">competitivas</span>
           </div>
         </div>
 
         <div className="bg-amber-500/10 border border-amber-500/20 p-3.5 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between text-amber-400">
-            <span className="text-[10px] font-mono uppercase font-bold">Em análise</span>
+            <span className="text-[10px] font-mono uppercase font-bold">Pontuação em análise</span>
             <Clock size={14} />
           </div>
           <div className="flex items-baseline gap-1.5 mt-1">
@@ -914,10 +916,10 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
             {[
               { id: 'all', label: 'Todas' },
-              { id: 'homologada', label: '🟢 Homologadas' },
-              { id: 'rejeitada', label: '🔴 Rejeitadas' },
-              { id: 'nao_elegivel', label: '🔵 Sem Estímulo' },
-              { id: 'pendente', label: '🟡 Em Análise' },
+              { id: 'registrada', label: '✓ Concluídas' },
+              { id: 'homologada', label: '🟢 No ranking' },
+              { id: 'rejeitada', label: '🔴 Fora do ranking' },
+              { id: 'pendente', label: '🟡 Pontuação em análise' },
             ].map(pill => (
               <button
                 key={pill.id}
@@ -1002,8 +1004,8 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
           {visibleItems.map((act) => {
             const isHomologada = act.status === 'homologada';
             const isRejeitada = act.status === 'rejeitada';
-            const isNaoElegivel = act.status === 'nao_elegivel';
             const isPendente = act.status === 'pendente';
+            const isRegistrada = act.status === 'registrada';
             const pace = act.pace || computePace(act.distanceKm, act.durationMins);
 
             return (
@@ -1015,9 +1017,9 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                     ? "bg-surface-container-low/60 border-emerald-500/20 hover:border-emerald-500/40"
                     : isRejeitada
                       ? "bg-rose-950/10 border-rose-500/30 hover:border-rose-500/50"
-                      : isNaoElegivel
-                        ? "bg-sky-950/10 border-sky-500/30 hover:border-sky-500/50"
-                        : "bg-amber-950/10 border-amber-500/30 hover:border-amber-500/50"
+                      : isPendente
+                        ? "bg-amber-950/10 border-amber-500/30 hover:border-amber-500/50"
+                        : "bg-surface-container-low/60 border-sky-500/20 hover:border-sky-500/40"
                 )}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1046,14 +1048,14 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                           "text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded-md border flex items-center gap-1",
                           isHomologada && "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
                           isRejeitada && "bg-rose-500/15 text-rose-400 border-rose-500/30",
-                          isNaoElegivel && "bg-sky-500/15 text-sky-400 border-sky-500/30",
-                          isPendente && "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                          isPendente && "bg-amber-500/15 text-amber-400 border-amber-500/30",
+                          isRegistrada && "bg-sky-500/15 text-sky-300 border-sky-500/30"
                         )}>
                           {isHomologada && <CheckCircle2 size={12} />}
                           {isRejeitada && <XCircle size={12} />}
-                          {isNaoElegivel && <Info size={12} />}
                           {isPendente && <Clock size={12} />}
-                          <span>{isHomologada ? 'APROVADA' : isRejeitada ? 'NÃO PONTUOU' : isNaoElegivel ? 'SEM ESTÍMULO' : 'EM ANÁLISE'}</span>
+                          {isRegistrada && <CheckCircle2 size={12} />}
+                          <span>{isHomologada ? 'VÁLIDA NO RANKING' : isRejeitada ? 'FORA DA PONTUAÇÃO' : isPendente ? 'PONTUAÇÃO EM ANÁLISE' : 'CONCLUÍDA'}</span>
                         </span>
                       </div>
 
@@ -1107,12 +1109,12 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0 shrink-0 gap-1.5">
                     <div className={cn(
                       "px-3 py-1 rounded-xl font-headline italic font-black text-xs sm:text-sm flex items-center gap-1 border",
-                      isHomologada
+                      act.points > 0
                         ? "bg-primary/10 border-primary/30 text-primary"
-                        : "bg-zinc-800 border-zinc-700 text-zinc-400"
+                        : "bg-zinc-800 border-zinc-700 text-zinc-300"
                     )}>
                       <Award size={14} />
-                      <span>{isHomologada ? `+${act.points} XP` : isRejeitada ? 'Não pontuou' : isNaoElegivel ? 'Sem estímulo' : 'Aguardando'}</span>
+                      <span>{act.points > 0 ? `+${act.points} XP` : 'Concluída'}</span>
                     </div>
                   </div>
                 </div>
@@ -1122,24 +1124,10 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
                     <AlertOctagon size={16} className="text-rose-400 shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
                       <p className="font-bold text-rose-400 uppercase tracking-wider text-[10px]">
-                        Esta atividade não gerou pontos
+                        Pontos competitivos não liberados
                       </p>
                       <p className="leading-relaxed text-[11.5px] text-rose-200/90">
-                        O registro permanece disponível no seu histórico para consulta.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {isNaoElegivel && (
-                  <div className="bg-sky-500/10 border border-sky-500/30 p-3 rounded-xl flex items-start gap-2.5 text-xs text-sky-300 font-sans">
-                    <Info size={16} className="text-sky-400 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <p className="font-bold text-sky-400 uppercase tracking-wider text-[10px]">
-                        Atividade válida, sem estímulo competitivo
-                      </p>
-                      <p className="leading-relaxed text-[11.5px] text-sky-200/90">
-                        {act.rejectionReason || 'Sem campeonato/desafio ativo (ou fora dos critérios mínimos) para gerar pontos agora.'}
+                        A atividade permanece concluída e continua valendo para XP, desafios e seu histórico pessoal.
                       </p>
                     </div>
                   </div>
@@ -1230,6 +1218,9 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
             rankingPointsEarned: shareItem.rankingPointsEarned,
             points: shareItem.points,
             status: shareItem.status,
+            recordStatus: shareItem.recordStatus,
+            activityMode: shareItem.activityMode,
+            competitionReviewStatus: shareItem.competitionStatus,
             photoUrl: shareItem.photoUrl,
           } as any}
           onClose={() => setShareItem(null)}

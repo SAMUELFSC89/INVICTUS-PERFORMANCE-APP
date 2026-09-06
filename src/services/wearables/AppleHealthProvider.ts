@@ -13,13 +13,20 @@ import { normalizeHeartRateSamples, normalizeIsoTimestamp, normalizePositiveNumb
 const READ_PERMISSIONS = ['READ_STEPS', 'READ_WORKOUTS', 'READ_ACTIVE_CALORIES', 'READ_DISTANCE', 'READ_HEART_RATE', 'READ_ROUTE'] as const;
 
 function mapWorkoutType(hkType: string): string {
-  if (!hkType) return 'Cardio';
+  if (!hkType) return 'Desconhecido';
   const typeStr = String(hkType).toLowerCase();
   if (typeStr.includes('running') || typeStr.includes('run') || typeStr.includes('corrida')) return 'Corrida';
   if (typeStr.includes('cycling') || typeStr.includes('bike') || typeStr.includes('pedalada')) return 'Bike';
   if (typeStr.includes('strength') || typeStr.includes('musculacao') || typeStr.includes('weight') || typeStr.includes('traditional_strength_training')) return 'Musculação';
   if (typeStr.includes('walking') || typeStr.includes('caminhada')) return 'Caminhada';
-  return 'Cardio';
+  if (typeStr.includes('swim') || typeStr.includes('natacao')) return 'Natação';
+  if (typeStr.includes('elliptical') || typeStr.includes('eliptico')) return 'Elíptico';
+  if (typeStr.includes('rowing') || typeStr.includes('remo')) return 'Remo';
+  if (typeStr.includes('stair') || typeStr.includes('escada')) return 'Escada';
+  if (typeStr.includes('crossfit') || typeStr.includes('functional')) return 'Treino funcional';
+  // Preserve the provider value. The server, not the client mapping, decides
+  // whether an unknown modality can earn XP or complete a mission.
+  return String(hkType).trim().slice(0, 120) || 'Desconhecido';
 }
 
 export class AppleHealthProvider implements WearableProvider {
@@ -184,6 +191,8 @@ export class AppleHealthProvider implements WearableProvider {
       source: 'apple_health',
       sourceActivityId: w.id,
       activityType: mapWorkoutType(w.workoutType),
+      isIndoorCardio: w.isIndoor === true || w.indoor === true
+        || /indoor|treadmill|esteira/i.test(String(w.workoutType || '')),
       startTime: w.startDate,
       durationSeconds: Math.round(w.duration || 0),
       distanceMeters: w.distance || 0,

@@ -55,10 +55,13 @@ const FONTES_PERMITIDAS = new Set(['apple_health', 'health_connect']);
 // produto, e protecao contra payload gigante/abusivo numa unica chamada; o
 // cliente pode sincronizar de novo para pegar o restante (usa lastSyncTime).
 const MAX_ATIVIDADES_POR_SYNC = 50;
-const ACTIVITY_TELEMETRY_VERSION = 2;
+const ACTIVITY_TELEMETRY_VERSION = 3;
 const MIN_BPM = 30;
 const MAX_BPM = 240;
-const MAX_AMOSTRAS_FC_POR_ATIVIDADE = 12000;
+// Keep the complete workout document comfortably below Firestore's 1 MiB
+// limit even when both heart-rate and GPS series are present.
+const MAX_AMOSTRAS_FC_POR_ATIVIDADE = 2500;
+const MAX_CHECKPOINTS_POR_ATIVIDADE = 2500;
 const TOLERANCIA_AMOSTRA_FC_MS = 5 * 60 * 1000;
 const HEALTH_VITALS_VERSION = 2;
 
@@ -72,6 +75,16 @@ type WearableCheckpointPayload = {
   longitude: number;
   timestamp?: string;
 };
+
+function reduzirSerieDeterministica<T>(items: T[], limit: number): T[] {
+  if (items.length <= limit) return items;
+  const reduced: T[] = [];
+  const lastIndex = items.length - 1;
+  for (let index = 0; index < limit; index += 1) {
+    reduced.push(items[Math.round((index * lastIndex) / (limit - 1))]);
+  }
+  return reduced;
+}
 
 /**
  * Valida a curva de FC sem inventar pontos. O app pode normalizar o formato,
@@ -111,13 +124,7 @@ function sanitizarSerieCardiaca(
   if (sorted.length <= MAX_AMOSTRAS_FC_POR_ATIVIDADE) return sorted.length ? sorted : undefined;
 
   // Limita o payload mantendo o começo, o fim e a distribuição temporal.
-  const reduced: WearableHeartRateSamplePayload[] = [];
-  const lastIndex = sorted.length - 1;
-  for (let index = 0; index < MAX_AMOSTRAS_FC_POR_ATIVIDADE; index += 1) {
-    const sourceIndex = Math.round((index * lastIndex) / (MAX_AMOSTRAS_FC_POR_ATIVIDADE - 1));
-    reduced.push(sorted[sourceIndex]);
-  }
-  return reduced;
+  return reduzirSerieDeterministica(sorted, MAX_AMOSTRAS_FC_POR_ATIVIDADE);
 }
 
 function numeroPositivo(value: unknown): number | undefined {
@@ -135,18 +142,24 @@ function bpmResumo(value: unknown): number | undefined {
 /** Aceita só o que realmente veio do dispositivo, no formato esperado -- não
  * confia em nenhum campo de pontuação/aprovação vindo do cliente (o cliente
  * não pode se autoaprovar, quem decide é o SecurityPipeline no servidor). */
-function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
-  if (!Array.isArray(input)) return [];
+function sanitizarAtividades(input: unknown): {
+  activities: WearableActivityPayload[];
+  receivedCount: number;
+  rejectedCount: number;
+} {
+  if (!Array.isArray(input)) return { activities: [], receivedCount: 0, rejectedCount: input == null ? 0 : 1 };
   const validas: WearableActivityPayload[] = [];
   for (const item of input.slice(0, MAX_ATIVIDADES_POR_SYNC)) {
     if (!item || typeof item !== 'object') continue;
     const a = item as Record<string, unknown>;
     if (!FONTES_PERMITIDAS.has(String(a.source))) continue;
-    if (typeof a.sourceActivityId !== 'string' || !a.sourceActivityId) continue;
-    if (typeof a.activityType !== 'string' || !a.activityType) continue;
+    if (typeof a.sourceActivityId !== 'string' || !a.sourceActivityId.trim() || a.sourceActivityId.length > 500) continue;
+    if (typeof a.activityType !== 'string' || !a.activityType.trim() || a.activityType.length > 160) continue;
     if (typeof a.startTime !== 'string' || isNaN(new Date(a.startTime).getTime())) continue;
     const durationSeconds = Number(a.durationSeconds);
-    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) continue;
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 6 * 60 * 60) continue;
+    const startMs = new Date(a.startTime).getTime();
+    if (startMs + durationSeconds * 1000 > Date.now() + 5 * 60 * 1000) continue;
 
     const heartRateSamples = sanitizarSerieCardiaca(a.heartRateSamples, a.startTime, durationSeconds);
     const heartRateValues = heartRateSamples?.map((sample) => sample.bpm) || [];
@@ -158,8 +171,9 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
       : bpmResumo(a.maxHeartRate);
     const steps = numeroPositivo(a.steps);
 
-    const checkpoints: WearableCheckpointPayload[] | undefined = Array.isArray(a.checkpoints)
-      ? (a.checkpoints as unknown[])
+    const checkpointMap = new Map<string, WearableCheckpointPayload>();
+    if (Array.isArray(a.checkpoints)) {
+      (a.checkpoints as unknown[])
           .filter((p): p is { latitude: unknown; longitude: unknown } => !!p && typeof p === 'object')
           .map((p) => {
             const rawTimestamp = (p as any).timestamp;
@@ -172,13 +186,26 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
               ...(timestamp ? { timestamp } : {})
             };
           })
-          .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
-      : undefined;
+          .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude)
+            && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180
+            && Boolean(p.timestamp)
+            && Date.parse(p.timestamp!) >= startMs - TOLERANCIA_AMOSTRA_FC_MS
+            && Date.parse(p.timestamp!) <= startMs + durationSeconds * 1000 + TOLERANCIA_AMOSTRA_FC_MS)
+          .forEach((point) => {
+            const key = `${point.timestamp}:${point.latitude.toFixed(7)}:${point.longitude.toFixed(7)}`;
+            if (!checkpointMap.has(key)) checkpointMap.set(key, point);
+          });
+    }
+    const checkpointList = [...checkpointMap.values()].sort((left, right) =>
+      String(left.timestamp).localeCompare(String(right.timestamp))
+    );
+    const checkpoints = reduzirSerieDeterministica(checkpointList, MAX_CHECKPOINTS_POR_ATIVIDADE);
 
     validas.push({
       source: a.source as 'apple_health' | 'health_connect',
-      sourceActivityId: a.sourceActivityId,
-      activityType: a.activityType,
+      sourceActivityId: a.sourceActivityId.trim(),
+      activityType: a.activityType.trim(),
+      ...(typeof a.isIndoorCardio === 'boolean' ? { isIndoorCardio: a.isIndoorCardio } : {}),
       startTime: a.startTime,
       durationSeconds,
       distanceMeters: numeroPositivo(a.distanceMeters),
@@ -190,7 +217,11 @@ function sanitizarAtividades(input: unknown): WearableActivityPayload[] {
       checkpoints: checkpoints && checkpoints.length > 0 ? checkpoints : undefined
     });
   }
-  return validas;
+  return {
+    activities: validas,
+    receivedCount: input.length,
+    rejectedCount: input.length - validas.length,
+  };
 }
 
 // Métricas passivas de atividade, condicionamento e bem-estar lidas via
@@ -411,49 +442,125 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // #248: ingestão real de HealthKit/Health Connect. O cliente só leu do
-  // aparelho (WearableManager.syncAll) -- quem decide se aquilo pontua é o
-  // SecurityPipeline aqui, atividade por atividade, mesmo pipeline que
-  // treino manual/check-in/corrida GPS/Strava já passam.
+  // aparelho (WearableManager.syncAll). A atividade pessoal não passa por
+  // antifraude; apenas uma projeção em competição ativa usa o pipeline.
   if (action === 'sync') {
-    const atividades = sanitizarAtividades(req.body?.activities);
+    const rawActivities = req.body?.activities;
+    if (!Array.isArray(rawActivities)) {
+      return res.status(400).json({ error: 'Envie activities como uma lista.', retryable: false });
+    }
+    if (rawActivities.length > MAX_ATIVIDADES_POR_SYNC) {
+      return res.status(413).json({
+        error: `Envie no máximo ${MAX_ATIVIDADES_POR_SYNC} atividades por lote. O cursor não foi avançado.`,
+        retryable: false,
+      });
+    }
+    const futureItem = rawActivities.some((item: any) => {
+      const start = typeof item?.startTime === 'string' ? Date.parse(item.startTime) : NaN;
+      const duration = Number(item?.durationSeconds);
+      return Number.isFinite(start) && Number.isFinite(duration)
+        && start + duration * 1000 > Date.now() + 5 * 60 * 1000;
+    });
+    if (futureItem) {
+      return res.status(503).json({
+        error: 'O lote contém uma atividade que termina no futuro. Confira o relógio e tente novamente; o cursor não foi avançado.',
+        retryable: true,
+      });
+    }
+    const sanitized = sanitizarAtividades(req.body?.activities);
+    const atividades = sanitized.activities;
     const finalBatch = req.body?.finalBatch !== false;
     const readComplete = req.body?.readComplete !== false;
+    if (atividades.length > 0) {
+      const configSnap = await configRef.get();
+      const config = configSnap.data() || {};
+      const disabledSource = atividades.find((activity) =>
+        activity.source === 'apple_health'
+          ? config.appleHealthConnected !== true
+          : config.healthConnectConnected !== true
+      );
+      if (disabledSource) {
+        return res.status(403).json({
+          error: 'A fonte desta atividade não está conectada para este usuário.',
+          retryable: false,
+        });
+      }
+    }
     if (atividades.length === 0) {
       const now = new Date().toISOString();
-      await configRef.set({
-        lastSyncTime: now,
-        ...(finalBatch && readComplete ? { activityTelemetryVersion: ACTIVITY_TELEMETRY_VERSION } : {}),
-        updatedAt: now
-      }, { merge: true }).catch(() => undefined);
+      if (finalBatch && readComplete) {
+        try {
+          await configRef.set({
+            lastSyncTime: now,
+            activityTelemetryVersion: ACTIVITY_TELEMETRY_VERSION,
+            updatedAt: now
+          }, { merge: true });
+        } catch (writeErr) {
+          console.error('[Wearables Handler] Falha ao confirmar cursor vazio:', writeErr);
+          return res.status(503).json({
+            error: 'Não foi possível confirmar o cursor. Tente novamente.',
+            retryable: true,
+          });
+        }
+      }
       return res.status(200).json({
         syncedCount: 0,
         duplicatesSkipped: 0,
-        blockedCount: 0,
-        logs: [],
-        lastSyncTime: now,
+        blockedCount: sanitized.rejectedCount,
+        sanitizationRejectedCount: sanitized.rejectedCount,
+        logs: sanitized.rejectedCount > 0 ? [{
+          status: 'blocked',
+          detalhe: `${sanitized.rejectedCount} atividade(s) malformada(s) foram descartadas permanentemente.`,
+        }] : [],
+        lastSyncTime: finalBatch && readComplete ? now : undefined,
         activityTelemetryVersion: finalBatch && readComplete ? ACTIVITY_TELEMETRY_VERSION : undefined
       });
     }
 
     try {
       const { resultados, syncedCount, duplicatesSkipped, blockedCount } = await processarLoteWearable(auth.uid, atividades);
+      const totalBlockedCount = blockedCount + sanitized.rejectedCount;
+      const sanitizationLogs = sanitized.rejectedCount > 0 ? [{
+        status: 'blocked',
+        detalhe: `${sanitized.rejectedCount} atividade(s) malformada(s) foram descartadas permanentemente.`,
+      }] : [];
       const now = new Date().toISOString();
-      try {
-        await configRef.set({
-          lastSyncTime: now,
-          ...(finalBatch && readComplete ? { activityTelemetryVersion: ACTIVITY_TELEMETRY_VERSION } : {}),
-          updatedAt: now
-        }, { merge: true });
-      } catch (writeErr) {
-        console.warn('[Wearables Handler] Aviso ao atualizar lastSyncTime:', writeErr);
+      const retryableErrors = resultados.filter((result) => result.status === 'error');
+      if (retryableErrors.length > 0) {
+        return res.status(503).json({
+          error: 'Parte das atividades não pôde ser conciliada. O cursor não foi avançado; tente novamente.',
+          retryable: true,
+          syncedCount,
+          duplicatesSkipped,
+          blockedCount: totalBlockedCount,
+          sanitizationRejectedCount: sanitized.rejectedCount,
+          logs: [...resultados, ...sanitizationLogs],
+        });
+      }
+      if (finalBatch && readComplete) {
+        try {
+          await configRef.set({
+            lastSyncTime: now,
+            activityTelemetryVersion: ACTIVITY_TELEMETRY_VERSION,
+            updatedAt: now
+          }, { merge: true });
+        } catch (writeErr) {
+          console.error('[Wearables Handler] Falha ao confirmar cursor de atividades:', writeErr);
+          return res.status(503).json({
+            error: 'As atividades foram salvas, mas não foi possível confirmar o cursor. Tente novamente.',
+            retryable: true,
+            logs: [...resultados, ...sanitizationLogs],
+          });
+        }
       }
       return res.status(200).json({
         syncedCount,
         duplicatesSkipped,
-        blockedCount,
-        lastSyncTime: now,
+        blockedCount: totalBlockedCount,
+        sanitizationRejectedCount: sanitized.rejectedCount,
+        lastSyncTime: finalBatch && readComplete ? now : undefined,
         activityTelemetryVersion: finalBatch && readComplete ? ACTIVITY_TELEMETRY_VERSION : undefined,
-        logs: resultados
+        logs: [...resultados, ...sanitizationLogs]
       });
     } catch (err: any) {
       console.error('[Wearables Handler] Falha ao sincronizar atividades:', err);
@@ -571,18 +678,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       updatedAt: now
     };
 
-    // O perfil pode refletir a conexão para a interface.
+    // O perfil pode refletir a conexão para a interface. Só confirme ao cliente
+    // depois de ambas as gravações serem aceitas pelo banco.
+    const batch = db.batch();
+    batch.set(configRef, config, { merge: true });
+    batch.set(db.collection('users').doc(auth.uid), {
+      hasSmartwatchConnected: anyConnected,
+      smartwatchProvider: primaryProvider,
+      wearableUpdatedAt: now
+    }, { merge: true });
     try {
-      const batch = db.batch();
-      batch.set(configRef, config, { merge: true });
-      batch.set(db.collection('users').doc(auth.uid), {
-        hasSmartwatchConnected: anyConnected,
-        smartwatchProvider: primaryProvider,
-        wearableUpdatedAt: now
-      }, { merge: true });
       await batch.commit();
     } catch (writeErr) {
-      console.warn('[Wearables Handler] Aviso ao persistir no Firestore:', writeErr);
+      console.error('[Wearables Handler] Falha ao persistir configuração:', writeErr);
+      return res.status(503).json({ error: 'Não foi possível confirmar a conexão agora. Tente novamente.', retryable: true });
     }
 
     return res.status(200).json({

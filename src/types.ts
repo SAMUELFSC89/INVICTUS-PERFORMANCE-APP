@@ -282,6 +282,42 @@ export interface ValidationResult {
   };
 }
 
+export interface ActivityCompetitionContext {
+  type: 'gym_ranking' | 'community_championship' | 'paid_championship';
+  id: string;
+  label: string;
+  enrollmentId: string;
+  requiresGymCheckIn: boolean;
+  requiresContinuousGps: boolean;
+  requiresMotionSensors: boolean;
+  epochId?: string;
+  epochStartedAt?: string;
+  gymId?: string;
+  cycleKey?: string;
+  minDurationMinutes?: number;
+  maxDurationMinutes?: number;
+  regulationVersion?: string;
+  regulationHash?: string;
+}
+
+export interface ActivityCompetitionPolicy {
+  version: 'activity-competition-v2';
+  activityType: 'workout' | 'cardio';
+  cardioType?: string;
+  isIndoorCardio: boolean;
+  resolvedAt: string;
+  effectiveAt: string;
+  contexts: ActivityCompetitionContext[];
+  requiresSecurityReview: boolean;
+  requiresGymCheckIn: boolean;
+  requiresContinuousGps: boolean;
+  requiresMotionSensors: boolean;
+  snapshotId: string;
+  sessionId: string;
+  startBy: string;
+  expiresAt: string;
+}
+
 export interface ActivitySession {
   id: string;
   userId: string;
@@ -315,6 +351,7 @@ export interface ActivitySession {
   status: 'active' | 'completed' | 'cancelled';
   hasExercises?: boolean;
   checkInId?: string;
+  competitionPolicy?: ActivityCompetitionPolicy;
   checkpoints: {
     timestamp: string;
     /** Identifica o trecho ativo; muda após cada pausa para não ligar
@@ -377,7 +414,7 @@ export interface Workout {
     lng: number;
     accuracy?: number;
   };
-  status: 'valid' | 'invalid' | 'pending' | 'suspicious';
+  status: 'valid' | 'invalid' | 'pending' | 'suspicious' | 'completed' | 'recorded' | 'rejected' | 'pending_review' | 'not_eligible';
   type: 'workout' | 'cardio' | 'diet' | 'recovery';
   imageHash?: string;
   duration?: number; // in minutes
@@ -392,6 +429,18 @@ export interface Workout {
   integrityScore?: number;
   riskScore?: number;
   validationStatus?: string;
+  recordStatus?: string;
+  activityMode?: 'personal' | 'competitive' | 'unresolved';
+  competitionReviewStatus?: string;
+  competitionContexts?: ActivityCompetitionContext[];
+  activityXpAwarded?: number;
+  competitionPoints?: number;
+  economyEligible?: boolean;
+  missionEligible?: boolean;
+  missionAccessTier?: 'free' | 'pro' | 'unknown';
+  missionAccessVersion?: number;
+  missionAccessResolvedAt?: string;
+  dataQualityStatus?: 'accepted' | 'duplicate' | 'discarded' | string;
   sessionId?: string;
   isMockLocation?: boolean;
   deviceInfo?: string;
@@ -714,6 +763,32 @@ export interface UserMissionProgress {
   completed: boolean;
   claimed: boolean;
   updatedAt: string;
+  periodKey?: string;
+  claimKey?: string;
+  claimState?: 'pending' | 'complete';
+  /** Definition snapshot for the period. Existing progress never changes value
+   * when an administrator edits or retires the mission afterwards. */
+  rewardCoinsSnapshot?: number;
+  rewardXPSnapshot?: number;
+  rewardCategorySnapshot?: IVCoinCategory;
+  ledgerTypeSnapshot?: IVCoinLedgerType;
+  missionTitleSnapshot?: string;
+  missionDescriptionSnapshot?: string;
+  missionCategorySnapshot?: Mission['category'];
+  missionTypeSnapshot?: Mission['type'];
+  targetSnapshot?: number;
+  weeklyGoalSnapshot?: number;
+  timeZoneSnapshot?: string;
+  isFreeAccessSnapshot?: boolean;
+  definitionVersionSnapshot?: number;
+  /** True only when the user had access to the mission when it completed. */
+  completionAccessGranted?: boolean;
+  completedAt?: string;
+  claimRewardCoins?: number;
+  claimRewardXP?: number;
+  claimLedgerType?: IVCoinLedgerType;
+  claimMissionTitle?: string;
+  claimReservedAt?: string;
 }
 
 export interface StoreItem {

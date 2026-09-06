@@ -21,16 +21,10 @@ export function getXPRequiredForLevel(level: number): number {
 }
 
 export function getLevelFromXP(xp: number = 0): number {
-  const safeXP = Math.max(0, Number(xp) || 0);
+  const numericXP = Number(xp);
+  const safeXP = Number.isFinite(numericXP) ? Math.max(0, numericXP) : 0;
   if (safeXP <= 0) return 1;
-  let level = 1;
-  while (true) {
-    const nextLevelXP = getXPRequiredForLevel(level + 1);
-    if (safeXP >= nextLevelXP) {
-      level++;
-    } else {
-      break;
-    }
-  }
-  return level;
+  // Inverse of 25 * (level - 1) * (level + 2); avoids an unbounded loop if a
+  // corrupt account ever contains an extremely large XP value.
+  return Math.max(1, Math.floor((-1 + Math.sqrt(9 + (4 * safeXP) / 25)) / 2));
 }

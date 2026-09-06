@@ -1,6 +1,10 @@
 import { db } from './common.js';
 import { calculateWeeklyIGA, IGASession, IGAUserProfile, IGACalculationResult } from '../../src/core/iga/index.js';
 import { getOrInitCurrentSeasonWindow } from './season-prize-engine.js';
+import {
+  hasTrustedCompetitionEvidence,
+  readCompetitionEvidenceMetrics,
+} from './competition-evidence.js';
 
 /**
  * FONTE UNICA DE PONTUACAO DE RANKING.
@@ -35,6 +39,12 @@ interface DatedSession extends IGASession {
   createdAt: Date;
 }
 
+interface GymRankingEnrollmentEpoch {
+  gymId: string;
+  enrolledAt: Date;
+  epochId: string;
+}
+
 /**
  * Busca TODOS os treinos do usuario com createdAt dentro de [earliestNeeded, agora]
  * numa unica ida ao Firestore. As tres janelas (semana/mes/temporada) recortam
@@ -42,7 +52,11 @@ interface DatedSession extends IGASession {
  * calculada (ate ~10 por recalculo) refazia a query inteira do usuario no
  * Firestore, multiplicando leituras desnecessariamente.
  */
-async function fetchAllSessionsSince(userId: string, earliestNeeded: Date): Promise<DatedSession[]> {
+async function fetchAllSessionsSince(
+  userId: string,
+  earliestNeeded: Date,
+  enrollment: GymRankingEnrollmentEpoch,
+): Promise<DatedSession[]> {
   const sessions: DatedSession[] = [];
   if (!db) return sessions;
 
@@ -53,39 +67,64 @@ async function fetchAllSessionsSince(userId: string, earliestNeeded: Date): Prom
 
     workoutsSnap.forEach((doc) => {
       const data = doc.data();
-      const createdAt = data.createdAt
-        ? (data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt))
+      const promotedMetrics = readCompetitionEvidenceMetrics(data);
+      // Nunca volte às métricas do wearable quando o documento afirma ter
+      // evidência confiável, mas o snapshot está ausente/adulterado.
+      if (hasTrustedCompetitionEvidence(data) && !promotedMetrics) return;
+      // `createdAt` pode ser a hora de sincronização (dias depois da prática).
+      // Prefira sempre o instante real da atividade e o campo v2 congelado.
+      const activityDateValue = promotedMetrics?.startTime
+        || data.startTime
+        || data.timestamp
+        || data.competitionPolicyEffectiveAt
+        || data.policyEffectiveAt
+        || data.createdAt;
+      const createdAt = activityDateValue
+        ? (activityDateValue.toDate ? activityDateValue.toDate() : new Date(activityDateValue))
         : null;
       if (!createdAt || createdAt < earliestNeeded) return;
 
-      // #228: "aprovado" nao tem um unico nome no Firestore -- cada caminho de
-      // escrita (treino manual, check-in de presenca, corrida GPS, Strava) usa
-      // vocabulario proprio (status: 'completed'|'valid'|'invalid'|'suspicious'|
-      // 'pending_review'|'rejected'; validationStatus: 'validated'|'invalid'|
-      // 'rejected'|'not_eligible'; securityBlocked: true/false). Uma lista negra
-      // (excluir so 'rejected') deixava 'suspicious'/'pending_review' passarem
-      // como validos por omissao -- o oposto da regra "ausencia de dado != dado
-      // valido". Por isso aqui e uma lista BRANCA: so conta se o status for
-      // explicitamente um dos dois valores usados pelos pipelines aprovados, e
-      // nenhum sinalizador de bloqueio/pendencia estiver presente.
+      if (createdAt < enrollment.enrolledAt) return;
       const isApprovedStatus = data.status === 'completed' || data.status === 'valid';
       const isFlaggedOrPending = data.status === 'rejected' || data.status === 'invalid' || data.status === 'suspicious'
-        || data.validationStatus === 'rejected' || data.validationStatus === 'invalid' || data.validationStatus === 'not_eligible'
-        || data.securityBlocked === true;
+        || ['rejected', 'invalid', 'not_eligible', 'pending', 'pending_review'].includes(String(data.validationStatus || ''))
+        || data.securityBlocked === true || data.pendingReview === true;
+
+      const isVersioned = Number(data.schemaVersion) >= 2 || Boolean(data.competitionPolicyVersion);
+      const contexts = Array.isArray(data.competitionContexts) ? data.competitionContexts : [];
+      const approvedForCurrentGym = isVersioned
+        ? isApprovedStatus && !isFlaggedOrPending
+          && data.competitionReviewStatus === 'approved'
+          && data.isScoringEligible === true
+          && contexts.some((context: any) => context?.type === 'gym_ranking'
+            && String(context?.id) === enrollment.gymId
+            && String(context?.epochId || '') === enrollment.epochId)
+        // Compatibilidade temporária para atividades antigas já homologadas,
+        // mas nunca anteriores à adesão atual ao ranking.
+        : isApprovedStatus && !isFlaggedOrPending && data.isScoringEligible === true;
 
       sessions.push({
         id: doc.id,
-        type: data.type || 'workout',
-        durationMinutes: Number(data.duration) || Number(data.durationMinutes) || 30,
-        avgHeartRate: Number(data.avgHeartRate) || Number(data.avgHr) || 0,
-        caloriesInformed: Number(data.calories) || Number(data.caloriesBurned) || 0,
-        isValid: isApprovedStatus && !isFlaggedOrPending,
+        // Quando um wearable controlado pelo cliente foi deduplicado e depois
+        // promovido por Strava/nativo, o ranking lê somente o snapshot da
+        // evidência confiável. As métricas pessoais originais são preservadas.
+        type: promotedMetrics?.activityType || data.type || 'workout',
+        durationMinutes: Number(promotedMetrics?.durationMinutes)
+          || Number(data.duration) || Number(data.durationMinutes) || 30,
+        avgHeartRate: promotedMetrics
+          ? Number(promotedMetrics.avgHeartRate) || 0
+          : Number(data.avgHeartRate) || Number(data.avgHr) || 0,
+        caloriesInformed: promotedMetrics
+          ? Number(promotedMetrics.calories) || 0
+          : Number(data.calories) || Number(data.caloriesBurned) || 0,
+        isValid: approvedForCurrentGym,
         date: createdAt.toISOString(),
         createdAt
       });
     });
   } catch (err) {
     console.warn(`[IGA Service] Aviso ao buscar treinos de ${userId} desde ${earliestNeeded.toISOString()}:`, err);
+    throw err;
   }
 
   return sessions;
@@ -179,6 +218,7 @@ export async function recalculateAllUserScores(
   userId: string,
   extraSession?: IGASession
 ): Promise<RecalculatedScores> {
+  void extraSession;
   const emptyWeek = calculateWeeklyIGA([], {});
   if (!db || !userId) {
     return {
@@ -189,9 +229,20 @@ export async function recalculateAllUserScores(
   }
 
   const userRef = db.collection('users').doc(userId);
-  const userSnap = await userRef.get();
+  const enrollmentRef = db.collection('gym_ranking_enrollments').doc(userId);
+  const [userSnap, enrollmentSnap] = await Promise.all([userRef.get(), enrollmentRef.get()]);
   const userData = userSnap.exists ? (userSnap.data() || {}) : {};
   const profile = await buildProfile(userId, userData);
+  const enrollmentData = enrollmentSnap.exists ? (enrollmentSnap.data() || {}) : {};
+  const enrolledAtValue = enrollmentData.enrolledAt?.toDate
+    ? enrollmentData.enrolledAt.toDate()
+    : new Date(enrollmentData.enrolledAt || '');
+  const enrollment: GymRankingEnrollmentEpoch | null = enrollmentData.enrolled === true
+    && typeof enrollmentData.gymId === 'string'
+    && enrollmentData.gymId
+    && Number.isFinite(enrolledAtValue.getTime())
+    ? { gymId: enrollmentData.gymId, enrolledAt: enrolledAtValue, epochId: `${userId}:${enrolledAtValue.getTime()}` }
+    : null;
 
   const now = new Date();
   const currentWeekStart = mondayOf(now);
@@ -209,12 +260,20 @@ export async function recalculateAllUserScores(
 
   // Busca tudo de uma vez, desde a mais antiga das tres janelas -- semana,
   // mes ou temporada, o que comecar primeiro.
-  const earliestNeeded = [currentWeekStart, monthStart, seasonWindow?.startDate]
+  const earliestWindow = [currentWeekStart, monthStart, seasonWindow?.startDate]
     .filter((d): d is Date => !!d)
     .reduce((min, d) => (d < min ? d : min));
-  const allSessions = await fetchAllSessionsSince(userId, earliestNeeded);
+  const earliestNeeded = enrollment && enrollment.enrolledAt > earliestWindow
+    ? enrollment.enrolledAt
+    : earliestWindow;
+  const allSessions = enrollment
+    ? await fetchAllSessionsSince(userId, earliestNeeded, enrollment)
+    : [];
 
-  const weekly = computeWeekIGA(allSessions, currentWeekStart, profile, extraSession);
+  // A atividade recém-gravada já está no Firestore. Um IGASession avulso não
+  // carrega o contexto/época de adesão necessários e por isso não pode ser
+  // usado como atalho para entrar no ranking.
+  const weekly = computeWeekIGA(allSessions, currentWeekStart, profile);
   const monthly = computeWindowAverageIGA(allSessions, monthStart, monthEnd, profile);
 
   const season: RecalculatedScores['season'] = seasonWindow
@@ -233,6 +292,7 @@ export async function recalculateAllUserScores(
     }, { merge: true });
   } catch (saveErr) {
     console.error(`[IGA Service] Erro ao salvar pontuacoes (weekly/monthly/season) para ${userId}:`, saveErr);
+    throw saveErr;
   }
 
   return { weekly, monthly, season };

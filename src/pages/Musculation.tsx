@@ -12,6 +12,7 @@ import { useUser } from '../UserContext';
 import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_MUSCLE_GROUP_LABELS, type OfficialMuscleGroup, isOfficialExerciseCompatible } from '../data/exerciseCatalog';
 import { workoutPlanService } from '../services/workoutPlanService';
 import { activityService } from '../services/activityService';
+import type { ActivityCompetitionPolicy } from '../types';
 import type { PlannedExercise, PlannedWorkout, WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
 import './Musculation.css';
 import './MusculationAi.css';
@@ -48,33 +49,6 @@ const equipmentOptions = [
 const availableAiExerciseCount = (equipment: string[]) => OFFICIAL_EXERCISES_BATCH_01.filter((exercise) =>
   isOfficialExerciseCompatible(exercise.id, equipment)
 ).length;
-
-// ACT-07 (auditoria 6167c8f): quando ha stakes competitivos reais (ranking
-// da comunidade ou inscricao paga ativa), o servidor
-// (validate-activity-service.ts) SEMPRE exige um check-in de academia
-// homologado por geofence pra este treino contar -- mas iniciar um plano
-// pelo hub Musculacao nunca coletava um: startSession() recebia
-// location/checkInId undefined incondicionalmente. O atleta so descobria a
-// exigencia no ENCERRAMENTO da sessao, quando a atividade caia em fila de
-// revisao manual por falta de geofence -- mesmo tendo seguido o fluxo
-// principal do app do jeito esperado. Esta funcao reaproveita exatamente o
-// mesmo preflight que Challenges.tsx (handleStartActivity) ja usa pra
-// corrida/cardio com check-in: se ha stakes, confirma a presenca ANTES de
-// iniciar a sessao, nao depois de encerra-la. Extraida do componente pra
-// poder ser testada sem montar a tela inteira.
-export async function resolveWorkoutCheckIn(): Promise<{
-  hasStakes: boolean;
-  location?: { lat: number; lng: number; accuracy?: number };
-  checkInId?: string;
-}> {
-  const hasStakes = await activityService.hasActiveScoringStakes();
-  if (!hasStakes) return { hasStakes: false };
-  // #249: mesmo sinal usado pra decidir o pedido de permissao de sensor --
-  // so pede quando ha algo competitivo de verdade em jogo.
-  await activityService.requestMotionPermission();
-  const confirmed = await activityService.performGymCheckIn();
-  return { hasStakes: true, location: confirmed.location, checkInId: confirmed.checkInId };
-}
 
 const emptyWorkout = (index: number): PlannedWorkout => ({
   id: `workout_${index + 1}`,
@@ -151,6 +125,8 @@ export function Musculation() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [startPolicy, setStartPolicy] = useState<ActivityCompetitionPolicy | null>(null);
+  const [policyLoading, setPolicyLoading] = useState(false);
   // #243: quando o plano ativo ainda esta dentro do compromisso minimo de 30
   // dias, "GERAR COM IA"/"CRIAR MANUALMENTE" nao trocam de tela direto -- primeiro
   // avisam que ha um plano em andamento e pedem confirmacao explicita.
@@ -164,6 +140,17 @@ export function Musculation() {
     }).catch(err => active && setError(err.message)).finally(() => active && setLoading(false));
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    let active = true;
+    setPolicyLoading(true);
+    activityService.resolveCompetitionPolicy('workout')
+      .then((policy) => { if (active) setStartPolicy(policy); })
+      .catch((reason) => { if (active) setError(reason.message || 'Não foi possível preparar o início do treino.'); })
+      .finally(() => { if (active) setPolicyLoading(false); });
+    return () => { active = false; };
+  }, [user?.uid]);
 
   useEffect(() => { if (view === 'manual') workoutPlanService.saveDraft(manual); }, [manual, view]);
 
@@ -232,34 +219,46 @@ export function Musculation() {
     } catch (err: any) { setError(err.message); setView('ai'); }
   };
   const startWorkout = async (plan: WorkoutPlan, workout: PlannedWorkout) => {
+    const policy = startPolicy;
+    if (!policy || Date.parse(policy.startBy) < Date.now()) {
+      setPolicyLoading(true);
+      setError('Estamos renovando a autorização do treino. Quando a mensagem sumir, toque em iniciar novamente.');
+      try {
+        setStartPolicy(await activityService.resolveCompetitionPolicy('workout'));
+        setError(null);
+      } catch (err: any) {
+        setError(err.message || 'Não foi possível preparar o treino.');
+      } finally {
+        setPolicyLoading(false);
+      }
+      return;
+    }
+    const motionPermission = policy.requiresMotionSensors
+      ? activityService.requestMotionPermission()
+      : Promise.resolve('granted' as const);
     setLoading(true); setError(null);
     try {
-      // ACT-07: resolve o check-in de academia ANTES de iniciar a sessao
-      // quando ha stakes competitivos reais -- ver resolveWorkoutCheckIn().
-      const checkIn = await resolveWorkoutCheckIn();
-      await activityService.startSession(
-        'workout',
-        checkIn.location,
-        undefined,
-        undefined,
-        checkIn.checkInId,
-        workout.focus || 'Musculação',
-        { workoutPlanId: plan.id, workoutId: workout.id, plannedExercises: workout.exercises }
-      );
+      await motionPermission;
+      const checkIn = policy.requiresGymCheckIn
+        ? await activityService.performGymCheckIn(policy)
+        : undefined;
+      await activityService.startSession('workout', checkIn?.location, undefined, undefined, checkIn?.checkInId, workout.focus || 'Musculação', {
+        workoutPlanId: plan.id, workoutId: workout.id, plannedExercises: workout.exercises
+      }, policy);
       navigate('/challenges', { replace: true });
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
 
   const content = <main className="mus-screen"><div className="mus-page">
-    {view === 'hub' ? <Hub userName={user?.displayName || user?.name || 'Atleta'} plan={activePlan} today={todayWorkout} loading={loading} planLocked={activePlanLocked} planDaysRemaining={activePlanDaysRemaining} onManual={() => startNewPlanFlow('manual')} onAi={() => startNewPlanFlow('ai')} onPlan={() => setView('plan')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} onStart={() => activePlan && todayWorkout && startWorkout(activePlan, todayWorkout)} /> : null}
+    {view === 'hub' ? <Hub userName={user?.displayName || user?.name || 'Atleta'} plan={activePlan} today={todayWorkout} loading={loading || policyLoading} planLocked={activePlanLocked} planDaysRemaining={activePlanDaysRemaining} onManual={() => startNewPlanFlow('manual')} onAi={() => startNewPlanFlow('ai')} onPlan={() => setView('plan')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} onStart={() => activePlan && todayWorkout && startWorkout(activePlan, todayWorkout)} /> : null}
     {view === 'manual' ? <ManualFlow draft={manual} setDraft={setManual} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} filteredExercises={filteredExercises} addExercise={addExercise} updateExercise={updateExercise} updateWorkout={updateManualWorkout} onBack={() => manual.step > 1 ? setManual(current => ({ ...current, step: current.step - 1 })) : setView('hub')} onSave={saveManual} loading={loading} /> : null}
     {view === 'ai' ? <AiFlow draft={ai} setDraft={setAi} onBack={() => ai.step > 1 ? setAi(current => ({ ...current, step: current.step - 1 })) : setView('hub')} onGenerate={generateAi} /> : null}
     {view === 'ai-processing' ? <Processing answers={ai} /> : null}
     {view === 'ai-success' && activePlan ? <AiSuccess plan={activePlan} onReview={() => setView('ai')} onPlan={() => setView('plan')} /> : null}
     {view === 'plan' && activePlan ? <PlanView plan={activePlan} onBack={() => setView('hub')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} /> : null}
-    {view === 'workout' && activePlan && selectedWorkout ? <WorkoutView plan={activePlan} workout={selectedWorkout} onBack={() => setView('plan')} onStart={() => startWorkout(activePlan, selectedWorkout)} loading={loading} /> : null}
+    {view === 'workout' && activePlan && selectedWorkout ? <WorkoutView plan={activePlan} workout={selectedWorkout} onBack={() => setView('plan')} onStart={() => startWorkout(activePlan, selectedWorkout)} loading={loading || policyLoading} /> : null}
     {error ? <div className="mus-error" role="alert">{error}<button onClick={() => setError(null)}>Fechar</button></div> : null}
-    {showInfo ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-info-title" onClick={() => setShowInfo(false)}><section onClick={event => event.stopPropagation()}><ShieldCheck /><h2 id="mus-info-title">COMO FUNCIONA</h2><p>Crie ou escolha um plano, inicie o treino do dia e registre a sessão completa. Somente atividades concluídas e homologadas alimentam sua evolução, seus desafios e o ranking.</p><button onClick={() => setShowInfo(false)}>ENTENDI</button></section></div> : null}
+    {showInfo ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-info-title" onClick={() => setShowInfo(false)}><section onClick={event => event.stopPropagation()}><ShieldCheck /><h2 id="mus-info-title">COMO FUNCIONA</h2><p>Crie ou escolha um plano e registre a sessão completa. Todo treino concluído alimenta sua evolução, XP e desafios. A verificação de segurança só é aplicada quando você participa de ranking ou campeonato.</p><button onClick={() => setShowInfo(false)}>ENTENDI</button></section></div> : null}
     {pendingNewPlanFlow ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-lock-title" onClick={() => setPendingNewPlanFlow(null)}><section onClick={event => event.stopPropagation()}><CalendarDays /><h2 id="mus-lock-title">TROCAR DE TREINO?</h2><p>Seu plano atual está ativo há {(activePlanAgeDays ?? 0)} {(activePlanAgeDays ?? 0) === 1 ? 'dia' : 'dias'} -- faltam {activePlanDaysRemaining} para completar o período mínimo recomendado de {MIN_PLAN_COMMITMENT_DAYS} dias, necessário para o corpo se adaptar e você ver evolução real. Criar um novo treino agora vai substituir o atual. Deseja continuar mesmo assim?</p><button onClick={() => setPendingNewPlanFlow(null)}>MANTER TREINO ATUAL</button><button className="is-back" onClick={confirmNewPlanFlow}>CONTINUAR MESMO ASSIM</button></section></div> : null}
   </div><Footer navigate={navigate} /></main>;
   return createPortal(content, document.body);

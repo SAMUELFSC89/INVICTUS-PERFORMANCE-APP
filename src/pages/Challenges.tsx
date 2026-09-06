@@ -1,6 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Dumbbell, Footprints } from 'lucide-react';
+import {
+  Dumbbell,
+  Clock, Flame, Trophy, X,
+  Zap, AlertCircle, ArrowRight,
+  Info, Footprints
+} from 'lucide-react';
 import { useLocation, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
 import { activityLiveActivityService } from '../services/activityLiveActivityService';
@@ -8,20 +14,31 @@ import { webGpsTrackingService } from '../services/webGpsTrackingService';
 import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
 import { auth, db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { ActivitySession } from '../types';
+import { ActivityCompetitionPolicy, ActivitySession } from '../types';
+import { cn } from '../lib/utils';
 import { formatPaceValue } from '../lib/runUtils';
 import { hapticNotification } from '../lib/haptics';
 import { useUser } from '../UserContext';
-import { ActivityDetailScreen, ActivityHistoryItem } from '../components/ActivityHistorySection';
+import { PrivateChallengesTab } from '../components/PrivateChallengesTab';
+import { ActivityDetailScreen, ActivityHistorySection, ActivityHistoryItem } from '../components/ActivityHistorySection';
+import { PowerLift } from './PowerLift';
 import { RunShareCard } from '../components/RunShareCard';
 import { CARDIO_OPTIONS, ChallengeActivityFlow, ChallengeFlowScreen, CardioOption, ActivityCompletion } from '../components/ChallengeActivityFlow';
-import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { getXPProgress } from '../lib/levelUtils';
+import { normalizeActivityValidationStatus, readActivityTimestamp, resolveActivityState } from '../lib/workoutData';
+import { ACHIEVEMENTS } from '../achievements';
 import { ChallengesHubNew } from '../components/ChallengesHubNew';
 import { ActivityHistoryPageNew } from '../components/ActivityHistoryPageNew';
-import { PrivateChallengesPageNew } from '../components/PrivateChallengesPageNew';
-import { communityChampionshipService } from '../services/communityChampionshipService';
-import { championshipService } from '../services/championshipService';
 import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
+
+export type ChallengeCategory =
+  | 'all'
+  | 'em_andamento'
+  | 'diarios'
+  | 'powerlift'
+  | 'privados'
+  | 'ranking'
+  | 'conquistas';
 
 interface CoreChallenge {
   id: 'workout' | 'cardio';
@@ -46,13 +63,15 @@ const CORE_CHALLENGES: CoreChallenge[] = [
   {
     id: 'cardio',
     title: 'Cardio Aeróbico',
-    subtitle: 'Corrida ou caminhada ao ar livre via GPS',
-    description: 'Corrida ou caminhada ao ar livre via GPS.',
+    subtitle: 'Escolha uma modalidade ao ar livre ou indoor',
+    description: 'Complete uma sessão de cardio registrada no aplicativo.',
     icon: <Footprints size={28} className="text-primary" />,
     tag: 'Resistência & Queima',
     badgeColor: 'bg-orange-500/10 text-orange-400 border-orange-500/20'
   }
 ];
+
+const DAILY_CHALLENGES_ORDER = ['workout', 'cardio'] as const;
 
 export function Challenges() {
   const { user: profile, refreshUser } = useUser();
@@ -60,7 +79,11 @@ export function Challenges() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const { triggerXPToast, setRouteOwnsFooter, setRouteOwnsHeader } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void; setRouteOwnsFooter?: (v: boolean) => void; setRouteOwnsHeader?: (v: boolean) => void }>();
+  // Selected Category State
+  const initialCategory = (searchParams.get('category') as ChallengeCategory) || 'all';
+  const [selectedCategory, setSelectedCategory] = useState<ChallengeCategory>(initialCategory);
+
+  const { triggerXPToast } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void }>();
 
   // Active activity session state
   const initialActive = activityService.getCurrentSession();
@@ -114,11 +137,7 @@ export function Challenges() {
 
   // Today's completed submissions
   const [submissions, setSubmissions] = useState<Record<string, any>>({});
-  // #257: o valor (nao so o setter) so era lido pelo <ActivityHistorySection
-  // refreshKey={...}> do catalogo antigo, removido nesta limpeza. O setter
-  // continua chamado nos mesmos pontos de sempre (fim de atividade) --
-  // inofensivo mesmo sem leitor, mas sem valor pra guardar/exportar aqui.
-  const [, setHistoryRefreshKey] = useState(0);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   // Modals & Pending Operations
   // #234: HOME -> MUSCULACAO / CARDIO SEM ETAPA INTERMEDIARIA.
@@ -168,6 +187,8 @@ export function Challenges() {
   const [selectedCardioOption, setSelectedCardioOption] = useState<CardioOption>(
     (initialActive?.cardioType && CARDIO_OPTIONS.find(o => o.id === initialActive.cardioType)) || CARDIO_OPTIONS[0]
   );
+  const [startPolicy, setStartPolicy] = useState<ActivityCompetitionPolicy | null>(initialActive?.competitionPolicy || null);
+  const [policyLoading, setPolicyLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   // #323: feedback visual imediato ao tocar em "INICIAR" -- startSession() faz
   // 2 idas ao Firestore + (pra cardio ao ar livre) uma leitura de GPS antes de
@@ -180,30 +201,29 @@ export function Challenges() {
   const [error, setError] = useState<string | null>(null);
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
   const [presenceCheckRequired, setPresenceCheckRequired] = useState(false);
-  const [championshipCheckInRequired, setChampionshipCheckInRequired] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      communityChampionshipService.status().catch(() => ({ enrolled: false, eventId: '' })),
-      championshipService.getUserRegistrations().catch(() => []),
-    ]).then(([community, registrations]) => {
-      if (active) setChampionshipCheckInRequired(Boolean(community.enrolled || registrations.some((item) => item.status === 'ACTIVE')));
-    });
-    return () => { active = false; };
-  }, [profile?.uid]);
   const [presenceCheckData, setPresenceCheckData] = useState<{ id: string; prompt: string } | null>(null);
   const [completion, setCompletion] = useState<ActivityCompletion | null>(null);
-  // #257: mesmo caso de historyRefreshKey acima -- o valor so era exibido no
-  // banner "Status da atividade" do catalogo antigo, removido nesta limpeza
-  // (na pratica ja ficava encoberto por ChallengeActivityFlow/
-  // ActivityDetailScreen, que cobrem a tela inteira nos mesmos estados em que
-  // este banner seria mostrado -- ver comentario #257 no return abaixo). Os
-  // setNotice(...) continuam nos mesmos pontos reais de sempre.
-  const [, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // A política é preparada antes do toque em "Iniciar". Assim, se a sessão
+  // competitiva precisar de movimento, o prompt do iOS nasce diretamente do
+  // gesto do usuário, sem uma chamada de rede no meio.
+  useEffect(() => {
+    if (!profile?.uid || flowScreen !== 'cardio-picker' || activeSession) return;
+    let active = true;
+    setPolicyLoading(true);
+    setStartPolicy(null);
+    activityService.resolveCompetitionPolicy('cardio', selectedCardioOption.id)
+      .then((policy) => { if (active) setStartPolicy(policy); })
+      .catch((reason) => { if (active) setStartActivityError(reason.message || 'Não foi possível preparar o cardio.'); })
+      .finally(() => { if (active) setPolicyLoading(false); });
+    return () => { active = false; };
+  }, [profile?.uid, flowScreen, selectedCardioOption.id, activeSession?.id]);
 
   // Cardio States
   const [selectedCardioType, setSelectedCardioType] = useState<string>(initialActive?.cardioType || 'running');
+  const levelProgress = getXPProgress(profile?.xp || 0);
+  const unlockedBadges = ACHIEVEMENTS.filter((achievement) => profile?.achievements?.includes(achievement.id));
 
   // Se a tela foi aberta depois de o app ser encerrado, o estado local pode
   // estar vazio mesmo com uma sessão ativa no servidor. Recuperar aqui faz as
@@ -246,14 +266,12 @@ export function Challenges() {
         snap.docs.forEach(d => {
           const data = d.data();
           const timestamp = readActivityTimestamp(data.timestamp ?? data.createdAt);
-          const status = normalizeActivityValidationStatus(
-            data.validationStatus ?? data.status ?? data.validation?.status
-          );
-          // Apenas uma atividade já validada pelo servidor entra no progresso
-          // diário. Envios pendentes e recusados nunca simulam conclusão.
+          const activityState = resolveActivityState(data);
+          // Missões de frequência contam o registro concluído. A decisão de
+          // ranking/campeonato não apaga a realização pessoal da atividade.
           if (
             (data.type === 'workout' || data.type === 'cardio') &&
-            status === 'validated' &&
+            activityState.isCompleted &&
             timestamp !== null &&
             timestamp >= todayStart.getTime()
           ) {
@@ -316,7 +334,6 @@ export function Challenges() {
     return () => clearInterval(interval);
   }, [flowScreen]);
 
-  // GPS checkpoint tracking em tempo real para cardio ao ar livre (corrida/caminhada/bike).
   // ACT-10 (auditoria 6167c8f): a coleta em si (watchPosition, wake lock,
   // addCheckpoint/recordGpsSpeedSample) já não vive mais aqui -- vive em
   // webGpsTrackingService, iniciada/parada pelos mesmos pontos que já
@@ -418,20 +435,34 @@ export function Challenges() {
   };
 
   // Start Session (Workout / Cardio)
-  const handleStartActivity = async (type: 'workout' | 'cardio', useCheckIn = false) => {
+  const handleStartActivity = async (type: 'workout' | 'cardio') => {
     setStartActivityError(null);
     setError(null);
+    const policy = startPolicy;
+    const expectedCardio = type === 'cardio' ? selectedCardioOption.id : undefined;
+    if (!policy || policy.activityType !== type
+      || String(policy.cardioType || '') !== String(expectedCardio || '')
+      || Date.parse(policy.startBy) < Date.now()) {
+      setPolicyLoading(true);
+      setStartActivityError('Estamos renovando a autorização. Quando esta mensagem sumir, toque em iniciar novamente.');
+      try {
+        setStartPolicy(await activityService.resolveCompetitionPolicy(type, expectedCardio));
+        setStartActivityError(null);
+      } catch (err: any) {
+        setStartActivityError(err.message || 'Não foi possível preparar a atividade.');
+      } finally {
+        setPolicyLoading(false);
+      }
+      return;
+    }
+    const motionPermission = policy.requiresMotionSensors
+      ? activityService.requestMotionPermission()
+      : Promise.resolve('granted' as const);
     setStartingActivity(true);
     try {
-      // #249: pedir permissao de sensor so quando ha campeonato/ranking ativo
-      // de verdade (mesmo sinal ja usado abaixo pro check-in de academia) --
-      // sem isso, todo mundo levava o mesmo pedido de permissao do iOS mesmo
-      // so treinando/correndo por conta propria, sem nada em disputa.
-      if (championshipCheckInRequired) {
-        await activityService.requestMotionPermission();
-      }
-      const confirmedCheckIn = type === 'workout' && (useCheckIn || championshipCheckInRequired)
-        ? await activityService.performGymCheckIn()
+      await motionPermission;
+      const confirmedCheckIn = type === 'workout' && policy.requiresGymCheckIn
+        ? await activityService.performGymCheckIn(policy)
         : null;
       const session = await activityService.startSession(
         type,
@@ -439,7 +470,9 @@ export function Challenges() {
         type === 'cardio' ? selectedCardioOption.id : undefined,
         undefined,
         confirmedCheckIn?.checkInId,
-        type === 'workout' ? selectedMuscleGroup : undefined
+        type === 'workout' ? selectedMuscleGroup : undefined,
+        undefined,
+        policy,
       );
       setActiveSession(session);
       setCompletion(null);
@@ -485,6 +518,10 @@ export function Challenges() {
     rankingPointsEarned: item.rankingPointsEarned,
     points: item.points,
     status: item.status,
+    validationStatus: item.statusRaw,
+    recordStatus: item.recordStatus,
+    activityMode: item.activityMode,
+    competitionReviewStatus: item.competitionStatus,
     photoUrl: item.photoUrl,
   });
 
@@ -508,18 +545,19 @@ export function Challenges() {
     const pace = session.type === 'cardio' && distanceKm !== undefined && distanceKm > 0 && durationMins !== undefined && durationMins > 0
       ? formatPaceValue(distanceKm, durationMins * 60)
       : undefined;
-    const rawStatus = normalizeActivityValidationStatus(result.status);
-    // ACT-11 / HEALTH-08 (auditoria 6167c8f): not_eligible é uma atividade
-    // legítima sem estímulo competitivo ativo -- diferente de rejected
-    // (bloqueio por antifraude). As duas não podem cair no mesmo balde
-    // "rejeitada", ou um treino normal parece ter sido recusado por fraude.
-    const historyStatus: ActivityHistoryItem['status'] = rawStatus === 'validated'
+    const activityState = resolveActivityState({
+      ...(result.commitResult || {}),
+      recordStatus: 'completed',
+      activityMode: 'competitive',
+      competitionReviewStatus: result.commitResult?.competitionReviewStatus || result.status,
+    });
+    const historyStatus: ActivityHistoryItem['status'] = activityState.competitionStatus === 'approved'
       ? 'homologada'
-      : rawStatus === 'rejected'
+      : activityState.competitionStatus === 'rejected' || activityState.competitionStatus === 'ineligible'
         ? 'rejeitada'
-        : rawStatus === 'not_eligible'
-          ? 'nao_elegivel'
-          : 'pendente';
+        : activityState.competitionStatus === 'pending' || activityState.competitionStatus === 'resolution_pending'
+          ? 'pendente'
+          : 'registrada';
     const completedAt = new Date(Number.isFinite(startMs) ? finishedAt : Date.now());
     const cardioLabel = session.cardioTypeLabel || selectedCardioOption.label || 'Cardio';
     const rawCalories = session.healthTelemetry?.calories;
@@ -537,8 +575,11 @@ export function Challenges() {
       timeStr: completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       rawTimestamp: completedAt.getTime(),
       status: historyStatus,
-      statusRaw: rawStatus || result.status,
-      points: historyStatus === 'homologada' && typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded)
+      statusRaw: result.status,
+      recordStatus: activityState.recordStatus,
+      activityMode: activityState.activityMode,
+      competitionStatus: activityState.competitionStatus,
+      points: typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded)
         ? result.pointsAwarded
         : 0,
       durationMins,
@@ -548,7 +589,7 @@ export function Challenges() {
       steps: Number.isFinite(rawSteps) && rawSteps > 0 ? rawSteps : undefined,
       pace,
       trajectory: validTrajectory,
-      details: { healthSession: result.commitResult?.healthSession ?? healthSession },
+      details: { ...result.commitResult, healthSession: result.commitResult?.healthSession ?? healthSession },
     };
   };
 
@@ -608,7 +649,17 @@ export function Challenges() {
       const status = normalizeActivityValidationStatus(
         res.validation?.status ?? res.workout?.status
       );
-      const rankingPoints = res.rankingPointsEarned ?? res.workout?.rankingPointsEarned;
+      const activityState = resolveActivityState({
+        ...(res.workout as any),
+        recordStatus: res.recordStatus || res.workout?.recordStatus,
+        activityMode: res.activityMode || res.workout?.activityMode,
+        competitionReviewStatus: res.competitionReviewStatus || res.workout?.competitionReviewStatus,
+      });
+      // Este card representa o ganho desta atividade, nunca o total semanal
+      // do IGA retornado em `rankingPointsEarned` por compatibilidade.
+      const rankingPoints = typeof res.workout?.competitionPoints === 'number'
+        ? res.workout.competitionPoints
+        : undefined;
       const points = typeof res.workout?.points === 'number' && Number.isFinite(res.workout.points) && res.workout.points > 0
         ? res.workout.points
         : undefined;
@@ -617,7 +668,7 @@ export function Challenges() {
       // inclusive enquanto aguarda a decisao antifraude. Nenhum valor e
       // inventado no cliente e pontos so aparecem quando o servidor aprova.
       const timestampMs = res.workout?.timestamp ? Date.parse(res.workout.timestamp) : Number.NaN;
-      if (res.workout?.id && Number.isFinite(timestampMs) && ['validated', 'pending', 'rejected', 'not_eligible'].includes(status)) {
+      if (res.workout?.id && Number.isFinite(timestampMs) && activityState.isCompleted) {
         const completedAt = new Date(timestampMs);
         const dateStr = completedAt.toLocaleDateString('pt-BR');
         const timeStr = completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -636,15 +687,13 @@ export function Challenges() {
           : undefined;
         const muscleGroup = (res.workout as any)?.muscleGroup || sessionBeforeEnd.muscleGroup || selectedMuscleGroup;
         const workoutTitle = muscleGroup ? `Treino de ${muscleGroup}` : 'Treino de Musculação';
-        const historyStatus: ActivityHistoryItem['status'] = status === 'validated'
+        const historyStatus: ActivityHistoryItem['status'] = activityState.competitionStatus === 'approved'
           ? 'homologada'
-          : status === 'pending'
+          : activityState.competitionStatus === 'pending' || activityState.competitionStatus === 'resolution_pending'
             ? 'pendente'
-            : status === 'not_eligible'
-              // ACT-11 / HEALTH-08: atividade legítima sem estímulo
-              // competitivo, não uma recusa por antifraude.
-              ? 'nao_elegivel'
-              : 'rejeitada';
+            : activityState.competitionStatus === 'rejected' || activityState.competitionStatus === 'ineligible'
+              ? 'rejeitada'
+              : 'registrada';
 
         if (serverDistance !== undefined) setLiveDistanceKm(serverDistance);
 
@@ -658,8 +707,11 @@ export function Challenges() {
           timeStr,
           rawTimestamp: timestampMs,
           status: historyStatus,
-          statusRaw: status,
-          points: historyStatus === 'homologada' ? (points || 0) : 0,
+          statusRaw: status || res.validation?.status || 'recorded',
+          recordStatus: activityState.recordStatus,
+          activityMode: activityState.activityMode,
+          competitionStatus: activityState.competitionStatus,
+          points: points || 0,
           rankingPointsEarned: historyStatus === 'homologada' && typeof rankingPoints === 'number' ? rankingPoints : undefined,
           durationMins: serverDuration,
           distanceKm: serverDistance,
@@ -668,7 +720,13 @@ export function Challenges() {
           pace,
           trajectory,
           photoUrl: (res.workout as any).photoUrl || (res.workout as any).verificationPhotoUrl,
-          details: { healthSession: res.healthSession, healthSessionStatus: res.healthSessionStatus, healthSessionReason: res.healthSessionReason },
+          details: {
+            healthSession: res.healthSession,
+            healthSessionStatus: res.healthSessionStatus,
+            healthSessionReason: res.healthSessionReason,
+            activityMode: activityState.activityMode,
+            competitionStatus: activityState.competitionStatus,
+          },
         };
         // The athlete reviews private health feedback before choosing whether
         // to share the existing public card, which contains no health record.
@@ -676,38 +734,26 @@ export function Challenges() {
         setHistoryRefreshKey((key) => key + 1);
       }
 
-      if (status === 'validated') {
+      if (activityState.isCompleted) {
         setActiveSession(null);
-        setCompletion({ status: 'approved', message: res.message, pointsAwarded: points });
         if (points !== undefined) {
-          // #242: retorno tátil no momento em que o XP/pontuação é confirmado.
           void hapticNotification('success');
-          triggerXPToast(points, 'Atividade validada.', rankingPoints);
+          triggerXPToast(points, 'Atividade concluída.', activityState.isCompetitionApproved ? rankingPoints : undefined);
         }
-
-        setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
-      } else if (status === 'pending') {
-        setActiveSession(null);
-        setCompletion({ status: 'pending', message: res.message });
-        setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
-        setNotice(res.message || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
-      } else if (status === 'rejected' || status === 'not_eligible') {
-        setActiveSession(null);
-        // ACT-11 / HEALTH-08 (auditoria 6167c8f): not_eligible é uma
-        // atividade legítima sem estímulo competitivo -- não é uma recusa
-        // por antifraude, então não pode reaproveitar o mesmo status
-        // 'rejected' (que assusta o atleta com uma tela de erro).
-        setCompletion({ status: status === 'not_eligible' ? 'not_eligible' : 'rejected', message: res.message });
-        setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
-        if (status === 'not_eligible') {
-          setNotice(res.message || 'Atividade registrada normalmente, mas sem estímulo competitivo ativo no momento. Nenhuma pontuação foi concedida.');
+        if (activityState.competitionStatus === 'approved') {
+          setCompletion({ status: 'approved', message: res.message, pointsAwarded: points });
+        } else if (activityState.competitionStatus === 'pending' || activityState.competitionStatus === 'resolution_pending') {
+          setCompletion({ status: 'pending', message: res.message, pointsAwarded: points });
+          setNotice(res.message || 'Atividade salva. Somente a pontuação competitiva está sendo processada.');
+        } else if (activityState.competitionStatus === 'rejected' || activityState.competitionStatus === 'ineligible') {
+          setCompletion({ status: 'rejected', message: res.message, pointsAwarded: points });
+          setNotice(res.message || 'Atividade salva no histórico, mas fora da pontuação competitiva.');
         } else {
-          setError(res.message || 'A atividade não foi validada. Nenhuma pontuação foi concedida.');
+          setCompletion({ status: 'recorded', message: res.message, pointsAwarded: points });
         }
+        setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
       } else {
-        // Sem decisão explícita do servidor, falhamos de forma segura: não
-        // marcamos a atividade como homologada e não concedemos XP.
-        setError(res.message || 'O servidor não confirmou o status da atividade. Nenhuma pontuação foi liberada.');
+        setError(res.message || 'O servidor não confirmou o registro da atividade.');
       }
       // Perfil e historico sao independentes. Em serie, duas leituras remotas
       // prolongavam a tela de finalizacao mesmo depois de o servidor ja ter
@@ -797,12 +843,8 @@ export function Challenges() {
   }, []);
 
 
-  const handleFlowStart = (type: 'workout' | 'cardio', options?: { checkIn?: boolean }) => {
-    if (type === 'workout' && flowScreen === 'workout-details') {
-      setFlowScreen('workout-checkin');
-      return;
-    }
-    handleStartActivity(type, Boolean(options?.checkIn));
+  const handleFlowStart = (type: 'workout' | 'cardio', _options?: { checkIn?: boolean }) => {
+    void handleStartActivity(type);
   };
 
   const handleFlowBack = () => {
@@ -810,50 +852,17 @@ export function Challenges() {
     else closeFlow();
   };
 
-  const isHistoryView = !flowScreen && searchParams.get('view') === 'history';
-  // #255 (pedido do usuario: "adicione a entrada na hub nova e refaça a tela
-  // de desafios pagos conforme o layout novo"): mesmo padrao de ?view=history
-  // acima, agora para a tela de Desafios Privados (PrivateChallengesPageNew).
-  const isPrivateView = !flowScreen && searchParams.get('view') === 'private';
-
   const showNewChallengesHub = !flowScreen
     && !finishedActivityItem
     && !shareCardData
     && !presenceCheckRequired
-    && !isHistoryView
-    && !isPrivateView;
+    && !error
+    && !notice
+    && selectedCategory === 'all'
+    && searchParams.get('view') !== 'history';
 
-  // #248: ChallengesHubNew, ActivityHistoryPageNew e PrivateChallengesPageNew
-  // desenham o proprio rodape (.dc-footer / .ah-new-footer) -- sem isso, o
-  // nav antigo do Layout.tsx ficava vazando por baixo desses rodapes novos
-  // sempre que essa era a tela mostrada (o caso mais comum, ja que e a tela
-  // padrao ao abrir "Desafios"). Ver comentario "routeOwnsFooter" em
-  // Layout.tsx para o mecanismo completo.
-  useEffect(() => {
-    setRouteOwnsFooter?.(showNewChallengesHub || isHistoryView || isPrivateView);
-    return () => setRouteOwnsFooter?.(false);
-  }, [showNewChallengesHub, isHistoryView, isPrivateView, setRouteOwnsFooter]);
-
-  // #248 (achado ao vivo, screenshot real do usuario): ChallengeActivityFlow
-  // (.challenge-flow-screen) desenha o proprio cabecalho no topo
-  // (.challenge-flow-header com botao de voltar + titulo, ou
-  // .challenge-cardio-live-topbar durante a corrida ao vivo) -- o badge fixo
-  // LVL+sino do Layout ficava na mesma faixa vertical e colidia visualmente
-  // com o titulo (ex.: "LVL 3" sobrepondo "CARDIO" em "SELECIONE O TIPO DE
-  // CARDIO"). Suprime so o badge do topo enquanto o fluxo estiver aberto; o
-  // nav de baixo continua igual (ja fica escondido atras do botao proprio do
-  // fluxo por z-index, entao nao precisa mudar).
-  useEffect(() => {
-    setRouteOwnsHeader?.(Boolean(flowScreen));
-    return () => setRouteOwnsHeader?.(false);
-  }, [flowScreen, setRouteOwnsHeader]);
-
-  if (isHistoryView) {
+  if (!flowScreen && searchParams.get('view') === 'history') {
     return <ActivityHistoryPageNew />;
-  }
-
-  if (isPrivateView) {
-    return <PrivateChallengesPageNew />;
   }
 
   if (showNewChallengesHub) {
@@ -861,33 +870,219 @@ export function Challenges() {
     return <ChallengesHubNew
       onCardio={() => { if (cardioChallenge) handleOpenChallenge(cardioChallenge); }}
       onHistory={() => setSearchParams({ view: 'history' })}
-      onPrivate={() => setSearchParams({ view: 'private' })}
     />;
   }
 
-  // #257 (pedido do usuario, verbatim: "porque é necessario existir ainda?
-  // quero excluir essas telas antigas"): o catalogo antigo (cabecalho
-  // duplicado "Desafios"/"Seu nivel atual", abas de categoria powerlift/
-  // privados/ranking/conquistas e a lista padrao de desafios com historico
-  // embutido) foi REMOVIDO daqui. Ele nunca era alcancavel de verdade: a
-  // ChallengesHubNew (mostrada acima quando showNewChallengesHub) ja cobre
-  // powerlift (/power) e ranking (/rankings) com navegacao real, e o unico
-  // setSelectedCategory('powerlift') que existia no app inteiro estava DENTRO
-  // deste mesmo catalogo morto -- confirmado por grep antes de apagar (ver
-  // #257 no relatorio). "Desafios Privados" (selectedCategory 'privados') e a
-  // unica peca real que dependia deste catalogo como ponto de entrada; ela
-  // ganhou uma entrada propria em ChallengesHubNew ("DESAFIOS PRIVADOS") que
-  // abre PrivateChallengesPageNew (?view=private) -- ver #255/#256.
-  //
-  // O que sobra abaixo (VerifiedPresenceModal/RunShareCard/
-  // ActivityDetailScreen/ChallengeActivityFlow) e o que de fato ficava por
-  // CIMA do catalogo como overlay de tela cheia -- exatamente a peca que
-  // causou a regressao real relatada pelo usuario (#253: "voltou toda tela
-  // antiga por baixo" no cardio), porque o catalogo continuava montado por
-  // baixo mesmo sem nunca ser visivel. Sem o catalogo morto, esses overlays
-  // continuam funcionando identicos, so que sem nada por baixo deles.
   return (
-    <>
+    <div className="challenge-screen min-h-screen bg-transparent pb-28 text-on-surface pt-4 px-0 max-w-[430px] mx-auto space-y-5">
+
+      {/* CABEÇALHO MOBILE */}
+      <header className="challenge-header space-y-4">
+        <div>
+          <h1 className="text-[30px] leading-[.9] font-headline tracking-tight uppercase text-white">Desafios</h1>
+          <p className="mt-1.5 text-[12px] leading-none text-white/65 uppercase tracking-wide">Supere seus limites</p>
+        </div>
+
+        <div className="challenge-level-card">
+          <div className="challenge-icon challenge-icon--level"><Zap size={31} strokeWidth={2.4} /></div>
+          <div className="min-w-0 flex-1">
+            <span className="block text-[12px] font-bold uppercase tracking-wide text-white/80">Seu nível atual</span>
+            <p className="mt-1 font-headline text-[18px] leading-none italic uppercase text-white">Nível {levelProgress.currentLevel} <span className="text-primary">· {profile?.xp || 0} XP</span></p>
+          </div>
+          <div className="challenge-level-progress">
+            <div className="challenge-progress-track"><div className="challenge-progress-value" style={{ width: `${levelProgress.percentage}%` }} /></div>
+            <span>{Math.round(levelProgress.percentage)}%</span>
+          </div>
+        </div>
+      </header>
+
+      {/* MENSAGEM REAL DE APROVAÇÃO/REJEIÇÃO DA ÚLTIMA ATIVIDADE ENCERRADA */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-2xl text-xs shadow-sm flex items-start gap-3"
+        >
+          <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-1">
+            <p className="font-bold uppercase tracking-wider text-[11px] text-rose-400">Não foi possível concluir</p>
+            <p className="whitespace-pre-line leading-relaxed text-[12px] text-rose-200">{error}</p>
+          </div>
+          <button onClick={() => setError(null)} className="text-rose-400/60 hover:text-rose-300 p-1 shrink-0 cursor-pointer">
+            <X size={16} />
+          </button>
+        </motion.div>
+      )}
+
+      {notice && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-sky-500/10 border border-sky-500/30 text-sky-100 p-4 rounded-2xl text-xs shadow-sm flex items-start gap-3"
+        >
+          <Info size={18} className="text-sky-300 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-1">
+            <p className="font-bold uppercase tracking-wider text-[11px] text-sky-300">Status da atividade</p>
+            <p className="whitespace-pre-line leading-relaxed text-[12px] text-sky-100/85">{notice}</p>
+          </div>
+          <button onClick={() => setNotice(null)} className="text-sky-300/60 hover:text-sky-200 p-1 shrink-0 cursor-pointer" aria-label="Fechar aviso">
+            <X size={16} />
+          </button>
+        </motion.div>
+      )}
+
+      {/* DYNAMIC VIEW CONTENT BASED ON SELECTED CATEGORY */}
+
+      {/* 1. POWER LIFT CATEGORY VIEW */}
+      {selectedCategory === 'powerlift' ? (
+        <div className="w-full">
+          <PowerLift />
+        </div>
+      ) : selectedCategory === 'privados' ? (
+        /* 2. PRIVATE CHALLENGES CATEGORY VIEW */
+        <PrivateChallengesTab />
+      ) : selectedCategory === 'ranking' ? (
+        <div className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-5 text-center">
+          <Trophy className="mx-auto text-primary" size={34} />
+          <div>
+            <h2 className="text-xl font-headline italic font-black text-white uppercase">Ranking</h2>
+            <p className="mt-2 text-sm text-on-surface-variant">A classificação é carregada apenas na tela oficial de ranking, com dados verificados do servidor.</p>
+          </div>
+          <button onClick={() => navigate('/rankings')} className="challenge-powerlift-button w-full rounded-xl bg-primary px-4 py-3 font-headline text-sm italic uppercase text-black">
+            Abrir ranking
+          </button>
+        </div>
+      ) : selectedCategory === 'conquistas' ? (
+        /* 4. CONQUISTAS CONFIRMADAS PELO PERFIL */
+        <div className="bg-surface-card border border-white/10 rounded-[28px] p-6 space-y-6">
+          <div>
+            <span className="text-[10px] font-mono font-black text-primary uppercase tracking-widest block">
+              🎖️ GALERIA DE TROFÉUS E CONQUISTAS
+            </span>
+            <h2 className="text-xl font-headline italic font-black text-white uppercase">
+              Badges & Medalhas Desbloqueadas
+            </h2>
+          </div>
+
+          {unlockedBadges.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-5 py-8 text-center text-sm text-on-surface-variant">
+              Nenhuma conquista desbloqueada foi registrada ainda.
+            </div>
+          ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {unlockedBadges.map((badge) => (
+              <div
+                key={badge.id}
+                className="p-4 rounded-2xl border flex flex-col justify-between gap-3 text-center transition-all bg-primary/5 border-primary/30"
+              >
+                <div className="space-y-2">
+                  <div className="text-4xl mx-auto">{badge.icon}</div>
+                  <h4 className="font-headline italic font-black text-sm text-white uppercase">{badge.name}</h4>
+                  <p className="text-[11px] text-on-surface-variant line-clamp-3">{badge.description}</p>
+                </div>
+
+                <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-emerald-400 font-bold">Desbloqueado ✓</span>
+                  <span className="text-on-surface-variant">Verificado</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          )}
+        </div>
+      ) : (
+        /* 5. DEFAULT CHALLENGES CATALOGUE VIEW */
+        <div className="challenge-catalogue flex flex-col gap-4">
+
+          {/* POWER LIFT HIGHLIGHT BANNER (If in 'all', 'diarios', 'em_andamento') */}
+          {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
+            <div className="challenge-powerlift order-2 relative min-h-[214px] overflow-hidden rounded-[22px] border border-primary/60 bg-[#100c06] shadow-[0_18px_40px_rgba(0,0,0,.50)]">
+              <img src="/invictus-power-lift-badge-v2.png" alt="Emblema dourado do Invictus Power Lift" className="challenge-powerlift-art" />
+              <div className="challenge-powerlift-shade" />
+              <div className="relative flex min-h-[214px] flex-col justify-between p-3.5">
+                <div className="max-w-[80%]">
+                  <div className="challenge-icon challenge-icon--fire"><Flame size={20} fill="currentColor" /></div>
+                  <h3 className="mt-2 font-headline text-[21px] leading-none italic uppercase text-white">Invictus Power Lift</h3>
+                  <p className="mt-2 text-[10px] leading-snug text-white/75">Supino · Agachamento · Levantamento Terra.</p>
+                  <p className="mt-2 max-w-[230px] text-[12px] leading-snug text-white/80">Registre marcas pessoais de carga com homologação de vídeo por IA e dispute o cinturão da sua academia!</p>
+                </div>
+                <button onClick={() => { setSelectedCategory('powerlift'); setSearchParams({ category: 'powerlift' }); }} className="challenge-powerlift-button flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-headline text-[12px] leading-none italic uppercase tracking-wide text-black transition-colors hover:bg-[#ffc13d]">
+                  <span>Acessar desafios de carga</span><ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* CORE DAILY CHALLENGES SECTION */}
+          {(selectedCategory === 'all' || selectedCategory === 'diarios' || selectedCategory === 'em_andamento') && (
+            <div className="order-1 space-y-3">
+              <div className="flex items-center justify-between px-0.5">
+                <div>
+                  <h2 className="text-[18px] leading-none font-headline text-white uppercase tracking-wide">Desafios principais do dia</h2>
+                  <span className="mt-1 block text-[12px] leading-none text-white/65">Atividades concluídas atualizam seu progresso</span>
+                </div>
+                <Info size={22} strokeWidth={1.7} className="text-white/60" />
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5">
+                {CORE_CHALLENGES.slice().sort((a, b) => DAILY_CHALLENGES_ORDER.indexOf(a.id) - DAILY_CHALLENGES_ORDER.indexOf(b.id)).map((ch) => {
+                  const isCompletedToday = Boolean(submissions[ch.id]);
+                  const isRunning = activeSession?.type === ch.id;
+
+                  return (
+                    <React.Fragment key={ch.id}>
+                    <div
+                      key={ch.id}
+                      className={cn(
+                        "challenge-card relative overflow-hidden rounded-[23px] border bg-[#101010] p-4 transition-all group hover:border-primary/50",
+                        isCompletedToday
+                          ? "border-emerald-500/30 bg-emerald-950/10"
+                          : isRunning
+                            ? "border-primary/50 bg-primary/5"
+                            : "border-white/10"
+                      )}
+                    >
+                      <div className={ch.id === 'workout' ? 'min-h-[144px]' : 'min-h-[74px]'}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="challenge-icon grid h-[50px] w-[50px] shrink-0 place-items-center group-hover:scale-105 transition-transform">
+                              {ch.icon}
+                            </div>
+                            <div>
+                              {isRunning && <span className="challenge-running">Em andamento</span>}
+                              <h3 className="text-[16px] leading-none font-headline uppercase text-white group-hover:text-primary transition-colors">
+                                {ch.title}
+                              </h3>
+                              <p className="mt-1.5 text-[12px] leading-snug text-white/65">{ch.subtitle}</p>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <button onClick={() => handleOpenChallenge(ch)} className="challenge-xp-action">
+                              {isCompletedToday ? 'INICIAR OUTRA' : 'INICIAR'} <ArrowRight size={26} />
+                            </button>
+                            {ch.id !== 'workout' && <span className="challenge-mini-progress">{isCompletedToday ? '1 / 1' : '0 / 1'}</span>}
+                          </div>
+                        </div>
+
+                        {ch.id === 'workout' && <div className="challenge-day-progress"><span><Clock size={19} /> Progresso do dia</span><strong>{isCompletedToday ? '1 / 1' : '0 / 1'}</strong><div className="challenge-day-progress-track"><i style={{ width: isCompletedToday ? '100%' : '0%' }} /></div></div>}
+                      </div>
+                    </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {selectedCategory === 'all' && (
+            <div className="order-3 mt-2">
+              <ActivityHistorySection refreshKey={historyRefreshKey} />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Anti-cheat presence modal if required */}
       {presenceCheckRequired && presenceCheckData && (
         <VerifiedPresenceModal
@@ -899,43 +1094,44 @@ export function Challenges() {
             setPresenceCheckData(null);
             const presenceStatus = normalizeActivityValidationStatus(result.status);
             const pendingPresence = pendingPresenceSessionRef.current;
-            pendingPresenceSessionRef.current = null;
             const sessionType = pendingPresence?.session.type || activeSession?.type;
-
-            if (presenceStatus === 'validated') {
-              await activityService.completeSessionAfterPresence();
-              setActiveSession(null);
-              const points = typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded) && result.pointsAwarded > 0
-                ? result.pointsAwarded
-                : undefined;
-              setCompletion({ status: 'approved', message: result.userMessage, pointsAwarded: points });
-              if (points !== undefined) { void hapticNotification('success'); triggerXPToast(points, 'Atividade validada.'); }
-              if (pendingPresence) {
-                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
-                setFinishedActivityItem(finishedItem);
-                setHistoryRefreshKey((key) => key + 1);
-              }
-              setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
-              setNotice(null);
-            } else if (presenceStatus === 'pending') {
-              await activityService.completeSessionAfterPresence();
-              setActiveSession(null);
-              setCompletion({ status: 'pending', message: result.userMessage });
-              if (pendingPresence) {
-                const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
-                setFinishedActivityItem(finishedItem);
-                setHistoryRefreshKey((key) => key + 1);
-              }
-              setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
-              setNotice(result.userMessage || 'Atividade recebida e aguardando análise. Nenhuma pontuação foi liberada ainda.');
-            } else {
-              activityService.cancelSession();
-              setActiveSession(null);
-              setFlowScreen(null);
-              setError(result.userMessage || 'A confirmação de presença não foi aprovada. Nenhuma pontuação foi concedida.');
+            const terminalStatus = presenceStatus === 'validated'
+              || presenceStatus === 'pending'
+              || presenceStatus === 'rejected'
+              || presenceStatus === 'not_eligible';
+            if (!terminalStatus) {
+              setError(result.userMessage || 'A resposta da confirmação de presença não foi reconhecida. A atividade continua salva no aparelho.');
+              return;
             }
-            await refreshUser();
-            await loadSubmissions();
+
+            pendingPresenceSessionRef.current = null;
+            await activityService.completeSessionAfterPresence();
+            setActiveSession(null);
+            const points = typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded) && result.pointsAwarded > 0
+              ? result.pointsAwarded
+              : undefined;
+            const completionStatus: ActivityCompletion['status'] = presenceStatus === 'validated'
+              ? 'approved'
+              : presenceStatus === 'pending'
+                ? 'pending'
+                : 'rejected';
+            setCompletion({ status: completionStatus, message: result.userMessage, pointsAwarded: points });
+            if (points !== undefined) {
+              void hapticNotification('success');
+              triggerXPToast(points, 'Atividade concluída.');
+            }
+            if (pendingPresence) {
+              const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
+              setFinishedActivityItem(finishedItem);
+              setHistoryRefreshKey((key) => key + 1);
+            }
+            setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
+            setNotice(presenceStatus === 'validated'
+              ? null
+              : presenceStatus === 'pending'
+                ? (result.userMessage || 'Atividade concluída. Somente a pontuação competitiva está em análise.')
+                : (result.userMessage || 'Atividade concluída e salva no histórico, mas fora da pontuação competitiva.'));
+            await Promise.allSettled([refreshUser(), loadSubmissions()]);
           }}
           onClose={() => {
             setPresenceCheckRequired(false);
@@ -962,7 +1158,7 @@ export function Challenges() {
           group={selectedMuscleGroup}
           onGroup={setSelectedMuscleGroup}
           cardio={selectedCardioOption}
-          onCardio={(option) => { setSelectedCardioOption(option); setSelectedCardioType(option.id); }}
+          onCardio={(option) => { setStartPolicy(null); setSelectedCardioOption(option); setSelectedCardioType(option.id); }}
           session={activeSession}
           elapsed={elapsedTime}
           distance={liveDistanceKm}
@@ -975,13 +1171,13 @@ export function Challenges() {
           gpsStalled={gpsStalled}
           onRetryGps={handleRetryGps}
           gymName={profile?.gymName || 'Sua academia'}
-          checkInRequired={championshipCheckInRequired}
+          checkInRequired={(startPolicy || activeSession?.competitionPolicy)?.requiresGymCheckIn === true}
           completedChallengeIds={Object.keys(submissions)}
           completion={completion}
           startError={startActivityError}
           endError={error}
           loading={loading}
-          startingActivity={startingActivity}
+          startingActivity={startingActivity || policyLoading}
           onBack={handleFlowBack}
           onStart={handleFlowStart}
           onEnd={handleEndActivity}
@@ -991,6 +1187,6 @@ export function Challenges() {
           onCancel={handleCancelActivity}
         />
       )}
-    </>
+    </div>
   );
 }

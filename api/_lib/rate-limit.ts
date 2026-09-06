@@ -11,6 +11,11 @@ interface RequestWithUser extends Request {
 // Vercel's request adapter can omit req.ip. Use the proxy header when it is
 // available and a stable anonymous bucket only as the final fallback.
 const requestKey = (req: Request) => {
+  // Nunca derive o bucket de um Bearer ainda não verificado: tokens falsos ou
+  // renovados permitiriam ao cliente girar chaves e contornar o limite.
+  const authenticated = req as RequestWithUser;
+  const authenticatedId = authenticated.user?.uid || authenticated.user?.id;
+  if (authenticatedId) return `user_${authenticatedId}`;
   const forwarded = req.headers['x-forwarded-for'];
   const forwardedIp = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0]?.trim();
   return forwardedIp || req.socket?.remoteAddress || 'anonymous';

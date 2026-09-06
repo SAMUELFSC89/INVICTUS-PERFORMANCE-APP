@@ -32,5 +32,14 @@ export interface ValidateActivityResponse {
   level: number;
   message: string;
   traceId: string;
+  recordStatus?: 'completed';
+  activityMode?: 'personal' | 'competitive' | 'unresolved';
+  competitionReviewStatus?: 'not_required' | 'approved' | 'pending_review' | 'ineligible' | 'resolution_pending';
+  competitionContexts?: Array<Record<string, any>>;
+  status?: string;
+  workout?: Record<string, any>;
+  validation?: Record<string, any>;
+  healthSession?: unknown;
+  isScoringEligible?: boolean;
   details?: Record<string, any>;
 }

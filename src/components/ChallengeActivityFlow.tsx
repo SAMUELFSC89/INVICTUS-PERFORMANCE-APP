@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, Info, MapPin, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
@@ -42,11 +42,7 @@ const icon = (kind: CardioOption['icon'], size = 20) => kind === 'bike' ? <Bike 
 const time = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 
 export type ActivityCompletion = {
-  // ACT-11 / HEALTH-08 (auditoria 6167c8f): 'not_eligible' é uma atividade
-  // legítima sem estímulo competitivo ativo -- diferente de 'rejected'
-  // (bloqueio por antifraude/geofence/GPS). Mantê-las no mesmo status fazia
-  // um treino normal, só sem campeonato ativo, parecer ter sido recusado.
-  status: 'approved' | 'pending' | 'rejected' | 'not_eligible';
+  status: 'recorded' | 'approved' | 'pending' | 'rejected';
   message?: string;
   pointsAwarded?: number;
 };
@@ -160,7 +156,7 @@ export function ChallengeActivityFlow({
     : null;
   const completionPending = completion?.status === 'pending';
   const completionRejected = completion?.status === 'rejected';
-  const completionNotEligible = completion?.status === 'not_eligible';
+  const competitiveSession = session?.competitionPolicy?.requiresSecurityReview === true;
 
   // #116: .challenge-flow-screen e position:fixed;inset:0;z-index:70 pensado
   // pra cobrir a tela INTEIRA por cima de tudo, inclusive o menu inferior
@@ -191,10 +187,10 @@ export function ChallengeActivityFlow({
             <div>
               <small>{workoutCompleted ? 'CONCLUÍDO HOJE' : 'ATIVIDADE PRINCIPAL'}</small>
               <h2>TREINO DE MUSCULAÇÃO</h2>
-              <b>Pontuação definida após validação</b>
+              <b>Conta para XP e desafios</b>
             </div>
           </div>
-          <p>Realize um treino completo na academia e registre a atividade para análise.</p>
+          <p>Realize um treino completo e salve sua evolução. Se você estiver em ranking ou campeonato, somente a pontuação competitiva passará por verificação.</p>
           <div className="challenge-flow-panel">
             <strong>SELECIONE O GRUPO MUSCULAR</strong>
             <div className="challenge-flow-groups">
@@ -211,22 +207,22 @@ export function ChallengeActivityFlow({
           </div>
           <div className="challenge-flow-panel">
             <strong>PROGRESSO DO DESAFIO <em>{workoutCompleted ? '1/1' : '0/1'}</em></strong>
-            <p>{workoutCompleted ? 'Treino validado hoje.' : 'Complete um treino de musculação validado hoje.'}</p>
+            <p>{workoutCompleted ? 'Treino concluído hoje.' : 'Complete um treino de musculação hoje.'}</p>
           </div>
           <div className="challenge-flow-panel">
             <strong>REQUISITOS</strong>
             <ul>
-              <li><MapPin />Presença na academia verificada no início</li>
-              <li><Clock3 />Treino de 30 a 90 minutos</li>
+              <li><MapPin />Check-in solicitado somente em atividade competitiva</li>
+              <li><Clock3 />Cronômetro e exercícios registrados no aplicativo</li>
               <li><Timer />Dados de frequência quando houver sensor conectado</li>
             </ul>
           </div>
           <button
             className="challenge-flow-primary"
             onClick={() => onStart('workout')}
-            disabled={workoutCompleted || startingActivity}
+            disabled={startingActivity}
           >
-            <Play />{workoutCompleted ? 'TREINO JÁ VALIDADO' : startingActivity ? 'INICIANDO...' : 'INICIAR TREINO'}
+            <Play />{startingActivity ? 'INICIANDO...' : workoutCompleted ? 'INICIAR OUTRO TREINO' : 'INICIAR TREINO'}
           </button>
         </section>
       )}
@@ -373,7 +369,7 @@ export function ChallengeActivityFlow({
               <header>
                 <span>{icon(cardio.icon, 24)}</span>
                 <strong>{activeTitle}</strong>
-                <ShieldCheck />
+                {competitiveSession ? <ShieldCheck /> : <Check />}
               </header>
               <div className={hasPaceMetric ? 'has-live-pace' : undefined}>
                 <article><Clock3 /><b>{time(elapsed)}</b><small>Tempo</small></article>
@@ -385,8 +381,8 @@ export function ChallengeActivityFlow({
             </article>
 
             <div className="challenge-cardio-live-status">
-              <ShieldCheck />
-              <span><b>{session?.isPaused ? 'ATIVIDADE PAUSADA' : 'ATIVIDADE SENDO REGISTRADA...'}</b><small>Mantenha o GPS ativo para que o treino seja validado.</small></span>
+              {competitiveSession ? <ShieldCheck /> : <Check />}
+              <span><b>{session?.isPaused ? 'ATIVIDADE PAUSADA' : competitiveSession ? 'ATIVIDADE COMPETITIVA' : 'ATIVIDADE SENDO REGISTRADA...'}</b><small>{competitiveSession ? 'Mantenha o GPS ativo para validar sua pontuação.' : 'Mantenha o GPS ativo para registrar rota e distância.'}</small></span>
             </div>
 
             {endError && <div className="challenge-flow-end-error"><AlertCircle size={16} /><span>{endError}</span></div>}
@@ -527,22 +523,20 @@ export function ChallengeActivityFlow({
       {complete && (
         <section className="challenge-flow-complete">
           <div className="challenge-flow-confetti">✦ ✦ ✦ ✦ ✦</div>
-          <span className="challenge-flow-check">{completionRejected ? <XCircle /> : completionNotEligible ? <Info /> : completionPending ? <Clock3 /> : <Check />}</span>
-          <p>{completion?.message || 'Atividade validada pelo servidor.'}</p>
-          {completionRejected ? (
-            <strong className="text-[15px]">Nenhuma pontuação foi concedida</strong>
-          ) : completionNotEligible ? (
-            <strong className="text-[15px]">Registrada, sem estímulo competitivo ativo</strong>
-          ) : completionPending ? (
-            <strong className="text-[15px]">Aguardando validação do servidor</strong>
-          ) : awardedPoints !== null ? (
+          <span className="challenge-flow-check"><Check /></span>
+          <p>Atividade concluída e salva no seu histórico.</p>
+          {awardedPoints !== null ? (
             <strong>+{awardedPoints} XP <Zap /></strong>
           ) : (
-            <strong className="text-[15px]">Pontuação registrada pelo servidor</strong>
+            <strong className="text-[15px]">Atividade salva no histórico</strong>
           )}
+          {completionPending ? <small>{completion?.message || 'Pontuação competitiva em análise'}</small> : null}
+          {completionRejected ? <small>{completion?.message || 'Fora da pontuação competitiva'}</small> : null}
+          {completion?.status === 'approved' ? <small>Pontuação competitiva validada</small> : null}
+          {completion?.status === 'recorded' ? <small>Já conta para seus desafios e missões</small> : null}
           <article>
             <b>TREINO DE MUSCULAÇÃO</b>
-            <small>{completion?.status === 'approved' ? '1/1' : '—'}</small>
+            <small>1/1</small>
             <div />
           </article>
           <button className="challenge-flow-primary" onClick={onSummary}>
@@ -556,7 +550,7 @@ export function ChallengeActivityFlow({
 
       {screen === 'day-progress' && (
         <section className="challenge-flow-day-progress">
-          <p>Progresso dos desafios validados hoje</p>
+          <p>Progresso dos desafios concluídos hoje</p>
           <strong>{completedToday}/2</strong>
           <div className="challenge-flow-day-track">
             <i style={{ width: `${Math.min(100, completedToday * 50)}%` }} />
@@ -564,12 +558,12 @@ export function ChallengeActivityFlow({
           <article>
             <span className={workoutCompleted ? 'is-complete' : ''}><Check /></span>
             <b>TREINO DE MUSCULAÇÃO</b>
-            <em>{workoutCompleted ? 'VALIDADO' : 'PENDENTE'}</em>
+            <em>{workoutCompleted ? 'CONCLUÍDO' : 'PENDENTE'}</em>
           </article>
           <article>
             <span className={cardioCompleted ? 'is-complete' : ''}><Check /></span>
             <b>CARDIO AERÓBICO</b>
-            <em>{cardioCompleted ? 'VALIDADO' : 'PENDENTE'}</em>
+            <em>{cardioCompleted ? 'CONCLUÍDO' : 'PENDENTE'}</em>
           </article>
           <button className="challenge-flow-primary" onClick={onDone}>
             VOLTAR PARA DESAFIOS

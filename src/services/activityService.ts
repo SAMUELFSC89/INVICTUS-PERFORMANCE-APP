@@ -1,4 +1,4 @@
-import { ActivitySession, Workout } from "../types";
+import { ActivityCompetitionPolicy, ActivitySession, Workout } from "../types";
 import { auth, db } from "../firebase";
 import { collection, doc, updateDoc, getDoc, query, where, getDocs, setDoc } from "firebase/firestore";
 import { validationService } from "./validationService";
@@ -12,8 +12,6 @@ import { webGpsTrackingService } from "./webGpsTrackingService";
 import { workoutSetJournal } from './workoutSetJournal';
 import { sessionHeartRateService } from './sessionHeartRateService';
 import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
-import { communityChampionshipService } from "./communityChampionshipService";
-import { championshipService } from "./championshipService";
 
 const SESSION_KEY = 'current_activity_session';
 const MAX_SESSION_MINUTES = {
@@ -38,6 +36,9 @@ export interface EndSessionResult {
   isScoringEligible?: boolean;
   nonScoringReason?: string | null;
   rankingPointsEarned?: number;
+  recordStatus?: 'completed';
+  activityMode?: 'personal' | 'competitive' | 'unresolved';
+  competitionReviewStatus?: string;
   presenceCheckRequired?: boolean;
   presenceCheckId?: string;
   livenessPrompt?: string;
@@ -49,16 +50,93 @@ export interface EndSessionResult {
 // derivado -- ver auditoria antifraude 2026-08).
 let sensorSamples: { accel: number[]; gyro: number[] } = { accel: [], gyro: [] };
 let activeMotionHandler: ((event: DeviceMotionEvent) => void) | null = null;
+let activeMotionAvailabilityTimer: ReturnType<typeof setTimeout> | null = null;
 let lastCheckpointRemoteSyncAt = 0;
-// ACT-05 (auditoria 6167c8f): rastreia o drenar-do-buffer-nativo disparado por
-// pauseSession() para que resumeSession() possa aguardá-lo antes de chamar
-// start() de novo -- ver comentário detalhado em pauseSession().
+
+// Promise pendente de drenagem do buffer nativo de GPS ao pausar a sessao (ver
+// pauseSession/resumeSession) -- evita perder pontos coletados enquanto a tela
+// estava bloqueada/app minimizado durante a pausa (auditoria antifraude 2026-08).
 let pendingNativeDrain: Promise<void> | null = null;
+
+// "Tumulo" local: gravado quando a escrita final de encerramento no Firestore falha,
+// para impedir que uma sessao ja finalizada localmente "ressuscite" na proxima
+// abertura do app (getCurrentSession/restoreActiveSession) apos um dessincronismo
+// com o servidor.
+function isTombstoned(sessionId: string): boolean {
+  try {
+    return !!localStorage.getItem('sessao_encerrada_' + sessionId);
+  } catch {
+    return false;
+  }
+}
+
+function markTombstoned(sessionId: string) {
+  try {
+    localStorage.setItem('sessao_encerrada_' + sessionId, new Date().toISOString());
+  } catch {
+    // localStorage pode nao estar disponivel no ambiente nativo.
+  }
+}
 
 function computeVariance(samples: number[]): number | undefined {
   if (!samples || samples.length < 3) return undefined;
   const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
   return samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length;
+}
+
+function attachMotionListener(): void {
+  if (typeof window === 'undefined' || activeMotionHandler) return;
+  if (activeMotionAvailabilityTimer) clearTimeout(activeMotionAvailabilityTimer);
+  activeMotionAvailabilityTimer = setTimeout(() => {
+    if (localStorage.getItem('sensor_status') === 'granted' && localStorage.getItem('has_sensor_events') !== 'true') {
+      localStorage.setItem('sensor_status', 'unavailable');
+    }
+  }, 3000);
+
+  const handleMotion = (event: DeviceMotionEvent) => {
+    localStorage.setItem('has_sensor_events', 'true');
+    if (localStorage.getItem('sensor_status') === 'unavailable') {
+      localStorage.setItem('sensor_status', 'granted');
+    }
+    if (activeMotionAvailabilityTimer) {
+      clearTimeout(activeMotionAvailabilityTimer);
+      activeMotionAvailabilityTimer = null;
+    }
+    const acc = event.accelerationIncludingGravity;
+    if (acc) {
+      const force = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
+      sensorSamples.accel.push(force);
+      if (sensorSamples.accel.length > 600) sensorSamples.accel.shift();
+      if (force > 11.5) localStorage.setItem('has_sensor_oscillation', 'true');
+    }
+    const rot = (event as any).rotationRate;
+    if (rot) {
+      const gyroMag = Math.sqrt((rot.alpha || 0) ** 2 + (rot.beta || 0) ** 2 + (rot.gamma || 0) ** 2);
+      sensorSamples.gyro.push(gyroMag);
+      if (sensorSamples.gyro.length > 600) sensorSamples.gyro.shift();
+    }
+  };
+  window.addEventListener('devicemotion', handleMotion);
+  activeMotionHandler = handleMotion;
+}
+
+function ensureCompetitionMotionTracking(session: ActivitySession): void {
+  if (typeof window === 'undefined' || session.competitionPolicy?.requiresMotionSensors !== true) return;
+  if (!('DeviceMotionEvent' in window)) {
+    localStorage.setItem('sensor_status', 'not_supported');
+    return;
+  }
+  const existingSensorStatus = localStorage.getItem('sensor_status');
+  if (existingSensorStatus === 'granted') {
+    attachMotionListener();
+  } else if (typeof (DeviceMotionEvent as any).requestPermission !== 'function') {
+    localStorage.setItem('sensor_status', 'granted');
+    attachMotionListener();
+  } else if (!existingSensorStatus) {
+    // No iOS um novo prompt exige gesto. A tela pode oferecer a retomada, mas
+    // a restauração automática nunca dispara uma permissão fora do toque.
+    localStorage.setItem('sensor_status', 'unavailable');
+  }
 }
 
 
@@ -86,34 +164,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
-/**
- * ACT-04 (auditoria 6167c8f): quando a escrita final que marca uma sessão
- * como 'completed'/'cancelled' falha no Firestore, o código grava uma marca
- * local ("tumba") só pra nunca ser lida em lugar nenhum -- getCurrentSession,
- * restoreActiveSession e o loop de restauração de startSession() olhavam
- * apenas o campo `status` do documento remoto, que continuava 'active'
- * justamente porque a escrita que o mudaria foi a que falhou. Resultado: uma
- * sessão que o atleta já encerrou (ou cancelou) podia "ressuscitar" sozinha
- * na próxima abertura do app ou troca de aba, quando o app tentasse
- * restaurar automaticamente uma atividade em andamento. Esta marca agora é
- * efetivamente consultada antes de qualquer restauração, local ou remota.
- */
-function isTombstoned(sessionId: string): boolean {
-  try {
-    return !!localStorage.getItem('sessao_encerrada_' + sessionId);
-  } catch {
-    return false;
-  }
-}
-
-function markTombstoned(sessionId: string) {
-  try {
-    localStorage.setItem('sessao_encerrada_' + sessionId, new Date().toISOString());
-  } catch {
-    // localStorage pode não estar disponível no ambiente nativo.
-  }
-}
-
 function sessionFromActiveDocument(data: Record<string, any>): ActivitySession {
   return {
     id: String(data.id || ''),
@@ -132,6 +182,7 @@ function sessionFromActiveDocument(data: Record<string, any>): ActivitySession {
     startLocation: data.startLocation || undefined,
     status: 'active',
     checkInId: data.checkInId || undefined,
+    competitionPolicy: data.competitionPolicy || undefined,
     checkpoints: Array.isArray(data.checkpoints) ? data.checkpoints : [],
     maxObservedSpeedKmH: Number(data.maxObservedSpeedKmH) || 0,
     gpsSpeedSampleCount: Number(data.gpsSpeedSampleCount) || 0,
@@ -143,7 +194,7 @@ function sessionFromActiveDocument(data: Record<string, any>): ActivitySession {
 }
 
 export const activityService = {
-  async performGymCheckIn(): Promise<{ checkInId: string; location: { lat: number; lng: number; accuracy?: number }; gymName?: string }> {
+  async performGymCheckIn(policy: ActivityCompetitionPolicy): Promise<{ checkInId: string; location: { lat: number; lng: number; accuracy?: number }; gymName?: string }> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
     const location = await getCurrentLocation(true);
@@ -152,11 +203,13 @@ export const activityService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        action: 'confirm',
+        action: 'confirm_activity',
         latitude: location.lat,
         longitude: location.lng,
         accuracy: location.accuracy || 15,
         isMock: false,
+        activityPolicySnapshotId: policy.snapshotId,
+        activitySessionId: policy.sessionId,
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -164,22 +217,25 @@ export const activityService = {
     return { checkInId: result.checkInId, location, gymName: result.gymName };
   },
 
-  // #249: mesmo criterio usado no servidor (validate-activity-service.ts,
-  // hasActiveChampionshipEnrollment) -- entrou por opcao propria no ranking
-  // da comunidade OU tem inscricao paga ativa em algum campeonato. So serve
-  // pra decisoes de UX no cliente (ex: pular pedido de permissao de sensor,
-  // deixar o mapa ao vivo opcional) -- a decisao de PONTUACAO de verdade
-  // sempre e recalculada no servidor, nunca confia neste valor do cliente.
-  async hasActiveScoringStakes(): Promise<boolean> {
-    try {
-      const [community, registrations] = await Promise.all([
-        communityChampionshipService.status().catch(() => ({ enrolled: false })),
-        championshipService.getUserRegistrations().catch(() => [])
-      ]);
-      return Boolean(community.enrolled || registrations.some((item) => item.status === 'ACTIVE'));
-    } catch {
-      return false;
+  async resolveCompetitionPolicy(type: 'workout' | 'cardio', cardioType?: string): Promise<ActivityCompetitionPolicy> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Usuário não autenticado');
+    const cardioConfig = type === 'cardio' ? getModalityConfig(cardioType) : undefined;
+    const token = await user.getIdToken();
+    const response = await withTimeout(fetch(`${API_CONFIG.baseUrl}/api/activity-policy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        activityType: type,
+        cardioType,
+        isIndoorCardio: cardioConfig ? cardioConfig.category !== 'outdoor' : false,
+      }),
+    }), 12_000, 'Não foi possível definir o modo da atividade. Verifique sua conexão e tente novamente.');
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.version !== 'activity-competition-v2' || !result?.snapshotId || !result?.sessionId) {
+      throw new Error(result?.error || 'Não foi possível definir com segurança se esta atividade é pessoal ou competitiva.');
     }
+    return result as ActivityCompetitionPolicy;
   },
 
   async requestMotionPermission(): Promise<'granted' | 'denied' | 'unavailable' | 'not_supported' | 'error'> {
@@ -212,11 +268,28 @@ export const activityService = {
     return 'granted';
   },
 
-  async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string, muscleGroup?: string, workoutContext?: Pick<ActivitySession, 'workoutPlanId' | 'workoutId' | 'plannedExercises'>): Promise<ActivitySession> {
+  async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string, muscleGroup?: string, workoutContext?: Pick<ActivitySession, 'workoutPlanId' | 'workoutId' | 'plannedExercises'>, competitionPolicy?: ActivityCompetitionPolicy): Promise<ActivitySession> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
     const existing = this.getCurrentSession();
     if (existing) throw new Error('Já existe uma atividade em andamento.');
+    if (!competitionPolicy || competitionPolicy.version !== 'activity-competition-v2') {
+      throw new Error('O modo pessoal ou competitivo da atividade não foi definido. Tente iniciar novamente.');
+    }
+    const cardioMapEntry = getModalityConfig(cardioType);
+    const expectedIndoor = cardioMapEntry ? cardioMapEntry.category !== 'outdoor' : false;
+    if (!competitionPolicy.snapshotId || !competitionPolicy.sessionId
+      || competitionPolicy.activityType !== type
+      || String(competitionPolicy.cardioType || '') !== String(cardioType || '')
+      || Boolean(competitionPolicy.isIndoorCardio) !== Boolean(expectedIndoor)) {
+      throw new Error('A autorização desta atividade não corresponde à modalidade selecionada. Atualize e tente novamente.');
+    }
+    if (Date.parse(competitionPolicy.startBy) < Date.now()) {
+      throw new Error('A autorização para iniciar expirou. Atualize a tela e toque em iniciar novamente.');
+    }
+    if (competitionPolicy.requiresGymCheckIn && (!providedLocation || !checkInId)) {
+      throw new Error('Faça o check-in presencial antes de iniciar esta atividade competitiva.');
+    }
 
     // #323: a checagem de sessão ativa e a leitura do perfil são independentes.
     // A primeira protege contra duplicidade; a segunda fica em segundo plano,
@@ -294,6 +367,7 @@ export const activityService = {
             startLocation: sessData.startLocation || undefined,
             status: 'active',
             checkInId: sessData.checkInId || undefined,
+            competitionPolicy: sessData.competitionPolicy || undefined,
             checkpoints: sessData.checkpoints || [],
             maxObservedSpeedKmH: Number(sessData.maxObservedSpeedKmH) || 0,
             gpsSpeedSampleCount: Number(sessData.gpsSpeedSampleCount) || 0,
@@ -313,7 +387,6 @@ export const activityService = {
       console.warn('[ActivityService] Server check for active sessions failed, proceeding locally:', checkErr);
     }
 
-    const cardioMapEntry = getModalityConfig(cardioType);
     if (type === 'cardio' && !cardioMapEntry) {
       throw new Error('Modalidade de cardio inválida ou não suportada. Selecione novamente antes de iniciar.');
     }
@@ -323,7 +396,7 @@ export const activityService = {
     const startLocation = providedLocation;
 
     const session: ActivitySession = {
-      id: Math.random().toString(36).substring(7),
+      id: competitionPolicy.sessionId,
       userId: user.uid,
       type,
       cardioType,
@@ -339,6 +412,7 @@ export const activityService = {
       startLocation,
       status: 'active',
       checkInId,
+      competitionPolicy,
       checkpoints: startLocation ? [{ timestamp: new Date().toISOString(), segmentId: 0, location: startLocation }] : [],
       isPaused: false,
       pausedMs: 0,
@@ -346,63 +420,13 @@ export const activityService = {
       gpsSegmentId: 0
     };
 
-    if (typeof window !== 'undefined') {
+    sensorSamples = { accel: [], gyro: [] };
+    lastCheckpointRemoteSyncAt = 0;
+
+    if (typeof window !== 'undefined' && competitionPolicy.requiresMotionSensors) {
       localStorage.setItem('has_sensor_oscillation', 'false');
       localStorage.setItem('has_sensor_events', 'false');
-      sensorSamples = { accel: [], gyro: [] };
-      lastCheckpointRemoteSyncAt = 0;
-
-      const isSupported = 'DeviceMotionEvent' in window;
-      if (!isSupported) {
-        localStorage.setItem('sensor_status', 'not_supported');
-      } else {
-        const registerListener = () => {
-          let timer = setTimeout(() => {
-            if (localStorage.getItem('sensor_status') === 'granted' && localStorage.getItem('has_sensor_events') !== 'true') {
-              localStorage.setItem('sensor_status', 'unavailable');
-            }
-          }, 3000);
-
-          const handleMotion = (event: DeviceMotionEvent) => {
-            localStorage.setItem('has_sensor_events', 'true');
-            if (localStorage.getItem('sensor_status') === 'unavailable') {
-              localStorage.setItem('sensor_status', 'granted');
-            }
-            clearTimeout(timer);
-            const acc = event.accelerationIncludingGravity;
-            if (acc) {
-              const force = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
-              sensorSamples.accel.push(force);
-              if (sensorSamples.accel.length > 600) sensorSamples.accel.shift();
-              if (force > 11.5) {
-                localStorage.setItem('has_sensor_oscillation', 'true');
-              }
-            }
-            const rot = (event as any).rotationRate;
-            if (rot) {
-              const gyroMag = Math.sqrt((rot.alpha || 0) ** 2 + (rot.beta || 0) ** 2 + (rot.gamma || 0) ** 2);
-              sensorSamples.gyro.push(gyroMag);
-              if (sensorSamples.gyro.length > 600) sensorSamples.gyro.shift();
-            }
-          };
-          window.addEventListener('devicemotion', handleMotion);
-          activeMotionHandler = handleMotion;
-        };
-
-        const existingSensorStatus = localStorage.getItem('sensor_status');
-        if (existingSensorStatus === 'granted') {
-          registerListener();
-        } else if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-          // No iOS a permissão de movimento só pode ser disparada dentro do
-          // gesto explícito do usuário (em Challenges). Não tentamos pedir de
-          // novo aqui, após consultas assíncronas, porque isso gera prompt
-          // inválido/inesperado.
-          localStorage.setItem('sensor_status', 'unavailable');
-        } else {
-          localStorage.setItem('sensor_status', 'granted');
-          registerListener();
-        }
-      }
+      ensureCompetitionMotionTracking(session);
     }
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -417,8 +441,7 @@ export const activityService = {
       // nativo -- webGpsTrackingService é o dono único do watchPosition a
       // partir de agora, iniciado aqui (não por um componente React) para
       // sobreviver a qualquer navegação dentro do app enquanto a sessão
-      // estiver ativa. No app nativo isto é um no-op (ver supported() no
-      // próprio serviço).
+      // estiver ativa. No app nativo isto é um no-op.
       webGpsTrackingService.start(session);
     }
 
@@ -439,6 +462,7 @@ export const activityService = {
       startLocation: session.startLocation || null,
       status: 'active',
       checkInId: session.checkInId || null,
+      competitionPolicy: session.competitionPolicy,
       checkpoints: session.checkpoints || [],
       maxObservedSpeedKmH: 0,
       gpsSpeedSampleCount: 0,
@@ -489,6 +513,7 @@ export const activityService = {
         return null;
       }
 
+      ensureCompetitionMotionTracking(session);
       return session;
     } catch (e) {
       localStorage.removeItem(SESSION_KEY);
@@ -560,6 +585,7 @@ export const activityService = {
       }
 
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      ensureCompetitionMotionTracking(session);
       if (session.requiresGpsDistance) {
         void nativeBackgroundLocationService.start().catch((error) => console.warn('[ActivityService] Não foi possível retomar o rastreamento nativo:', error));
         // ACT-10: mesma reconciliação do lado web ao recuperar uma sessão
@@ -830,6 +856,7 @@ export const activityService = {
   async endSession(photoBase64?: string, externalSignal?: AbortSignal): Promise<EndSessionResult> {
     const session = this.getCurrentSession();
     if (!session) throw new Error('Nenhuma atividade em andamento.');
+    const securityRequired = session.competitionPolicy?.requiresSecurityReview === true;
 
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
@@ -886,8 +913,9 @@ export const activityService = {
       // pelo servico em segundo plano. Pedir outra localizacao aqui acrescentava
       // ate quatro segundos ao encerramento sem melhorar a rota. O navegador,
       // que nao possui coletor nativo, continua capturando o ponto final.
-      const needsLocationAtEnd = !session.isPaused && (session.type === 'workout'
-        || (Boolean(session.requiresGpsDistance) && recoveredNativePointCount === 0));
+      const needsLocationAtEnd = !session.isPaused
+        && Boolean(session.requiresGpsDistance)
+        && recoveredNativePointCount === 0;
       if (needsLocationAtEnd) {
         // A rota de cardio externo também precisa de precisão alta para que o
         // último trecho não seja descartado. Sessões internas são ignoradas
@@ -945,15 +973,15 @@ export const activityService = {
     );
 
     let isDev = false;
-    if (typeof window !== 'undefined') {
+    if (securityRequired && typeof window !== 'undefined') {
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       // DevTools/React DevTools podem existir no aparelho de um usuário real e
       // não são prova de adulteração. Só o ambiente local explícito é marcado.
       isDev = isLocalhost;
     }
 
-    let isEmu = typeof window !== 'undefined' && /headless|chrome-lighthouse|bot|crawl|emulator|android sdk/i.test(navigator.userAgent || '');
-    if (typeof window !== 'undefined' && !isEmu) {
+    let isEmu = securityRequired && typeof window !== 'undefined' && /headless|chrome-lighthouse|bot|crawl|emulator|android sdk/i.test(navigator.userAgent || '');
+    if (securityRequired && typeof window !== 'undefined' && !isEmu) {
       try {
         const canvas = document.createElement('canvas');
         const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
@@ -971,7 +999,7 @@ export const activityService = {
     }
 
     let isRoot = false;
-    if (typeof window !== 'undefined') {
+    if (securityRequired && typeof window !== 'undefined') {
       const ua = navigator.userAgent || '';
       const rootedSigs = ['rooted', 'jailbreak', 'supersu', 'magisk', 'cydia', 'busybox', 'xposed', 'substrate', 'bypass'];
       const hasRootSignatures = rootedSigs.some(sig => ua.toLowerCase().includes(sig));
@@ -981,7 +1009,7 @@ export const activityService = {
       isRoot = hasRootSignatures;
     }
 
-    let isMockLoc = nativeMockDetected;
+    let isMockLoc = securityRequired && nativeMockDetected;
     if (session.startLocation) {
       const accuracy = (session.startLocation as any).accuracy || 0;
       if (accuracy < 1 && accuracy > 0) {
@@ -1000,15 +1028,15 @@ export const activityService = {
 
     // Telemetria ausente não é evidência de movimento. Só enviamos positivo
     // quando o listener capturou uma oscilação real nesta sessão.
-    const hasOscillation = typeof window !== 'undefined' && localStorage.getItem('has_sensor_oscillation') === 'true';
-    const sensorStatus = typeof window !== 'undefined' ? (localStorage.getItem('sensor_status') || 'unavailable') : 'unavailable';
+    const hasOscillation = securityRequired && typeof window !== 'undefined' && localStorage.getItem('has_sensor_oscillation') === 'true';
+    const sensorStatus = securityRequired && typeof window !== 'undefined' ? (localStorage.getItem('sensor_status') || 'unavailable') : undefined;
     const rawPedometerSteps = Number(session.smartwatchData?.pedometerSteps ?? session.smartwatchData?.steps);
     const initialPedometerSteps = Number.isFinite(rawPedometerSteps) && rawPedometerSteps >= 0
       ? rawPedometerSteps
       : undefined;
 
-    const accelVariance = computeVariance(sensorSamples.accel);
-    const gyroVariance = computeVariance(sensorSamples.gyro);
+    const accelVariance = securityRequired ? computeVariance(sensorSamples.accel) : undefined;
+    const gyroVariance = securityRequired ? computeVariance(sensorSamples.gyro) : undefined;
     const sensorTelemetry = (accelVariance !== undefined || gyroVariance !== undefined)
       ? { accelVariance, gyroVariance }
       : undefined;
@@ -1083,14 +1111,13 @@ export const activityService = {
           'Authorization': `Bearer ${idToken}`
         },
         body: JSON.stringify({
-          // ACT-02 (auditoria 6167c8f): sessionId estavel (o mesmo em toda
-          // tentativa de finalizar esta sessao) -- o servidor usa esta chave
-          // como ID determinístico do documento, para que um retry (rede
-          // caiu, resposta se perdeu) nunca crie um segundo workout nem
-          // conceda XP duas vezes, mesmo que a duracao recalculada aqui saia
-          // levemente diferente entre tentativas.
-          sessionId: session.id,
           type: session.type,
+          sessionId: session.id,
+          activitySessionId: session.id,
+          startTime: session.startTime,
+          endTime: endTime.toISOString(),
+          competitionPolicySnapshotId: session.competitionPolicy?.snapshotId,
+          competitionPolicyVersion: session.competitionPolicy?.version,
           muscleGroup: session.muscleGroup,
           cardioType: session.cardioType,
           cardioTypeLabel: session.cardioTypeLabel,
@@ -1114,11 +1141,11 @@ export const activityService = {
           // servidor ja faz; api/_lib/gps-engine.ts usa o maior dos dois.
           maxObservedSpeedKmH: session.maxObservedSpeedKmH,
           gpsSpeedSampleCount: session.gpsSpeedSampleCount || 0,
-          isMockLocation: isMockLoc,
-          isEmulator: isEmu,
-          isRooted: isRoot,
-          isDeveloperMode: isDev,
-          hasSensorOscillation: hasOscillation,
+          isMockLocation: securityRequired ? isMockLoc : undefined,
+          isEmulator: securityRequired ? isEmu : undefined,
+          isRooted: securityRequired ? isRoot : undefined,
+          isDeveloperMode: securityRequired ? isDev : undefined,
+          hasSensorOscillation: securityRequired ? hasOscillation : undefined,
           sensorStatus,
           pedometerSteps,
           sensorTelemetry,
@@ -1139,11 +1166,8 @@ export const activityService = {
           console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após falha de envio:', restartErr);
         });
         // ACT-10: mesmo raciocinio do restart nativo acima, para o watcher
-        // web -- ele nunca foi parado neste ponto (endSession não chama
-        // webGpsTrackingService.stop() antes de tentar a rede, diferente do
-        // coletor nativo que já foi drenado por collectAndStop()), mas
-        // start() aqui é idempotente e serve de garantia caso algo o tenha
-        // derrubado nesse meio-tempo.
+        // web -- start() aqui é idempotente e serve de garantia caso algo o
+        // tenha derrubado nesse meio-tempo.
         webGpsTrackingService.start(session);
       }
       if (fetchErr?.name === 'AbortError') {
@@ -1161,10 +1185,10 @@ export const activityService = {
     }
 
     if (!response.ok) {
-      // ACT-06: mesmo raciocinio do catch de rede acima -- um erro HTTP (ex.:
-      // o novo 503 de ACT-01 quando a persistencia falhou no servidor)
-      // tambem significa que o atleta vai tentar de novo, e o coletor nativo
-      // ja foi parado antes desta chamada.
+      // ACT-06: mesmo raciocinio do catch de rede acima -- um erro HTTP
+      // (ex.: persistencia falhou no servidor) tambem significa que o
+      // atleta vai tentar de novo, e o coletor nativo ja foi parado antes
+      // desta chamada.
       if (session.requiresGpsDistance) {
         void nativeBackgroundLocationService.start().catch((restartErr) => {
           console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após erro do servidor:', restartErr);
@@ -1205,7 +1229,7 @@ export const activityService = {
       };
     }
 
-    const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned } = respData;
+    const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned, recordStatus, activityMode, competitionReviewStatus } = respData;
 
       // #230: fechar a sessao no SERVIDOR antes de limpar o estado local, e
         // esperar a confirmacao.
@@ -1248,12 +1272,12 @@ export const activityService = {
         this.limparEstadoLocal();
         try { workoutSetJournal.clear(user.uid, session.id); } catch { /* Server already acknowledged the activity. */ }
 
-    const finalUserMessage = userMessage || message || 'Não conseguimos validar esta atividade no momento. Tente novamente seguindo as regras do desafio.';
+    const finalUserMessage = userMessage || message || 'Atividade concluída e salva no seu histórico.';
 
       const enrichedValidation = {
         ...(validation || workout?.validation || {}),
-        success: success !== undefined ? success : (workout?.status === 'valid'),
-        status: status || (workout?.status === 'valid' ? 'approved' : 'rejected'),
+        success: success !== undefined ? success : Boolean(workout?.id),
+        status: validation?.status || status || workout?.validationStatus || 'recorded',
         reasonCode: reasonCode || null,
         userMessage: finalUserMessage,
         canRetry: canRetry !== undefined ? canRetry : false
@@ -1268,7 +1292,10 @@ export const activityService = {
       message: finalUserMessage,
       isScoringEligible,
       nonScoringReason,
-      rankingPointsEarned
+      rankingPointsEarned,
+      recordStatus: recordStatus || workout?.recordStatus,
+      activityMode: activityMode || workout?.activityMode,
+      competitionReviewStatus: competitionReviewStatus || workout?.competitionReviewStatus,
     };
   },
 
@@ -1370,6 +1397,10 @@ export const activityService = {
   // endSession possa encerrar a sessao como 'completed' sem que uma escrita
   // de 'cancelled' passe por cima.
   limparEstadoLocal() {
+    if (activeMotionAvailabilityTimer) {
+      clearTimeout(activeMotionAvailabilityTimer);
+      activeMotionAvailabilityTimer = null;
+    }
     if (typeof window !== 'undefined' && activeMotionHandler) {
       window.removeEventListener('devicemotion', activeMotionHandler);
       activeMotionHandler = null;

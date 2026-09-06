@@ -9,6 +9,14 @@
       ]
     },
     {
+      "collectionGroup": "workouts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "pendingReview", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "health_samples",
       "queryScope": "COLLECTION",
       "fields": [
@@ -22,6 +30,20 @@
         },
         {
           "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "gym_checkins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "confirmedAt",
           "order": "DESCENDING"
         }
       ]

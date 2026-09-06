@@ -11,6 +11,9 @@ export interface WearableActivity {
   source: WearableSource;
   sourceActivityId: string; // ID from the original provider
   activityType: string; // e.g., 'Corrida', 'Caminhada', 'Ciclismo', 'Musculação', 'Cardio'
+  /** Preserved from the provider so treadmill/indoor cardio is not forced
+   * through outdoor GPS competition rules. */
+  isIndoorCardio?: boolean;
   startTime: string; // ISO string
   durationSeconds: number;
   distanceMeters: number;

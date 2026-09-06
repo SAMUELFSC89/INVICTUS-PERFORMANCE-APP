@@ -184,7 +184,7 @@ export function CreatorSandbox({
                   : "bg-surface-container hover:bg-surface-container-high border-white/5 text-on-surface-variant"
               )}
             >
-              <span>{roleItem.name} <span className="text-[10px] opacity-50 font-mono">({roleItem.id})</span></span>
+              <span>{roleItem.name} <span className="text-[10px] invictus-text-subtle font-mono">({roleItem.id})</span></span>
               {simulatedRole === roleItem.id && <Check size={14} />}
             </button>
           ))}

@@ -1,13 +1,13 @@
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import type { Workout } from '../types';
-import { normalizeActivityValidationStatus, readActivityTimestamp } from '../lib/workoutData';
+import { readActivityTimestamp, resolveActivityState } from '../lib/workoutData';
 import { API_CONFIG } from '../config';
 
 /**
- * Leitura de atividades já homologadas. A criação, validação, score e
- * conquistas acontecem exclusivamente nas APIs de validação; este serviço não
- * possui mais um caminho de escrita direta em `workouts` ou `users`.
+ * Leitura de atividades pessoais concluídas. A criação, recompensas e eventual
+ * pontuação competitiva acontecem exclusivamente nas APIs; este serviço não
+ * possui caminho de escrita direta em `workouts` ou `users`.
  */
 export const workoutService = {
   async submitRecovery(data: { focus: 'alongamento' | 'sono' | 'meditacao' | 'caminhada'; description: string; quizAnswers?: unknown }) {
@@ -50,10 +50,8 @@ export const workoutService = {
       return snapshot.docs.flatMap((entry) => {
         const data = entry.data() as Record<string, unknown>;
         const timestamp = readActivityTimestamp(data.timestamp ?? data.createdAt);
-        const status = normalizeActivityValidationStatus(
-          data.validationStatus ?? data.status ?? (data.validation as { status?: unknown } | undefined)?.status
-        );
-        if (timestamp === null || status !== 'validated') return [];
+        const activityState = resolveActivityState(data);
+        if (timestamp === null || !activityState.isCompleted) return [];
 
         const workoutType: 'workout' | 'cardio' | 'diet' | 'recovery' =
           data.type === 'cardio' || data.type === 'diet' || data.type === 'recovery' || data.type === 'workout'
@@ -64,7 +62,7 @@ export const workoutService = {
           id: entry.id,
           userId: typeof data.userId === 'string' ? data.userId : user.uid,
           timestamp: new Date(timestamp).toISOString(),
-          status: 'valid',
+          status: 'completed',
           type: workoutType,
           photoUrl: typeof data.photoUrl === 'string' ? data.photoUrl : undefined,
           muscleGroup: typeof data.muscleGroup === 'string' ? data.muscleGroup : undefined,
@@ -75,10 +73,20 @@ export const workoutService = {
           duration: typeof data.duration === 'number' ? data.duration : undefined,
           distance: typeof data.distance === 'number' ? data.distance : undefined,
           calories: typeof data.calories === 'number' ? data.calories : undefined,
-          points: typeof data.points === 'number' ? data.points : undefined,
-          rankingPointsEarned: typeof data.rankingPointsEarned === 'number' ? data.rankingPointsEarned : undefined,
+          points: typeof data.activityXpAwarded === 'number' ? data.activityXpAwarded : typeof data.points === 'number' ? data.points : undefined,
+          rankingPointsEarned: activityState.isCompetitionApproved
+            ? (typeof data.competitionPoints === 'number'
+                ? data.competitionPoints
+                : typeof data.rankingPointsEarned === 'number' ? data.rankingPointsEarned : undefined)
+            : undefined,
           gymId: typeof data.gymId === 'string' ? data.gymId : undefined,
           validationStatus: typeof data.validationStatus === 'string' ? data.validationStatus : undefined,
+          recordStatus: activityState.recordStatus,
+          activityMode: activityState.activityMode,
+          competitionReviewStatus: activityState.competitionStatus,
+          competitionContexts: Array.isArray(data.competitionContexts) ? data.competitionContexts as Workout['competitionContexts'] : undefined,
+          activityXpAwarded: typeof data.activityXpAwarded === 'number' ? data.activityXpAwarded : undefined,
+          competitionPoints: typeof data.competitionPoints === 'number' ? data.competitionPoints : undefined,
           sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
           verificationPhotoUrl: typeof data.verificationPhotoUrl === 'string' ? data.verificationPhotoUrl : undefined
         };

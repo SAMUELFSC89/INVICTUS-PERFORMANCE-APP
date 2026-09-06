@@ -105,6 +105,63 @@ export const MODALITY_BACKEND_CONFIG: Record<string, ModalityBackendConfig> = {
   }
 };
 
+export interface NormalizedSessionPolicyModality {
+  activityType: 'workout' | 'cardio';
+  cardioType?: string;
+  isIndoorCardio: boolean;
+  requiresGps: boolean;
+}
+
+/**
+ * Fronteira estrita usada ao emitir/consumir a autorização de uma sessão
+ * nativa. Diferentemente de `resolveModality`, aqui não há aliases nem
+ * fallback: modalidade e ambiente precisam ser canônicos, e o servidor
+ * deriva indoor/outdoor da própria configuração.
+ */
+export function normalizeSessionPolicyModality(input: {
+  activityType: unknown;
+  cardioType?: unknown;
+  isIndoorCardio?: unknown;
+}): NormalizedSessionPolicyModality {
+  if (input.cardioType !== undefined && typeof input.cardioType !== 'string') {
+    throw new Error('Modalidade de cardio deve ser texto.');
+  }
+  if (input.isIndoorCardio !== undefined && typeof input.isIndoorCardio !== 'boolean') {
+    throw new Error('Ambiente da atividade deve ser booleano.');
+  }
+  const activityType = String(input.activityType || '').trim().toLowerCase();
+  const suppliedCardioType = typeof input.cardioType === 'string'
+    ? input.cardioType.trim().toLowerCase() : '';
+  const hasIndoorFlag = typeof input.isIndoorCardio === 'boolean';
+
+  if (activityType === 'workout') {
+    if (suppliedCardioType || input.isIndoorCardio === true) {
+      throw new Error('Musculação não pode declarar modalidade ou ambiente de cardio.');
+    }
+    return {
+      activityType: 'workout',
+      isIndoorCardio: false,
+      requiresGps: false,
+    };
+  }
+  if (activityType !== 'cardio') throw new Error('Tipo de atividade inválido.');
+
+  const config = MODALITY_BACKEND_CONFIG[suppliedCardioType];
+  if (!config || config.id !== suppliedCardioType) {
+    throw new Error('Modalidade de cardio inválida ou ausente.');
+  }
+  const isIndoorCardio = config.category !== 'outdoor';
+  if (hasIndoorFlag && input.isIndoorCardio !== isIndoorCardio) {
+    throw new Error('O ambiente informado não corresponde à modalidade de cardio.');
+  }
+  return {
+    activityType: 'cardio',
+    cardioType: config.id,
+    isIndoorCardio,
+    requiresGps: config.requiresGps,
+  };
+}
+
 /**
  * #239: PERFIS DE VALIDACAO POR MODALIDADE.
  *

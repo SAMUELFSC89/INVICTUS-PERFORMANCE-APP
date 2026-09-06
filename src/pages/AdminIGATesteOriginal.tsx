@@ -102,7 +102,7 @@ export function AdminIGATesteOriginal() {
               <p className='font-mono text-sm text-secondary'>ICV = raiz(I x T)</p>
             </div>
           </div>
-          <p className='text-[10px] text-on-surface-variant font-medium leading-relaxed opacity-70'>
+          <p className='text-[10px] invictus-text-muted font-medium leading-relaxed'>
             F = numero de sessoes na semana | C = calorias totais informadas (kcal) |
             T = minutos totais de exercicio | I = intensidade relativa media (% da FC maxima)
           </p>

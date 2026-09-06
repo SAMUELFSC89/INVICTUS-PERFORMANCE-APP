@@ -25,18 +25,16 @@ export function Layout() {
   const location = useLocation();
   const isHome = location.pathname === '/' || location.pathname === '/invite';
 
-  // #253: varias telas em tela cheia sao renderizadas via portal direto no
-  // document.body (createPortal), fora da arvore deste Layout -- por isso o
-  // backdrop padronizado (internal-page-backdrop.css) precisa de um sinal no
-  // proprio body, nao so numa classe deste componente, pra alcancar tanto as
-  // rotas normais do Outlet quanto essas telas portalled.
+  // Several full-screen routes are rendered in document.body through portals.
+  // Keeping the route surface on body lets the shared backdrop style reach both
+  // regular Outlet pages and those portal-based screens without touching Home.
   useLayoutEffect(() => {
     document.body.dataset.invictusSurface = isHome ? 'home' : 'internal';
+
     return () => {
       delete document.body.dataset.invictusSurface;
     };
   }, [isHome]);
-
   // Power Lift owns the whole viewport and ships its own footer. Keeping the
   // legacy shell mounted here produced two navigation bars on the same screen.
   // #241: Musculação (Meu Plano e todo o fluxo de criação de treino) tambem
@@ -45,60 +43,7 @@ export function Layout() {
   // Layout (z-50, canto superior direito) continuava renderizado por cima/
   // por baixo do cabecalho da tela, causando a sobreposicao reportada pelo
   // usuario ("sino e level por baixo ainda aparecendo" na tela Meu Plano).
-  //
-  // #248: "/challenges" (e as rotas que reusam o mesmo componente Challenges.tsx
-  // -- /activity/ongoing, /running, /challenges/cardio) e um caso especial: o
-  // MESMO pathname mostra 3 telas bem diferentes dependendo de estado interno
-  // do componente (nao refletido na URL) -- o hub novo (ChallengesHubNew, com
-  // .dc-footer proprio), o historico novo (ActivityHistoryPageNew, com
-  // .ah-new-footer proprio) ou a tela antiga de desafios/fluxo em andamento
-  // (sem footer proprio, que PRECISA do nav antigo). Como o pathname sozinho
-  // nao distingue os 3 casos, o Layout nao pode decidir isso so com
-  // location.pathname -- por isso o nav antigo continuava vazando por baixo
-  // do rodape novo sempre que o hub/historico era a tela mostrada (o caso mais
-  // comum, ja que e a tela padrao ao abrir "Desafios"). A correcao usa o mesmo
-  // Outlet context ja existente (triggerXPToast) para a tela filha avisar o
-  // Layout quando ela propria desenha um rodape e o nav antigo deve sumir.
-  const [routeOwnsFooter, setRouteOwnsFooter] = useState(false);
-  useEffect(() => { setRouteOwnsFooter(false); }, [location.pathname]);
-  // #248 (achado ao vivo, reportado pelo usuario com screenshot real): o
-  // fluxo antigo de desafios (ChallengeActivityFlow, .challenge-flow-screen)
-  // desenha o proprio cabecalho (.challenge-flow-header, com botao de voltar
-  // e titulo tipo "SELECIONE O TIPO DE CARDIO") no topo da tela -- mas
-  // suppressLegacyChrome continua false ali de proposito, porque esse fluxo
-  // ainda PRECISA do nav antigo no rodape (fica escondido atras do proprio
-  // botao "INICIAR CARDIO" por z-index, sem duplicar nada). O problema e que
-  // o MESMO suppressLegacyChrome tambem controlava o badge fixo LVL+sino no
-  // topo, que fica na mesma faixa vertical do cabecalho da tela e colide
-  // visualmente com o titulo (confirmado com zoom: "LVL 3" sobrepondo o "O"
-  // de "CARDIO"). routeOwnsHeader separa esse caso: suprime so o badge do
-  // topo quando a tela filha avisa que ja desenha o proprio cabecalho, sem
-  // mexer no nav de baixo.
-  const [routeOwnsHeader, setRouteOwnsHeader] = useState(false);
-  useEffect(() => { setRouteOwnsHeader(false); }, [location.pathname]);
-  // #252: auditoria pedida pelo usuario apos o fix acima -- confirmado ao vivo
-  // em producao que o MESMO bug (nav antigo #bottom-nav montado por baixo de
-  // um rodape novo proprio da tela) tambem acontecia, de forma estatica (sem
-  // precisar do mecanismo de Outlet context acima), em: /store (.store-footer),
-  // /ai (.iai-footer), /profile exato (ProfileNew, .np-footer), /profile/:userId
-  // (PublicProfile, .ppn-footer -- mas NAO nas sub-rotas fixas do
-  // ProfileSecondary como /profile/academy, que nao tem rodape proprio),
-  // /championships exato (ChampionshipsHub, .ch-new-footer -- mas NAO em
-  // /championships/community, que tambem nao tem rodape proprio) e
-  // /achievements (.an-footer). Confirmado via inspecao de DOM ao vivo
-  // (getElementById('bottom-nav') presente+visible ao mesmo tempo que o
-  // rodape novo) em cada uma dessas rotas antes desta correcao.
-  // (/performance tinha o mesmo problema mas a pagina inteira foi removida
-  // -- ver App.tsx -- por ser uma tela antiga superada pela aba Saude.)
-  const PROFILE_SECONDARY_PREFIXES = ['/profile/academy', '/profile/wearables', '/profile/goals', '/profile/security', '/profile/preferences'];
-  const isProfileSecondary = PROFILE_SECONDARY_PREFIXES.some(p => location.pathname === p || location.pathname.startsWith(`${p}/`));
-  const isOwnFooterScreen = location.pathname === '/store'
-    || location.pathname === '/ai'
-    || location.pathname === '/profile'
-    || location.pathname === '/championships'
-    || location.pathname === '/achievements'
-    || (location.pathname.startsWith('/profile/') && !isProfileSecondary);
-  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao' || routeOwnsFooter || isOwnFooterScreen;
+  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao';
 
   const [theme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -155,15 +100,7 @@ export function Layout() {
           um valor fixo: no iPhone o sino subia demais e encostava no relogio do
           sistema, e na web ficava colado na borda. env() vale 0px onde nao ha
           notch, entao na web o sino simplesmente desce para 1.5rem. */}
-      {/* #248: a Home ("/") desenha o proprio cabecalho com sino de notificacoes
-          e avatar (Home.tsx, .nh-header) -- igual ja acontecia com o bottom-nav
-          legado (ver comentario isHome mais abaixo). Esse sino+LVL fixo deste
-          Layout nunca tinha entrado na lista de telas suprimidas, entao ficava
-          duplicado por cima do cabecalho da Home (2 sinos + badge LVL solto),
-          confirmado ao vivo em producao. O modal "Nivel do haltere" continua
-          acessivel normalmente nas demais telas que nao desenham cabecalho
-          proprio. */}
-      {!suppressLegacyChrome && !routeOwnsHeader && !isHome && location.pathname !== '/notifications' && <div
+      {!suppressLegacyChrome && location.pathname !== '/notifications' && <div
         className="fixed right-4 z-50 pointer-events-auto flex items-center gap-2"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.5rem)' }}>
         {/* #245: showBarbellModal e o BarbellLifter ja existiam prontos, mas
@@ -228,11 +165,7 @@ export function Layout() {
             exit={{ opacity: 0, scale: 1.02, filter: 'blur(10px)' }}
             transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
           >
-            <Outlet context={{
-              triggerXPToast: (p: number, m?: string, rankingPoints?: number) => setXpToast({ visible: true, points: p, message: m, rankingPoints }),
-              setRouteOwnsFooter,
-              setRouteOwnsHeader,
-            }} />
+            <Outlet context={{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => setXpToast({ visible: true, points: p, message: m, rankingPoints }) }} />
           </motion.div>
         </AnimatePresence>
       </main>

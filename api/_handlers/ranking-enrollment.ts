@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { FieldValue, cors, db, verifyAuth } from '../_lib/common.js';
+import { recalculateAllUserScores } from '../_lib/igaService.js';
 
 const CONSENT_VERSION = 'gym-ranking-v1';
 
@@ -24,37 +25,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'POST') {
-    const userSnapshot = await db.collection('users').doc(auth.uid).get();
+    const [userSnapshot, currentEnrollment] = await Promise.all([
+      db.collection('users').doc(auth.uid).get(),
+      enrollmentRef.get(),
+    ]);
     if (!userSnapshot.exists) return res.status(404).json({ error: 'Perfil não encontrado.' });
 
     const userData = userSnapshot.data() || {};
     const requestedGymId = typeof req.body?.gymId === 'string' ? req.body.gymId.trim() : '';
-    const gymId = requestedGymId || String(userData.gymId || '').trim();
+    const profileGymId = String(userData.gymId || '').trim();
+    if (requestedGymId && requestedGymId !== profileGymId) {
+      return res.status(409).json({ error: 'A academia informada não corresponde à academia vinculada ao seu perfil.' });
+    }
+    const gymId = profileGymId;
     if (!gymId) {
       return res.status(422).json({
         error: 'Defina sua academia no perfil antes de entrar no ranking.'
       });
     }
 
+    const current = currentEnrollment.data() || {};
+    const keepEnrollmentEpoch = current.enrolled === true && current.gymId === gymId && current.enrolledAt;
     await enrollmentRef.set({
       userId: auth.uid,
       gymId,
       enrolled: true,
       consentVersion: CONSENT_VERSION,
-      enrolledAt: FieldValue.serverTimestamp(),
+      ...(!keepEnrollmentEpoch ? { enrolledAt: FieldValue.serverTimestamp() } : {}),
+      withdrawnAt: null,
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
+
+    if (!keepEnrollmentEpoch) {
+      await db.collection('users').doc(auth.uid).set({
+        weeklyScore: 0,
+        monthlyScore: 0,
+        score: 0,
+        rankingEpochResetAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
+    await recalculateAllUserScores(auth.uid).catch((error) => {
+      console.error('[Ranking Enrollment] adesão salva, mas IGA não foi recalculado:', error);
+    });
 
     return res.status(200).json({ enrolled: true, gymId, consentVersion: CONSENT_VERSION });
   }
 
   if (req.method === 'DELETE') {
-    await enrollmentRef.set({
+    const batch = db.batch();
+    batch.set(enrollmentRef, {
       userId: auth.uid,
       enrolled: false,
       withdrawnAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
+    batch.set(db.collection('users').doc(auth.uid), {
+      weeklyScore: 0,
+      monthlyScore: 0,
+      score: 0,
+      rankingEpochResetAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await batch.commit();
+    await recalculateAllUserScores(auth.uid).catch((error) => {
+      console.error('[Ranking Enrollment] saída salva, mas scores não foram zerados:', error);
+    });
     return res.status(200).json({ enrolled: false });
   }
 

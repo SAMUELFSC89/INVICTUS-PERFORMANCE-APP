@@ -17,7 +17,9 @@ import { useUser } from '../UserContext';
 export function PrivateChallengesTab() {
   const { user: profile, refreshUser } = useUser();
   const navigate = useNavigate();
-  const isPro = profile?.subscriptionTier === 'performance';
+  const isPro = ['performance', 'pro'].includes(String(profile?.subscriptionTier || '').toLowerCase())
+    || ['performance', 'pro'].includes(String(profile?.currentPlan || '').toLowerCase())
+    || profile?.premium === true;
 
   const [activeSubTab, setActiveSubTab] = useState<'ativos' | 'criar' | 'entrar'>('ativos');
 
@@ -366,7 +368,7 @@ export function PrivateChallengesTab() {
                             className="bg-surface-container-high border border-outline-variant/30 px-3.5 py-2.5 rounded-2xl flex items-center justify-between gap-3 text-on-surface-variant hover:text-primary transition-all shrink-0 w-full sm:w-auto"
                           >
                             <div className="text-left font-mono">
-                              <span className="block font-label text-[7px] uppercase tracking-[0.2em] opacity-40 leading-none mb-1">CÓDIGO DE CONVITE</span>
+                              <span className="block font-label text-[7px] uppercase tracking-[0.2em] invictus-text-muted leading-none mb-1">CÓDIGO DE CONVITE</span>
                               <span className="font-bold text-xs uppercase tracking-widest text-on-surface leading-none">{challenge.inviteCode}</span>
                             </div>
                             <div className="w-8 h-8 rounded-xl bg-surface-container-low flex items-center justify-center text-primary border border-outline-variant/20">
@@ -383,28 +385,28 @@ export function PrivateChallengesTab() {
                         {isLegacyMoney ? (
                           <>
                             <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
-                              <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">PRÊMIO (LEGADO)</span>
+                              <span className="block font-label text-[7px] uppercase tracking-[0.25em] invictus-text-muted mb-1 leading-none">PRÊMIO (LEGADO)</span>
                               <span className="font-headline italic font-black text-lg text-primary">R$ {(challenge.netPrizePool || 0).toFixed(2)}</span>
                             </div>
                             <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
-                              <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">TAXA (LEGADO)</span>
+                              <span className="block font-label text-[7px] uppercase tracking-[0.25em] invictus-text-muted mb-1 leading-none">TAXA (LEGADO)</span>
                               <span className="font-headline italic font-black text-lg text-on-surface">R$ {(challenge.entryFee || 0).toFixed(2)}</span>
                             </div>
                           </>
                         ) : (
                           <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
-                            <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">PRÊMIO</span>
+                            <span className="block font-label text-[7px] uppercase tracking-[0.25em] invictus-text-muted mb-1 leading-none">PRÊMIO</span>
                             <span className="font-headline italic font-black text-sm text-primary flex items-center gap-1"><Trophy size={13} /> TOP 1 leva o troféu</span>
                           </div>
                         )}
 
                         <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
-                          <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">PARTICIPANTES CONFIRMADOS</span>
+                          <span className="block font-label text-[7px] uppercase tracking-[0.25em] invictus-text-muted mb-1 leading-none">PARTICIPANTES CONFIRMADOS</span>
                           <span className="font-headline italic font-black text-lg text-on-surface uppercase">{challenge.participantsCount} ATLETAS</span>
                         </div>
 
                         <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
-                          <span className="block font-label text-[7px] uppercase tracking-[0.25em] text-on-surface-variant opacity-45 mb-1 leading-none">ENCERRA EM</span>
+                          <span className="block font-label text-[7px] uppercase tracking-[0.25em] invictus-text-muted mb-1 leading-none">ENCERRA EM</span>
                           <span className="font-headline italic font-black text-md text-on-surface truncate leading-none pt-0.5 uppercase block">
                              {new Date(challenge.endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                           </span>
@@ -434,13 +436,13 @@ export function PrivateChallengesTab() {
                               </div>
                             )}
                             <div>
-                              <span className="block font-label text-[7px] uppercase tracking-widest text-on-surface-variant opacity-50 mb-0.5">Vencedor Absoluto</span>
+                              <span className="block font-label text-[7px] uppercase tracking-widest invictus-text-muted mb-0.5">Vencedor Absoluto</span>
                               <span className="font-headline italic font-black text-md text-purple-400 uppercase">{challenge.winnerName}</span>
                             </div>
                           </div>
                           {isLegacyMoney && (
                             <div className="text-right">
-                              <span className="block font-label text-[7px] uppercase tracking-widest text-on-surface-variant opacity-50 mb-0.5">Prêmio (legado)</span>
+                              <span className="block font-label text-[7px] uppercase tracking-widest invictus-text-muted mb-0.5">Prêmio (legado)</span>
                               <span className="font-headline italic font-black text-lg text-primary">R$ {(challenge.netPrizePool || 0).toFixed(2)}</span>
                             </div>
                           )}
@@ -449,7 +451,7 @@ export function PrivateChallengesTab() {
 
                       {/* Challenge member list leaderboard */}
                       <div className="space-y-3">
-                        <span className="block font-label text-[8px] uppercase tracking-widest text-on-surface-variant opacity-45 font-black">
+                        <span className="block font-label text-[8px] uppercase tracking-widest invictus-text-muted font-black">
                           CLASSICAÇÃO / RANKING DO DESAFIO
                         </span>
 
@@ -488,11 +490,11 @@ export function PrivateChallengesTab() {
 
                                   <div className="flex items-center gap-4 text-right">
                                     <div className="font-mono">
-                                      <span className="block font-label text-[6px] text-on-surface-variant opacity-40 uppercase leading-none mb-[2px]">ATIVIDADES</span>
+                                      <span className="block font-label text-[6px] invictus-text-muted uppercase leading-none mb-[2px]">ATIVIDADES</span>
                                       <span className="font-bold text-[9px] text-on-surface">{member.workoutsCount || 0}</span>
                                     </div>
                                     <div className="font-mono">
-                                      <span className="block font-label text-[6px] text-on-surface-variant opacity-40 uppercase leading-none mb-[2px]">PONTUAÇÃO</span>
+                                      <span className="block font-label text-[6px] invictus-text-muted uppercase leading-none mb-[2px]">PONTUAÇÃO</span>
                                       <span className="font-black text-[11px] text-primary">{member.points || 0} PTS</span>
                                     </div>
                                   </div>
@@ -599,7 +601,7 @@ export function PrivateChallengesTab() {
                   <span className="font-black text-primary">TOP 1 leva o reconhecimento de campeão</span>
                 </div>
 
-                <p className="opacity-55 leading-relaxed text-[8px] uppercase tracking-wide border-t border-outline-variant/10 pt-2">
+                <p className="invictus-text-muted leading-relaxed text-[8px] uppercase tracking-wide border-t border-outline-variant/10 pt-2">
                   *Para que o desafio seja ativado, é necessário um mínimo de 2 participantes confirmados (inclusive você). Caso o prazo final expire sem atingir o mínimo, o desafio é cancelado — sem qualquer custo envolvido.
                 </p>
               </div>
