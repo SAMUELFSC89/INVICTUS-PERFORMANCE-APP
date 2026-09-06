@@ -26,10 +26,13 @@
  * These route shells previously painted an opaque near-black canvas over the
  * global banner. Only their canvas color becomes transparent; their existing
  * gradients, cards, dialogs, footers and content surfaces stay unchanged.
+ *
+ * ChallengeActivityFlow is deliberately excluded. It is an overlay rendered
+ * above Challenges.tsx, so making it transparent exposes the old challenge
+ * catalogue and its navigation underneath. Its own #030303 canvas must stay
+ * opaque for the whole viewport.
  */
 body[data-invictus-surface='internal'] :is(
-  .challenge-flow-screen,
-  .challenge-cardio-live,
   .activity-type-screen,
   .an-screen,
   .an-page,
@@ -43,8 +46,8 @@ body[data-invictus-surface='internal'] :is(
   .store-page,
   .notifications-screen-new,
   .payn-screen,
-  .pfn-screen,
-  .pfn-page,
+  .np-screen,
+  .np-page,
   .power-screen,
   .power-flow,
   .profile-flow-screen-new,

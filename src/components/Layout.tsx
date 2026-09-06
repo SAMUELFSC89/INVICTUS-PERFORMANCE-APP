@@ -43,7 +43,12 @@ export function Layout() {
   // Layout (z-50, canto superior direito) continuava renderizado por cima/
   // por baixo do cabecalho da tela, causando a sobreposicao reportada pelo
   // usuario ("sino e level por baixo ainda aparecendo" na tela Meu Plano).
-  const suppressLegacyChrome = location.pathname.startsWith('/power') || location.pathname.startsWith('/health') || location.pathname === '/activity' || location.pathname === '/musculacao';
+  const suppressLegacyChrome = location.pathname.startsWith('/power')
+    || location.pathname.startsWith('/health')
+    || location.pathname.startsWith('/championships')
+    || location.pathname.startsWith('/challenges')
+    || location.pathname === '/activity'
+    || location.pathname === '/musculacao';
 
   const [theme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
