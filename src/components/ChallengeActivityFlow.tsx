@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, MoreVertical, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
@@ -112,6 +113,8 @@ export function ChallengeActivityFlow({
   onDone: () => void;
   onCancel?: () => void;
 }) {
+  const [cardioMenuOpen, setCardioMenuOpen] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const modalityCfg = getModalityConfig(session?.cardioType || cardio.id);
   const effectiveCardioLabel = session?.cardioTypeLabel || modalityCfg?.label || cardio.label;
   const effectiveMuscleGroup = session?.muscleGroup || group;
@@ -129,9 +132,6 @@ export function ChallengeActivityFlow({
   const currentSpeedLabel = currentSpeed !== null ? currentSpeed.toFixed(1) : '—';
   const hasDistanceMetric = Boolean(modalityCfg ? modalityCfg.hasDistance : (session?.requiresGpsDistance || cardio.gps));
   const hasPaceMetric = Boolean(modalityCfg ? modalityCfg.hasPace : !isBike);
-  // O pace atual é a conversão da velocidade GPS mais recente, enquanto o
-  // pace médio continua vindo da distância/tempo acumulados da sessão.
-  // Quando o GPS fica velho ou pausado, não mostramos um ritmo inventado.
   const currentPace = hasPaceMetric ? formatPaceFromSpeed(currentSpeed) : null;
   const currentPaceLabel = currentPace || '—';
   const averagePace = formatPaceValue(distance, elapsed) || '—';
@@ -158,19 +158,6 @@ export function ChallengeActivityFlow({
   const completionRejected = completion?.status === 'rejected';
   const competitiveSession = session?.competitionPolicy?.requiresSecurityReview === true;
 
-  // #116: .challenge-flow-screen e position:fixed;inset:0;z-index:70 pensado
-  // pra cobrir a tela INTEIRA por cima de tudo, inclusive o menu inferior
-  // (#bottom-nav, z-index:30). Mas antes este componente renderizava inline,
-  // como filho de <main className="... relative z-[2] ...."> em Layout.tsx.
-  // Um elemento position:relative + z-index cria seu proprio contexto de
-  // empilhamento: o z-index:70 daqui so competia DENTRO desse <main>, que por
-  // fora participava do empilhamento do documento com z-index:2 -- menor que
-  // o z-index:30 do nav, que e irmao de <main>, nao filho. Resultado: o nav
-  // sempre pintava por cima da parte de baixo desta tela (ex: o botao
-  // "FINALIZAR ATIVIDADE" ficava coberto, existindo no DOM mas invisivel e
-  // impossivel de tocar). Renderizar via portal direto em document.body tira
-  // este componente de dentro do contexto de empilhamento do <main> e resolve
-  // na raiz, sem depender de ajustar z-index em cascata.
   return createPortal(
     <main className={`challenge-flow-screen ${screen === 'active' && session?.type === 'cardio' && session?.requiresGpsDistance ? 'is-cardio-live' : ''} ${screen === 'active' && session?.type === 'workout' ? 'is-workout-live' : ''}`}>
       <header className="challenge-flow-header">
@@ -352,6 +339,53 @@ export function ChallengeActivityFlow({
           <div className="challenge-cardio-live-topbar">
             <button type="button" onClick={onBack} aria-label="Minimizar atividade" title="Sair sem encerrar a atividade"><ChevronDown /></button>
             <div><InvictusLogo size={29} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div>
+            <div className="challenge-cardio-live-menu-wrap">
+              <button
+                type="button"
+                className="challenge-cardio-live-menu-trigger"
+                aria-label="Opções da atividade"
+                aria-expanded={cardioMenuOpen}
+                onClick={() => {
+                  setCardioMenuOpen(value => !value);
+                  setConfirmDiscard(false);
+                }}
+              >
+                <MoreVertical />
+              </button>
+              {cardioMenuOpen && (
+                <div className="challenge-cardio-live-menu" role="menu" aria-label="Ações da atividade">
+                  {!confirmDiscard ? (
+                    <>
+                      {onTogglePause && (
+                        <button type="button" role="menuitem" onClick={() => { onTogglePause(); setCardioMenuOpen(false); }} disabled={loading}>
+                          {session?.isPaused ? <Play /> : <Pause />}
+                          <span>{session?.isPaused ? 'Retomar atividade' : 'Pausar atividade'}</span>
+                        </button>
+                      )}
+                      <button type="button" role="menuitem" onClick={() => { setCardioMenuOpen(false); onEnd(); }} disabled={loading}>
+                        <Flag />
+                        <span>{loading ? 'Finalizando...' : 'Finalizar atividade'}</span>
+                      </button>
+                      {onCancel && (
+                        <button type="button" role="menuitem" className="is-danger" onClick={() => setConfirmDiscard(true)}>
+                          <XCircle />
+                          <span>Descartar atividade</span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <div className="challenge-cardio-live-discard-confirm">
+                      <strong>Descartar atividade?</strong>
+                      <small>O registro desta sessão será perdido.</small>
+                      <div>
+                        <button type="button" onClick={() => setConfirmDiscard(false)}>Cancelar</button>
+                        <button type="button" className="is-danger" onClick={() => { setCardioMenuOpen(false); setConfirmDiscard(false); onCancel?.(); }}>Descartar</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <LiveTrackingMap
@@ -361,7 +395,7 @@ export function ChallengeActivityFlow({
             permissionDenied={gpsPermissionDenied}
             stalled={gpsStalled}
             onRetry={onRetryGps}
-            heightPx={Math.max(350, Math.min(540, typeof window !== 'undefined' ? window.innerHeight * .59 : 460))}
+            heightPx={Math.max(280, Math.min(500, typeof window !== 'undefined' ? window.innerHeight * .56 : 430))}
           />
 
           <div className="challenge-cardio-live-content">
@@ -371,27 +405,20 @@ export function ChallengeActivityFlow({
                 <strong>{activeTitle}</strong>
                 {competitiveSession ? <ShieldCheck /> : <Check />}
               </header>
-              <div className={hasPaceMetric ? 'has-live-pace' : undefined}>
+              <div className="challenge-cardio-live-metrics">
                 <article><Clock3 /><b>{time(elapsed)}</b><small>Tempo</small></article>
                 <article><Navigation /><b>{distance.toFixed(2)}</b><small>Distância (km)</small></article>
                 <article><Gauge /><b>{currentSpeedLabel}</b><small>Velocidade atual (km/h)</small></article>
-                {hasPaceMetric && <article><Timer /><b>{currentPaceLabel}</b><small>Pace atual (min/km)</small></article>}
-                <article><Timer /><b>{hasPaceMetric ? averagePace : `${averageSpeedKmH}`}</b><small>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade média (km/h)'}</small></article>
+                <article><Timer /><b>{hasPaceMetric ? currentPaceLabel : averageSpeedKmH}</b><small>{hasPaceMetric ? 'Pace atual (min/km)' : 'Velocidade média (km/h)'}</small></article>
               </div>
             </article>
 
             <div className="challenge-cardio-live-status">
               {competitiveSession ? <ShieldCheck /> : <Check />}
-              <span><b>{session?.isPaused ? 'ATIVIDADE PAUSADA' : competitiveSession ? 'ATIVIDADE COMPETITIVA' : 'ATIVIDADE SENDO REGISTRADA...'}</b><small>{competitiveSession ? 'Mantenha o GPS ativo para validar sua pontuação.' : 'Mantenha o GPS ativo para registrar rota e distância.'}</small></span>
+              <span><b>{session?.isPaused ? 'ATIVIDADE PAUSADA' : competitiveSession ? 'ATIVIDADE COMPETITIVA' : 'ATIVIDADE SENDO REGISTRADA'}</b><small>{gpsPermissionDenied ? 'Localização desativada' : gpsStalled ? 'Sinal de GPS indisponível' : gpsSignal === 'SEARCHING' ? 'Buscando sinal GPS' : gpsSignal === 'WEAK' ? 'GPS com precisão moderada' : 'GPS conectado'}</small></span>
             </div>
 
             {endError && <div className="challenge-flow-end-error"><AlertCircle size={16} /><span>{endError}</span></div>}
-
-            <div className="challenge-cardio-live-actions">
-              {onTogglePause && <button type="button" onClick={onTogglePause} disabled={loading}>{session?.isPaused ? <Play /> : <Pause />}<span>{session?.isPaused ? 'RETOMAR' : 'PAUSAR'}</span></button>}
-              <button type="button" className="is-finish" onClick={onEnd} disabled={loading}><Flag /><span>{loading ? 'FINALIZANDO...' : 'FINALIZAR'}</span></button>
-            </div>
-            {onCancel && <button type="button" className="challenge-cardio-live-cancel" onClick={onCancel}><XCircle /> Descartar atividade</button>}
             <GpsSignalIndicator accuracy={gpsAccuracy} signal={gpsSignal} />
           </div>
         </section>
@@ -418,13 +445,6 @@ export function ChallengeActivityFlow({
           <span className="challenge-flow-gps">
             <Zap /> {session?.isPaused ? 'EM PAUSA' : session?.requiresGpsDistance ? 'GPS CONECTADO' : (session?.type === 'cardio' ? 'CARDIO INDOOR' : 'ATIVIDADE EM ANDAMENTO')}
           </span>
-          {/* #120: handleEndActivity() mantem a sessao ativa em caso de falha
-              (rede/servidor) pra permitir tentar de novo, mas o erro (`error`
-              em Challenges.tsx) rendeirava numa banner por tras deste overlay
-              de tela cheia -- o atleta so via o botao voltar pra
-              "FINALIZAR ATIVIDADE" sem NENHUMA explicacao do que deu errado,
-              parecendo que nada tinha acontecido. Mostrando aqui, dentro da
-              propria tela ativa, onde o atleta de fato consegue ver. */}
           {endError && (
             <div className="challenge-flow-end-error">
               <AlertCircle size={16} />
@@ -482,9 +502,6 @@ export function ChallengeActivityFlow({
             </article>
           )}
           {onTogglePause && (
-            // #324: semaforo, cadarco, banheiro -- sem pausa, a unica opcao
-            // ate aqui era encerrar de verdade ou aceitar que o pace/tempo
-            // continuassem correndo parado.
             <button
               type="button"
               className="challenge-flow-secondary mb-2 flex items-center justify-center gap-1"
@@ -503,11 +520,6 @@ export function ChallengeActivityFlow({
             {loading ? 'FINALIZANDO...' : (session?.type === 'cardio' ? 'FINALIZAR ATIVIDADE' : 'FINALIZAR TREINO')}
           </button>
           {onCancel && (
-            // #323: fica habilitado mesmo com `loading` true de proposito -- se o
-            // envio de finalizacao ficar pendurado (sem sinal, ex: dentro de um
-            // veiculo em movimento), este e o unico jeito do atleta sair da tela
-            // sem forcar o fechamento do app. onCancel (handleCancelActivity)
-            // aborta o envio pendente antes de descartar a sessao.
             <button
               type="button"
               className="challenge-flow-secondary mt-2 flex items-center justify-center gap-1 text-rose-400 hover:text-rose-300 transition-colors"
