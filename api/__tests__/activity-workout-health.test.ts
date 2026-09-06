@@ -19,7 +19,6 @@ jest.mock('../../src/config/cardioConfig', () => ({ getModalityConfig: jest.fn()
 jest.mock('../../src/services/nativeBackgroundLocationService', () => ({ nativeBackgroundLocationService: {
   collectAndStop: jest.fn().mockResolvedValue([]), stop: jest.fn().mockResolvedValue(undefined), start: jest.fn().mockResolvedValue(undefined),
 } }));
-jest.mock('../../src/services/sessionHeartRateService', () => ({ sessionHeartRateService: { read: jest.fn() } }), { virtual: true });
 
 const UID = 'athlete-a', SESSION = 'workout-a';
 const start = Date.parse('2026-09-05T09:30:00Z');
@@ -66,7 +65,15 @@ beforeEach(() => {
     getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => { store.set(key, value); }, removeItem: (key: string) => { store.delete(key); },
   } });
   authState.currentUser = { uid: UID, getIdToken: jest.fn().mockResolvedValue('token-a') };
-  (sessionHeartRateService.read as jest.Mock).mockResolvedValue(health());
+
+  // IMPORTANT: spy on the REAL exported service object instead of creating a
+  // `virtual` Jest module. activityService imports the same object through the
+  // relative path `./sessionHeartRateService`; spying on the object guarantees
+  // both the test and activityService observe the same mocked `read()` method.
+  // The old virtual mock could split those two resolutions under Jest/ts-jest
+  // ESM workers, causing the real non-native fallback to run in CI.
+  jest.spyOn(sessionHeartRateService, 'read').mockResolvedValue(health());
+
   (HealthDataCollector.collectForSession as jest.Mock).mockResolvedValue({
     healthTelemetry: { avgHeartRate: 142, steps: 325, source: 'health_connect' },
     metricSources: { heartRate: 'health_connect', steps: 'device_pedometer', calories: 'server_estimated' },
