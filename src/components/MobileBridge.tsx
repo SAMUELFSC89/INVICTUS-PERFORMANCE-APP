@@ -6,39 +6,68 @@ import { Capacitor } from '@capacitor/core';
 import { auth, getRedirectResult } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { WearableManager } from '../services/wearables/WearableManager';
+import { healthSummaryService } from '../services/healthSummaryService';
 
-// Sincronização automática real dentro do ciclo de vida suportado pelo plugin:
-// ao autenticar, ao abrir/retomar o app e a cada cinco minutos em primeiro
-// plano. Sincronização com o app encerrado exige um worker nativo adicional e
-// não é simulada por timers JavaScript.
-const INTERVALO_AUTO_SYNC_MS = 5 * 60 * 1000;
-const MINUTOS_MINIMOS_ENTRE_SYNCS = 4;
+// Saúde passiva precisa chegar com baixa latência enquanto o app está em uso.
+// O iOS não garante timers JavaScript com o app suspenso/encerrado; nesses
+// estados sincronizamos imediatamente no próximo resume. Em primeiro plano,
+// vitais são verificados a cada 2 minutos. Atividades completas continuam com
+// uma janela maior porque são payloads bem mais pesados que passos/HRV/FC/etc.
+const INTERVALO_AUTO_SYNC_MS = 2 * 60 * 1000;
+const MINUTOS_MINIMOS_VITAIS = 1.5;
+const MINUTOS_MINIMOS_ATIVIDADES = 4;
 let syncEmAndamento: Promise<void> | null = null;
 
 async function tentarSincronizacaoAutomatica() {
   if (!auth.currentUser) return;
   if (syncEmAndamento) return syncEmAndamento;
   syncEmAndamento = (async () => {
-  try {
-    const manager = WearableManager.getInstance();
-    const config = await manager.loadConfig();
-    if (!config.autoSync) return;
-    if (!config.appleHealthConnected && !config.healthConnectConnected) return;
+    try {
+      const manager = WearableManager.getInstance();
+      const config = await manager.loadConfig();
+      if (!config.autoSync) return;
+      if (!config.appleHealthConnected && !config.healthConnectConnected) return;
 
-    const minutosAtividade = config.lastSyncTime ? (Date.now() - new Date(config.lastSyncTime).getTime()) / 60000 : Infinity;
-    const minutosSaude = config.lastVitalsSyncTime ? (Date.now() - new Date(config.lastVitalsSyncTime).getTime()) / 60000 : Infinity;
-    const tarefas: Promise<unknown>[] = [];
-    if (minutosAtividade >= MINUTOS_MINIMOS_ENTRE_SYNCS) tarefas.push(manager.syncAll());
-    if (minutosSaude >= MINUTOS_MINIMOS_ENTRE_SYNCS) tarefas.push(manager.syncVitals());
-    if (tarefas.length) await Promise.allSettled(tarefas);
-  } catch (err) {
-    // Silenciosa de proposito -- nao pode interromper o uso do app nem
-    // aparecer como erro pro usuario so porque a sincronizacao em segundo
-    // plano falhou (ex.: sem internet no momento).
-    console.warn('[MobileBridge] Sincronização automática não concluída:', err);
-  } finally {
-    syncEmAndamento = null;
-  }
+      const minutosAtividade = config.lastSyncTime
+        ? (Date.now() - new Date(config.lastSyncTime).getTime()) / 60000
+        : Infinity;
+      const minutosSaude = config.lastVitalsSyncTime
+        ? (Date.now() - new Date(config.lastVitalsSyncTime).getTime()) / 60000
+        : Infinity;
+
+      const tarefas: Promise<unknown>[] = [];
+      if (minutosAtividade >= MINUTOS_MINIMOS_ATIVIDADES) {
+        tarefas.push(manager.syncAll());
+      }
+      if (minutosSaude >= MINUTOS_MINIMOS_VITAIS) {
+        const vitalsTask = manager.syncVitals().then((result) => {
+          // O resumo da tela Saúde não pode permanecer preso no cache depois
+          // que uma nova revisão de passos/vitais foi persistida.
+          healthSummaryService.invalidate();
+          window.dispatchEvent(new CustomEvent('invictus:health-sync-complete', {
+            detail: {
+              savedCount: result.savedCount,
+              syncedAt: new Date().toISOString(),
+              reads: result.diagnostics?.reads?.map((read) => ({
+                dataType: read.dataType,
+                status: read.status,
+                count: read.count
+              })) || []
+            }
+          }));
+          return result;
+        });
+        tarefas.push(vitalsTask);
+      }
+      if (tarefas.length) await Promise.allSettled(tarefas);
+    } catch (err) {
+      // Silenciosa de propósito -- não pode interromper o uso do app nem
+      // aparecer como erro pro usuário só porque a sincronização automática
+      // falhou no momento (ex.: sem internet).
+      console.warn('[MobileBridge] Sincronização automática não concluída:', err);
+    } finally {
+      syncEmAndamento = null;
+    }
   })();
   return syncEmAndamento;
 }
@@ -64,7 +93,7 @@ export function MobileBridge() {
     // Handle deep link / OAuth return
     const appUrlListener = CapApp.addListener('appUrlOpen', async (data) => {
       console.log('[MobileBridge] Deep link appUrlOpen received:', data.url);
-      
+
       try {
         await Browser.close();
       } catch (e) {
@@ -82,9 +111,9 @@ export function MobileBridge() {
 
       // Check if this is an auth redirect
       if (
-        data.url.includes('access_token') || 
-        data.url.includes('code') || 
-        data.url.includes('state') || 
+        data.url.includes('access_token') ||
+        data.url.includes('code') ||
+        data.url.includes('state') ||
         data.url.includes('auth') ||
         data.url.includes('com.desafiosemdesculpa.app') ||
         data.url.includes('invictus')
@@ -104,11 +133,11 @@ export function MobileBridge() {
     const handleExternalLinks = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const anchor = target.closest('a');
-      
+
       if (anchor && anchor.href) {
         const url = new URL(anchor.href);
         const isExternal = url.hostname !== window.location.hostname;
-        
+
         if (isExternal) {
           e.preventDefault();
           Browser.open({ url: anchor.href });
@@ -125,10 +154,8 @@ export function MobileBridge() {
     };
   }, [navigate, location]);
 
-  // #249: efeito PROPRIO (nao dentro do efeito acima) -- aquele reinstala os
-  // listeners a cada troca de rota (precisa do location.pathname atualizado
-  // pro botao voltar), o que faria a sincronizacao automatica disparar a
-  // cada navegacao. Aqui e so uma vez, e reage a abrir/voltar ao app.
+  // Efeito próprio: instala uma vez e reage a autenticação, retomada do app e
+  // ao timer de primeiro plano. Não depende de rota para não duplicar timers.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
@@ -140,7 +167,9 @@ export function MobileBridge() {
       if (isActive) void tentarSincronizacaoAutomatica();
     });
 
-    const interval = setInterval(() => { void tentarSincronizacaoAutomatica(); }, INTERVALO_AUTO_SYNC_MS);
+    const interval = setInterval(() => {
+      void tentarSincronizacaoAutomatica();
+    }, INTERVALO_AUTO_SYNC_MS);
 
     return () => {
       stateListener.then((l) => l.remove());
