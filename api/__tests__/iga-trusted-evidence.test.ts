@@ -36,8 +36,15 @@ function createDb() {
     startTime: '2026-09-05T08:00:00.000Z', duration: 90, avgHeartRate: 240, calories: 9999,
     competitionReviewStatus: 'approved', isScoringEligible: true,
     competitionEvidenceStatus: 'trusted_server_source',
+    // api/_lib/competition-evidence.ts::readCompetitionEvidenceMetrics() e um
+    // leitor "fail-closed": se QUALQUER campo obrigatorio do snapshot faltar
+    // ou for invalido, ele devolve null -- e fetchAllSessionsSince() em
+    // igaService.ts entao DESCARTA a sessao inteira (nunca cai de volta pras
+    // metricas nao confiaveis do wearable). O fixture precisa dos mesmos
+    // campos que um snapshot real de evidencia confiavel teria.
     competitionEvidenceMetrics: {
-      activityType: 'cardio', startTime: '2026-09-05T09:00:00.000Z',
+      activityType: 'cardio', cardioType: 'running', isIndoorCardio: false,
+      startTime: '2026-09-05T09:00:00.000Z', endTime: '2026-09-05T09:30:00.000Z',
       durationMinutes: 30, avgHeartRate: 140, calories: 300,
     },
     competitionContexts: [{ type: 'gym_ranking', id: 'gym-a', epochId }],
