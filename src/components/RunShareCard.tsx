@@ -6,7 +6,6 @@ import {
   Flame,
   Gauge,
   Image as ImageIcon,
-  Instagram,
   Map,
   MapPin,
   Mountain,
@@ -28,7 +27,6 @@ import { resolveActivityState } from '../lib/workoutData';
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
 import { InvictusLogo } from './InvictusLogo';
-import { instagramStoriesShareService } from '../services/instagramStoriesShareService';
 import './RunShareCard.css';
 
 export interface ShareableSession {
@@ -87,11 +85,7 @@ function hasValidLatLng(point: any): boolean {
 }
 
 function formatPaceForCard(value: unknown): string {
-  return String(value || '—')
-    .replace(/\/km/i, '')
-    .replace("'", ':')
-    .replace('"', '')
-    .trim();
+  return String(value || '—').replace(/\/km/i, '').replace("'", ':').replace('"', '').trim();
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -105,10 +99,8 @@ function fileToDataUrl(file: File): Promise<string> {
 
 export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const stickerRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [igAvailable, setIgAvailable] = useState(false);
   const [mapImages, setMapImages] = useState<Record<string, string | null>>({});
   const [mapError, setMapError] = useState(false);
   const [zoomAdjust, setZoomAdjust] = useState(0);
@@ -168,15 +160,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto);
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() => hasRoute ? 'satellite' : 'photo');
-
-  useEffect(() => {
-    let cancelled = false;
-    instagramStoriesShareService.isAvailable().then((available) => {
-      if (!cancelled) setIgAvailable(available);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
   const requestedMapVariant: MapVariant = isMapVariant(backgroundMode) ? backgroundMode : 'satellite';
   const cacheKey = `${requestedMapVariant}:${zoomAdjust}`;
   const currentMapImage = mapImages[cacheKey] ?? null;
@@ -196,13 +179,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({
-            trajectory: points,
-            width: 720,
-            height: 1280,
-            mapType: requestedMapVariant,
-            zoomAdjust,
-          }),
+          body: JSON.stringify({ trajectory: points, width: 720, height: 1280, mapType: requestedMapVariant, zoomAdjust }),
         });
         if (!response.ok) throw new Error(`activity-map respondeu ${response.status}`);
         const json = await response.json();
@@ -210,9 +187,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         if (json.success && json.imageDataUrl) {
           setMapImages(current => ({ ...current, [cacheKey]: json.imageDataUrl }));
           setMapError(false);
-        } else {
-          setMapError(true);
-        }
+        } else setMapError(true);
       } catch (error) {
         if (!cancelled) setMapError(true);
         console.warn('[RunShareCard] Falha ao carregar mapa:', error);
@@ -221,10 +196,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
     const unsubscribe = auth.onAuthStateChanged(user => { if (user) void fetchMap(user); });
     if (auth.currentUser) void fetchMap(auth.currentUser);
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
+    return () => { cancelled = true; unsubscribe(); };
   }, [cacheKey, hasRoute, mapImages, requestedMapVariant, trajectory, zoomAdjust]);
 
   const handlePhotoSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -235,8 +207,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       return;
     }
     try {
-      const url = await fileToDataUrl(file);
-      setSelectedPhoto(url);
+      setSelectedPhoto(await fileToDataUrl(file));
       setBackgroundMode('photo');
       setFeedback(null);
     } catch {
@@ -288,22 +259,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
   };
 
-  const handleShareToInstagramStories = async () => {
-    if (!stickerRef.current) return;
-    setIsGenerating(true);
-    setFeedback(null);
-    try {
-      const stickerDataUrl = await toPng(stickerRef.current, { pixelRatio: 2, cacheBust: true });
-      await instagramStoriesShareService.share({ stickerDataUrl, topColor: '#11151a', bottomColor: '#050608' });
-      setFeedback('Aberto no Instagram Stories.');
-    } catch (error) {
-      console.error('[RunShareCard] Instagram share falhou:', error);
-      setFeedback('Não foi possível abrir o Instagram Stories.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const adjustZoom = (delta: number) => setZoomAdjust(value => Math.max(ZOOM_ADJUST_MIN, Math.min(ZOOM_ADJUST_MAX, value + delta)));
 
   const statMarkup = useMemo(() => (
@@ -317,21 +272,9 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       </div>
       <div className="share-card-divider" />
       <div className="share-card-metrics">
-        <div className="share-card-metric">
-          <MapPin className="share-card-metric-icon" size={25} />
-          <span className="share-card-metric-label">DISTÂNCIA</span>
-          <strong>{hasDistance ? distanceLabel : '—'} <small>KM</small></strong>
-        </div>
-        <div className="share-card-metric">
-          <Timer className="share-card-metric-icon" size={25} />
-          <span className="share-card-metric-label">TEMPO</span>
-          <strong>{duration}</strong>
-        </div>
-        <div className="share-card-metric">
-          <Gauge className="share-card-metric-icon" size={25} />
-          <span className="share-card-metric-label">{isSpeedActivity ? 'VELOCIDADE' : 'RITMO MÉDIO'}</span>
-          <strong>{isSpeedActivity ? speedLabel : sharePace} <small>{isSpeedActivity ? 'KM/H' : '/KM'}</small></strong>
-        </div>
+        <div className="share-card-metric"><MapPin className="share-card-metric-icon" size={25} /><span className="share-card-metric-label">DISTÂNCIA</span><strong>{hasDistance ? distanceLabel : '—'} <small>KM</small></strong></div>
+        <div className="share-card-metric"><Timer className="share-card-metric-icon" size={25} /><span className="share-card-metric-label">TEMPO</span><strong>{duration}</strong></div>
+        <div className="share-card-metric"><Gauge className="share-card-metric-icon" size={25} /><span className="share-card-metric-label">{isSpeedActivity ? 'VELOCIDADE' : 'RITMO MÉDIO'}</span><strong>{isSpeedActivity ? speedLabel : sharePace} <small>{isSpeedActivity ? 'KM/H' : '/KM'}</small></strong></div>
       </div>
       <div className={cn('share-card-status', `is-${validationState}`)}>
         {validationState === 'approved' || validationState === 'completed' ? <ShieldCheck size={25} /> : validationState === 'pending' ? <Clock size={24} /> : <ShieldAlert size={24} />}
@@ -346,18 +289,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         <button type="button" onClick={onClose} className="share-icon-button" aria-label="Fechar"><X size={21} /></button>
 
         <div className="share-background-picker" aria-label="Escolha o estilo">
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'satellite' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => hasRoute && setBackgroundMode('satellite')}
-            disabled={!hasRoute}
-          ><Map size={14} /><span>MAPA</span></button>
-          <button
-            type="button"
-            className={cn('share-background-option', backgroundMode === 'outdoors' && 'is-selected', !hasRoute && 'is-disabled')}
-            onClick={() => hasRoute && setBackgroundMode('outdoors')}
-            disabled={!hasRoute}
-          ><Mountain size={14} /><span>TRILHA</span></button>
+          <button type="button" className={cn('share-background-option', backgroundMode === 'satellite' && 'is-selected', !hasRoute && 'is-disabled')} onClick={() => hasRoute && setBackgroundMode('satellite')} disabled={!hasRoute}><Map size={14} /><span>MAPA</span></button>
+          <button type="button" className={cn('share-background-option', backgroundMode === 'outdoors' && 'is-selected', !hasRoute && 'is-disabled')} onClick={() => hasRoute && setBackgroundMode('outdoors')} disabled={!hasRoute}><Mountain size={14} /><span>TRILHA</span></button>
           <label className={cn('share-background-option', backgroundMode === 'photo' && 'is-selected')} onClick={() => setBackgroundMode('photo')}>
             {selectedPhoto ? <ImageIcon size={14} /> : <Upload size={14} />}<span>FOTO + MAPA</span>
             <input type="file" accept="image/*" className="sr-only" onChange={handlePhotoSelection} />
@@ -371,15 +304,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         </div> : null}
 
         <div className="share-screen-actions">
-          <button type="button" className="share-icon-button share-icon-button--accent" onClick={() => void handleExport('share')} disabled={isGenerating} aria-label="Compartilhar imagem">
-            {isGenerating ? <RefreshCw size={20} className="share-spin" /> : <Share2 size={20} />}
-          </button>
-          <button type="button" className="share-icon-button" onClick={() => void handleExport('download')} disabled={isGenerating} aria-label="Baixar imagem">
-            {isGenerating ? <RefreshCw size={20} className="share-spin" /> : <Download size={20} />}
-          </button>
-          {igAvailable ? <button type="button" className="share-icon-button share-icon-button--instagram" onClick={() => void handleShareToInstagramStories()} disabled={isGenerating} aria-label="Instagram Stories">
-            {isGenerating ? <RefreshCw size={20} className="share-spin" /> : <Instagram size={20} />}
-          </button> : null}
+          <button type="button" className="share-icon-button share-icon-button--accent" onClick={() => void handleExport('share')} disabled={isGenerating} aria-label="Compartilhar imagem">{isGenerating ? <RefreshCw size={20} className="share-spin" /> : <Share2 size={20} />}</button>
+          <button type="button" className="share-icon-button" onClick={() => void handleExport('download')} disabled={isGenerating} aria-label="Baixar imagem">{isGenerating ? <RefreshCw size={20} className="share-spin" /> : <Download size={20} />}</button>
         </div>
       </div>
 
@@ -397,11 +323,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           <div className="share-card-content">{statMarkup}</div>
         </div>
       </div>
-
-      {igAvailable ? <div ref={stickerRef} className="share-sticker" aria-hidden="true">
-        <div className="share-card-brand"><InvictusLogo size={64} /><div className="share-card-brand-copy"><strong>INVICTUS</strong><span>PERFORMANCE</span></div></div>
-        <div className="share-card-content">{statMarkup}</div>
-      </div> : null}
 
       {feedback ? <div className="share-feedback" role="status" aria-live="polite">{feedback}</div> : null}
     </div>,
