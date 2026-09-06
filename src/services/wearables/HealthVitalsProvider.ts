@@ -355,8 +355,12 @@ export const HealthVitalsProvider = {
     if (!isSupportedPlatform()) return false;
     try {
       const status = await CapgoHealth.requestAuthorization({ read: readTypes(), requestHistoryAccess: false });
-      // On iOS this confirms that the request flow completed, not that data
-      // is readable. HealthKit deliberately does not disclose read grants.
+      // HealthKit intentionally does not reveal per-type read authorization.
+      // On iOS, a successfully completed authorization flow is therefore the
+      // only correct signal to proceed with reads; requiring readAuthorized
+      // made a valid HealthKit connection look denied and skipped the initial
+      // vitals backfill. Individual reads below remain the source of truth.
+      if (Capacitor.getPlatform() === 'ios') return true;
       return Array.isArray(status.readAuthorized) && status.readAuthorized.length > 0;
     } catch (error) {
       console.error('[HealthVitalsProvider] Erro ao solicitar permissões:', error);
