@@ -41,10 +41,15 @@ export function formatPaceValue(distanceKm: number, seconds: number): string | n
   return `${minutes}'${String(remainingSeconds).padStart(2, '0')}"`;
 }
 
-/** Converte a velocidade instantânea (km/h) no pace equivalente (min/km). */
+/**
+ * Converte a velocidade instantânea (km/h) no pace equivalente (min/km).
+ * Abaixo de 1 km/h o valor deixa de representar um ritmo esportivo útil e é
+ * dominado por drift normal do GPS parado. Nessa faixa a UI mostra "—" em vez
+ * de números enormes como 120'00"/km mudando a cada fix.
+ */
 export function formatPaceFromSpeed(speedKmH: number | null | undefined): string | null {
   const speed = Number(speedKmH);
-  if (!Number.isFinite(speed) || speed <= 0.1) return null;
+  if (!Number.isFinite(speed) || speed < 1) return null;
   return formatPaceValue(1, 3600 / speed);
 }
 
