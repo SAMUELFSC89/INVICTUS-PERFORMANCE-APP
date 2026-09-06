@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { useUser } from '../UserContext';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
 
 // #325/#124 (pedido do usuario): Desafios Privados deixou de ser uma disputa
 // com dinheiro real (taxa de entrada, pool, premio em R$) e virou um
@@ -17,9 +18,7 @@ import { useUser } from '../UserContext';
 export function PrivateChallengesTab() {
   const { user: profile, refreshUser } = useUser();
   const navigate = useNavigate();
-  const isPro = ['performance', 'pro'].includes(String(profile?.subscriptionTier || '').toLowerCase())
-    || ['performance', 'pro'].includes(String(profile?.currentPlan || '').toLowerCase())
-    || profile?.premium === true;
+  const isPro = hasActiveProEntitlement(profile);
 
   const [activeSubTab, setActiveSubTab] = useState<'ativos' | 'criar' | 'entrar'>('ativos');
 

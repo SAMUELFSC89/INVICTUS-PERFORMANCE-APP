@@ -275,6 +275,11 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
     // caso de reload no meio do cadastro (AP-03): chamar esta ação de novo,
     // com qualquer subconjunto de campos, é sempre seguro e nunca reseta o
     // que já foi concedido.
+    const deletionTombstone = await db.collection('deleted_users').doc(auth.uid).get();
+    if (deletionTombstone.exists) {
+      return res.status(403).json({ error: 'Esta conta foi desativada.', code: 'ACCOUNT_DELETED' });
+    }
+
     const displayName = String(body.displayName || '').trim().slice(0, 128) || 'Atleta';
     const cpf = String(body.cpf || '').replace(/\D/g, '');
     if (cpf && cpf.length !== 11) {
@@ -365,7 +370,9 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
           statusPagamento: 'Não aplicável',
           premium: false,
           performance: false,
-          isSubscribed: preferredPlan === 'open',
+          // Conta ativa e assinatura paga são conceitos distintos. O Plano
+          // Open continua acessível por subscriptionTier/subscriptionStatus.
+          isSubscribed: false,
           subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
           league: 'Comunidade Invictus',
           score: 10,

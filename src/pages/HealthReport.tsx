@@ -10,6 +10,7 @@ import { InvictusLogo } from '../components/InvictusLogo';
 import { HealthFooter, HealthReportContent } from './Health';
 import type { HealthSummaryResponse, UltimoValorMetrica } from '../services/healthSummaryService';
 import { API_CONFIG } from '../config';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
 import './HealthReport.css';
 
 const concepts = [
@@ -212,7 +213,7 @@ export function HealthReport() {
   const { user } = useUser();
   const [summary, setSummary] = useState<HealthSummaryResponse | null>(null);
   const [days, setDays] = useState(30);
-  const isPro = ['performance', 'pro'].includes(String(user?.subscriptionTier));
+  const isPro = hasActiveProEntitlement(user);
   return createPortal(
     <div className="health-report-shell health-new-shell">
       <div className="health-report-layout">

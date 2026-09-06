@@ -74,7 +74,9 @@ await EventLogService.logEventReceived(event as any, idempotencyKey).catch(() =>
           userId,
           totalScore: 0,
           currentStreak: 1,
-          subscriptionTier: (event.payload?.subscriptionTier || event.payload?.plan || 'OPEN').toString().toUpperCase(),
+          // Fail closed se o perfil nao puder ser carregado. Dados de plano
+          // enviados pelo cliente nunca sao autoridade de entitlement.
+          subscriptionTier: 'OPEN',
           goal: (event.payload?.trainingGoal || event.payload?.goal || TrainingGoal.HYPERTROPHY),
           joinDate: new Date()
         } as any;
@@ -91,7 +93,10 @@ await EventLogService.logEventReceived(event as any, idempotencyKey).catch(() =>
       const userData = {
         userId,
         trainingGoal: userStats.goal || event.payload?.trainingGoal || TrainingGoal.HYPERTROPHY,
-        subscriptionTier: userStats.subscriptionTier || event.payload?.subscriptionTier || event.payload?.plan || 'OPEN',
+        // ScoreRepository ja normaliza este campo via isProUser(). Nao existe
+        // fallback para subscriptionTier/plan do payload, que e controlado
+        // pelo cliente.
+        subscriptionTier: userStats.subscriptionTier === 'PERFORMANCE' ? 'PERFORMANCE' : 'OPEN',
         scoredDays: (userStats as any)?.scoredDays || [],
         age: (userStats as any)?.age || event.payload?.age || 25,
         weight: (userStats as any)?.weight || event.payload?.weight || 70,

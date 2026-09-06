@@ -1,6 +1,7 @@
 import { db, FieldValue } from '../../common.js';
 import { ActivityScore, UserStats } from '../types.js';
 import { scoreLogger } from '../../logger.js';
+import { isProUser } from '../../entitlement.js';
 
 export class ScoreRepository {
   /**
@@ -83,8 +84,12 @@ export class ScoreRepository {
             bestStreak: data?.bestStreak || 1,
             lastActivityDate: data?.lastActivityDate ? new Date(data.lastActivityDate) : new Date(),
             joinDate: data?.joinDate ? new Date(data.joinDate) : new Date(Date.now() - 30 * 24 * 3600 * 1000),
-isBanned: data?.isBanned || false,
-isBlocked: data?.isBlocked || false
+            // Nunca projete o tier diretamente dos campos legados: somente a
+            // politica canonica (tier + status + expiracao) pode liberar os
+            // limites Performance no motor de score.
+            subscriptionTier: isProUser(data) ? 'PERFORMANCE' : 'OPEN',
+            isBanned: data?.isBanned || false,
+            isBlocked: data?.isBlocked || false
           };
         }
       }
@@ -96,7 +101,8 @@ isBlocked: data?.isBlocked || false
         currentStreak: 1,
         bestStreak: 1,
         lastActivityDate: new Date(),
-        joinDate: new Date(Date.now() - 30 * 24 * 3600 * 1000)
+        joinDate: new Date(Date.now() - 30 * 24 * 3600 * 1000),
+        subscriptionTier: 'OPEN'
       };
     } catch (error) {
       scoreLogger.error({ error, userId }, 'Failed to fetch user stats');
@@ -108,7 +114,8 @@ isBlocked: data?.isBlocked || false
         currentStreak: 1,
         bestStreak: 1,
         lastActivityDate: new Date(),
-        joinDate: new Date(Date.now() - 30 * 24 * 3600 * 1000)
+        joinDate: new Date(Date.now() - 30 * 24 * 3600 * 1000),
+        subscriptionTier: 'OPEN'
       };
     }
   }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Crown, Zap, Shield, Rocket, X, Users, Copy, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useUser } from '../UserContext';
+import { useNavigate } from 'react-router-dom';
 
 interface ProModalProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface ProModalProps {
 
 export function ProModal({ isOpen, onClose, reason }: ProModalProps) {
   const { user } = useUser();
+  const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
 
   const referralCode = user?.referralCode || (user?.uid ? user.uid.substring(0, 6).toUpperCase() : 'INVICTUS');
@@ -123,16 +125,18 @@ export function ProModal({ isOpen, onClose, reason }: ProModalProps) {
               <div className="space-y-3 pt-2">
                 <button 
                   onClick={() => {
-                    alert('Obrigado pelo interesse! Nosso sistema PRO está em manutenção para melhor atendê-los.');
                     onClose();
+                    navigate('/profile/preferences/subscriptions', {
+                      state: { returnTo: `${window.location.pathname}${window.location.search}${window.location.hash}` }
+                    });
                   }}
                   className="w-full py-5 bg-gradient-to-r from-primary to-orange-500 text-black rounded-[24px] font-headline italic font-black text-lg uppercase tracking-widest hover:scale-[1.02] transition-transform shadow-lg shadow-primary/20"
                 >
-                  TENHO INTERESSE NO PRO
+                  VER PLANO PRO
                 </button>
                 
                 <p className="text-[10px] font-black invictus-text-muted uppercase tracking-widest">
-                  Plano Free grátis. Pro por R$ 29,90/mês
+                  Preço e período confirmados pela App Store ou Google Play
                 </p>
               </div>
             </div>

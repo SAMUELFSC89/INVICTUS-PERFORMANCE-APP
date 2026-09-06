@@ -189,6 +189,23 @@ describe('mission reward claim idempotency', () => {
       .resolves.toMatchObject({ rewardCoins: 40, rewardXP: 25 });
   });
 
+  it('bloqueia conclusão PRO legada sem snapshot de acesso autorizado', async () => {
+    const proMission = { ...mission, id: 'pro-legacy', isFreeAccess: false, ledgerType: 'PRO_MISSION_REWARD' };
+    (MissionEngine.getMissions as jest.Mock).mockResolvedValue([proMission as any]);
+    const progressId = (MissionEngine as any).progressId('free-user', proMission);
+    mockDb.store.set(`user_missions/${progressId}`, {
+      id: progressId, userId: 'free-user', missionId: proMission.id,
+      currentProgress: 2, target: 2, completed: true, claimed: false,
+      rewardCoinsSnapshot: 40, rewardXPSnapshot: 25,
+      ledgerTypeSnapshot: 'PRO_MISSION_REWARD', missionTitleSnapshot: 'Pro legado',
+      isFreeAccessSnapshot: false,
+    });
+
+    await expect(MissionEngine.claimMissionReward('free-user', proMission.id, progressId))
+      .rejects.toThrow('exclusiva para assinantes');
+    expect(RewardCoinEngine.credit).not.toHaveBeenCalled();
+  });
+
   it('counts completed casual cardio toward the Coin challenge without competition approval', async () => {
     mockDb.store.set('workouts/casual-a', {
       userId: 'free-user', type: 'cardio', recordStatus: 'completed', activityMode: 'personal',

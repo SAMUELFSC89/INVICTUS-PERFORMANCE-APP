@@ -28,18 +28,41 @@ FlaskConical
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, auth } from '../firebase';
-import { collection, query, getDocs, getDoc, limit, orderBy, where, getCountFromServer, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, getDocs, limit, orderBy, where, getCountFromServer, doc, updateDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { CreatorSandbox } from '../components/CreatorSandbox';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
+
+async function requestAdminDeletion(target: string): Promise<{ deletedUids: string[]; message: string }> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error('Sessão administrativa indisponível.');
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch('/api/admin?action=delete-user', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ target }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success !== true) {
+    throw new Error(payload.error || 'Não foi possível desativar a conta.');
+  }
+  return {
+    deletedUids: Array.isArray(payload.deletedUids) ? payload.deletedUids : [],
+    message: String(payload.message || 'Conta desativada com sucesso.'),
+  };
+}
 
 export function AdminDashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalSubscribers: 0,
-    totalRevenue: 0,
+    totalRevenue: null as number | null,
     activePhase: 1,
     pools: { gym: 0, city: 0, national: 0 }
   });
@@ -224,41 +247,14 @@ export function AdminDashboard() {
     const targetName = userToDelete.name;
 
     try {
-      // 1. Call Backend API
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        try {
-          const idToken = await currentUser.getIdToken();
-          const res = await fetch('/api/admin?action=delete-user', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            },
-            body: JSON.stringify({ target: targetUid })
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            console.warn('[Admin] Backend delete API notice:', data.error);
-          }
-        } catch (apiErr) {
-          console.warn('[Admin] Backend API call failed:', apiErr);
-        }
-      }
-
-      // 2. Direct client fallback deletion
-      try {
-        await deleteDoc(doc(db, 'users', targetUid));
-      } catch (clientErr: any) {
-        console.warn('[Admin] Client deleteDoc notice:', clientErr.message);
-      }
+      const result = await requestAdminDeletion(targetUid);
 
       setRecentUsers(prev => prev.filter(u => u.uid !== targetUid));
       setDbSearchResults(prev => prev.filter(u => u.uid !== targetUid));
       setUserToDelete(null);
       setAdminFeedback({
         type: 'success',
-        text: `Cadastro de "${targetName}" foi excluído permanentemente com sucesso!`
+        text: `${targetName}: ${result.message}`
       });
       setTimeout(() => setAdminFeedback(null), 6000);
     } catch (err: any) {
@@ -286,130 +282,27 @@ export function AdminDashboard() {
     const cleanEmail = rawVal.toLowerCase();
     
     try {
-      let deletedUids: string[] = [];
-
-      // 1. Try Backend API first for comprehensive deletion across auth & db
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        try {
-          const idToken = await currentUser.getIdToken();
-          const res = await fetch('/api/admin?action=delete-user', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            },
-            body: JSON.stringify({ target: rawVal })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            deletedUids = data.deletedUids || [];
-            
-            setRecentUsers(prev => prev.filter(u => 
-              !deletedUids.includes(u.uid) &&
-              u.uid !== rawVal &&
-              (!u.email || u.email.toLowerCase() !== cleanEmail) && 
-              (!u.cpf || u.cpf.replace(/\D/g, '') !== cleanCpf)
-            ));
-            setDbSearchResults(prev => prev.filter(u => 
-              !deletedUids.includes(u.uid) &&
-              u.uid !== rawVal &&
-              (!u.email || u.email.toLowerCase() !== cleanEmail) && 
-              (!u.cpf || u.cpf.replace(/\D/g, '') !== cleanCpf)
-            ));
-            
-            const inputEl = document.getElementById('delete-user-search') as HTMLInputElement;
-            if (inputEl) inputEl.value = '';
-
-            setAdminFeedback({
-              type: 'success',
-              text: data.message || `Cadastro referente a "${rawVal}" foi excluído permanentemente com sucesso!`
-            });
-            setTimeout(() => setAdminFeedback(null), 6000);
-            return;
-          }
-        } catch (apiErr) {
-          console.warn('[Admin] API delete attempt notice, falling back to direct Firestore:', apiErr);
-        }
-      }
-
-      // 2. Comprehensive Client-side Firestore search and deletion
-      const usersRef = collection(db, 'users');
-      const foundUids = new Set<string>();
-
-      // A. Direct doc check if rawVal is doc ID
-      try {
-        const directDoc = await getDoc(doc(db, 'users', rawVal));
-        if (directDoc.exists()) {
-          foundUids.add(directDoc.id);
-        }
-      } catch (e) {}
-
-      // B. Query by exact email
-      if (rawVal.includes('@')) {
-        const snapEmail = await getDocs(query(usersRef, where('email', '==', cleanEmail)));
-        snapEmail.docs.forEach(d => foundUids.add(d.id));
-
-        const snapRawEmail = await getDocs(query(usersRef, where('email', '==', rawVal)));
-        snapRawEmail.docs.forEach(d => foundUids.add(d.id));
-      }
-
-      // C. Query by CPF match
-      if (cleanCpf.length >= 8) {
-        const snapCpfClean = await getDocs(query(usersRef, where('cpf', '==', cleanCpf)));
-        snapCpfClean.docs.forEach(d => foundUids.add(d.id));
-
-        const snapCpfRaw = await getDocs(query(usersRef, where('cpf', '==', rawVal)));
-        snapCpfRaw.docs.forEach(d => foundUids.add(d.id));
-      }
-
-      // D. Full collection scan fallback if no direct matches found
-      if (foundUids.size === 0) {
-        const allUsersSnap = await getDocs(query(usersRef, limit(200)));
-        allUsersSnap.docs.forEach(d => {
-          const u = d.data() || {};
-          const uEmail = (u.email || '').toLowerCase();
-          const uCpf = (u.cpf || '').replace(/\D/g, '');
-          const uName = (u.displayName || '').toLowerCase();
-
-          if (
-            d.id === rawVal ||
-            (cleanEmail && uEmail === cleanEmail) ||
-            (cleanCpf && uCpf === cleanCpf) ||
-            (rawVal.length > 3 && (uName.includes(rawVal.toLowerCase()) || uEmail.includes(rawVal.toLowerCase())))
-          ) {
-            foundUids.add(d.id);
-          }
-        });
-      }
-
-      if (foundUids.size === 0) {
-        setAdminFeedback({ 
-          type: 'error', 
-          text: `Nenhum cadastro de atleta foi encontrado para "${rawVal}". Verifique o e-mail ou CPF digitado.` 
-        });
-        setTimeout(() => setAdminFeedback(null), 6000);
-        return;
-      }
-
-      // Delete all matching documents from client Firestore
-      for (const targetUid of foundUids) {
-        try {
-          await deleteDoc(doc(db, 'users', targetUid));
-        } catch (delErr) {
-          console.error(`Error deleting user doc ${targetUid}:`, delErr);
-        }
-      }
-
-      setRecentUsers(prev => prev.filter(u => !foundUids.has(u.uid)));
-      setDbSearchResults(prev => prev.filter(u => !foundUids.has(u.uid)));
+      const result = await requestAdminDeletion(rawVal);
+      const deletedUids = result.deletedUids;
+      setRecentUsers(prev => prev.filter(u =>
+        !deletedUids.includes(u.uid) &&
+        u.uid !== rawVal &&
+        (!u.email || u.email.toLowerCase() !== cleanEmail) &&
+        (!u.cpf || u.cpf.replace(/\D/g, '') !== cleanCpf)
+      ));
+      setDbSearchResults(prev => prev.filter(u =>
+        !deletedUids.includes(u.uid) &&
+        u.uid !== rawVal &&
+        (!u.email || u.email.toLowerCase() !== cleanEmail) &&
+        (!u.cpf || u.cpf.replace(/\D/g, '') !== cleanCpf)
+      ));
 
       const inputEl = document.getElementById('delete-user-search') as HTMLInputElement;
       if (inputEl) inputEl.value = '';
 
       setAdminFeedback({
         type: 'success',
-        text: `Cadastro referente a "${rawVal}" (${foundUids.size} registro(s)) foi excluído com sucesso!`
+        text: result.message
       });
       setTimeout(() => setAdminFeedback(null), 6000);
     } catch (err: any) {
@@ -427,14 +320,17 @@ export function AdminDashboard() {
       try {
         // 1. Core Metrics
         const usersCol = collection(db, 'users');
-        const [totalUsersSnap, subUsersSnap] = await Promise.all([
+        const [totalUsersSnap, proCandidatesSnap] = await Promise.all([
           getCountFromServer(usersCol),
-          getCountFromServer(query(usersCol, where('isSubscribed', '==', true)))
+          getDocs(query(usersCol, where('subscriptionTier', 'in', ['performance', 'pro'])))
         ]);
 
         const totalUsers = totalUsersSnap.data().count;
-        const totalSubscribers = subUsersSnap.data().count;
-        const totalRevenue = totalSubscribers * 49.90; // Receita de assinaturas digitais PRO
+        const totalSubscribers = proCandidatesSnap.docs.filter(document => hasActiveProEntitlement(document.data())).length;
+        // RevenueCat pode vender períodos e moedas diferentes. Sem uma
+        // agregação financeira por transação/moeda, não inventamos receita a
+        // partir da quantidade de assinantes.
+        const totalRevenue = null;
         const activePhase = totalSubscribers >= 150 ? 3 : (totalSubscribers >= 50 ? 2 : 1);
         
         const pools = {
@@ -475,7 +371,7 @@ export function AdminDashboard() {
 
   const filteredUsers = activeUserList.filter(u => {
     const matchesFilter = filter === 'all' ? true : 
-                         filter === 'premium' ? u.isSubscribed : !u.isSubscribed;
+                         filter === 'premium' ? hasActiveProEntitlement(u) : !hasActiveProEntitlement(u);
     return matchesFilter;
   });
 
@@ -570,10 +466,11 @@ export function AdminDashboard() {
             subtitle={stats.activePhase === 1 ? "Academia" : stats.activePhase === 2 ? "Cidade" : "Nacional"}
           />
           <StatCard 
-            label="Receita Est." 
-            value={`R$ ${stats.totalRevenue.toLocaleString()}`} 
+            label="Receita confirmada"
+            value={stats.totalRevenue === null ? '—' : `R$ ${stats.totalRevenue.toLocaleString('pt-BR')}`}
             icon={<DollarSign size={20} />} 
             color="text-tertiary"
+            subtitle="Consultar por moeda e período na RevenueCat"
           />
         </section>
 
@@ -810,10 +707,10 @@ export function AdminDashboard() {
         <section className="bg-red-500/5 p-8 rounded-[40px] border border-red-500/20 space-y-6">
           <div className="flex items-center gap-3">
             <Trash2 className="text-red-400" size={24} />
-            <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight">EXCLUIR CADASTRO DO APP</h3>
+            <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight">DESATIVAR CONTA DO APP</h3>
           </div>
           <p className="text-xs text-on-surface-variant font-medium">
-            Digite o e-mail ou o CPF do atleta para excluir totalmente o cadastro do banco de dados para que ele possa recadastrar.
+            Digite o e-mail ou o CPF do atleta para bloquear a conta, revogar sessões e preservar a trilha de auditoria. A conta não poderá ser recriada pelo login.
           </p>
           
           <div className="flex flex-col md:flex-row gap-4">
@@ -838,12 +735,12 @@ export function AdminDashboard() {
               {deletingQueryLoading ? (
                 <>
                   <Loader2 className="animate-spin" size={18} />
-                  <span>EXCLUINDO...</span>
+                  <span>DESATIVANDO...</span>
                 </>
               ) : (
                 <>
                   <Trash2 size={18} />
-                  <span>EXCLUIR CADASTRO</span>
+                  <span>DESATIVAR CONTA</span>
                 </>
               )}
             </button>
@@ -957,13 +854,13 @@ export function AdminDashboard() {
                 <AlertTriangle size={24} />
               </div>
               <div>
-                <h3 className="font-headline italic font-black text-lg text-on-surface uppercase tracking-tight">EXCLUIR CADASTRO</h3>
-                <p className="text-[10px] font-mono font-bold text-red-400 uppercase tracking-widest mt-0.5">AÇÃO IRREVERSÍVEL</p>
+                <h3 className="font-headline italic font-black text-lg text-on-surface uppercase tracking-tight">DESATIVAR CONTA</h3>
+                <p className="text-[10px] font-mono font-bold text-red-400 uppercase tracking-widest mt-0.5">AÇÃO ADMINISTRATIVA AUDITADA</p>
               </div>
             </div>
 
             <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
-              Tem certeza de que deseja excluir permanentemente o cadastro de <strong className="text-on-surface">{userToDelete.name}</strong>? Esta ação apagará todos os dados no banco de dados e na autenticação.
+              Tem certeza de que deseja desativar <strong className="text-on-surface">{userToDelete.name}</strong>? O acesso será bloqueado, as sessões serão revogadas e um tombstone impedirá a recriação automática; os registros necessários à auditoria serão preservados.
             </p>
 
             <div className="flex items-center gap-3 pt-2">
@@ -982,12 +879,12 @@ export function AdminDashboard() {
                 {deletingUser ? (
                   <>
                     <Loader2 className="animate-spin" size={16} />
-                    <span>EXCLUINDO...</span>
+                    <span>DESATIVANDO...</span>
                   </>
                 ) : (
                   <>
                     <Trash2 size={16} />
-                    <span>EXCLUIR AGORA</span>
+                    <span>DESATIVAR AGORA</span>
                   </>
                 )}
               </button>
@@ -1064,6 +961,7 @@ function UserRow({
   onPromoteToggle?: (uid: string, currentRole: 'user' | 'admin') => void,
   onDelete?: (uid: string, name?: string) => void
 }) {
+  const isPro = hasActiveProEntitlement(user);
   return (
     <div 
       onClick={onClick}
@@ -1072,7 +970,7 @@ function UserRow({
       <div className="flex items-center gap-4">
         <div className="w-12 h-12 rounded-xl bg-surface-container-highest overflow-hidden border border-white/5 relative shrink-0">
           <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="" className="w-full h-full object-cover" />
-          {user.isSubscribed && (
+          {isPro && (
             <div className="absolute top-0 right-0 w-4 h-4 bg-secondary rounded-bl-lg flex items-center justify-center">
               <TrendingUp size={8} className="text-black" />
             </div>
@@ -1081,7 +979,7 @@ function UserRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="font-bold text-sm text-on-surface group-hover:text-primary transition-colors truncate">{user.displayName}</h4>
-            {user.isSubscribed && <span className="bg-secondary/20 text-secondary text-[8px] font-black px-1.5 py-0.5 rounded uppercase font-mono">PRO</span>}
+            {isPro && <span className="bg-secondary/20 text-secondary text-[8px] font-black px-1.5 py-0.5 rounded uppercase font-mono">PRO</span>}
             {user.role === 'admin' && <span className="bg-primary/20 text-primary text-[8px] font-black px-1.5 py-0.5 rounded uppercase border border-primary/20 font-mono">ADMIN</span>}
           </div>
           <p className="text-[10px] invictus-text-muted font-medium truncate max-w-[200px]">{user.email || 'Sem e-mail'}</p>
@@ -1112,7 +1010,7 @@ function UserRow({
               e.stopPropagation();
               onDelete(user.uid, user.displayName || user.email || user.cpf);
             }}
-            title="Excluir cadastro"
+            title="Desativar conta"
             className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all"
           >
             <Trash2 size={16} />

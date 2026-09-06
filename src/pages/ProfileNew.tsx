@@ -9,6 +9,7 @@ import { workoutService } from '../services/workoutService';
 import { userService } from '../services/userService';
 import { getXPProgress } from '../lib/levelUtils';
 import type { Workout } from '../types';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
 import './ProfileNew.css';
 
 export function ProfileNew() {
@@ -28,9 +29,7 @@ export function ProfileNew() {
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
   const monthActivities = activities.filter(item => Date.parse(item.timestamp) >= monthStart.getTime());
   const gymPosition = Number(user?.positions?.gym);
-  const paid = ['performance', 'pro'].includes(String(user?.subscriptionTier || '').toLowerCase())
-    || ['performance', 'pro'].includes(String(user?.currentPlan || '').toLowerCase())
-    || user?.premium === true;
+  const paid = hasActiveProEntitlement(user);
   const joined = (user as any)?.createdAt || (user as any)?.joinedAt || (user as any)?.activatedAt;
   const memberDate = joined && !Number.isNaN(Date.parse(String(joined))) ? new Date(joined).toLocaleDateString('pt-BR') : '—';
 

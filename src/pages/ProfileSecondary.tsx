@@ -17,6 +17,7 @@ import { checkNativePermissions } from '../lib/nativePermissions';
 import { disablePushNotifications, initPushNotifications } from '../services/pushNotificationService';
 import { LEGAL_ACCOUNT_DELETION_POLICY, LEGAL_ANTI_FRAUD_POLICY, LEGAL_CONSENTS, LEGAL_DISCLAIMERS, LEGAL_FAQ_100, LEGAL_HEALTH_DATA_POLICY, LEGAL_PRIVACY_POLICY, LEGAL_PROMOTIONAL_RULES, LEGAL_SUBSCRIPTIONS_POLICY, LEGAL_TERMS_OF_USE, type FAQItem } from '../lib/legalDocuments';
 import { InvictusLogo } from '../components/InvictusLogo';
+import { SubscriptionManager } from '../components/SubscriptionManager';
 import './ProfileSecondary.css';
 
 type Page = 'academy' | 'academy-search' | 'academy-confirm' | 'wearables' | 'goals' | 'security' | 'preferences';
@@ -301,6 +302,7 @@ export function ProfileSecondary() {
   // "voltar" correto e a raiz de Configuracoes, igual aos outros documentos.
   const nestedSectionParent: Record<string, string> = { scoring: 'game', rules: 'game', ai: 'game' };
   const content = () => {
+    if (page === 'preferences' && section === 'subscriptions') return <SubscriptionManager />;
     if (page === 'preferences' && section && documents[section]) return documentView(documents[section]);
     if (page === 'preferences' && section && gameViews[section]) return gameViews[section];
     if (page === 'preferences' && section === 'game') return <><p className="profile-flow-section-label">ENTENDA O JOGO</p>{rows([{ icon:<Target/>, label:'Como funciona a pontuação', action:()=>go('/profile/preferences/scoring') }, { icon:<ShieldCheck/>, label:'Regras de ranking e atividades', action:()=>go('/profile/preferences/rules') }, { icon:<ShieldCheck/>, label:'Transparência e validação', action:()=>go('/profile/preferences/antifraud') }, { icon:<Target/>, label:'Sobre a Invictus IA', action:()=>go('/profile/preferences/ai') }])}</>;

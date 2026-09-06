@@ -167,7 +167,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
     } catch (entitlementErr) {
-      console.warn('[API Training Plans] Falha ao verificar plano PRO; seguindo com checagem padrão:', entitlementErr);
+      console.warn('[API Training Plans] Falha ao verificar plano PRO:', entitlementErr);
+      return res.status(503).json({
+        error: 'Não foi possível confirmar seu plano agora. Tente novamente em instantes.',
+        code: 'ENTITLEMENT_UNAVAILABLE',
+        retryable: true,
+      });
     }
     try {
       return res.status(200).json({ plan: await generatePlan(req.body.answers || {}, auth.uid) });

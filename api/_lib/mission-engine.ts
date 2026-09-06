@@ -585,9 +585,10 @@ export class MissionEngine {
         : mission?.isFreeAccess === true;
       // Acesso PRO é decidido quando as atividades entram no período. Uma
       // assinatura adquirida agora não transforma progresso Free antigo em
-      // missão PRO. Conclusões legadas já persistidas são preservadas.
-      if (!resuming && !isFreeAccess && progress.completionAccessGranted !== true
-        && progress.completed !== true) {
+      // missão PRO. Uma conclusão legada sem snapshot de acesso não é prova
+      // suficiente; ela precisa passar por migração/revisão server-side.
+      // Claims já reservados continuam retomáveis de modo idempotente.
+      if (!resuming && !isFreeAccess && progress.completionAccessGranted !== true) {
         throw new Error('Esta missão é exclusiva para assinantes do Plano Premium Invictus.');
       }
       if (!resuming && !progress.completed) throw new Error('Missão ainda não foi concluída.');

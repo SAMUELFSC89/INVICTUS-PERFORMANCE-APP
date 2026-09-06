@@ -16,13 +16,25 @@ jest.mock('../_lib/common', () => ({
 }));
 
 let usersStore: Record<string, any>;
+let deletedUsersStore: Record<string, any>;
 
 beforeEach(() => {
   jest.clearAllMocks();
   usersStore = {};
+  deletedUsersStore = {};
   (verifyAuth as jest.Mock).mockResolvedValue({ uid: 'user-A', email: 'atleta@example.com' });
 
   (db.collection as jest.Mock).mockImplementation((name: string) => {
+    if (name === 'deleted_users') {
+      return {
+        doc: (uid: string) => ({
+          get: async () => ({
+            exists: Boolean(deletedUsersStore[uid]),
+            data: () => deletedUsersStore[uid],
+          }),
+        }),
+      };
+    }
     if (name !== 'users') throw new Error(`unexpected collection ${name}`);
     return {
       doc: (uid: string) => ({ __uid: uid }),
@@ -107,7 +119,7 @@ describe('AP-01 / SEC-01: action=onboard cria/concluí o perfil com autoridade d
     expect(stored.level).toBe(1);
     expect(stored.isBlocked).toBe(false);
     expect(stored.isBanned).toBe(false);
-    expect(stored.isSubscribed).toBe(true);
+    expect(stored.isSubscribed).toBe(false);
     expect(stored.subscriptionTier).toBe('open');
     expect(stored.displayName).toBe('Atleta Teste');
     expect(stored.state).toBe('SP');
@@ -198,6 +210,18 @@ describe('AP-01 / SEC-01: action=onboard cria/concluí o perfil com autoridade d
     await handler(request(validBody), res);
 
     expect(res.status).toHaveBeenCalledWith(401);
+    expect(db.runTransaction).not.toHaveBeenCalled();
+  });
+
+  test('tombstone de exclusão impede recriar o perfil', async () => {
+    deletedUsersStore['user-A'] = { deletedAt: '2026-09-06T12:00:00.000Z' };
+    const res = response();
+
+    await handler(request(validBody), res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ACCOUNT_DELETED' }));
+    expect(usersStore['user-A']).toBeUndefined();
     expect(db.runTransaction).not.toHaveBeenCalled();
   });
 });

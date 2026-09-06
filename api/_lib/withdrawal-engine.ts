@@ -3,6 +3,7 @@ import { WalletEngine } from './wallet-engine.js';
 import { PIXWithdrawal, WithdrawalStatus, WithdrawalConfig } from '../../src/types.js';
 import { AsaasClient } from './asaas-client.js';
 import { notificationService } from '../_services/notification-service.js';
+import { isProUser } from './entitlement.js';
 
 export const DEFAULT_WITHDRAWAL_CONFIG: WithdrawalConfig = {
   minWithdrawalAmount: 20, // R$ 20,00
@@ -100,7 +101,7 @@ export class WithdrawalEngine {
         score -= 30;
       }
 
-      const isPremium = Boolean(userData.premium || userData.isSubscribed);
+      const isPremium = isProUser(userData);
       if (!isPremium) {
         flags.push('FREE_PLAN_WITHDRAWAL');
       } else {

@@ -7,8 +7,8 @@ import { API_CONFIG } from '../config';
 import { InvictusLogo } from '../components/InvictusLogo';
 import './PaymentSuccessNew.css';
 
-type PaymentStatus = 'pending'|'processing'|'approved'|'rejected'|'cancelled'|'refunded'|'charged_back'|'error';
-const FINAL = new Set<PaymentStatus>(['approved','rejected','cancelled','refunded','charged_back']);
+type PaymentStatus = 'pending'|'processing'|'approved'|'rejected'|'cancelled'|'expired'|'revoked'|'refunded'|'charged_back'|'error';
+const FINAL = new Set<PaymentStatus>(['approved','rejected','cancelled','expired','revoked','refunded','charged_back']);
 
 export function PaymentSuccess() {
   const [params] = useSearchParams();
@@ -51,13 +51,13 @@ export function PaymentSuccess() {
   },[failurePage,orderId,params]);
 
   const approved=status==='approved';
-  const revoked=status==='refunded'||status==='charged_back';
+  const revoked=status==='expired'||status==='revoked'||status==='refunded'||status==='charged_back';
   const pending=checking&&(status==='pending'||status==='processing');
   return createPortal(<main className="payn-screen"><section className="payn-card"><header><InvictusLogo size={72}/><b>INVICTUS</b><small>PERFORMANCE</small></header>
     {pending?<><div className="payn-icon is-pending"><Clock3/></div><small className="payn-label">PAGAMENTO EM ANÁLISE</small><h1>CONFIRMANDO PAGAMENTO</h1><p>{message}</p>{orderId?<code>Pedido #{orderId}</code>:null}<div className="payn-progress"><i/></div><em>Você pode sair desta tela. A confirmação também ocorre pelo servidor.</em></>:null}
     {approved?<><div className="payn-icon is-approved"><CheckCircle2/></div><small className="payn-label">PAGAMENTO CONFIRMADO</small><h1>ACESSO PRO LIBERADO</h1><p>{message||'Sua assinatura foi ativada. Os benefícios do plano já estão disponíveis.'}</p><div className="payn-note"><ShieldCheck/><span>A assinatura não inscreve automaticamente em campeonatos ou temporadas.</span></div><button onClick={()=>navigate('/')}>IR PARA O INÍCIO <ChevronRight/></button></>:null}
     {!pending&&!approved&&!revoked?<><div className="payn-icon is-failed"><AlertCircle/></div><small className="payn-label">PAGAMENTO NÃO CONCLUÍDO</small><h1>VERIFIQUE O PAGAMENTO</h1><p>{message}</p><button className="is-outline" onClick={()=>navigate('/profile/preferences/subscriptions')}><RotateCcw/> VER PLANOS</button></>:null}
-    {revoked?<><div className="payn-icon is-failed"><AlertCircle/></div><small className="payn-label">STATUS DO PAGAMENTO</small><h1>ACESSO PRO SUSPENSO</h1><p>{message||'O pagamento foi estornado ou contestado. Seu acesso Pro foi atualizado automaticamente.'}</p>{status==='charged_back'?<div className="payn-note is-alert"><AlertCircle/><span>A transação está sob revisão de segurança.</span></div>:null}<button className="is-outline" onClick={()=>navigate('/')}>VOLTAR AO INÍCIO</button></>:null}
+    {revoked?<><div className="payn-icon is-failed"><AlertCircle/></div><small className="payn-label">STATUS DA ASSINATURA</small><h1>ACESSO PRO INATIVO</h1><p>{message||'A assinatura não concede acesso Pro neste momento.'}</p>{status==='charged_back'?<div className="payn-note is-alert"><AlertCircle/><span>A transação está sob revisão de segurança.</span></div>:null}<button className="is-outline" onClick={()=>navigate('/profile/preferences/subscriptions')}>VER ASSINATURA</button></>:null}
   </section></main>,document.body);
 }
 export default PaymentSuccess;

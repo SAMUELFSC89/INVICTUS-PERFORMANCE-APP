@@ -3,14 +3,13 @@ import { createPortal } from 'react-dom';
 import { ArrowRight, BarChart3, Bell, CalendarDays, Check, Dumbbell, Footprints, Plus, ShieldCheck, Trophy, UserRound, Users } from 'lucide-react';
 import { InvictusLogo } from '../../components/InvictusLogo';
 import { useUser } from '../../UserContext';
+import { hasActiveProEntitlement } from '../../lib/proEntitlement';
 import './ChampionshipsNew.css';
 
 export function ChampionshipsHub() {
   const navigate = useNavigate();
   const { user } = useUser();
-  const paid = ['performance', 'pro'].includes(String(user?.subscriptionTier || '').toLowerCase())
-    || ['performance', 'pro'].includes(String(user?.currentPlan || '').toLowerCase())
-    || user?.premium === true;
+  const paid = hasActiveProEntitlement(user);
   return createPortal(<main className="ch-new-screen"><div className="ch-new-page">
     <header className="ch-new-header"><button onClick={() => navigate('/notifications')}><Bell /></button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="ch-new-avatar" onClick={() => navigate('/profile')}>{user?.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
     <section className="ch-new-hero"><h1>CAMPEONATOS</h1><p>Treine. Compita. Evolua.</p></section>

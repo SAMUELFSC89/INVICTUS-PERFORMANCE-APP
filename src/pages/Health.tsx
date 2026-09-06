@@ -22,6 +22,7 @@ import { InvictusLogo } from '../components/InvictusLogo';
 import { HealthBodyIllustration } from '../components/health/HealthBodyIllustration';
 import { WearableManager } from '../services/wearables/WearableManager';
 import { getModalityConfig } from '../config/cardioConfig';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
 import { buildHealthViewModel, healthLocalDate, type HealthViewModel, type HealthInterpretation, type PersonalBaseline } from '../core/health/healthViewModel';
 import { buildHealthPeriodSummary } from '../core/health/healthPeriodSummary';
 import './HealthNew.css';
@@ -1115,7 +1116,7 @@ export function Health() {
           viewModel={viewModel}
           trainingPartial={trainingPartial}
           periodDays={periodDays}
-          isPro={['performance', 'pro'].includes(String(user.subscriptionTier))}
+          isPro={hasActiveProEntitlement(user)}
           state={state}
           summary={summary}
           loadingSummary={loadingSummary}
@@ -1166,7 +1167,7 @@ export function HealthReportContent({ onSummaryChange, onPeriodChange, reportNar
       <p>{activeMinutes === null ? 'Ainda não há duração registrada para somar.' : `${formatDuration(activeMinutes)} de treino registradas. `}{trainingPartial ? 'O histórico está incompleto: os totais abaixo podem estar subestimados.' : 'Os totais consideram as mesmas sessões exibidas na lista de Saúde.'}</p>
       <small>O período resume os registros recebidos. Recuperação descreve o estado atual; a revisão de treinos usa os últimos 7 dias. Dias sem registro não comprovam inatividade.</small>
     </section>
-    <WeeklyReviewCard viewModel={viewModel} isPro={['performance', 'pro'].includes(String(user.subscriptionTier))} />
+    <WeeklyReviewCard viewModel={viewModel} isPro={hasActiveProEntitlement(user)} />
     {reportNarrative}
     <HealthInsightsSection summary={summary} state={state} trainingPartial={trainingPartial} />
     {Capacitor.isNativePlatform() && <details className="health-report-data-details"><summary>Ver situação da sincronização</summary><HealthSyncStatus diagnostics={syncDiagnostics} loading={loadingSummary} /></details>}

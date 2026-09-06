@@ -9,6 +9,7 @@ import { workoutPlanService } from '../services/workoutPlanService';
 import { communityChampionshipService } from '../services/communityChampionshipService';
 import type { Workout } from '../types';
 import type { WorkoutPlan } from '../types/workoutPlan';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
 import './Home.css';
 
 const weekStart = () => { const d = new Date(); const day = d.getDay(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); return d.getTime(); };
@@ -44,9 +45,7 @@ export function Home() {
   const nextWorkout = plan?.workouts.find(workout => workout.weekdays.includes(today)) || plan?.workouts[0] || null;
   const gymPosition = Number(user?.positions?.gym);
   const iga = Number(user?.score);
-  const paid = ['performance', 'pro'].includes(String(user?.subscriptionTier || '').toLowerCase())
-    || ['performance', 'pro'].includes(String(user?.currentPlan || '').toLowerCase())
-    || user?.premium === true;
+  const paid = hasActiveProEntitlement(user);
 
   return createPortal(<main className="nh-screen"><div className="nh-page">
     <header className="nh-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell />{user?.notifications?.some(item => !item.read) ? <i /> : null}</button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="nh-avatar" onClick={() => navigate('/profile')} aria-label="Perfil">{user?.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>

@@ -1,85 +1,92 @@
 import { Capacitor } from '@capacitor/core';
-import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
+import {
+  Purchases,
+  LOG_LEVEL,
+  type CustomerInfo,
+  type PurchasesPackage,
+} from '@revenuecat/purchases-capacitor';
+import {
+  createRevenueCatClient,
+  PERFORMANCE_ENTITLEMENT_ID,
+  type PerformancePurchaseResult,
+  type PerformanceSubscriptionOffer,
+  type RevenueCatCustomerInfoLike,
+  type RevenueCatPackageLike,
+} from './revenuecat-core';
 
 /**
- * Integração com a RevenueCat para compras nativas reais (Google Play / App Store)
- * do Plano Performance. O Plano Open é gratuito e nunca passa por este módulo.
+ * Integração nativa RevenueCat do Plano Performance.
  *
- * Configuração necessária (feita fora do código, nos dashboards):
- * 1. Criar conta gratuita em https://app.revenuecat.com
- * 2. Criar o produto de assinatura mensal no Google Play Console (e depois na App
- *    Store Connect, quando o iOS entrar), com o preço definido (ex: R$ 29,90/mês).
- * 3. Conectar o app Android/iOS ao projeto da RevenueCat e importar esse produto.
- * 4. Criar uma "Entitlement" chamada exatamente "performance" e vincular o produto.
- * 5. Criar uma "Offering" (ex: "default") com um "Package" que contenha esse produto.
- * 6. Copiar as chaves públicas de API (uma para Android, outra para iOS) em
- *    Project Settings > API Keys, e configurá-las como variáveis de ambiente do
- *    build: VITE_REVENUECAT_ANDROID_API_KEY e VITE_REVENUECAT_IOS_API_KEY.
+ * Configuração obrigatória por build:
+ * - VITE_REVENUECAT_ANDROID_API_KEY / VITE_REVENUECAT_IOS_API_KEY
+ * - ao menos um package ID ou product ID explícito do Performance. Há versões
+ *   globais e opcionais por plataforma para projetos com SKUs diferentes.
  */
-
 const REVENUECAT_ANDROID_API_KEY = import.meta.env.VITE_REVENUECAT_ANDROID_API_KEY || '';
 const REVENUECAT_IOS_API_KEY = import.meta.env.VITE_REVENUECAT_IOS_API_KEY || '';
+const PERFORMANCE_PACKAGE_ID = (import.meta.env.VITE_REVENUECAT_PERFORMANCE_PACKAGE_ID || '').trim();
+const PERFORMANCE_PRODUCT_ID = (import.meta.env.VITE_REVENUECAT_PERFORMANCE_PRODUCT_ID || '').trim();
+const ANDROID_PERFORMANCE_PACKAGE_ID = (import.meta.env.VITE_REVENUECAT_ANDROID_PERFORMANCE_PACKAGE_ID || '').trim();
+const IOS_PERFORMANCE_PACKAGE_ID = (import.meta.env.VITE_REVENUECAT_IOS_PERFORMANCE_PACKAGE_ID || '').trim();
+const ANDROID_PERFORMANCE_PRODUCT_ID = (import.meta.env.VITE_REVENUECAT_ANDROID_PERFORMANCE_PRODUCT_ID || '').trim();
+const IOS_PERFORMANCE_PRODUCT_ID = (import.meta.env.VITE_REVENUECAT_IOS_PERFORMANCE_PRODUCT_ID || '').trim();
 
-// Precisa bater exatamente com o identificador da Entitlement criada no dashboard.
-export const PERFORMANCE_ENTITLEMENT_ID = 'performance';
+export { PERFORMANCE_ENTITLEMENT_ID };
+export type { PerformancePurchaseResult, PerformanceSubscriptionOffer };
 
-let isConfigured = false;
+const revenueCatClient = createRevenueCatClient({
+  sdk: {
+    isConfigured: () => Purchases.isConfigured(),
+    setLogLevel: ({ level }) => Purchases.setLogLevel({ level: level as LOG_LEVEL }),
+    configure: (configuration) => Purchases.configure(configuration),
+    getAppUserID: () => Purchases.getAppUserID(),
+    logIn: (identity) => Purchases.logIn(identity),
+    logOut: () => Purchases.logOut(),
+    getOfferings: async () => {
+      const offerings = await Purchases.getOfferings();
+      return {
+        current: offerings.current
+          ? { availablePackages: offerings.current.availablePackages as RevenueCatPackageLike[] }
+          : null,
+      };
+    },
+    purchasePackage: async ({ aPackage }) => {
+      const result = await Purchases.purchasePackage({ aPackage: aPackage as PurchasesPackage });
+      return { customerInfo: result.customerInfo as RevenueCatCustomerInfoLike };
+    },
+    restorePurchases: async () => {
+      const result = await Purchases.restorePurchases();
+      return { customerInfo: result.customerInfo as CustomerInfo as RevenueCatCustomerInfoLike };
+    },
+  },
+  isNativePlatform: () => Capacitor.isNativePlatform(),
+  getPlatform: () => Capacitor.getPlatform(),
+  getStoreConfiguration: (platform) => ({
+    apiKey: platform === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY,
+    packageIdentifier: platform === 'ios'
+      ? IOS_PERFORMANCE_PACKAGE_ID || PERFORMANCE_PACKAGE_ID
+      : ANDROID_PERFORMANCE_PACKAGE_ID || PERFORMANCE_PACKAGE_ID,
+    productIdentifier: platform === 'ios'
+      ? IOS_PERFORMANCE_PRODUCT_ID || PERFORMANCE_PRODUCT_ID
+      : ANDROID_PERFORMANCE_PRODUCT_ID || PERFORMANCE_PRODUCT_ID,
+  }),
+  logLevel: LOG_LEVEL.WARN,
+});
 
 /**
- * Inicializa o SDK da RevenueCat vinculando o usuário logado (Firebase UID) como
- * appUserID, para que o backend consiga consultar a assinatura pelo mesmo ID.
- * Deve ser chamado uma vez, assim que soubermos qual usuário está logado (ex: no
- * UserContext, logo após o login). Idempotente e seguro para chamar mais de uma vez.
- * Não faz nada fora do app nativo (Android/iOS), já que compras reais não existem
- * na versão web/preview.
+ * Vincula o Firebase UID ao SDK. É seguro chamar repetidamente e em trocas de
+ * conta; a fila compartilhada impede interleaving com compra/restore/logout.
  */
-export async function configureRevenueCat(firebaseUid: string): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  if (isConfigured) return;
-  if (!firebaseUid) return;
+export const configureRevenueCat = revenueCatClient.configureRevenueCat;
 
-  const apiKey = Capacitor.getPlatform() === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
-  if (!apiKey) {
-    console.warn('[RevenueCat] Chave de API não configurada para esta plataforma (verifique as variáveis de ambiente VITE_REVENUECAT_ANDROID_API_KEY / VITE_REVENUECAT_IOS_API_KEY). Compras reais desativadas.');
-    return;
-  }
+/** Retorna pacote, produto, preço localizado e período publicados pela loja. */
+export const getPerformanceSubscriptionOffer = revenueCatClient.getPerformanceSubscriptionOffer;
 
-  try {
-    await Purchases.setLogLevel({ level: LOG_LEVEL.WARN });
-    await Purchases.configure({ apiKey, appUserID: firebaseUid });
-    isConfigured = true;
-  } catch (err) {
-    console.error('[RevenueCat] Falha ao configurar o SDK:', err);
-  }
-}
+/** Compra apenas o pacote/produto explicitamente configurado para a plataforma. */
+export const purchasePerformanceSubscription = revenueCatClient.purchasePerformanceSubscription;
 
-/**
- * Executa a compra real da assinatura do Plano Performance através da loja nativa
- * (Google Play ou App Store, conforme a plataforma do dispositivo). Lança um erro
- * com mensagem amigável em qualquer cenário de falha, cancelamento pelo usuário ou
- * ausência de oferta configurada.
- */
-export async function purchasePerformanceSubscription(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) {
-    throw new Error('A assinatura do Plano Performance só pode ser feita pelo aplicativo instalado (Android ou iOS), não é possível comprar pelo navegador.');
-  }
+/** Restauração explícita acionada pelo usuário. */
+export const restorePerformanceSubscription = revenueCatClient.restorePerformanceSubscription;
 
-  const offerings = await Purchases.getOfferings();
-  const currentOffering = offerings.current;
-  const availablePackages = currentOffering?.availablePackages || [];
-
-  if (availablePackages.length === 0) {
-    throw new Error('Nenhum plano de assinatura disponível no momento. Verifique sua conexão ou tente novamente mais tarde.');
-  }
-
-  // Usa o primeiro pacote disponível na oferta atual configurada no dashboard da
-  // RevenueCat (normalmente há apenas um: a assinatura mensal do Plano Performance).
-  const packageToPurchase = availablePackages[0];
-
-  const { customerInfo } = await Purchases.purchasePackage({ aPackage: packageToPurchase });
-  const isActive = !!customerInfo.entitlements.active[PERFORMANCE_ENTITLEMENT_ID];
-
-  if (!isActive) {
-    throw new Error('A compra foi processada pela loja, mas a assinatura ainda não foi confirmada. Tente novamente em instantes ou contate o suporte.');
-  }
-}
+/** Drena operações no logout; não cria identidade anônima no SDK. */
+export const disconnectRevenueCat = revenueCatClient.disconnectRevenueCat;

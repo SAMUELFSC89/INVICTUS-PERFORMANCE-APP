@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { 
   auth, 
@@ -12,15 +12,30 @@ import {
   sendPasswordResetEmail,
   sendEmailVerification
 } from '../firebase';
-import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
-import { purchasePerformanceSubscription } from '../lib/revenuecat';
+import { doc, getDoc } from 'firebase/firestore';
+import {
+  getPerformanceSubscriptionOffer,
+  purchasePerformanceSubscription,
+  restorePerformanceSubscription,
+  type PerformanceSubscriptionOffer,
+} from '../lib/revenuecat';
 import { UserProfile } from '../types';
-import { Lock, User, MapPin, CheckCircle, Calendar, Fingerprint, AlertTriangle, Loader2, LogOut, Sparkles } from 'lucide-react';
+import { Lock, User, MapPin, CheckCircle, Calendar, Fingerprint, AlertTriangle, Loader2, LogOut, RefreshCw, Sparkles } from 'lucide-react';
 import { referralService } from '../services/referralService';
 import { useUser } from '../UserContext';
 import { InvictusLogo } from './InvictusLogo';
 import { AuthExperience, RegistrationField } from './AuthExperience';
 import { CURRENT_LEGAL_VERSION } from '../lib/legalDocuments';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
+import {
+  clearPendingSubscriptionVerification,
+  createPendingSubscriptionVerification,
+  isSubscriptionProvisioned,
+  isTerminalInactiveSubscription,
+  readPendingSubscriptionVerification,
+  savePendingSubscriptionVerification,
+  type PendingSubscriptionVerification,
+} from '../lib/subscriptionVerification';
 
 async function isCpfAlreadyInUse(firebaseUser: { getIdToken: () => Promise<string> }, cpf: string): Promise<boolean> {
   const token = await firebaseUser.getIdToken();
@@ -62,6 +77,40 @@ type OnboardPayload = Partial<{
   termsVersionAccepted: string | number;
 }>;
 
+type PerformanceOfferState = {
+  uid: string;
+  status: 'loading' | 'ready' | 'error';
+  offer: PerformanceSubscriptionOffer | null;
+  error: string;
+};
+
+type SubscriptionAction = 'purchase' | 'restore' | 'verify' | null;
+
+export function formatSubscriptionPeriod(period: string | null): string {
+  if (!period) return '';
+
+  const match = /^P(\d+)([DWMY])$/.exec(period);
+  if (!match) return '';
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const singular: Record<string, string> = {
+    D: 'dia',
+    W: 'semana',
+    M: 'mês',
+    Y: 'ano',
+  };
+  const plural: Record<string, string> = {
+    D: 'dias',
+    W: 'semanas',
+    M: 'meses',
+    Y: 'anos',
+  };
+
+  if (!Number.isInteger(amount) || amount <= 0 || !singular[unit]) return '';
+  return amount === 1 ? `/${singular[unit]}` : `/${amount} ${plural[unit]}`;
+}
+
 async function completeOnboarding(
   firebaseUser: { getIdToken: () => Promise<string> },
   fields: OnboardPayload
@@ -89,10 +138,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [resetEmailSent, setResetEmailSent] = useState(false);
 
   // Paywall states
-  const [pendingOrder, setPendingOrder] = useState<any>(null);
   const [paywallLoading, setPaywallLoading] = useState(false);
+  const [subscriptionAction, setSubscriptionAction] = useState<SubscriptionAction>(null);
   const [paywallError, setPaywallError] = useState('');
   const [paymentCheckMsg, setPaymentCheckMsg] = useState('');
+  const [performanceOfferState, setPerformanceOfferState] = useState<PerformanceOfferState | null>(null);
+  const [pendingVerification, setPendingVerification] = useState<PendingSubscriptionVerification | null>(null);
+  const [verificationHydratedUid, setVerificationHydratedUid] = useState<string | null>(null);
+  const subscriptionActionRef = useRef(false);
   
   // Local states for onboarding/login process
   const [email, setEmail] = useState('');
@@ -153,34 +206,98 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
-  // Validação de acesso da conta em produção (Membro Open, Performance PRO e Administrador)
-  const isPaid = user?.subscriptionStatus === 'active_basic' || user?.subscriptionStatus === 'active_premium' || user?.isSubscribed || user?.role === 'admin' || user?.subscriptionTier === 'open';
+  // O Plano Open mantém o acesso básico; o Pro exige tier, status e validade
+  // canônicos. Flags legadas isoladas nunca liberam o paywall.
+  const hasBasicAccess = user?.subscriptionStatus === 'active_basic' || user?.subscriptionTier === 'open';
+  const isPaid = hasBasicAccess || hasActiveProEntitlement(user) || user?.role === 'admin';
+  const capacitorPlatform = Capacitor.getPlatform();
+  const nativeStorePlatform: 'android' | 'ios' | null = capacitorPlatform === 'android' || capacitorPlatform === 'ios'
+    ? capacitorPlatform
+    : null;
+  const nativeStoreName = nativeStorePlatform === 'ios' ? 'App Store' : 'Google Play';
+  const currentPendingVerification = pendingVerification?.uid === user?.uid ? pendingVerification : null;
+  const verificationHydrated = Boolean(user?.uid && verificationHydratedUid === user.uid);
+  const currentOfferState = performanceOfferState?.uid === user?.uid ? performanceOfferState : null;
+  const performanceOffer = currentOfferState?.status === 'ready' ? currentOfferState.offer : null;
+  const performanceOfferError = currentOfferState?.status === 'error' ? currentOfferState.error : '';
+  const shouldLoadPerformanceOffer = Boolean(
+    user
+    && !showTerms
+    && !isPaid
+    && selectedPlanId === 'invictus_performance'
+    && nativeStorePlatform
+    && verificationHydrated
+    && !currentPendingVerification
+  );
+  const performanceOfferLoading = Boolean(
+    selectedPlanId === 'invictus_performance'
+    && nativeStorePlatform
+    && (!verificationHydrated || (shouldLoadPerformanceOffer && currentOfferState?.status !== 'ready' && currentOfferState?.status !== 'error'))
+  );
 
   useEffect(() => {
-    if (user && !showTerms && !isPaid) {
-      const fetchPendingOrders = async () => {
-        try {
-          const q = query(
-            collection(db, 'payment_orders'),
-            where('userId', '==', user.uid),
-            where('status', '==', 'pending')
-          );
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            const sorted = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => 
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-            setPendingOrder(sorted[0]);
-          } else {
-            setPendingOrder(null);
-          }
-        } catch (err) {
-          console.error('[Paywall] Error fetching pending orders:', err);
-        }
+    const uid = user?.uid;
+    setPendingVerification(null);
+    setVerificationHydratedUid(null);
+    setPaywallError('');
+    setPaymentCheckMsg('');
+
+    if (!uid) return;
+    const stored = readPendingSubscriptionVerification(uid);
+    setPendingVerification(stored);
+    setVerificationHydratedUid(uid);
+    if (stored) setSelectedPlanId('invictus_performance');
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !currentPendingVerification || !hasActiveProEntitlement(user)) return;
+    clearPendingSubscriptionVerification(user.uid);
+    setPendingVerification(null);
+  }, [currentPendingVerification, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (
+      !user
+      || showTerms
+      || isPaid
+      || selectedPlanId !== 'invictus_performance'
+      || !nativeStorePlatform
+      || !verificationHydrated
+      || currentPendingVerification
+    ) {
+      setPerformanceOfferState(null);
+      return () => {
+        cancelled = true;
       };
-      fetchPendingOrders();
     }
-  }, [user, showTerms, isPaid]);
+
+    const uid = user.uid;
+    setPerformanceOfferState({ uid, status: 'loading', offer: null, error: '' });
+
+    getPerformanceSubscriptionOffer(uid)
+      .then((offer) => {
+        if (!cancelled) setPerformanceOfferState({ uid, status: 'ready', offer, error: '' });
+      })
+      .catch((offerError: unknown) => {
+        if (cancelled) return;
+        const message = offerError instanceof Error ? offerError.message : 'Não foi possível consultar a oferta da loja.';
+        setPerformanceOfferState({ uid, status: 'error', offer: null, error: message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentPendingVerification?.storeCompletedAt,
+    isPaid,
+    nativeStorePlatform,
+    selectedPlanId,
+    showTerms,
+    user?.uid,
+    verificationHydrated,
+  ]);
 
   // Combined loading state for initial load and auth processes
   const isGlobalLoading = contextLoading || isRedirecting || loading;
@@ -460,7 +577,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   };
 
-  if (isGlobalLoading && !user) {
+  // Nunca renderize filhos, onboarding ou paywall enquanto a identidade/perfil
+  // estiver mudando. Um perfil em cache ou da conta anterior não é autorização.
+  if (isGlobalLoading) {
     return (
       <div className="auth-experience"><div className="auth-ambient" aria-hidden="true"><span /><span /><span /></div><div className="auth-shell"><div className="auth-brand"><InvictusLogo size={84} showText /><p>{isRedirecting ? 'FINALIZANDO LOGIN' : isLoggingIn ? 'AUTENTICANDO' : 'CARREGANDO SEU PERFIL'}</p></div></div>
       </div>
@@ -497,7 +616,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (user.isBlocked) {
+  if (user.isBlocked || user.isBanned || user.isSuspended || ['deleted', 'blocked', 'banned', 'suspended'].includes(String(user.status || '').toLowerCase())) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
         <div className="w-20 h-20 bg-error/10 text-error rounded-full flex items-center justify-center mb-6">
@@ -510,7 +629,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (showTerms && user && !user.isBlocked) {
+  if (showTerms && user && !user.isBlocked && !user.isBanned && !user.isSuspended) {
     return (
       <div className="fixed inset-0 z-[10000] bg-[#030303] flex flex-col items-center justify-center p-6 overflow-y-auto">
         <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_50%_5%,rgba(232,173,21,.16),transparent_32%),linear-gradient(135deg,#020202,#0b0905,#020202)]"></div>
@@ -583,7 +702,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                   className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-4 text-white focus:border-primary outline-none transition-all appearance-none font-bold text-sm"
                 >
                   <option value="open" className="bg-surface-container">Plano Free (Grátis)</option>
-                  <option value="performance" className="bg-surface-container">Plano Pro (R$ 29,90/mês)</option>
+                  <option value="performance" className="bg-surface-container">Plano Pro</option>
                 </select>
               </div>
             </div>
@@ -707,21 +826,54 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!isPaid) {
-    const handleVerifyStorePurchase = async (planId: string, platform: 'android' | 'ios') => {
-    setPaywallLoading(true);
-    setPaywallError('');
-    setPaymentCheckMsg('');
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) {
-        throw new Error('Sessão inválida. Por favor, saia e faça login novamente.');
-      }
+    const runPaywallAction = async (
+      action: Exclude<SubscriptionAction, null>,
+      uid: string,
+      operation: () => Promise<void>,
+    ) => {
+      if (subscriptionActionRef.current) return;
+      subscriptionActionRef.current = true;
+      setPaywallLoading(true);
+      setSubscriptionAction(action);
+      setPaywallError('');
+      setPaymentCheckMsg('');
 
-      // Plano Pro: executa a compra real na loja (Google Play/App Store)
-      // antes de pedir ao backend para confirmar. O Plano Free é gratuito e nunca
-      // passa por nenhuma loja.
-      if (planId === 'invictus_performance') {
-        await purchasePerformanceSubscription();
+      try {
+        if (auth.currentUser?.uid !== uid) throw new Error('A conta mudou. Volte à assinatura e tente novamente na conta correta.');
+        await operation();
+      } catch (reason: unknown) {
+        console.error('[Store Purchase Error]', reason);
+        if (auth.currentUser?.uid === uid) {
+          setPaywallError(reason instanceof Error ? reason.message : 'Falha ao processar assinatura.');
+        }
+      } finally {
+        subscriptionActionRef.current = false;
+        setPaywallLoading(false);
+        setSubscriptionAction(null);
+      }
+    };
+
+    const refreshAfterProvisioning = async (uid: string): Promise<boolean> => {
+      if (auth.currentUser?.uid !== uid) return false;
+      try {
+        const refreshedProfile = await refreshUser?.();
+        return auth.currentUser?.uid === uid && hasActiveProEntitlement(refreshedProfile);
+      } catch (refreshError) {
+        // O servidor já aplicou o benefício. Falha ao reler o perfil não pode
+        // transformar uma confirmação forte em nova tentativa de compra.
+        console.error('[Store Purchase] Benefício aplicado, mas o perfil não foi recarregado:', refreshError);
+        return false;
+      }
+    };
+
+    const confirmPerformanceWithServer = async (pending: PendingSubscriptionVerification) => {
+      const currentAccount = auth.currentUser;
+      if (!currentAccount || currentAccount.uid !== pending.uid) {
+        throw new Error('A conta mudou antes da confirmação. Entre novamente na conta que concluiu a operação na loja.');
+      }
+      const token = await currentAccount.getIdToken();
+      if (auth.currentUser?.uid !== pending.uid) {
+        throw new Error('A conta mudou antes da confirmação. Nenhum benefício foi aplicado à conta incorreta.');
       }
 
       const response = await fetch('/api/payments/verify-purchase', {
@@ -730,31 +882,120 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ planId, platform })
+        body: JSON.stringify({
+          planId: 'invictus_performance',
+          platform: pending.platform,
+          productId: pending.productIdentifier,
+          packageIdentifier: pending.packageIdentifier,
+        })
       });
-
-      const data = await response.json();
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error || 'Erro ao validar a assinatura.');
+        if (isTerminalInactiveSubscription(payload) && auth.currentUser?.uid === pending.uid) {
+          clearPendingSubscriptionVerification(pending.uid);
+          setPendingVerification(null);
+        }
+        throw new Error(payload.error || 'A loja confirmou a operação, mas o servidor ainda não conseguiu aplicar o benefício. Tente confirmar novamente.');
+      }
+      if (!isSubscriptionProvisioned(payload)) {
+        throw new Error(payload.error || 'A resposta ainda não confirma que o benefício Pro foi aplicado. Tente confirmar novamente.');
       }
 
-      if (data.success && data.status === 'approved') {
-        setPaymentCheckMsg(planId === 'invictus_open'
-          ? 'Plano Free ativado com sucesso! Liberando acesso...'
-          : 'Assinatura ativada com sucesso pelas lojas oficiais! Liberando acesso...');
-        if (refreshUser) {
-          await refreshUser();
+      if (auth.currentUser?.uid === pending.uid) {
+        const profileConfirmed = await refreshAfterProvisioning(pending.uid);
+        if (profileConfirmed) {
+          clearPendingSubscriptionVerification(pending.uid);
+          setPendingVerification(null);
+          setPaymentCheckMsg('Assinatura confirmada pela loja e benefícios Pro aplicados!');
+        } else {
+          // O POST confirmou o provisionamento, mas o cliente ainda não leu a
+          // projeção canônica. Mantemos a intenção para retry somente-servidor.
+          setPaymentCheckMsg('Benefício aplicado pelo servidor. Sincronize novamente para atualizar este dispositivo; nenhuma nova compra será aberta.');
         }
-      } else {
-        throw new Error('Falha na validação do recibo de compra.');
       }
-    } catch (err: any) {
-      console.error('[Store Purchase Error]', err);
-      setPaywallError(err.message || 'Falha ao processar assinatura.');
-    } finally {
-      setPaywallLoading(false);
-    }
-  };
+    };
+
+    const handlePerformanceStoreAction = async (operation: 'purchase' | 'restore') => {
+      const uid = user.uid;
+      const platform = nativeStorePlatform;
+      const selectedOffer = performanceOffer;
+      if (!platform) {
+        setPaywallError('Assine ou restaure o Plano Pro pelo aplicativo instalado no Android ou iOS.');
+        return;
+      }
+      if (!verificationHydrated || (operation === 'purchase' && performanceOfferLoading)) return;
+      if (currentPendingVerification && operation === 'purchase') {
+        await runPaywallAction('verify', uid, () => confirmPerformanceWithServer(currentPendingVerification));
+        return;
+      }
+      if (operation === 'purchase' && !selectedOffer) {
+        setPaywallError(performanceOfferError || 'A oferta da loja ainda não está disponível. Tente novamente.');
+        return;
+      }
+
+      await runPaywallAction(operation, uid, async () => {
+        const result = operation === 'purchase'
+          ? await purchasePerformanceSubscription(uid)
+          : await restorePerformanceSubscription(uid);
+        if (result.active !== true || !result.productIdentifier?.trim()) {
+          throw new Error('A loja não confirmou uma assinatura Performance ativa.');
+        }
+
+        const pending = createPendingSubscriptionVerification({
+          uid,
+          platform,
+          operation,
+          productIdentifier: result.productIdentifier,
+          packageIdentifier: operation === 'purchase' ? selectedOffer?.packageIdentifier : undefined,
+        });
+
+        // Gravar antes do POST garante retomada após timeout, reload ou ACK perdido.
+        const persisted = savePendingSubscriptionVerification(pending);
+        if (auth.currentUser?.uid === uid) setPendingVerification(pending);
+
+        try {
+          await confirmPerformanceWithServer(pending);
+        } catch (verificationError) {
+          if (!persisted) {
+            const message = verificationError instanceof Error ? verificationError.message : 'A confirmação do servidor falhou.';
+            throw new Error(`${message} Mantenha esta tela aberta e tente confirmar novamente.`);
+          }
+          throw verificationError;
+        }
+      });
+    };
+
+    const handleOpenActivation = async () => {
+      const uid = user.uid;
+      await runPaywallAction('verify', uid, async () => {
+        const currentAccount = auth.currentUser;
+        if (!currentAccount || currentAccount.uid !== uid) throw new Error('Sessão inválida. Faça login novamente.');
+        const token = await currentAccount.getIdToken();
+        if (auth.currentUser?.uid !== uid) throw new Error('A conta mudou antes da ativação. Tente novamente na conta correta.');
+
+        const response = await fetch('/api/payments/verify-purchase', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            planId: 'invictus_open',
+            platform: 'internal',
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || 'Erro ao ativar o Plano Free.');
+        }
+        if (!isSubscriptionProvisioned(data)) {
+          throw new Error(data.error || 'O servidor ainda não confirmou a ativação do Plano Free.');
+        }
+
+        setPaymentCheckMsg('Plano Free ativado com sucesso! Liberando acesso...');
+        await refreshAfterProvisioning(uid);
+      });
+    };
 
     return (
       <div className="min-h-screen bg-background text-on-background flex flex-col items-center justify-center p-4 md:p-6 select-none font-sans">
@@ -779,7 +1020,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             {/* Plano Free */}
             <button
               onClick={() => setSelectedPlanId('invictus_open')}
-              disabled={!!pendingOrder}
+              disabled={paywallLoading || !verificationHydrated || !!currentPendingVerification}
               className={`w-full text-left p-4 rounded-xl border transition-all flex flex-col justify-between gap-1 cursor-pointer ${
                 selectedPlanId === 'invictus_open'
                   ? 'bg-primary/5 border-primary shadow-lg shadow-primary/5'
@@ -798,7 +1039,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             {/* Plano Pro */}
             <button
               onClick={() => setSelectedPlanId('invictus_performance')}
-              disabled={!!pendingOrder}
+              disabled={paywallLoading || !verificationHydrated}
               className={`w-full text-left p-4 rounded-xl border transition-all flex flex-col justify-between gap-1 cursor-pointer ${
                 selectedPlanId === 'invictus_performance'
                   ? 'bg-primary/5 border-primary shadow-lg shadow-primary/5'
@@ -807,7 +1048,22 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             >
               <div className="flex justify-between items-center w-full">
                 <span className="text-sm font-bold uppercase tracking-wider text-white">Plano Pro</span>
-                <span className="text-lg font-headline italic font-black text-primary">R$ 29,90<span className="text-[10px] font-normal not-italic text-on-surface-variant">/mês</span></span>
+                <span className="text-right font-headline italic font-black text-primary">
+                  {currentPendingVerification
+                    ? <span className="text-xs">Compra confirmada</span>
+                    : performanceOfferLoading
+                    ? <span className="text-xs">Consultando loja...</span>
+                    : performanceOffer
+                      ? (
+                        <>
+                          <span className="text-lg">{performanceOffer.priceString}</span>
+                          <span className="text-[10px] font-normal not-italic text-on-surface-variant">
+                            {formatSubscriptionPeriod(performanceOffer.subscriptionPeriod)}
+                          </span>
+                        </>
+                      )
+                      : <span className="text-xs">{nativeStorePlatform ? 'Oferta indisponível' : 'Pelo app'}</span>}
+                </span>
               </div>
               <p className="text-[10px] text-on-surface-variant font-medium uppercase mt-1">
                 Acesso Elite, Gráficos Biométricos avançados, Integração com Smartwatch e IA.
@@ -865,6 +1121,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
+          {selectedPlanId === 'invictus_performance' && performanceOfferError && !paywallError && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl p-4 flex gap-3 items-start text-xs leading-relaxed">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{performanceOfferError}</span>
+            </div>
+          )}
+
+          {selectedPlanId === 'invictus_performance' && currentPendingVerification && !paymentCheckMsg && (
+            <div className="bg-primary/10 border border-primary/20 text-primary rounded-xl p-4 flex gap-3 items-start text-xs leading-relaxed">
+              <RefreshCw className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>A loja já confirmou a operação. Falta apenas aplicar o benefício no servidor; tentar novamente não abrirá uma nova compra.</span>
+            </div>
+          )}
+
           {paymentCheckMsg && (
             <div className="bg-primary/10 border border-primary/20 text-primary rounded-xl p-4 flex gap-3 items-start text-xs leading-relaxed">
               <Sparkles className="h-4 w-4 shrink-0 mt-0.5" />
@@ -876,19 +1146,25 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           <div className="space-y-4">
             <div className="bg-surface-variant/10 border border-surface-variant rounded-2xl p-4 text-center space-y-2">
 <span className="text-[10px] font-black uppercase text-primary tracking-widest">
-{selectedPlanId === 'invictus_open' ? 'Comece Agora, é Grátis!' : 'Assinatura In-App Nativa (Google Play / App Store)'}
+{selectedPlanId === 'invictus_open'
+  ? 'Comece Agora, é Grátis!'
+  : currentPendingVerification ? 'CONFIRMAÇÃO PENDENTE' : 'Assinatura In-App Nativa (Google Play / App Store)'}
 </span>
 <p className="text-[9.5px] text-on-surface-variant leading-relaxed">
 {selectedPlanId === 'invictus_open'
 ? 'Sem custo e sem necessidade de cartão. Ative seu acesso ao Plano Free agora mesmo.'
-: 'Nenhum gateway externo. Selecione o sistema operacional desejado para validar e simular a compra oficial do seu plano Performance:'}
+: currentPendingVerification
+  ? 'A compra ou restauração já terminou na loja. Esta etapa consulta somente o servidor e é segura para repetir.'
+: nativeStorePlatform
+  ? `O preço e o período acima são informados pela ${nativeStoreName}. A loja confirmará a assinatura antes da liberação.`
+  : 'A assinatura do Plano Pro está disponível no aplicativo instalado para Android ou iOS.'}
 </p>
 </div>
 
 {selectedPlanId === 'invictus_open' ? (
 <button
-onClick={() => handleVerifyStorePurchase('invictus_open', 'android')}
-disabled={paywallLoading}
+onClick={() => void handleOpenActivation()}
+disabled={paywallLoading || !verificationHydrated}
 className="w-full h-14 bg-primary hover:bg-primary-hover text-white font-headline italic font-black text-sm rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
 >
 {paywallLoading ? (
@@ -898,34 +1174,30 @@ className="w-full h-14 bg-primary hover:bg-primary-hover text-white font-headlin
 )}
 </button>
 ) : (
-<div className="grid grid-cols-2 gap-3">
+<div className="space-y-3">
 <button
-onClick={() => handleVerifyStorePurchase(selectedPlanId, 'android')}
-disabled={paywallLoading}
-className="h-14 bg-emerald-500 hover:bg-emerald-400 text-black font-headline italic font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
+onClick={() => void handlePerformanceStoreAction('purchase')}
+disabled={paywallLoading || !verificationHydrated || performanceOfferLoading || (!currentPendingVerification && !performanceOffer) || !nativeStorePlatform}
+className="w-full h-14 bg-primary hover:bg-primary-hover text-white font-headline italic font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
 >
-{paywallLoading ? (
-<Loader2 className="h-4 w-4 animate-spin text-black" />
+{paywallLoading || performanceOfferLoading ? (
+<Loader2 className="h-4 w-4 animate-spin text-white" />
 ) : (
-<>
-<span>🤖 Play Store</span>
-</>
+<span>{currentPendingVerification
+  ? 'CONFIRMAR ASSINATURA'
+  : nativeStorePlatform ? `Assinar pela ${nativeStoreName}` : 'Disponível no app Android ou iOS'}</span>
 )}
 </button>
 
-<button
-onClick={() => handleVerifyStorePurchase(selectedPlanId, 'ios')}
-disabled={paywallLoading}
-className="h-14 bg-white hover:bg-white/90 text-black font-headline italic font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider disabled:opacity-50"
+{nativeStorePlatform ? <button
+onClick={() => void handlePerformanceStoreAction('restore')}
+disabled={paywallLoading || !verificationHydrated}
+className="w-full h-12 border border-surface-variant hover:border-primary text-on-surface-variant hover:text-primary font-headline italic font-black rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-50"
 >
-{paywallLoading ? (
-<Loader2 className="h-4 w-4 animate-spin text-black" />
-) : (
-<>
-<span> App Store</span>
-</>
-)}
-</button>
+{paywallLoading && subscriptionAction === 'restore'
+  ? <><Loader2 className="h-4 w-4 animate-spin" /> RESTAURANDO…</>
+  : <><RefreshCw className="h-4 w-4" /> {currentPendingVerification ? 'REVALIDAR NA LOJA' : 'RESTAURAR COMPRA'}</>}
+</button> : null}
 </div>
 )}
 

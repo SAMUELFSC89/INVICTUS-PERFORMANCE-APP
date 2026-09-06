@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
+import { isProUser } from '../_lib/entitlement.js';
 
 type CachedRanking = { topUsers: any[]; timestamp: number };
 const serverRankingCache = new Map<string, CachedRanking>();
@@ -56,7 +57,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           photoURL: data.photoURL || '',
           score: Number(data[scoreField] || 0),
           streak: Number(data.streak || 0),
-          isSubscribed: data.isSubscribed === true,
+          // Campo mantido no contrato público como snapshot booleano, mas é
+          // derivado do entitlement vigente em vez da flag legada gravada.
+          isSubscribed: isProUser(data, now),
           subscriptionTier: data.subscriptionTier || 'open',
           gymId,
           gymName: data.gymName || data.gym || '',

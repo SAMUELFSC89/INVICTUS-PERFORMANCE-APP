@@ -144,7 +144,7 @@ export class ValidationEngine {
     // missingData nem bloqueia 'valid' (ver auditoria antifraude 2026-08).
 
     // 10. Usuário Elegível
-    const isBanned = userData?.status === 'BANNED' || userData?.isSuspended || userData?.isBlocked;
+    const isBanned = userData?.status === 'BANNED' || userData?.isBanned || userData?.isSuspended || userData?.isBlocked;
     const userEligible = !isBanned;
     if (isBanned) {
       warnings.push('Usuário suspenso ou inapto para validação de atividades.');

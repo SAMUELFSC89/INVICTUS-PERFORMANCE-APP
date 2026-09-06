@@ -6,6 +6,7 @@ import { InvictusLogo } from './InvictusLogo';
 import { useUser } from '../UserContext';
 import { missionService, MissionDashboard } from '../services/missionService';
 import type { Mission, UserMissionProgress } from '../types';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
 import './ChallengesHubNew.css';
 
 type Filter = 'all' | 'workout' | 'cardio' | 'performance' | 'habits' | 'social';
@@ -72,9 +73,7 @@ export function ChallengesHubNew({ onCardio, onHistory }: Props) {
   );
   const filtered = useMemo(() => missions.filter(mission => filter === 'all' || missionFilter(mission) === filter), [missions, filter]);
   const featured = missions.slice(0, 3);
-  const paid = ['performance', 'pro'].includes(String(user?.subscriptionTier || '').toLowerCase())
-    || ['performance', 'pro'].includes(String(user?.currentPlan || '').toLowerCase())
-    || user?.premium === true;
+  const paid = hasActiveProEntitlement(user);
 
   const claim = async (mission: Mission, item: UserMissionProgress) => {
     setClaiming(mission.id); setError(null);

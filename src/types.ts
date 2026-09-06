@@ -154,6 +154,7 @@ export interface UserProfile {
   walletBalance: number;
   isBlocked: boolean;
   isBanned?: boolean;
+  isSuspended?: boolean;
   isBot?: boolean;
   infractions: number;
   profileLikes: string[]; // Array of UIDs who liked this athlete
@@ -982,9 +983,16 @@ export interface PhysicalOrder {
   idempotencyKey: string;
   paymentProvider?: string | null;
   paymentReference?: string | null;
+  paymentStatus?: string | null;
+  cancellationStatus?: 'NONE' | 'REQUESTED' | 'CONFIRMED' | 'FAILED';
+  refundStatus?: 'NONE' | 'REQUESTED' | 'IN_PROGRESS' | 'PARTIAL' | 'CONFIRMED' | 'FAILED';
+  financialReviewRequired?: boolean;
+  financialActionRequired?: string | null;
+  financialOperationError?: string | null;
   paymentQrCode?: { encodedImage?: string; payload?: string; expirationDate?: string } | null;
   paymentInvoiceUrl?: string | null;
   paymentDueAt?: string | null;
+  paymentExpiresAt?: string | null;
   coinReservationStatus?: 'NONE' | 'HELD' | 'CONSUMED' | 'RELEASED' | 'REFUNDED';
   coinReservationExpiresAt?: string | null;
   shippingMode?: StoreShippingMode;

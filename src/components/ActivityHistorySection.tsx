@@ -22,6 +22,7 @@ import { useUser } from '../UserContext';
 import { WorkoutFeedbackPanel } from './health/WorkoutFeedbackPanel';
 import { loadWorkoutFeedbackHistory, readWorkoutHealthRecord, type WorkoutFeedbackHistory } from '../services/workoutFeedbackHistoryService';
 import { workoutHealthRefreshService } from '../services/workoutHealthRefreshService';
+import { hasActiveProEntitlement } from '../lib/proEntitlement';
 
 export interface ActivityHistoryItem {
   id: string;
@@ -165,7 +166,7 @@ function ActivityWorkoutFeedback({ item }: { item: ActivityHistoryItem }) {
   const [history, setHistory] = useState<WorkoutFeedbackHistory | null>(null);
   const sameOwner = !!ownerUid && authUid === ownerUid && auth.currentUser?.uid === ownerUid
     && user?.uid === ownerUid && (!item.details?.userId || item.details.userId === ownerUid);
-  const isPro = sameOwner && ['performance', 'pro'].includes(String(user?.subscriptionTier));
+  const isPro = sameOwner && hasActiveProEntitlement(user);
   const record = useMemo(() => readWorkoutHealthRecord(item.details?.healthSession), [item.details?.healthSession]);
 
   useEffect(() => onAuthStateChanged(auth, account => setAuthUid(account?.uid ?? null)), []);

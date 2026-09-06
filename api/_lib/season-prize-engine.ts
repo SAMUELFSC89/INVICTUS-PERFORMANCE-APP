@@ -2,6 +2,7 @@ import { startOfMonth, addMonths } from 'date-fns';
 import { db, FieldValue } from './common.js';
 import { RewardsEngine } from './rewards-engine.js';
 import { lerConfiguracaoInscricao } from './season-settings.js';
+import { isProUser } from './entitlement.js';
 import {
   SEASON_MIN_PARTICIPANTS_PER_GYM,
   SEASON_TOP5_THRESHOLD_PER_GYM,
@@ -317,7 +318,7 @@ export async function getSeasonParticipants(): Promise<Array<{ id: string; month
     .get();
 
   return snap.docs
-    .filter((d: any) => d.data().subscriptionTier === 'performance')
+    .filter((d: any) => isProUser(d.data()))
     .map((d: any) => ({ id: d.id, monthlyScore: d.data().monthlyScore }));
 }
 

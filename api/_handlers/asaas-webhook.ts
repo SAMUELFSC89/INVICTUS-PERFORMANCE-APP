@@ -62,9 +62,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // A loja física também usa o Asaas. O pedido é localizado pela referência
       // do pagamento antes de tentar interpretar o evento como inscrição.
-      const resultadoLoja = await StoreEngine.handleStorePaymentWebhook(payment.id, event, payment.value);
+      const resultadoLoja = await StoreEngine.handleStorePaymentWebhook(payment.id, event, payment.value, {
+        eventId: req.body?.id,
+        eventAt: req.body?.dateCreated,
+        externalReference: payment.externalReference,
+      });
       if (resultadoLoja.found) {
-        return res.status(200).json({ received: true, loja: resultadoLoja });
+        return res.status(resultadoLoja.retryable ? 503 : 200).json({ received: !resultadoLoja.retryable, retryable: Boolean(resultadoLoja.retryable), loja: resultadoLoja });
       }
 
       if (confirmado) {

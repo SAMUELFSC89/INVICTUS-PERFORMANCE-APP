@@ -2,30 +2,27 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { auth, db, onAuthStateChanged } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { UserProfile } from './types';
+import { configureRevenueCat, disconnectRevenueCat } from './lib/revenuecat';
 
 
 
 interface UserContextType {
   user: UserProfile | null;
   loading: boolean;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<UserProfile | null>;
 }
 
 const UserContext = createContext<UserContextType>({ 
   user: null, 
   loading: true, 
-  refreshUser: async () => {} 
+  refreshUser: async () => null
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(() => {
-    const cached = localStorage.getItem('last_user_profile');
-    try {
-      return cached ? JSON.parse(cached) : null;
-    } catch {
-      return null;
-    }
-  });
+  // O cache nunca pode ser usado como identidade/autorização. No primeiro
+  // frame ainda não sabemos qual conta o Firebase restaurará; renderizar o
+  // perfil anterior aqui poderia expor dados e gates PRO de outro usuário.
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   // AP-02 (auditoria 6167c8f): cada transição de auth (login, logout, troca
@@ -86,7 +83,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (snap.exists()) {
         const userData = { uid: snap.id, ...snap.data() } as UserProfile;
         setUser(userData);
-        localStorage.setItem('last_user_profile', JSON.stringify(userData));
         setLoading(false);
         console.log(`[AUTH] [LOAD_PROFILE] [${uid}] [SUCCESS] Perfil do usuário carregado com sucesso`);
         return userData;
@@ -101,7 +97,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (isStale()) return null;
       if (userData) {
         setUser(userData);
-        localStorage.setItem('last_user_profile', JSON.stringify(userData));
         console.log(`[AUTH] [ENSURE_PROFILE] [${uid}] [SUCCESS] Perfil mínimo criado no servidor`);
       }
       setLoading(false);
@@ -117,8 +112,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     if (auth.currentUser) {
       const generation = generationRef.current;
       console.log(`[AUTH] [REFRESH_USER] [${auth.currentUser.uid}] [INFO] Recarregando perfil do usuário`);
-      await loadUserProfile(auth.currentUser.uid, generation);
+      return await loadUserProfile(auth.currentUser.uid, generation);
     }
+    return null;
   }, [loadUserProfile]);
 
   useEffect(() => {
@@ -127,14 +123,30 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       // anteriores (ver comentário de generationRef acima).
       generationRef.current += 1;
       const generation = generationRef.current;
+      // Fecha imediatamente a janela entre contas. Só o perfil lido para a
+      // geração/UID atual poderá voltar a ser publicado pelo contexto.
+      setLoading(true);
+      setUser(null);
+      localStorage.removeItem('last_user_profile');
       if (firebaseUser) {
         console.log(`[AUTH] [SESSION_CHANGE] [${firebaseUser.uid}] [INFO] Estado de autenticação alterado: Logado`);
+        // BILL-02: antecipamos a vinculação do SDK, mas não bloqueamos a carga
+        // do perfil se a loja estiver lenta. A ação de compra chama e aguarda a
+        // mesma fila antes de buscar ofertas, portanto nunca compra sem UID.
+        void configureRevenueCat(firebaseUser.uid).catch((error: any) => {
+          console.error(`[AUTH] [REVENUECAT] [${firebaseUser.uid}] [FAILURE] ${error?.message || 'Falha ao vincular usuário'}`);
+        });
         await loadUserProfile(firebaseUser.uid, generation);
       } else {
         console.log(`[AUTH] [SESSION_CHANGE] [GUEST] [INFO] Estado de autenticação alterado: Deslogado`);
         setUser(null);
         localStorage.removeItem('last_user_profile');
         setLoading(false);
+        try {
+          await disconnectRevenueCat();
+        } catch (error: any) {
+          console.error(`[AUTH] [REVENUECAT] [GUEST] [FAILURE] ${error?.message || 'Falha ao desvincular usuário'}`);
+        }
       }
     });
 

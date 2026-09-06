@@ -47,7 +47,22 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
   beforeEach(() => {
     jest.clearAllMocks(); mockCache.clear();
     jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-05T15:00:00Z'));
-    mockUserGet.mockResolvedValue({ exists: true, data: () => ({ subscriptionTier: 'pro' }) });
+    mockUserGet.mockResolvedValue({
+      exists: true,
+      data: () => ({
+        proEntitlement: {
+          version: 1,
+          entitlementId: 'performance',
+          tier: 'performance',
+          provider: 'revenuecat',
+          status: 'active',
+          productId: 'invictus_performance_monthly',
+          purchasedAt: '2026-09-01T15:00:00Z',
+          expiresAt: '2026-10-05T15:00:00Z',
+          providerObservedAt: '2026-09-05T14:59:00Z',
+        },
+      }),
+    });
     mockWorkoutGet.mockResolvedValue({ docs: [] });
     mockBuildSummary.mockResolvedValue({ windowDays: 30, latest: {}, trends: {
       steps_daily: [{ timestamp: '2026-09-04T23:00:00Z', value: 5300, unit: 'steps', source: 'health_connect' }]

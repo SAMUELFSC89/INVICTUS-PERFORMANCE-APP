@@ -47,6 +47,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, order });
     }
 
+    if (req.method === 'POST' && action === 'resume-payment') {
+      const orderId = String(req.body?.orderId || '');
+      if (!orderId) return res.status(400).json({ success: false, error: 'Identificador do pedido ausente.' });
+      const payment = await StoreEngine.createPaymentForOrder(auth.uid, orderId);
+      const order = await StoreEngine.getPhysicalOrder(auth.uid, orderId);
+      if (!order) return res.status(404).json({ success: false, error: 'Pedido não encontrado.' });
+      return res.status(200).json({ success: true, order, payment });
+    }
+
+    if (req.method === 'POST' && action === 'cancel-order') {
+      const orderId = String(req.body?.orderId || '');
+      if (!orderId) return res.status(400).json({ success: false, error: 'Identificador do pedido ausente.' });
+      const financialOperation = await StoreEngine.cancelPendingOrder(auth.uid, orderId);
+      const order = await StoreEngine.getPhysicalOrder(auth.uid, orderId);
+      const pending = financialOperation.state === 'PENDING';
+      return res.status(pending ? 202 : 200).json({ success: true, pending, order, financialOperation });
+    }
+
     if (req.method === 'POST' && action === 'redeem-with-coins') {
       const result = await StoreEngine.redeemWithCoins({ userId: auth.uid, productId: String(req.body.productId || ''), quantity: Number(req.body.quantity), address: req.body.address, idempotencyKey: String(req.body.idempotencyKey || '') });
       return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result });
@@ -55,13 +73,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'POST' && action === 'create-cash-order') {
       const paymentMethod = req.body.paymentMethod === 'COINS_PLUS_MONEY' ? 'COINS_PLUS_MONEY' : 'MONEY';
       const result = await StoreEngine.createMoneyOrder({ userId: auth.uid, productId: String(req.body.productId || ''), quantity: Number(req.body.quantity), address: req.body.address, paymentMethod, idempotencyKey: String(req.body.idempotencyKey || '') });
-      try {
-        const payment = await StoreEngine.createPaymentForOrder(auth.uid, result.order.orderId);
-        return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result, payment });
-      } catch (paymentError) {
-        await StoreEngine.updateOrderStatus(result.order.orderId, 'CANCELLED').catch(() => undefined);
-        throw paymentError;
-      }
+      const payment = await StoreEngine.createPaymentForOrder(auth.uid, result.order.orderId);
+      return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result, payment });
     }
 
     const admin = await requireAdmin(auth.uid);
@@ -108,13 +121,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'POST' && action === 'update-order-status') {
-      await StoreEngine.updateOrderStatus(String(req.body.orderId || ''), req.body.status, req.body.trackingCode);
-      return res.status(200).json({ success: true });
+      const financialOperation = await StoreEngine.updateOrderStatus(String(req.body.orderId || ''), req.body.status, req.body.trackingCode);
+      const pending = financialOperation ? financialOperation.state === 'PENDING' : false;
+      return res.status(pending ? 202 : 200).json({ success: true, pending, financialOperation: financialOperation || null });
     }
 
     return res.status(400).json({ success: false, error: 'Ação de loja não suportada.' });
   } catch (error: any) {
     console.error('[Store Handler Error]:', error);
-    return res.status(400).json({ success: false, error: error?.message || 'Erro ao processar a Loja Invictus.' });
+    const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600
+      ? error.statusCode
+      : error?.retryable ? 503 : 400;
+    return res.status(statusCode).json({ success: false, retryable: Boolean(error?.retryable), error: error?.message || 'Erro ao processar a Loja Invictus.' });
   }
 }

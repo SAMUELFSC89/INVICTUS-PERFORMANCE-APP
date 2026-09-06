@@ -10,9 +10,27 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isActiveAdminProfile(data) {
+      return data.get('role', 'user') == 'admin' &&
+        data.get('isBlocked', false) != true &&
+        data.get('isBanned', false) != true &&
+        data.get('isSuspended', false) != true &&
+        data.get('isDeleted', false) != true &&
+        data.get('deleted', false) != true &&
+        data.get('accountDeleted', false) != true &&
+        data.get('disabled', false) != true &&
+        data.get('tombstone', false) != true &&
+        data.get('deletedAt', null) == null &&
+        data.get('accountDeletedAt', null) == null &&
+        !(data.get('status', 'active') in ['deleted', 'blocked', 'banned', 'suspended', 'DELETED', 'BLOCKED', 'BANNED', 'SUSPENDED', 'account_deleted', 'deletion_completed']) &&
+        !(data.get('accountStatus', 'active') in ['deleted', 'blocked', 'banned', 'suspended', 'DELETED', 'BLOCKED', 'BANNED', 'SUSPENDED', 'account_deleted', 'deletion_completed']) &&
+        !(data.get('lifecycleStatus', 'active') in ['deleted', 'blocked', 'banned', 'suspended', 'DELETED', 'BLOCKED', 'BANNED', 'SUSPENDED', 'account_deleted', 'deletion_completed']) &&
+        !(data.get('deletionStatus', 'active') in ['completed', 'deleted', 'deletion_completed', 'COMPLETED', 'DELETED', 'DELETION_COMPLETED']);
+    }
+
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin';
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        isActiveAdminProfile(get(/databases/$(database)/documents/users/$(request.auth.uid)).data);
     }
 
     function incoming() {
@@ -37,7 +55,29 @@ service cloud.firestore {
               (data.email == request.auth.token.email) &&
               (data.uid == request.auth.uid) && // Identity Integrity
               (data.get('isAdmin', false) == false) &&
-              (data.get('role', 'user') == 'user');
+              (data.get('role', 'user') == 'user') &&
+              // Perfis completos são criados pelo endpoint de onboarding com
+              // Admin SDK. Um create direto do cliente nunca pode semear os
+              // campos que formam o entitlement pago nem saldos/ranking.
+              !data.keys().hasAny([
+                'score', 'weeklyScore', 'monthlyScore', 'streak', 'walletBalance',
+                'badges', 'achievements', 'positions', 'activeSeason', 'seasonBoost',
+                'seasonEntryStatus', 'totalEarnings', 'totalWins', 'rankingPosition',
+                'premiumStatus', 'subscriptionStatus', 'isSubscribed', 'status',
+                'isPro', 'pro', 'plan', 'entitlement', 'proEntitlement',
+                'isBlocked', 'isBanned', 'isSuspended', 'isDeleted', 'deleted',
+                'accountDeleted', 'disabled', 'tombstone', 'accountStatus',
+                'lifecycleStatus', 'deletionStatus', 'deletedAt', 'accountDeletedAt',
+                'plano', 'assinatura', 'statusPagamento', 'premium', 'performance',
+                'currentPlan', 'subscriptionTier', 'paymentStatus', 'customerId',
+                'subscriptionId', 'orderId', 'chargeId', 'activatedAt',
+                'nextBillingDate', 'expiresAt', 'subscriptionExpiresAt', 'proStatus',
+                'gracePeriodExpiresAt', 'proActivatedAt', 'performanceActivatedAt',
+                'subscriptionStartedAt', 'proPaymentId', 'temporaryPremiumUntil',
+                'lastTransferOutAt', 'lastTransferOutTransactionId', 'lastTransferOutTransactionIds', 'lastTransferInAt',
+                'lastRevenueCatPurchaseEventAt', 'lastRevenueCatPurchaseEventType', 'lastRevenueCatPurchaseEventTransactionId',
+                'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent'
+              ]);
     }
 
     function isValidWorkout(data) {
@@ -107,9 +147,16 @@ service cloud.firestore {
           'walletBalance', 'badges', 'achievements', 'positions', 'activeSeason', 
            'seasonBoost', 'seasonEntryStatus', 'totalEarnings', 'totalWins', 'rankingPosition',
            'premiumStatus', 'subscriptionStatus', 'boostMultiplier', 'challengeProgress',
-           'role', 'isBanned', 'isSubscribed', 'status', 'seasonStatus', 'nextSeasonStart',
-           'isPro', 'pro', 'plan', 'entitlement',
+           'role', 'isBlocked', 'isBanned', 'isSuspended', 'isDeleted', 'deleted',
+           'accountDeleted', 'disabled', 'tombstone', 'accountStatus', 'lifecycleStatus',
+           'deletionStatus', 'deletedAt', 'accountDeletedAt', 'isSubscribed', 'status', 'seasonStatus', 'nextSeasonStart',
+           'isPro', 'pro', 'plan', 'entitlement', 'proEntitlement',
            'plano', 'assinatura', 'statusPagamento', 'premium', 'performance', 'currentPlan', 'subscriptionTier',
+           'paymentStatus', 'customerId', 'subscriptionId', 'orderId', 'chargeId', 'activatedAt',
+           'nextBillingDate', 'expiresAt', 'subscriptionExpiresAt', 'gracePeriodExpiresAt', 'proStatus',
+           'proActivatedAt', 'performanceActivatedAt', 'subscriptionStartedAt', 'proPaymentId',
+           'temporaryPremiumUntil', 'lastTransferOutAt', 'lastTransferOutTransactionId', 'lastTransferOutTransactionIds', 'lastTransferInAt',
+           'lastRevenueCatPurchaseEventAt', 'lastRevenueCatPurchaseEventType', 'lastRevenueCatPurchaseEventTransactionId',
            'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
             'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
             'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes', 'isAdmin', 'email', 'uid',
@@ -117,12 +164,20 @@ service cloud.firestore {
           ])
       );
       
-      allow delete: if isAdmin() || isOwner(userId);
+      // Exclusão do perfil precisa passar por um fluxo coordenado no servidor;
+      // apagar e recriar o documento não pode remover punições/entitlements.
+      allow delete: if isAdmin();
 
       match /weeklyStats/{weekId} {
         allow get, list: if isSignedIn() && (userId == request.auth.uid || isAdmin());
         allow write: if isAdmin();
       }
+    }
+
+    // Tombstones de exclusão impedem que login/webhook tardio recrie uma
+    // conta desativada. Somente o backend com Admin SDK pode acessá-los.
+    match /deleted_users/{userId} {
+      allow read, write: if false;
     }
 
     // Gyms Collection

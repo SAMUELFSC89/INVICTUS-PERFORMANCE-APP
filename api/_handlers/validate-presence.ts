@@ -19,6 +19,7 @@ import { criarInscricaoChampionship } from '../_lib/championship-inscription-ser
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 import { getAiPresenceModel } from '../_lib/ai-config.js';
 import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
+import { isProUser } from '../_lib/entitlement.js';
 
 // Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -542,7 +543,9 @@ async function commitWorkoutSession(userId: string, payload: any, finalDecision:
     let pointsEarned = 0;
     let computedStatus: 'valid' | 'pending_review' | 'invalid' | 'suspicious' = 'valid';
 
-    const subTier = userData.subscriptionTier || 'open';
+    // O documento do usuario e lido dentro da transacao; ainda assim, campos
+    // legados isolados nao sao suficientes para conceder limites Performance.
+    const subTier = isProUser(userData) ? 'performance' : 'open';
     const dailyCap = subTier === 'performance' ? 100 : 60;
 
     if (finalDecision === 'pending') {
@@ -873,7 +876,7 @@ async function commitRunningSession(userId: string, payload: any, finalDecision:
     // Sem isso, corridas repetidas no mesmo dia (dentro do limite semanal de
     // DIAS, mas sem limite de QUANTIDADE por dia) inflavam o score sem controle.
     if (xpAwarded > 0) {
-      const subTier = userData.subscriptionTier || 'open';
+      const subTier = isProUser(userData) ? 'performance' : 'open';
       const dailyCap = subTier === 'performance' ? 100 : 60;
       const todaySnap = await transaction.get(
         db.collection('workouts').where('userId', '==', userId).where('timestamp', '>=', todayISO)

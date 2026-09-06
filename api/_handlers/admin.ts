@@ -3,11 +3,12 @@ import { corsMiddleware } from '../_middleware/cors.js';
 import { methodMiddleware } from '../_middleware/method.js';
 import { authMiddleware } from '../_middleware/auth.js';
 import { errorHandler, AppError } from '../_middleware/error.js';
-import { db } from '../_lib/common.js';
+import { auth as firebaseAdminAuth, db } from '../_lib/common.js';
 import { logEvent } from '../_lib/observability.js';
 import { AdminRepository } from '../_repositories/admin-repository.js';
 import { AdminService } from '../_services/admin/admin-service.js';
 import { resolveGymChampionshipReview } from '../_lib/championship-scoring-service.js';
+import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
 const adminRepository = new AdminRepository();
 const adminService = new AdminService(adminRepository);
@@ -22,9 +23,9 @@ export default async function handler(req: VercelRequest & { userId?: string; us
     // 2. Authorize Admin
     const userSnap = await db.collection('users').doc(req.userId!).get();
     const userData = userSnap.exists ? userSnap.data() : {};
-    // A autorização usa somente o papel persistido. Exceções por e-mail
-    // espalhadas pelo código criavam dois modelos de permissão incompatíveis.
-    const isAdmin = userData?.role === 'admin';
+    // O papel persistido só concede autoridade enquanto a conta continua
+    // ativa. Assim, bloqueio/exclusão revogam acesso mesmo com token antigo.
+    const isAdmin = hasActiveAdminAuthority(userData);
 
     if (!isAdmin) {
       await logEvent({
@@ -85,6 +86,100 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         return res.status(200).json(await resolveGymChampionshipReview({
           resultId: String(req.body?.resultId || ''), decision, reviewerId: req.userId!, reason: String(req.body?.reason || ''),
         }));
+      }
+
+      case 'delete-user': {
+        const target = String(req.body?.target || '').trim();
+        if (!target || target.length > 256) throw new AppError('Usuário inválido.', 400);
+
+        const users = db.collection('users');
+        const matches = new Map<string, any>();
+        const direct = await users.doc(target).get();
+        if (direct.exists) matches.set(direct.id, direct);
+
+        const normalizedEmail = target.toLowerCase();
+        if (target.includes('@')) {
+          const byEmail = await users.where('email', '==', normalizedEmail).limit(10).get();
+          byEmail.docs.forEach((document: any) => matches.set(document.id, document));
+        }
+
+        const normalizedCpf = target.replace(/\D/g, '');
+        if (normalizedCpf.length === 11) {
+          const byCpf = await users.where('cpf', '==', normalizedCpf).limit(10).get();
+          byCpf.docs.forEach((document: any) => matches.set(document.id, document));
+        }
+
+        if (!matches.size) throw new AppError('Cadastro não encontrado.', 404);
+        if (matches.has(req.userId!)) throw new AppError('Você não pode desativar a própria conta administrativa.', 400);
+
+        const deletedAt = new Date().toISOString();
+        const deletedUids: string[] = [];
+        const identityWarnings: string[] = [];
+        for (const [uid] of matches) {
+          const userRef = users.doc(uid);
+          const tombstoneRef = db.collection('deleted_users').doc(uid);
+          await db.runTransaction(async (transaction: any) => {
+            const current = await transaction.get(userRef);
+            if (!current.exists) return;
+            const existing = current.data() || {};
+            transaction.set(tombstoneRef, {
+              uid,
+              deletedAt,
+              deletedBy: req.userId,
+              reason: 'ADMIN_ACCOUNT_DELETION',
+            }, { merge: true });
+            transaction.update(userRef, {
+              role: 'user',
+              isAdmin: false,
+              accountStatus: 'deleted',
+              status: 'deleted',
+              isBlocked: true,
+              isBanned: true,
+              isSuspended: true,
+              isSubscribed: false,
+              isPro: false,
+              premium: false,
+              performance: false,
+              subscriptionStatus: 'inactive',
+              proStatus: 'revoked',
+              proEntitlement: existing.proEntitlement && typeof existing.proEntitlement === 'object'
+                ? { ...existing.proEntitlement, status: 'revoked', expiresAt: deletedAt, providerObservedAt: deletedAt }
+                : { tier: 'performance', status: 'revoked', expiresAt: deletedAt, providerObservedAt: deletedAt },
+              deletedAt,
+              deletedBy: req.userId,
+              updatedAt: deletedAt,
+            });
+          });
+          deletedUids.push(uid);
+
+          try {
+            await firebaseAdminAuth().updateUser(uid, { disabled: true });
+            await firebaseAdminAuth().revokeRefreshTokens(uid);
+          } catch (error: any) {
+            if (error?.code !== 'auth/user-not-found') {
+              identityWarnings.push(uid);
+              console.error(`[Admin] Conta ${uid} foi bloqueada no banco, mas a identidade não pôde ser desabilitada:`, error);
+            }
+          }
+        }
+
+        await logEvent({
+          severity: 'HIGH_RISK',
+          category: 'system_logs',
+          message: `Administrador desativou ${deletedUids.length} conta(s).`,
+          userId: req.userId!,
+          route: '/api/admin?action=delete-user',
+          details: { deletedUids, identityWarnings },
+        });
+
+        return res.status(200).json({
+          success: true,
+          deletedUids,
+          identityWarnings,
+          message: identityWarnings.length
+            ? 'Conta bloqueada no aplicativo; a desativação da identidade exige revisão operacional.'
+            : 'Conta desativada, sessões revogadas e tombstone de auditoria criado.',
+        });
       }
 
       case 'logs': {

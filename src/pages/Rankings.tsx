@@ -23,7 +23,7 @@ function TopAvatar({ entry, rank }: { entry: any; rank: number }) {
 }
 
 function RankingRow({ entry, rank, current }: { entry: any; rank: number; current?: boolean }) {
-  const isPro = entry.subscriptionTier === 'performance' || entry.subscriptionTier === 'pro';
+  const isPro = entry.isSubscribed === true;
   return <div className={`rank-row ${current ? 'rank-row--current' : ''}`}><b className={`rank-number rank-number--${rank}`}>{rank}</b><TopAvatar entry={entry} rank={rank} /><span className="rank-row-name"><strong>{name(entry)}{isPro ? <span className="rank-plan-badge">PRO</span> : null}</strong><small>{gym(entry)}</small></span><span className="rank-score"><small>IGA</small><b>{Number(entry.score || 0).toLocaleString('pt-BR')}</b></span></div>;
 }
 

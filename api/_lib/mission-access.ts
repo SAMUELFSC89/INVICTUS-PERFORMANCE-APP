@@ -1,3 +1,5 @@
+import { isCanonicalProEntitlement, isProUser } from './entitlement.js';
+
 export type MissionAccessTier = 'free' | 'pro' | 'unknown';
 
 export type MissionAccessSnapshot = {
@@ -31,8 +33,7 @@ export function resolveMissionAccessSnapshot(
       missionAccessResolvedAt: resolvedAt.toISOString(),
     };
   }
-  const tier = String(profile.subscriptionTier || profile.currentPlan || '').toLowerCase();
-  const isPro = profile.premium === true || tier === 'performance' || tier === 'pro';
+  const isPro = isProUser(profile, resolvedAt);
   return {
     missionAccessTier: isPro ? 'pro' : 'free',
     missionAccessVersion: 1,
@@ -77,14 +78,22 @@ export function resolveExternalMissionAccessSnapshot(
   }
 
   const current = resolveMissionAccessSnapshot(profile, true, resolvedAt);
-  const activationCandidates = [
-    profile.activatedAt,
-    profile.proActivatedAt,
-    profile.performanceActivatedAt,
-    profile.subscriptionStartedAt,
-  ].map(timestampMs).filter((value): value is number => value !== null);
+  const canonicalEntitlement = isCanonicalProEntitlement(profile.proEntitlement)
+    ? profile.proEntitlement
+    : null;
+  const activationCandidates = [canonicalEntitlement?.purchasedAt]
+    .map(timestampMs).filter((value): value is number => value !== null);
   const activatedAt = activationCandidates.length ? Math.min(...activationCandidates) : null;
-  const expiresAt = timestampMs(profile.expiresAt ?? profile.subscriptionExpiresAt);
+  const canonicalStatus = String(canonicalEntitlement?.status || '').trim().toLowerCase();
+  // Grace só estende o intervalo quando esse é realmente o estado canônico.
+  // Refund/revoke não possuem neste schema um instante de término confiável;
+  // nesses casos não inferimos retrospectivamente um período PRO.
+  const canonicalPeriodEnd = canonicalStatus === 'grace_period' || canonicalStatus === 'grace'
+    ? canonicalEntitlement?.gracePeriodExpiresAt ?? canonicalEntitlement?.expiresAt
+    : canonicalStatus === 'active' || canonicalStatus === 'active_premium' || canonicalStatus === 'expired'
+      ? canonicalEntitlement?.expiresAt
+      : null;
+  const expiresAt = timestampMs(canonicalPeriodEnd);
 
   if (activatedAt !== null && occurrenceMs < activatedAt) {
     return { ...current, missionAccessTier: 'free' };
@@ -96,7 +105,10 @@ export function resolveExternalMissionAccessSnapshot(
     };
   }
   if (activatedAt !== null && current.missionAccessTier === 'pro') return current;
-  if (current.missionAccessTier === 'free') return current;
+  // Um tier legado só pode indicar que faltam dados para um backfill; nunca é
+  // prova suficiente para promover a atividade a PRO.
+  const declaredTier = String(profile.subscriptionTier || profile.currentPlan || '').toLowerCase();
+  if (current.missionAccessTier === 'free' && declaredTier !== 'performance' && declaredTier !== 'pro') return current;
 
   // Para webhook/sync próximo do treino, o plano atual é evidência suficiente;
   // para backfill antigo sem datas, falhamos fechado apenas para missões PRO.
