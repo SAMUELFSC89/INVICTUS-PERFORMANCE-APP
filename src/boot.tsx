@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
 import './styles/readability.css';
+import './styles/ChallengeCardioModern.css';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 // #mapa-ios-2026-09-04: efeito colateral, sem exports usados aqui de proposito.
 //
