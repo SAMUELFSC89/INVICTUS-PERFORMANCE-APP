@@ -28,10 +28,11 @@ import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_EXERCISE
 const exercise = (exerciseId: string) => ({ exerciseId, sets: 3, repsMin: 8, repsMax: 12, restSeconds: 90 });
 const plan = (...ids: string[]) => ({ name: 'Teste', workouts: [{ id: 'a', name: 'A', exercises: ids.map(exercise) }] });
 const response = () => {
-  const res: any = { status: jest.fn(), json: jest.fn(), setHeader: jest.fn() };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
+  let body: any;
+  const res: any = { setHeader: jest.fn() };
+  res.status = jest.fn(() => res);
+  res.json = jest.fn((value: any) => { body = value; return res; });
+  return { res, body: () => body };
 };
 
 describe('planos usam o catálogo completo', () => {
@@ -79,14 +80,14 @@ describe('planos usam o catálogo completo', () => {
     ['JSON nulo', null],
   ])('o endpoint retorna resposta segura quando a IA envia %s', async (_label, generated) => {
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
-    const res = response();
-    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, res);
-    const payload = res.json.mock.calls.at(-1)?.[0];
-    if (res.status.mock.calls.some((call: any[]) => call[0] === 200)) {
+    const reply = response();
+    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
+    const payload = reply.body();
+    if (reply.res.status.mock.calls.some((call: any[]) => call[0] === 200)) {
       expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
       expect(payload.plan.workouts.flatMap((workout: any) => workout.exercises).every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
     } else {
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(reply.res.status).toHaveBeenCalledWith(422);
       expect(payload).toEqual(expect.objectContaining({ code: 'INVALID_PLAN' }));
     }
   });
@@ -95,10 +96,10 @@ describe('planos usam o catálogo completo', () => {
     const generated = plan('dumbbell_hammer_curl');
     Object.assign(generated.workouts[0].exercises[0], { thumbUrl: 'https://example.com/not-official.webp' });
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
-    const res = response();
-    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, res);
-    expect(res.status).toHaveBeenCalledWith(200);
-    const payload = res.json.mock.calls.at(-1)?.[0];
+    const reply = response();
+    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
+    expect(reply.res.status).toHaveBeenCalledWith(200);
+    const payload = reply.body();
     expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
     const items = payload.plan.workouts.flatMap((workout: any) => workout.exercises);
     expect(items.length).toBeGreaterThan(1);
