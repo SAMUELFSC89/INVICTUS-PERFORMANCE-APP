@@ -2,10 +2,8 @@ import {
   OFFICIAL_EXERCISES_BATCH_01 as LEGACY_EXERCISES,
   OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS as LEGACY_EQUIPMENT_REQUIREMENTS,
   OFFICIAL_MUSCLE_GROUP_LABELS as LEGACY_MUSCLE_GROUP_LABELS,
-  type ExerciseAssetStatus,
   type OfficialExercise,
   type OfficialMuscleGroup,
-  type OfficialMuscleSubgroup,
 } from './exerciseCatalogLegacy';
 import {
   OFFICIAL_EXERCISES_BATCH_02,
