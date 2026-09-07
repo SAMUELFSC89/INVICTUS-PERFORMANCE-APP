@@ -6,7 +6,9 @@ import { isProUser } from '../_lib/entitlement.js';
 import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 
 import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS, isOfficialExerciseCompatible } from '../../src/data/exerciseCatalog.js';
+import { readWorkoutHealthRecord } from '../../src/core/health/workoutHealthTypes.js';
 import { buildTrainingEnginePlan } from '../../src/core/training/trainingEngine.js';
+import { applyTrainingMemoryToPlan, deriveTrainingMemory, type TrainingMemorySnapshot } from '../../src/core/training/trainingMemory.js';
 import { validateTrainingPlanDraft } from '../../src/core/training/trainingValidator.js';
 
 export class InvalidTrainingPlanError extends Error {
@@ -88,7 +90,32 @@ function athleteProfileFromUser(userData: any) {
   };
 }
 
-export async function generatePlan(answers: any, userId: string) {
+async function loadPrivateTrainingMemory(userId: string): Promise<TrainingMemorySnapshot | null> {
+  if (!userId || !isDbAvailable()) return null;
+  try {
+    const snapshot = await db.collection('workouts')
+      .where('userId', '==', userId)
+      .orderBy('timestamp', 'desc')
+      .limit(31)
+      .get();
+    const records = snapshot.docs.slice(0, 30).flatMap(doc => {
+      const data = doc.data();
+      if (data.userId !== userId) return [];
+      const record = readWorkoutHealthRecord(data.healthSession ?? data.details?.healthSession);
+      return record ? [record] : [];
+    });
+    return records.length ? deriveTrainingMemory(records) : null;
+  } catch (error) {
+    console.warn('[Training Plans] Histórico privado indisponível; geração seguirá sem progressão de carga.', error);
+    return null;
+  }
+}
+
+function applyPrivateMemory<T extends any>(plan: T, memory?: TrainingMemorySnapshot | null): T {
+  return memory ? applyTrainingMemoryToPlan(plan as any, memory) as T : plan;
+}
+
+export async function generatePlan(answers: any, userId: string, memory?: TrainingMemorySnapshot | null) {
   const equipment = Array.isArray(answers?.equipment) ? answers.equipment.filter((item: unknown) => typeof item === 'string') : [];
   const available = getCompatibleOfficialExercises(equipment);
   if (available.length < 3) throw new Error('Selecione equipamentos suficientes para montar um plano seguro com a biblioteca disponível.');
@@ -96,8 +123,11 @@ export async function generatePlan(answers: any, userId: string) {
   // The deterministic engine creates the safe, evidence-versioned baseline.
   // Gemini is allowed to refine it, never to invent the prescription from zero.
   const basePlan = buildTrainingEnginePlan(answers);
+  // Important privacy boundary: the prompt receives basePlan WITHOUT private
+  // execution memory. Progression from actual sets is overlaid only afterwards.
+  const personalizedBase = applyPrivateMemory(basePlan, memory);
   const apiKey = getAiApiKey();
-  if (!apiKey) return { ...basePlan, generationMode: 'local_fallback' as const };
+  if (!apiKey) return { ...personalizedBase, generationMode: 'local_fallback' as const };
 
   const ai = new GoogleGenAI({ apiKey });
   const model = getAiWorkoutModel();
@@ -119,7 +149,7 @@ export async function generatePlan(answers: any, userId: string) {
       errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown_error'
     }).catch(() => {});
     console.warn('[Training Plans] Gemini refinement unavailable; returning Training Engine baseline.', classifyAiError(err).code);
-    return { ...basePlan, generationMode: 'local_fallback' as const };
+    return { ...personalizedBase, generationMode: 'local_fallback' as const };
   }
 
   let parsed: any;
@@ -127,10 +157,10 @@ export async function generatePlan(answers: any, userId: string) {
     const text = (response.text || '{}').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     parsed = JSON.parse(text);
   } catch {
-    return { ...basePlan, generationMode: 'local_fallback' as const };
+    return { ...personalizedBase, generationMode: 'local_fallback' as const };
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ...basePlan, generationMode: 'local_fallback' as const };
+    return { ...personalizedBase, generationMode: 'local_fallback' as const };
   }
 
   // Fields that belong to the engine cannot be overwritten by the model.
@@ -152,10 +182,10 @@ export async function generatePlan(answers: any, userId: string) {
     const normalized = normalizePlan(parsed, userId, 'ai', new Set(available.map(exercise => exercise.id)));
     const validation = validateTrainingPlanDraft(normalized as any, answers);
     if (!validation.valid) throw new InvalidTrainingPlanError(validation.issues.map(issue => issue.message).slice(0, 4).join(' '));
-    return normalized;
+    return applyPrivateMemory(normalized, memory);
   } catch (error) {
     console.warn('[Training Plans] Gemini refinement rejected by validator; returning Training Engine baseline.', error);
-    return { ...basePlan, generationMode: 'local_fallback' as const };
+    return { ...personalizedBase, generationMode: 'local_fallback' as const };
   }
 }
 
@@ -202,7 +232,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       athleteProfile: athleteProfileFromUser(userData)
     };
     try {
-      return res.status(200).json({ plan: await generatePlan(enrichedAnswers, auth.uid) });
+      const trainingMemory = await loadPrivateTrainingMemory(auth.uid);
+      return res.status(200).json({ plan: await generatePlan(enrichedAnswers, auth.uid, trainingMemory) });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '';
       if (
