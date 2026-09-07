@@ -1,0 +1,228 @@
+/* Cardio sem GPS — substitui visualmente a tela legada sem alterar o motor
+   de atividade. Usa a mesma arte-base desfocada da Home. */
+
+.challenge-flow-screen:has(> .challenge-flow-active) {
+  isolation: isolate;
+  overflow: hidden !important;
+  height: 100dvh;
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + .55rem) .8rem calc(env(safe-area-inset-bottom) + .7rem) !important;
+  background: #050505 !important;
+}
+
+.challenge-flow-screen:has(> .challenge-flow-active)::before {
+  content: '';
+  position: fixed;
+  inset: -14px;
+  z-index: -2;
+  background: url('/assets/home/home-season-hallway-v2.webp') top center / cover no-repeat;
+  filter: blur(8px) saturate(.9);
+  transform: scale(1.05);
+}
+
+.challenge-flow-screen:has(> .challenge-flow-active)::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(3,3,3,.28) 0%, rgba(3,3,3,.48) 52%, rgba(3,3,3,.82) 100%),
+    radial-gradient(circle at 50% 30%, rgba(218,164,58,.10), transparent 34%);
+}
+
+.challenge-flow-screen:has(> .challenge-flow-active) > .challenge-flow-header {
+  width: min(100%, 680px);
+  min-height: 2.65rem;
+  margin: 0 auto .5rem;
+  padding: .12rem .1rem;
+  background: transparent !important;
+}
+
+.challenge-flow-screen:has(> .challenge-flow-active) > .challenge-flow-header button {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 50%;
+  color: #f1ede5;
+  background: rgba(8,8,8,.40);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.challenge-flow-screen:has(> .challenge-flow-active) > .challenge-flow-header h1 {
+  font-size: .86rem !important;
+  letter-spacing: .12em !important;
+  color: #e8e2d7 !important;
+}
+
+.challenge-flow-active {
+  width: min(100%, 680px) !important;
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 4.7rem) !important;
+  min-height: 0 !important;
+  margin: 0 auto !important;
+  padding: .85rem !important;
+  border: 1px solid rgba(225,177,69,.18) !important;
+  border-radius: 24px !important;
+  background: rgba(8,8,8,.50) !important;
+  box-shadow: 0 22px 64px rgba(0,0,0,.40), inset 0 1px rgba(255,255,255,.035) !important;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr) 2.8rem;
+  grid-template-rows: auto auto minmax(0,1fr) auto auto;
+  gap: .58rem !important;
+  align-items: stretch;
+  overflow: hidden !important;
+}
+
+.challenge-flow-active > .challenge-flow-activity-type {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+  padding: .68rem .78rem !important;
+  min-height: 0 !important;
+  border: 1px solid rgba(229,180,73,.22) !important;
+  border-radius: 15px !important;
+  background: linear-gradient(135deg, rgba(225,173,61,.11), rgba(9,9,9,.62)) !important;
+  color: #fff !important;
+  font-size: clamp(1rem, 4.4vw, 1.2rem) !important;
+  font-weight: 800 !important;
+  letter-spacing: .025em !important;
+  text-align: left !important;
+}
+
+.challenge-flow-active > .challenge-flow-gps {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin: 0 !important;
+  padding: .35rem .62rem !important;
+  border: 1px solid rgba(76,209,124,.20) !important;
+  border-radius: 999px !important;
+  background: rgba(8,8,8,.45) !important;
+  color: #9fd8b2 !important;
+  font-size: .62rem !important;
+  letter-spacing: .09em !important;
+}
+.challenge-flow-active > .challenge-flow-gps svg { width:.78rem; height:.78rem; }
+
+.challenge-flow-active > .challenge-flow-end-error {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+  border-radius: 12px !important;
+}
+
+.challenge-flow-active > .challenge-flow-clock {
+  grid-column: 1 / -1;
+  align-self: center;
+  justify-self: stretch;
+  margin: 0 !important;
+  padding: clamp(.7rem, 3vh, 1.4rem) .5rem !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: center;
+}
+.challenge-flow-active > .challenge-flow-clock strong {
+  display: block;
+  font-size: clamp(3rem, 14vw, 5.2rem) !important;
+  line-height: .95 !important;
+  letter-spacing: -.045em !important;
+  font-variant-numeric: tabular-nums;
+  color: #fff !important;
+  text-shadow: 0 7px 28px rgba(0,0,0,.45);
+}
+.challenge-flow-active > .challenge-flow-clock small {
+  display: block;
+  margin-top: .4rem;
+  color: #aaa39a !important;
+  font-size: .68rem !important;
+  letter-spacing: .11em !important;
+  text-transform: uppercase;
+}
+
+.challenge-flow-active > .challenge-flow-kpis {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  gap: .5rem !important;
+  overflow: auto;
+  max-height: min(30vh, 15rem);
+  padding: .05rem !important;
+}
+.challenge-flow-active > .challenge-flow-kpis article {
+  min-width: 0 !important;
+  min-height: 4.2rem !important;
+  padding: .62rem !important;
+  border: 1px solid rgba(255,255,255,.075) !important;
+  border-radius: 14px !important;
+  background: rgba(12,12,12,.58) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  text-align: left !important;
+}
+.challenge-flow-active > .challenge-flow-kpis article b {
+  color: #f1b94d !important;
+  font-size: clamp(1.12rem, 5vw, 1.48rem) !important;
+  line-height: 1 !important;
+  font-variant-numeric: tabular-nums;
+}
+.challenge-flow-active > .challenge-flow-kpis article span {
+  margin-top: .25rem;
+  color: #918b83 !important;
+  font-size: .60rem !important;
+  line-height: 1.15 !important;
+}
+
+/* Os comandos continuam funcionais, mas deixam de dominar a tela. */
+.challenge-flow-active > .challenge-flow-secondary.mb-2,
+.challenge-flow-active > .challenge-flow-primary,
+.challenge-flow-active > .challenge-flow-secondary.mt-2 {
+  align-self: end;
+  min-height: 2.75rem !important;
+  height: 2.75rem !important;
+  margin: 0 !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+}
+
+.challenge-flow-active > .challenge-flow-secondary.mb-2 {
+  grid-column: 1;
+  color: #ded9d1 !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  background: rgba(11,11,11,.66) !important;
+  font-size: .70rem !important;
+}
+
+.challenge-flow-active > .challenge-flow-primary {
+  grid-column: 2;
+  color: #171006 !important;
+  background: linear-gradient(180deg,#e8ba59,#c98b20) !important;
+  font-size: .70rem !important;
+}
+
+.challenge-flow-active > .challenge-flow-secondary.mt-2 {
+  grid-column: 3;
+  width: 2.8rem !important;
+  padding: 0 !important;
+  color: #d76f78 !important;
+  border: 1px solid rgba(215,111,120,.20) !important;
+  background: rgba(39,10,13,.36) !important;
+}
+.challenge-flow-active > .challenge-flow-secondary.mt-2 span { display:none !important; }
+.challenge-flow-active > .challenge-flow-secondary.mt-2 svg { width:1rem; height:1rem; }
+
+@media (max-height: 690px) {
+  .challenge-flow-active { gap:.42rem !important; padding:.7rem !important; }
+  .challenge-flow-active > .challenge-flow-clock { padding:.35rem .4rem !important; }
+  .challenge-flow-active > .challenge-flow-clock strong { font-size:clamp(2.6rem,12vw,4rem) !important; }
+  .challenge-flow-active > .challenge-flow-kpis { max-height:25vh; }
+}
+
+@media (max-width: 365px) {
+  .challenge-flow-active { padding:.68rem !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr) 2.6rem; }
+  .challenge-flow-active > .challenge-flow-kpis article { min-height:3.8rem !important; }
+  .challenge-flow-active > .challenge-flow-secondary.mt-2 { width:2.6rem !important; }
+}
