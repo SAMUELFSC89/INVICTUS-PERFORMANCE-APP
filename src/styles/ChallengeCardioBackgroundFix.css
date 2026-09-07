@@ -1,0 +1,4 @@
+.challenge-flow-screen:has(> .challenge-flow-cardio-picker),
+.challenge-flow-screen:has(> .challenge-flow-active) {
+  background: transparent !important;
+}
