@@ -6,6 +6,8 @@ import { isProUser } from '../_lib/entitlement.js';
 import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
 
 import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS, isOfficialExerciseCompatible } from '../../src/data/exerciseCatalog.js';
+import { buildTrainingEnginePlan } from '../../src/core/training/trainingEngine.js';
+import { validateTrainingPlanDraft } from '../../src/core/training/trainingValidator.js';
 
 export class InvalidTrainingPlanError extends Error {
   constructor(message: string) {
@@ -43,25 +45,26 @@ export function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai'
       return [{
         exerciseId,
         order: index,
-        sets: clampInt(exercise?.sets, 1, 10, 3),
-        repsMin: clampInt(exercise?.repsMin, 1, 100, 8),
-        repsMax: clampInt(exercise?.repsMax, 1, 100, 12),
-        restSeconds: clampInt(exercise?.restSeconds, 15, 600, 90),
+        sets: clampInt(exercise?.sets, 1, 6, 3),
+        repsMin: clampInt(exercise?.repsMin, 1, 30, 8),
+        repsMax: clampInt(exercise?.repsMax, 1, 30, 12),
+        restSeconds: clampInt(exercise?.restSeconds, 30, 300, 90),
+        ...(Number.isFinite(Number(exercise?.targetRir)) ? { targetRir: clampInt(exercise.targetRir, 0, 5, 2) } : {}),
         ...(Number(exercise?.initialLoadKg) >= 0 ? { initialLoadKg: Number(exercise.initialLoadKg) } : {})
       }];
     }).slice(0, 20) : []
   })).filter((workout: any) => workout.exercises.length > 0) : [];
   if (!workouts.length) throw new InvalidTrainingPlanError('O plano precisa conter ao menos um exercício oficial.');
+  const generationMode = ['gemini', 'training_engine', 'local_fallback'].includes(raw?.generationMode) ? raw.generationMode : undefined;
   return {
     userId,
     name: cleanText(raw?.name, 60) || 'Meu plano',
     description: cleanText(raw?.description, 240),
-    // #246: explicação curta do "porquê" desse plano específico. Opcional --
-    // planos antigos sem esse campo continuam válidos, a tela mostra um texto
-    // padrão nesse caso.
-    ...(cleanText(raw?.rationale, 280) ? { rationale: cleanText(raw?.rationale, 280) } : {}),
+    ...(cleanText(raw?.rationale, 500) ? { rationale: cleanText(raw?.rationale, 500) } : {}),
     source: source || (['manual', 'ai', 'imported'].includes(raw?.source) ? raw.source : 'manual'),
-    ...(raw?.generationMode === 'local_fallback' ? { generationMode: 'local_fallback' } : {}),
+    ...(generationMode ? { generationMode } : {}),
+    ...(cleanText(raw?.trainingEngineVersion, 40) ? { trainingEngineVersion: cleanText(raw.trainingEngineVersion, 40) } : {}),
+    ...(cleanText(raw?.evidenceVersion, 60) ? { evidenceVersion: cleanText(raw.evidenceVersion, 60) } : {}),
     status: 'active',
     objective: cleanText(raw?.objective, 80) || 'Evolução física',
     experienceLevel: cleanText(raw?.experienceLevel, 40),
@@ -72,66 +75,88 @@ export function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai'
   };
 }
 
-async function generatePlan(answers: any, userId: string) {
+function athleteProfileFromUser(userData: any) {
+  const age = Number(userData?.age);
+  const weightKg = Number(userData?.weight);
+  const heightCm = Number(userData?.height);
+  const sex = userData?.sex === 'male' || userData?.sex === 'female' ? userData.sex : undefined;
+  return {
+    ...(Number.isFinite(age) && age >= 18 && age <= 100 ? { age: Math.round(age) } : {}),
+    ...(Number.isFinite(weightKg) && weightKg >= 30 && weightKg <= 350 ? { weightKg } : {}),
+    ...(Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 ? { heightCm } : {}),
+    ...(sex ? { sex } : {})
+  };
+}
+
+export async function generatePlan(answers: any, userId: string) {
   const equipment = Array.isArray(answers?.equipment) ? answers.equipment.filter((item: unknown) => typeof item === 'string') : [];
   const available = getCompatibleOfficialExercises(equipment);
   if (available.length < 3) throw new Error('Selecione equipamentos suficientes para montar um plano seguro com a biblioteca disponível.');
+
+  // The deterministic engine creates the safe, evidence-versioned baseline.
+  // Gemini is allowed to refine it, never to invent the prescription from zero.
+  const basePlan = buildTrainingEnginePlan(answers);
   const apiKey = getAiApiKey();
-  if (!apiKey) throw new Error('AI_NOT_CONFIGURED');
+  if (!apiKey) return { ...basePlan, generationMode: 'local_fallback' as const };
+
   const ai = new GoogleGenAI({ apiKey });
   const model = getAiWorkoutModel();
   const requestId = newAiRequestId();
   const startedAt = Date.now();
-  // #245: instrucao explicita para o modelo de fato USAR primaryGoal e
-  // preferredSplit na estrutura do plano -- antes o prompt so despejava o
-  // JSON das respostas sem dizer que esses dois campos deveriam moldar
-  // series/reps/descanso e quais grupos musculares caem em cada dia.
-  // #246: pede explicitamente um "rationale" curto explicando o porquê das
-  // escolhas de série/reps/descanso/divisão -- exibido depois na tela "Meu
-  // Plano" pra o atleta entender a lógica do treino, não só recebê-lo pronto.
-  const prompt = `Monte um plano de musculação em JSON usando SOMENTE os exerciseIds permitidos. Respostas do atleta: ${JSON.stringify(answers)}. IDs permitidos: ${JSON.stringify(available)}. Use "primaryGoal" para calibrar sets/repsMin/repsMax/restSeconds (ex: força = poucas reps e descanso longo; perda de gordura/condicionamento = mais reps e descanso curto; hipertrofia/massa = faixa intermediária). Use "preferredSplit" para decidir quais grupos musculares entram em cada dia de "workouts" (ex: Bro split = um grupo por dia; Upper/Lower = alterna superior e inferior; PPL = empurrar/puxar/pernas; Full body = todos os grupos em cada dia). Inclua também um campo "rationale": uma explicação curta (máximo 2 frases, em português) do porquê dessas séries/reps/descanso e dessa divisão de dias, dado o objetivo do atleta. Formato: {name,description,rationale,objective,experienceLevel,durationMinutes,daysPerWeek,workouts:[{id,name,focus,weekdays:number[],exercises:[{exerciseId,sets,repsMin,repsMax,restSeconds}]}]}. Não diagnostique lesões.`;
+  const prompt = `Você é a camada de personalização do Training Engine do Invictus. O plano-base abaixo já foi calculado por regras de evidência e validado. NÃO crie um treino do zero. Preserve exatamente daysPerWeek, durationMinutes, trainingEngineVersion, evidenceVersion e os weekdays de cada sessão. Use SOMENTE exerciseIds permitidos. Você pode trocar um exercício por outro permitido quando isso melhorar a aderência às preferências, experiência e perfil do atleta; pode ajustar sets/reps/rest/targetRir apenas dentro de ranges sensatos e sem aumentar agressivamente volume. Não use idade, peso ou sexo para inventar carga inicial. Não diagnostique lesões. Retorne JSON no mesmo formato e inclua rationale curto explicando a individualização.\nRespostas: ${JSON.stringify(answers)}\nPlano-base: ${JSON.stringify(basePlan)}\nIDs permitidos: ${JSON.stringify(available)}.`;
+
   let response;
   try {
-    response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: { responseMimeType: 'application/json' }
-    });
+    response = await ai.models.generateContent({ model, contents: prompt, config: { responseMimeType: 'application/json' } });
     logAiUsage({
-      requestId,
-      userId,
-      feature: 'WORKOUT_GENERATION',
-      model,
-      ...extractUsage(response),
-      durationMs: Date.now() - startedAt,
-      success: true,
-      contextSize: prompt.length
+      requestId, userId, feature: 'WORKOUT_GENERATION', model,
+      ...extractUsage(response), durationMs: Date.now() - startedAt, success: true, contextSize: prompt.length
     }).catch(() => {});
   } catch (err) {
     logAiUsage({
-      requestId,
-      userId,
-      feature: 'WORKOUT_GENERATION',
-      model,
-      durationMs: Date.now() - startedAt,
-      success: false,
-      contextSize: prompt.length,
+      requestId, userId, feature: 'WORKOUT_GENERATION', model,
+      durationMs: Date.now() - startedAt, success: false, contextSize: prompt.length,
       errorCode: err instanceof Error ? err.message.slice(0, 200) : 'unknown_error'
     }).catch(() => {});
-    throw err;
+    console.warn('[Training Plans] Gemini refinement unavailable; returning Training Engine baseline.', classifyAiError(err).code);
+    return { ...basePlan, generationMode: 'local_fallback' as const };
   }
+
   let parsed: any;
   try {
     const text = (response.text || '{}').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     parsed = JSON.parse(text);
   } catch {
-    throw new Error('A IA não retornou um plano válido. Tente novamente.');
+    return { ...basePlan, generationMode: 'local_fallback' as const };
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new InvalidTrainingPlanError('A IA não retornou um plano válido. Tente novamente.');
+    return { ...basePlan, generationMode: 'local_fallback' as const };
   }
+
+  // Fields that belong to the engine cannot be overwritten by the model.
+  parsed.daysPerWeek = basePlan.daysPerWeek;
+  parsed.durationMinutes = basePlan.durationMinutes;
+  parsed.trainingEngineVersion = basePlan.trainingEngineVersion;
+  parsed.evidenceVersion = basePlan.evidenceVersion;
+  parsed.generationMode = 'gemini';
   parsed.answers = answers;
-  return normalizePlan(parsed, userId, 'ai', new Set(available.map(exercise => exercise.id)));
+  if (Array.isArray(parsed.workouts)) {
+    parsed.workouts = parsed.workouts.slice(0, basePlan.workouts.length).map((workout: any, index: number) => ({
+      ...workout,
+      id: basePlan.workouts[index]?.id || workout?.id,
+      weekdays: basePlan.workouts[index]?.weekdays || []
+    }));
+  }
+
+  try {
+    const normalized = normalizePlan(parsed, userId, 'ai', new Set(available.map(exercise => exercise.id)));
+    const validation = validateTrainingPlanDraft(normalized as any, answers);
+    if (!validation.valid) throw new InvalidTrainingPlanError(validation.issues.map(issue => issue.message).slice(0, 4).join(' '));
+    return normalized;
+  } catch (error) {
+    console.warn('[Training Plans] Gemini refinement rejected by validator; returning Training Engine baseline.', error);
+    return { ...basePlan, generationMode: 'local_fallback' as const };
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -151,18 +176,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(503).json({ error: 'O banco de planos está temporariamente indisponível.', code: 'DATABASE_UNAVAILABLE', retryable: true });
     }
   }
+
   if (req.method === 'POST' && req.body?.action === 'generate') {
-    // #AI_COST_AUDIT: geração de treino por IA virou benefício PRO. Checa o
-    // plano ANTES de chamar generatePlan() (que já faz a chamada Gemini), para
-    // não gastar nada com quem não tem acesso. Free continua com o plano
-    // determinístico local (buildLocalFallbackPlan no cliente), sem perda de
-    // funcionalidade essencial.
+    let userData: any = null;
     try {
       const userSnap = await db.collection('users').doc(auth.uid).get();
-      const userData = userSnap.exists ? userSnap.data() : null;
+      userData = userSnap.exists ? userSnap.data() : null;
       if (!isProUser(userData)) {
         return res.status(403).json({
-          error: 'A geração de treino por IA é um benefício exclusivo do plano PRO.',
+          error: 'A personalização adicional pela Invictus IA é um benefício exclusivo do plano PRO.',
           code: 'PRO_REQUIRED'
         });
       }
@@ -170,35 +192,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.warn('[API Training Plans] Falha ao verificar plano PRO:', entitlementErr);
       return res.status(503).json({
         error: 'Não foi possível confirmar seu plano agora. Tente novamente em instantes.',
-        code: 'ENTITLEMENT_UNAVAILABLE',
-        retryable: true,
+        code: 'ENTITLEMENT_UNAVAILABLE', retryable: true
       });
     }
+
+    const clientAnswers = req.body.answers && typeof req.body.answers === 'object' ? req.body.answers : {};
+    const enrichedAnswers = {
+      ...clientAnswers,
+      athleteProfile: athleteProfileFromUser(userData)
+    };
     try {
-      return res.status(200).json({ plan: await generatePlan(req.body.answers || {}, auth.uid) });
+      return res.status(200).json({ plan: await generatePlan(enrichedAnswers, auth.uid) });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '';
-      // Falhas de preenchimento/validação do plano não são falhas do provedor.
-      // Mantemos 422 para a interface orientar o atleta sem sugerir problema
-      // de faturamento ou cota quando a resposta simplesmente não é válida.
       if (
         error instanceof InvalidTrainingPlanError ||
         message.startsWith('Selecione equipamentos suficientes') ||
-        message.startsWith('A IA não retornou um plano válido') ||
+        message.startsWith('TRAINING_ENGINE_INVALID_PLAN') ||
         message.startsWith('O plano precisa conter')
       ) {
         return res.status(422).json({ error: message, code: 'INVALID_PLAN' });
       }
       const failure = classifyAiError(error);
-      console.error('[API Training Plans AI Error]:', failure.code, error);
+      console.error('[API Training Plans Error]:', failure.code, error);
       return res.status(failure.status).json({
-        error: failure.message,
-        code: failure.code,
-        isBillingError: failure.isBillingError,
-        retryable: failure.retryable
+        error: failure.message, code: failure.code,
+        isBillingError: failure.isBillingError, retryable: failure.retryable
       });
     }
   }
+
   if (req.method === 'POST' && req.body?.action === 'save') {
     if (!isDbAvailable()) return res.status(503).json({ error: 'O banco de planos está temporariamente indisponível.', code: 'DATABASE_UNAVAILABLE', retryable: true });
     try {
