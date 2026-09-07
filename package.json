@@ -15,6 +15,7 @@
     "lint": "eslint firestore.rules storage.rules",
     "typecheck": "tsc --noEmit",
     "test": "jest",
+    "test:serverless-init": "node scripts/test-training-plans-serverless-esm.mjs",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "postinstall": "patch-package",

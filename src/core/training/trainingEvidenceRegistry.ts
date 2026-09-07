@@ -1,4 +1,4 @@
-import type { MuscleGroup } from '../../types/workoutPlan';
+import type { MuscleGroup } from '../../types/workoutPlan.js';
 
 export type TrainingGoal = 'massa' | 'forca' | 'gordura' | 'condicionamento' | 'definicao' | 'retorno' | 'saude';
 export type EvidenceConfidence = 'high' | 'moderate' | 'limited';

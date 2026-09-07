@@ -1,5 +1,5 @@
-import { OFFICIAL_EXERCISE_BY_ID, isOfficialExerciseCompatible } from '../../data/exerciseCatalog';
-import type { MuscleGroup, WorkoutPlanAnswers, WorkoutPlanDraft } from '../../types/workoutPlan';
+import { OFFICIAL_EXERCISE_BY_ID, isOfficialExerciseCompatible } from '../../data/exerciseCatalog.js';
+import type { MuscleGroup, WorkoutPlanAnswers, WorkoutPlanDraft } from '../../types/workoutPlan.js';
 
 export interface TrainingValidationIssue {
   code: string;

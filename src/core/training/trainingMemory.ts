@@ -1,6 +1,6 @@
-import type { WorkoutHealthRecord } from '../health/workoutHealthTypes';
-import type { MuscleGroup, WorkoutPlanDraft } from '../../types/workoutPlan';
-import { OFFICIAL_EXERCISE_BY_ID } from '../../data/exerciseCatalog';
+import type { WorkoutHealthRecord } from '../health/workoutHealthTypes.js';
+import type { MuscleGroup, WorkoutPlanDraft } from '../../types/workoutPlan.js';
+import { OFFICIAL_EXERCISE_BY_ID } from '../../data/exerciseCatalog.js';
 
 export const TRAINING_MEMORY_VERSION = 'training-memory-v1';
 

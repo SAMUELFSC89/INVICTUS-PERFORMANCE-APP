@@ -4,15 +4,15 @@ import {
   OFFICIAL_MUSCLE_GROUP_LABELS,
   isOfficialExerciseCompatible,
   type OfficialExercise
-} from '../../data/exerciseCatalog';
-import type { MuscleGroup, WorkoutPlanAnswers, WorkoutPlanDraft } from '../../types/workoutPlan';
+} from '../../data/exerciseCatalog.js';
+import type { MuscleGroup, WorkoutPlanAnswers, WorkoutPlanDraft } from '../../types/workoutPlan.js';
 import {
   GOAL_PRESCRIPTION_RULES,
   TRAINING_ENGINE_VERSION,
   TRAINING_EVIDENCE_VERSION,
   normalizeTrainingGoal
-} from './trainingEvidenceRegistry';
-import { assertTrainingPlanDraft } from './trainingValidator';
+} from './trainingEvidenceRegistry.js';
+import { assertTrainingPlanDraft } from './trainingValidator.js';
 
 type FocusToken = MuscleGroup | 'biceps' | 'triceps';
 type ExperienceBand = 'beginner' | 'intermediate' | 'advanced';
