@@ -12,9 +12,12 @@ export interface ExerciseTrainingMemory {
   lastLoadKg?: number;
   /** Minimum reps completed across the latest session's working sets. */
   latestMinReps?: number;
-  /** Same measure for the preceding comparable session, when available. */
+  /** Median user-reported RIR across the latest session's working sets. */
+  latestRir?: number;
+  /** Same measures for the preceding comparable session, when available. */
   previousMinReps?: number;
   previousLoadKg?: number;
+  previousRir?: number;
 }
 
 export interface TrainingMemorySnapshot {
@@ -27,13 +30,14 @@ export interface TrainingMemorySnapshot {
 export interface LoadRecommendation {
   loadKg: number;
   action: 'maintain' | 'increase' | 'decrease';
-  reason: 'recent_execution' | 'upper_range_repeated' | 'lower_range_repeated';
+  reason: 'recent_execution' | 'upper_range_repeated' | 'lower_range_repeated' | 'effort_above_target';
 }
 
 type SessionPerformance = {
   endedAt: string;
   loadKg?: number;
   minReps?: number;
+  rir?: number;
 };
 
 function median(values: number[]): number | undefined {
@@ -71,17 +75,23 @@ function summarizeExerciseInSession(record: WorkoutHealthRecord, exerciseId: str
   const working = loaded.filter(set => (set.loadKg as number) >= maxLoad * 0.9);
   const loadKg = median(working.map(set => set.loadKg as number));
   const reps = working.map(set => set.reps as number);
+  const rir = median(working.flatMap(set =>
+    typeof set.actualRir === 'number' && Number.isFinite(set.actualRir) && set.actualRir >= 0 && set.actualRir <= 5
+      ? [set.actualRir]
+      : []
+  ));
   return {
     endedAt: record.endedAt,
     ...(loadKg !== undefined ? { loadKg: roundedPlateLoad(loadKg) } : {}),
-    ...(reps.length ? { minReps: Math.min(...reps) } : {})
+    ...(reps.length ? { minReps: Math.min(...reps) } : {}),
+    ...(rir !== undefined ? { rir } : {})
   };
 }
 
 /**
  * Builds an aggregate, private training memory. It contains no heart-rate data
  * and no raw health samples; only actual user-entered exercise execution is
- * retained. Planned reps/load never enter this function as observed results.
+ * retained. Planned reps/load/RIR never enter this function as observed results.
  */
 export function deriveTrainingMemory(records: readonly WorkoutHealthRecord[]): TrainingMemorySnapshot {
   const validRecords = records
@@ -108,8 +118,10 @@ export function deriveTrainingMemory(records: readonly WorkoutHealthRecord[]): T
       lastPerformedAt: latest.endedAt,
       ...(latest.loadKg !== undefined ? { lastLoadKg: latest.loadKg } : {}),
       ...(latest.minReps !== undefined ? { latestMinReps: latest.minReps } : {}),
+      ...(latest.rir !== undefined ? { latestRir: latest.rir } : {}),
       ...(previousComparable?.loadKg !== undefined ? { previousLoadKg: previousComparable.loadKg } : {}),
-      ...(previousComparable?.minReps !== undefined ? { previousMinReps: previousComparable.minReps } : {})
+      ...(previousComparable?.minReps !== undefined ? { previousMinReps: previousComparable.minReps } : {}),
+      ...(previousComparable?.rir !== undefined ? { previousRir: previousComparable.rir } : {})
     };
   }
 
@@ -124,22 +136,29 @@ export function deriveTrainingMemory(records: readonly WorkoutHealthRecord[]): T
 /**
  * Double-progression heuristic. An increase/decrease requires two comparable
  * sessions at the same working-load band; one session alone only carries the
- * most recently executed load forward. Percent changes are intentionally
- * small and are not derived from age, sex or body mass.
+ * most recently executed load forward. When actual RIR is available in both
+ * comparable sessions, an increase is blocked if effort exceeded the planned
+ * target. Missing RIR remains backward-compatible and never penalizes the user.
  */
 export function recommendLoadFromMemory(
   memory: ExerciseTrainingMemory | undefined,
   repsMin: number,
   repsMax: number,
-  muscleGroup: MuscleGroup
+  muscleGroup: MuscleGroup,
+  targetRir?: number
 ): LoadRecommendation | null {
   if (!memory || !(typeof memory.lastLoadKg === 'number' && memory.lastLoadKg > 0)) return null;
   const current = memory.lastLoadKg;
   const comparable = comparableLoads(current, memory.previousLoadKg);
   const latest = memory.latestMinReps;
   const previous = memory.previousMinReps;
+  const hasComparableRir = typeof memory.latestRir === 'number' && typeof memory.previousRir === 'number';
+  const validTargetRir = typeof targetRir === 'number' && Number.isFinite(targetRir) && targetRir >= 0 && targetRir <= 5;
 
   if (comparable && typeof latest === 'number' && typeof previous === 'number' && latest >= repsMax && previous >= repsMax) {
+    if (hasComparableRir && validTargetRir && (memory.latestRir! < targetRir! || memory.previousRir! < targetRir!)) {
+      return { loadKg: roundedPlateLoad(current), action: 'maintain', reason: 'effort_above_target' };
+    }
     const increase = muscleGroup === 'pernas' ? 1.05 : 1.025;
     return { loadKg: roundedPlateLoad(current * increase), action: 'increase', reason: 'upper_range_repeated' };
   }
@@ -171,7 +190,8 @@ export function applyTrainingMemoryToPlan<T extends WorkoutPlanDraft>(
         memory.exercises[exercise.exerciseId],
         exercise.repsMin,
         exercise.repsMax,
-        official.muscleGroup
+        official.muscleGroup,
+        exercise.targetRir
       );
       if (!recommendation) return exercise;
       if (exercise.initialLoadKg === recommendation.loadKg) return exercise;
