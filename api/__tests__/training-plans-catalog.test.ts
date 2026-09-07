@@ -45,7 +45,11 @@ const response = () => {
   const res: any = { setHeader: jest.fn() };
   res.status = jest.fn(() => res);
   res.json = jest.fn((value: any) => { body = value; return res; });
-  return { res, body: () => body };
+  return {
+    res,
+    body: () => body,
+    lastStatus: () => res.status.mock.calls.at(-1)?.[0]
+  };
 };
 
 describe('planos usam o catálogo completo', () => {
@@ -96,11 +100,14 @@ describe('planos usam o catálogo completo', () => {
     const reply = response();
     await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
     const payload = reply.body();
-    if (reply.res.status.mock.calls.some((call: any[]) => call[0] === 200)) {
-      expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
+    if (reply.lastStatus() === 200) {
+      expect(payload).toEqual(expect.objectContaining({
+        plan: expect.objectContaining({ workouts: expect.any(Array) })
+      }));
+      expect(payload.plan.workouts.length).toBeGreaterThan(0);
       expect(payload.plan.workouts.flatMap((workout: any) => workout.exercises).every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
     } else {
-      expect(reply.res.status).toHaveBeenCalledWith(422);
+      expect(reply.lastStatus()).toBe(422);
       expect(payload).toEqual(expect.objectContaining({ code: 'INVALID_PLAN' }));
     }
   });
@@ -111,9 +118,12 @@ describe('planos usam o catálogo completo', () => {
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const reply = response();
     await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
-    expect(reply.res.status).toHaveBeenCalledWith(200);
+    expect(reply.lastStatus()).toBe(200);
     const payload = reply.body();
-    expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
+    expect(payload).toEqual(expect.objectContaining({
+      plan: expect.objectContaining({ workouts: expect.any(Array) })
+    }));
+    expect(payload.plan.workouts.length).toBeGreaterThan(0);
     const items = payload.plan.workouts.flatMap((workout: any) => workout.exercises);
     expect(items.length).toBeGreaterThan(1);
     expect(items.every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
