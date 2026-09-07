@@ -73,9 +73,14 @@ export function getOfficialExerciseFocusArea(exercise: OfficialExercise): Offici
   return OFFICIAL_EXERCISE_FOCUS_AREAS[exercise.id] ?? exercise.muscleSubgroup ?? exercise.muscleGroup;
 }
 
-/** Unknown IDs or a missing requirement row fail closed instead of becoming bodyweight exercises. */
+/**
+ * Automatic plans only use exercises whose official thumbnail has been reviewed and activated.
+ * The 191 new catalogue entries stay dormant while their media is being produced, preventing
+ * blank exercise cards and preventing a large unreviewed batch from changing plan selection.
+ */
 export function isOfficialExerciseCompatible(exerciseId: string, availableEquipment: readonly string[]): boolean {
-  if (!OFFICIAL_EXERCISE_BY_ID.has(exerciseId)) return false;
+  const exercise = OFFICIAL_EXERCISE_BY_ID.get(exerciseId);
+  if (!exercise || exercise.thumbStatus !== 'ready') return false;
   const required = OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS[exerciseId];
   return Array.isArray(required) && required.every((item) => availableEquipment.includes(item));
 }
