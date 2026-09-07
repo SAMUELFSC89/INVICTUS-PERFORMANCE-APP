@@ -102,6 +102,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
   const [journal, setJournal] = useState<WorkoutSetJournalState>(() => workoutSetJournal.read(session.userId, session.id));
   const [actualReps, setActualReps] = useState('');
   const [actualLoad, setActualLoad] = useState('');
+  const [actualRir, setActualRir] = useState('');
   const [resultSetId, setResultSetId] = useState<string | null>(null);
   const [recordNotice, setRecordNotice] = useState<string | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
@@ -115,6 +116,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
     setJournal(workoutSetJournal.read(session.userId, session.id));
     setActualReps('');
     setActualLoad('');
+    setActualRir('');
     setResultSetId(null);
     setRecordError(null);
     setRecordNotice(null);
@@ -186,6 +188,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
       if (before.active) setRecordNotice('Série interrompida. Esse intervalo não será usado para relacionar batimentos ao exercício.');
       setActualReps('');
       setActualLoad('');
+      setActualRir('');
       setResultSetId(null);
     } catch (error) {
       setRecordError(error instanceof Error ? error.message : 'Não foi possível atualizar o registro da série.');
@@ -206,6 +209,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
       }));
       setActualReps('');
       setActualLoad('');
+      setActualRir('');
       setResultSetId(null);
     } catch (error) {
       setRecordError(error instanceof Error ? error.message : 'Não foi possível iniciar o registro da série.');
@@ -221,12 +225,13 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
       void hapticImpact('medium');
       // Stop at the explicit tap. Optional result entry happens afterwards,
       // so time spent typing is never counted as exercise execution.
-      const completed = workoutSetJournal.complete(session.userId, session.id, { reps: null, loadKg: null });
+      const completed = workoutSetJournal.complete(session.userId, session.id, { reps: null, loadKg: null, actualRir: null });
       setJournal(completed);
       setResultSetId(completed.sets.at(-1)?.id || null);
       setActualReps('');
       setActualLoad('');
-      setRecordNotice('Horário da série registrado. Você pode informar as repetições e a carga agora.');
+      setActualRir('');
+      setRecordNotice('Horário da série registrado. Você pode informar repetições, carga e esforço agora.');
       // #REST_TIMER: descanso começa assim que a execução para, independente
       // de o atleta preencher reps/carga depois. Usa o restSeconds do plano da
       // IA para este exercício quando existir; senão, um padrão de academia.
@@ -243,11 +248,13 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
       setJournal(workoutSetJournal.updateResults(session.userId, session.id, resultSetId, {
         reps: actualReps.trim() === '' ? null : Number(actualReps),
         loadKg: actualLoad.trim() === '' ? null : Number(actualLoad),
+        actualRir: actualRir.trim() === '' ? null : Number(actualRir),
       }));
       setResultSetId(null);
       setActualReps('');
       setActualLoad('');
-      setRecordNotice('Resultados salvos. A análise usará somente o que foi informado e os batimentos disponíveis no intervalo marcado.');
+      setActualRir('');
+      setRecordNotice('Resultados salvos. A progressão usará somente repetições, carga e RIR que você informou; os dados continuam privados.');
     } catch (error) {
       setRecordError(error instanceof Error ? error.message : 'Não foi possível salvar os resultados da série.');
     }
@@ -278,7 +285,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
     {currentExercise ? <>
       <article className="workout-live-current">
         <OfficialExerciseMedia exercise={currentExercise} priority className="workout-live-current-media" />
-        <div className="workout-live-current-copy"><small>EXERCÍCIO SELECIONADO</small><h1>{currentExercise.name}</h1><span>{OFFICIAL_MUSCLE_GROUP_LABELS[currentExercise.muscleGroup].toLocaleUpperCase('pt-BR')}</span><em>{currentExercise.planned ? `Planejado: ${currentExercise.planned.sets} séries · ${currentExercise.planned.repsMin}–${currentExercise.planned.repsMax} reps` : 'Exercício selecionado'}</em></div>
+        <div className="workout-live-current-copy"><small>EXERCÍCIO SELECIONADO</small><h1>{currentExercise.name}</h1><span>{OFFICIAL_MUSCLE_GROUP_LABELS[currentExercise.muscleGroup].toLocaleUpperCase('pt-BR')}</span><em>{currentExercise.planned ? `Planejado: ${currentExercise.planned.sets} séries · ${currentExercise.planned.repsMin}–${currentExercise.planned.repsMax} reps${currentExercise.planned.targetRir !== undefined ? ` · RIR ${currentExercise.planned.targetRir}` : ''}` : 'Exercício selecionado'}</em></div>
         <button onClick={() => setDemoOpen(true)} aria-label={`Ver execução de ${currentExercise.name}`}><Play /><span>VER EXECUÇÃO</span></button>
       </article>
       <ExerciseDemoDialog exercise={currentExercise} open={demoOpen} onClose={() => setDemoOpen(false)} />
@@ -301,7 +308,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
 
       <section className="workout-set-recorder" aria-labelledby="workout-set-title">
         <div className="workout-set-heading"><div><small>REGISTRO OPCIONAL</small><h2 id="workout-set-title">Registre a série que você fizer</h2></div><span>{recordedSets.length} {recordedSets.length === 1 ? 'série registrada' : 'séries registradas'}</span></div>
-        <p>Marque o início e o fim de cada série para relacionar seus batimentos ao exercício, quando houver leituras suficientes.</p>
+        <p>Marque o início e o fim de cada série. Repetições, carga e RIR ajudam o Invictus a ajustar sua próxima prescrição sem transformar o treino em competição.</p>
         {!ownsSession ? <p role="alert">Entre na conta que iniciou este treino para registrar suas séries.</p> : activeSet ? <>
           <p className="workout-set-active" role="status">Série aberta: <b>{activeSet.exerciseName}</b>. Toque em concluir quando terminar a execução.</p>
           <div className="workout-set-buttons"><button type="button" className="is-primary" onClick={completeSet} disabled={loading || session.isPaused}><Check size={17} />Concluir série</button><button type="button" onClick={interruptOpenSet} disabled={loading}>Interromper registro</button></div>
@@ -310,16 +317,17 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
           <div className="workout-set-fields">
             <label>Repetições realizadas <span>(opcional)</span><input type="number" inputMode="numeric" min="1" max="1000" step="1" value={actualReps} onChange={event => setActualReps(event.target.value)} placeholder="Não informado" disabled={loading} /></label>
             <label>Carga externa total (kg) <span>(opcional)</span><input type="number" inputMode="decimal" min="0" max="1000" step="any" value={actualLoad} onChange={event => setActualLoad(event.target.value)} placeholder="Não informada" disabled={loading} /></label>
+            <label>RIR real <span>(opcional)</span><input type="number" inputMode="numeric" min="0" max="5" step="1" value={actualRir} onChange={event => setActualRir(event.target.value)} placeholder="0 a 5" disabled={loading} /></label>
           </div>
-          <p className="workout-set-hint">Some os pesos usados. Seu peso corporal não entra nessa carga. Os valores planejados não serão registrados como realizados.</p>
-          <div className="workout-set-buttons"><button type="button" className="is-primary" onClick={saveSetResults} disabled={loading}><Check size={17} />Salvar resultados</button><button type="button" onClick={() => { setResultSetId(null); setActualReps(''); setActualLoad(''); setRecordNotice('Série mantida sem repetições ou carga informadas.'); }} disabled={loading}>Deixar sem informar</button></div>
+          <p className="workout-set-hint">RIR = repetições em reserva. Ex.: RIR 0 = nenhuma repetição sobrando; RIR 2 = você estima que faria mais 2 com boa técnica. Seu peso corporal não entra na carga externa.</p>
+          <div className="workout-set-buttons"><button type="button" className="is-primary" onClick={saveSetResults} disabled={loading}><Check size={17} />Salvar resultados</button><button type="button" onClick={() => { setResultSetId(null); setActualReps(''); setActualLoad(''); setActualRir(''); setRecordNotice('Série mantida sem resultados informados.'); }} disabled={loading}>Deixar sem informar</button></div>
         </> : <button type="button" className="workout-set-start is-primary" onClick={startSet} disabled={loading || session.isPaused || !ownsSession}><Play size={17} />{session.isPaused ? 'Retome o treino para iniciar uma série' : 'Iniciar série'}</button>}
-        {recordedSets.length > 0 ? <ol className="workout-set-results">{recordedSets.slice(-4).map((set, index) => <li key={set.id}><b>Série {Math.max(0, recordedSets.length - 4) + index + 1}</b><span>{set.reps === null ? 'Repetições não informadas' : `${set.reps} repetições`}</span><span>{set.loadKg === null ? 'Carga não informada' : `${set.loadKg.toLocaleString('pt-BR')} kg externos`}</span></li>)}</ol> : null}
+        {recordedSets.length > 0 ? <ol className="workout-set-results">{recordedSets.slice(-4).map((set, index) => <li key={set.id}><b>Série {Math.max(0, recordedSets.length - 4) + index + 1}</b><span>{set.reps === null ? 'Repetições não informadas' : `${set.reps} repetições`}</span><span>{set.loadKg === null ? 'Carga não informada' : `${set.loadKg.toLocaleString('pt-BR')} kg externos`}</span><span>{set.actualRir === undefined || set.actualRir === null ? 'RIR não informado' : `RIR ${set.actualRir}`}</span></li>)}</ol> : null}
         {recordNotice ? <p className="workout-set-notice" role="status">{recordNotice}</p> : null}
         {recordError ? <p className="workout-set-error" role="alert">{recordError}</p> : null}
       </section>
 
-      {nextExercise ? <article className="workout-live-next"><OfficialExerciseMedia exercise={nextExercise} className="workout-live-next-media" /><div className="workout-live-next-copy"><small>PRÓXIMO EXERCÍCIO</small><h2>{nextExercise.name}</h2><span>{OFFICIAL_MUSCLE_GROUP_LABELS[nextExercise.muscleGroup].toLocaleUpperCase('pt-BR')}</span><em>{nextExercise.planned ? `${nextExercise.planned.sets} séries · ${nextExercise.planned.repsMin}–${nextExercise.planned.repsMax} reps` : 'Plano selecionado'}</em></div></article> : null}
+      {nextExercise ? <article className="workout-live-next"><OfficialExerciseMedia exercise={nextExercise} className="workout-live-next-media" /><div className="workout-live-next-copy"><small>PRÓXIMO EXERCÍCIO</small><h2>{nextExercise.name}</h2><span>{OFFICIAL_MUSCLE_GROUP_LABELS[nextExercise.muscleGroup].toLocaleUpperCase('pt-BR')}</span><em>{nextExercise.planned ? `${nextExercise.planned.sets} séries · ${nextExercise.planned.repsMin}–${nextExercise.planned.repsMax} reps${nextExercise.planned.targetRir !== undefined ? ` · RIR ${nextExercise.planned.targetRir}` : ''}` : 'Plano selecionado'}</em></div></article> : null}
 
       <div className="workout-live-list-head"><h2>TREINO DE HOJE</h2><span>{exercises.length} exercícios</span></div>
       <div className="workout-live-list">
@@ -327,7 +335,7 @@ export function WorkoutActiveScreen({ session, elapsed, loading, endError, onBac
           const completed = progress.completedIds.includes(exercise.id);
           const active = index === progress.activeIndex && !completed;
           return <button key={exercise.id} className={active ? 'is-active' : ''} onClick={() => { if (index !== progress.activeIndex) interruptOpenSet(); setProgress((current) => ({ ...current, activeIndex: index })); }}>
-            <OfficialExerciseMedia exercise={exercise} className="workout-live-list-media" /><b>{index + 1}</b><span><strong>{exercise.name}</strong><small>{OFFICIAL_MUSCLE_GROUP_LABELS[exercise.muscleGroup].toLocaleUpperCase('pt-BR')} · {exercise.planned ? `${exercise.planned.sets} séries · ${exercise.planned.repsMin}–${exercise.planned.repsMax}` : 'Plano selecionado'}</small></span><i className={completed ? 'is-complete' : active ? 'is-current' : ''}>{completed ? <Check /> : active ? <Play /> : null}</i><em>{completed ? 'Concluído' : active ? 'Selecionado' : 'Pendente'}</em><ChevronRight />
+            <OfficialExerciseMedia exercise={exercise} className="workout-live-list-media" /><b>{index + 1}</b><span><strong>{exercise.name}</strong><small>{OFFICIAL_MUSCLE_GROUP_LABELS[exercise.muscleGroup].toLocaleUpperCase('pt-BR')} · {exercise.planned ? `${exercise.planned.sets} séries · ${exercise.planned.repsMin}–${exercise.planned.repsMax}${exercise.planned.targetRir !== undefined ? ` · RIR ${exercise.planned.targetRir}` : ''}` : 'Plano selecionado'}</small></span><i className={completed ? 'is-complete' : active ? 'is-current' : ''}>{completed ? <Check /> : active ? <Play /> : null}</i><em>{completed ? 'Concluído' : active ? 'Selecionado' : 'Pendente'}</em><ChevronRight />
           </button>;
         })}
       </div>
