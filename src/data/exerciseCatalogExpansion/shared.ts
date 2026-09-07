@@ -37,7 +37,7 @@ export type ExpansionOfficialExercise = {
   muscleSubgroup?: ExpansionMuscleSubgroup;
   equipment: string;
   thumbUrl: string;
-  thumbStatus: 'waiting_for_thumb';
+  thumbStatus: 'ready' | 'waiting_for_thumb';
   demoStatus: 'waiting_for_demo';
 };
 
@@ -61,11 +61,24 @@ export const e = (
 
 const ASSET_BASE = '/assets/exercise-library/rebuild-2026-09-05/';
 
+const APPROVED_EXPANSION_THUMB_IDS: ReadonlySet<string> = new Set([
+  'barbell_shrug',
+  'dumbbell_shrug',
+  'smith_machine_shrug',
+  'tibialis_raise_bodyweight',
+  'barbell_wrist_curl',
+  'barbell_reverse_wrist_curl',
+  'reverse_ez_bar_curl',
+  'cable_external_rotation',
+  'cable_internal_rotation',
+  'cable_glute_kickback',
+]);
+
 export function materializeExerciseDefinitions(definitions: readonly ExpansionDefinition[]): ExpansionOfficialExercise[] {
   return definitions.map(({ requirements: _requirements, focusArea: _focusArea, ...exercise }) => ({
     ...exercise,
     thumbUrl: `${ASSET_BASE}${exercise.id}/thumb.webp`,
-    thumbStatus: 'waiting_for_thumb',
+    thumbStatus: APPROVED_EXPANSION_THUMB_IDS.has(exercise.id) ? 'ready' : 'waiting_for_thumb',
     demoStatus: 'waiting_for_demo',
   }));
 }

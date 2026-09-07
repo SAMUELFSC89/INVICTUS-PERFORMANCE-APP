@@ -73,12 +73,22 @@ describe('catálogo oficial de exercícios', () => {
     expect(isOfficialExerciseCompatible('pull_up', ['barra_fixa'])).toBe(true);
   });
 
-  test('novos exercícios permanecem fora da geração automática até o thumbnail ser aprovado', () => {
-    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_shrug')?.thumbStatus).toBe('waiting_for_thumb');
-    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_wrist_curl')?.thumbStatus).toBe('waiting_for_thumb');
+  test.each([
+    'barbell_shrug', 'dumbbell_shrug', 'smith_machine_shrug',
+    'tibialis_raise_bodyweight', 'barbell_wrist_curl', 'barbell_reverse_wrist_curl',
+    'reverse_ez_bar_curl', 'cable_external_rotation', 'cable_internal_rotation', 'cable_glute_kickback',
+  ])('thumbnail aprovado libera %s somente com o equipamento correto', (id) => {
+    expect(OFFICIAL_EXERCISE_BY_ID.get(id)?.thumbStatus).toBe('ready');
+    expect(isOfficialExerciseCompatible(id, requirements[id])).toBe(true);
+    for (const missing of requirements[id]) {
+      expect(isOfficialExerciseCompatible(id, requirements[id].filter(item => item !== missing))).toBe(false);
+    }
+  });
+
+  test('exercícios sem thumbnail aprovado continuam fora da geração automática', () => {
+    expect(exercises.filter(exercise => exercise.thumbStatus === 'ready')).toHaveLength(69);
+    expect(exercises.filter(exercise => exercise.thumbStatus === 'waiting_for_thumb')).toHaveLength(181);
     expect(OFFICIAL_EXERCISE_BY_ID.get('standing_dumbbell_calf_raise')?.thumbStatus).toBe('waiting_for_thumb');
-    expect(isOfficialExerciseCompatible('barbell_shrug', ['barra_anilhas'])).toBe(false);
-    expect(isOfficialExerciseCompatible('barbell_wrist_curl', ['barra_anilhas'])).toBe(false);
     expect(isOfficialExerciseCompatible('standing_dumbbell_calf_raise', ['halteres'])).toBe(false);
   });
 
@@ -89,6 +99,11 @@ describe('catálogo oficial de exercícios', () => {
         const filename = path.join(root, 'public', exercise.thumbUrl);
         expect(fs.existsSync(filename)).toBe(true);
         expect(fs.statSync(filename).size).toBeGreaterThan(0);
+        const image = fs.readFileSync(filename);
+        expect(image.toString('ascii', 0, 4)).toBe('RIFF');
+        expect(image.toString('ascii', 8, 12)).toBe('WEBP');
+        expect(image.readUInt32LE(4) + 8).toBe(image.length);
+        expect(['VP8 ', 'VP8L', 'VP8X']).toContain(image.toString('ascii', 12, 16));
       }
       if (exercise.thumbFallbackUrl) expect(fs.existsSync(path.join(root, 'public', exercise.thumbFallbackUrl))).toBe(true);
       expect(exercise.demoStatus).toBe('waiting_for_demo');
