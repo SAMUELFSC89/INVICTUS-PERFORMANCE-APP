@@ -73,12 +73,14 @@ describe('catálogo oficial de exercícios', () => {
     expect(isOfficialExerciseCompatible('pull_up', ['barra_fixa'])).toBe(true);
   });
 
-  test('novos exercícios permanecem fora da geração automática até o thumbnail ser aprovado', () => {
-    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_shrug')?.thumbStatus).toBe('waiting_for_thumb');
-    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_wrist_curl')?.thumbStatus).toBe('waiting_for_thumb');
+  test('somente thumbnails novos explicitamente aprovados entram na geração automática', () => {
+    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_shrug')?.thumbStatus).toBe('ready');
+    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_wrist_curl')?.thumbStatus).toBe('ready');
+    expect(OFFICIAL_EXERCISE_BY_ID.get('cable_external_rotation')?.thumbStatus).toBe('ready');
     expect(OFFICIAL_EXERCISE_BY_ID.get('standing_dumbbell_calf_raise')?.thumbStatus).toBe('waiting_for_thumb');
-    expect(isOfficialExerciseCompatible('barbell_shrug', ['barra_anilhas'])).toBe(false);
-    expect(isOfficialExerciseCompatible('barbell_wrist_curl', ['barra_anilhas'])).toBe(false);
+    expect(isOfficialExerciseCompatible('barbell_shrug', ['barra_anilhas'])).toBe(true);
+    expect(isOfficialExerciseCompatible('barbell_wrist_curl', ['barra_anilhas'])).toBe(true);
+    expect(isOfficialExerciseCompatible('cable_external_rotation', ['crossover'])).toBe(true);
     expect(isOfficialExerciseCompatible('standing_dumbbell_calf_raise', ['halteres'])).toBe(false);
   });
 
