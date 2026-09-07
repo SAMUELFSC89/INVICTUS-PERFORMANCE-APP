@@ -6,7 +6,7 @@
 .workout-set-heading>span{font-size:12px;color:#c9bea3;text-align:right;flex:0 0 auto;padding-top:4px}
 .workout-set-recorder p{font-size:13px;line-height:1.5;margin:12px 0;color:#c3bdaf}
 .workout-set-recorder .workout-set-active{color:#f1d68e}
-.workout-set-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.workout-set-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
 .workout-set-fields label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;min-width:0}
 .workout-set-fields label>span{color:var(--invictus-text-muted);font-weight:400}
 .workout-set-fields input{background:#080807;border:1px solid #5b5340;border-radius:9px;color:#fff;font-size:16px;padding:11px;width:100%;box-sizing:border-box}
@@ -23,7 +23,8 @@
 .workout-set-results b{color:#ebdfc4}
 .workout-set-recorder .workout-set-notice{font-size:12px;color:#dfd5b9}
 .workout-set-recorder .workout-set-error{color:#ffa8a0;font-size:12px}
-@media(max-width:420px){.workout-set-recorder{padding:14px}.workout-set-heading{display:block}.workout-set-heading>span{display:block;text-align:left;margin-top:8px}.workout-set-heading h2{font-size:17px}.workout-set-fields{gap:9px}.workout-set-buttons>button{flex:1 1 130px}}
+@media(max-width:560px){.workout-set-fields{grid-template-columns:1fr 1fr}.workout-set-fields label:last-child{grid-column:1/-1}}
+@media(max-width:420px){.workout-set-recorder{padding:14px}.workout-set-heading{display:block}.workout-set-heading>span{display:block;text-align:left;margin-top:8px}.workout-set-heading h2{font-size:17px}.workout-set-fields{grid-template-columns:1fr;gap:9px}.workout-set-fields label:last-child{grid-column:auto}.workout-set-buttons>button{flex:1 1 130px}}
 
 .workout-exercise-advance{margin:10px 0}
 .workout-exercise-advance>button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:48px;border-radius:12px;padding:12px 16px;font-size:14px;font-weight:700;background:transparent;border:1px solid #e8b838;color:#f1d68e;cursor:pointer}

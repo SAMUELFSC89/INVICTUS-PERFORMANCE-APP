@@ -1,7 +1,7 @@
 import { auth } from '../firebase';
 import type { RecordedExerciseSet } from '../core/health/workoutHealthTypes';
 
-export type ActiveRecordedExerciseSet = Omit<RecordedExerciseSet, 'endedAt' | 'status' | 'reps' | 'loadKg'>;
+export type ActiveRecordedExerciseSet = Omit<RecordedExerciseSet, 'endedAt' | 'status' | 'reps' | 'loadKg' | 'actualRir'>;
 export interface WorkoutSetJournalState {
   sets: RecordedExerciseSet[];
   active: ActiveRecordedExerciseSet | null;
@@ -26,7 +26,8 @@ function validResult(value: any): value is RecordedExerciseSet {
   return validIdentity(value) && validTime(value.endedAt)
     && (value.status === 'completed' || value.status === 'interrupted')
     && (value.reps === null || (Number.isInteger(value.reps) && value.reps >= 1 && value.reps <= 1000))
-    && (value.loadKg === null || (typeof value.loadKg === 'number' && Number.isFinite(value.loadKg) && value.loadKg >= 0 && value.loadKg <= 1000));
+    && (value.loadKg === null || (typeof value.loadKg === 'number' && Number.isFinite(value.loadKg) && value.loadKg >= 0 && value.loadKg <= 1000))
+    && (value.actualRir === undefined || value.actualRir === null || (Number.isInteger(value.actualRir) && value.actualRir >= 0 && value.actualRir <= 5));
 }
 
 function requireOwner(uid: string, sessionId: string): void {
@@ -87,23 +88,35 @@ export const workoutSetJournal = {
     if (!validIdentity(active)) throw new Error('Não foi possível identificar este exercício. Selecione-o novamente.');
     return write(uid, sessionId, { ...state, active });
   },
-  complete(uid: string, sessionId: string, result: { reps: number | null; loadKg: number | null }, now = Date.now()): WorkoutSetJournalState {
+  complete(uid: string, sessionId: string, result: { reps: number | null; loadKg: number | null; actualRir?: number | null }, now = Date.now()): WorkoutSetJournalState {
     requireOwner(uid, sessionId);
     const state = read(uid, sessionId);
     if (!state.active) throw new Error('Inicie a série antes de registrar a conclusão.');
     if (now <= Date.parse(state.active.startedAt)) throw new Error('O fim da série precisa acontecer depois do início. Confira o relógio do aparelho.');
-    const completed: RecordedExerciseSet = { ...state.active, endedAt: timestamp(now), status: 'completed', reps: result.reps, loadKg: result.loadKg };
-    if (!validResult(completed)) throw new Error('Informe repetições de 1 a 1.000 e carga de 0 a 1.000 kg, ou deixe os campos vazios.');
+    const completed: RecordedExerciseSet = {
+      ...state.active,
+      endedAt: timestamp(now),
+      status: 'completed',
+      reps: result.reps,
+      loadKg: result.loadKg,
+      actualRir: result.actualRir ?? null,
+    };
+    if (!validResult(completed)) throw new Error('Informe repetições de 1 a 1.000, carga de 0 a 1.000 kg e RIR de 0 a 5, ou deixe os campos vazios.');
     return write(uid, sessionId, { sets: [...state.sets, completed], active: null });
   },
   /** Enter results after stopping the timer; typing must not lengthen execution. */
-  updateResults(uid: string, sessionId: string, setId: string, result: { reps: number | null; loadKg: number | null }): WorkoutSetJournalState {
+  updateResults(uid: string, sessionId: string, setId: string, result: { reps: number | null; loadKg: number | null; actualRir?: number | null }): WorkoutSetJournalState {
     requireOwner(uid, sessionId);
     const state = read(uid, sessionId);
     const index = state.sets.findIndex(set => set.id === setId && set.status === 'completed');
     if (index < 0) throw new Error('Não foi encontrada uma série concluída para atualizar.');
-    const updated = { ...state.sets[index], reps: result.reps, loadKg: result.loadKg };
-    if (!validResult(updated)) throw new Error('Informe repetições de 1 a 1.000 e carga de 0 a 1.000 kg, ou deixe os campos vazios.');
+    const updated = {
+      ...state.sets[index],
+      reps: result.reps,
+      loadKg: result.loadKg,
+      actualRir: result.actualRir ?? null,
+    };
+    if (!validResult(updated)) throw new Error('Informe repetições de 1 a 1.000, carga de 0 a 1.000 kg e RIR de 0 a 5, ou deixe os campos vazios.');
     return write(uid, sessionId, { ...state, sets: state.sets.map((set, itemIndex) => itemIndex === index ? updated : set) });
   },
   interrupt(uid: string, sessionId: string, now = Date.now()): WorkoutSetJournalState {
@@ -112,7 +125,7 @@ export const workoutSetJournal = {
     if (!state.active) return state;
     // Preserve the real action time even if the clock moved backwards.
     // Interrupted records never support a heart-rate attribution.
-    const interrupted: RecordedExerciseSet = { ...state.active, endedAt: timestamp(now), status: 'interrupted', reps: null, loadKg: null };
+    const interrupted: RecordedExerciseSet = { ...state.active, endedAt: timestamp(now), status: 'interrupted', reps: null, loadKg: null, actualRir: null };
     return write(uid, sessionId, { sets: [...state.sets, interrupted], active: null });
   },
   finish(uid: string, sessionId: string, now = Date.now()): RecordedExerciseSet[] {
