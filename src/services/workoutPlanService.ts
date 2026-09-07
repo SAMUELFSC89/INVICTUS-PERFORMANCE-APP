@@ -3,6 +3,8 @@ import { API_CONFIG } from '../config';
 import type { WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
 import { OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS } from '../data/exerciseCatalog';
 import { buildTrainingEnginePlan } from '../core/training/trainingEngine';
+import { applyTrainingMemoryToPlan, deriveTrainingMemory } from '../core/training/trainingMemory';
+import { loadWorkoutFeedbackHistory } from './workoutFeedbackHistoryService';
 
 const DRAFT_KEY = 'invictus_workout_plan_draft_v1';
 const LOCAL_PLANS_KEY = 'invictus_workout_plans_local_v1';
@@ -45,6 +47,23 @@ export function buildLocalFallbackPlan(answers: WorkoutPlanAnswers): WorkoutPlan
     description: 'Plano montado pelo Training Engine com exercícios oficiais e regras de evidência versionadas. A Invictus IA será reativada quando o serviço estiver disponível.',
     generationMode: 'local_fallback'
   };
+}
+
+/**
+ * Private personalization for local/fallback generation. Firestore rules and
+ * the UID check in loadWorkoutFeedbackHistory keep the records scoped to the
+ * authenticated athlete. Only the derived recommended load reaches the plan.
+ */
+async function withPrivateTrainingMemory(plan: WorkoutPlanDraft): Promise<WorkoutPlanDraft> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return plan;
+  try {
+    const history = await loadWorkoutFeedbackHistory(uid);
+    if (history.status !== 'available' || history.records.length === 0) return plan;
+    return applyTrainingMemoryToPlan(plan, deriveTrainingMemory(history.records));
+  } catch {
+    return plan;
+  }
 }
 
 function readLocalPlans(): WorkoutPlan[] {
@@ -140,7 +159,7 @@ export const workoutPlanService = {
       const candidate = error as RequestError | undefined;
       if (candidate?.code === 'PRO_REQUIRED') {
         console.info('[WorkoutPlanService] Invictus IA é exclusiva do PRO; usando Training Engine determinístico.');
-        const fallback = buildLocalFallbackPlan(answers);
+        const fallback = await withPrivateTrainingMemory(buildLocalFallbackPlan(answers));
         return {
           ...fallback,
           generationMode: 'training_engine',
@@ -149,7 +168,7 @@ export const workoutPlanService = {
       }
       if (isAiAvailabilityFailure(error)) {
         console.warn('[WorkoutPlanService] Gemini indisponível; Training Engine assumiu a geração:', error);
-        return buildLocalFallbackPlan(answers);
+        return withPrivateTrainingMemory(buildLocalFallbackPlan(answers));
       }
       throw error;
     }
