@@ -89,6 +89,11 @@ jobs:
         env:
           NODE_ENV: test
 
+      - name: Validate exercise catalog ESM graph
+        run: npm run test:catalog-esm
+        env:
+          NODE_ENV: test
+
       - name: Archive build artifacts
         if: success()
         uses: actions/upload-artifact@v4

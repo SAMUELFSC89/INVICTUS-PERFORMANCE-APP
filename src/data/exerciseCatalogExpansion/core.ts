@@ -1,4 +1,4 @@
-import { e, type ExpansionDefinition } from './shared';
+import { e, type ExpansionDefinition } from './shared.js';
 
 export const CORE_EXPANSION: ExpansionDefinition[] = [
   e("bicycle_crunch", "Abdominal Bicicleta", "core", "peso corporal", [], "core"),

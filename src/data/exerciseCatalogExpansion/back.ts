@@ -1,4 +1,4 @@
-import { e, type ExpansionDefinition } from './shared';
+import { e, type ExpansionDefinition } from './shared.js';
 
 export const BACK_EXPANSION: ExpansionDefinition[] = [
   e("assisted_chin_up", "Barra Fixa Supinada Assistida", "costas", "máquina gravitacional", ["maquinas"], "costas"),
