@@ -72,7 +72,7 @@ export function readWorkoutHealthRecord(value: unknown): WorkoutHealthRecord | n
     && (set.equipment === null || typeof set.equipment === 'string')
     && ['completed', 'interrupted'].includes(set.status) && set.timingSource === 'user_marked'
     && (set.reps === null || typeof set.reps === 'number') && (set.loadKg === null || typeof set.loadKg === 'number')
-    && (set.actualRir === undefined || set.actualRir === null || (typeof set.actualRir === 'number' && Number.isFinite(set.actualRir) && set.actualRir >= 0 && set.actualRir <= 5)))) return null;
+    && (set.actualRir === undefined || set.actualRir === null || (typeof set.actualRir === 'number' && Number.isInteger(set.actualRir) && set.actualRir >= 0 && set.actualRir <= 5)))) return null;
   if (!record.heartRate.samples.every(sample => sample && typeof sample.timestamp === 'string' && typeof sample.bpm === 'number')) return null;
   return record;
 }
