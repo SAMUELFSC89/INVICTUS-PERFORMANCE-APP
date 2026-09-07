@@ -80,6 +80,9 @@ describe('catálogo oficial de exercícios', () => {
     'trap_bar_shrug', 'smith_machine_calf_raise', 'standing_barbell_calf_raise',
     'standing_dumbbell_calf_raise', 'single_leg_calf_raise_bodyweight', 'prone_y_raise_lower_trap',
     'plate_pinch_hold', 'dumbbell_farmer_carry', 'dead_hang', 'single_leg_leg_press_calf_raise',
+    'dumbbell_step_up', 'dumbbell_glute_bridge', 'bilateral_cable_lateral_raise',
+    'cable_pull_through', 'hanging_knee_raise', 'seated_dumbbell_calf_raise',
+    'dumbbell_lateral_lunge', 'reverse_lunge_dumbbell', 'hanging_leg_raise', 'pendulum_squat_machine',
   ])('thumbnail aprovado libera %s somente com o equipamento correto', (id) => {
     expect(OFFICIAL_EXERCISE_BY_ID.get(id)?.thumbStatus).toBe('ready');
     expect(isOfficialExerciseCompatible(id, requirements[id])).toBe(true);
@@ -89,10 +92,10 @@ describe('catálogo oficial de exercícios', () => {
   });
 
   test('exercícios sem thumbnail aprovado continuam fora da geração automática', () => {
-    expect(exercises.filter(exercise => exercise.thumbStatus === 'ready')).toHaveLength(79);
-    expect(exercises.filter(exercise => exercise.thumbStatus === 'waiting_for_thumb')).toHaveLength(171);
-    expect(OFFICIAL_EXERCISE_BY_ID.get('seated_dumbbell_calf_raise')?.thumbStatus).toBe('waiting_for_thumb');
-    expect(isOfficialExerciseCompatible('seated_dumbbell_calf_raise', requirements.seated_dumbbell_calf_raise)).toBe(false);
+    expect(exercises.filter(exercise => exercise.thumbStatus === 'ready')).toHaveLength(89);
+    expect(exercises.filter(exercise => exercise.thumbStatus === 'waiting_for_thumb')).toHaveLength(161);
+    expect(OFFICIAL_EXERCISE_BY_ID.get('donkey_calf_raise_machine')?.thumbStatus).toBe('waiting_for_thumb');
+    expect(isOfficialExerciseCompatible('donkey_calf_raise_machine', requirements.donkey_calf_raise_machine)).toBe(false);
   });
 
   test('nenhuma imagem ausente recebe estado pronto e nenhum vídeo é inventado', () => {

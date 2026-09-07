@@ -99,10 +99,10 @@ describe('planos usam o catálogo completo', () => {
     expect(manualPlan.workouts[0].exercises[0].initialLoadKg).toBe(999);
   });
 
-  test('a geração automática usa somente os 79 exercícios com mídia já aprovada', () => {
+  test('a geração automática usa somente os 89 exercícios com mídia já aprovada', () => {
     const allEquipment = [...new Set(Object.values(OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS).flat())];
     const available = getCompatibleOfficialExercises(allEquipment);
-    expect(available).toHaveLength(79);
+    expect(available).toHaveLength(89);
     expect(new Set(available.map(item => item.group)).size).toBe(6);
     expect(available.some(item => item.id === 'barbell_shrug')).toBe(true);
     expect(available.some(item => item.id === 'barbell_wrist_curl')).toBe(true);
@@ -111,10 +111,13 @@ describe('planos usam o catálogo completo', () => {
       'trap_bar_shrug', 'smith_machine_calf_raise', 'standing_barbell_calf_raise',
       'standing_dumbbell_calf_raise', 'single_leg_calf_raise_bodyweight', 'prone_y_raise_lower_trap',
       'plate_pinch_hold', 'dumbbell_farmer_carry', 'dead_hang', 'single_leg_leg_press_calf_raise',
+      'dumbbell_step_up', 'dumbbell_glute_bridge', 'bilateral_cable_lateral_raise',
+      'cable_pull_through', 'hanging_knee_raise', 'seated_dumbbell_calf_raise',
+      'dumbbell_lateral_lunge', 'reverse_lunge_dumbbell', 'hanging_leg_raise', 'pendulum_squat_machine',
     ]) {
       expect(available.some(item => item.id === id)).toBe(true);
     }
-    expect(available.some(item => item.id === 'seated_dumbbell_calf_raise')).toBe(false);
+    expect(available.some(item => item.id === 'donkey_calf_raise_machine')).toBe(false);
     const noEquipment = getCompatibleOfficialExercises([]).map(item => item.id);
     expect(noEquipment).toContain('classic_push_up');
     expect(noEquipment).toContain('bird_dog');
@@ -122,6 +125,8 @@ describe('planos usam o catálogo completo', () => {
     expect(noEquipment).toContain('single_leg_calf_raise_bodyweight');
     expect(noEquipment).not.toContain('dead_hang');
     expect(noEquipment).not.toContain('standing_dumbbell_calf_raise');
+    expect(noEquipment).not.toContain('hanging_leg_raise');
+    expect(noEquipment).not.toContain('hanging_knee_raise');
     expect(noEquipment).not.toContain('pull_up');
     expect(noEquipment).not.toContain('cable_face_pull');
   });
