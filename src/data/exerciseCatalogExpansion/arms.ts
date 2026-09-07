@@ -1,4 +1,4 @@
-import { e, type ExpansionDefinition } from './shared';
+import { e, type ExpansionDefinition } from './shared.js';
 
 export const ARMS_EXPANSION: ExpansionDefinition[] = [
   e("barbell_reverse_wrist_curl", "Extensão de Punho com Barra", "bracos", "barra", ["barra_anilhas"], "antebracos"),
