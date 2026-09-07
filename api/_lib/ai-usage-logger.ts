@@ -24,7 +24,8 @@ export type AiFeature =
   | 'POWERLIFT_VIDEO_AUDIT'
   | 'ACTIVITY_PHOTO_VALIDATION'
   | 'PRESENCE_BIOMETRIC_CHECK'
-  | 'HABIT_REVEAL_MESSAGE';
+  | 'HABIT_REVEAL_MESSAGE'
+  | 'CARDIO_OBJECTIVE_EXPLANATION';
 
 export interface AiUsageEntry {
   requestId: string;

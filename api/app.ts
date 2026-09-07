@@ -26,6 +26,7 @@ import gymsCheckinHandler from './_handlers/gyms_checkin.js';
 import gymsPhotoHandler from './_handlers/gyms_photo.js';
 import runningHandler from './_handlers/running.js';
 import habitsHandler from './_handlers/habits.js';
+import cardioObjectiveHandler from './_handlers/cardio-objective.js';
 import validateActivityHandler from './_handlers/validate-activity.js';
 import activityPolicyHandler from './_handlers/activity-policy.js';
 import validatePresenceHandler from './_handlers/validate-presence.js';
@@ -226,6 +227,7 @@ router.all('/activity-map', wrap(activityMapHandler));
 
 console.log('[ROUTE] /habits', typeof habitsHandler);
 router.all('/habits', wrap(habitsHandler));
+router.all('/cardio-objective', wrap(cardioObjectiveHandler));
 
 console.log('[ROUTE] /validate-activity', typeof validateActivityHandler);
 router.all('/validate-activity', activityLimiter, wrap(validateActivityHandler));

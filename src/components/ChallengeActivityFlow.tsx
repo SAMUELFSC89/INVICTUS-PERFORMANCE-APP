@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, Bike, Check, ChevronDown, Clock3, Dumbbell, Flag, Gauge, MapPin, MoreVertical, Navigation, Pause, PersonStanding, Play, ShieldCheck, Timer, Waves, XCircle, Zap } from 'lucide-react';
 import type { ActivitySession } from '../types';
 import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
@@ -71,6 +72,7 @@ export function ChallengeActivityFlow({
   completion,
   startError,
   endError,
+  statusMessage,
   loading = false,
   startingActivity = false,
   onBack,
@@ -103,6 +105,7 @@ export function ChallengeActivityFlow({
   completion?: ActivityCompletion | null;
   startError?: string | null;
   endError?: string | null;
+  statusMessage?: string | null;
   loading?: boolean;
   startingActivity?: boolean;
   onBack: () => void;
@@ -167,6 +170,8 @@ export function ChallengeActivityFlow({
         <h1>{subtitle}</h1>
       </header>
 
+      {statusMessage ? <div role="status" className="challenge-flow-card"><p>{statusMessage}</p><Link to="/challenges/cardio/objective">ABRIR MEU OBJETIVO</Link></div> : null}
+
       {screen === 'workout-details' && (
         <section className="challenge-flow-card challenge-flow-details">
           <div className="challenge-flow-title">
@@ -216,6 +221,7 @@ export function ChallengeActivityFlow({
 
       {screen === 'cardio-picker' && (
         <section className="challenge-flow-card challenge-flow-cardio-picker" aria-label="Seleção de modalidade de cardio">
+          <Link to="/challenges/cardio/objective" className="challenge-flow-primary challenge-flow-objective-link">BUSCAR OBJETIVO / MINHA JORNADA</Link>
           <div className="challenge-flow-cardio-intro">
             <div className="challenge-flow-cardio-selected">
               <span className="challenge-flow-cardio-selected-icon">{icon(cardio.icon, 27)}</span>

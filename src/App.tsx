@@ -20,6 +20,7 @@ const Home = lazyNamed(() => import('./pages/Home'), 'Home');
 const Rankings = lazyNamed(() => import('./pages/Rankings'), 'Rankings');
 const Achievements = lazyNamed(() => import('./pages/Achievements'), 'Achievements');
 const Challenges = lazyNamed(() => import('./pages/Challenges'), 'Challenges');
+const CardioObjective = lazyNamed(() => import('./pages/CardioObjective'), 'CardioObjective');
 const ActivityTypeChooser = lazyNamed(() => import('./components/ActivityTypeChooser'), 'ActivityTypeChooser');
 const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
@@ -88,6 +89,7 @@ export default function App() {
                 <Route path="/gym" element={<Navigate to="/profile/academy" replace />} />
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/challenges/cardio" element={<Challenges />} />
+                <Route path="/challenges/cardio/objective" element={<CardioObjective />} />
                 <Route path="/activity" element={<ActivityTypeChooser />} />
                 {/* Rotas canônicas para retomar uma sessão sem voltar à escolha
                     de modalidade. A rota de saída apenas minimiza a sessão;

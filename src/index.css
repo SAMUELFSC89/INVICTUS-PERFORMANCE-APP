@@ -1196,3 +1196,4 @@ html.app-nativo body {
   .workout-live-current { grid-template-columns: minmax(0, 1fr) minmax(6.5rem, 42%); padding: .7rem; gap: .5rem; }
   .workout-live-current h1 { font-size: 1.4rem; }
 }
+.challenge-flow-objective-link{display:flex;min-height:3rem;align-items:center;justify-content:center;margin-bottom:1.25rem;text-decoration:none}
