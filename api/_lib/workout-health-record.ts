@@ -76,6 +76,7 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
     const enteredReps = actualNumber(set.reps, 1000, true);
     const reps = set.status === 'completed' && enteredReps !== 0 ? enteredReps : null;
     const loadKg = set.status === 'completed' ? actualNumber(set.loadKg, 1000) : null;
+    const hasActualRir = set.actualRir !== undefined;
     const actualRir = set.status === 'completed' ? actualNumber(set.actualRir, 5, true) : null;
     if ((set.reps !== undefined && set.reps !== null && reps === null)
       || (set.loadKg !== undefined && set.loadKg !== null && loadKg === null)
@@ -85,7 +86,8 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
     seenIds.add(id);
     sets.push({
       id, exerciseId, exerciseName, equipment, startedAt: start.iso, endedAt: end.iso,
-      status: set.status as RecordedExerciseSet['status'], timingSource: 'user_marked', reps, loadKg, actualRir
+      status: set.status as RecordedExerciseSet['status'], timingSource: 'user_marked', reps, loadKg,
+      ...(hasActualRir ? { actualRir } : {})
     });
   }
   sets.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
