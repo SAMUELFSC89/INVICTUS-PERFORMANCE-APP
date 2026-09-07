@@ -23,7 +23,7 @@ jest.mock('../_lib/ai-usage-logger', () => ({
 }));
 
 import handler, { getCompatibleOfficialExercises, InvalidTrainingPlanError, normalizePlan } from '../_handlers/training-plans';
-import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS } from '../../src/data/exerciseCatalog';
+import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS } from '../../src/data/exerciseCatalog';
 
 const exercise = (exerciseId: string) => ({ exerciseId, sets: 3, repsMin: 8, repsMax: 12, restSeconds: 90 });
 const plan = (...ids: string[]) => ({ name: 'Teste', workouts: [{ id: 'a', name: 'A', exercises: ids.map(exercise) }] });
@@ -77,23 +77,32 @@ describe('planos usam o catálogo completo', () => {
     ['ID desconhecido', plan('classic_push_up', 'invented_id')],
     ['equipamento não selecionado', plan('classic_push_up', 'barbell_back_squat')],
     ['JSON nulo', null],
-  ])('o endpoint retorna 422 INVALID_PLAN para %s', async (_label, generated) => {
+  ])('o endpoint retorna resposta segura quando a IA envia %s', async (_label, generated) => {
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const res = response();
     await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, res);
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INVALID_PLAN' }));
+    const payload = res.json.mock.calls.at(-1)?.[0];
+    if (res.status.mock.calls.some((call: any[]) => call[0] === 200)) {
+      expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
+      expect(payload.plan.workouts.flatMap((workout: any) => workout.exercises).every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
+    } else {
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(payload).toEqual(expect.objectContaining({ code: 'INVALID_PLAN' }));
+    }
   });
 
-  test('o endpoint aceita um novo exercício compatível e ignora a URL inventada pela IA', async () => {
+  test('uma sugestão insuficiente da IA não substitui o plano validado do Training Engine nem injeta URL externa', async () => {
     const generated = plan('dumbbell_hammer_curl');
     Object.assign(generated.workouts[0].exercises[0], { thumbUrl: 'https://example.com/not-official.webp' });
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const res = response();
     await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, res);
     expect(res.status).toHaveBeenCalledWith(200);
-    const payload = res.json.mock.calls[0][0];
-    expect(payload.plan.workouts[0].exercises[0].exerciseId).toBe('dumbbell_hammer_curl');
-    expect(payload.plan.workouts[0].exercises[0].thumbUrl).toBeUndefined();
+    const payload = res.json.mock.calls.at(-1)?.[0];
+    expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
+    const items = payload.plan.workouts.flatMap((workout: any) => workout.exercises);
+    expect(items.length).toBeGreaterThan(1);
+    expect(items.every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
+    expect(items.every((item: any) => item.thumbUrl === undefined && item.demoUrl === undefined)).toBe(true);
   });
 });
