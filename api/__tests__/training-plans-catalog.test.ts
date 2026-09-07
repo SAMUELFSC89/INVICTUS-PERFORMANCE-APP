@@ -69,7 +69,8 @@ const response = () => {
 describe('planos usam o catálogo completo', () => {
   beforeEach(() => { mockGenerateContent.mockReset(); });
 
-  test('a API aceita individualmente todos os 59 IDs oficiais', () => {
+  test('a API aceita individualmente todos os 250 IDs oficiais na normalização', () => {
+    expect(OFFICIAL_EXERCISES_BATCH_01).toHaveLength(250);
     for (const official of OFFICIAL_EXERCISES_BATCH_01) {
       expect(normalizePlan(plan(official.id), 'athlete').workouts[0].exercises[0].exerciseId).toBe(official.id);
     }
@@ -98,11 +99,14 @@ describe('planos usam o catálogo completo', () => {
     expect(manualPlan.workouts[0].exercises[0].initialLoadKg).toBe(999);
   });
 
-  test('o conjunto de equipamentos é o mesmo usado pelo catálogo e inclui os novos grupos', () => {
+  test('a geração automática usa somente os 59 exercícios com mídia já aprovada', () => {
     const allEquipment = [...new Set(Object.values(OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS).flat())];
     const available = getCompatibleOfficialExercises(allEquipment);
     expect(available).toHaveLength(59);
     expect(new Set(available.map(item => item.group)).size).toBe(6);
+    expect(available.some(item => item.id === 'barbell_shrug')).toBe(false);
+    expect(available.some(item => item.id === 'barbell_wrist_curl')).toBe(false);
+    expect(available.some(item => item.id === 'standing_dumbbell_calf_raise')).toBe(false);
     const noEquipment = getCompatibleOfficialExercises([]).map(item => item.id);
     expect(noEquipment).toContain('classic_push_up');
     expect(noEquipment).toContain('bird_dog');

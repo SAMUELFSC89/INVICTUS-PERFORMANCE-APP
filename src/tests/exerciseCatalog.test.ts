@@ -4,6 +4,7 @@ import {
   OFFICIAL_EXERCISES_BATCH_01 as exercises,
   OFFICIAL_EXERCISE_BY_ID,
   OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS as requirements,
+  getOfficialExerciseFocusArea,
   isOfficialExerciseCompatible,
 } from '../data/exerciseCatalog';
 
@@ -11,14 +12,33 @@ const root = process.cwd();
 const legacy = JSON.parse(fs.readFileSync(path.join(root, 'design/exercise-library/rebuild-2026-09-05/legacy-catalog-snapshot.json'), 'utf8'));
 
 describe('catálogo oficial de exercícios', () => {
-  test('59 IDs únicos cobrem os seis grupos e os dois subgrupos de braços', () => {
-    expect(exercises).toHaveLength(59);
-    expect(OFFICIAL_EXERCISE_BY_ID.size).toBe(59);
-    for (const [group, count] of Object.entries({ peito: 8, costas: 10, pernas: 17, ombros: 7, bracos: 10, core: 7 })) {
+  test('250 IDs únicos cobrem os seis grupos com distribuição ampla', () => {
+    expect(exercises).toHaveLength(250);
+    expect(OFFICIAL_EXERCISE_BY_ID.size).toBe(250);
+    for (const [group, count] of Object.entries({ peito: 35, costas: 45, pernas: 65, ombros: 35, bracos: 45, core: 25 })) {
       expect(exercises.filter(exercise => exercise.muscleGroup === group)).toHaveLength(count);
     }
-    expect(exercises.filter(exercise => exercise.muscleSubgroup === 'biceps')).toHaveLength(5);
-    expect(exercises.filter(exercise => exercise.muscleSubgroup === 'triceps')).toHaveLength(5);
+    expect(exercises.filter(exercise => exercise.muscleSubgroup === 'biceps')).toHaveLength(16);
+    expect(exercises.filter(exercise => exercise.muscleSubgroup === 'triceps')).toHaveLength(16);
+  });
+
+  test('regiões frequentemente esquecidas têm variedade própria no catálogo', () => {
+    const counts = exercises.reduce<Record<string, number>>((acc, exercise) => {
+      const focus = getOfficialExerciseFocusArea(exercise);
+      acc[focus] = (acc[focus] || 0) + 1;
+      return acc;
+    }, {});
+
+    expect(counts.panturrilhas).toBe(12);
+    expect(counts.antebracos).toBe(13);
+    expect(counts.trapezio).toBe(8);
+    expect(counts.tibial_anterior).toBe(2);
+    expect(counts.adutores).toBe(4);
+    expect(counts.abdutores).toBe(4);
+    expect(counts.gluteos).toBe(9);
+    expect(counts.posteriores).toBe(13);
+    expect(counts.deltoide_posterior).toBe(9);
+    expect(counts.manguito_rotador).toBe(6);
   });
 
   test('os 27 IDs, nomes, grupos e equipamentos legados permanecem compatíveis', () => {
@@ -51,6 +71,15 @@ describe('catálogo oficial de exercícios', () => {
     expect(isOfficialExerciseCompatible('classic_push_up', [])).toBe(true);
     expect(isOfficialExerciseCompatible('pull_up', ['maquinas'])).toBe(false);
     expect(isOfficialExerciseCompatible('pull_up', ['barra_fixa'])).toBe(true);
+  });
+
+  test('novos exercícios permanecem fora da geração automática até o thumbnail ser aprovado', () => {
+    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_shrug')?.thumbStatus).toBe('waiting_for_thumb');
+    expect(OFFICIAL_EXERCISE_BY_ID.get('barbell_wrist_curl')?.thumbStatus).toBe('waiting_for_thumb');
+    expect(OFFICIAL_EXERCISE_BY_ID.get('standing_dumbbell_calf_raise')?.thumbStatus).toBe('waiting_for_thumb');
+    expect(isOfficialExerciseCompatible('barbell_shrug', ['barra_anilhas'])).toBe(false);
+    expect(isOfficialExerciseCompatible('barbell_wrist_curl', ['barra_anilhas'])).toBe(false);
+    expect(isOfficialExerciseCompatible('standing_dumbbell_calf_raise', ['halteres'])).toBe(false);
   });
 
   test('nenhuma imagem ausente recebe estado pronto e nenhum vídeo é inventado', () => {
