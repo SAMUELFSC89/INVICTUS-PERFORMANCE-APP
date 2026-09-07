@@ -40,6 +40,20 @@ import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_EXERCISE
 
 const exercise = (exerciseId: string) => ({ exerciseId, sets: 3, repsMin: 8, repsMax: 12, restSeconds: 90 });
 const plan = (...ids: string[]) => ({ name: 'Teste', workouts: [{ id: 'a', name: 'A', exercises: ids.map(exercise) }] });
+const generationAnswers = {
+  primaryGoal: 'massa',
+  experienceLevel: 'intermediario',
+  experienceTime: '1 a 3 anos',
+  daysPerWeek: 3,
+  availableWeekdays: [1, 3, 5],
+  durationMinutes: 60,
+  preferredPeriod: 'Manhã',
+  equipment: ['maquinas', 'halteres', 'banco', 'crossover', 'barra_anilhas'],
+  preferredTraining: 'forca',
+  preferredSplit: 'Outro',
+  preferences: [],
+  restrictions: []
+};
 const response = () => {
   let body: any;
   const res: any = { setHeader: jest.fn() };
@@ -93,23 +107,23 @@ describe('planos usam o catálogo completo', () => {
 
   test.each([
     ['ID desconhecido', plan('classic_push_up', 'invented_id')],
-    ['equipamento não selecionado', plan('classic_push_up', 'barbell_back_squat')],
+    ['equipamento não selecionado', plan('classic_push_up', 'pull_up')],
     ['JSON nulo', null],
-  ])('o endpoint retorna resposta segura quando a IA envia %s', async (_label, generated) => {
+  ])('o endpoint mantém um fallback válido quando a IA envia %s', async (_label, generated) => {
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const reply = response();
-    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
+    await handler({ method: 'POST', body: { action: 'generate', answers: generationAnswers } } as any, reply.res);
     const payload = reply.body();
-    if (reply.lastStatus() === 200) {
-      expect(payload).toEqual(expect.objectContaining({
-        plan: expect.objectContaining({ workouts: expect.any(Array) })
-      }));
-      expect(payload.plan.workouts.length).toBeGreaterThan(0);
-      expect(payload.plan.workouts.flatMap((workout: any) => workout.exercises).every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
-    } else {
-      expect(reply.lastStatus()).toBe(422);
-      expect(payload).toEqual(expect.objectContaining({ code: 'INVALID_PLAN' }));
-    }
+
+    expect(reply.lastStatus()).toBe(200);
+    expect(payload).toEqual(expect.objectContaining({
+      plan: expect.objectContaining({
+        generationMode: 'local_fallback',
+        workouts: expect.any(Array)
+      })
+    }));
+    expect(payload.plan.workouts.length).toBeGreaterThan(0);
+    expect(payload.plan.workouts.flatMap((workout: any) => workout.exercises).every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
   });
 
   test('uma sugestão insuficiente da IA não substitui o plano validado do Training Engine nem injeta URL externa', async () => {
@@ -117,11 +131,14 @@ describe('planos usam o catálogo completo', () => {
     Object.assign(generated.workouts[0].exercises[0], { thumbUrl: 'https://example.com/not-official.webp' });
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const reply = response();
-    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
+    await handler({ method: 'POST', body: { action: 'generate', answers: generationAnswers } } as any, reply.res);
     expect(reply.lastStatus()).toBe(200);
     const payload = reply.body();
     expect(payload).toEqual(expect.objectContaining({
-      plan: expect.objectContaining({ workouts: expect.any(Array) })
+      plan: expect.objectContaining({
+        generationMode: 'local_fallback',
+        workouts: expect.any(Array)
+      })
     }));
     expect(payload.plan.workouts.length).toBeGreaterThan(0);
     const items = payload.plan.workouts.flatMap((workout: any) => workout.exercises);
