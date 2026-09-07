@@ -1,5 +1,6 @@
 import type { WorkoutHealthRecord } from '../health/workoutHealthTypes';
-import type { MuscleGroup } from '../../types/workoutPlan';
+import type { MuscleGroup, WorkoutPlanDraft } from '../../types/workoutPlan';
+import { OFFICIAL_EXERCISE_BY_ID } from '../../data/exerciseCatalog';
 
 export const TRAINING_MEMORY_VERSION = 'training-memory-v1';
 
@@ -146,4 +147,38 @@ export function recommendLoadFromMemory(
     return { loadKg: roundedPlateLoad(current * 0.95), action: 'decrease', reason: 'lower_range_repeated' };
   }
   return { loadKg: roundedPlateLoad(current), action: 'maintain', reason: 'recent_execution' };
+}
+
+/**
+ * Applies private execution memory after a plan has been structurally generated.
+ * This keeps the deterministic/AI prescription separate from observed user data:
+ * only the final recommended load is copied into the plan; raw sets and health
+ * samples never become part of the plan payload.
+ */
+export function applyTrainingMemoryToPlan<T extends WorkoutPlanDraft>(
+  plan: T,
+  memory: TrainingMemorySnapshot
+): T {
+  if (!plan || !Array.isArray(plan.workouts) || memory?.version !== TRAINING_MEMORY_VERSION) return plan;
+
+  let changed = false;
+  const workouts = plan.workouts.map(workout => ({
+    ...workout,
+    exercises: workout.exercises.map(exercise => {
+      const official = OFFICIAL_EXERCISE_BY_ID.get(exercise.exerciseId);
+      if (!official) return exercise;
+      const recommendation = recommendLoadFromMemory(
+        memory.exercises[exercise.exerciseId],
+        exercise.repsMin,
+        exercise.repsMax,
+        official.muscleGroup
+      );
+      if (!recommendation) return exercise;
+      if (exercise.initialLoadKg === recommendation.loadKg) return exercise;
+      changed = true;
+      return { ...exercise, initialLoadKg: recommendation.loadKg };
+    })
+  }));
+
+  return changed ? { ...plan, workouts } as T : plan;
 }
