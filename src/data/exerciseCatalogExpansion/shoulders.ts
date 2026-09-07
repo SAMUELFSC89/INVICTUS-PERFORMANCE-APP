@@ -1,4 +1,4 @@
-import { e, type ExpansionDefinition } from './shared';
+import { e, type ExpansionDefinition } from './shared.js';
 
 export const SHOULDERS_EXPANSION: ExpansionDefinition[] = [
   e("arnold_press", "Desenvolvimento Arnold", "ombros", "halteres e banco", ["halteres", "banco"], "ombros"),
