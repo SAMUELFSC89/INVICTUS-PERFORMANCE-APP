@@ -99,17 +99,19 @@ describe('planos usam o catálogo completo', () => {
     expect(manualPlan.workouts[0].exercises[0].initialLoadKg).toBe(999);
   });
 
-  test('a geração automática usa somente os 59 exercícios com mídia já aprovada', () => {
+  test('a geração automática usa somente exercícios com mídia aprovada', () => {
     const allEquipment = [...new Set(Object.values(OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS).flat())];
     const available = getCompatibleOfficialExercises(allEquipment);
-    expect(available).toHaveLength(59);
+    expect(available).toHaveLength(69);
     expect(new Set(available.map(item => item.group)).size).toBe(6);
-    expect(available.some(item => item.id === 'barbell_shrug')).toBe(false);
-    expect(available.some(item => item.id === 'barbell_wrist_curl')).toBe(false);
+    expect(available.some(item => item.id === 'barbell_shrug')).toBe(true);
+    expect(available.some(item => item.id === 'barbell_wrist_curl')).toBe(true);
+    expect(available.some(item => item.id === 'cable_external_rotation')).toBe(true);
     expect(available.some(item => item.id === 'standing_dumbbell_calf_raise')).toBe(false);
     const noEquipment = getCompatibleOfficialExercises([]).map(item => item.id);
     expect(noEquipment).toContain('classic_push_up');
     expect(noEquipment).toContain('bird_dog');
+    expect(noEquipment).toContain('tibialis_raise_bodyweight');
     expect(noEquipment).not.toContain('pull_up');
     expect(noEquipment).not.toContain('cable_face_pull');
   });
