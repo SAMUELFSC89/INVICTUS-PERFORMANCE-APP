@@ -1,7 +1,8 @@
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
-import type { WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft, MuscleGroup } from '../types/workoutPlan';
-import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_MUSCLE_GROUP_LABELS, OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS, isOfficialExerciseCompatible } from '../data/exerciseCatalog';
+import type { WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
+import { OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS } from '../data/exerciseCatalog';
+import { buildTrainingEnginePlan } from '../core/training/trainingEngine';
 
 const DRAFT_KEY = 'invictus_workout_plan_draft_v1';
 const LOCAL_PLANS_KEY = 'invictus_workout_plans_local_v1';
@@ -14,7 +15,6 @@ function isPersistenceFailure(error: unknown): boolean {
   const candidate = error as RequestError | undefined;
   if (candidate?.code === 'DATABASE_UNAVAILABLE' || candidate?.retryable === true) return true;
   if (typeof candidate?.status === 'number') return candidate.status >= 500;
-  // TypeError é o erro padrão de fetch para rede indisponível/offline.
   return candidate instanceof TypeError;
 }
 
@@ -31,122 +31,19 @@ function isAiAvailabilityFailure(error: unknown): boolean {
 // Compatibility export: every consumer uses the same requirements as the API.
 export const FALLBACK_REQUIREMENTS = OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS;
 
-// #245: cada objetivo do questionario (step 1 do AiFlow) tinha volume/
-// intensidade IDENTICOS no plano de contingencia -- so "forca" era
-// diferenciado, os outros 6 objetivos (massa, gordura, condicionamento,
-// definicao, retorno, saude) caiam todos no mesmo esquema generico de
-// hipertrofia. Agora cada objetivo tem sua propria faixa de reps/series/
-// descanso, coerente com a logica de treino real por objetivo.
-const OBJECTIVE_SCHEME: Record<string, { repsMin: number; repsMax: number; restSeconds: number; setsDelta: number }> = {
-  forca: { repsMin: 4, repsMax: 6, restSeconds: 150, setsDelta: 0 },
-  massa: { repsMin: 8, repsMax: 12, restSeconds: 90, setsDelta: 0 },
-  gordura: { repsMin: 12, repsMax: 20, restSeconds: 45, setsDelta: 0 },
-  condicionamento: { repsMin: 12, repsMax: 20, restSeconds: 45, setsDelta: 0 },
-  definicao: { repsMin: 12, repsMax: 15, restSeconds: 60, setsDelta: 0 },
-  retorno: { repsMin: 10, repsMax: 15, restSeconds: 90, setsDelta: -1 }, // #245: menos series pra quem esta retomando -- prioriza reaprender o movimento sem sobrecarregar.
-  saude: { repsMin: 10, repsMax: 15, restSeconds: 75, setsDelta: 0 },
-};
-
-// #245: preferredSplit (escolhido no ultimo passo do questionario) so ia pro
-// "answers" salvo, mas nunca influenciava QUAIS grupos musculares caiam em
-// cada dia -- o round-robin original ignorava a divisao escolhida pelo
-// atleta. Cada entrada abaixo e um ciclo de listas de grupos musculares (um
-// item por dia do ciclo); o dia real usa cycle[dayIndex % cycle.length].
-const SPLIT_DAY_GROUPS: Record<string, MuscleGroup[][]> = {
-  'Full body': [['peito', 'costas', 'pernas', 'ombros', 'bracos', 'core']],
-  'Upper / Lower': [['peito', 'costas', 'ombros', 'bracos'], ['pernas', 'core']],
-  'ABC (3x por semana)': [['peito', 'bracos'], ['costas', 'ombros'], ['pernas', 'core']],
-  'Bro split': [['peito'], ['costas'], ['pernas'], ['ombros'], ['bracos'], ['core']],
-  PPL: [['peito', 'ombros', 'bracos'], ['costas', 'bracos'], ['pernas', 'core']],
-};
-
-// #246: rótulo em português de cada objetivo, usado só para montar a
-// explicação do "porquê" desse plano -- não afeta o esquema de treino em si.
-const OBJECTIVE_LABELS: Record<string, string> = {
-  forca: 'ganhar força',
-  massa: 'ganhar massa muscular',
-  gordura: 'reduzir gordura corporal',
-  condicionamento: 'melhorar condicionamento',
-  definicao: 'melhorar definição muscular',
-  retorno: 'retomar os treinos com segurança',
-  saude: 'saúde e qualidade de vida',
-};
-
 /**
- * Geração determinística de contingência. Ela não chama a IA nem inventa
- * exercícios: apenas distribui a biblioteca oficial compatível com os
- * equipamentos informados, mantendo o atleta treinando enquanto o Gemini
- * aguarda faturamento, cota ou configuração.
+ * Contingency is no longer a round-robin/random-looking plan. It is the same
+ * versioned Training Engine used as the deterministic foundation of workout
+ * generation. Gemini can enhance a plan, but an outage cannot lower the
+ * prescription below this baseline.
  */
 export function buildLocalFallbackPlan(answers: WorkoutPlanAnswers): WorkoutPlanDraft {
-  const equipment = Array.isArray(answers?.equipment) ? answers.equipment : [];
-  const available = OFFICIAL_EXERCISES_BATCH_01.filter((exercise) =>
-    isOfficialExerciseCompatible(exercise.id, equipment)
-  );
-  if (available.length < 3) {
-    throw new Error('Selecione equipamentos suficientes para montar um plano seguro com a biblioteca disponível.');
-  }
-
-  const days = Math.max(1, Math.min(7, Math.round(Number(answers.daysPerWeek) || 3)));
-  const durationMinutes = Math.max(20, Math.min(180, Math.round(Number(answers.durationMinutes) || 60)));
-  const isStrength = answers.primaryGoal === 'forca' || answers.preferredTraining === 'forca';
-  const scheme = OBJECTIVE_SCHEME[answers.primaryGoal || ''] || OBJECTIVE_SCHEME.massa;
-  const isAdvanced = answers.experienceLevel === 'avancado';
-  const { repsMin, repsMax, restSeconds } = isStrength ? OBJECTIVE_SCHEME.forca : scheme;
-  const sets = Math.max(2, (isAdvanced ? 4 : 3) + (isStrength ? 0 : scheme.setsDelta));
-
-  const dayGroupCycle = SPLIT_DAY_GROUPS[answers.preferredSplit || ''] || null;
-  const count = Math.min(4, available.length);
-  const workouts = Array.from({ length: days }, (_, dayIndex) => {
-    let pool = available;
-    if (dayGroupCycle) {
-      const groupsToday = dayGroupCycle[dayIndex % dayGroupCycle.length];
-      const filtered = available.filter((exercise) => groupsToday.includes(exercise.muscleGroup as MuscleGroup));
-      // Equipamento selecionado pode nao cobrir o grupo do dia (ex: so
-      // "barra fixa" nao tem nada de perna) -- cai pro pool completo pra
-      // nunca gerar um dia vazio, so troca a fonte quando ha exercicios
-      // suficientes pro recorte pedido.
-      if (filtered.length >= Math.min(2, count)) pool = filtered;
-    }
-    const selectedExercises = Array.from({ length: count }, (_, slot) => pool[(dayIndex * 2 + slot) % pool.length]);
-    const exercises = selectedExercises.map((exercise, slot) => {
-      return {
-        exerciseId: exercise.id,
-        order: slot,
-        sets,
-        repsMin,
-        repsMax,
-        restSeconds
-      };
-    });
-    const focusGroups = [...new Set(selectedExercises.map((exercise) => exercise.muscleGroup))];
-    return {
-      id: `workout_${dayIndex + 1}`,
-      name: `Treino ${String.fromCharCode(65 + dayIndex)}`,
-      focus: focusGroups.map((group) => OFFICIAL_MUSCLE_GROUP_LABELS[group] || group).join(' e '),
-      weekdays: [dayIndex % 7],
-      exercises
-    };
-  });
-
-  // #246: explicação curta do porquê desse esquema/divisão, mostrada na tela
-  // "Meu Plano" -- assim o atleta entende a lógica, não só recebe números.
-  const objectiveLabel = OBJECTIVE_LABELS[answers.primaryGoal || ''] || 'evoluir fisicamente de forma consistente';
-  const splitLabel = answers.preferredSplit && answers.preferredSplit !== 'Outro' ? answers.preferredSplit : null;
-  const rationale = `Séries de ${repsMin}–${repsMax} repetições e ${restSeconds}s de descanso porque seu objetivo é ${objectiveLabel}. ${splitLabel ? `Os dias seguem a divisão "${splitLabel}" que você escolheu, priorizando grupos musculares diferentes a cada sessão.` : 'Os exercícios são distribuídos entre os grupos musculares cobertos pelo equipamento que você selecionou.'}`;
-
+  const plan = buildTrainingEnginePlan(answers);
   return {
+    ...plan,
     name: 'Plano Invictus de contingência',
-    description: 'Plano montado localmente com exercícios oficiais. A Invictus IA será reativada quando o serviço Gemini estiver disponível.',
-    rationale,
-    source: 'ai',
-    generationMode: 'local_fallback',
-    objective: answers.primaryGoal || 'Evolução física',
-    experienceLevel: answers.experienceLevel,
-    durationMinutes,
-    daysPerWeek: days,
-    answers,
-    workouts
+    description: 'Plano montado pelo Training Engine com exercícios oficiais e regras de evidência versionadas. A Invictus IA será reativada quando o serviço estiver disponível.',
+    generationMode: 'local_fallback'
   };
 }
 
@@ -207,8 +104,6 @@ async function syncPendingLocalPlan(): Promise<WorkoutPlan | null> {
     localStorage.setItem(LOCAL_PLANS_KEY, JSON.stringify(remaining));
     return result.plan;
   } catch {
-    // A tentativa é oportunista; o plano local continua disponível para o
-    // treino e será tentado novamente na próxima abertura da musculação.
     return null;
   }
 }
@@ -216,9 +111,6 @@ async function syncPendingLocalPlan(): Promise<WorkoutPlan | null> {
 export const workoutPlanService = {
   async list(): Promise<WorkoutPlan[]> {
     try {
-      // Na Vercel, /api/* é reescrito para /api/app. Sem a ação explícita,
-      // o endpoint unificado responde 400 em vez de encaminhar para a lista.
-      // A query continua compatível com o handler direto usado localmente.
       const result = await request<{ plans: WorkoutPlan[] }>('GET', undefined, '/api/training-plans?action=training-plans');
       const synced = await syncPendingLocalPlan();
       const local = readLocalPlans();
@@ -234,9 +126,6 @@ export const workoutPlanService = {
       this.clearDraft();
       return result.plan;
     } catch (error) {
-      // O plano já foi gerado/validado pela IA. Se apenas a persistência caiu,
-      // preservamos o resultado no aparelho para o atleta não perder o treino;
-      // a mensagem na tela deixa explícito que a sincronização ficou pendente.
       if (!isPersistenceFailure(error)) throw error;
       const localPlan = writeLocalPlan(plan);
       this.clearDraft();
@@ -246,24 +135,20 @@ export const workoutPlanService = {
   async generate(answers: WorkoutPlanAnswers): Promise<WorkoutPlanDraft> {
     try {
       const result = await request<{ plan: WorkoutPlanDraft }>('POST', { action: 'generate', answers });
-      return { ...result.plan, generationMode: 'gemini' };
+      return result.plan;
     } catch (error) {
       const candidate = error as RequestError | undefined;
-      // #AI_COST_AUDIT: geração de treino por IA é benefício PRO. Isto não é
-      // uma falha do Gemini (outage/cota/faturamento) -- é uma decisão de
-      // produto -- então a mensagem/log não pode soar como indisponibilidade
-      // técnica. O atleta Free ainda sai com um plano de treino de verdade
-      // (mesma biblioteca oficial de exercícios), só que montado localmente.
       if (candidate?.code === 'PRO_REQUIRED') {
-        console.info('[WorkoutPlanService] Geração por IA é exclusiva do plano PRO; usando plano local determinístico.');
+        console.info('[WorkoutPlanService] Invictus IA é exclusiva do PRO; usando Training Engine determinístico.');
         const fallback = buildLocalFallbackPlan(answers);
         return {
           ...fallback,
-          description: 'Plano montado com a biblioteca oficial de exercícios do Invictus. A geração por Invictus IA é um benefício exclusivo do plano PRO.'
+          generationMode: 'training_engine',
+          description: 'Plano montado pelo Training Engine do Invictus. A personalização adicional pela Invictus IA é um benefício exclusivo do plano PRO.'
         };
       }
       if (isAiAvailabilityFailure(error)) {
-        console.warn('[WorkoutPlanService] Gemini indisponível; usando plano local de contingência:', error);
+        console.warn('[WorkoutPlanService] Gemini indisponível; Training Engine assumiu a geração:', error);
         return buildLocalFallbackPlan(answers);
       }
       throw error;
