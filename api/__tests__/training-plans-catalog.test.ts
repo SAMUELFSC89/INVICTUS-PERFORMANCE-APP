@@ -8,7 +8,20 @@ jest.mock('../_lib/common', () => ({
   cors: jest.fn(() => false),
   verifyAuth: jest.fn(async () => ({ uid: 'athlete-1' })),
   isDbAvailable: jest.fn(() => true),
-  db: { collection: jest.fn(() => ({ doc: () => ({ get: async () => ({ exists: true, data: () => ({ pro: true }) }) }) })) },
+  db: {
+    collection: jest.fn((name: string) => {
+      if (name === 'workouts') {
+        return {
+          where: jest.fn(() => ({
+            orderBy: jest.fn(() => ({
+              limit: jest.fn(() => ({ get: async () => ({ docs: [] }) }))
+            }))
+          }))
+        };
+      }
+      return { doc: () => ({ get: async () => ({ exists: true, data: () => ({ pro: true }) }) }) };
+    })
+  },
 }));
 jest.mock('../_lib/ai-config', () => ({
   getAiApiKey: () => 'test-key',
