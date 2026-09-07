@@ -11,6 +11,8 @@ export interface RecordedExerciseSet {
   /** Actual user-entered results; planned values must never populate these. */
   reps: number | null;
   loadKg: number | null;
+  /** Subjective reps-in-reserve reported after the set. Optional and private. */
+  actualRir?: number | null;
 }
 
 export interface WorkoutHeartRateEvidence {
@@ -69,7 +71,8 @@ export function readWorkoutHealthRecord(value: unknown): WorkoutHealthRecord | n
     && typeof set.exerciseName === 'string' && typeof set.startedAt === 'string' && typeof set.endedAt === 'string'
     && (set.equipment === null || typeof set.equipment === 'string')
     && ['completed', 'interrupted'].includes(set.status) && set.timingSource === 'user_marked'
-    && (set.reps === null || typeof set.reps === 'number') && (set.loadKg === null || typeof set.loadKg === 'number'))) return null;
+    && (set.reps === null || typeof set.reps === 'number') && (set.loadKg === null || typeof set.loadKg === 'number')
+    && (set.actualRir === undefined || set.actualRir === null || (typeof set.actualRir === 'number' && Number.isFinite(set.actualRir) && set.actualRir >= 0 && set.actualRir <= 5)))) return null;
   if (!record.heartRate.samples.every(sample => sample && typeof sample.timestamp === 'string' && typeof sample.bpm === 'number')) return null;
   return record;
 }
