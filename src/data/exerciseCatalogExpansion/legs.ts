@@ -1,4 +1,4 @@
-import { e, type ExpansionDefinition } from './shared';
+import { e, type ExpansionDefinition } from './shared.js';
 
 export const LEGS_EXPANSION: ExpansionDefinition[] = [
   e("band_hip_adduction", "Adução de Quadril com Elástico", "pernas", "faixa elástica", ["elasticos"], "adutores"),
