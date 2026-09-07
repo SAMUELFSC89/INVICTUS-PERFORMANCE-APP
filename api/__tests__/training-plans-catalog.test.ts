@@ -99,10 +99,10 @@ describe('planos usam o catálogo completo', () => {
     expect(manualPlan.workouts[0].exercises[0].initialLoadKg).toBe(999);
   });
 
-  test('a geração automática usa somente os 89 exercícios com mídia já aprovada', () => {
+  test('a geração automática usa somente os 99 exercícios com mídia já aprovada', () => {
     const allEquipment = [...new Set(Object.values(OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS).flat())];
     const available = getCompatibleOfficialExercises(allEquipment);
-    expect(available).toHaveLength(89);
+    expect(available).toHaveLength(99);
     expect(new Set(available.map(item => item.group)).size).toBe(6);
     expect(available.some(item => item.id === 'barbell_shrug')).toBe(true);
     expect(available.some(item => item.id === 'barbell_wrist_curl')).toBe(true);
@@ -114,6 +114,9 @@ describe('planos usam o catálogo completo', () => {
       'dumbbell_step_up', 'dumbbell_glute_bridge', 'bilateral_cable_lateral_raise',
       'cable_pull_through', 'hanging_knee_raise', 'seated_dumbbell_calf_raise',
       'dumbbell_lateral_lunge', 'reverse_lunge_dumbbell', 'hanging_leg_raise', 'pendulum_squat_machine',
+      'arnold_press', 'barbell_front_raise', 'barbell_push_press', 'cable_front_raise',
+      'cable_rear_delt_row', 'chest_supported_reverse_dumbbell_fly', 'dumbbell_cuban_rotation',
+      'dumbbell_scaption', 'high_cable_reverse_fly', 'machine_lateral_raise',
     ]) {
       expect(available.some(item => item.id === id)).toBe(true);
     }
@@ -127,6 +130,8 @@ describe('planos usam o catálogo completo', () => {
     expect(noEquipment).not.toContain('standing_dumbbell_calf_raise');
     expect(noEquipment).not.toContain('hanging_leg_raise');
     expect(noEquipment).not.toContain('hanging_knee_raise');
+    expect(noEquipment).not.toContain('arnold_press');
+    expect(noEquipment).not.toContain('machine_lateral_raise');
     expect(noEquipment).not.toContain('pull_up');
     expect(noEquipment).not.toContain('cable_face_pull');
   });

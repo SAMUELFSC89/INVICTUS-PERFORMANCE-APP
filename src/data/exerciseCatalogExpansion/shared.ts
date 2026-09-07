@@ -92,6 +92,16 @@ const APPROVED_EXPANSION_THUMB_IDS: ReadonlySet<string> = new Set([
   'reverse_lunge_dumbbell',
   'hanging_leg_raise',
   'pendulum_squat_machine',
+  'arnold_press',
+  'barbell_front_raise',
+  'barbell_push_press',
+  'cable_front_raise',
+  'cable_rear_delt_row',
+  'chest_supported_reverse_dumbbell_fly',
+  'dumbbell_cuban_rotation',
+  'dumbbell_scaption',
+  'high_cable_reverse_fly',
+  'machine_lateral_raise',
 ]);
 
 export function materializeExerciseDefinitions(definitions: readonly ExpansionDefinition[]): ExpansionOfficialExercise[] {

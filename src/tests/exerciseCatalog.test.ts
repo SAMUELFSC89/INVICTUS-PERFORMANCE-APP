@@ -83,6 +83,9 @@ describe('catálogo oficial de exercícios', () => {
     'dumbbell_step_up', 'dumbbell_glute_bridge', 'bilateral_cable_lateral_raise',
     'cable_pull_through', 'hanging_knee_raise', 'seated_dumbbell_calf_raise',
     'dumbbell_lateral_lunge', 'reverse_lunge_dumbbell', 'hanging_leg_raise', 'pendulum_squat_machine',
+    'arnold_press', 'barbell_front_raise', 'barbell_push_press', 'cable_front_raise',
+    'cable_rear_delt_row', 'chest_supported_reverse_dumbbell_fly', 'dumbbell_cuban_rotation',
+    'dumbbell_scaption', 'high_cable_reverse_fly', 'machine_lateral_raise',
   ])('thumbnail aprovado libera %s somente com o equipamento correto', (id) => {
     expect(OFFICIAL_EXERCISE_BY_ID.get(id)?.thumbStatus).toBe('ready');
     expect(isOfficialExerciseCompatible(id, requirements[id])).toBe(true);
@@ -92,8 +95,8 @@ describe('catálogo oficial de exercícios', () => {
   });
 
   test('exercícios sem thumbnail aprovado continuam fora da geração automática', () => {
-    expect(exercises.filter(exercise => exercise.thumbStatus === 'ready')).toHaveLength(89);
-    expect(exercises.filter(exercise => exercise.thumbStatus === 'waiting_for_thumb')).toHaveLength(161);
+    expect(exercises.filter(exercise => exercise.thumbStatus === 'ready')).toHaveLength(99);
+    expect(exercises.filter(exercise => exercise.thumbStatus === 'waiting_for_thumb')).toHaveLength(151);
     expect(OFFICIAL_EXERCISE_BY_ID.get('donkey_calf_raise_machine')?.thumbStatus).toBe('waiting_for_thumb');
     expect(isOfficialExerciseCompatible('donkey_calf_raise_machine', requirements.donkey_calf_raise_machine)).toBe(false);
   });
