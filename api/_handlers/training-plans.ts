@@ -52,7 +52,9 @@ export function normalizePlan(raw: any, userId: string, source?: 'manual' | 'ai'
         repsMax: clampInt(exercise?.repsMax, 1, 30, 12),
         restSeconds: clampInt(exercise?.restSeconds, 30, 300, 90),
         ...(Number.isFinite(Number(exercise?.targetRir)) ? { targetRir: clampInt(exercise.targetRir, 0, 5, 2) } : {}),
-        ...(Number(exercise?.initialLoadKg) >= 0 ? { initialLoadKg: Number(exercise.initialLoadKg) } : {})
+        // AI is never an authority for starting load. Only a manually saved
+        // plan or private observed execution memory may populate this field.
+        ...(source !== 'ai' && Number(exercise?.initialLoadKg) >= 0 ? { initialLoadKg: Number(exercise.initialLoadKg) } : {})
       }];
     }).slice(0, 20) : []
   })).filter((workout: any) => workout.exercises.length > 0) : [];
