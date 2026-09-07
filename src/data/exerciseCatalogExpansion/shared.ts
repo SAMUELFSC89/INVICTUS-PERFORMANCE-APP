@@ -72,6 +72,16 @@ const APPROVED_EXPANSION_THUMB_IDS: ReadonlySet<string> = new Set([
   'cable_external_rotation',
   'cable_internal_rotation',
   'cable_glute_kickback',
+  'trap_bar_shrug',
+  'smith_machine_calf_raise',
+  'standing_barbell_calf_raise',
+  'standing_dumbbell_calf_raise',
+  'single_leg_calf_raise_bodyweight',
+  'prone_y_raise_lower_trap',
+  'plate_pinch_hold',
+  'dumbbell_farmer_carry',
+  'dead_hang',
+  'single_leg_leg_press_calf_raise',
 ]);
 
 export function materializeExerciseDefinitions(definitions: readonly ExpansionDefinition[]): ExpansionOfficialExercise[] {
