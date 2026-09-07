@@ -8,7 +8,20 @@ jest.mock('../_lib/common', () => ({
   cors: jest.fn(() => false),
   verifyAuth: jest.fn(async () => ({ uid: 'athlete-1' })),
   isDbAvailable: jest.fn(() => true),
-  db: { collection: jest.fn(() => ({ doc: () => ({ get: async () => ({ exists: true, data: () => ({ pro: true }) }) }) })) },
+  db: {
+    collection: jest.fn((name: string) => {
+      if (name === 'workouts') {
+        return {
+          where: jest.fn(() => ({
+            orderBy: jest.fn(() => ({
+              limit: jest.fn(() => ({ get: async () => ({ docs: [] }) }))
+            }))
+          }))
+        };
+      }
+      return { doc: () => ({ get: async () => ({ exists: true, data: () => ({ pro: true }) }) }) };
+    })
+  },
 }));
 jest.mock('../_lib/ai-config', () => ({
   getAiApiKey: () => 'test-key',
@@ -27,12 +40,30 @@ import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_EXERCISE
 
 const exercise = (exerciseId: string) => ({ exerciseId, sets: 3, repsMin: 8, repsMax: 12, restSeconds: 90 });
 const plan = (...ids: string[]) => ({ name: 'Teste', workouts: [{ id: 'a', name: 'A', exercises: ids.map(exercise) }] });
+const generationAnswers = {
+  primaryGoal: 'massa',
+  experienceLevel: 'intermediario',
+  experienceTime: '1 a 3 anos',
+  daysPerWeek: 3,
+  availableWeekdays: [1, 3, 5],
+  durationMinutes: 60,
+  preferredPeriod: 'Manhã',
+  equipment: ['maquinas', 'halteres', 'banco', 'crossover', 'barra_anilhas'],
+  preferredTraining: 'forca',
+  preferredSplit: 'Outro',
+  preferences: [],
+  restrictions: []
+};
 const response = () => {
   let body: any;
   const res: any = { setHeader: jest.fn() };
   res.status = jest.fn(() => res);
   res.json = jest.fn((value: any) => { body = value; return res; });
-  return { res, body: () => body };
+  return {
+    res,
+    body: () => body,
+    lastStatus: () => res.status.mock.calls.at(-1)?.[0]
+  };
 };
 
 describe('planos usam o catálogo completo', () => {
@@ -56,6 +87,17 @@ describe('planos usam o catálogo completo', () => {
     expect(normalized.workouts[0].exercises[0]).toEqual({ ...exercise('barbell_back_squat'), order: 0 });
   });
 
+  test('a IA não consegue injetar carga inicial; carga manual continua preservada', () => {
+    const input = plan('dumbbell_lateral_raise');
+    Object.assign(input.workouts[0].exercises[0], { initialLoadKg: 999 });
+
+    const aiPlan = normalizePlan(input, 'athlete', 'ai');
+    expect(aiPlan.workouts[0].exercises[0].initialLoadKg).toBeUndefined();
+
+    const manualPlan = normalizePlan(input, 'athlete', 'manual');
+    expect(manualPlan.workouts[0].exercises[0].initialLoadKg).toBe(999);
+  });
+
   test('o conjunto de equipamentos é o mesmo usado pelo catálogo e inclui os novos grupos', () => {
     const allEquipment = [...new Set(Object.values(OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS).flat())];
     const available = getCompatibleOfficialExercises(allEquipment);
@@ -76,34 +118,44 @@ describe('planos usam o catálogo completo', () => {
 
   test.each([
     ['ID desconhecido', plan('classic_push_up', 'invented_id')],
-    ['equipamento não selecionado', plan('classic_push_up', 'barbell_back_squat')],
+    ['equipamento não selecionado', plan('classic_push_up', 'pull_up')],
     ['JSON nulo', null],
-  ])('o endpoint retorna resposta segura quando a IA envia %s', async (_label, generated) => {
+  ])('o endpoint mantém um fallback válido quando a IA envia %s', async (_label, generated) => {
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const reply = response();
-    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
+    await handler({ method: 'POST', body: { action: 'generate', answers: generationAnswers } } as any, reply.res);
     const payload = reply.body();
-    if (reply.res.status.mock.calls.some((call: any[]) => call[0] === 200)) {
-      expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
-      expect(payload.plan.workouts.flatMap((workout: any) => workout.exercises).every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
-    } else {
-      expect(reply.res.status).toHaveBeenCalledWith(422);
-      expect(payload).toEqual(expect.objectContaining({ code: 'INVALID_PLAN' }));
-    }
+
+    expect(reply.lastStatus()).toBe(200);
+    expect(payload).toEqual(expect.objectContaining({
+      plan: expect.objectContaining({
+        generationMode: 'local_fallback',
+        workouts: expect.any(Array)
+      })
+    }));
+    expect(payload.plan.workouts.length).toBeGreaterThan(0);
+    expect(payload.plan.workouts.flatMap((workout: any) => workout.exercises).every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
   });
 
   test('uma sugestão insuficiente da IA não substitui o plano validado do Training Engine nem injeta URL externa', async () => {
     const generated = plan('dumbbell_hammer_curl');
-    Object.assign(generated.workouts[0].exercises[0], { thumbUrl: 'https://example.com/not-official.webp' });
+    Object.assign(generated.workouts[0].exercises[0], { thumbUrl: 'https://example.com/not-official.webp', initialLoadKg: 999 });
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const reply = response();
-    await handler({ method: 'POST', body: { action: 'generate', answers: { equipment: ['halteres'] } } } as any, reply.res);
-    expect(reply.res.status).toHaveBeenCalledWith(200);
+    await handler({ method: 'POST', body: { action: 'generate', answers: generationAnswers } } as any, reply.res);
+    expect(reply.lastStatus()).toBe(200);
     const payload = reply.body();
-    expect(payload?.plan?.workouts?.length).toBeGreaterThan(0);
+    expect(payload).toEqual(expect.objectContaining({
+      plan: expect.objectContaining({
+        generationMode: 'local_fallback',
+        workouts: expect.any(Array)
+      })
+    }));
+    expect(payload.plan.workouts.length).toBeGreaterThan(0);
     const items = payload.plan.workouts.flatMap((workout: any) => workout.exercises);
     expect(items.length).toBeGreaterThan(1);
     expect(items.every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
     expect(items.every((item: any) => item.thumbUrl === undefined && item.demoUrl === undefined)).toBe(true);
+    expect(items.every((item: any) => item.initialLoadKg === undefined)).toBe(true);
   });
 });
