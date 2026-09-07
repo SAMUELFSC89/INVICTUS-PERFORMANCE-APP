@@ -1,0 +1,272 @@
+/* Cardio 2026 — camada visual nova. Mantém a lógica existente e substitui
+   apenas o visual das telas de seleção/atividade sem GPS. Carregado depois
+   do index.css para impedir que estilos legados apareçam por baixo. */
+
+.challenge-flow-screen:has(> .challenge-flow-cardio-picker) {
+  isolation: isolate;
+  background: #050505;
+  padding: calc(env(safe-area-inset-top) + .65rem) .75rem calc(env(safe-area-inset-bottom) + 1.2rem);
+}
+
+.challenge-flow-screen:has(> .challenge-flow-cardio-picker)::before {
+  content: '';
+  position: fixed;
+  inset: -14px;
+  z-index: -2;
+  background: url('/assets/home/home-season-hallway-v2.webp') top center / cover no-repeat;
+  filter: blur(7px) saturate(.9);
+  transform: scale(1.04);
+}
+
+.challenge-flow-screen:has(> .challenge-flow-cardio-picker)::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(4,4,4,.28) 0%, rgba(4,4,4,.52) 45%, rgba(4,4,4,.78) 100%),
+    radial-gradient(circle at 50% 18%, rgba(221,165,52,.10), transparent 34%);
+}
+
+.challenge-flow-screen:has(> .challenge-flow-cardio-picker) > .challenge-flow-header {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  max-width: 760px;
+  margin: 0 auto .7rem;
+  padding: .35rem .2rem .55rem;
+  background: linear-gradient(180deg, rgba(5,5,5,.82), rgba(5,5,5,.42), transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.challenge-flow-screen:has(> .challenge-flow-cardio-picker) > .challenge-flow-header h1 {
+  font-size: clamp(1rem, 4.5vw, 1.2rem);
+  letter-spacing: .065em;
+  font-weight: 800;
+}
+
+.challenge-flow-cardio-picker {
+  width: min(100%, 760px) !important;
+  margin: 0 auto !important;
+  padding: .85rem !important;
+  border: 1px solid rgba(226,178,70,.22) !important;
+  border-radius: 24px !important;
+  background: rgba(9,9,9,.62) !important;
+  box-shadow: 0 22px 60px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.035) !important;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.challenge-flow-cardio-intro {
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) auto !important;
+  gap: .65rem !important;
+  align-items: stretch !important;
+  margin: 0 0 .8rem !important;
+}
+
+.challenge-flow-cardio-selected {
+  min-width: 0;
+  display: grid !important;
+  grid-template-columns: 2.9rem minmax(0,1fr) !important;
+  align-items: center !important;
+  gap: .7rem !important;
+  padding: .75rem !important;
+  border: 1px solid rgba(226,178,70,.26) !important;
+  border-radius: 17px !important;
+  background: linear-gradient(135deg, rgba(226,178,70,.11), rgba(13,13,13,.78)) !important;
+}
+
+.challenge-flow-cardio-selected-icon {
+  width: 2.75rem !important;
+  height: 2.75rem !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 14px !important;
+  color: #f2bd50 !important;
+  background: rgba(226,178,70,.10) !important;
+  border: 1px solid rgba(226,178,70,.28) !important;
+}
+
+.challenge-flow-cardio-selected > div {
+  min-width: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: .1rem !important;
+}
+
+.challenge-flow-cardio-selected small {
+  color: #b6aea0 !important;
+  font-size: .61rem !important;
+  letter-spacing: .12em !important;
+}
+
+.challenge-flow-cardio-selected strong {
+  color: #fff !important;
+  font-size: 1.05rem !important;
+  line-height: 1.12 !important;
+}
+
+.challenge-flow-cardio-selected span:not(.challenge-flow-cardio-selected-icon) {
+  color: #b9b5af !important;
+  font-size: .72rem !important;
+  line-height: 1.25 !important;
+}
+
+.challenge-flow-cardio-tracking {
+  min-width: 7.2rem !important;
+  padding: .68rem .72rem !important;
+  border-radius: 17px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: .5rem !important;
+  color: #d6d0c5 !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  background: rgba(7,7,7,.58) !important;
+}
+
+.challenge-flow-cardio-tracking.is-gps {
+  border-color: rgba(74,209,122,.24) !important;
+}
+
+.challenge-flow-cardio-tracking svg { width: 1.05rem; height: 1.05rem; }
+.challenge-flow-cardio-tracking span { display:flex !important; flex-direction:column !important; gap:.08rem !important; }
+.challenge-flow-cardio-tracking b { font-size:.68rem !important; letter-spacing:.055em !important; color:#f1ede4 !important; }
+.challenge-flow-cardio-tracking small { font-size:.58rem !important; color:#8f8a82 !important; white-space:nowrap; }
+
+.challenge-flow-cardio-count {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: .15rem .1rem .55rem !important;
+  margin: 0 !important;
+  border: 0 !important;
+}
+
+.challenge-flow-cardio-count span {
+  font-size: .72rem !important;
+  letter-spacing: .12em !important;
+  color: #d3c9b5 !important;
+}
+.challenge-flow-cardio-count b {
+  font-size: .66rem !important;
+  font-weight: 600 !important;
+  color: #8f8a82 !important;
+}
+
+.challenge-flow-cardio-group {
+  margin: 0 0 .72rem !important;
+  padding: .72rem !important;
+  border: 1px solid rgba(255,255,255,.075) !important;
+  border-radius: 18px !important;
+  background: rgba(7,7,7,.46) !important;
+}
+
+.challenge-flow-cardio-group-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: .55rem !important;
+  margin: 0 0 .58rem !important;
+}
+.challenge-flow-cardio-group-title > span {
+  width: 2rem !important;
+  height: 2rem !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 10px !important;
+  color: #e9b549 !important;
+  background: rgba(229,179,72,.09) !important;
+}
+.challenge-flow-cardio-group-title svg { width: 1rem; height: 1rem; }
+.challenge-flow-cardio-group-title > div { display:flex !important; flex-direction:column !important; gap:.05rem !important; }
+.challenge-flow-cardio-group-title strong { font-size:.76rem !important; letter-spacing:.1em !important; color:#f4efe6 !important; }
+.challenge-flow-cardio-group-title small { font-size:.64rem !important; color:#8e8981 !important; }
+
+.challenge-flow-cardio-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  gap: .52rem !important;
+}
+.challenge-flow-cardio-grid.is-single { grid-template-columns: minmax(0,1fr) !important; }
+
+.challenge-flow-cardio-grid > button {
+  min-width: 0 !important;
+  min-height: 4.45rem !important;
+  display: grid !important;
+  grid-template-columns: 2.25rem minmax(0,1fr) 1.25rem !important;
+  align-items: center !important;
+  gap: .5rem !important;
+  padding: .6rem !important;
+  border: 1px solid rgba(255,255,255,.075) !important;
+  border-radius: 14px !important;
+  color: #d7d3cc !important;
+  text-align: left !important;
+  background: rgba(15,15,15,.72) !important;
+  box-shadow: none !important;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease !important;
+}
+.challenge-flow-cardio-grid > button:active { transform: scale(.985); }
+.challenge-flow-cardio-grid > button.is-selected {
+  border-color: rgba(236,185,76,.72) !important;
+  background: linear-gradient(135deg, rgba(224,171,56,.17), rgba(14,14,14,.88)) !important;
+}
+.challenge-flow-cardio-option-icon {
+  width: 2.2rem !important;
+  height: 2.2rem !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 11px !important;
+  color: #d9a943 !important;
+  background: rgba(221,169,67,.08) !important;
+}
+.challenge-flow-cardio-option-copy { min-width:0; display:flex !important; flex-direction:column !important; gap:.08rem !important; }
+.challenge-flow-cardio-option-copy strong { font-size:.78rem !important; line-height:1.15 !important; color:#f4f1eb !important; }
+.challenge-flow-cardio-option-copy small { font-size:.60rem !important; line-height:1.2 !important; color:#85817a !important; }
+.challenge-flow-cardio-option-check { width:1.18rem !important; height:1.18rem !important; display:grid !important; place-items:center !important; border-radius:50% !important; color:#151108 !important; background:transparent !important; }
+.challenge-flow-cardio-grid > button.is-selected .challenge-flow-cardio-option-check { background:#e7b54c !important; }
+.challenge-flow-cardio-option-check svg { width:.76rem; height:.76rem; stroke-width:3; }
+
+.challenge-flow-cardio-picker .challenge-flow-note {
+  margin: .15rem .15rem .7rem !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #88837a !important;
+  font-size: .64rem !important;
+  line-height: 1.35 !important;
+}
+.challenge-flow-cardio-picker .challenge-flow-note svg { width:.82rem; height:.82rem; color:#c99b40; }
+
+.challenge-flow-cardio-actions {
+  position: sticky !important;
+  bottom: calc(env(safe-area-inset-bottom) + .15rem) !important;
+  z-index: 6 !important;
+  padding: .45rem 0 .08rem !important;
+  background: linear-gradient(180deg, transparent, rgba(7,7,7,.94) 35%) !important;
+}
+.challenge-flow-cardio-actions .challenge-flow-primary {
+  min-height: 3.25rem !important;
+  border-radius: 16px !important;
+  background: linear-gradient(180deg,#e8ba59,#c98b20) !important;
+  color: #120d05 !important;
+  box-shadow: 0 9px 28px rgba(197,139,31,.22) !important;
+}
+
+@media (max-width: 560px) {
+  .challenge-flow-cardio-intro { grid-template-columns: minmax(0,1fr) !important; }
+  .challenge-flow-cardio-tracking { min-width: 0 !important; justify-content:flex-start !important; }
+  .challenge-flow-cardio-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  .challenge-flow-cardio-grid > button {
+    grid-template-columns: 2.1rem minmax(0,1fr) 1.05rem !important;
+    min-height: 4.65rem !important;
+    padding: .55rem !important;
+  }
+}
+
+@media (max-width: 365px) {
+  .challenge-flow-cardio-picker { padding:.72rem !important; }
+  .challenge-flow-cardio-grid { grid-template-columns: minmax(0,1fr) !important; }
+}
