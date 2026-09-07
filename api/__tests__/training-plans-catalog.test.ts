@@ -87,6 +87,17 @@ describe('planos usam o catálogo completo', () => {
     expect(normalized.workouts[0].exercises[0]).toEqual({ ...exercise('barbell_back_squat'), order: 0 });
   });
 
+  test('a IA não consegue injetar carga inicial; carga manual continua preservada', () => {
+    const input = plan('dumbbell_lateral_raise');
+    Object.assign(input.workouts[0].exercises[0], { initialLoadKg: 999 });
+
+    const aiPlan = normalizePlan(input, 'athlete', 'ai');
+    expect(aiPlan.workouts[0].exercises[0].initialLoadKg).toBeUndefined();
+
+    const manualPlan = normalizePlan(input, 'athlete', 'manual');
+    expect(manualPlan.workouts[0].exercises[0].initialLoadKg).toBe(999);
+  });
+
   test('o conjunto de equipamentos é o mesmo usado pelo catálogo e inclui os novos grupos', () => {
     const allEquipment = [...new Set(Object.values(OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS).flat())];
     const available = getCompatibleOfficialExercises(allEquipment);
@@ -128,7 +139,7 @@ describe('planos usam o catálogo completo', () => {
 
   test('uma sugestão insuficiente da IA não substitui o plano validado do Training Engine nem injeta URL externa', async () => {
     const generated = plan('dumbbell_hammer_curl');
-    Object.assign(generated.workouts[0].exercises[0], { thumbUrl: 'https://example.com/not-official.webp' });
+    Object.assign(generated.workouts[0].exercises[0], { thumbUrl: 'https://example.com/not-official.webp', initialLoadKg: 999 });
     mockGenerateContent.mockResolvedValue({ text: JSON.stringify(generated) });
     const reply = response();
     await handler({ method: 'POST', body: { action: 'generate', answers: generationAnswers } } as any, reply.res);
@@ -145,5 +156,6 @@ describe('planos usam o catálogo completo', () => {
     expect(items.length).toBeGreaterThan(1);
     expect(items.every((item: any) => OFFICIAL_EXERCISE_BY_ID.has(item.exerciseId))).toBe(true);
     expect(items.every((item: any) => item.thumbUrl === undefined && item.demoUrl === undefined)).toBe(true);
+    expect(items.every((item: any) => item.initialLoadKg === undefined)).toBe(true);
   });
 });
