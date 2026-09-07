@@ -10,12 +10,20 @@ import { OfficialExerciseMedia } from '../components/OfficialExerciseMedia';
 import { InvictusLogo } from '../components/InvictusLogo';
 import { useUser } from '../UserContext';
 import { OFFICIAL_EXERCISES_BATCH_01, OFFICIAL_EXERCISE_BY_ID, OFFICIAL_MUSCLE_GROUP_LABELS, type OfficialMuscleGroup, isOfficialExerciseCompatible } from '../data/exerciseCatalog';
+import {
+  MAX_MANUAL_EXERCISES_PER_WORKOUT,
+  areAllManualWorkoutsConfigured,
+  isManualWorkoutConfigured,
+  manualExerciseAddDecision,
+  manualPlanExceedsExerciseLimit,
+} from '../core/training/manualWorkoutRules';
 import { workoutPlanService } from '../services/workoutPlanService';
 import { activityService } from '../services/activityService';
 import type { ActivityCompetitionPolicy } from '../types';
 import type { PlannedExercise, PlannedWorkout, WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
 import './Musculation.css';
 import './MusculationAi.css';
+import './MusculationManualFeedback.css';
 
 type View = 'hub' | 'manual' | 'ai' | 'ai-processing' | 'ai-success' | 'plan' | 'workout';
 type ManualDraft = WorkoutPlanDraft & { step: number; selectedWorkout: number };
@@ -99,13 +107,19 @@ function Choice({ selected, onClick, icon, title, detail }: { selected: boolean;
   </button>;
 }
 
-function ExerciseRow({ exerciseId, onAdd }: { exerciseId: string; onAdd?: () => void }) {
+function ExerciseRow({ exerciseId, onAdd, added = false, addDisabled = false }: { exerciseId: string; onAdd?: () => void; added?: boolean; addDisabled?: boolean }) {
   const exercise = OFFICIAL_EXERCISE_BY_ID.get(exerciseId);
   if (!exercise) return null;
+  const disabled = added || addDisabled;
+  const addLabel = added
+    ? `${exercise.name} adicionado ao treino`
+    : addDisabled
+      ? `Limite de ${MAX_MANUAL_EXERCISES_PER_WORKOUT} exercícios atingido neste treino`
+      : `Adicionar ${exercise.name}`;
   return <article className="mus-exercise-row">
     <OfficialExerciseMedia exercise={exercise} className="mus-exercise-media" />
     <div><strong>{exercise.name}</strong><span>{exercise.muscleSubgroup === 'biceps' ? 'Bíceps' : exercise.muscleSubgroup === 'triceps' ? 'Tríceps' : OFFICIAL_MUSCLE_GROUP_LABELS[exercise.muscleGroup]}</span></div>
-    {onAdd ? <button type="button" aria-label={`Adicionar ${exercise.name}`} onClick={onAdd}><Plus /></button> : null}
+    {onAdd ? <button type="button" className={added ? 'is-added' : ''} aria-label={addLabel} title={addLabel} onClick={onAdd} disabled={disabled}>{added ? <Check /> : <Plus />}</button> : null}
   </article>;
 }
 
@@ -183,11 +197,18 @@ export function Musculation() {
     ...current, workouts: current.workouts.map((workout, workoutIndex) => workoutIndex === index ? { ...workout, ...next } : workout)
   }));
   const addExercise = (exerciseId: string) => {
-    const index = manual.selectedWorkout;
-    const workout = manual.workouts[index];
-    if (workout.exercises.some(item => item.exerciseId === exerciseId)) return;
-    const exercise: PlannedExercise = { exerciseId, order: workout.exercises.length, sets: 4, repsMin: 8, repsMax: 12, restSeconds: 90 };
-    updateManualWorkout(index, { exercises: [...workout.exercises, exercise] });
+    setManual(current => {
+      const index = current.selectedWorkout;
+      const workout = current.workouts[index];
+      if (!workout || manualExerciseAddDecision(workout, exerciseId) !== 'allowed') return current;
+      const exercise: PlannedExercise = { exerciseId, order: workout.exercises.length, sets: 4, repsMin: 8, repsMax: 12, restSeconds: 90 };
+      return {
+        ...current,
+        workouts: current.workouts.map((item, workoutIndex) => workoutIndex === index
+          ? { ...item, exercises: [...item.exercises, exercise] }
+          : item),
+      };
+    });
   };
   const updateExercise = (exerciseIndex: number, next: Partial<PlannedExercise>) => {
     const workout = manual.workouts[manual.selectedWorkout];
@@ -195,7 +216,16 @@ export function Musculation() {
   };
 
   const saveManual = async () => {
-    setError(null); setLoading(true);
+    setError(null);
+    if (!areAllManualWorkoutsConfigured(manual.workouts)) {
+      setError('Adicione pelo menos um exercício em cada treino/dia antes de salvar o plano.');
+      return;
+    }
+    if (manualPlanExceedsExerciseLimit(manual.workouts)) {
+      setError(`Cada treino pode ter no máximo ${MAX_MANUAL_EXERCISES_PER_WORKOUT} exercícios.`);
+      return;
+    }
+    setLoading(true);
     try {
       const rationale = `Treino manual configurado por você: ${manual.daysPerWeek} dia(s) por semana com foco em ${manual.objective.toLowerCase()}${manual.experienceLevel ? `, nível ${manual.experienceLevel.toLowerCase()}` : ''}. Ajuste séries, repetições e descanso sempre que quiser evoluir a carga.`;
       const saved = await workoutPlanService.save({ ...manual, rationale, workouts: manual.workouts.filter(workout => workout.exercises.length) });
@@ -277,17 +307,26 @@ function Hub({ userName, plan, today, loading, planLocked, planDaysRemaining, on
 
 function ManualFlow({ draft, setDraft, query, setQuery, filter, setFilter, filteredExercises, addExercise, updateExercise, updateWorkout, onBack, onSave, loading }: any) {
   const workout = draft.workouts[draft.selectedWorkout];
-  const next = () => setDraft((current: ManualDraft) => ({ ...current, step: Math.min(5, current.step + 1) }));
+  const allWorkoutsConfigured = areAllManualWorkoutsConfigured(draft.workouts);
+  const missingWorkoutCount = draft.workouts.filter((item: PlannedWorkout) => !isManualWorkoutConfigured(item)).length;
+  const workoutConfigured = isManualWorkoutConfigured(workout);
+  const workoutAtLimit = workout.exercises.length >= MAX_MANUAL_EXERCISES_PER_WORKOUT;
+  const selectedExerciseIds = new Set(workout.exercises.map((exercise: PlannedExercise) => exercise.exerciseId));
+  const manualCanContinue = draft.step === 1 ? Boolean(draft.name.trim()) : draft.step === 3 ? allWorkoutsConfigured : true;
+  const next = () => {
+    if (!manualCanContinue) return;
+    setDraft((current: ManualDraft) => ({ ...current, step: Math.min(5, current.step + 1) }));
+  };
   const [confirmCommitment, setConfirmCommitment] = useState(false);
   return <><Header onBack={onBack} /><Steps current={draft.step} mode="manual" /><section className="mus-flow">
-    {draft.step === 1 ? <><h1>CRIAR MANUALMENTE</h1><p>Monte seu treino escolhendo exercícios, séries, repetições, cargas e descansos.</p><h2>1. DADOS DO TREINO</h2><div className="mus-form-card"><label>NOME DO PLANO<input maxLength={60} value={draft.name} placeholder="Ex.: Meu plano de hipertrofia" onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><label>DESCRIÇÃO (OPCIONAL)<textarea maxLength={240} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label></div><h2>2. CONFIGURAÇÕES DO TREINO</h2><div className="mus-setting-grid"><label>DIAS POR SEMANA<div>{[1,2,3,4,5,6].map(n => <button key={n} className={draft.daysPerWeek === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, daysPerWeek: n, workouts: Array.from({length:n}, (_,i) => draft.workouts[i] || emptyWorkout(i)) })}>{n}</button>)}</div></label><label>TEMPO ESTIMADO<div>{[30,45,60,90].map(n => <button key={n} className={draft.durationMinutes === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, durationMinutes: n })}>{n}{n === 90 ? '+' : ''} min</button>)}</div></label><label>NÍVEL DO TREINO<select value={draft.experienceLevel || ''} onChange={event => setDraft({ ...draft, experienceLevel: event.target.value })}><option value="">Selecione</option><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select></label><label>OBJETIVO PRINCIPAL<select value={draft.objective} onChange={event => setDraft({ ...draft, objective: event.target.value })}><option>Hipertrofia</option><option>Força</option><option>Condicionamento</option><option>Saúde e qualidade de vida</option></select></label></div></> : null}
+    {draft.step === 1 ? <><h1>CRIAR MANUALMENTE</h1><p>Monte seu treino escolhendo exercícios, séries, repetições, cargas e descansos.</p><h2>1. DADOS DO TREINO</h2><div className="mus-form-card"><label>NOME DO PLANO<input maxLength={60} value={draft.name} placeholder="Ex.: Meu plano de hipertrofia" onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><label>DESCRIÇÃO (OPCIONAL)<textarea maxLength={240} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label></div><h2>2. CONFIGURAÇÕES DO TREINO</h2><div className="mus-setting-grid"><label>DIAS POR SEMANA<div>{[1,2,3,4,5,6].map(n => <button key={n} className={draft.daysPerWeek === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, daysPerWeek: n, workouts: Array.from({length:n}, (_,i) => draft.workouts[i] || emptyWorkout(i)), selectedWorkout: Math.min(draft.selectedWorkout, n - 1) })}>{n}</button>)}</div></label><label>TEMPO ESTIMADO<div>{[30,45,60,90].map(n => <button key={n} className={draft.durationMinutes === n ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, durationMinutes: n })}>{n}{n === 90 ? '+' : ''} min</button>)}</div></label><label>NÍVEL DO TREINO<select value={draft.experienceLevel || ''} onChange={event => setDraft({ ...draft, experienceLevel: event.target.value })}><option value="">Selecione</option><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select></label><label>OBJETIVO PRINCIPAL<select value={draft.objective} onChange={event => setDraft({ ...draft, objective: event.target.value })}><option>Hipertrofia</option><option>Força</option><option>Condicionamento</option><option>Saúde e qualidade de vida</option></select></label></div></> : null}
     {draft.step === 2 ? <><h1>2. DIVISÃO SEMANAL</h1><p>Defina quantos treinos e como eles serão distribuídos na semana.</p><div className="mus-form-card"><h3>SELECIONE OS DIAS DE CADA TREINO</h3>{draft.workouts.map((item: PlannedWorkout, index: number) => <article className="mus-split-row" key={item.id}><i>{index + 1}</i><input value={item.name} onChange={event => updateWorkout(index, { name: event.target.value })} /><input placeholder="Grupo muscular" value={item.focus} onChange={event => updateWorkout(index, { focus: event.target.value })} /><div>{weekdays.map((day, dayIndex) => <button key={day} className={item.weekdays.includes(dayIndex) ? 'is-selected' : ''} onClick={() => updateWorkout(index, { weekdays: item.weekdays.includes(dayIndex) ? item.weekdays.filter((n:number) => n !== dayIndex) : [...item.weekdays, dayIndex] })}>{day}</button>)}</div></article>)}</div></> : null}
-    {draft.step === 3 ? <><h1>3. EXERCÍCIOS</h1><p>Adicione os exercícios e configure séries, repetições e descanso.</p><div className="mus-workout-tabs">{draft.workouts.map((item: PlannedWorkout, index: number) => <button key={item.id} className={draft.selectedWorkout === index ? 'is-selected' : ''} onClick={() => setDraft({ ...draft, selectedWorkout: index })}>{item.name}</button>)}</div><div className="mus-library"><div className="mus-search"><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar exercício na biblioteca" /><ListFilter /></div><div className="mus-filters">{[['todos','Todos'],...Object.entries(OFFICIAL_MUSCLE_GROUP_LABELS),['biceps','Bíceps'],['triceps','Tríceps']].map(([item,label]) => <button key={item} className={filter === item ? 'is-selected' : ''} onClick={() => setFilter(item)}>{label}</button>)}</div>{filteredExercises.map((exercise: any) => <ExerciseRow key={exercise.id} exerciseId={exercise.id} onAdd={() => addExercise(exercise.id)} />)}</div><h2>EXERCÍCIOS ADICIONADOS</h2><div className="mus-configured">{workout.exercises.map((exercise: PlannedExercise, index: number) => <article key={exercise.exerciseId}><ExerciseRow exerciseId={exercise.exerciseId} /><label>Séries<input type="number" value={exercise.sets} onChange={event => updateExercise(index, { sets: Number(event.target.value) })} /></label><label>Reps mín.<input type="number" value={exercise.repsMin} onChange={event => updateExercise(index, { repsMin: Number(event.target.value) })} /></label><label>Reps máx.<input type="number" value={exercise.repsMax} onChange={event => updateExercise(index, { repsMax: Number(event.target.value) })} /></label><label>Descanso<input type="number" value={exercise.restSeconds} onChange={event => updateExercise(index, { restSeconds: Number(event.target.value) })} /></label><label>Carga opcional<input type="number" value={exercise.initialLoadKg ?? ''} onChange={event => updateExercise(index, { initialLoadKg: event.target.value === '' ? undefined : Number(event.target.value) })} /></label></article>)}</div></> : null}
+    {draft.step === 3 ? <><h1>3. EXERCÍCIOS</h1><p>Adicione os exercícios e configure séries, repetições e descanso. Cada treino aceita até {MAX_MANUAL_EXERCISES_PER_WORKOUT} exercícios.</p><div className="mus-workout-tabs">{draft.workouts.map((item: PlannedWorkout, index: number) => { const configured = isManualWorkoutConfigured(item); return <button key={item.id} className={`${draft.selectedWorkout === index ? 'is-selected' : ''} ${configured ? 'is-complete' : ''}`.trim()} onClick={() => setDraft({ ...draft, selectedWorkout: index })} aria-label={`${item.name}: ${item.exercises.length} de ${MAX_MANUAL_EXERCISES_PER_WORKOUT} exercícios${configured ? ', configurado' : ', ainda sem exercícios'}`}><span>{item.name}{configured ? <Check className="mus-workout-tab-check" aria-hidden="true" /> : null}</span><small>{item.exercises.length}/{MAX_MANUAL_EXERCISES_PER_WORKOUT}</small></button>; })}</div><div className={`mus-manual-workout-status ${workoutConfigured ? 'is-confirmed' : ''} ${workoutAtLimit ? 'is-limit' : ''}`} role="status" aria-live="polite"><span><b>{workout.name}</b>{workout.exercises.length} de {MAX_MANUAL_EXERCISES_PER_WORKOUT} exercícios adicionados</span><i>{workoutConfigured ? <Check /> : <Plus />}</i></div>{workoutAtLimit ? <p className="mus-manual-limit-note">Limite atingido neste treino. Selecione o próximo treino/dia acima para continuar.</p> : workoutConfigured ? <p className="mus-manual-limit-note">{workout.name} confirmado. Você pode continuar adicionando ou tocar no próximo treino/dia acima.</p> : null}<div className="mus-library"><div className="mus-search"><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar exercício na biblioteca" /><ListFilter /></div><div className="mus-filters">{[['todos','Todos'],...Object.entries(OFFICIAL_MUSCLE_GROUP_LABELS),['biceps','Bíceps'],['triceps','Tríceps']].map(([item,label]) => <button key={item} className={filter === item ? 'is-selected' : ''} onClick={() => setFilter(item)}>{label}</button>)}</div>{filteredExercises.map((exercise: any) => { const added = selectedExerciseIds.has(exercise.id); return <ExerciseRow key={exercise.id} exerciseId={exercise.id} added={added} addDisabled={workoutAtLimit && !added} onAdd={() => addExercise(exercise.id)} />; })}</div><h2>EXERCÍCIOS ADICIONADOS</h2><div className="mus-configured">{workout.exercises.map((exercise: PlannedExercise, index: number) => <article key={exercise.exerciseId}><ExerciseRow exerciseId={exercise.exerciseId} /><label>Séries<input type="number" value={exercise.sets} onChange={event => updateExercise(index, { sets: Number(event.target.value) })} /></label><label>Reps mín.<input type="number" value={exercise.repsMin} onChange={event => updateExercise(index, { repsMin: Number(event.target.value) })} /></label><label>Reps máx.<input type="number" value={exercise.repsMax} onChange={event => updateExercise(index, { repsMax: Number(event.target.value) })} /></label><label>Descanso<input type="number" value={exercise.restSeconds} onChange={event => updateExercise(index, { restSeconds: Number(event.target.value) })} /></label><label>Carga opcional<input type="number" value={exercise.initialLoadKg ?? ''} onChange={event => updateExercise(index, { initialLoadKg: event.target.value === '' ? undefined : Number(event.target.value) })} /></label></article>)}</div>{!allWorkoutsConfigured ? <p className="mus-manual-requirement" role="status"><Info /> Falta preencher {missingWorkoutCount} {missingWorkoutCount === 1 ? 'treino/dia' : 'treinos/dias'}. Toque nas abas acima e adicione pelo menos um exercício em cada uma para continuar.</p> : <p className="mus-manual-requirement" role="status"><Check /> Todos os treinos/dias receberam exercícios. Você já pode continuar para a revisão.</p>}</> : null}
     {draft.step === 4 ? <><h1>4. REVISÃO</h1><p>Confira a estrutura antes de salvar.</p>{draft.workouts.map((item: PlannedWorkout, index: number) => <article className="mus-review-card" key={item.id}><i>{String.fromCharCode(65 + index)}</i><div><h3>{item.name}</h3><p>{item.focus || 'Foco não informado'}</p><span>{item.exercises.length} exercícios · {item.exercises.reduce((sum:number, exercise:PlannedExercise) => sum + exercise.sets, 0)} séries</span></div><button onClick={() => setDraft({ ...draft, selectedWorkout:index, step:3 })}><Pencil /></button></article>)}</> : null}
     {draft.step === 5 ? <><h1>5. SALVAR TREINO</h1><p>Finalize seu treino e comece a evoluir.</p><div className="mus-final-data"><h2>DADOS FINAIS</h2><p><Dumbbell /><span>Nome do treino<b>{draft.name || 'Meu plano'}</b></span></p><p><CalendarDays /><span>Divisão<b>{draft.daysPerWeek} treinos por semana</b></span></p><p><Target /><span>Objetivo principal<b>{draft.objective}</b></span></p><p><Clock3 /><span>Tempo estimado<b>~{draft.durationMinutes} min</b></span></p></div><div className="mus-tip"><ShieldCheck /><span><b>DICA INVICTUS</b>Registre suas cargas e evolua a cada sessão.</span></div>
       <label className="mus-commitment-check"><input type="checkbox" checked={confirmCommitment} onChange={event => setConfirmCommitment(event.target.checked)} /><span>Entendo que, ao salvar, este treino ficará ativo por no mínimo {MIN_PLAN_COMMITMENT_DAYS} dias -- o tempo mínimo pro corpo se adaptar e a evolução aparecer de verdade.</span></label>
     </> : null}
-    <div className="mus-flow-actions">{draft.step > 1 ? <button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button> : null}{draft.step < 5 ? <button className="is-primary" onClick={next} disabled={draft.step === 1 && !draft.name.trim()}>CONTINUAR <ArrowRight /></button> : <button className="is-primary" onClick={onSave} disabled={loading || !confirmCommitment}>{loading ? 'SALVANDO…' : 'SALVAR E IR PARA MEUS TREINOS'} <Check /></button>}</div>
+    <div className="mus-flow-actions">{draft.step > 1 ? <button className="is-back" onClick={onBack}><ArrowLeft /> VOLTAR</button> : null}{draft.step < 5 ? <button className="is-primary" onClick={next} disabled={!manualCanContinue}>CONTINUAR <ArrowRight /></button> : <button className="is-primary" onClick={onSave} disabled={loading || !confirmCommitment}>{loading ? 'SALVANDO…' : 'SALVAR E IR PARA MEUS TREINOS'} <Check /></button>}</div>
   </section></>;
 }
 
