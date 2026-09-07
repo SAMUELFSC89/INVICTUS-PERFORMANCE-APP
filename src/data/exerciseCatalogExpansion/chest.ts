@@ -1,4 +1,4 @@
-import { e, type ExpansionDefinition } from './shared';
+import { e, type ExpansionDefinition } from './shared.js';
 
 export const CHEST_EXPANSION: ExpansionDefinition[] = [
   e("barbell_floor_press", "Supino no Chão com Barra", "peito", "barra e anilhas", ["barra_anilhas"], "peito"),
