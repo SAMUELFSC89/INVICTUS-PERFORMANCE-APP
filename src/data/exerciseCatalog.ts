@@ -4,16 +4,16 @@ import {
   OFFICIAL_MUSCLE_GROUP_LABELS as LEGACY_MUSCLE_GROUP_LABELS,
   type OfficialExercise,
   type OfficialMuscleGroup,
-} from './exerciseCatalogLegacy';
+} from './exerciseCatalogLegacy.js';
 import {
   OFFICIAL_EXERCISES_BATCH_02,
   OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS_BATCH_02,
   OFFICIAL_EXERCISE_FOCUS_AREAS_BATCH_02,
   type OfficialExerciseFocusArea,
-} from './exerciseCatalogExpansion';
+} from './exerciseCatalogExpansion/index.js';
 
-export type { ExerciseAssetStatus, OfficialExercise, OfficialMuscleGroup, OfficialMuscleSubgroup } from './exerciseCatalogLegacy';
-export type { OfficialExerciseFocusArea } from './exerciseCatalogExpansion';
+export type { ExerciseAssetStatus, OfficialExercise, OfficialMuscleGroup, OfficialMuscleSubgroup } from './exerciseCatalogLegacy.js';
+export type { OfficialExerciseFocusArea } from './exerciseCatalogExpansion/index.js';
 
 /**
  * Single source consumed by manual plans, deterministic generation, API validation and media.
