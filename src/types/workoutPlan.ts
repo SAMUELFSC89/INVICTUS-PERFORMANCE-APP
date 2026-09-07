@@ -1,7 +1,14 @@
 export type WorkoutPlanSource = 'manual' | 'ai' | 'imported';
-export type WorkoutPlanGenerationMode = 'gemini' | 'local_fallback';
+export type WorkoutPlanGenerationMode = 'gemini' | 'training_engine' | 'local_fallback';
 
 export type MuscleGroup = 'peito' | 'costas' | 'pernas' | 'ombros' | 'bracos' | 'core';
+
+export interface AthleteTrainingProfileSnapshot {
+  age?: number;
+  weightKg?: number;
+  heightCm?: number;
+  sex?: 'male' | 'female';
+}
 
 export interface PlannedExercise {
   exerciseId: string;
@@ -10,6 +17,8 @@ export interface PlannedExercise {
   repsMin: number;
   repsMax: number;
   restSeconds: number;
+  /** Repetições em reserva planejadas para a maior parte das séries de trabalho. */
+  targetRir?: number;
   initialLoadKg?: number;
   notes?: string;
 }
@@ -27,7 +36,10 @@ export interface WorkoutPlanAnswers {
   secondaryGoals?: string[];
   experienceLevel?: string;
   experienceTime?: string;
+  /** Número de sessões desejadas por semana. */
   daysPerWeek?: number;
+  /** Dias reais escolhidos pelo atleta (0=domingo ... 6=sábado). */
+  availableWeekdays?: number[];
   durationMinutes?: number;
   preferredPeriod?: string;
   energyLevel?: string;
@@ -37,6 +49,8 @@ export interface WorkoutPlanAnswers {
   preferredSplit?: string;
   preferences?: string[];
   restrictions?: string[];
+  /** Snapshot mínimo usado pelo motor; carga inicial nunca é inferida só por peso/idade. */
+  athleteProfile?: AthleteTrainingProfileSnapshot;
 }
 
 export interface WorkoutPlan {
@@ -48,9 +62,11 @@ export interface WorkoutPlan {
    * séries/reps/descanso e essa divisão de dias, dado o objetivo do atleta. */
   rationale?: string;
   source: WorkoutPlanSource;
-  /** Indica quando a IA externa estava indisponível e o plano foi montado
-   * deterministicamente a partir da biblioteca oficial. */
+  /** Indica quem produziu a prescrição final. */
   generationMode?: WorkoutPlanGenerationMode;
+  /** Versões tornam uma prescrição reproduzível mesmo após futuras atualizações. */
+  trainingEngineVersion?: string;
+  evidenceVersion?: string;
   status: 'active' | 'archived';
   objective: string;
   experienceLevel?: string;
@@ -68,6 +84,8 @@ export interface WorkoutPlanDraft {
   rationale?: string;
   source: WorkoutPlanSource;
   generationMode?: WorkoutPlanGenerationMode;
+  trainingEngineVersion?: string;
+  evidenceVersion?: string;
   objective: string;
   experienceLevel?: string;
   durationMinutes: number;
