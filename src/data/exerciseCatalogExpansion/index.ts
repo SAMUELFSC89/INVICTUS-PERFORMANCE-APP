@@ -1,12 +1,12 @@
-import { ARMS_EXPANSION } from './arms';
-import { BACK_EXPANSION } from './back';
-import { CHEST_EXPANSION } from './chest';
-import { CORE_EXPANSION } from './core';
-import { LEGS_EXPANSION } from './legs';
-import { SHOULDERS_EXPANSION } from './shoulders';
-import { materializeExerciseDefinitions, type ExpansionDefinition } from './shared';
+import { ARMS_EXPANSION } from './arms.js';
+import { BACK_EXPANSION } from './back.js';
+import { CHEST_EXPANSION } from './chest.js';
+import { CORE_EXPANSION } from './core.js';
+import { LEGS_EXPANSION } from './legs.js';
+import { SHOULDERS_EXPANSION } from './shoulders.js';
+import { materializeExerciseDefinitions, type ExpansionDefinition } from './shared.js';
 
-export type { OfficialExerciseFocusArea } from './shared';
+export type { OfficialExerciseFocusArea } from './shared.js';
 
 const DEFINITIONS: ExpansionDefinition[] = [
   ...CHEST_EXPANSION,
