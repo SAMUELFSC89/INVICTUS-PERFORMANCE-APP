@@ -472,14 +472,15 @@ export interface RankingEntry {
   streak: number;
   rank: number;
   referralCount?: number;
-  isSubscribed: boolean;
-  /** #104-107: badge visual de plano no ranking unificado -- Free e Pro competem na mesma lista. */
+  isSubscribed?: boolean;
+  /** O plano não altera a regra nem a posição no ranking da academia. */
   subscriptionTier?: string;
   isBot?: boolean;
   seasonBoost?: number;
   entryStatus?: 'early' | 'late';
   city?: string;
   gymId?: string;
+  gymName?: string;
   positions?: {
     gym?: number;
     city?: number;
@@ -501,12 +502,15 @@ export interface Referral {
 
   export interface RankingSnapshot {
     id: string;
-    level: 'league' | 'referral' | 'gym' | 'city' | 'global';
+    level: 'gym';
     levelId: string;
     topUsers: RankingEntry[];
     updatedAt: string;
     enrolled?: boolean;
     gymId?: string;
+    gymName?: string;
+    participantCount?: number;
+    currentUser?: RankingEntry | null;
   }
 
 export interface Gym {

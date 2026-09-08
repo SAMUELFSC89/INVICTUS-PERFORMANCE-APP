@@ -11,14 +11,26 @@ import type { Workout } from '../types';
 import type { WorkoutPlan } from '../types/workoutPlan';
 import { hasActiveProEntitlement } from '../lib/proEntitlement';
 import './Home.css';
+import { objectiveRequest, type ObjectiveView } from '../services/cardioObjectiveService';
 
 const weekStart = () => { const d = new Date(); const day = d.getDay(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); return d.getTime(); };
+const objectiveModalityLabels = { walking: 'Caminhada', running: 'Corrida', bike: 'Bicicleta', stationary_bike: 'Bike ergométrica', treadmill: 'Esteira' } as const;
 
 export function Home() {
   const navigate = useNavigate();
   const { user } = useUser();
   const [activities, setActivities] = useState<Workout[]>([]);
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
+  const [objective, setObjective] = useState<ObjectiveView['summary']>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setObjective(null);
+    if (user?.uid) void objectiveRequest(undefined, '?summary=true', controller.signal)
+      .then(result => { if (!controller.signal.aborted) setObjective(result.summary); })
+      .catch(() => {}); // Optional summary never blocks Home or fabricates a journey.
+    return () => controller.abort();
+  }, [user?.uid]);
   const [championship, setChampionship] = useState<{ rank: number | null; prizes: { 1: number } } | null>(null);
 
   useEffect(() => {
@@ -50,6 +62,7 @@ export function Home() {
   return createPortal(<main className="nh-screen"><div className="nh-page">
     <header className="nh-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell />{user?.notifications?.some(item => !item.read) ? <i /> : null}</button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="nh-avatar" onClick={() => navigate('/profile')} aria-label="Perfil">{user?.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
     <section className="nh-greeting"><h1>{greeting}, {firstName.toUpperCase()}!</h1><p>Cada treino te aproxima da sua melhor versão.</p></section>
+    {objective ? <button className="nh-objective-summary" onClick={() => navigate('/challenges/cardio/objective')}><Target size={22} /><span><small>MEU OBJETIVO · CARDIO</small><strong>{objective.goalLabel}</strong><small>{objective.status === 'paused' ? 'Jornada pausada · rever meu retorno' : objective.nextMission ? `Próxima: ${objectiveModalityLabels[objective.nextMission.modality]} · ${objective.nextMission.targetMetric === 'distance' ? `${objective.nextMission.distanceKm?.toLocaleString('pt-BR')} km` : `${objective.nextMission.durationMinutes} min`}` : `${objective.totalCompleted} metas concluídas · abrir jornada`}</small></span><ArrowRight size={20} /></button> : null}
     <section className="nh-season"><div><small>TEMPORADA INVICTUS</small><h2>TREINE. EVOLUA. SUPERE.</h2><p>Mostre sua força. Supere seus limites.</p><button onClick={() => navigate('/championships')}>VER MAIS <ArrowRight /></button></div></section>
     <h2 className="nh-title">O QUE VOCÊ QUER FAZER?</h2><section className="nh-actions"><article className="nh-action-musculacao"><span className="nh-action-icon"><Dumbbell /></span><h3>MUSCULAÇÃO</h3><p>Seu plano, cargas e evolução.</p><button onClick={() => navigate('/musculacao')}>COMEÇAR <ArrowRight /></button></article><article className="nh-action-cardio"><span className="nh-action-icon"><Flame /></span><h3>CARDIO</h3><p>Corrida, bike e atividades ao ar livre.</p><button onClick={() => navigate('/challenges/cardio')}>COMEÇAR <ArrowRight /></button></article></section>
     <h2 className="nh-title">HOJE</h2><section className={`nh-next ${plan && nextWorkout ? '' : 'is-empty'}`}><span><Dumbbell /></span><div><small>SEU PRÓXIMO TREINO</small><h3>{nextWorkout?.focus || nextWorkout?.name || 'PLANO AINDA NÃO CRIADO'}</h3><p>{plan && nextWorkout ? `${nextWorkout.name} · ~${plan.durationMinutes} min · ${nextWorkout.exercises.length} exercícios` : 'Crie manualmente ou com a Invictus IA.'}</p></div><button onClick={() => navigate('/musculacao')}>{plan ? 'INICIAR TREINO' : 'CRIAR PLANO'} <ArrowRight /></button></section>

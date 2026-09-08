@@ -4,7 +4,7 @@ import { recalculateAllUserScores } from '../_lib/igaService.js';
 
 const CONSENT_VERSION = 'gym-ranking-v1';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handleRankingEnrollment(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
   const auth = await verifyAuth(req);
@@ -95,4 +95,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.setHeader('Allow', 'GET, POST, DELETE');
   return res.status(405).json({ error: 'Método não permitido.' });
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try {
+    return await handleRankingEnrollment(req, res);
+  } catch (error) {
+    console.error('[Ranking Enrollment] Falha ao processar adesão:', error);
+    return res.status(500).json({ error: 'Não foi possível processar sua adesão ao ranking agora.' });
+  }
 }

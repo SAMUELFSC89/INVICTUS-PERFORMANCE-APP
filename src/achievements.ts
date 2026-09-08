@@ -21,13 +21,11 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'followers_50', name: 'Influente', description: 'Conquistou 50 seguidores', icon: '🌟', criteria: 'followersCount >= 50', category: 'social', points: 200 },
 
   // Ranking
-  { id: 'top_10', name: 'Elite dos 10', description: 'Entrou no Top 10 do ranking', icon: '🎖️', criteria: 'ranking <= 10', category: 'ranking', points: 300 },
-  { id: 'top_5', name: 'Dominador do Top 5', description: 'Entrou no Top 5 do ranking', icon: '🏅', criteria: 'ranking <= 5', category: 'ranking', points: 600 },
-  { id: 'top_3', name: 'Pódio dos Atletas', description: 'Conquistou o Top 3 do ranking', icon: '🥈', criteria: 'ranking <= 3', category: 'ranking', points: 1000 },
-  { id: 'champion', name: 'Campeão Supremo', description: 'Ficou em 1º lugar no ranking', icon: '🏆', criteria: 'ranking == 1', category: 'ranking', points: 2500 },
+  { id: 'top_10', name: 'Elite da Academia', description: 'Entrou no Top 10 da sua academia', icon: '🎖️', criteria: 'gym_rank <= 10', category: 'ranking', points: 300 },
+  { id: 'top_5', name: 'Destaque da Academia', description: 'Entrou no Top 5 da sua academia', icon: '🏅', criteria: 'gym_rank <= 5', category: 'ranking', points: 600 },
+  { id: 'top_3', name: 'Pódio da Academia', description: 'Conquistou o Top 3 da sua academia', icon: '🥈', criteria: 'gym_rank <= 3', category: 'ranking', points: 1000 },
+  { id: 'champion', name: 'Campeão da Academia', description: 'Ficou em 1º lugar na sua academia', icon: '🏆', criteria: 'gym_rank == 1', category: 'ranking', points: 2500 },
   
   // Layer Specific
   { id: 'gym_leader', name: 'Lenda da Academia', description: 'Ficou em 1º lugar na sua academia', icon: '🏢', criteria: 'gym_rank == 1', category: 'ranking', points: 500 },
-  { id: 'city_champion', name: 'Orgulho da Cidade', description: 'Ficou no Top 3 da sua cidade', icon: '🏙️', criteria: 'city_rank <= 3', category: 'ranking', points: 1000 },
-  { id: 'national_elite', name: 'Elite Nacional', description: 'Ficou no Top 10 Nacional', icon: '🇧🇷', criteria: 'national_rank <= 10', category: 'ranking', points: 2000 },
 ];

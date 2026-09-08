@@ -1,8 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
-import { isProUser } from '../_lib/entitlement.js';
 
-type CachedRanking = { topUsers: any[]; timestamp: number };
+type CachedRanking = { topUsers: any[]; gymName: string; timestamp: number };
 const serverRankingCache = new Map<string, CachedRanking>();
 const CACHE_TTL = 3 * 60 * 1000;
 
@@ -18,7 +17,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const scoreField = period === 'weekly' ? 'weeklyScore' : period === 'monthly' ? 'monthlyScore' : 'score';
 
   try {
-    const ownEnrollmentSnapshot = await db.collection('gym_ranking_enrollments').doc(auth.uid).get();
+    const [ownEnrollmentSnapshot, ownProfileSnapshot] = await Promise.all([
+      db.collection('gym_ranking_enrollments').doc(auth.uid).get(),
+      db.collection('users').doc(auth.uid).get(),
+    ]);
+    if (!ownProfileSnapshot.exists) {
+      return res.status(404).json({ error: 'Perfil não encontrado.', topUsers: [] });
+    }
+
+    const ownProfile = ownProfileSnapshot.data() || {};
+    const profileGymId = String(ownProfile.gymId || '').trim();
+    if (!profileGymId) {
+      return res.status(422).json({ topUsers: [], enrolled: false, error: 'Defina sua academia no perfil para acessar o ranking.' });
+    }
+
     const ownEnrollment = ownEnrollmentSnapshot.exists ? ownEnrollmentSnapshot.data() : undefined;
     if (ownEnrollment?.enrolled !== true) {
       return res.status(200).json({
@@ -29,13 +41,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const gymId = String(ownEnrollment.gymId || '').trim();
-    if (!gymId) return res.status(409).json({ topUsers: [], enrolled: false, error: 'Adesão sem academia vinculada.' });
+    if (!gymId || gymId !== profileGymId) {
+      return res.status(409).json({ topUsers: [], enrolled: false, error: 'Sua adesão não corresponde à academia atual. Saia e entre novamente no ranking.' });
+    }
+
+    const requestedLimit = Number(req.query.limit || 50);
+    const responseLimit = Math.min(100, Math.max(20, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50));
+    const gymName = String(ownProfile.gymName || ownProfile.gym || '').trim();
 
     const cacheKey = `${gymId}_${period}_${scoreField}`;
     const now = Date.now();
     const cached = serverRankingCache.get(cacheKey);
     if (cached && now - cached.timestamp < CACHE_TTL && cached.topUsers.some((entry) => entry.uid === auth.uid)) {
-      return res.status(200).json({ topUsers: cached.topUsers, enrolled: true, gymId, cached: true });
+      return res.status(200).json({
+        topUsers: cached.topUsers.slice(0, responseLimit),
+        currentUser: cached.topUsers.find((entry) => entry.uid === auth.uid) || null,
+        participantCount: cached.topUsers.length,
+        enrolled: true,
+        gymId,
+        gymName: cached.gymName || gymName,
+        cached: true
+      });
     }
 
     const enrollments = await db.collection('gym_ranking_enrollments')
@@ -48,7 +74,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .map((entry) => db.collection('users').doc(entry.id));
     const userSnapshots = userRefs.length ? await db.getAll(...userRefs) : [];
     const topUsers = userSnapshots
-      .filter((snapshot) => snapshot.exists)
+      .filter((snapshot) => {
+        if (!snapshot.exists) return false;
+        const data = snapshot.data() || {};
+        return String(data.gymId || '').trim() === gymId
+          && data.isBlocked !== true
+          && data.isBanned !== true
+          && data.isSuspended !== true
+          && data.isDeleted !== true
+          && data.deleted !== true;
+      })
       .map((snapshot) => {
         const data = snapshot.data() || {};
         return {
@@ -57,20 +92,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           photoURL: data.photoURL || '',
           score: Number(data[scoreField] || 0),
           streak: Number(data.streak || 0),
-          // Campo mantido no contrato público como snapshot booleano, mas é
-          // derivado do entitlement vigente em vez da flag legada gravada.
-          isSubscribed: isProUser(data, now),
-          subscriptionTier: data.subscriptionTier || 'open',
-          gymId,
-          gymName: data.gymName || data.gym || '',
-          positions: data.positions || {}
+          gymId
         };
       })
-      .sort((left, right) => right.score - left.score)
+      .sort((left, right) => {
+        const scoreDifference = right.score - left.score;
+        if (scoreDifference !== 0) return scoreDifference;
+        const nameDifference = left.displayName.localeCompare(right.displayName, 'pt-BR', { sensitivity: 'base' });
+        return nameDifference !== 0 ? nameDifference : left.uid.localeCompare(right.uid);
+      })
       .map((entry, index) => ({ ...entry, rank: index + 1 }));
 
-    serverRankingCache.set(cacheKey, { topUsers, timestamp: now });
-    return res.status(200).json({ topUsers, enrolled: true, gymId });
+    serverRankingCache.set(cacheKey, { topUsers, gymName, timestamp: now });
+    return res.status(200).json({
+      topUsers: topUsers.slice(0, responseLimit),
+      currentUser: topUsers.find((entry) => entry.uid === auth.uid) || null,
+      participantCount: topUsers.length,
+      enrolled: true,
+      gymId,
+      gymName
+    });
   } catch (error: any) {
     console.error('[Ranking API] Falha ao carregar ranking opt-in:', error);
     const isQuotaError = String(error?.message || '').includes('RESOURCE_EXHAUSTED');

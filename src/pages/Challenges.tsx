@@ -19,6 +19,8 @@ import { ChallengesHubNew } from '../components/ChallengesHubNew';
 import { ActivityHistoryPageNew } from '../components/ActivityHistoryPageNew';
 import { PrivateChallengesPageNew } from '../components/PrivateChallengesPageNew';
 import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
+import { bindObjectiveSession, objectiveRequest } from '../services/cardioObjectiveService';
+import { localDate, safetyDecision } from '../core/cardioObjective/engine';
 
 type CoreChallenge = { id: 'workout' | 'cardio' };
 const CORE_CHALLENGES: CoreChallenge[] = [{ id: 'workout' }, { id: 'cardio' }];
@@ -28,6 +30,8 @@ export function Challenges() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const objectiveJourneyId = searchParams.get('journeyId');
+  const objectiveMissionId = searchParams.get('missionId');
 
   const { triggerXPToast } = useOutletContext<{ triggerXPToast: (p: number, m?: string, rankingPoints?: number) => void }>();
 
@@ -84,7 +88,7 @@ export function Challenges() {
   );
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState(initialActive?.muscleGroup || 'Pernas');
   const [selectedCardioOption, setSelectedCardioOption] = useState<CardioOption>(
-    (initialActive?.cardioType && CARDIO_OPTIONS.find(o => o.id === initialActive.cardioType)) || CARDIO_OPTIONS[0]
+    CARDIO_OPTIONS.find(o => o.id === (initialActive?.cardioType || searchParams.get('modality'))) || CARDIO_OPTIONS[0]
   );
   const [startPolicy, setStartPolicy] = useState<ActivityCompetitionPolicy | null>(initialActive?.competitionPolicy || null);
   const [policyLoading, setPolicyLoading] = useState(false);
@@ -97,6 +101,14 @@ export function Challenges() {
   const [presenceCheckData, setPresenceCheckData] = useState<{ id: string; prompt: string } | null>(null);
   const [completion, setCompletion] = useState<ActivityCompletion | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!objectiveJourneyId || !objectiveMissionId || activeSession?.type !== 'cardio') return;
+    let current = true;
+    void bindObjectiveSession(objectiveJourneyId, objectiveMissionId, activeSession.id)
+      .catch(() => { if (current) setNotice('Seu Cardio está ativo, mas a meta não foi vinculada. Volte a Meu Objetivo para tentar novamente antes de finalizar.'); });
+    return () => { current = false; };
+  }, [objectiveJourneyId, objectiveMissionId, activeSession?.id]);
 
   // A política é preparada antes do toque em "Iniciar". Assim, se a sessão
   // competitiva precisar de movimento, o prompt do iOS nasce diretamente do
@@ -122,7 +134,7 @@ export function Challenges() {
     const legacyCategory = searchParams.get('category');
     if (!legacyCategory) return;
     if (legacyCategory === 'powerlift') { navigate('/power', { replace: true }); return; }
-    if (legacyCategory === 'ranking') { navigate('/rankings', { replace: true }); return; }
+    if (legacyCategory === 'ranking') { navigate('/championships?section=ranking', { replace: true }); return; }
     if (legacyCategory === 'conquistas') { navigate('/achievements', { replace: true }); return; }
     const next = new URLSearchParams(searchParams);
     next.delete('category');
@@ -325,6 +337,17 @@ export function Challenges() {
     setStartingActivity(true);
     try {
       await motionPermission;
+      if (type === 'cardio' && objectiveJourneyId && objectiveMissionId) {
+        const objective = await objectiveRequest(undefined, `?journeyId=${encodeURIComponent(objectiveJourneyId)}`);
+        const mission = objective.missions?.find(m => m.id === objectiveMissionId);
+        if (!mission || !('prescription' in mission) || objective.journey?.status !== 'active'
+          || mission.prescription.modality !== selectedCardioOption.id || !['available', 'started'].includes(mission.state)
+          || mission.localDate > localDate(new Date().toISOString(), objective.journey.timeZone)
+          || Date.now() - Date.parse(objective.journey.weekStartedAt) >= 7 * 86400000
+          || safetyDecision(objective.journey.safety, objective.journey.goalType === 'gradual_return').blocked) {
+          throw new Error('Escolha a modalidade indicada em Meu Objetivo ou retorne à jornada para atualizar sua meta.');
+        }
+      }
       const confirmedCheckIn = type === 'workout' && policy.requiresGymCheckIn
         ? await activityService.performGymCheckIn(policy)
         : null;
@@ -495,6 +518,10 @@ export function Challenges() {
       const rankingPoints = typeof res.workout?.competitionPoints === 'number'
         ? res.workout.competitionPoints
         : undefined;
+      if (res.workout?.id && activityState.isCompleted && objectiveJourneyId && objectiveMissionId) {
+        void objectiveRequest({ action: 'complete', journeyId: objectiveJourneyId, missionId: objectiveMissionId, activityId: res.workout.id })
+          .catch(() => setNotice('Atividade salva. Confira Meu Objetivo para sincronizar a meta e verificar os critérios.'));
+      }
       const points = typeof res.workout?.points === 'number' && Number.isFinite(res.workout.points) && res.workout.points > 0
         ? res.workout.points
         : undefined;
@@ -706,6 +733,10 @@ export function Challenges() {
             }
 
             pendingPresenceSessionRef.current = null;
+            if (sessionType === 'cardio' && result.commitResult?.activityId && objectiveJourneyId && objectiveMissionId) {
+              void objectiveRequest({ action: 'complete', journeyId: objectiveJourneyId, missionId: objectiveMissionId, activityId: result.commitResult.activityId })
+                .catch(() => setNotice('Atividade salva. Abra Meu Objetivo para verificar a sincronização da meta.'));
+            }
             await activityService.completeSessionAfterPresence();
             setActiveSession(null);
             const points = typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded) && result.pointsAwarded > 0
@@ -754,6 +785,7 @@ export function Challenges() {
       {flowScreen && !finishedActivityItem && (
         <ChallengeActivityFlow
           screen={flowScreen}
+          statusMessage={objectiveJourneyId ? notice : null}
           group={selectedMuscleGroup}
           onGroup={setSelectedMuscleGroup}
           cardio={selectedCardioOption}

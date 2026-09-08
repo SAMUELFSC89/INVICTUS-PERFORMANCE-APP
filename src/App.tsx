@@ -17,9 +17,9 @@ const lazyNamed = <T extends Record<string, unknown>, K extends keyof T>(
 ) => lazy(async () => ({ default: (await loader())[exportName] as ComponentType<any> }));
 
 const Home = lazyNamed(() => import('./pages/Home'), 'Home');
-const Rankings = lazyNamed(() => import('./pages/Rankings'), 'Rankings');
 const Achievements = lazyNamed(() => import('./pages/Achievements'), 'Achievements');
 const Challenges = lazyNamed(() => import('./pages/Challenges'), 'Challenges');
+const CardioObjective = lazyNamed(() => import('./pages/CardioObjective'), 'CardioObjective');
 const ActivityTypeChooser = lazyNamed(() => import('./components/ActivityTypeChooser'), 'ActivityTypeChooser');
 const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
@@ -81,13 +81,14 @@ export default function App() {
               <Route element={<Layout />}>
                 <Route path="/" element={<Home />} />
                 <Route path="/invite" element={<Home />} />
-                <Route path="/rankings" element={<Rankings />} />
+                <Route path="/rankings" element={<Navigate to="/championships?section=ranking" replace />} />
                 <Route path="/league" element={<Navigate to="/championships" replace />} />
                 <Route path="/league/inscricao" element={<Navigate to="/championships" replace />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/gym" element={<Navigate to="/profile/academy" replace />} />
                 <Route path="/challenges" element={<Challenges />} />
                 <Route path="/challenges/cardio" element={<Challenges />} />
+                <Route path="/challenges/cardio/objective" element={<CardioObjective />} />
                 <Route path="/activity" element={<ActivityTypeChooser />} />
                 {/* Rotas canônicas para retomar uma sessão sem voltar à escolha
                     de modalidade. A rota de saída apenas minimiza a sessão;
