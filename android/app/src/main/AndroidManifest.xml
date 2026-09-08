@@ -42,6 +42,7 @@
 
     <!-- A câmera é solicitada pelo seletor apenas ao gravar/anexar provas. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <!-- Notificações são opcionais e pedidas no controle do Perfil. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

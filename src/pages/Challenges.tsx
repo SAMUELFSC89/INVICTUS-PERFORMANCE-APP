@@ -386,10 +386,12 @@ export function Challenges() {
   const buildShareableFromItem = (item: ActivityHistoryItem) => ({
     id: item.id,
     title: item.title,
+    activityType: item.type,
     distanceKm: item.distanceKm,
     durationMins: item.durationMins,
     pace: item.pace,
     calories: item.calories,
+    weightKg: item.weightKg,
     elevationGain: item.elevationGain,
     steps: item.steps,
     trajectory: item.trajectory,
