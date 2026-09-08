@@ -8,3 +8,44 @@
 
 .ch-new-screen{overflow-x:hidden;background:#050505}.ch-section-tabs{display:grid;grid-template-columns:1fr 1.35fr;gap:6px;margin:14px 0;padding:5px;border:1px solid #292929;border-radius:10px;background:#0b0b0b}.ch-section-tabs button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:42px;padding:0 8px;border:0;border-radius:7px;color:#96928c;background:transparent;font-size:10px;font-weight:900}.ch-section-tabs button svg{width:17px}.ch-section-tabs button.is-active{color:#171004;background:linear-gradient(100deg,#eeab0c,#ffd25e);box-shadow:0 5px 18px rgba(230,166,8,.15)}
 @media(max-width:370px){.ch-section-tabs{grid-template-columns:1fr}.ch-section-tabs button{min-height:37px}}
+
+/* Campeonatos — composição cinematográfica aprovada (assets oficiais). */
+.ch-new-hero{background:linear-gradient(90deg,#050505 4%,rgba(5,5,5,.88) 38%,rgba(5,5,5,.28) 100%),url('/assets/championships/friends-banner.png') center right/cover no-repeat}
+.ch-friends-card{position:relative;min-height:520px;overflow:hidden;border:1px solid #e6ad11;border-radius:14px;background:#050505;box-shadow:0 0 20px rgba(221,160,0,.18),inset 0 0 22px rgba(242,181,22,.06)}
+.ch-friends-card__background,.ch-paid-card__background{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ch-friends-card__background{object-position:62% center}
+.ch-friends-card__overlay{position:absolute;inset:0;background:linear-gradient(90deg,rgba(1,1,1,.98) 0%,rgba(1,1,1,.91) 36%,rgba(1,1,1,.52) 65%,rgba(1,1,1,.12) 100%),linear-gradient(0deg,rgba(2,2,2,.98) 0%,rgba(2,2,2,.9) 39%,rgba(2,2,2,.08) 75%)}
+.ch-friends-card__content{position:relative;z-index:1;display:grid;align-content:start;min-height:520px;padding:24px 20px 14px}
+.ch-friends-card__free{justify-self:start;padding:5px 12px;border-radius:7px;color:#fff;background:#168b35;font-size:13px;font-weight:900;box-shadow:0 4px 12px rgba(5,89,29,.28)}
+.ch-friends-card h2{max-width:62%;margin:12px 0 0;font-family:"Bebas Neue";font-size:42px;font-weight:400;letter-spacing:.02em;line-height:.92}
+.ch-friends-card h2 strong{display:block;color:#f1b51e;font-weight:400}
+.ch-friends-card h3{margin:7px 0 0;color:#eee;font-size:15px;letter-spacing:.24em}
+.ch-friends-card__description{max-width:60%;margin:13px 0 0;color:#e0dcd4;font-size:13px;line-height:1.42}
+.ch-friends-card__facts{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:18px 0 0;padding:0;list-style:none}
+.ch-friends-card__facts li{display:grid;grid-template-columns:28px 1fr;align-items:center;gap:7px;min-height:62px;padding:8px;border:1px solid rgba(239,179,24,.36);border-radius:8px;color:#ddd8cf;background:rgba(5,5,5,.79);font-size:10px;line-height:1.25}
+.ch-friends-card__facts svg{width:25px;color:#f2b516}
+.ch-friends-card__facts b{font-weight:700}
+.ch-friends-card__prize{display:grid;grid-template-columns:105px 1fr;align-items:center;gap:8px;min-height:91px;margin-top:9px;padding:7px 11px;border:1px solid rgba(238,179,25,.44);border-radius:9px;background:rgba(5,5,5,.88)}
+.ch-friends-card__prize img{width:100px;height:78px;object-fit:contain;filter:drop-shadow(0 7px 8px rgba(0,0,0,.42))}
+.ch-friends-card__prize small{display:block;color:#b9b4ac;font-size:9px;letter-spacing:.25em}
+.ch-friends-card__prize strong{display:block;margin:1px 0;color:#f2b516;font-family:"Bebas Neue";font-size:27px;font-weight:400;line-height:1}
+.ch-friends-card__prize p,.ch-friends-card__prize span{display:block;margin:0;color:#e3ded5;font-size:11px;line-height:1.35}
+.ch-friends-card__content>button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:49px;margin-top:10px;padding:0 17px;border:1px solid #dda500;border-radius:7px;color:#161004;background:linear-gradient(100deg,#f0aa0a,#ffd05b);font-size:15px;font-weight:900}
+.ch-friends-card__content>button svg{width:21px}
+.ch-friends-card__legal{display:flex;align-items:center;justify-content:center;gap:7px;margin:9px 0 0;color:#c1bcb4;font-size:8px;letter-spacing:.08em}
+.ch-friends-card__legal svg{width:13px;color:#ddd}
+.ch-future{grid-template-columns:1fr;gap:12px}
+.ch-future .ch-paid-card{position:relative;display:block;min-height:300px;overflow:hidden;padding:0;border:1px solid #555;border-radius:13px;background:#080808}
+.ch-paid-card__background{object-position:var(--ch-paid-image-position,center right)}
+.ch-paid-card__overlay{position:absolute;inset:0;background:linear-gradient(90deg,rgba(2,2,2,.99) 0%,rgba(2,2,2,.94) 31%,rgba(2,2,2,.62) 57%,rgba(2,2,2,.09) 100%),linear-gradient(0deg,rgba(1,1,1,.72),transparent 52%)}
+.ch-paid-card__content{position:relative;z-index:1;display:flex;min-height:300px;width:67%;flex-direction:column;align-items:flex-start;padding:24px 20px 19px}
+.ch-paid-card__content>svg{width:36px;height:36px;color:#f2b516}
+.ch-future .ch-paid-card small{margin-top:10px;color:#f2b516;font-size:13px;font-weight:800}
+.ch-future .ch-paid-card h3{margin:5px 0 0;font-family:"Bebas Neue";font-size:34px;font-weight:400;line-height:1}
+.ch-future .ch-paid-card p{max-width:250px;min-height:43px;margin:10px 0 0;color:#d3cfc7;font-size:13px;line-height:1.35}
+.ch-future .ch-paid-card strong{margin:14px 0;padding:5px 10px;border-radius:5px;color:#f2b516;background:rgba(62,47,8,.73);font-size:12px}
+.ch-future .ch-paid-card button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:48px;margin-top:auto;padding:0 14px;border:1px solid #f2b516;border-radius:7px;color:#f2b516;background:rgba(3,3,3,.9);font-size:12px;font-weight:900}
+.ch-paid-card button svg{width:20px}
+
+@media(max-width:430px){.ch-friends-card{min-height:510px}.ch-friends-card__background{bottom:auto;height:auto;aspect-ratio:1672/941;object-position:center}.ch-friends-card__content{min-height:510px;padding:20px 15px 12px}.ch-friends-card h2{font-size:clamp(34px,10vw,42px)}.ch-friends-card__description{max-width:63%;font-size:12px}.ch-friends-card__facts{gap:5px}.ch-friends-card__facts li{grid-template-columns:24px 1fr;gap:5px;padding:6px;font-size:9px}.ch-friends-card__facts svg{width:22px}.ch-friends-card__prize{grid-template-columns:88px 1fr}.ch-friends-card__prize img{width:84px;height:67px}.ch-friends-card__prize strong{font-size:24px}.ch-future .ch-paid-card,.ch-paid-card__content{min-height:275px}.ch-paid-card__content{width:70%;padding:20px 15px 15px}.ch-future .ch-paid-card h3{font-size:30px}.ch-future .ch-paid-card p{font-size:12px}}
+@media(max-width:350px){.ch-friends-card,.ch-friends-card__content{min-height:535px}.ch-friends-card__content{padding-right:11px;padding-left:11px}.ch-friends-card h2{max-width:67%}.ch-friends-card h3{font-size:12px}.ch-friends-card__description{max-width:67%;font-size:11px}.ch-friends-card__facts li{grid-template-columns:1fr;justify-items:center;text-align:center}.ch-friends-card__prize{grid-template-columns:76px 1fr;padding-right:7px;padding-left:7px}.ch-friends-card__prize img{width:74px}.ch-friends-card__prize strong{font-size:21px}.ch-friends-card__prize p,.ch-friends-card__prize span{font-size:10px}.ch-friends-card__legal{font-size:7px;letter-spacing:.04em}.ch-paid-card__content{width:76%}.ch-future .ch-paid-card h3{font-size:27px}}

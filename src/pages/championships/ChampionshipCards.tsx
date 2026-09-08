@@ -1,0 +1,93 @@
+import type { CSSProperties, ComponentType } from 'react';
+import { ArrowRight, Dumbbell, Footprints, ShieldCheck, Trophy, Users } from 'lucide-react';
+
+const FRIENDS_BANNER = '/assets/championships/friends-banner.png';
+const COINS_STACK = '/assets/coins/invictus-coins-stack.png';
+
+type PreviewCardProps = {
+  category: string;
+  title: string;
+  description: string;
+  image: string;
+  imagePosition: string;
+  icon: ComponentType<{ 'aria-hidden'?: boolean }>;
+  onPreview: () => void;
+};
+
+export function FriendsChampionshipCard({ onParticipate }: { onParticipate: () => void }) {
+  return <section className="ch-friends-card" aria-labelledby="friends-championship-title">
+    <img
+      className="ch-friends-card__background"
+      src={FRIENDS_BANNER}
+      alt=""
+      aria-hidden="true"
+      width={1672}
+      height={941}
+      decoding="async"
+      fetchPriority="high"
+    />
+    <div className="ch-friends-card__overlay" />
+    <div className="ch-friends-card__content">
+      <span className="ch-friends-card__free">GRÁTIS</span>
+      <h2 id="friends-championship-title">CAMPEONATO <strong>ENTRE AMIGOS</strong></h2>
+      <h3>MUSCULAÇÃO + CARDIO</h3>
+      <p className="ch-friends-card__description">Compita com a mesma regra de IGA para FREE e PRO. Sem prêmio em dinheiro e sem vínculo comercial com academias.</p>
+
+      <ul className="ch-friends-card__facts" aria-label="Destaques do campeonato">
+        <li><Users aria-hidden="true" /><span>Compita entre amigos</span></li>
+        <li><Trophy aria-hidden="true" /><span>1º lugar: <b>2.500 Coins</b></span></li>
+        <li><ShieldCheck aria-hidden="true" /><span>Top 3 com auditoria reforçada</span></li>
+      </ul>
+
+      <div className="ch-friends-card__prize">
+        <img src={COINS_STACK} alt="" aria-hidden="true" width={1374} height={1145} loading="lazy" decoding="async" />
+        <div><small>PREMIAÇÃO</small><strong>5.000 COINS POR CICLO</strong><p>1º: 2.500 · 2º: 1.500 · 3º: 1.000</p><span>Conclusão válida: +50 Coins</span></div>
+      </div>
+
+      <button type="button" onClick={onParticipate}>PARTICIPAR GRÁTIS <ArrowRight aria-hidden="true" /></button>
+      <p className="ch-friends-card__legal"><ShieldCheck aria-hidden="true" /> 100% GRATUITO · SEM PRÊMIO EM DINHEIRO · SÓ PERFORMANCE</p>
+    </div>
+  </section>;
+}
+
+export function ChampionshipPreviewCard({ category, title, description, image, imagePosition, icon: Icon, onPreview }: PreviewCardProps) {
+  return <article className="ch-paid-card" style={{ '--ch-paid-image-position': imagePosition } as CSSProperties}>
+    <img
+      className="ch-paid-card__background"
+      src={image}
+      alt=""
+      aria-hidden="true"
+      width={1672}
+      height={941}
+      loading="lazy"
+      decoding="async"
+    />
+    <div className="ch-paid-card__overlay" />
+    <div className="ch-paid-card__content">
+      <Icon aria-hidden={true} />
+      <small>{category}</small>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      <strong>EM BREVE</strong>
+      <button type="button" onClick={onPreview}>CONHECER A PRÉVIA <ArrowRight aria-hidden="true" /></button>
+    </div>
+  </article>;
+}
+
+export const strengthPreviewCard = {
+  category: 'MUSCULAÇÃO',
+  title: 'CAMPEONATO DE FORÇA',
+  description: 'Conheça a proposta e como será a validação das atividades.',
+  image: '/assets/championships/strength-banner.png',
+  imagePosition: 'center right',
+  icon: Dumbbell,
+};
+
+export const cardioPreviewCard = {
+  category: 'CARDIO',
+  title: 'CAMPEONATO DE CARDIO',
+  description: 'Veja o formato planejado e como o antifraude protegerá a competição.',
+  image: '/assets/championships/cardio-banner.png',
+  imagePosition: 'center right',
+  icon: Footprints,
+};
