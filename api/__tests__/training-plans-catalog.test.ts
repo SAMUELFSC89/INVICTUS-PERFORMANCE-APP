@@ -99,10 +99,10 @@ describe('planos usam o catálogo completo', () => {
     expect(manualPlan.workouts[0].exercises[0].initialLoadKg).toBe(999);
   });
 
-  test('a geração automática usa somente os 99 exercícios com mídia já aprovada', () => {
+  test('a geração automática usa somente os 189 exercícios com mídia já aprovada', () => {
     const allEquipment = [...new Set(Object.values(OFFICIAL_EXERCISE_EQUIPMENT_REQUIREMENTS).flat())];
     const available = getCompatibleOfficialExercises(allEquipment);
-    expect(available).toHaveLength(99);
+    expect(available).toHaveLength(189);
     expect(new Set(available.map(item => item.group)).size).toBe(6);
     expect(available.some(item => item.id === 'barbell_shrug')).toBe(true);
     expect(available.some(item => item.id === 'barbell_wrist_curl')).toBe(true);
@@ -120,7 +120,9 @@ describe('planos usam o catálogo completo', () => {
     ]) {
       expect(available.some(item => item.id === id)).toBe(true);
     }
-    expect(available.some(item => item.id === 'donkey_calf_raise_machine')).toBe(false);
+    expect(available.some(item => item.id === 'donkey_calf_raise_machine')).toBe(true);
+    expect(available.some(item => item.id === 'sumo_deadlift_barbell')).toBe(true);
+    expect(available.some(item => item.id === 'close_grip_bench_press')).toBe(false);
     const noEquipment = getCompatibleOfficialExercises([]).map(item => item.id);
     expect(noEquipment).toContain('classic_push_up');
     expect(noEquipment).toContain('bird_dog');
