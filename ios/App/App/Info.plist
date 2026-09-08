@@ -54,6 +54,8 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>O INVICTUS acessa sua biblioteca apenas quando você escolher anexar um comprovante ou vídeo.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>O INVICTUS salva na sua galeria somente os cards de atividade que você solicitar.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UILaunchStoryboardName</key>

@@ -124,8 +124,6 @@ export function ChallengeActivityFlow({
   const activeTitle = session?.type === 'cardio'
     ? effectiveCardioLabel
     : `Treino de ${effectiveMuscleGroup}`;
-  const isBike = session?.cardioType === 'bike' || cardio.id === 'bike';
-  const averageSpeedKmH = distance > 0.01 && elapsed > 0 ? (distance / (elapsed / 3600)).toFixed(1) : '—';
   const speedIsFresh = typeof currentSpeedKmH === 'number'
     && Number.isFinite(currentSpeedKmH)
     && typeof currentSpeedUpdatedAt === 'number'
@@ -134,7 +132,10 @@ export function ChallengeActivityFlow({
   const currentSpeed = speedIsFresh ? currentSpeedKmH! : null;
   const currentSpeedLabel = currentSpeed !== null ? currentSpeed.toFixed(1) : '—';
   const hasDistanceMetric = Boolean(modalityCfg ? modalityCfg.hasDistance : (session?.requiresGpsDistance || cardio.gps));
-  const hasPaceMetric = Boolean(modalityCfg ? modalityCfg.hasPace : !isBike);
+  // O novo padrão usa pace em todo cardio com distância, inclusive bike.
+  // O valor nasce da mesma leitura de velocidade mostrada ao lado, impedindo
+  // combinações incoerentes como 40 km/h e 20 min/km.
+  const hasPaceMetric = hasDistanceMetric;
   const currentPace = hasPaceMetric ? formatPaceFromSpeed(currentSpeed) : null;
   const currentPaceLabel = currentPace || '—';
   const averagePace = formatPaceValue(distance, elapsed) || '—';
@@ -415,7 +416,7 @@ export function ChallengeActivityFlow({
                 <article><Clock3 /><b>{time(elapsed)}</b><small>Tempo</small></article>
                 <article><Navigation /><b>{distance.toFixed(2)}</b><small>Distância (km)</small></article>
                 <article><Gauge /><b>{currentSpeedLabel}</b><small>Velocidade atual (km/h)</small></article>
-                <article><Timer /><b>{hasPaceMetric ? currentPaceLabel : averageSpeedKmH}</b><small>{hasPaceMetric ? 'Pace atual (min/km)' : 'Velocidade média (km/h)'}</small></article>
+                <article><Timer /><b>{currentPaceLabel}</b><small>Pace atual (min/km)</small></article>
               </div>
             </article>
 
@@ -480,8 +481,8 @@ export function ChallengeActivityFlow({
                 <>
                   <article><b>{distance.toFixed(2)}</b><span>Distância (km)</span></article>
                   <article><b>{currentSpeedLabel}</b><span>Velocidade atual (km/h)</span></article>
-                  {hasPaceMetric && <article><b>{currentPaceLabel}</b><span>Pace atual (min/km)</span></article>}
-                  <article><b>{hasPaceMetric ? averagePace : `${averageSpeedKmH}`}</b><span>{hasPaceMetric ? 'Pace médio (min/km)' : 'Velocidade média (km/h)'}</span></article>
+                  <article><b>{currentPaceLabel}</b><span>Pace atual (min/km)</span></article>
+                  <article><b>{averagePace}</b><span>Pace médio (min/km)</span></article>
                   <article><b>—</b><span>Calorias (kcal)</span></article>
                 </>
               ) : (

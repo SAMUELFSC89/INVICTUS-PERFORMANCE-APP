@@ -8,6 +8,7 @@ describe('Métricas de corrida', () => {
 
   it('converte a velocidade instantânea para pace equivalente', () => {
     expect(formatPaceFromSpeed(12)).toBe(`5'00"`);
+    expect(formatPaceFromSpeed(40)).toBe(`1'30"`);
     expect(formatPaceFromSpeed(1)).toBe(`60'00"`);
     expect(formatPaceFromSpeed(0.9)).toBeNull();
     expect(formatPaceFromSpeed(0)).toBeNull();

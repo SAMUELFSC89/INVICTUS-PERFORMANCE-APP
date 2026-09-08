@@ -1,62 +1,491 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, Download, Flame, Gauge, Image as ImageIcon, Layers3, Map as MapIcon, MapPin, Mountain, RefreshCw, Route as RouteIcon, Share2, ShieldAlert, ShieldCheck, Timer, Upload, X } from 'lucide-react';
+import {
+  Download,
+  Image as ImageIcon,
+  Layers3,
+  Map as MapIcon,
+  RefreshCw,
+  Route as RouteIcon,
+  Share2,
+  X,
+} from 'lucide-react';
 import { toPng } from 'html-to-image';
-import type { RunSession, AdvancedRunStats } from '../services/runningService';
-import { formatDuration } from '../lib/runUtils';
-import { cn } from '../lib/utils';
-import { resolveActivityState } from '../lib/workoutData';
+import type { AdvancedRunStats, RunSession } from '../services/runningService';
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
-import { InvictusLogo } from './InvictusLogo';
+import { cn } from '../lib/utils';
+import { resolveShareCardMetrics } from '../lib/shareCard';
+import { shareCardExportService } from '../services/shareCardExportService';
 import './RunShareCard.css';
 
-export interface ShareableSession { id?: string; title?: string; cardioType?: string; cardioTypeLabel?: string; km?: number; distanceKm?: number; totalDistance?: number; timeSeconds?: number; durationMins?: number; startTime?: string; endTime?: string; pace?: string; avgPace?: string; calories?: number; avgHeartRate?: number; elevationGain?: number; steps?: number; trajectory?: Array<any>; checkpoints?: Array<any>; date?: string; timestamp?: string; locationLabel?: string; points?: number; rankingPointsEarned?: number; photoProof?: string; photoUrl?: string; status?: string; validationStatus?: string; recordStatus?: string; activityMode?: 'personal' | 'competitive' | 'unresolved'; competitionReviewStatus?: string; competitionStatus?: string; }
-interface RunShareCardProps { session: RunSession | AdvancedRunStats | ShareableSession; onClose: () => void; }
+export interface ShareableSession {
+  id?: string;
+  title?: string;
+  activityType?: string;
+  cardioType?: string;
+  cardioTypeLabel?: string;
+  km?: number;
+  distanceKm?: number;
+  totalDistance?: number;
+  timeSeconds?: number;
+  durationMins?: number;
+  startTime?: string;
+  endTime?: string;
+  calories?: number;
+  weightKg?: number;
+  points?: number;
+  rankingPointsEarned?: number;
+  trajectory?: unknown[];
+  checkpoints?: unknown[];
+  photoProof?: string;
+  photoUrl?: string;
+}
+
+interface RunShareCardProps {
+  session: RunSession | AdvancedRunStats | ShareableSession;
+  onClose: () => void;
+}
+
 type MapVariant = 'satellite' | 'outdoors';
 type CompositionMode = 'map' | 'photo-map' | 'photo-route';
 type Point = { lat: number; lng: number };
-function extractPoint(point: any): Point | null { if (!point) return null; const lat = Number(point.lat ?? point.latitude ?? point.location?.lat ?? point.location?.latitude); const lng = Number(point.lng ?? point.longitude ?? point.location?.lng ?? point.location?.longitude); return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null; }
-function formatPaceForCard(value: unknown): string { return String(value || '—').replace(/\/km/i, '').replace("'", ':').replace('"', '').trim(); }
-function fileToDataUrl(file: File): Promise<string> { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(reader.error || new Error('Falha ao ler a imagem.')); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Imagem inválida.')); reader.readAsDataURL(file); }); }
-function distanceBetween(a: { x: number; y: number }, b: { x: number; y: number }): number { return Math.hypot(a.x - b.x, a.y - b.y); }
-function normalizedRoute(points: Point[]) { if (points.length < 2) return [] as Array<{ x: number; y: number }>; const lngs = points.map(p => p.lng), lats = points.map(p => p.lat); const minLng = Math.min(...lngs), maxLng = Math.max(...lngs), minLat = Math.min(...lats), maxLat = Math.max(...lats); const dx = Math.max(maxLng - minLng, 0.000001), dy = Math.max(maxLat - minLat, 0.000001); return points.map(p => ({ x: 120 + ((p.lng - minLng) / dx) * 760, y: 120 + (1 - (p.lat - minLat) / dy) * 760 })); }
-async function waitForCardAssets(node: HTMLElement) { try { await document.fonts?.ready; } catch { /* fonts API is best effort */ } const images = Array.from(node.querySelectorAll('img')); await Promise.all(images.map(async image => { if (!image.complete) await new Promise<void>(resolve => { const done = () => resolve(); image.addEventListener('load', done, { once: true }); image.addEventListener('error', done, { once: true }); }); try { await image.decode?.(); } catch { /* already loaded or browser without decode */ } })); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); }
+type LayerTransform = { x: number; y: number; scale: number; rotation: number };
+type PointerPosition = { x: number; y: number };
+
+const DEFAULT_MAP_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
+const DEFAULT_ROUTE_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
+const DEFAULT_INFO_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
+
+function extractPoint(value: unknown): Point | null {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Record<string, unknown>;
+  const location = source.location && typeof source.location === 'object'
+    ? source.location as Record<string, unknown>
+    : undefined;
+  const lat = Number(source.lat ?? source.latitude ?? location?.lat ?? location?.latitude);
+  const lng = Number(source.lng ?? source.longitude ?? location?.lng ?? location?.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+function normalizedRoute(points: Point[]): Array<{ x: number; y: number }> {
+  if (points.length < 2) return [];
+  const middleLatitude = points.reduce((total, point) => total + point.lat, 0) / points.length;
+  const longitudeFactor = Math.max(0.15, Math.cos((middleLatitude * Math.PI) / 180));
+  const projected = points.map((point) => ({ x: point.lng * longitudeFactor, y: -point.lat }));
+  const xs = projected.map((point) => point.x);
+  const ys = projected.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(maxX - minX, 0.000001);
+  const height = Math.max(maxY - minY, 0.000001);
+  const scale = 820 / Math.max(width, height);
+  const offsetX = (1000 - width * scale) / 2;
+  const offsetY = (1000 - height * scale) / 2;
+  return projected.map((point) => ({
+    x: offsetX + (point.x - minX) * scale,
+    y: offsetY + (point.y - minY) * scale,
+  }));
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('Falha ao ler a imagem.'));
+    reader.onload = () => typeof reader.result === 'string'
+      ? resolve(reader.result)
+      : reject(new Error('Imagem inválida.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function waitForCardAssets(node: HTMLElement): Promise<void> {
+  try { await document.fonts?.ready; } catch { /* best effort */ }
+  const images = Array.from(node.querySelectorAll('img'));
+  await Promise.all(images.map(async (image) => {
+    if (!image.complete) {
+      await new Promise<void>((resolve) => {
+        const done = () => resolve();
+        image.addEventListener('load', done, { once: true });
+        image.addEventListener('error', done, { once: true });
+      });
+    }
+    try { await image.decode?.(); } catch { /* already decoded */ }
+  }));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+}
+
+function pointerDistance(points: PointerPosition[]): number {
+  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+}
+
+function pointerAngle(points: PointerPosition[]): number {
+  return Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x) * (180 / Math.PI);
+}
+
+function clampScale(value: number, min = 0.55, max = 2.4): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function layerStyle(transform: LayerTransform): CSSProperties {
+  return {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale}) rotate(${transform.rotation}deg)`,
+  };
+}
+
+function RouteLayer({ points, transform }: { points: Array<{ x: number; y: number }>; transform: LayerTransform }) {
+  if (points.length < 2) return null;
+  return (
+    <div className="share-card-route-layer" style={layerStyle(transform)} aria-hidden="true">
+      <svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
+        <polyline
+          points={points.map((point) => `${point.x},${point.y}`).join(' ')}
+          fill="none"
+          stroke="#ff9d00"
+          strokeWidth="15"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+}
 
 export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps) {
-  const cardRef = useRef<HTMLDivElement>(null), pointersRef = useRef(new Map<number, { x: number; y: number }>()), pinchDistanceRef = useRef<number | null>(null), routeScaleAtPinchRef = useRef(1), dragRef = useRef<{ id: number; x: number; y: number; ox: number; oy: number } | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false), [feedback, setFeedback] = useState<string | null>(null), [mapImages, setMapImages] = useState<Record<string, string | null>>({}), [mapError, setMapError] = useState(false), [zoomAdjust, setZoomAdjust] = useState(0), [customizerOpen, setCustomizerOpen] = useState(false), [routeScale, setRouteScale] = useState(1), [routeOffset, setRouteOffset] = useState({ x: 0, y: 0 });
-  const ZOOM_ADJUST_MIN = -3, ZOOM_ADJUST_MAX = 3;
-  const session: any = rawSession;
-  const distanceKm = Number(session.distanceKm ?? session.km ?? (session.totalDistance ? session.totalDistance / 1000 : 0));
-  const durationMins = Number(session.durationMins ?? (session.timeSeconds ? session.timeSeconds / 60 : session.startTime && session.endTime ? (new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 60000 : 0));
-  const durationSeconds = Number(session.timeSeconds ?? (session.startTime && session.endTime ? Math.round((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000) : Math.round(durationMins * 60)));
-  const duration = formatDuration(Math.max(0, durationSeconds || 0));
-  const pace = session.pace || session.avgPace || (distanceKm > 0.05 && durationMins > 0 ? `${Math.floor(durationMins / distanceKm)}'${String(Math.round(((durationMins / distanceKm) % 1) * 60)).padStart(2, '0')}"/km` : null);
-  const trajectory: Array<any> = Array.isArray(session.trajectory) ? session.trajectory : Array.isArray(session.checkpoints) ? session.checkpoints : [];
-  const routePoints = useMemo(() => trajectory.map(extractPoint).filter((point): point is Point => Boolean(point)), [trajectory]), routeSvgPoints = useMemo(() => normalizedRoute(routePoints), [routePoints]);
-  const title = String(session.title || session.cardioTypeLabel || 'Corrida ao ar livre'), activityState = resolveActivityState(session);
-  const validationState: 'completed' | 'approved' | 'pending' | 'rejected' = activityState.competitionStatus === 'approved' ? 'approved' : activityState.competitionStatus === 'pending' || activityState.competitionStatus === 'resolution_pending' ? 'pending' : activityState.competitionStatus === 'rejected' || activityState.competitionStatus === 'ineligible' ? 'rejected' : 'completed';
-  const existingPhoto = session.photoProof || session.photoUrl || null, hasRoute = routePoints.length >= 2, hasDistance = distanceKm > 0.05;
-  const isBike = title.toLowerCase().includes('bike') || session.cardioType === 'bike', isSpeedActivity = isBike || ['treadmill', 'stationary_bike', 'elliptical', 'rowing', 'stair_climber'].includes(String(session.cardioType || '').toLowerCase()), speedKmH = distanceKm > 0.01 && durationMins > 0 ? distanceKm / (durationMins / 60) : 0;
-  const distanceLabel = distanceKm.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), speedLabel = speedKmH > 0 ? speedKmH.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—', sharePace = formatPaceForCard(pace), statusLabel = validationState === 'approved' ? 'ATIVIDADE VALIDADA' : validationState === 'pending' ? 'CONCLUÍDA · COMPETIÇÃO EM ANÁLISE' : validationState === 'rejected' ? 'CONCLUÍDA · FORA DA COMPETIÇÃO' : 'ATIVIDADE CONCLUÍDA';
-  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto), [compositionMode, setCompositionMode] = useState<CompositionMode>(() => hasRoute ? 'map' : 'photo-map'), [mapVariant, setMapVariant] = useState<MapVariant>('satellite');
-  const cacheKey = `${mapVariant}:${zoomAdjust}`, currentMapImage = mapImages[cacheKey] ?? null;
+  const session = rawSession as ShareableSession;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const contentPointersRef = useRef(new Map<number, PointerPosition>());
+  const infoPointersRef = useRef(new Map<number, PointerPosition>());
+  const contentGestureRef = useRef<{
+    transform: LayerTransform;
+    startX: number;
+    startY: number;
+    distance?: number;
+    angle?: number;
+  } | null>(null);
+  const infoGestureRef = useRef<{
+    transform: LayerTransform;
+    startX: number;
+    startY: number;
+    distance?: number;
+  } | null>(null);
 
-  useEffect(() => { if (!hasRoute || compositionMode === 'photo-route') return undefined; let cancelled = false, started = false; if (mapImages[cacheKey]) return undefined; const fetchMap = async (user: NonNullable<typeof auth.currentUser>) => { if (started || cancelled) return; started = true; try { const idToken = await user.getIdToken(); const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` }, body: JSON.stringify({ trajectory: routePoints, width: 720, height: 1280, mapType: mapVariant, zoomAdjust }) }); if (!response.ok) throw new Error(`activity-map respondeu ${response.status}`); const json = await response.json(); if (cancelled) return; if (json.success && json.imageDataUrl) { setMapImages(current => ({ ...current, [cacheKey]: json.imageDataUrl })); setMapError(false); } else setMapError(true); } catch (error) { if (!cancelled) setMapError(true); console.warn('[RunShareCard] Falha ao carregar mapa:', error); } }; const unsubscribe = auth.onAuthStateChanged(user => { if (user) void fetchMap(user); }); if (auth.currentUser) void fetchMap(auth.currentUser); return () => { cancelled = true; unsubscribe(); }; }, [cacheKey, compositionMode, hasRoute, mapImages, mapVariant, routePoints, zoomAdjust]);
+  const distanceKm = Math.max(0, Number(session.distanceKm ?? session.km ?? (session.totalDistance ? session.totalDistance / 1000 : 0)) || 0);
+  const durationSeconds = Math.max(0, Math.round(Number(
+    session.timeSeconds
+      ?? (session.durationMins ? session.durationMins * 60 : undefined)
+      ?? (session.startTime && session.endTime
+        ? (new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000
+        : 0),
+  ) || 0));
+  const title = String(session.title || session.cardioTypeLabel || 'Atividade').trim();
+  const rawTrajectory = Array.isArray(session.trajectory)
+    ? session.trajectory
+    : Array.isArray(session.checkpoints) ? session.checkpoints : [];
+  const routePoints = useMemo(
+    () => rawTrajectory.map(extractPoint).filter((point): point is Point => Boolean(point)),
+    [rawTrajectory],
+  );
+  const routeSvgPoints = useMemo(() => normalizedRoute(routePoints), [routePoints]);
+  const hasRoute = routePoints.length >= 2;
+  const existingPhoto = session.photoProof || session.photoUrl || null;
+  const metrics = useMemo(() => resolveShareCardMetrics({
+    distanceKm,
+    durationSeconds,
+    calories: session.calories,
+    weightKg: session.weightKg,
+    points: session.rankingPointsEarned ?? session.points,
+    activityType: session.activityType,
+  }), [distanceKm, durationSeconds, session.activityType, session.calories, session.points, session.rankingPointsEarned, session.weightKg]);
 
-  const handlePhotoSelection = async (event: React.ChangeEvent<HTMLInputElement>, target: 'photo-map' | 'photo-route' = 'photo-map') => { const file = event.target.files?.[0]; if (!file) return; if (!file.type.startsWith('image/')) { setFeedback('Selecione uma imagem válida.'); return; } try { setSelectedPhoto(await fileToDataUrl(file)); setCompositionMode(target); setCustomizerOpen(false); setFeedback(null); } catch { setFeedback('Não foi possível carregar essa foto.'); } };
-  const handleExport = async (mode: 'download' | 'share') => { if (!cardRef.current) return; setFeedback(null); setIsGenerating(true); try { await waitForCardAssets(cardRef.current); const rect = cardRef.current.getBoundingClientRect(); if (!rect.width || !rect.height) throw new Error('Card sem dimensão para exportação.'); const targetWidth = 1440; const pixelRatio = Math.max(1, Math.min(4, targetWidth / rect.width)); const dataUrl = await toPng(cardRef.current, { pixelRatio, cacheBust: true, backgroundColor: '#050608', skipAutoScale: true }); if (mode === 'share' && navigator.share) { try { const blob = await (await fetch(dataUrl)).blob(), file = new File([blob], 'invictus-atividade.png', { type: 'image/png' }); if ((navigator as any).canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Invictus Performance' }); setFeedback('Imagem compartilhada em alta qualidade.'); return; } } catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return; console.warn('[RunShareCard] Compartilhamento nativo falhou:', error); } } const link = document.createElement('a'); link.download = `invictus-atividade-${session.id || 'card'}-hq.png`; link.href = dataUrl; link.click(); setFeedback('Imagem baixada em alta qualidade.'); } catch (error) { console.error('[RunShareCard] Falha ao exportar:', error); setFeedback('Não foi possível gerar a imagem.'); } finally { setIsGenerating(false); } };
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto);
+  const [compositionMode, setCompositionMode] = useState<CompositionMode>(() => existingPhoto ? 'photo-route' : 'map');
+  const [mapVariant, setMapVariant] = useState<MapVariant>('satellite');
+  const [mapImages, setMapImages] = useState<Record<string, string | null>>({});
+  const [mapError, setMapError] = useState(false);
+  const [mapTransform, setMapTransform] = useState(DEFAULT_MAP_TRANSFORM);
+  const [routeTransform, setRouteTransform] = useState(DEFAULT_ROUTE_TRANSFORM);
+  const [infoTransform, setInfoTransform] = useState(DEFAULT_INFO_TRANSFORM);
+  const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  const activePinch = () => { const points = Array.from(pointersRef.current.values()); return points.length === 2 ? distanceBetween(points[0], points[1]) : null; };
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => { if (event.pointerType !== 'touch' || !hasRoute) return; pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY }); if (compositionMode === 'photo-route' && pointersRef.current.size === 1) dragRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, ox: routeOffset.x, oy: routeOffset.y }; if (pointersRef.current.size === 2) { pinchDistanceRef.current = activePinch(); routeScaleAtPinchRef.current = routeScale; dragRef.current = null; } };
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => { if (!pointersRef.current.has(event.pointerId) || !hasRoute) return; pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY }); if (compositionMode === 'photo-route' && pointersRef.current.size === 1 && dragRef.current?.id === event.pointerId) { setRouteOffset({ x: dragRef.current.ox + event.clientX - dragRef.current.x, y: dragRef.current.oy + event.clientY - dragRef.current.y }); return; } if (pointersRef.current.size !== 2) return; const distance = activePinch(), base = pinchDistanceRef.current; if (!distance || !base) { pinchDistanceRef.current = distance; return; } if (compositionMode === 'photo-route') { setRouteScale(Math.max(.62, Math.min(1.9, routeScaleAtPinchRef.current * (distance / base)))); return; } const ratio = distance / base; if (ratio > 1.16) { setZoomAdjust(value => Math.min(ZOOM_ADJUST_MAX, value + 1)); pinchDistanceRef.current = distance; } else if (ratio < 0.86) { setZoomAdjust(value => Math.max(ZOOM_ADJUST_MIN, value - 1)); pinchDistanceRef.current = distance; } };
-  const endPointer = (event: React.PointerEvent<HTMLDivElement>) => { pointersRef.current.delete(event.pointerId); if (dragRef.current?.id === event.pointerId) dragRef.current = null; if (pointersRef.current.size < 2) pinchDistanceRef.current = null; };
+  const mapCacheKey = mapVariant;
+  const currentMapImage = mapImages[mapCacheKey] ?? null;
 
-  const routeOverlay = routeSvgPoints.length >= 2 ? <div style={{ position: 'absolute', zIndex: 1, top: '12%', right: '3%', width: '51%', height: '56%', transform: `translate(${routeOffset.x}px, ${routeOffset.y}px) scale(${routeScale})`, transformOrigin: 'center', filter: 'drop-shadow(0 0 10px rgba(255,166,0,.82))' }}><svg viewBox="0 0 1000 1000" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"><defs><filter id="routeGlow"><feGaussianBlur stdDeviation="10" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><polyline points={routeSvgPoints.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#ff9d00" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" opacity=".3"/><polyline points={routeSvgPoints.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#ffb31a" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" filter="url(#routeGlow)"/>{(() => { const start = routeSvgPoints[0], end = routeSvgPoints[routeSvgPoints.length - 1]; return <><g transform={`translate(${start.x} ${start.y})`}><circle r="34" fill="#fff"/><circle r="25" fill="#ffad12"/><path d="M-8 13V-15M-8-13h23l-7 8 7 8H-8" fill="#111" stroke="#111" strokeWidth="5" strokeLinejoin="round"/></g><g transform={`translate(${end.x} ${end.y})`}><circle r="31" fill="#fff"/><circle r="17" fill="#ffad12"/></g></>; })()}</svg></div> : null;
-  const statMarkup = useMemo(() => <><div className="share-card-activity-heading"><span className="share-card-activity-icon"><Flame size={31} strokeWidth={2.4}/></span><h1>{title.toUpperCase()}</h1><span className={cn('share-card-validation-icon', `is-${validationState}`)}>{validationState === 'approved' || validationState === 'completed' ? <ShieldCheck size={28}/> : validationState === 'pending' ? <Clock size={26}/> : <ShieldAlert size={26}/>}</span></div><div className="share-card-divider"/><div className="share-card-metrics"><div className="share-card-metric"><MapPin className="share-card-metric-icon" size={25}/><span className="share-card-metric-label">DISTÂNCIA</span><strong>{hasDistance ? distanceLabel : '—'} <small>KM</small></strong></div><div className="share-card-metric"><Timer className="share-card-metric-icon" size={25}/><span className="share-card-metric-label">TEMPO</span><strong>{duration}</strong></div><div className="share-card-metric"><Gauge className="share-card-metric-icon" size={25}/><span className="share-card-metric-label">{isSpeedActivity ? 'VELOCIDADE' : 'RITMO MÉDIO'}</span><strong>{isSpeedActivity ? speedLabel : sharePace} <small>{isSpeedActivity ? 'KM/H' : '/KM'}</small></strong></div></div><div className={cn('share-card-status', `is-${validationState}`)}>{validationState === 'approved' || validationState === 'completed' ? <ShieldCheck size={25}/> : validationState === 'pending' ? <Clock size={24}/> : <ShieldAlert size={24}/>}<span>{statusLabel}</span></div></>, [distanceLabel, duration, hasDistance, isSpeedActivity, sharePace, speedLabel, statusLabel, title, validationState]);
+  useEffect(() => {
+    if (!hasRoute || compositionMode === 'photo-route' || mapImages[mapCacheKey]) return undefined;
+    let cancelled = false;
+    let started = false;
 
-  const sheetStyle: React.CSSProperties = { position: 'fixed', zIndex: 20, left: 10, right: 10, bottom: 'max(12px, env(safe-area-inset-bottom))', margin: '0 auto', maxWidth: 520, padding: 14, border: '1px solid rgba(255,181,37,.35)', borderRadius: 20, background: 'rgba(8,9,11,.96)', boxShadow: '0 22px 70px rgba(0,0,0,.55)', backdropFilter: 'blur(18px)' }, rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 7 }, optionStyle: React.CSSProperties = { minHeight: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 13, border: '1px solid rgba(255,255,255,.12)', background: '#111316', color: '#f4f4f4', fontSize: 10, fontWeight: 800 }, compactBrandStyle: React.CSSProperties = { top: '3.2%', left: '4.3%', transform: 'scale(.72)', transformOrigin: 'top left' }, photoStyle: React.CSSProperties = { filter: 'brightness(.94) saturate(1.03) contrast(1.02)' }, mapStyle: React.CSSProperties = { filter: 'brightness(.8) saturate(1.04) contrast(1.05)' }, vignetteStyle: React.CSSProperties = { background: 'linear-gradient(180deg,rgba(0,0,0,.12) 0%,transparent 42%,rgba(0,0,0,.28) 60%,rgba(3,4,5,.84) 83%,#050608 100%)' };
+    const fetchMap = async (user: NonNullable<typeof auth.currentUser>) => {
+      if (started || cancelled) return;
+      started = true;
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch(`${API_CONFIG.baseUrl}/api/activity-map`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            trajectory: routePoints,
+            width: 720,
+            height: 1280,
+            mapType: mapVariant,
+            zoomAdjust: -0.75,
+          }),
+        });
+        if (!response.ok) throw new Error(`activity-map respondeu ${response.status}`);
+        const json = await response.json();
+        if (cancelled) return;
+        if (json.success && json.imageDataUrl) {
+          setMapImages((current) => ({ ...current, [mapCacheKey]: json.imageDataUrl }));
+          setMapError(false);
+        } else {
+          setMapError(true);
+        }
+      } catch (error) {
+        if (!cancelled) setMapError(true);
+        console.warn('[RunShareCard] Falha ao carregar mapa:', error);
+      }
+    };
 
-  return createPortal(<div className="share-screen" role="dialog" aria-modal="true" aria-label="Compartilhar atividade"><div className="share-screen-toolbar"><button type="button" onClick={onClose} className="share-icon-button" aria-label="Fechar"><X size={21}/></button><button type="button" className="share-icon-button" style={{ position: 'fixed', top: 'max(82px, calc(env(safe-area-inset-top) + 68px))', left: 12, width: 36, height: 36 }} onClick={() => setCustomizerOpen(true)} aria-label="Personalizar card"><Layers3 size={17}/></button><div className="share-screen-actions" style={{ position: 'fixed', top: 'max(82px, calc(env(safe-area-inset-top) + 68px))', right: 12, flexDirection: 'column', alignItems: 'center', gap: 7 }}><button type="button" className="share-icon-button share-icon-button--accent" style={{ width: 36, height: 36 }} onClick={() => void handleExport('share')} disabled={isGenerating} aria-label="Compartilhar imagem">{isGenerating ? <RefreshCw size={17} className="share-spin"/> : <Share2 size={17}/>}</button><button type="button" className="share-icon-button" style={{ width: 36, height: 36 }} onClick={() => void handleExport('download')} disabled={isGenerating} aria-label="Baixar imagem">{isGenerating ? <RefreshCw size={17} className="share-spin"/> : <Download size={17}/>}</button></div></div><div className="share-card-stage" style={{ touchAction: 'none' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}><div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`)}><div className="share-card-background" aria-hidden="true">{(compositionMode === 'photo-map' || compositionMode === 'photo-route') && selectedPhoto ? <img src={selectedPhoto} alt="" className="share-card-photo" style={photoStyle}/> : null}{compositionMode === 'map' && currentMapImage ? <img src={currentMapImage} alt="" className="share-card-map" style={mapStyle}/> : null}{compositionMode === 'photo-map' && hasRoute && currentMapImage ? <div className="share-card-route-overlay" style={{ opacity: .92 }}><img src={currentMapImage} alt="" style={mapStyle}/></div> : null}{compositionMode === 'photo-route' ? routeOverlay : null}<div className="share-card-vignette" style={vignetteStyle}/>{!currentMapImage && hasRoute && compositionMode === 'map' ? <div className="share-card-loading-map">{mapError ? 'MAPA INDISPONÍVEL' : 'CARREGANDO MAPA...'}</div> : null}{(compositionMode === 'photo-map' || compositionMode === 'photo-route') && !selectedPhoto ? <div className="share-card-photo-empty">SELECIONE UMA FOTO</div> : null}</div><div className="share-card-brand" style={compactBrandStyle}><InvictusLogo size={64}/><div className="share-card-brand-copy"><strong>INVICTUS</strong><span>PERFORMANCE</span></div></div><div className="share-card-content">{statMarkup}</div></div></div>{customizerOpen ? <div style={sheetStyle} role="dialog" aria-label="Personalizar compartilhamento"><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}><div><div style={{ color: '#f6a916', fontSize: 10, fontWeight: 900, letterSpacing: '.16em' }}>PERSONALIZAR</div><strong style={{ fontSize: 16 }}>Escolha a composição</strong></div><button className="share-icon-button" style={{ width: 34, height: 34 }} onClick={() => setCustomizerOpen(false)} aria-label="Fechar opções"><X size={16}/></button></div><div style={rowStyle}><button style={{ ...optionStyle, borderColor: compositionMode === 'map' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => { if (hasRoute) { setCompositionMode('map'); setCustomizerOpen(false); } }} disabled={!hasRoute}><MapIcon size={17}/>Mapa</button>{selectedPhoto ? <button style={{ ...optionStyle, borderColor: compositionMode === 'photo-map' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => { setCompositionMode('photo-map'); setCustomizerOpen(false); }}><ImageIcon size={17}/>Foto + mapa</button> : <label style={{ ...optionStyle, cursor: 'pointer' }}><Upload size={17}/>Foto + mapa<input type="file" accept="image/*" className="sr-only" onChange={event => void handlePhotoSelection(event, 'photo-map')}/></label>}{selectedPhoto ? <button style={{ ...optionStyle, borderColor: compositionMode === 'photo-route' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => { setCompositionMode('photo-route'); setCustomizerOpen(false); }} disabled={!hasRoute}><RouteIcon size={17}/>Foto + rota</button> : <label style={{ ...optionStyle, cursor: 'pointer', opacity: hasRoute ? 1 : .4 }}><Upload size={17}/>Foto + rota<input type="file" accept="image/*" className="sr-only" disabled={!hasRoute} onChange={event => void handlePhotoSelection(event, 'photo-route')}/></label>}</div>{hasRoute && compositionMode !== 'photo-route' ? <><div style={{ margin: '14px 0 8px', color: '#9d9d9d', fontSize: 10, fontWeight: 800, letterSpacing: '.12em' }}>ESTILO DO MAPA</div><div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}><button style={{ ...optionStyle, flexDirection: 'row', borderColor: mapVariant === 'satellite' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => setMapVariant('satellite')}><MapIcon size={16}/>Satélite</button><button style={{ ...optionStyle, flexDirection: 'row', borderColor: mapVariant === 'outdoors' ? '#f6a916' : 'rgba(255,255,255,.12)' }} onClick={() => setMapVariant('outdoors')}><Mountain size={16}/>Terreno</button></div></> : null}{compositionMode === 'photo-route' ? <div style={{ marginTop: 12, color: '#aaa', fontSize: 11, lineHeight: 1.35 }}>Arraste a rota com um dedo. Use pinça para aumentar ou diminuir.</div> : null}</div> : null}{feedback ? <div className="share-feedback" role="status" aria-live="polite">{feedback}</div> : null}</div>, document.body);
+    const unsubscribe = auth.onAuthStateChanged((user) => { if (user) void fetchMap(user); });
+    if (auth.currentUser) void fetchMap(auth.currentUser);
+    return () => { cancelled = true; unsubscribe(); };
+  }, [compositionMode, hasRoute, mapCacheKey, mapImages, mapVariant, routePoints]);
+
+  const currentContentTransform = compositionMode === 'photo-route' ? routeTransform : mapTransform;
+  const setCurrentContentTransform = useCallback((next: LayerTransform) => {
+    if (compositionMode === 'photo-route') setRouteTransform(next);
+    else setMapTransform(next);
+  }, [compositionMode]);
+
+  const startContentGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!hasRoute) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    contentPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pointers = Array.from(contentPointersRef.current.values());
+    contentGestureRef.current = {
+      transform: currentContentTransform,
+      startX: event.clientX,
+      startY: event.clientY,
+      ...(pointers.length === 2 ? { distance: pointerDistance(pointers), angle: pointerAngle(pointers) } : {}),
+    };
+  };
+
+  const moveContentGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!contentPointersRef.current.has(event.pointerId) || !contentGestureRef.current) return;
+    contentPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pointers = Array.from(contentPointersRef.current.values());
+    const start = contentGestureRef.current;
+    if (pointers.length === 1) {
+      setCurrentContentTransform({
+        ...start.transform,
+        x: start.transform.x + event.clientX - start.startX,
+        y: start.transform.y + event.clientY - start.startY,
+      });
+      return;
+    }
+    if (pointers.length === 2 && start.distance && start.angle !== undefined) {
+      setCurrentContentTransform({
+        ...start.transform,
+        scale: clampScale(start.transform.scale * (pointerDistance(pointers) / start.distance), 0.7, 2.2),
+        rotation: start.transform.rotation + pointerAngle(pointers) - start.angle,
+      });
+    }
+  };
+
+  const endContentGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    contentPointersRef.current.delete(event.pointerId);
+    if (contentPointersRef.current.size === 0) {
+      contentGestureRef.current = null;
+      return;
+    }
+    const remaining = Array.from(contentPointersRef.current.values())[0];
+    contentGestureRef.current = {
+      transform: compositionMode === 'photo-route' ? routeTransform : mapTransform,
+      startX: remaining.x,
+      startY: remaining.y,
+    };
+  };
+
+  const startInfoGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    infoPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pointers = Array.from(infoPointersRef.current.values());
+    infoGestureRef.current = {
+      transform: infoTransform,
+      startX: event.clientX,
+      startY: event.clientY,
+      ...(pointers.length === 2 ? { distance: pointerDistance(pointers) } : {}),
+    };
+  };
+
+  const moveInfoGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (!infoPointersRef.current.has(event.pointerId) || !infoGestureRef.current) return;
+    infoPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pointers = Array.from(infoPointersRef.current.values());
+    const start = infoGestureRef.current;
+    if (pointers.length === 1) {
+      setInfoTransform({
+        ...start.transform,
+        x: start.transform.x + event.clientX - start.startX,
+        y: start.transform.y + event.clientY - start.startY,
+      });
+      return;
+    }
+    if (pointers.length === 2 && start.distance) {
+      setInfoTransform({
+        ...start.transform,
+        scale: clampScale(start.transform.scale * (pointerDistance(pointers) / start.distance), 0.55, 1.8),
+      });
+    }
+  };
+
+  const endInfoGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    infoPointersRef.current.delete(event.pointerId);
+    if (infoPointersRef.current.size === 0) {
+      infoGestureRef.current = null;
+      return;
+    }
+    const remaining = Array.from(infoPointersRef.current.values())[0];
+    infoGestureRef.current = { transform: infoTransform, startX: remaining.x, startY: remaining.y };
+  };
+
+  const handlePhotoSelection = async (event: ChangeEvent<HTMLInputElement>, target: 'photo-map' | 'photo-route') => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setFeedback('Selecione uma imagem válida.');
+      return;
+    }
+    try {
+      setSelectedPhoto(await fileToDataUrl(file));
+      setCompositionMode(target);
+      setCustomizerOpen(false);
+      setFeedback(null);
+    } catch {
+      setFeedback('Não foi possível carregar essa foto.');
+    }
+  };
+
+  const handleExport = async (mode: 'download' | 'share') => {
+    if (!cardRef.current) return;
+    setFeedback(null);
+    setIsGenerating(true);
+    try {
+      await waitForCardAssets(cardRef.current);
+      const rect = cardRef.current.getBoundingClientRect();
+      if (!rect.width || !rect.height) throw new Error('Card sem dimensão para exportação.');
+      const pixelRatio = Math.max(1, Math.min(4, 1440 / rect.width));
+      const dataUrl = await toPng(cardRef.current, {
+        pixelRatio,
+        cacheBust: true,
+        backgroundColor: '#050608',
+        skipAutoScale: true,
+      });
+      const fileName = `invictus-atividade-${session.id || 'card'}.png`;
+      if (mode === 'share') {
+        const result = await shareCardExportService.share(dataUrl, fileName);
+        setFeedback(result === 'shared' ? 'Imagem pronta para compartilhar.' : 'Compartilhamento indisponível; imagem baixada.');
+      } else {
+        await shareCardExportService.save(dataUrl, fileName);
+        setFeedback('Imagem salva em alta qualidade.');
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.error('[RunShareCard] Falha ao exportar:', error);
+      setFeedback('Não foi possível gerar a imagem. Tente novamente.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const resetContent = () => {
+    if (compositionMode === 'photo-route') setRouteTransform(DEFAULT_ROUTE_TRANSFORM);
+    else setMapTransform(DEFAULT_MAP_TRANSFORM);
+  };
+
+  const mapLayerClass = compositionMode === 'photo-map'
+    ? 'share-card-map-layer share-card-map-layer--inset'
+    : 'share-card-map-layer share-card-map-layer--full';
+
+  return createPortal(
+    <div className="share-screen" role="dialog" aria-modal="true" aria-label="Editor do card da atividade">
+      <div className="share-screen-toolbar">
+        <button type="button" onClick={onClose} className="share-icon-button" aria-label="Fechar editor"><X size={21} /></button>
+        <button type="button" onClick={() => setCustomizerOpen(true)} className="share-icon-button" aria-label="Personalizar card"><Layers3 size={19} /></button>
+        <div className="share-screen-actions">
+          <button type="button" onClick={() => void handleExport('share')} className="share-icon-button share-icon-button--accent" disabled={isGenerating} aria-label="Compartilhar imagem">
+            {isGenerating ? <RefreshCw size={19} className="share-spin" /> : <Share2 size={19} />}
+          </button>
+          <button type="button" onClick={() => void handleExport('download')} className="share-icon-button" disabled={isGenerating} aria-label="Salvar imagem">
+            {isGenerating ? <RefreshCw size={19} className="share-spin" /> : <Download size={19} />}
+          </button>
+        </div>
+      </div>
+
+      <div className="share-card-stage" onPointerDown={startContentGesture} onPointerMove={moveContentGesture} onPointerUp={endContentGesture} onPointerCancel={endContentGesture}>
+        <div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`)}>
+          <div className="share-card-background" aria-hidden="true">
+            {(compositionMode === 'photo-map' || compositionMode === 'photo-route') && selectedPhoto ? <img src={selectedPhoto} alt="" className="share-card-photo" /> : null}
+            {compositionMode !== 'photo-route' && currentMapImage ? <div className={mapLayerClass} style={layerStyle(mapTransform)}><img src={currentMapImage} alt="" /></div> : null}
+            {compositionMode === 'photo-route' ? <RouteLayer points={routeSvgPoints} transform={routeTransform} /> : null}
+            {!currentMapImage && compositionMode !== 'photo-route' ? <div className="share-card-empty-state">{mapError ? 'Não foi possível carregar o mapa.' : hasRoute ? 'Preparando mapa…' : 'Esta atividade não possui rota GPS.'}</div> : null}
+            {!selectedPhoto && compositionMode !== 'map' ? <div className="share-card-empty-state">Escolha uma foto para esta composição.</div> : null}
+            <div className="share-card-vignette" />
+          </div>
+
+          <div className="share-card-info-block" style={layerStyle(infoTransform)} onPointerDown={startInfoGesture} onPointerMove={moveInfoGesture} onPointerUp={endInfoGesture} onPointerCancel={endInfoGesture}>
+            <div className="share-card-brand"><img src="/capacete.webp" alt="" draggable={false} /><strong>INVICTUS</strong></div>
+            <div className="share-card-activity-name"><small>{title.toUpperCase()}</small></div>
+            <div className="share-card-metrics">
+              {metrics.map((metric) => <div className="share-card-metric" key={metric.label}><span>{metric.label}</span><strong>{metric.value}{metric.unit ? <small> {metric.unit}</small> : null}</strong></div>)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="share-card-notices">
+        <p className="share-card-gesture-hint">Arraste mapa ou rota. Arraste as informações separadamente e use dois dedos para redimensionar.</p>
+        {feedback ? <p className="share-card-feedback" role="status">{feedback}</p> : null}
+      </div>
+
+      {customizerOpen ? (
+        <div className="share-customizer-backdrop" onClick={() => setCustomizerOpen(false)}>
+          <section className="share-customizer" onClick={(event) => event.stopPropagation()} aria-label="Opções do card">
+            <header><strong>PERSONALIZAR</strong><button type="button" onClick={() => setCustomizerOpen(false)} aria-label="Fechar opções"><X size={18} /></button></header>
+            <div className="share-customizer-modes">
+              <button type="button" className={compositionMode === 'map' ? 'is-active' : ''} onClick={() => setCompositionMode('map')}><MapIcon size={18} /><span>Mapa</span></button>
+              <label className={compositionMode === 'photo-map' ? 'is-active' : ''}><ImageIcon size={18} /><span>Foto + mapa</span><input type="file" accept="image/*" onChange={(event) => void handlePhotoSelection(event, 'photo-map')} /></label>
+              <label className={compositionMode === 'photo-route' ? 'is-active' : ''}><RouteIcon size={18} /><span>Foto + rota</span><input type="file" accept="image/*" onChange={(event) => void handlePhotoSelection(event, 'photo-route')} /></label>
+            </div>
+
+            {compositionMode !== 'photo-route' ? <div className="share-customizer-row"><span>Estilo do mapa</span><div><button type="button" className={mapVariant === 'satellite' ? 'is-active' : ''} onClick={() => setMapVariant('satellite')}>Satélite</button><button type="button" className={mapVariant === 'outdoors' ? 'is-active' : ''} onClick={() => setMapVariant('outdoors')}>Ruas</button></div></div> : null}
+
+            <label className="share-customizer-slider"><span>Tamanho das informações</span><input type="range" min="55" max="180" value={Math.round(infoTransform.scale * 100)} onChange={(event) => setInfoTransform((current) => ({ ...current, scale: Number(event.target.value) / 100 }))} /></label>
+            <label className="share-customizer-slider"><span>Tamanho do {compositionMode === 'photo-route' ? 'traçado' : 'mapa'}</span><input type="range" min="70" max="220" value={Math.round(currentContentTransform.scale * 100)} onChange={(event) => setCurrentContentTransform({ ...currentContentTransform, scale: Number(event.target.value) / 100 })} /></label>
+            <label className="share-customizer-slider"><span>Ângulo do {compositionMode === 'photo-route' ? 'traçado' : 'mapa'}</span><input type="range" min="-35" max="35" value={Math.round(currentContentTransform.rotation)} onChange={(event) => setCurrentContentTransform({ ...currentContentTransform, rotation: Number(event.target.value) })} /></label>
+
+            <div className="share-customizer-reset"><button type="button" onClick={resetContent}>Recentrar mapa/rota</button><button type="button" onClick={() => setInfoTransform(DEFAULT_INFO_TRANSFORM)}>Recentrar informações</button></div>
+          </section>
+        </div>
+      ) : null}
+    </div>,
+    document.body,
+  );
 }

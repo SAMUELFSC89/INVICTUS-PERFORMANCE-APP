@@ -132,27 +132,6 @@ function drawFallbackCircle(image, cx, cy, radius, color) {
   }
 }
 
-// #254: bandeira quadriculada no ponto de partida, pedida pelo usuario pra
-// diferenciar visualmente inicio/fim no mapa do card de compartilhamento
-// (antes os dois pontos eram so circulos, um mais claro e um mais escuro).
-function drawFallbackStartFlag(image, cx, cy) {
-  const black = Jimp.rgbaToInt(16, 16, 16, 255);
-  const white = Jimp.rgbaToInt(255, 255, 255, 255);
-  drawFallbackCircle(image, cx, cy, 18, white);
-  drawFallbackCircle(image, cx, cy, 13, Jimp.rgbaToInt(255, 173, 18, 255));
-  for (let y = -8; y <= 9; y += 1) image.setPixelColor(black, Math.round(cx - 6), Math.round(cy + y));
-  for (let row = 0; row < 3; row += 1) {
-    for (let col = 0; col < 3; col += 1) {
-      const color = (row + col) % 2 === 0 ? black : white;
-      for (let y = 0; y < 4; y += 1) {
-        for (let x = 0; x < 4; x += 1) {
-          image.setPixelColor(color, Math.round(cx - 5 + col * 4 + x), Math.round(cy - 8 + row * 4 + y));
-        }
-      }
-    }
-  }
-}
-
 function drawFallbackLine(image, from, to, width, color) {
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
   const steps = Math.max(1, Math.ceil(distance));
@@ -273,17 +252,10 @@ async function renderFallbackMap(points, width, height, mapType) {
       y: latitudeToWorldY(point.lat) * worldSize - (viewport.centerY - height / 2),
     });
     const projected = points.map(project);
-    const glowColor = Jimp.rgbaToInt(255, 157, 0, 92);
     const routeColor = Jimp.rgbaToInt(255, 173, 18, 255);
     for (let i = 1; i < projected.length; i += 1) {
-      drawFallbackLine(routeLayer, projected[i - 1], projected[i], 18, glowColor);
-      drawFallbackLine(routeLayer, projected[i - 1], projected[i], 7, routeColor);
+      drawFallbackLine(routeLayer, projected[i - 1], projected[i], 8, routeColor);
     }
-    const start = projected[0];
-    const end = projected[projected.length - 1];
-    drawFallbackStartFlag(routeLayer, start.x, start.y);
-    drawFallbackCircle(routeLayer, end.x, end.y, 15, Jimp.rgbaToInt(255, 255, 255, 255));
-    drawFallbackCircle(routeLayer, end.x, end.y, 8, Jimp.rgbaToInt(255, 173, 18, 255));
     image.composite(routeLayer, 0, 0);
     const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
     return `data:image/png;base64,${buffer.toString('base64')}`;
@@ -381,7 +353,6 @@ export default async function handler(req, res) {
     const w = Math.min(1280, Math.max(200, Number(width) || 640));
     const h = Math.min(1280, Math.max(200, Number(height) || 400));
     const start = points[0];
-    const end = points[points.length - 1];
     // #201: mapType agora aceita as 6 opcoes oferecidas no seletor do card de
     // compartilhamento (pedido do usuario apos ver a lista de Classic Styles
     // do Mapbox). "satellite"/"roadmap" sao os 2 originais (mantidos para nao
@@ -410,7 +381,7 @@ export default async function handler(req, res) {
       const encoded = encodePolyline(points);
       const googleMapType = isSatelliteFamily ? 'satellite' : 'roadmap';
       const styleParams = googleMapType === 'roadmap' ? `&${DARK_STYLE_RULES.map((s) => `style=${encodeURIComponent(s)}`).join('&')}` : '';
-      return `https://maps.googleapis.com/maps/api/staticmap?size=${googleWidth}x${googleHeight}&scale=2&maptype=${googleMapType}` + styleParams + `&path=color:0xFFAA00FF|weight:5|enc:${encodeURIComponent(encoded)}` + `&markers=color:0xFFFFFF|size:mid|${start.lat},${start.lng}` + `&markers=color:0xFFAA00|size:small|${start.lat},${start.lng}` + `&markers=color:0xFFFFFF|size:mid|${end.lat},${end.lng}` + `&markers=color:0x111111|size:small|${end.lat},${end.lng}` + `&key=${googleApiKey}`;
+      return `https://maps.googleapis.com/maps/api/staticmap?size=${googleWidth}x${googleHeight}&scale=2&maptype=${googleMapType}` + styleParams + `&path=color:0xFFAA00FF|weight:5|enc:${encodeURIComponent(encoded)}` + `&key=${googleApiKey}`;
     };
 
     if (mapboxToken) {
@@ -436,7 +407,7 @@ export default async function handler(req, res) {
       const fit = computeFitZoom(points, Math.max(1, w - mapPadding * 2), Math.max(1, h - mapPadding * 2));
       const clampedFitZoom = clampNumber(fit.zoom, 3, MAX_AUTO_FIT_ZOOM);
       const zoomAdjustNumber = Number(zoomAdjustInput);
-      const zoomAdjust = Number.isFinite(zoomAdjustNumber) ? clampNumber(Math.round(zoomAdjustNumber), -3, 3) : 0;
+      const zoomAdjust = Number.isFinite(zoomAdjustNumber) ? clampNumber(zoomAdjustNumber, -3, 3) : 0;
       const finalZoom = clampNumber(clampedFitZoom + zoomAdjust, 3, 18);
       const centerParam = `${fit.center.lng.toFixed(6)},${fit.center.lat.toFixed(6)},${finalZoom.toFixed(2)}`;
 
@@ -444,16 +415,9 @@ export default async function handler(req, res) {
         const overlay = {
           type: 'FeatureCollection',
           features: [
-            { type: 'Feature', properties: { stroke: '#ff9d00', 'stroke-width': 12, 'stroke-opacity': .35 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } },
-            { type: 'Feature', properties: { stroke: '#ffc13b', 'stroke-width': 6, 'stroke-opacity': 1 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } },
-            // #254: partida com bandeira quadriculada (marker-symbol: flag);
-            // chegada com marcador circular laranja -- pedido do usuario pra
-            // diferenciar visualmente inicio/fim (antes os dois pontos usavam
-            // so cor, sem simbolo).
-            { type: 'Feature', properties: { 'marker-size': 'medium', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
-            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffad12', 'marker-symbol': 'flag' }, geometry: { type: 'Point', coordinates: [start.lng, start.lat] } },
-            { type: 'Feature', properties: { 'marker-size': 'medium', 'marker-color': '#ffffff' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } },
-            { type: 'Feature', properties: { 'marker-size': 'small', 'marker-color': '#ffad12' }, geometry: { type: 'Point', coordinates: [end.lng, end.lat] } }
+            // Um único traçado opaco evita o aspecto pontilhado criado pela
+            // antiga combinação de linha translúcida + linha principal.
+            { type: 'Feature', properties: { stroke: '#ffad12', 'stroke-width': 7, 'stroke-opacity': 1 }, geometry: { type: 'LineString', coordinates: routePoints.map((point) => [point.lng, point.lat]) } }
           ]
         };
         return `https://api.mapbox.com/styles/v1/mapbox/${styleId}/static/geojson(${encodeURIComponent(JSON.stringify(overlay))})/${centerParam}/${w}x${h}@2x?access_token=${encodeURIComponent(mapboxToken)}`;

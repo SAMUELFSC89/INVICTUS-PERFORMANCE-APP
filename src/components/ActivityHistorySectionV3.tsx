@@ -127,10 +127,12 @@ function toShareSession(item: ActivityHistoryItem) {
   return {
     id: item.id,
     title: item.title,
+    activityType: item.type,
     distanceKm: item.distanceKm,
     durationMins: item.durationMins,
     pace: item.pace,
     calories: item.calories,
+    weightKg: item.weightKg,
     avgHeartRate: item.avgHeartRate,
     elevationGain: item.elevationGain,
     steps: item.steps,

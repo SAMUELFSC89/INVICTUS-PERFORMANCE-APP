@@ -78,15 +78,15 @@ public class InstagramStoriesSharePlugin extends Plugin {
                 intent.setType("image/*");
                 intent.putExtra("interactive_asset_uri", stickerUri);
                 intent.putExtra("background_asset_uri", backgroundUri);
-                grantUriPermission(INSTAGRAM_PACKAGE, backgroundUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                grantUriPermission(INSTAGRAM_PACKAGE, stickerUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getContext().grantUriPermission(INSTAGRAM_PACKAGE, backgroundUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getContext().grantUriPermission(INSTAGRAM_PACKAGE, stickerUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } else if (stickerUri != null) {
                 intent.setType("image/*");
                 intent.putExtra("interactive_asset_uri", stickerUri);
-                grantUriPermission(INSTAGRAM_PACKAGE, stickerUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getContext().grantUriPermission(INSTAGRAM_PACKAGE, stickerUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } else {
                 intent.setDataAndType(backgroundUri, "image/*");
-                grantUriPermission(INSTAGRAM_PACKAGE, backgroundUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getContext().grantUriPermission(INSTAGRAM_PACKAGE, backgroundUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }
 
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);

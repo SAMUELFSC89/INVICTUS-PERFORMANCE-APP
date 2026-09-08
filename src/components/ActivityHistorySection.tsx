@@ -1207,10 +1207,12 @@ export function ActivityHistorySection({ refreshKey = 0 }: { refreshKey?: number
           session={{
             id: shareItem.id,
             title: shareItem.title,
+            activityType: shareItem.type,
             distanceKm: shareItem.distanceKm,
             durationMins: shareItem.durationMins,
             pace: shareItem.pace,
             calories: shareItem.calories,
+            weightKg: shareItem.weightKg,
             avgHeartRate: shareItem.avgHeartRate,
             elevationGain: shareItem.elevationGain,
             steps: shareItem.steps,

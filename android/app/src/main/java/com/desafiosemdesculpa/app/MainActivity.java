@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(InvictusActivityPlugin.class);
         registerPlugin(InstagramStoriesSharePlugin.class);
+        registerPlugin(InvictusShareCardPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
