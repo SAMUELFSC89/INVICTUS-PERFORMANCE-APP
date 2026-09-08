@@ -1,10 +1,11 @@
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, BarChart3, Bell, CalendarDays, Check, Dumbbell, Footprints, Plus, ShieldCheck, Trophy, UserRound, Users } from 'lucide-react';
+import { BarChart3, Bell, CalendarDays, Check, Dumbbell, Plus, ShieldCheck, Trophy, UserRound } from 'lucide-react';
 import { AcademyRanking } from '../../components/ranking/AcademyRanking';
 import { InvictusLogo } from '../../components/InvictusLogo';
 import { useUser } from '../../UserContext';
 import { hasActiveProEntitlement } from '../../lib/proEntitlement';
+import { cardioPreviewCard, ChampionshipPreviewCard, FriendsChampionshipCard, strengthPreviewCard } from './ChampionshipCards';
 import './ChampionshipsNew.css';
 
 export function ChampionshipsHub() {
@@ -30,8 +31,13 @@ export function ChampionshipsHub() {
 
     {section === 'ranking' ? <AcademyRanking /> : <>
       <section className="ch-new-hero"><h1>CAMPEONATOS</h1><p>Treine. Compita. Evolua.</p></section>
-      <h2 className="ch-new-title">DESTAQUE</h2><section className="ch-feature"><div className="ch-feature-main"><span className="ch-badge"><Trophy /></span><div><small>GRÁTIS</small><h2>CAMPEONATO ENTRE AMIGOS</h2><h3>MUSCULAÇÃO + CARDIO</h3><p>Compita com a mesma regra de IGA para FREE e PRO. Sem prêmio em dinheiro e sem vínculo comercial com academias.</p></div><ul><li><Users />Compita entre amigos</li><li><Trophy />1º lugar: 2.500 Coins</li><li><ShieldCheck />Top 3 com auditoria reforçada</li></ul><button onClick={() => navigate('/championships/community')}>PARTICIPAR GRÁTIS <ArrowRight /></button></div><aside><Trophy /><h3>5.000 COINS POR CICLO</h3><p>1º: 2.500 · 2º: 1.500 · 3º: 1.000. Conclusão válida: +50 Coins.</p><button onClick={() => navigate('/championships/community')}>VER CAMPEONATO <ArrowRight /></button></aside></section>
-      <div className="ch-paid-head"><h2>CAMPEONATOS PAGOS</h2><span>EM PREPARAÇÃO</span></div><section className="ch-future"><article><Dumbbell /><small>MUSCULAÇÃO</small><h3>CAMPEONATO DE FORÇA</h3><p>Conheça a proposta e como será a validação das atividades.</p><strong>EM BREVE</strong><button onClick={() => navigate('/championships/preview/musculacao')}>CONHECER A PRÉVIA <ArrowRight /></button></article><article><Footprints /><small>CARDIO</small><h3>CAMPEONATO DE CARDIO</h3><p>Veja o formato planejado e como o antifraude protegerá a competição.</p><strong>EM BREVE</strong><button onClick={() => navigate('/championships/preview/cardio')}>CONHECER A PRÉVIA <ArrowRight /></button></article></section>
+      <h2 className="ch-new-title">DESTAQUE</h2>
+      <FriendsChampionshipCard onParticipate={() => navigate('/championships/community')} />
+      <div className="ch-paid-head"><h2>CAMPEONATOS PAGOS</h2><span>EM PREPARAÇÃO</span></div>
+      <section className="ch-future">
+        <ChampionshipPreviewCard {...strengthPreviewCard} onPreview={() => navigate('/championships/preview/musculacao')} />
+        <ChampionshipPreviewCard {...cardioPreviewCard} onPreview={() => navigate('/championships/preview/cardio')} />
+      </section>
       <h2 className="ch-new-title">COMO FUNCIONA</h2><section className="ch-how">{[[CalendarDays,'1. ESCOLHA','Escolha o campeonato'],[Check,'2. INSCREVA-SE','Confirme sua participação'],[Dumbbell,'3. TREINE','Registre atividades reais'],[BarChart3,'4. RANKING','Acompanhe sua posição'],[Trophy,'5. EVOLUA','Supere suas marcas']].map(([Icon,title,text]:any) => <article key={title}><Icon /><b>{title}</b><span>{text}</span></article>)}</section><div className="ch-security"><ShieldCheck /><span>Validação avançada e sistema antifraude ajudam a manter competições justas.</span></div>
     </>}
   </div><nav className="ch-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button className="is-active" onClick={() => selectSection('championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Iniciar treino"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav></main>, document.body);
