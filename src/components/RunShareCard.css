@@ -154,6 +154,78 @@
 
 .share-card-info-block:active { cursor: grabbing; }
 
+
+.share-card-phrase {
+  position: absolute;
+  z-index: 7;
+  max-width: 43%;
+  color: rgba(255, 255, 255, .9);
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1.55;
+  letter-spacing: .24em;
+  white-space: pre-line;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .94);
+  transform-origin: center;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  will-change: transform;
+}
+.share-card-phrase:active { cursor: grabbing; }
+.share-card-phrase--movement { top: 5.4%; left: 5.3%; text-align: left; }
+.share-card-phrase--freedom { top: 5.4%; right: 5.3%; text-align: right; }
+.share-card-phrase--choice { left: 5.3%; bottom: 5.2%; text-align: left; }
+.share-card-phrase--discipline {
+  right: 5.3%;
+  bottom: 5.4%;
+  max-width: 48%;
+  color: #f3b324;
+  font-family: cursive;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: .01em;
+  text-align: right;
+}
+.share-card-phrase.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: -7px -9px;
+  border: 1px solid rgba(243, 179, 36, .72);
+  border-radius: 9px;
+  pointer-events: none;
+}
+.share-card-trash-zone {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: 2.5%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, .78);
+  background: rgba(8, 8, 8, .82);
+  backdrop-filter: blur(8px);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: .15s ease;
+}
+.share-card-trash-zone.is-armed {
+  border-color: rgba(244, 63, 94, .72);
+  color: #fff;
+  background: rgba(127, 29, 29, .88);
+  transform: translateX(-50%) scale(1.05);
+}
+.share-card-art.is-exporting .share-card-phrase.is-selected::after,
+.share-card-art.is-exporting .share-card-trash-zone { display: none; }
+
 .share-card-brand {
   display: flex;
   align-items: center;
@@ -260,6 +332,7 @@
 
 .share-customizer-reset { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 14px; }
 .share-customizer-reset button { min-height: 40px; color: #f3b324; }
+.share-customizer-reset button:last-child:nth-child(3) { grid-column: 1 / -1; }
 
 .share-spin { animation: share-spin .8s linear infinite; }
 @keyframes share-spin { to { transform: rotate(360deg); } }

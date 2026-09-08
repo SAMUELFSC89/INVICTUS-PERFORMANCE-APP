@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Route as RouteIcon,
   Share2,
+  Trash2,
   X,
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
@@ -61,10 +62,23 @@ type CompositionMode = 'map' | 'photo-map' | 'photo-route';
 type Point = { lat: number; lng: number };
 type LayerTransform = { x: number; y: number; scale: number; rotation: number };
 type PointerPosition = { x: number; y: number };
+type PhraseId = 'movement' | 'freedom' | 'choice' | 'discipline';
+type PhraseLayer = {
+  id: PhraseId;
+  text: string;
+  transform: LayerTransform;
+  visible: boolean;
+};
 
 const DEFAULT_MAP_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
 const DEFAULT_ROUTE_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
 const DEFAULT_INFO_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
+const DEFAULT_PHRASES: PhraseLayer[] = [
+  { id: 'movement', text: 'MAIS MOVIMENTO\nMAIS VIDA', transform: { x: 0, y: 0, scale: 1, rotation: 0 }, visible: true },
+  { id: 'freedom', text: 'DISCIPLINA\nCONSTRÓI LIBERDADE', transform: { x: 0, y: 0, scale: 1, rotation: 0 }, visible: true },
+  { id: 'choice', text: 'PERFORMANCE\nÉ UMA ESCOLHA\nDIÁRIA', transform: { x: 0, y: 0, scale: 1, rotation: 0 }, visible: true },
+  { id: 'discipline', text: 'Disciplina\nTe Leva Mais Longe', transform: { x: 0, y: 0, scale: 1, rotation: -4 }, visible: true },
+];
 
 function extractPoint(value: unknown): Point | null {
   if (!value || typeof value !== 'object') return null;
@@ -152,7 +166,7 @@ function RouteLayer({ points, transform }: { points: Array<{ x: number; y: numbe
         <polyline
           points={points.map((point) => `${point.x},${point.y}`).join(' ')}
           fill="none"
-          stroke="#ff9d00"
+          stroke="#f3b324"
           strokeWidth="15"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -167,6 +181,11 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const cardRef = useRef<HTMLDivElement>(null);
   const contentPointersRef = useRef(new Map<number, PointerPosition>());
   const infoPointersRef = useRef(new Map<number, PointerPosition>());
+  const phrasePointersRef = useRef(new Map<PhraseId, Map<number, PointerPosition>>());
+  const phraseGestureRef = useRef(new Map<PhraseId, { transform: LayerTransform; startX: number; startY: number; distance?: number }>());
+  const trashArmedRef = useRef<PhraseId | null>(null);
+  const selectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preferencesHydratedRef = useRef(false);
   const contentGestureRef = useRef<{
     transform: LayerTransform;
     startX: number;
@@ -217,12 +236,50 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const [mapTransform, setMapTransform] = useState(DEFAULT_MAP_TRANSFORM);
   const [routeTransform, setRouteTransform] = useState(DEFAULT_ROUTE_TRANSFORM);
   const [infoTransform, setInfoTransform] = useState(DEFAULT_INFO_TRANSFORM);
+  const [phrases, setPhrases] = useState<PhraseLayer[]>(() => DEFAULT_PHRASES.map((phrase) => ({ ...phrase, transform: { ...phrase.transform } })));
+  const [selectedPhraseId, setSelectedPhraseId] = useState<PhraseId | null>(null);
+  const [draggingPhraseId, setDraggingPhraseId] = useState<PhraseId | null>(null);
+  const [trashArmedPhraseId, setTrashArmedPhraseId] = useState<PhraseId | null>(null);
   const [customizerOpen, setCustomizerOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const mapCacheKey = mapVariant;
   const currentMapImage = mapImages[mapCacheKey] ?? null;
+  const preferencesKey = `invictus:share-card-layout:${auth.currentUser?.uid || 'local'}`;
+
+  useEffect(() => {
+    preferencesHydratedRef.current = false;
+    try {
+      const raw = localStorage.getItem(preferencesKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.infoTransform) setInfoTransform({ ...DEFAULT_INFO_TRANSFORM, ...parsed.infoTransform });
+        if (Array.isArray(parsed?.phrases)) {
+          setPhrases(DEFAULT_PHRASES.map((fallback) => {
+            const saved = parsed.phrases.find((phrase: PhraseLayer) => phrase?.id === fallback.id);
+            return saved
+              ? { ...fallback, visible: saved.visible !== false, transform: { ...fallback.transform, ...saved.transform } }
+              : { ...fallback, transform: { ...fallback.transform } };
+          }));
+        }
+      }
+    } catch {
+      // Preferências são best effort; nunca bloqueiam o editor.
+    } finally {
+      queueMicrotask(() => { preferencesHydratedRef.current = true; });
+    }
+    return () => { if (selectionTimerRef.current) clearTimeout(selectionTimerRef.current); };
+  }, [preferencesKey]);
+
+  useEffect(() => {
+    if (!preferencesHydratedRef.current) return;
+    try {
+      localStorage.setItem(preferencesKey, JSON.stringify({ infoTransform, phrases }));
+    } catch {
+      // Armazenamento indisponível não impede compartilhar.
+    }
+  }, [infoTransform, phrases, preferencesKey]);
 
   useEffect(() => {
     if (!hasRoute || compositionMode === 'photo-route' || mapImages[mapCacheKey]) return undefined;
@@ -350,7 +407,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     if (pointers.length === 2 && start.distance) {
       setInfoTransform({
         ...start.transform,
-        scale: clampScale(start.transform.scale * (pointerDistance(pointers) / start.distance), 0.55, 1.8),
+        scale: clampScale(start.transform.scale * (pointerDistance(pointers) / start.distance), 0.55, 1.4),
       });
     }
   };
@@ -364,6 +421,104 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
     const remaining = Array.from(infoPointersRef.current.values())[0];
     infoGestureRef.current = { transform: infoTransform, startX: remaining.x, startY: remaining.y };
+  };
+
+  const updatePhrase = useCallback((id: PhraseId, updater: (phrase: PhraseLayer) => PhraseLayer) => {
+    setPhrases((current) => current.map((phrase) => phrase.id === id ? updater(phrase) : phrase));
+  }, []);
+
+  const schedulePhraseSelectionClear = useCallback((id: PhraseId) => {
+    if (selectionTimerRef.current) clearTimeout(selectionTimerRef.current);
+    setSelectedPhraseId(id);
+    selectionTimerRef.current = setTimeout(() => {
+      setSelectedPhraseId((current) => current === id ? null : current);
+    }, 1100);
+  }, []);
+
+  const setTrashArmed = useCallback((id: PhraseId | null) => {
+    trashArmedRef.current = id;
+    setTrashArmedPhraseId(id);
+  }, []);
+
+  const startPhraseGesture = (id: PhraseId, event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (selectionTimerRef.current) clearTimeout(selectionTimerRef.current);
+    setSelectedPhraseId(id);
+    setDraggingPhraseId(id);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    const pointerMap = phrasePointersRef.current.get(id) || new Map<number, PointerPosition>();
+    pointerMap.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    phrasePointersRef.current.set(id, pointerMap);
+
+    const phrase = phrases.find((candidate) => candidate.id === id);
+    if (!phrase) return;
+    const pointers = Array.from(pointerMap.values());
+    phraseGestureRef.current.set(id, {
+      transform: phrase.transform,
+      startX: event.clientX,
+      startY: event.clientY,
+      ...(pointers.length === 2 ? { distance: pointerDistance(pointers) } : {}),
+    });
+  };
+
+  const movePhraseGesture = (id: PhraseId, event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    const pointerMap = phrasePointersRef.current.get(id);
+    const gesture = phraseGestureRef.current.get(id);
+    if (!pointerMap?.has(event.pointerId) || !gesture) return;
+    pointerMap.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pointers = Array.from(pointerMap.values());
+
+    if (pointers.length === 1) {
+      updatePhrase(id, (phrase) => ({
+        ...phrase,
+        transform: {
+          ...gesture.transform,
+          x: gesture.transform.x + event.clientX - gesture.startX,
+          y: gesture.transform.y + event.clientY - gesture.startY,
+        },
+      }));
+      const rect = cardRef.current?.getBoundingClientRect();
+      setTrashArmed(rect && event.clientY >= rect.bottom - rect.height * 0.14 ? id : null);
+      return;
+    }
+
+    if (pointers.length === 2 && gesture.distance) {
+      updatePhrase(id, (phrase) => ({
+        ...phrase,
+        transform: {
+          ...gesture.transform,
+          scale: clampScale(gesture.transform.scale * (pointerDistance(pointers) / gesture.distance), 0.5, 1.7),
+        },
+      }));
+      setTrashArmed(null);
+    }
+  };
+
+  const endPhraseGesture = (id: PhraseId, event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    const pointerMap = phrasePointersRef.current.get(id);
+    pointerMap?.delete(event.pointerId);
+    if (!pointerMap || pointerMap.size === 0) {
+      if (trashArmedRef.current === id) updatePhrase(id, (phrase) => ({ ...phrase, visible: false }));
+      phrasePointersRef.current.delete(id);
+      phraseGestureRef.current.delete(id);
+      setDraggingPhraseId(null);
+      setTrashArmed(null);
+      schedulePhraseSelectionClear(id);
+      return;
+    }
+    const remaining = Array.from(pointerMap.values())[0];
+    const phrase = phrases.find((candidate) => candidate.id === id);
+    if (phrase) phraseGestureRef.current.set(id, { transform: phrase.transform, startX: remaining.x, startY: remaining.y });
+  };
+
+  const restorePhrases = () => {
+    setPhrases(DEFAULT_PHRASES.map((phrase) => ({ ...phrase, transform: { ...phrase.transform }, visible: true })));
+    setSelectedPhraseId(null);
+    setDraggingPhraseId(null);
+    setTrashArmed(null);
   };
 
   const handlePhotoSelection = async (event: ChangeEvent<HTMLInputElement>, target: 'photo-map' | 'photo-route') => {
@@ -440,7 +595,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       </div>
 
       <div className="share-card-stage" onPointerDown={startContentGesture} onPointerMove={moveContentGesture} onPointerUp={endContentGesture} onPointerCancel={endContentGesture}>
-        <div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`)}>
+        <div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`, isGenerating && 'is-exporting')}>
           <div className="share-card-background" aria-hidden="true">
             {(compositionMode === 'photo-map' || compositionMode === 'photo-route') && selectedPhoto ? <img src={selectedPhoto} alt="" className="share-card-photo" /> : null}
             {compositionMode !== 'photo-route' && currentMapImage ? <div className={mapLayerClass} style={layerStyle(mapTransform)}><img src={currentMapImage} alt="" /></div> : null}
@@ -457,11 +612,33 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
               {metrics.map((metric) => <div className="share-card-metric" key={metric.label}><span>{metric.label}</span><strong>{metric.value}{metric.unit ? <small> {metric.unit}</small> : null}</strong></div>)}
             </div>
           </div>
+
+          {phrases.filter((phrase) => phrase.visible).map((phrase) => (
+            <div
+              key={phrase.id}
+              className={cn('share-card-phrase', `share-card-phrase--${phrase.id}`, selectedPhraseId === phrase.id && 'is-selected')}
+              style={layerStyle(phrase.transform)}
+              onPointerDown={(event) => startPhraseGesture(phrase.id, event)}
+              onPointerMove={(event) => movePhraseGesture(phrase.id, event)}
+              onPointerUp={(event) => endPhraseGesture(phrase.id, event)}
+              onPointerCancel={(event) => endPhraseGesture(phrase.id, event)}
+              aria-label={`Editar frase: ${phrase.text.replace(/\n/g, ' ')}`}
+            >
+              {phrase.text}
+            </div>
+          ))}
+
+          {draggingPhraseId ? (
+            <div className={cn('share-card-trash-zone', trashArmedPhraseId === draggingPhraseId && 'is-armed')} aria-hidden="true">
+              <Trash2 size={16} />
+              <span>SOLTE PARA REMOVER</span>
+            </div>
+          ) : null}
         </div>
       </div>
 
       <div className="share-card-notices">
-        <p className="share-card-gesture-hint">Arraste mapa ou rota. Arraste as informações separadamente e use dois dedos para redimensionar.</p>
+        <p className="share-card-gesture-hint">Arraste mapa/rota, frases e informações. Use pinça para redimensionar; arraste uma frase até a área de descarte para remover.</p>
         {feedback ? <p className="share-card-feedback" role="status">{feedback}</p> : null}
       </div>
 
@@ -477,11 +654,11 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
             {compositionMode !== 'photo-route' ? <div className="share-customizer-row"><span>Estilo do mapa</span><div><button type="button" className={mapVariant === 'satellite' ? 'is-active' : ''} onClick={() => setMapVariant('satellite')}>Satélite</button><button type="button" className={mapVariant === 'outdoors' ? 'is-active' : ''} onClick={() => setMapVariant('outdoors')}>Ruas</button></div></div> : null}
 
-            <label className="share-customizer-slider"><span>Tamanho das informações</span><input type="range" min="55" max="180" value={Math.round(infoTransform.scale * 100)} onChange={(event) => setInfoTransform((current) => ({ ...current, scale: Number(event.target.value) / 100 }))} /></label>
+            <label className="share-customizer-slider"><span>Tamanho das informações</span><input type="range" min="55" max="140" value={Math.round(infoTransform.scale * 100)} onChange={(event) => setInfoTransform((current) => ({ ...current, scale: Number(event.target.value) / 100 }))} /></label>
             <label className="share-customizer-slider"><span>Tamanho do {compositionMode === 'photo-route' ? 'traçado' : 'mapa'}</span><input type="range" min="70" max="220" value={Math.round(currentContentTransform.scale * 100)} onChange={(event) => setCurrentContentTransform({ ...currentContentTransform, scale: Number(event.target.value) / 100 })} /></label>
             <label className="share-customizer-slider"><span>Ângulo do {compositionMode === 'photo-route' ? 'traçado' : 'mapa'}</span><input type="range" min="-35" max="35" value={Math.round(currentContentTransform.rotation)} onChange={(event) => setCurrentContentTransform({ ...currentContentTransform, rotation: Number(event.target.value) })} /></label>
 
-            <div className="share-customizer-reset"><button type="button" onClick={resetContent}>Recentrar mapa/rota</button><button type="button" onClick={() => setInfoTransform(DEFAULT_INFO_TRANSFORM)}>Recentrar informações</button></div>
+            <div className="share-customizer-reset"><button type="button" onClick={resetContent}>Recentrar mapa/rota</button><button type="button" onClick={() => setInfoTransform(DEFAULT_INFO_TRANSFORM)}>Recentrar informações</button><button type="button" onClick={restorePhrases}>Restaurar frases</button></div>
           </section>
         </div>
       ) : null}
