@@ -17,7 +17,6 @@ const lazyNamed = <T extends Record<string, unknown>, K extends keyof T>(
 ) => lazy(async () => ({ default: (await loader())[exportName] as ComponentType<any> }));
 
 const Home = lazyNamed(() => import('./pages/Home'), 'Home');
-const Rankings = lazyNamed(() => import('./pages/Rankings'), 'Rankings');
 const Achievements = lazyNamed(() => import('./pages/Achievements'), 'Achievements');
 const Challenges = lazyNamed(() => import('./pages/Challenges'), 'Challenges');
 const CardioObjective = lazyNamed(() => import('./pages/CardioObjective'), 'CardioObjective');
@@ -82,7 +81,7 @@ export default function App() {
               <Route element={<Layout />}>
                 <Route path="/" element={<Home />} />
                 <Route path="/invite" element={<Home />} />
-                <Route path="/rankings" element={<Rankings />} />
+                <Route path="/rankings" element={<Navigate to="/championships?section=ranking" replace />} />
                 <Route path="/league" element={<Navigate to="/championships" replace />} />
                 <Route path="/league/inscricao" element={<Navigate to="/championships" replace />} />
                 <Route path="/notifications" element={<Notifications />} />

@@ -134,7 +134,7 @@ export function Challenges() {
     const legacyCategory = searchParams.get('category');
     if (!legacyCategory) return;
     if (legacyCategory === 'powerlift') { navigate('/power', { replace: true }); return; }
-    if (legacyCategory === 'ranking') { navigate('/rankings', { replace: true }); return; }
+    if (legacyCategory === 'ranking') { navigate('/championships?section=ranking', { replace: true }); return; }
     if (legacyCategory === 'conquistas') { navigate('/achievements', { replace: true }); return; }
     const next = new URLSearchParams(searchParams);
     next.delete('category');

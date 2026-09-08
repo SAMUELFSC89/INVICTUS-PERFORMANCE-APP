@@ -101,7 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rawDisplayName = typeof user.displayName === 'string' && user.displayName.trim() ? user.displayName : 'Atleta';
     const displayName = escapeHtml(rawDisplayName);
     const handle = escapeHtml(rawDisplayName.toLowerCase().replace(/\s+/g, ''));
-    const city = escapeHtml(user.city || 'Ranking Geral');
+    const city = escapeHtml(user.city || 'Atleta Invictus');
     const safePhotoUrl = safeImageUrl(workout.photoUrl);
 
     const protocol = req.headers['x-forwarded-proto'] || 'https';

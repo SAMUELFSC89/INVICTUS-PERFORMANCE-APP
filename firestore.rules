@@ -127,7 +127,7 @@ service cloud.firestore {
 
     // Aggregated Rankings (Snapshots)
     match /aggregated_rankings/{rankingId} {
-      allow read: if isSignedIn() && isValidId(rankingId);
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
@@ -366,7 +366,7 @@ service cloud.firestore {
 
     // Rankings Collection
     match /rankings/{rankingId} {
-      allow read: if isSignedIn() && isValidId(rankingId);
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 

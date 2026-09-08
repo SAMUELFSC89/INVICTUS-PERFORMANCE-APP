@@ -144,7 +144,7 @@ export function Layout() {
               label="INÍCIO"
               extraActiveCheck={(p) => p === '/' || p.startsWith('/championships')}
             />
-            <NavItem id="nav-rankings" to="/rankings" icon={<Trophy size={20} className="md:w-[22px] md:h-[22px]" />} label="RANKING" />
+            <NavItem id="nav-championships" to="/championships" icon={<Trophy size={20} className="md:w-[22px] md:h-[22px]" />} label="CAMPEONATOS" />
             <NavItem id="nav-challenges" to="/challenges" icon={<Award size={20} className="md:w-[22px] md:h-[22px]" />} label="DESAFIOS" />
             <NavItem
               id="nav-profile"

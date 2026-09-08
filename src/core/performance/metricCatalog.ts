@@ -365,7 +365,7 @@ export const METRIC_CATALOG: PerformanceMetricDef[] = [
     category: 'records_evolution',
     name: 'Recorde de Pontuação Semanal (Melhor IGA Histórico)',
     objective: 'Guardar o ápice de pontuação científica atingida pelo atleta em uma semana.',
-    simpleDescription: 'Sua maior pontuação no Ranking Invictus até hoje.',
+    simpleDescription: 'Sua maior pontuação no Ranking da Academia até hoje.',
     technicalDescription: 'Máximo valor do indicador IGA = 100 * (Fn * Tn * In)^(1/3) calculado em qualquer semana concluída.',
     formula: 'PR_{IGA} = \\max_{semanas} \\{ IGA_{semana} \\}',
     unit: 'pts',

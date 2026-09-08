@@ -50,9 +50,6 @@ export const aggregationService = {
 
       console.log('[Aggregation] Global stats updated successfully.');
       
-      // 4. Ranking Snapshots
-      await this.updateRankings();
-      
     } catch (error: any) {
       const errorMsg = error.message || '';
       if (errorMsg.includes('RESOURCE_EXHAUSTED')) {
@@ -60,57 +57,6 @@ export const aggregationService = {
         return;
       }
       console.error('[Aggregation] Error updating stats:', error);
-    }
-  },
-
-  async updateRankings() {
-    if (!db) return;
-    const periods = ['all', 'weekly', 'monthly'];
-    const scoreFields: Record<string, string> = {
-      all: 'score',
-      weekly: 'weeklyScore',
-      monthly: 'monthlyScore'
-    };
-
-    try {
-      for (const period of periods) {
-        const scoreField = scoreFields[period];
-        
-        // Global Ranking
-        const globalSnap = await db.collection('users')
-          .where('activeSeason', '==', 'S1')
-          .orderBy(scoreField, 'desc')
-          .limit(50)
-          .get();
-          
-        const topUsers = globalSnap.docs.map((d: any, i: number) => {
-          const data = d.data();
-          return {
-            uid: d.id,
-            displayName: data.displayName || 'Atleta',
-            photoURL: data.photoURL || '',
-            score: data[scoreField] || 0,
-            streak: data.streak || 0,
-            rank: i + 1,
-            isSubscribed: isProUser(data),
-            subscriptionTier: data.subscriptionTier || 'open',
-          };
-        });
-
-        await db.collection('aggregated_rankings').doc(`global_${period}`).set({
-          level: 'global',
-          period,
-          topUsers,
-          updatedAt: new Date().toISOString()
-        });
-      }
-      console.log('[Aggregation] Global rankings snapshots updated.');
-    } catch (error: any) {
-      if (error.message?.includes('RESOURCE_EXHAUSTED')) {
-        console.warn('[Aggregation] Quota limit reached during ranking snapshots.');
-        return;
-      }
-      throw error;
     }
   }
 };

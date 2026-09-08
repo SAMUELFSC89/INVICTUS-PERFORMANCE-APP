@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Award, Check, Flame, Heart, MapPin, Plus, Share2, ShieldCheck, Trophy, UserRound } from 'lucide-react';
+import { ArrowLeft, Award, Check, Flame, Heart, MapPin, Plus, Share2, ShieldCheck, Trophy, UserRound, Zap } from 'lucide-react';
 import { auth } from '../firebase';
 import { ACHIEVEMENTS } from '../achievements';
 import { InvictusLogo } from '../components/InvictusLogo';
@@ -19,12 +19,9 @@ interface PublicProfileData {
   streak?: number;
   score?: number;
   xp?: number;
-  positions?: Partial<Record<'gym' | 'city' | 'national' | 'global', number>>;
   achievements?: string[];
   profileLikesCount?: number;
 }
-
-const rank = (value?: number) => Number(value) > 0 ? `#${Number(value)}` : '—';
 
 export function PublicProfile() {
   const { userId } = useParams<{ userId: string }>();
@@ -36,7 +33,7 @@ export function PublicProfile() {
   const [recognized, setRecognized] = useState(false);
 
   useEffect(() => {
-    if (!userId) { navigate('/rankings', { replace: true }); return; }
+    if (!userId) { navigate('/championships?section=ranking', { replace: true }); return; }
     const controller = new AbortController();
     setLoading(true); setError('');
     fetch(`${API_CONFIG.baseUrl}/api/profile?id=${encodeURIComponent(userId)}`, { signal: controller.signal })
@@ -83,7 +80,7 @@ export function PublicProfile() {
   return createPortal(<main className="ppn-screen">
     <div className="ppn-page">
       <header className="ppn-header"><button onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={share} aria-label="Compartilhar perfil"><Share2 /></button></header>
-      {loading ? <section className="ppn-state"><i /><p>Carregando atleta...</p></section> : error && !profile ? <section className="ppn-state"><Award /><p>{error}</p><button onClick={() => navigate('/rankings')}>VOLTAR AO RANKING</button></section> : profile ? <>
+      {loading ? <section className="ppn-state"><i /><p>Carregando atleta...</p></section> : error && !profile ? <section className="ppn-state"><Award /><p>{error}</p><button onClick={() => navigate('/championships?section=ranking')}>VOLTAR AO RANKING</button></section> : profile ? <>
         <section className="ppn-hero">
           <div className="ppn-photo">{profile.photoURL ? <img src={profile.photoURL} alt={`Foto de ${profile.displayName || 'atleta'}`} referrerPolicy="no-referrer" /> : <UserRound />}</div>
           <div className="ppn-person"><small>ATLETA INVICTUS</small><h1>{(profile.displayName || 'ATLETA').toUpperCase()}</h1>{location ? <p><MapPin /> {location}</p> : null}{profile.bio ? <blockquote>{profile.bio}</blockquote> : null}</div>
@@ -92,8 +89,8 @@ export function PublicProfile() {
         <section className="ppn-recognition"><div><Heart /><span><b>{Number(profile.profileLikesCount || 0).toLocaleString('pt-BR')}</b><small>RECONHECIMENTOS</small></span></div>{!isMe ? <button className={recognized ? 'is-done' : ''} onClick={recognize} disabled={recognizing || recognized}>{recognized ? <Check /> : <Heart />}{recognized ? 'RECONHECIDO' : recognizing ? 'ENVIANDO...' : 'RECONHECER'}</button> : null}</section>
         {error ? <p className="ppn-message">{error}</p> : null}
         <section className="ppn-stats">
-          <article><Trophy /><small>RANK GERAL</small><b>{rank(profile.positions?.national || profile.positions?.global)}</b><span>Brasil</span></article>
-          <article><ShieldCheck /><small>RANK LOCAL</small><b>{rank(profile.positions?.city)}</b><span>{profile.city || 'Sem localização pública'}</span></article>
+          <article><Zap /><small>PONTUAÇÃO IGA</small><b>{Number.isFinite(Number(profile.score)) ? Math.round(Number(profile.score)) : '—'}</b><span>desempenho validado</span></article>
+          <article><Heart /><small>RECONHECIMENTOS</small><b>{Number(profile.profileLikesCount || 0)}</b><span>da comunidade</span></article>
           <article><Flame /><small>SEQUÊNCIA</small><b>{Number(profile.streak) > 0 ? Number(profile.streak) : '—'}</b><span>{Number(profile.streak) === 1 ? 'dia ativo' : 'dias ativos'}</span></article>
           <article><Award /><small>CONQUISTAS</small><b>{unlocked.length}</b><span>desbloqueadas</span></article>
         </section>
