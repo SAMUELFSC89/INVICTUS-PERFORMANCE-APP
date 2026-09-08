@@ -1,0 +1,68 @@
+name: PR41 personal workout and daily active energy
+
+on:
+  push:
+    branches:
+      - feat/exercise-assets-batch-01-clean
+    paths:
+      - .github/workflows/pr41-personal-workout-health.yml
+
+permissions:
+  contents: write
+
+jobs:
+  implement-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply requested implementation
+        run: python scripts/pr41_personal_workout_health.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Focused regression tests
+        run: npx jest api/__tests__/activity-policy-modality.test.ts api/__tests__/active-energy-summary.test.ts --runInBand
+
+      - name: Full test suite
+        run: npm test -- --runInBand
+
+      - name: Build
+        run: npm run build
+
+      - name: Serverless ESM validation
+        run: npm run test:serverless-init
+
+      - name: Catalog ESM validation
+        run: npm run test:catalog-esm
+
+      - name: Diff validation
+        run: git diff --check
+
+      - name: Commit validated implementation to PR 41
+        run: |
+          rm -f scripts/pr41_personal_workout_health.py
+          rm -f .github/workflows/pr41-personal-workout-health.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No implementation changes to commit."
+            exit 1
+          fi
+          git commit -m "feat: personal workout mode and daily active energy"
+          git push origin HEAD:feat/exercise-assets-batch-01-clean

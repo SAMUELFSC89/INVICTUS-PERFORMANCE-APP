@@ -19,6 +19,7 @@ import {
 } from '../core/training/manualWorkoutRules';
 import { workoutPlanService } from '../services/workoutPlanService';
 import { activityService } from '../services/activityService';
+import { resolvePersonalWorkoutPolicy } from '../services/personalWorkoutPolicyService';
 import type { ActivityCompetitionPolicy } from '../types';
 import type { PlannedExercise, PlannedWorkout, WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
 import './Musculation.css';
@@ -28,6 +29,12 @@ import './MusculationManualFeedback.css';
 type View = 'hub' | 'manual' | 'ai' | 'ai-processing' | 'ai-success' | 'plan' | 'workout';
 type ManualDraft = WorkoutPlanDraft & { step: number; selectedWorkout: number };
 type AiDraft = WorkoutPlanAnswers & { step: number };
+
+type PendingCheckInFallback = {
+  plan: WorkoutPlan;
+  workout: PlannedWorkout;
+  message: string;
+};
 
 const MIN_PLAN_COMMITMENT_DAYS = 30;
 function daysSince(iso: string): number {
@@ -123,6 +130,29 @@ function ExerciseRow({ exerciseId, onAdd, added = false, addDisabled = false }: 
   </article>;
 }
 
+function ScoringModeToggle({ enabled, onChange, disabled = false }: { enabled: boolean; onChange: (enabled: boolean) => void; disabled?: boolean }) {
+  return <article className="mus-plan-lock-note" style={{ alignItems: 'center', margin: '0 0 12px', padding: '12px 14px' }}>
+    <Trophy size={18} />
+    <span style={{ display: 'grid', gap: 2, flex: 1 }}>
+      <b style={{ color: enabled ? '#f5b514' : '#f3f3f3', fontSize: 13 }}>PONTUAÇÃO {enabled ? 'ATIVADA' : 'DESATIVADA'}</b>
+      <small style={{ color: '#aaa', lineHeight: 1.35 }}>{enabled ? 'Se este treino for elegível para ranking/campeonato, o check-in competitivo será exigido.' : 'Treino pessoal: salva cargas, volume, histórico e saúde, mas não entra em ranking ou campeonato.'}</small>
+    </span>
+    <button
+      type="button"
+      aria-label={enabled ? 'Desativar pontuação neste treino' : 'Ativar pontuação neste treino'}
+      aria-pressed={enabled}
+      disabled={disabled}
+      onClick={() => onChange(!enabled)}
+      style={{
+        position: 'relative', flex: '0 0 auto', width: 48, height: 28, border: 0, borderRadius: 20,
+        background: enabled ? '#f5b514' : '#2c2c2c', opacity: disabled ? .55 : 1, cursor: disabled ? 'default' : 'pointer'
+      }}
+    >
+      <span style={{ position: 'absolute', top: 4, left: enabled ? 24 : 4, width: 20, height: 20, borderRadius: '50%', background: enabled ? '#171107' : '#e7e7e7', transition: 'left .18s ease' }} />
+    </button>
+  </article>;
+}
+
 export function Musculation() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -140,6 +170,8 @@ export function Musculation() {
   const [startPolicy, setStartPolicy] = useState<ActivityCompetitionPolicy | null>(null);
   const [policyLoading, setPolicyLoading] = useState(false);
   const [pendingNewPlanFlow, setPendingNewPlanFlow] = useState<'manual' | 'ai' | null>(null);
+  const [scoringEnabled, setScoringEnabled] = useState(true);
+  const [checkInFallback, setCheckInFallback] = useState<PendingCheckInFallback | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -246,55 +278,71 @@ export function Musculation() {
       setPlans(current => [saved, ...current]); setSelectedPlan(saved); setView('ai-success');
     } catch (err: any) { setError(err.message); setView('ai'); }
   };
-  const startWorkout = async (plan: WorkoutPlan, workout: PlannedWorkout) => {
-    const policy = startPolicy;
-    if (!policy || Date.parse(policy.startBy) < Date.now()) {
-      setPolicyLoading(true);
-      setError('Estamos renovando a autorização do treino. Quando a mensagem sumir, toque em iniciar novamente.');
-      try {
-        setStartPolicy(await activityService.resolveCompetitionPolicy('workout'));
-        setError(null);
-      } catch (err: any) {
-        setError(err.message || 'Não foi possível preparar o treino.');
-      } finally {
-        setPolicyLoading(false);
-      }
-      return;
-    }
-    const motionPermission = policy.requiresMotionSensors
-      ? activityService.requestMotionPermission()
-      : Promise.resolve('granted' as const);
+
+  const startWorkout = async (plan: WorkoutPlan, workout: PlannedWorkout, forcePersonal = false) => {
     setLoading(true); setError(null);
     try {
-      await motionPermission;
-      const checkIn = policy.requiresGymCheckIn
-        ? await activityService.performGymCheckIn(policy)
-        : undefined;
+      let policy: ActivityCompetitionPolicy;
+      if (forcePersonal || !scoringEnabled) {
+        policy = await resolvePersonalWorkoutPolicy();
+      } else {
+        const currentPolicyValid = startPolicy?.startBy && Date.parse(startPolicy.startBy) >= Date.now();
+        if (currentPolicyValid) {
+          policy = startPolicy as ActivityCompetitionPolicy;
+        } else {
+          setPolicyLoading(true);
+          policy = await activityService.resolveCompetitionPolicy('workout');
+          setStartPolicy(policy);
+        }
+      }
+
+      if (policy.requiresMotionSensors) await activityService.requestMotionPermission();
+
+      let checkIn: Awaited<ReturnType<typeof activityService.performGymCheckIn>> | undefined;
+      if (policy.requiresGymCheckIn) {
+        try {
+          checkIn = await activityService.performGymCheckIn(policy);
+        } catch (err: any) {
+          setCheckInFallback({
+            plan,
+            workout,
+            message: err?.message || 'Não foi possível confirmar que você está na academia vinculada.',
+          });
+          return;
+        }
+      }
+
       await activityService.startSession('workout', checkIn?.location, undefined, undefined, checkIn?.checkInId, workout.focus || 'Musculação', {
         workoutPlanId: plan.id, workoutId: workout.id, plannedExercises: workout.exercises
       }, policy);
       navigate('/challenges', { replace: true });
-    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível iniciar o treino.');
+    } finally {
+      setPolicyLoading(false);
+      setLoading(false);
+    }
   };
 
   const content = <main className="mus-screen"><div className="mus-page">
-    {view === 'hub' ? <Hub userName={user?.displayName || user?.name || 'Atleta'} plan={activePlan} today={todayWorkout} loading={loading || policyLoading} planLocked={activePlanLocked} planDaysRemaining={activePlanDaysRemaining} onManual={() => startNewPlanFlow('manual')} onAi={() => startNewPlanFlow('ai')} onPlan={() => setView('plan')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} onStart={() => activePlan && todayWorkout && startWorkout(activePlan, todayWorkout)} /> : null}
+    {view === 'hub' ? <Hub userName={user?.displayName || user?.name || 'Atleta'} plan={activePlan} today={todayWorkout} loading={loading || policyLoading} planLocked={activePlanLocked} planDaysRemaining={activePlanDaysRemaining} scoringEnabled={scoringEnabled} onScoringChange={setScoringEnabled} onManual={() => startNewPlanFlow('manual')} onAi={() => startNewPlanFlow('ai')} onPlan={() => setView('plan')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} onStart={() => activePlan && todayWorkout && startWorkout(activePlan, todayWorkout)} /> : null}
     {view === 'manual' ? <ManualFlow draft={manual} setDraft={setManual} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} filteredExercises={filteredExercises} addExercise={addExercise} updateExercise={updateExercise} updateWorkout={updateManualWorkout} onBack={() => manual.step > 1 ? setManual(current => ({ ...current, step: current.step - 1 })) : setView('hub')} onSave={saveManual} loading={loading} /> : null}
     {view === 'ai' ? <AiFlow draft={ai} setDraft={setAi} onBack={() => ai.step > 1 ? setAi(current => ({ ...current, step: current.step - 1 })) : setView('hub')} onGenerate={generateAi} /> : null}
     {view === 'ai-processing' ? <Processing answers={ai} /> : null}
     {view === 'ai-success' && activePlan ? <AiSuccess plan={activePlan} onReview={() => setView('ai')} onPlan={() => setView('plan')} /> : null}
     {view === 'plan' && activePlan ? <PlanView plan={activePlan} onBack={() => setView('hub')} onWorkout={(workout) => { setSelectedWorkout(workout); setView('workout'); }} /> : null}
-    {view === 'workout' && activePlan && selectedWorkout ? <WorkoutView plan={activePlan} workout={selectedWorkout} onBack={() => setView('plan')} onStart={() => startWorkout(activePlan, selectedWorkout)} loading={loading || policyLoading} /> : null}
+    {view === 'workout' && activePlan && selectedWorkout ? <WorkoutView plan={activePlan} workout={selectedWorkout} onBack={() => setView('plan')} onStart={() => startWorkout(activePlan, selectedWorkout)} loading={loading || policyLoading} scoringEnabled={scoringEnabled} onScoringChange={setScoringEnabled} /> : null}
     {error ? <div className="mus-error" role="alert">{error}<button onClick={() => setError(null)}>Fechar</button></div> : null}
-    {showInfo ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-info-title" onClick={() => setShowInfo(false)}><section onClick={event => event.stopPropagation()}><ShieldCheck /><h2 id="mus-info-title">COMO FUNCIONA</h2><p>Crie ou escolha um plano e registre a sessão completa. Todo treino concluído alimenta sua evolução, XP e desafios. A verificação de segurança só é aplicada quando você participa de ranking ou campeonato.</p><button onClick={() => setShowInfo(false)}>ENTENDI</button></section></div> : null}
+    {showInfo ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-info-title" onClick={() => setShowInfo(false)}><section onClick={event => event.stopPropagation()}><ShieldCheck /><h2 id="mus-info-title">COMO FUNCIONA</h2><p>Crie ou escolha um plano e registre a sessão completa. Com a pontuação ativada, treinos elegíveis para ranking/campeonato usam o check-in e as verificações competitivas. Com a pontuação desativada, o treino é pessoal: continua salvando cargas, volume, histórico, progressão e saúde, mas não entra na disputa.</p><button onClick={() => setShowInfo(false)}>ENTENDI</button></section></div> : null}
+    {checkInFallback ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-checkin-title" onClick={() => setCheckInFallback(null)}><section onClick={event => event.stopPropagation()}><ShieldCheck /><h2 id="mus-checkin-title">CHECK-IN NÃO CONFIRMADO</h2><p>{checkInFallback.message}</p><p>Para este treino contar na pontuação, o check-in competitivo precisa ser confirmado. Se você só quer registrar o treino em outra academia, pode continuar agora sem pontuar.</p><button onClick={() => { const pending = checkInFallback; setCheckInFallback(null); setScoringEnabled(true); void startWorkout(pending.plan, pending.workout); }}>TENTAR CHECK-IN NOVAMENTE</button><button className="is-back" onClick={() => { const pending = checkInFallback; setCheckInFallback(null); setScoringEnabled(false); void startWorkout(pending.plan, pending.workout, true); }}>CONTINUAR SEM PONTUAR</button></section></div> : null}
     {pendingNewPlanFlow ? <div className="mus-info-overlay" role="dialog" aria-modal="true" aria-labelledby="mus-lock-title" onClick={() => setPendingNewPlanFlow(null)}><section onClick={event => event.stopPropagation()}><CalendarDays /><h2 id="mus-lock-title">TROCAR DE TREINO?</h2><p>Seu plano atual está ativo há {(activePlanAgeDays ?? 0)} {(activePlanAgeDays ?? 0) === 1 ? 'dia' : 'dias'} -- faltam {activePlanDaysRemaining} para completar o período mínimo recomendado de {MIN_PLAN_COMMITMENT_DAYS} dias, necessário para o corpo se adaptar e você ver evolução real. Criar um novo treino agora vai substituir o atual. Deseja continuar mesmo assim?</p><button onClick={() => setPendingNewPlanFlow(null)}>MANTER TREINO ATUAL</button><button className="is-back" onClick={confirmNewPlanFlow}>CONTINUAR MESMO ASSIM</button></section></div> : null}
   </div><Footer navigate={navigate} /></main>;
   return createPortal(content, document.body);
 }
 
-function Hub({ userName, plan, today, loading, planLocked, planDaysRemaining, onManual, onAi, onPlan, onWorkout, onStart }: any) {
+function Hub({ userName, plan, today, loading, planLocked, planDaysRemaining, scoringEnabled, onScoringChange, onManual, onAi, onPlan, onWorkout, onStart }: any) {
   return <><Header /><section className="mus-hero"><div><h1>MUSCULAÇÃO</h1><p>Organize seus treinos, acompanhe sua evolução e supere seus limites.</p></div></section>
-    {plan && today ? <section><h2 className="mus-section-title"><CalendarDays /> TREINO DE HOJE</h2><article className="mus-today-card">
+    {plan && today ? <section><h2 className="mus-section-title"><CalendarDays /> TREINO DE HOJE</h2><ScoringModeToggle enabled={scoringEnabled} onChange={onScoringChange} disabled={loading} /><article className="mus-today-card">
       {today.exercises[0] ? <OfficialExerciseMedia exercise={OFFICIAL_EXERCISE_BY_ID.get(today.exercises[0].exerciseId)} label={today.exercises[0].exerciseId} className="mus-today-media" /> : null}
       <div><h3>{today.focus || today.name}</h3><span>{today.name}</span><p><Dumbbell /> {today.exercises.length} exercícios</p><p><Clock3 /> ~{plan.durationMinutes} min</p><button onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></div>
     </article></section> : <section className="mus-empty-plan"><h2>COMECE SEU PLANO</h2><p>{userName.split(' ')[0]}, escolha como deseja montar seus treinos.</p></section>}
@@ -400,6 +448,6 @@ function PlanView({ plan, onBack, onWorkout }: { plan: WorkoutPlan; onBack: () =
   return <><Header onBack={onBack} /><section className="mus-flow"><h1>MEU PLANO</h1><p>{plan.description || 'Seu plano de musculação atual.'}</p><div className="mus-final-data"><h2>VISÃO GERAL</h2><p><Target /><span>Objetivo<b>{plan.objective}</b></span></p><p><CalendarDays /><span>Frequência<b>{plan.daysPerWeek} dias por semana</b></span></p><p><Clock3 /><span>Duração média<b>{plan.durationMinutes} min</b></span></p><p><Brain /><span>Origem<b>{origin}</b></span></p></div><div className="mus-tip mus-plan-rationale"><Info /><span><b>POR QUE ESSE TREINO</b>{rationale}</span></div><h2>PROGRAMAÇÃO SEMANAL</h2><div className="mus-workout-list">{plan.workouts.map((workout,index) => <button key={workout.id} onClick={() => onWorkout(workout)}><i>{String.fromCharCode(65+index)}</i><span><b>{workout.name}</b><small>{workout.weekdays.map(day => weekdays[day]).join(' · ')} · {workout.focus}</small></span><em>{workout.exercises.length} exercícios</em><ChevronRight /></button>)}</div></section></>;
 }
 
-function WorkoutView({ workout, onBack, onStart, loading }: { plan: WorkoutPlan; workout: PlannedWorkout; onBack: () => void; onStart: () => void; loading: boolean }) {
-  return <><Header onBack={onBack} /><section className="mus-flow"><h1>{workout.name}</h1><p>{workout.focus}</p><div className="mus-workout-detail">{workout.exercises.map((item,index) => { const exercise = OFFICIAL_EXERCISE_BY_ID.get(item.exerciseId); return <article key={`${item.exerciseId}-${index}`}><OfficialExerciseMedia exercise={exercise} label={item.exerciseId} className="mus-detail-media" /><i>{index+1}</i><span><b>{exercise?.name || item.exerciseId}</b><small>{item.sets} × {item.repsMin}–{item.repsMax} · {item.restSeconds}s descanso{item.targetRir !== undefined ? ` · RIR ${item.targetRir}` : ''}{item.initialLoadKg !== undefined ? ` · ${item.initialLoadKg} kg inicial` : ''}</small></span></article>; })}</div><button className="mus-start-workout" onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></section></>;
+function WorkoutView({ workout, onBack, onStart, loading, scoringEnabled, onScoringChange }: { plan: WorkoutPlan; workout: PlannedWorkout; onBack: () => void; onStart: () => void; loading: boolean; scoringEnabled: boolean; onScoringChange: (enabled: boolean) => void }) {
+  return <><Header onBack={onBack} /><section className="mus-flow"><h1>{workout.name}</h1><p>{workout.focus}</p><div className="mus-workout-detail">{workout.exercises.map((item,index) => { const exercise = OFFICIAL_EXERCISE_BY_ID.get(item.exerciseId); return <article key={`${item.exerciseId}-${index}`}><OfficialExerciseMedia exercise={exercise} label={item.exerciseId} className="mus-detail-media" /><i>{index+1}</i><span><b>{exercise?.name || item.exerciseId}</b><small>{item.sets} × {item.repsMin}–{item.repsMax} · {item.restSeconds}s descanso{item.targetRir !== undefined ? ` · RIR ${item.targetRir}` : ''}{item.initialLoadKg !== undefined ? ` · ${item.initialLoadKg} kg inicial` : ''}</small></span></article>; })}</div><ScoringModeToggle enabled={scoringEnabled} onChange={onScoringChange} disabled={loading} /><button className="mus-start-workout" onClick={onStart} disabled={loading}><Play />{loading ? 'INICIANDO…' : 'INICIAR TREINO'}</button></section></>;
 }
