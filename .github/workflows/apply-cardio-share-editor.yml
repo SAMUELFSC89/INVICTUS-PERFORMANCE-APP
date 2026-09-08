@@ -1,0 +1,48 @@
+name: Apply cardio share editor implementation
+
+on:
+  push:
+    branches:
+      - feat/cardio-share-editor-direct-flow
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/cardio-share-editor-direct-flow
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply source patch
+        run: python3 scripts/apply_cardio_share_editor.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Focused share-flow tests
+        run: npx jest src/tests/shareCardNativeContract.test.ts src/tests/cardioShareDirectFlow.test.ts --runInBand
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-cardio-share-editor.yml scripts/apply_cardio_share_editor.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: direct cardio share editor with gestures"
+          git push origin HEAD:feat/cardio-share-editor-direct-flow
