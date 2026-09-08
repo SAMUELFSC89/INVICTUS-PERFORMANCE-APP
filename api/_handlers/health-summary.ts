@@ -1,7 +1,8 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors, verifyAuth } from '../_lib/common.js';
+import { cors, db, verifyAuth } from '../_lib/common.js';
 import { lerSerieTemporalMetricaComLimite, HealthMetricType, HealthSample } from '../_lib/health-data-layer.js';
 import { aggregateDailyHealthSamples, healthSampleLocalDate } from '../_lib/health-source-priority.js';
+import { buildConsolidatedDailyActiveCalories } from '../_lib/daily-active-energy.js';
 
 const METRICAS_RESUMO: HealthMetricType[] = [
   'heart_rate', 'heart_rate_resting', 'hrv_rmssd', 'hrv_sdnn', 'sleep_duration_min', 'steps_daily', 'weight_kg',
@@ -57,12 +58,15 @@ export async function buildHealthSummary(userId: string, days = 30, timeZone = '
     windowDays, latest: {}, trends: {},
     metadata: { partial: false, aggregation: 'daily', timeZone, generatedAt: now.toISOString(), metrics: {} }
   };
+  const rawSeries = new Map<HealthMetricType, HealthSample[]>();
+
   // Cada métrica é lida uma única vez. Falha parcial não apaga as demais métricas.
   // Quatro consultas simultâneas evitam rajadas de dezenas de RPCs por usuário.
   for (let offset = 0; offset < METRICAS_TENDENCIA.length; offset += 4) {
     await Promise.all(METRICAS_TENDENCIA.slice(offset, offset + 4).map(async metric => {
       try {
         const series = await lerSerieTemporalMetricaComLimite(userId, metric, since, now, LIMIT_PER_METRIC, timeZone);
+        rawSeries.set(metric, series.samples);
         const daily = aggregateDailyHealthSamples(metric, series.samples, timeZone);
         result.metadata.metrics[metric] = {
           partial: series.partial, scannedCount: series.scannedCount, limit: series.limit,
@@ -94,6 +98,54 @@ export async function buildHealthSummary(userId: string, days = 30, timeZone = '
       }
     }));
   }
+
+  // Consolidação diária de energia: o Health/Health Connect continua sendo
+  // consultado todos os dias pela sincronização passiva. Aqui combinamos esse
+  // total com treinos sem duplicar uma sessão que já esteja dentro do total do
+  // dispositivo. Quando o Health não entrega calorias, passos fora dos treinos
+  // servem como fallback estimado usando o peso conhecido do atleta.
+  try {
+    const stepsActivity = await lerSerieTemporalMetricaComLimite(userId, 'steps_activity', since, now, LIMIT_PER_METRIC, timeZone);
+    rawSeries.set('steps_activity', stepsActivity.samples);
+    result.metadata.metrics.steps_activity = {
+      partial: stepsActivity.partial, scannedCount: stepsActivity.scannedCount, limit: stepsActivity.limit,
+      excludedLegacyCount: stepsActivity.excludedLegacyCount, unusableLegacyCount: stepsActivity.unusableLegacyCount
+    };
+    result.metadata.partial ||= stepsActivity.partial;
+
+    let weightKg = Number(result.latest.weight_kg?.value) || 0;
+    if (!(weightKg > 0)) {
+      try {
+        const userSnap = await db.collection('users').doc(userId).get();
+        weightKg = Number(userSnap.data()?.weight) || 0;
+      } catch {
+        weightKg = 0;
+      }
+    }
+
+    const consolidated = buildConsolidatedDailyActiveCalories({
+      calories: rawSeries.get('calories_active') || [],
+      stepsDaily: rawSeries.get('steps_daily') || [],
+      stepsActivity: rawSeries.get('steps_activity') || [],
+      weightKg,
+      timeZone,
+    });
+    const visible = consolidated.filter(sample => (sample.localDate || sample.timestamp.slice(0, 10)) >= trendStartDate);
+    if (visible.length) {
+      result.trends.calories_active = visible.map(point);
+      const latest = visible.filter(sample => Date.parse(sample.timestamp) >= latestSince || Boolean(sample.localDate)).at(-1);
+      const latestPoint = latest ? point(latest) : null;
+      if (latestPoint && latest?.aggregation === 'daily_total') {
+        latestPoint.timestamp = latest.updatedAt || latest.createdAt || latest.timestamp;
+      }
+      result.latest.calories_active = latestPoint;
+    }
+  } catch {
+    // A consolidação é complementar. Se ela falhar, preservamos o total diário
+    // já calculado acima em vez de apagar calorias válidas do dispositivo.
+    result.metadata.partial = true;
+  }
+
   return result;
 }
 
