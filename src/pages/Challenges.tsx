@@ -590,6 +590,9 @@ export function Challenges() {
           },
         };
         setFinishedActivityItem(finishedItem);
+        if (sessionType === 'cardio') {
+          setShareCardData(buildShareableFromItem(finishedItem));
+        }
       }
 
       if (activityState.isCompleted) {
@@ -757,6 +760,9 @@ export function Challenges() {
             if (pendingPresence) {
               const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
               setFinishedActivityItem(finishedItem);
+              if (sessionType === 'cardio') {
+                setShareCardData(buildShareableFromItem(finishedItem));
+              }
             }
             setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
             setNotice(presenceStatus === 'validated'
@@ -775,9 +781,15 @@ export function Challenges() {
       )}
 
       {shareCardData && (
-        <RunShareCard session={shareCardData} onClose={() => { setShareCardData(null); if (!finishedActivityItem) closeFlow(); }} />
+        <RunShareCard
+          session={shareCardData}
+          onClose={() => {
+            setShareCardData(null);
+            if (!finishedActivityItem || finishedActivityItem.type === 'cardio') closeFlow();
+          }}
+        />
       )}
-      {finishedActivityItem && !shareCardData && (
+      {finishedActivityItem && !shareCardData && finishedActivityItem.type !== 'cardio' && (
         <ActivityDetailScreen
           item={finishedActivityItem}
           onClose={closeFlow}
