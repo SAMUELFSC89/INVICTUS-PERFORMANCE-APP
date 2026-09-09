@@ -1,0 +1,181 @@
+/* Rodada 2026-09: refinamentos aprovados do card de compartilhamento. */
+
+.share-card-round-v3.share-card-art--map .share-card-map-layer--full {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+}
+
+.share-card-round-v3.share-card-art--map .share-card-vignette {
+  background:
+    linear-gradient(180deg, rgba(3,4,6,.72) 0%, rgba(3,4,6,.36) 15%, transparent 35%, transparent 72%, rgba(2,2,3,.18) 84%, rgba(2,2,3,.7) 100%),
+    linear-gradient(90deg, rgba(0,0,0,.12), transparent 18%, transparent 82%, rgba(0,0,0,.12));
+}
+
+.share-card-round-v3.share-card-art--photo-map .share-card-map-layer--inset {
+  top: 17%;
+  left: 28%;
+  width: 72%;
+  height: 48%;
+  opacity: var(--share-map-opacity, .5);
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  -webkit-mask-image: radial-gradient(ellipse 72% 50% at 62% 45%, #000 32%, rgba(0,0,0,.9) 58%, transparent 94%);
+  mask-image: radial-gradient(ellipse 72% 50% at 62% 45%, #000 32%, rgba(0,0,0,.9) 58%, transparent 94%);
+}
+
+/* Branding: mantém INVICTUS PERFORMANCE, remove somente o capacete no mapa e foto+mapa. */
+.share-card-round-v3.share-card-art--map .share-card-brand img,
+.share-card-round-v3.share-card-art--photo-map .share-card-brand img {
+  display: none;
+}
+
+.share-card-round-v3.share-card-art--map .share-card-info-block,
+.share-card-round-v3.share-card-art--photo-map .share-card-info-block {
+  top: 3.5%;
+}
+
+/* Métricas sem caixas/ícones, com distância acima e pace/tempo abaixo. */
+.share-card-round-v3 .share-card-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 24px;
+  width: min(86%, 330px);
+  margin: 13px auto 0;
+}
+
+.share-card-round-v3 .share-card-metric {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
+}
+
+.share-card-round-v3 .share-card-metric-icon {
+  display: none;
+}
+
+.share-card-round-v3 .share-card-metric--0 {
+  grid-column: 1 / -1;
+  margin-bottom: 1px;
+}
+
+.share-card-round-v3 .share-card-metric-copy > span {
+  margin-bottom: 4px;
+  color: rgba(255,255,255,.78);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: .18em;
+}
+
+.share-card-round-v3 .share-card-metric-copy strong {
+  font-size: 27px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  text-align: center;
+}
+
+.share-card-round-v3 .share-card-metric--0 .share-card-metric-copy strong {
+  font-size: 42px;
+  line-height: .95;
+}
+
+.share-card-round-v3 .share-card-metric-copy strong small {
+  font-size: .42em;
+  font-weight: 500;
+}
+
+/* Só a assinatura permanece. */
+.share-card-round-v3 .share-card-phrase--movement,
+.share-card-round-v3 .share-card-phrase--freedom,
+.share-card-round-v3 .share-card-phrase--journey,
+.share-card-round-v3 .share-card-phrase--choice {
+  display: none !important;
+}
+
+.share-card-round-v3 .share-card-phrase--discipline {
+  right: 5%;
+  bottom: 4.5%;
+}
+
+/* Remove a chegada antiga; o início recebe bandeira dourada via enhancer. */
+.share-card-round-v3 .share-route-finish-marker {
+  display: none;
+}
+
+.share-card-round-v3 .share-route-start-marker circle {
+  display: none;
+}
+
+.share-card-round-v3 .share-route-start-marker {
+  filter: drop-shadow(0 0 8px rgba(243,179,36,.78));
+}
+
+/* Controles adicionados ao personalizador. */
+.share-round-controls {
+  display: grid;
+  gap: 11px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(243,179,36,.22);
+  border-radius: 13px;
+  background: rgba(243,179,36,.035);
+}
+
+.share-round-privacy {
+  margin: 0;
+  color: rgba(255,255,255,.62);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.share-round-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #ddd;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.share-round-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #f3b324;
+}
+
+.share-round-slider {
+  display: grid;
+  gap: 7px;
+}
+
+.share-round-slider > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #ddd;
+  font-size: 10px;
+}
+
+.share-round-slider b {
+  color: #f3b324;
+  font-size: 10px;
+}
+
+.share-round-slider input {
+  width: 100%;
+  accent-color: #f3b324;
+}
+
+.share-card-round-v3.is-exporting .share-card-info-block,
+.share-card-round-v3.is-exporting .share-card-phrase {
+  outline: none !important;
+}
