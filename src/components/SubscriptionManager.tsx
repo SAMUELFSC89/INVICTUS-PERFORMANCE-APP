@@ -262,7 +262,7 @@ export function SubscriptionManager() {
       <ul className="subscription-manager-benefits" aria-label="Benefícios do plano Pro">
         <li><CheckCircle2 /><span><b>Saúde avançada</b><small>Métricas biométricas, zonas cardíacas e análises detalhadas.</small></span></li>
         <li><CheckCircle2 /><span><b>Integrações de saúde</b><small>Apple Health, Health Connect e Strava integrados ao seu acompanhamento.</small></span></li>
-        <li><CheckCircle2 /><span><b>Invictus IA</b><small>Insights e recomendações personalizados com base na sua evolução.</small></span></li>
+        <li><CheckCircle2 /><span><b>Invictus IA</b><small>Chat, análises, memória individual e recomendações personalizadas com base na sua evolução.</small></span></li>
         <li><CheckCircle2 /><span><b>Relatórios completos</b><small>Visão avançada do seu histórico e desempenho para acompanhar sua evolução.</small></span></li>
       </ul>
 
@@ -277,10 +277,12 @@ export function SubscriptionManager() {
         <small>{periodLabel(offer.subscriptionPeriod)} · {offer.productIdentifier}</small>
       </div> : null}
 
-      {error || currentOfferState?.error ? <div className="subscription-manager-error" role="alert"><span>{error || currentOfferState?.error}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />{currentPending ? 'CONFIRMAR NOVAMENTE' : 'TENTAR NOVAMENTE'}</button></div> : null}
+      {error && !currentOfferState?.error ? <div className="subscription-manager-error" role="alert"><span>{error}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />{currentPending ? 'CONFIRMAR NOVAMENTE' : 'TENTAR NOVAMENTE'}</button></div> : null}
+
+      {!showSuccess && !offer ? <div className="subscription-manager-offer"><span>Invictus Pro</span><b>R$ 29,90</b><small>por mês</small></div> : null}
 
       {isNative && !showSuccess ? <button className="profile-flow-primary" onClick={() => void runStoreOperation('purchase')} disabled={busy || !hydrated || offerLoading || (!currentPending && !offer)}>
-        {state === 'purchasing' ? <><Loader2 /> PROCESSANDO NA LOJA…</> : state === 'verifying' ? <><Loader2 /> CONFIRMANDO BENEFÍCIO…</> : currentPending ? 'CONFIRMAR ASSINATURA' : <>ASSINAR {offer ? `· ${offer.priceString}` : ''}</>}
+        {state === 'purchasing' ? <><Loader2 /> PROCESSANDO NA LOJA…</> : state === 'verifying' ? <><Loader2 /> CONFIRMANDO BENEFÍCIO…</> : currentPending ? 'CONFIRMAR ASSINATURA' : <>ASSINAR PRO · {offer?.priceString || 'R$ 29,90'}/MÊS</>}
       </button> : null}
       {isNative && !showSuccess ? <button className="subscription-manager-secondary" onClick={() => void runStoreOperation('restore')} disabled={busy || !hydrated}>
         {state === 'restoring' ? <><Loader2 /> RESTAURANDO…</> : <><RefreshCw />{currentPending ? 'REVALIDAR NA LOJA' : 'RESTAURAR COMPRA'}</>}
