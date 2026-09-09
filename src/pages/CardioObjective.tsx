@@ -356,6 +356,7 @@ export function CardioObjective() {
   const journey = view?.journey;
   const fullMissions = (view?.missions || []).filter((mission): mission is Mission => 'prescription' in mission);
   const nextMission = fullMissions.find(mission => ['available', 'started'].includes(mission.state));
+  const displayMission = nextMission || fullMissions.find(mission => !['completed', 'rescheduled'].includes(mission.state));
   const completed = fullMissions.filter(mission => mission.state === 'completed').length;
   const planned = fullMissions.length;
   const progress = planned ? Math.round(completed / planned * 100) : 0;
@@ -416,10 +417,10 @@ export function CardioObjective() {
           </div>
         </section>
 
-        {journey.status === 'active' && nextMission ? <section className="objective-next-step">
+        {journey.status === 'active' && displayMission ? <section className={`objective-next-step ${nextMission ? '' : 'is-waiting'}`}>
           <div className="objective-next-icon"><Target/></div>
-          <div><small>{reviewDue ? 'REVISÃO DA SEMANA' : 'PRÓXIMO PASSO'}</small><h2>{missionTitle(nextMission).label} {missionTitle(nextMission).target}</h2><p>{nextMission.prescription.runSecondsPerInterval ? `Alterne ${nextMission.prescription.runSecondsPerInterval}s de corrida leve com ${nextMission.prescription.walkSecondsPerInterval}s caminhando.` : 'Movimento gera progresso.'}</p></div>
-          <button aria-label="Iniciar próximo passo" disabled={busy || reviewDue || nextMission.localDate > localDate(new Date().toISOString(), journey.timeZone)} onClick={() => startMission(nextMission)}><ArrowRight/></button>
+          <div><small>{reviewDue ? 'REVISÃO DA SEMANA' : nextMission ? 'PRÓXIMO PASSO' : 'PRÓXIMA ETAPA'}</small><h2>{missionTitle(displayMission).label} {missionTitle(displayMission).target}</h2><p>{nextMission?.prescription.runSecondsPerInterval ? `Alterne ${nextMission.prescription.runSecondsPerInterval}s de corrida leve com ${nextMission.prescription.walkSecondsPerInterval}s caminhando.` : nextMission ? 'Movimento gera progresso.' : 'Conclua ou reagende a etapa pendente para continuar sua jornada.'}</p></div>
+          <button aria-label="Iniciar próximo passo" disabled={!nextMission || busy || reviewDue || nextMission.localDate > localDate(new Date().toISOString(), journey.timeZone)} onClick={() => nextMission && startMission(nextMission)}><ArrowRight/></button>
         </section> : journey.status === 'active' ? <section className="objective-next-step is-complete"><div className="objective-next-icon"><Check/></div><div><small>SEMANA EM DIA</small><h2>Metas registradas</h2><p>A próxima etapa será preparada após seu check-in semanal.</p></div></section> : null}
 
         <section className="objective-week-plan">
@@ -454,6 +455,7 @@ export function CardioObjective() {
 
         <section className="objective-remember-card"><span className="objective-trophy-css"><Trophy/></span><div><small>LEMBRE-SE</small><h2>Você já começou. Agora é consistência.</h2><p>Disciplina de hoje. Liberdade amanhã.</p></div><ChevronRight/></section>
 
+        {['active', 'paused'].includes(journey.status) ? <button type="button" className="objective-continue-journey" disabled={busy || journey.status !== 'active' || !nextMission || reviewDue || nextMission.localDate > localDate(new Date().toISOString(), journey.timeZone)} onClick={() => nextMission && startMission(nextMission)}>CONTINUAR JORNADA <ChevronRight/></button> : null}
         {['completed', 'cancelled'].includes(journey.status) ? <button className="objective-primary objective-new-goal" disabled={busy} onClick={() => { setBusy(true); objectiveRequest(undefined, '?new=true').then(setView).catch(requestError => setError(requestError.message)).finally(() => setBusy(false)); }}>BUSCAR UM NOVO OBJETIVO</button> : null}
         {['active', 'paused'].includes(journey.status) ? <div className="objective-journey-management">{journey.status === 'active' ? <button disabled={busy} onClick={() => void mutate({ action: 'pause', journeyId: journey.id })}>PAUSAR JORNADA</button> : null}<button disabled={busy} onClick={() => { if (window.confirm('Encerrar esta jornada? O histórico será preservado.')) void mutate({ action: 'cancel', journeyId: journey.id }); }}>ENCERRAR JORNADA</button></div> : <p className="objective-ended-note">Jornada encerrada. Seus registros continuam preservados.</p>}
       </div> : null}
