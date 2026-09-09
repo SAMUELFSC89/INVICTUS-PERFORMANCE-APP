@@ -105,17 +105,70 @@
   bottom: 4.5%;
 }
 
-/* Remove a chegada antiga; o início recebe bandeira dourada via enhancer. */
-.share-card-round-v3 .share-route-finish-marker {
-  display: none;
-}
-
+/* Marcadores da rota: bandeira apenas no início e ponto simples na chegada. */
 .share-card-round-v3 .share-route-start-marker circle {
   display: none;
 }
 
-.share-card-round-v3 .share-route-start-marker {
+.share-card-round-v3 .share-route-start-marker,
+.share-card-round-v3 .share-route-finish-marker {
   filter: drop-shadow(0 0 8px rgba(243,179,36,.78));
+}
+
+.share-card-round-v3 .share-route-finish-marker [data-invictus-legacy-finish='true'] {
+  display: none;
+}
+
+.share-round-map-markers {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+}
+
+.share-round-map-marker {
+  position: absolute;
+  display: block;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 7px rgba(243,179,36,.82));
+}
+
+.share-round-map-marker--start {
+  width: 30px;
+  height: 34px;
+}
+
+.share-round-map-marker--start::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  bottom: 2px;
+  width: 3px;
+  height: 29px;
+  border-radius: 999px;
+  background: #f3b324;
+  box-shadow: 0 0 5px rgba(243,179,36,.7);
+}
+
+.share-round-map-marker--start::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 2px;
+  width: 19px;
+  height: 12px;
+  clip-path: polygon(0 0, 100% 28%, 0 100%);
+  background: #f3b324;
+  outline: 1px solid rgba(255,244,207,.85);
+}
+
+.share-round-map-marker--finish {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #fff4cf;
+  border-radius: 50%;
+  background: #f3b324;
+  box-shadow: 0 0 0 2px rgba(8,8,8,.55), 0 0 10px rgba(243,179,36,.8);
 }
 
 /* Controles adicionados ao personalizador. */

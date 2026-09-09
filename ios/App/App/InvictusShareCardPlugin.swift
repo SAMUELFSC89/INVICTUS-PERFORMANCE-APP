@@ -13,33 +13,54 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     @objc func share(_ call: CAPPluginCall) {
-        guard let image = image(from: call) else {
+        guard let data = imageData(from: call) else {
             call.reject("Imagem inválida.")
             return
         }
+
+        let requestedName = call.getString("fileName") ?? "invictus-atividade.png"
+        let safeName = requestedName.lowercased().hasSuffix(".png") ? requestedName : requestedName + ".png"
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
+
+        do {
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            call.reject("Não foi possível preparar a imagem para compartilhar.", nil, error)
+            return
+        }
+
         DispatchQueue.main.async {
-            let controller = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+            let controller = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
             if let popover = controller.popoverPresentationController {
                 popover.sourceView = self.bridge?.viewController?.view
                 popover.sourceRect = self.bridge?.viewController?.view.bounds ?? .zero
             }
+            controller.completionWithItemsHandler = { _, _, _, _ in
+                try? FileManager.default.removeItem(at: fileURL)
+                call.resolve()
+            }
+
             guard let presenter = self.bridge?.viewController else {
+                try? FileManager.default.removeItem(at: fileURL)
                 call.reject("Tela de compartilhamento indisponível.")
                 return
             }
-            presenter.present(controller, animated: true) { call.resolve() }
+            presenter.present(controller, animated: true)
         }
     }
 
     @objc func save(_ call: CAPPluginCall) {
-        guard let image = image(from: call) else {
+        guard let data = imageData(from: call) else {
             call.reject("Imagem inválida.")
             return
         }
 
         let saveImage = {
             PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
+                let request = PHAssetCreationRequest.forAsset()
+                let options = PHAssetResourceCreationOptions()
+                options.originalFilename = call.getString("fileName") ?? "invictus-atividade.png"
+                request.addResource(with: .photo, data: data, options: options)
             }) { success, error in
                 if success { call.resolve() }
                 else { call.reject("Não foi possível salvar a imagem na galeria.", nil, error) }
@@ -59,9 +80,8 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func image(from call: CAPPluginCall) -> UIImage? {
-        guard let base64 = call.getString("base64"), let data = Data(base64Encoded: base64) else { return nil }
-        return UIImage(data: data)
+    private func imageData(from call: CAPPluginCall) -> Data? {
+        guard let base64 = call.getString("base64") else { return nil }
+        return Data(base64Encoded: base64)
     }
 }
-
