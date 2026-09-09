@@ -1,7 +1,8 @@
 name: Apply PRO Paywall Copy
 on:
   push:
-    branches: [feat/pro-paywall-price-cta]
+    branches:
+      - feat/pro-paywall-price-cta
 permissions:
   contents: write
 jobs:
@@ -13,33 +14,22 @@ jobs:
         with:
           ref: feat/pro-paywall-price-cta
       - name: Update subscription screen
-        shell: python
         run: |
+          python - <<'PY'
           from pathlib import Path
           p = Path('src/components/SubscriptionManager.tsx')
           s = p.read_text()
-          old = '<li><CheckCircle2 /><span><b>Invictus IA</b><small>Insights e recomendações personalizados com base na sua evolução.</small></span></li>'
-          new = '<li><CheckCircle2 /><span><b>Invictus IA</b><small>Chat, análises, memória individual e recomendações personalizadas com base na sua evolução.</small></span></li>'
-          if old not in s:
-              raise SystemExit('Invictus IA copy anchor not found')
-          s = s.replace(old, new, 1)
+          s = s.replace('Insights e recomendações personalizados com base na sua evolução.', 'Chat, análises, memória individual e recomendações personalizadas com base na sua evolução.', 1)
           old = '''{error || currentOfferState?.error ? <div className="subscription-manager-error" role="alert"><span>{error || currentOfferState?.error}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />{currentPending ? 'CONFIRMAR NOVAMENTE' : 'TENTAR NOVAMENTE'}</button></div> : null}'''
-          new = '''{error && !currentOfferState?.error ? <div className="subscription-manager-error" role="alert"><span>{error}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />{currentPending ? 'CONFIRMAR NOVAMENTE' : 'TENTAR NOVAMENTE'}</button></div> : null}
-
-      {!showSuccess && !offer ? <div className="subscription-manager-offer">
-        <span>Invictus Pro</span>
-        <b>R$ 29,90</b>
-        <small>por mês</small>
-      </div> : null}'''
-          if old not in s:
-              raise SystemExit('error block anchor not found')
+          new = '''{error && !currentOfferState?.error ? <div className="subscription-manager-error" role="alert"><span>{error}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />{currentPending ? 'CONFIRMAR NOVAMENTE' : 'TENTAR NOVAMENTE'}</button></div> : null}\n\n      {!showSuccess && !offer ? <div className="subscription-manager-offer"><span>Invictus Pro</span><b>R$ 29,90</b><small>por mês</small></div> : null}'''
+          if old not in s: raise SystemExit('error block anchor not found')
           s = s.replace(old, new, 1)
           old = '''{state === 'purchasing' ? <><Loader2 /> PROCESSANDO NA LOJA…</> : state === 'verifying' ? <><Loader2 /> CONFIRMANDO BENEFÍCIO…</> : currentPending ? 'CONFIRMAR ASSINATURA' : <>ASSINAR {offer ? `· ${offer.priceString}` : ''}</>}'''
           new = '''{state === 'purchasing' ? <><Loader2 /> PROCESSANDO NA LOJA…</> : state === 'verifying' ? <><Loader2 /> CONFIRMANDO BENEFÍCIO…</> : currentPending ? 'CONFIRMAR ASSINATURA' : <>ASSINAR PRO · {offer?.priceString || 'R$ 29,90'}/MÊS</>}'''
-          if old not in s:
-              raise SystemExit('purchase CTA anchor not found')
+          if old not in s: raise SystemExit('purchase CTA anchor not found')
           s = s.replace(old, new, 1)
           p.write_text(s)
+          PY
       - name: Commit source change
         run: |
           git config user.name "github-actions[bot]"
