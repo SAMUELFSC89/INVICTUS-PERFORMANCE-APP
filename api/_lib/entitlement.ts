@@ -34,7 +34,7 @@ export function isCanonicalProEntitlement(
   if (!value || typeof value !== 'object') return false;
   const entitlement = value as CanonicalProEntitlement;
   return entitlement.version === 1
-    && normalizedString(entitlement.entitlementId) === 'performance'
+    && new Set(['invictus_performance_pro', 'performance']).has(normalizedString(entitlement.entitlementId))
     && normalizedString(entitlement.provider) === 'revenuecat'
     && typeof entitlement.productId === 'string'
     && Boolean(entitlement.productId.trim())

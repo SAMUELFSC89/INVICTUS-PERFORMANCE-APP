@@ -947,7 +947,7 @@ describe('normalização da fonte RevenueCat', () => {
       json: async () => ({
         request_date: NOW,
         subscriber: {
-          entitlements: { performance: { product_identifier: 'other-product' } },
+          entitlements: { invictus_performance_pro: { product_identifier: 'other-product' } },
           subscriptions: { 'other-product': { expires_date: null } },
         },
       }),
