@@ -1,30 +1,45 @@
 import { auth } from '../firebase';
 
-async function call(method = 'GET') {
+export type CommunityRankingPeriod = 'weekly' | 'monthly' | 'all';
+export type CommunityLeaderboardEntry = {
+  userId: string;
+  userName: string;
+  photoURL?: string;
+  score: number;
+  validActivities: number;
+  rank: number;
+};
+export type CommunityChampionshipStatus = {
+  eventId: string;
+  enrolled: boolean;
+  participantCount?: number;
+  championship?: {
+    cycleKey: string;
+    period?: CommunityRankingPeriod;
+    gymId?: string;
+    gymName: string;
+    rank: number | null;
+    score: number;
+    validActivities: number;
+    leaderboard?: CommunityLeaderboardEntry[];
+    resultStatus: 'OPEN' | 'PROVISIONAL' | 'APPROVED' | 'REVIEW' | 'REJECTED';
+    prizes: { 1: number; 2: number; 3: number; participation: number };
+  };
+};
+
+async function call(method = 'GET', period: CommunityRankingPeriod = 'weekly') {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado.');
   const token = await user.getIdToken();
-  const response = await fetch('/api/community-championship', { method, headers: { Authorization: `Bearer ${token}` } });
+  const suffix = method === 'GET' ? `?period=${encodeURIComponent(period)}` : '';
+  const response = await fetch(`/api/community-championship${suffix}`, { method, headers: { Authorization: `Bearer ${token}` } });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Não foi possível atualizar sua participação.');
-  return result as {
-    eventId: string;
-    enrolled: boolean;
-    participantCount?: number;
-    championship?: {
-      cycleKey: string;
-      gymName: string;
-      rank: number | null;
-      score: number;
-      validActivities: number;
-      resultStatus: 'OPEN' | 'PROVISIONAL' | 'APPROVED' | 'REVIEW' | 'REJECTED';
-      prizes: { 1: number; 2: number; 3: number; participation: number };
-    };
-  };
+  return result as CommunityChampionshipStatus;
 }
 
 export const communityChampionshipService = {
-  status: () => call('GET'),
+  status: (period: CommunityRankingPeriod = 'weekly') => call('GET', period),
   enroll: () => call('POST'),
   withdraw: () => call('DELETE')
 };

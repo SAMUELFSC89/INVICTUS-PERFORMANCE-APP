@@ -39,6 +39,7 @@ const HealthReport = lazyNamed(() => import('./pages/HealthReport'), 'HealthRepo
 const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifications');
 const ChampionshipsHub = lazyNamed(() => import('./pages/championships/ChampionshipsHub'), 'ChampionshipsHub');
 const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');
+const CommunityRanking = lazyNamed(() => import('./pages/championships/CommunityRanking'), 'CommunityRanking');
 const ChampionshipPreview = lazyNamed(() => import('./pages/championships/ChampionshipPreview'), 'ChampionshipPreview');
 const Musculation = lazyNamed(() => import('./pages/Musculation'), 'Musculation');
 const InvictusStore = lazyNamed(() => import('./pages/InvictusStore'), 'InvictusStore');
@@ -81,7 +82,7 @@ export default function App() {
               <Route element={<Layout />}>
                 <Route path="/" element={<Home />} />
                 <Route path="/invite" element={<Home />} />
-                <Route path="/rankings" element={<Navigate to="/championships?section=ranking" replace />} />
+                <Route path="/rankings" element={<Navigate to="/championships" replace />} />
                 <Route path="/league" element={<Navigate to="/championships" replace />} />
                 <Route path="/league/inscricao" element={<Navigate to="/championships" replace />} />
                 <Route path="/notifications" element={<Notifications />} />
@@ -115,6 +116,7 @@ export default function App() {
                 <Route path="/profile" element={<ProfileNew />} />
                 <Route path="/championships" element={<ChampionshipsHub />} />
                 <Route path="/championships/community" element={<CommunityChampionship />} />
+                <Route path="/championships/community/ranking" element={<CommunityRanking />} />
                 <Route path="/championships/preview/musculacao" element={<ChampionshipPreview modality="musculacao" />} />
                 <Route path="/championships/preview/cardio" element={<ChampionshipPreview modality="cardio" />} />
                 <Route path="/championships/my" element={<Navigate to="/championships/community" replace />} />

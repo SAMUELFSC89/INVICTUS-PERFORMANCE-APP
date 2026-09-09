@@ -225,7 +225,23 @@ export async function syncReviewedActivityCompetitionScores(activityId: string):
   await batch.commit();
 }
 
-export async function getCommunityGymChampionshipStatus(userId: string, now = new Date()) {
+type CommunityRankingPeriod = 'weekly' | 'monthly' | 'all';
+
+function communityRankingPeriodStart(period: CommunityRankingPeriod, now: Date): Date | null {
+  if (period === 'all') return null;
+  if (period === 'monthly') return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const start = new Date(now);
+  const daysSinceMonday = (start.getUTCDay() + 6) % 7;
+  start.setUTCDate(start.getUTCDate() - daysSinceMonday);
+  start.setUTCHours(0, 0, 0, 0);
+  return start;
+}
+
+export async function getCommunityGymChampionshipStatus(
+  userId: string,
+  now = new Date(),
+  period: CommunityRankingPeriod = 'weekly',
+) {
   const [userSnap, configSnap] = await Promise.all([
     db.collection('users').doc(userId).get(),
     db.collection('gym_championship_config').doc('global').get(),
@@ -234,25 +250,43 @@ export async function getCommunityGymChampionshipStatus(userId: string, now = ne
   const config = configSnap.data() || {};
   const gymId = String(user.gymId || user.academyId || 'community_global');
   const cycleKey = communityCycleKey(now);
-  const snap = await db.collection('gym_championship_scores').where('cycleKey', '==', cycleKey).get();
+  const cutoff = communityRankingPeriodStart(period, now);
+  const snap = await db.collection('gym_championship_scores')
+    .where('eventId', '==', COMMUNITY_EVENT_ID)
+    .limit(5000)
+    .get();
   const totals = new Map<string, { userId: string; userName: string; score: number; validActivities: number }>();
   snap.forEach(doc => {
     const data: any = doc.data();
     if (data.gymId !== gymId || data.validationStatus !== 'VALIDATED') return;
+    if (cutoff) {
+      const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt || 0);
+      if (!Number.isFinite(createdAt.getTime()) || createdAt < cutoff || createdAt > now) return;
+    }
     const item = totals.get(data.userId) || { userId: data.userId, userName: data.userName || 'Atleta Invictus', score: 0, validActivities: 0 };
     item.score += Math.max(0, Number(data.score) || 0);
     item.validActivities += 1;
     totals.set(data.userId, item);
   });
-  const leaderboard = [...totals.values()].sort((a, b) => b.score - a.score || a.userId.localeCompare(b.userId));
-  const rankIndex = leaderboard.findIndex(item => item.userId === userId);
+  const ranked = [...totals.values()]
+    .sort((a, b) => b.score - a.score || a.userName.localeCompare(b.userName, 'pt-BR', { sensitivity: 'base' }) || a.userId.localeCompare(b.userId))
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+  const visible = ranked.slice(0, 100);
+  const profileRefs = visible.map((item) => db.collection('users').doc(item.userId));
+  const profileSnaps = profileRefs.length ? await db.getAll(...profileRefs) : [];
+  const profileByUid = new Map(profileSnaps.map((snap) => [snap.id, snap.data() || {}]));
+  const leaderboard = visible.map((item) => ({
+    ...item,
+    photoURL: String(profileByUid.get(item.userId)?.photoURL || (item.userId === userId ? user.photoURL || '' : '')),
+  }));
+  const rankIndex = ranked.findIndex(item => item.userId === userId);
   const resultSnap = await db.collection('gym_championship_results').doc(`${cycleKey}_${gymId}_${userId}`).get();
   return {
-    cycleKey, gymId, gymName: String(user.gymName || 'Comunidade Invictus'),
+    cycleKey, period, gymId, gymName: String(user.gymName || 'Comunidade Invictus'),
     rank: rankIndex >= 0 ? rankIndex + 1 : null,
-    score: rankIndex >= 0 ? leaderboard[rankIndex].score : 0,
-    validActivities: rankIndex >= 0 ? leaderboard[rankIndex].validActivities : 0,
-    leaderboard: leaderboard.slice(0, 10),
+    score: rankIndex >= 0 ? ranked[rankIndex].score : 0,
+    validActivities: rankIndex >= 0 ? ranked[rankIndex].validActivities : 0,
+    leaderboard,
     resultStatus: resultSnap.data()?.status || 'OPEN',
     prizes: {
       1: Math.max(0, Number(config.top1Prize) || 2500),

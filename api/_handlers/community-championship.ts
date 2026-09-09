@@ -12,10 +12,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ref = db.collection('community_championship_enrollments').doc(`${EVENT_ID}_${auth.uid}`);
 
   if (req.method === 'GET') {
+    const rawPeriod = String(req.query.period || 'weekly');
+    const period = rawPeriod === 'monthly' || rawPeriod === 'all' ? rawPeriod : 'weekly';
     const [own, count, championship] = await Promise.all([
       ref.get(),
       db.collection('community_championship_enrollments').where('eventId', '==', EVENT_ID).where('status', '==', 'active').count().get(),
-      getCommunityGymChampionshipStatus(auth.uid),
+      getCommunityGymChampionshipStatus(auth.uid, new Date(), period),
     ]);
     return res.status(200).json({ eventId: EVENT_ID, enrolled: own.data()?.status === 'active', participantCount: count.data().count, championship });
   }

@@ -1,0 +1,24 @@
+/* 2026-09 round: no duplicated hero; ranking becomes available through the participating card. */
+.ch-paid-head--first{margin-top:18px}
+.ch-my-championship-head{display:flex;align-items:center;justify-content:space-between;margin:20px 0 9px}
+.ch-my-championship-head h2{margin:0;padding-left:9px;border-left:2px solid #f2b516;font-family:"Bebas Neue";font-size:20px;font-weight:400}
+.ch-my-championship-head span{color:#817d76;font-size:9px}
+.ch-friends-status-loading{height:88px;margin-top:18px;border:1px solid #252525;border-radius:12px;background:linear-gradient(90deg,#0a0a0a,#15130d,#0a0a0a);background-size:180% 100%;animation:ch-ranking-card-loading 1.2s ease-in-out infinite}
+.ch-friends-ranking-card{position:relative;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(125px,.9fr) minmax(90px,.65fr);align-items:center;gap:9px;width:100%;min-height:84px;overflow:hidden;padding:11px 14px;border:1px solid #dfa60d;border-radius:12px;color:#f4f1e9;background:#070707;text-align:left;box-shadow:0 0 18px rgba(226,166,12,.08)}
+.ch-friends-ranking-card__background,.ch-friends-ranking-card__scrim{position:absolute;inset:0;width:100%;height:100%}
+.ch-friends-ranking-card__background{object-fit:cover;object-position:center;opacity:.24}
+.ch-friends-ranking-card__scrim{background:linear-gradient(90deg,rgba(3,3,3,.82),rgba(3,3,3,.6) 55%,rgba(3,3,3,.94))}
+.ch-friends-ranking-card__identity,.ch-friends-ranking-card__status,.ch-friends-ranking-card__ranking{position:relative;z-index:1}
+.ch-friends-ranking-card__identity{display:flex;align-items:center;gap:9px}
+.ch-friends-ranking-card__identity>svg{width:31px;height:31px;color:#f2b516}
+.ch-friends-ranking-card__identity span{display:grid}
+.ch-friends-ranking-card__identity small{font-family:"Bebas Neue";font-size:15px;line-height:1}
+.ch-friends-ranking-card__identity strong{color:#f2b516;font-family:"Bebas Neue";font-size:20px;line-height:1}
+.ch-friends-ranking-card__status{display:flex;min-height:31px;flex-wrap:wrap;align-items:center;justify-content:center;gap:5px;padding:4px 8px;border-radius:16px;color:#eaffef;background:linear-gradient(100deg,#15863b,#1dae51);font-size:9px;font-weight:900;text-align:center}
+.ch-friends-ranking-card__status>svg{width:15px}
+.ch-friends-ranking-card__status small{flex-basis:100%;color:#ddd;font-size:7px;font-weight:600;letter-spacing:.11em}
+.ch-friends-ranking-card__ranking{display:flex;align-items:center;justify-content:flex-end;gap:3px;padding-left:10px;border-left:1px solid rgba(230,169,14,.3);color:#f2b516;font-size:11px;font-weight:900;white-space:nowrap}
+.ch-friends-ranking-card__ranking svg{width:17px}
+@keyframes ch-ranking-card-loading{50%{background-position:100% 0}}
+@media(max-width:390px){.ch-friends-ranking-card{grid-template-columns:1fr auto;min-height:96px;padding:10px}.ch-friends-ranking-card__status{justify-self:start;grid-column:1}.ch-friends-ranking-card__ranking{grid-column:2;grid-row:1/3}.ch-friends-ranking-card__identity strong{font-size:18px}}
+@media(prefers-reduced-motion:reduce){.ch-friends-status-loading{animation:none}}

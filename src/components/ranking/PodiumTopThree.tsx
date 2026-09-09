@@ -5,7 +5,11 @@ const CROWN_ASSETS: Record<number, string> = {
   2: '/ranking-frame-silver-reference.png',
   3: '/ranking-frame-bronze-reference.png',
 };
-
+const PODIUM_BASE_ASSETS: Record<number, string> = {
+  1: '/assets/ranking/podium-top1.webp',
+  2: '/assets/ranking/podium-top2.webp',
+  3: '/assets/ranking/podium-top3.webp',
+};
 const fallbackAvatar = '/capacete.webp';
 
 function PodiumAthlete({ entry, currentUserId, onSelect }: {
@@ -20,14 +24,16 @@ function PodiumAthlete({ entry, currentUserId, onSelect }: {
     onClick={() => onSelect?.(entry.uid)}
     aria-label={`${entry.rank}º lugar, ${entry.displayName}, ${entry.score} pontos IGA${isCurrent ? ', você' : ''}`}
   >
-    <span className="academy-podium-avatar">
-      <img className="academy-podium-photo" src={entry.photoURL || fallbackAvatar} alt="" onError={(event) => { event.currentTarget.src = fallbackAvatar; }} />
-      <img className="academy-podium-crown" src={CROWN_ASSETS[entry.rank]} alt="" aria-hidden="true" />
+    <span className="academy-podium-panel">
+      <span className="academy-podium-avatar">
+        <img className="academy-podium-photo" src={entry.photoURL || fallbackAvatar} alt="" onError={(event) => { event.currentTarget.src = fallbackAvatar; }} />
+        <img className="academy-podium-crown" src={CROWN_ASSETS[entry.rank]} alt="" aria-hidden="true" />
+      </span>
+      <strong>{entry.displayName || 'Atleta Invictus'}{isCurrent ? <em>VOCÊ</em> : null}</strong>
+      <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></b>
+      {Number(entry.streak) > 0 ? <span className="academy-podium-streak">{entry.streak} dias em sequência</span> : null}
     </span>
-    <span className="academy-podium-position">{entry.rank}º</span>
-    <strong>{entry.displayName || 'Atleta Invictus'}{isCurrent ? <em>VOCÊ</em> : null}</strong>
-    <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></b>
-    {Number(entry.streak) > 0 ? <span className="academy-podium-streak">{entry.streak} dias em sequência</span> : null}
+    <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[entry.rank]} alt="" aria-hidden="true" />
   </button>;
 }
 
