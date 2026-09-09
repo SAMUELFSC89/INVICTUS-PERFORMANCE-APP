@@ -1,4 +1,4 @@
-export const PERFORMANCE_ENTITLEMENT_ID = 'performance';
+export const PERFORMANCE_ENTITLEMENT_ID = 'invictus_performance_pro';
 
 export interface PerformanceSubscriptionOffer {
   packageIdentifier: string;

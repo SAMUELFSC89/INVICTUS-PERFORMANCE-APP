@@ -62,7 +62,7 @@ export async function logPaymentAudit(log: {
 }
 
 const REVENUECAT_API_URL = 'https://api.revenuecat.com/v1';
-export const PERFORMANCE_ENTITLEMENT_ID = 'performance';
+export const PERFORMANCE_ENTITLEMENT_ID = 'invictus_performance_pro';
 
 interface RevenueCatEntitlementRecord {
   expires_date?: string | null;

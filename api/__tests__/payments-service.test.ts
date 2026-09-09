@@ -906,7 +906,7 @@ describe('normalização da fonte RevenueCat', () => {
         request_date: NOW,
         subscriber: {
           entitlements: {
-            performance: {
+            invictus_performance_pro: {
               product_identifier: 'invictus.performance.monthly',
               purchase_date: '2026-09-06T10:00:00Z',
               expires_date: '2026-10-06T12:00:00Z',
@@ -947,7 +947,7 @@ describe('normalização da fonte RevenueCat', () => {
       json: async () => ({
         request_date: NOW,
         subscriber: {
-          entitlements: { performance: { product_identifier: 'other-product' } },
+          entitlements: { invictus_performance_pro: { product_identifier: 'other-product' } },
           subscriptions: { 'other-product': { expires_date: null } },
         },
       }),
@@ -981,7 +981,7 @@ describe('normalização da fonte RevenueCat', () => {
         request_date: NOW,
         subscriber: {
           entitlements: {
-            performance: {
+            invictus_performance_pro: {
               product_identifier: 'invictus.performance.monthly',
               expires_date: FUTURE,
             },
@@ -1025,7 +1025,7 @@ describe('normalização da fonte RevenueCat', () => {
         request_date: NOW,
         subscriber: {
           entitlements: {
-            performance: {
+            invictus_performance_pro: {
               product_identifier: 'invictus.performance.legacy.annual',
               expires_date: FUTURE,
             },
