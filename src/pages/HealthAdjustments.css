@@ -1,0 +1,76 @@
+.health-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-refresh-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(242, 181, 22, .42);
+  border-radius: 50%;
+  color: #f2b516;
+  background: rgba(10, 9, 7, .88);
+}
+
+.health-refresh-icon svg { width: 17px; height: 17px; }
+.health-refresh-icon:disabled { opacity: .65; }
+.is-spinning { animation: health-control-spin .9s linear infinite; }
+
+@keyframes health-control-spin { to { transform: rotate(360deg); } }
+
+.health-technical-status {
+  margin: 18px 0 8px;
+  border-top: 1px solid #27251f;
+  color: #8f8b84;
+}
+
+.health-technical-status > summary {
+  display: grid;
+  grid-template-columns: 18px 1fr 17px;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 3px;
+  font: 600 10px Barlow, sans-serif;
+  cursor: pointer;
+  list-style: none;
+}
+
+.health-technical-status > summary::-webkit-details-marker { display: none; }
+.health-technical-status > summary svg { width: 16px; color: #9c7920; }
+.health-technical-status > summary svg:last-child { justify-self: end; transition: transform .2s ease; }
+.health-technical-status[open] > summary svg:last-child { transform: rotate(180deg); }
+.health-technical-status > div { padding: 0 0 8px; }
+.health-technical-status .health-data-notice,
+.health-technical-status .health-sync-status { margin: 6px 0; padding: 10px; border-color: #39352b; background: #0b0b0a; }
+.health-technical-status .health-data-notice p,
+.health-technical-status .health-sync-status strong { font-size: 10px; }
+.health-technical-status .health-sync-status small { font-size: 9px; }
+
+.health-export-error {
+  margin: -8px 0 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 98, 90, .4);
+  border-radius: 8px;
+  color: #ffaaa5;
+  background: rgba(120, 28, 23, .12);
+  font: 500 11px/1.4 Barlow, sans-serif;
+}
+
+.health-report-actions button:disabled { opacity: .7; }
+
+@media (max-width: 390px) {
+  .health-header-controls { gap: 5px; }
+  .health-refresh-icon { width: 34px; height: 34px; flex-basis: 34px; }
+}
+
+@media print {
+  .health-refresh-icon,
+  .health-technical-status,
+  .health-export-error { display: none !important; }
+}

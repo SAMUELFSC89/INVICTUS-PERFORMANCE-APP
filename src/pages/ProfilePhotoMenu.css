@@ -1,0 +1,68 @@
+.np-notice {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border: 1px solid rgba(70, 212, 123, .45);
+  border-radius: 8px;
+  color: #8be8ad;
+  background: rgba(70, 212, 123, .08);
+  font-size: 11px;
+  text-align: center;
+}
+
+.np-photo-menu-backdrop {
+  position: fixed;
+  z-index: 160;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 18px max(12px, calc((100vw - 540px) / 2)) calc(18px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, .78);
+  backdrop-filter: blur(8px);
+}
+
+.np-photo-menu {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  max-width: 510px;
+  padding: 16px;
+  border: 1px solid #5d470f;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #17140c, #090909);
+  box-shadow: 0 -10px 35px rgba(0, 0, 0, .5);
+}
+
+.np-photo-menu > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0 0 10px;
+  border-bottom: 1px solid #29261d;
+}
+
+.np-photo-menu > header small { color: #dca30a; font-size: 8px; font-weight: 900; letter-spacing: .14em; }
+.np-photo-menu > header h2 { margin: 2px 0 0; font-family: "Bebas Neue"; font-size: 23px; font-weight: 400; }
+.np-photo-menu > header button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #393939; border-radius: 8px; color: #ddd; background: #111; }
+.np-photo-menu > header svg { width: 18px; }
+
+.np-photo-menu > button:not(header button) {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  align-items: center;
+  gap: 11px;
+  min-height: 62px;
+  padding: 11px;
+  border: 1px solid #333;
+  border-radius: 10px;
+  color: #f4f1eb;
+  text-align: left;
+  background: #111;
+}
+
+.np-photo-menu > button:not(header button) > svg { width: 26px; color: #f2b516; }
+.np-photo-menu > button:not(header button) > span { display: grid; gap: 3px; }
+.np-photo-menu > button:not(header button) b { font-size: 12px; }
+.np-photo-menu > button:not(header button) small { color: #97938c; font-size: 10px; }
+.np-photo-menu > button.is-remove { border-color: #512927; color: #ffaaa5; background: rgba(99, 24, 20, .14); }
+.np-photo-menu > button.is-remove > svg { color: #ff6f67; }

@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(InvictusActivityPlugin.class);
         registerPlugin(InstagramStoriesSharePlugin.class);
         registerPlugin(InvictusShareCardPlugin.class);
+        registerPlugin(InvictusPdfPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

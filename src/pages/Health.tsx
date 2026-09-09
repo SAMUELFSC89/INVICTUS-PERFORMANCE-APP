@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Accessibility, AudioLines, Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Droplet, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, MapPin, Moon, Plus, ShieldCheck, SlidersHorizontal, Trophy, UserRound, Wind } from 'lucide-react';
+import { Accessibility, AudioLines, Activity, AlertCircle, ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Clock3, Download, Droplet, Dumbbell, FileDown, Flame, Footprints, Heart, HeartPulse, Info, LoaderCircle, MapPin, Moon, Plus, RefreshCw, ShieldCheck, SlidersHorizontal, Trophy, UserRound, Wind } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -25,8 +25,10 @@ import { getModalityConfig } from '../config/cardioConfig';
 import { hasActiveProEntitlement } from '../lib/proEntitlement';
 import { buildHealthViewModel, healthLocalDate, type HealthViewModel, type HealthInterpretation, type PersonalBaseline } from '../core/health/healthViewModel';
 import { buildHealthPeriodSummary } from '../core/health/healthPeriodSummary';
+import { healthReportExportService } from '../services/healthReportExportService';
 import './HealthNew.css';
 import './HealthConfidence.css';
+import './HealthAdjustments.css';
 
 const ranges: { id: TimeRange; label: string }[] = [
   { id: '7days', label: '7 Dias' },
@@ -266,6 +268,16 @@ function HealthSyncStatus({ diagnostics, loading }: { diagnostics: HealthVitalsD
       ? 'O dispositivo respondeu, mas não entregou batimentos e/ou passos nesta janela.'
       : 'Batimentos e passos foram lidos ativamente do dispositivo.';
   return <section className={cn('health-sync-status', missingCoreData && 'has-warning')} aria-live="polite"><div><span className="health-sync-status-icon">{missingCoreData ? <AlertCircle /> : <ShieldCheck />}</span><strong>{statusText}</strong></div><p><span>Batimentos: {heartRate?.status === 'ok' ? `${heartRate.count} leituras` : heartRate?.status === 'error' ? 'erro de leitura' : 'nenhuma leitura'}</span><span>Passos: {steps?.status === 'ok' ? `${steps.count} dias agregados` : steps?.status === 'error' ? 'erro de leitura' : 'nenhum dia'}</span></p>{missingCoreData ? <small>Verifique no app Saúde se o Invictus tem acesso a “Batimentos” e “Passos”. O Invictus não cria valores quando a fonte não entrega a leitura.</small> : <small>Última consulta: {formatUltimaLeitura(diagnostics.until)} · valores exibidos abaixo vêm dessa leitura.</small>}</section>;
+}
+
+function HealthTechnicalStatus({ summary, trainingPartial, error, diagnostics, loading }: {
+  summary: HealthSummaryResponse | null;
+  trainingPartial?: boolean;
+  error?: string | null;
+  diagnostics: HealthVitalsDiagnostics | null;
+  loading: boolean;
+}) {
+  return <details className="health-technical-status"><summary><Info /><span>Situação da sincronização e cobertura</span><ChevronDown /></summary><div><SummaryAvailability summary={summary} trainingPartial={trainingPartial} error={error} /><HealthSyncStatus diagnostics={diagnostics} loading={loading} /></div></details>;
 }
 
 function HealthInsightsSection({ summary, state, trainingPartial = false }: { summary: HealthSummaryResponse | null; state: UserPerformanceState; trainingPartial?: boolean }) {
@@ -870,12 +882,11 @@ function EstadoDeHojeCard({ fcRepouso, hrv, sono, fcDelta, hrvDelta, sonoDelta, 
   </article>;
 }
 
-export function HealthSummaryContent({ state, summary, loadingSummary, syncDiagnostics, onGenerateReport, onOpenLegacyReport, onOpenChat, viewModel, periodDays, isPro, trainingPartial = false }: {
+export function HealthSummaryContent({ state, summary, loadingSummary, onGenerateReport, onOpenLegacyReport, onOpenChat, viewModel, periodDays, isPro, trainingPartial = false }: {
   viewModel: HealthViewModel; periodDays: number; isPro: boolean; trainingPartial?: boolean;
   state: UserPerformanceState;
   summary: HealthSummaryResponse | null;
   loadingSummary: boolean;
-  syncDiagnostics: HealthVitalsDiagnostics | null;
   onGenerateReport: () => void;
   onOpenLegacyReport: () => void;
   onOpenChat: () => void;
@@ -937,7 +948,6 @@ export function HealthSummaryContent({ state, summary, loadingSummary, syncDiagn
 
   return (
     <>
-      <HealthSyncStatus diagnostics={syncDiagnostics} loading={loadingSummary} />
       <div className="health-tabs">
         {SAUDE_TABS.map((tab) => (
           <button key={tab.id} className={activeTab === tab.id ? 'is-active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
@@ -1109,9 +1119,8 @@ export function Health() {
           title="SAÚDE"
           subtitle="Sua saúde. Seus dados. Seu desempenho."
           onBack={() => navigate('/profile')}
-          right={<PeriodControl value={range} onChange={setRange} />}
+          right={<div className="health-header-controls"><button type="button" className="health-refresh-icon" onClick={refresh} disabled={loadingSummary} aria-label="Atualizar dados de saúde" title="Atualizar dados de saúde">{loadingSummary ? <LoaderCircle className="is-spinning" /> : <RefreshCw />}</button><PeriodControl value={range} onChange={setRange} /></div>}
         />
-        <SummaryAvailability summary={summary} trainingPartial={trainingPartial} error={error} onRetry={refresh} />
         <HealthSummaryContent
           viewModel={viewModel}
           trainingPartial={trainingPartial}
@@ -1120,13 +1129,13 @@ export function Health() {
           state={state}
           summary={summary}
           loadingSummary={loadingSummary}
-          syncDiagnostics={syncDiagnostics}
           onGenerateReport={() => navigate('/health/report')}
           onOpenLegacyReport={() => navigate('/health/report')}
           onOpenChat={() => navigate('/ai')}
         />
         <HealthMetricLibrary summary={summary} />
         <HealthGlossary onUpdated={refresh} />
+        <HealthTechnicalStatus summary={summary} trainingPartial={trainingPartial} error={error} diagnostics={syncDiagnostics} loading={loadingSummary} />
       </div><HealthFooter navigate={navigate} />
     </main>
   , document.body);
@@ -1142,6 +1151,8 @@ export function HealthReportContent({ onSummaryChange, onPeriodChange, reportNar
   const [filterOpen, setFilterOpen] = useState(false);
   const [activitiesExpanded, setActivitiesExpanded] = useState(false);
   const [heartDetailsExpanded, setHeartDetailsExpanded] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const { user, state, loading, summary, loadingSummary, syncDiagnostics, refresh, trainingPartial, error, viewModel, periodDays, periodSummary } = useHealthScreen(range);
   useEffect(() => { onSummaryChange?.(summary); }, [summary, onSummaryChange]);
   useEffect(() => { onPeriodChange?.(periodDays); }, [periodDays, onPeriodChange]);
@@ -1155,8 +1166,21 @@ export function HealthReportContent({ onSummaryChange, onPeriodChange, reportNar
   const latestSteps = summary?.latest.steps_daily;
   const latestSleep = summary?.latest.sleep_duration_min;
   const latestActiveCalories = summary?.latest.calories_active;
+  const exportReport = async () => {
+    if (exporting) return;
+    setExporting(true); setExportError('');
+    try {
+      await healthReportExportService.export(`invictus-saude-${periodDays}-dias.pdf`);
+    } catch (exportFailure: any) {
+      console.error('[HEALTH_REPORT] [EXPORT] [FAILURE]', exportFailure);
+      setExportError(exportFailure?.message || 'Não foi possível gerar o PDF neste dispositivo.');
+    } finally {
+      setExporting(false);
+    }
+  };
   return <main className="health-screen health-report-main"><div className="health-content health-report">
-    <HealthHeader title="RELATÓRIO DE SAÚDE" subtitle="Seus registros, mudanças e pontos de atenção." onBack={() => navigate('/health')} right={<div className="health-report-actions"><button onClick={() => window.print()}><Download />EXPORTAR</button><button onClick={() => setFilterOpen(value => !value)} aria-expanded={filterOpen}><SlidersHorizontal />FILTRAR</button></div>} />
+    <HealthHeader title="RELATÓRIO DE SAÚDE" subtitle="Seus registros, mudanças e pontos de atenção." onBack={() => navigate('/health')} right={<div className="health-report-actions"><button onClick={exportReport} disabled={exporting}>{exporting ? <LoaderCircle className="is-spinning" /> : <Download />}<span>{exporting ? 'GERANDO' : 'EXPORTAR'}</span></button><button onClick={() => setFilterOpen(value => !value)} aria-expanded={filterOpen}><SlidersHorizontal />FILTRAR</button></div>} />
+    {exportError && <p className="health-export-error" role="alert">{exportError}</p>}
     {filterOpen && <div className="health-period-bar">{ranges.map(item => <button key={item.id} className={range === item.id ? 'is-selected' : ''} onClick={() => { setRange(item.id); setFilterOpen(false); }}>{item.label}</button>)}</div>}
     <PeriodControl value={range} onChange={setRange} compact />
     <SummaryAvailability summary={summary} trainingPartial={trainingPartial} error={error} onRetry={refresh} />

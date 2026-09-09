@@ -1,15 +1,40 @@
 import { auth, db, storage, handleFirestoreError, OperationType } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { deleteObject, ref, uploadBytesResumable, getDownloadURL, type StorageReference } from 'firebase/storage';
 import { UserProfile } from '../types';
 import { API_CONFIG } from '../config';
+
+function ownedAvatarReference(photoURL: unknown, userId: string): StorageReference | null {
+  if (typeof photoURL !== 'string' || !photoURL) return null;
+  try {
+    const candidate = ref(storage, photoURL);
+    return candidate.fullPath.startsWith(`profiles/${userId}/`) ? candidate : null;
+  } catch {
+    // Provider avatars and malformed legacy values never belong to our bucket.
+    return null;
+  }
+}
+
+async function deleteOwnedAvatar(photoURL: unknown, userId: string) {
+  const avatarRef = ownedAvatarReference(photoURL, userId);
+  if (!avatarRef) return;
+  try {
+    await deleteObject(avatarRef);
+  } catch (error: any) {
+    if (error?.code !== 'storage/object-not-found') throw error;
+  }
+}
 
 export const userService = {
   async updateProfilePhoto(photoBlob: Blob) {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado.');
 
-    // Strict preventive size validation to avoid large payloads / approaching document/Firestore limits
+    if (!photoBlob.type.startsWith('image/')) {
+      throw new Error('O arquivo selecionado não é uma imagem válida.');
+    }
+
+    // The UI compresses the image before this boundary; keep a defensive cap here.
     const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB limit
     if (photoBlob.size > MAX_SIZE_BYTES) {
       throw new Error(`A foto selecionada é muito grande (${(photoBlob.size / 1024 / 1024).toFixed(2)}MB). Por favor, selecione uma imagem de até 5MB.`);
@@ -20,9 +45,13 @@ export const userService = {
     let photoURL = '';
 
     try {
-      const storageRef = ref(storage, `profiles/${user.uid}/avatar.jpg`);
+      const previousPhotoURL = (await getDoc(userRef)).data()?.photoURL;
+      // A versioned path prevents WKWebView/browser caches from displaying an
+      // overwritten avatar through the previous download URL.
+      const storageRef = ref(storage, `profiles/${user.uid}/avatar-${Date.now()}.jpg`);
       const uploadTask = uploadBytesResumable(storageRef, photoBlob, {
-        contentType: 'image/jpeg'
+        contentType: photoBlob.type || 'image/jpeg',
+        cacheControl: 'public,max-age=31536000,immutable'
       });
 
       photoURL = await new Promise<string>((resolve, reject) => {
@@ -46,6 +75,9 @@ export const userService = {
       });
       
       await updateDoc(userRef, { photoURL });
+      deleteOwnedAvatar(previousPhotoURL, user.uid).catch((cleanupError) => {
+        console.warn('Previous profile photo cleanup failed:', cleanupError);
+      });
       return photoURL;
     } catch (error: any) {
       console.error('Error updating profile photo:', error);
@@ -66,6 +98,8 @@ export const userService = {
     console.log('Removing profile photo for user:', user.uid);
     const userRef = doc(db, 'users', user.uid);
     try {
+      const previousPhotoURL = (await getDoc(userRef)).data()?.photoURL;
+      await deleteOwnedAvatar(previousPhotoURL, user.uid);
       await updateDoc(userRef, { photoURL: '' });
       return true;
     } catch (error: any) {

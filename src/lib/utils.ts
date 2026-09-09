@@ -36,6 +36,7 @@ export async function compressImage(file: File, maxWidth = 800, quality = 0.5): 
           quality
         );
       };
+      img.onerror = () => reject(new Error('O formato desta imagem não pôde ser lido. Escolha uma foto em JPG, PNG ou WEBP.'));
     };
     reader.onerror = (error) => reject(error);
   });
