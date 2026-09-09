@@ -258,7 +258,13 @@ export function SubscriptionManager() {
       <span className="subscription-manager-icon"><Crown /></span>
       <small>PLANO PERFORMANCE</small>
       <h2>{showSuccess ? 'PRO ATIVO' : 'EVOLUA PARA O PRO'}</h2>
-      <p>Gráficos biométricos avançados, integrações de saúde e recursos de IA. A assinatura não altera pontos nem inscreve você automaticamente em competições.</p>
+      <p>Desbloqueie a experiência completa do Invictus Performance. A assinatura não altera seus pontos e não inscreve você automaticamente em competições.</p>
+      <ul className="subscription-manager-benefits" aria-label="Benefícios do plano Pro">
+        <li><CheckCircle2 /><span><b>Saúde avançada</b><small>Métricas biométricas, zonas cardíacas e análises detalhadas.</small></span></li>
+        <li><CheckCircle2 /><span><b>Integrações de saúde</b><small>Apple Health, Health Connect e Strava integrados ao seu acompanhamento.</small></span></li>
+        <li><CheckCircle2 /><span><b>Invictus IA</b><small>Insights e recomendações personalizados com base na sua evolução.</small></span></li>
+        <li><CheckCircle2 /><span><b>Relatórios completos</b><small>Visão avançada do seu histórico e desempenho para acompanhar sua evolução.</small></span></li>
+      </ul>
 
       {showSuccess ? <div className="subscription-manager-success"><CheckCircle2 /><span>{notice || 'Os benefícios do plano estão disponíveis nesta conta.'}</span></div> : null}
       {currentPending && !showSuccess ? <div className="subscription-manager-info"><RefreshCw /><span>{notice || 'A loja já confirmou a operação. Falta apenas sincronizar o benefício; repetir esta etapa não abre uma nova compra.'}</span></div> : null}
