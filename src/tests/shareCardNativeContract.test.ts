@@ -12,11 +12,11 @@ describe('contrato nativo do card de compartilhamento', () => {
     expect(read('ios/App/App.xcodeproj/project.pbxproj')).toContain('InvictusShareCardPlugin.swift in Sources');
   });
 
-  it('remove do card o modelo antigo com velocidade, divisórias e ícones de métricas', () => {
+  it('remove velocidade e divisórias antigas, mas mantém os ícones do layout aprovado', () => {
     const card = read('src/components/RunShareCard.tsx');
     expect(card).not.toContain('VELOCIDADE');
     expect(card).not.toContain('share-card-divider');
-    expect(card).not.toContain('share-card-metric-icon');
+    expect(card).toContain('share-card-metric-icon');
   });
 });
 
