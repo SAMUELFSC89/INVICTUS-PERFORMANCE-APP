@@ -32,7 +32,7 @@ function customerInfo(productIdentifier: string): RevenueCatCustomerInfoLike {
   return {
     entitlements: {
       active: {
-        performance: {
+        invictus_performance_pro: {
           isActive: true,
           productIdentifier,
           expirationDate: FUTURE,
