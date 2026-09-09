@@ -1,0 +1,61 @@
+name: RevenueCat Final Alignment
+
+on:
+  push:
+    branches:
+      - fix/revenuecat-entitlement-align
+    paths:
+      - .github/workflows/revenuecat-final-align.yml
+
+permissions:
+  contents: write
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/revenuecat-entitlement-align
+      - name: Align canonical entitlement and remaining backend fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          # Canonical projection now writes the real RevenueCat entitlement id.
+          # Accept both the new canonical id and the legacy internal id so existing
+          # server-written records remain valid during the transition.
+          path = Path('api/_lib/entitlement.ts')
+          text = path.read_text()
+          old = "    && normalizedString(entitlement.entitlementId) === 'performance'\n"
+          new = "    && new Set(['invictus_performance_pro', 'performance']).has(normalizedString(entitlement.entitlementId))\n"
+          if text.count(old) != 1:
+              raise SystemExit('Expected exactly one canonical entitlementId check')
+          path.write_text(text.replace(old, new, 1))
+
+          # One backend REST mock still used the old RevenueCat entitlement key.
+          path = Path('api/__tests__/payments-service.test.ts')
+          text = path.read_text()
+          old = "          entitlements: { performance: { product_identifier: 'other-product' } },\n"
+          new = "          entitlements: { invictus_performance_pro: { product_identifier: 'other-product' } },\n"
+          if text.count(old) != 1:
+              raise SystemExit('Expected exactly one remaining legacy backend fixture')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Verify targeted alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F "invictus_performance_pro" api/_lib/entitlement.ts
+          grep -F "entitlements: { invictus_performance_pro: { product_identifier: 'other-product' } }" api/__tests__/payments-service.test.ts
+      - name: Commit alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/_lib/entitlement.ts api/__tests__/payments-service.test.ts
+          git commit -m 'fix: complete RevenueCat entitlement alignment'
+          git push origin HEAD:fix/revenuecat-entitlement-align
