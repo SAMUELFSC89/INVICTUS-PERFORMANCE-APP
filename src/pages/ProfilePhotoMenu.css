@@ -9,6 +9,36 @@
   text-align: center;
 }
 
+.np-recent-card {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 43px 1fr 72px 75px 35px 20px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 0;
+  border-bottom: 1px solid #2c2c2c;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.np-recent-card:last-child { border: 0; }
+.np-recent-card > span { display: grid; width: 39px; height: 39px; place-items: center; border: 1px solid #d39c00; border-radius: 50%; color: #f2b516; }
+.np-recent-card > span svg { width: 21px; }
+.np-recent-card > div { display: grid; }
+.np-recent-card small, .np-recent-card p, .np-recent-card time { margin: 0; color: var(--invictus-text-secondary); font-size: 9px; }
+.np-recent-card p { display: flex; align-items: center; gap: 4px; }
+.np-recent-card p svg { width: 14px; color: #f2b516; }
+.np-recent-card > svg { width: 18px; color: #23bd53; }
+.np-recent-card:focus-visible { outline: 2px solid #f2b516; outline-offset: -2px; }
+.np-recent-card:active { background: #17140d; }
+
+@media (max-width: 430px) {
+  .np-recent-card { grid-template-columns: 42px 1fr 55px 20px; }
+  .np-recent-card p:nth-of-type(2), .np-recent-card time { display: none; }
+}
+
 .np-photo-menu-backdrop {
   position: fixed;
   z-index: 160;

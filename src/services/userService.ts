@@ -58,7 +58,7 @@ export const userService = {
         const timeout = setTimeout(() => {
           uploadTask.cancel();
           reject(new Error('TIMEOUT'));
-        }, 20000); // 20s timeout for profile photo
+        }, 120000); // Mobile uploads can legitimately take longer on 4G.
 
         uploadTask.on('state_changed', null, (err) => {
           clearTimeout(timeout);
@@ -87,7 +87,14 @@ export const userService = {
       if (error.code === 'storage/unauthorized') {
         throw new Error('Erro de permissão no Storage ao atualizar foto de perfil.');
       }
-      throw new Error('Não foi possível fazer o upload da sua foto de perfil. Por favor, tente novamente.');
+      if (error.code === 'storage/canceled') {
+        throw new Error('O envio da foto foi interrompido. Tente novamente.');
+      }
+      if (error.code === 'storage/retry-limit-exceeded') {
+        throw new Error('A conexão oscilou durante o envio. Tente novamente em uma rede estável.');
+      }
+      const reference = error?.code ? ` Referência: ${String(error.code)}.` : '';
+      throw new Error(`Não foi possível enviar a foto.${reference} Tente novamente.`);
     }
   },
 

@@ -1,12 +1,15 @@
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Bell, History, Plus, ShieldCheck, Trophy, UserRound } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ActivityHistorySectionV3 } from './ActivityHistorySectionV3';
 import { InvictusLogo } from './InvictusLogo';
 import './ActivityHistoryPageNew.css';
 
 export function ActivityHistoryPageNew() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialActivityId = searchParams.get('activity');
+  const initialActivitySource = searchParams.get('source');
 
   return createPortal(
     <main className="ah-new-screen">
@@ -26,7 +29,7 @@ export function ActivityHistoryPageNew() {
           </div>
         </section>
 
-        <div className="ah-new-content"><ActivityHistorySectionV3 /></div>
+        <div className="ah-new-content"><ActivityHistorySectionV3 initialActivityId={initialActivityId} initialActivitySource={initialActivitySource} /></div>
       </div>
 
       <nav className="ah-new-footer">

@@ -23,6 +23,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { auth, db, onAuthStateChanged } from '../firebase';
 import { readActivityTimestamp, resolveActivityState } from '../lib/workoutData';
 import { VALIDATION_MESSAGES } from '../services/validationMessages';
+import { API_CONFIG } from '../config';
 import { ActivityDetailScreen, type ActivityHistoryItem } from './ActivityHistorySection';
 import { RunShareCard } from './RunShareCard';
 import './ActivityHistorySectionV3.css';
@@ -148,7 +149,7 @@ function toShareSession(item: ActivityHistoryItem) {
   } as any;
 }
 
-export function ActivityHistorySectionV3() {
+export function ActivityHistorySectionV3({ initialActivityId, initialActivitySource }: { initialActivityId?: string | null; initialActivitySource?: string | null } = {}) {
   const [activities, setActivities] = useState<ActivityHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -158,7 +159,9 @@ export function ActivityHistorySectionV3() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [detail, setDetail] = useState<ActivityHistoryItem | null>(null);
   const [share, setShare] = useState<ActivityHistoryItem | null>(null);
+  const [sourceWarning, setSourceWarning] = useState<string | null>(null);
   const lastReconcileAt = useRef(0);
+  const openedInitialActivity = useRef('');
 
   const load = useCallback(async (silent = false) => {
     const user = auth.currentUser;
@@ -169,15 +172,37 @@ export function ActivityHistorySectionV3() {
     }
     if (!silent) setLoading(true);
     setError(null);
+    setSourceWarning(null);
     try {
-      const [workoutsSnap, checkinsSnap, powerSnap] = await Promise.all([
+      const [workoutsResult, checkinsResult, powerResult] = await Promise.allSettled([
         getDocs(query(collection(db, 'workouts'), where('userId', '==', user.uid))),
         getDocs(query(collection(db, 'gym_checkins'), where('userId', '==', user.uid))),
-        getDocs(query(collection(db, 'power_records'), where('userId', '==', user.uid))),
+        (async () => {
+          const idToken = await user.getIdToken();
+          const response = await fetch(`${API_CONFIG.baseUrl}/api/powerlift?action=me`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || 'Power Lift indisponível.');
+          return Array.isArray(payload.records) ? payload.records : [];
+        })(),
       ]);
+      const workoutsSnap = workoutsResult.status === 'fulfilled' ? workoutsResult.value : null;
+      const checkinsSnap = checkinsResult.status === 'fulfilled' ? checkinsResult.value : null;
+      const powerRecords = powerResult.status === 'fulfilled' ? powerResult.value : null;
+      const failedSources = [
+        workoutsResult.status === 'rejected' ? 'treinos e cardio' : '',
+        checkinsResult.status === 'rejected' ? 'check-ins' : '',
+        powerResult.status === 'rejected' ? 'Power Lift' : '',
+      ].filter(Boolean);
+      if (!workoutsSnap && !checkinsSnap && !powerRecords) throw new Error('Todas as fontes do histórico falharam.');
+      if (failedSources.length) {
+        console.warn('[ActivityHistorySectionV3] Fontes parciais indisponíveis:', failedSources);
+        setSourceWarning(`Parte do histórico (${failedSources.join(', ')}) não respondeu. As demais atividades continuam disponíveis.`);
+      }
       const next: ActivityHistoryItem[] = [];
 
-      workoutsSnap.forEach((document) => {
+      workoutsSnap?.forEach((document) => {
         const data: any = document.data();
         if (data.dataQualityStatus === 'duplicate' || data.nonScoringReason === 'DUPLICATE_ACTIVITY') return;
         const state = resolveActivityState(data);
@@ -221,7 +246,7 @@ export function ActivityHistorySectionV3() {
         });
       });
 
-      checkinsSnap.forEach((document) => {
+      checkinsSnap?.forEach((document) => {
         const data: any = document.data();
         const raw = String(data.status || '').toLowerCase();
         const status: ActivityHistoryItem['status'] = ['confirmed', 'valid', 'approved'].includes(raw)
@@ -245,14 +270,13 @@ export function ActivityHistorySectionV3() {
         });
       });
 
-      powerSnap.forEach((document) => {
-        const data: any = document.data();
+      powerRecords?.forEach((data: any) => {
         const raw = String(data.videoStatus || data.status || '').toLowerCase();
         const status: ActivityHistoryItem['status'] = ['validated', 'valid', 'approved'].includes(raw)
           ? 'homologada' : ['rejected', 'invalid'].includes(raw) ? 'rejeitada' : 'pendente';
         const ms = timestampOf(data, data.timestamp, data.createdAt);
         next.push({
-          id: document.id,
+          id: String(data.id),
           source: 'power',
           type: 'power',
           typeLabel: 'Power Lift',
@@ -266,7 +290,7 @@ export function ActivityHistorySectionV3() {
           points: status === 'homologada' ? numberOrZero(data.points) : 0,
           weightKg: optionalNumber(data.weight),
           exerciseName: data.exercise,
-          rejectionReason: data.rejectionReason,
+          rejectionReason: data.userMessage || (Array.isArray(data.motives) ? data.motives.join(' · ') : undefined),
           details: data,
         });
       });
@@ -307,6 +331,16 @@ export function ActivityHistorySectionV3() {
     const unsubscribe = onAuthStateChanged(auth, () => { void load(); });
     return unsubscribe;
   }, [load]);
+
+  useEffect(() => {
+    if (!initialActivityId || loading) return;
+    const targetKey = `${initialActivitySource || ''}:${initialActivityId}`;
+    if (openedInitialActivity.current === targetKey) return;
+    const match = activities.find((item) => item.id === initialActivityId && (!initialActivitySource || item.source === initialActivitySource));
+    if (!match) return;
+    openedInitialActivity.current = targetKey;
+    setDetail(match);
+  }, [activities, initialActivityId, initialActivitySource, loading]);
 
   const pendingCount = activities.filter(item => item.status === 'pendente').length;
 
@@ -384,6 +418,8 @@ export function ActivityHistorySectionV3() {
         ['all', 'Todos'], ['completed', 'Concluídas'], ['approved', 'Validadas'], ['pending', 'Em revisão'], ['rejected', 'Fora da pontuação'],
       ] as Array<[StatusFilter, string]>).map(([id, label]) => <button key={id} onClick={() => setStatusFilter(id)} className={statusFilter === id ? 'is-active' : ''}>{label}</button>)}
     </div>
+
+    {sourceWarning && <div className="ahv3-pending-note"><AlertTriangle /><div><b>HISTÓRICO PARCIAL</b><span>{sourceWarning}</span></div></div>}
 
     {pendingCount > 0 && <div className="ahv3-pending-note"><TimerReset /><div><b>{pendingCount} {pendingCount === 1 ? 'atividade está' : 'atividades estão'} sendo acompanhada{pendingCount === 1 ? '' : 's'}</b><span>Pendências técnicas são reprocessadas automaticamente. Casos realmente duvidosos seguem para revisão de segurança.</span></div></div>}
 
