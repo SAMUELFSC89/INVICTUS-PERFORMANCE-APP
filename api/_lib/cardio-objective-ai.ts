@@ -1,16 +1,31 @@
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
+import { db } from './common.js';
 import { getAiApiKey, getAiHabitModel } from './ai-config.js';
 import { extractUsage, logAiUsage, newAiRequestId } from './ai-usage-logger.js';
+import { isProUser } from './entitlement.js';
 import type { Journey, Review } from '../../src/core/cardioObjective/types.js';
 
 const responseSchema = z.object({ explanation: z.string().trim().min(12).max(420) }).strict();
 
 export interface ObjectiveExplanation { text: string; source: 'gemini' | 'deterministic'; model: string | null }
 
-/** Gemini explains a completed deterministic decision; it never receives authority to change it. */
+/**
+ * O motor determinístico sempre toma a decisão. Para FREE, a explicação também
+ * é determinística e não gera custo de IA. Apenas um entitlement PRO canônico
+ * permite que o Gemini reescreva a decisão de forma mais natural.
+ */
 export async function explainObjectiveDecision(userId: string, journey: Journey, review: Review): Promise<ObjectiveExplanation> {
   const fallback = { text: review.reason, source: 'deterministic' as const, model: null };
+
+  try {
+    const userSnap = await db.collection('users').doc(userId).get();
+    if (!userSnap.exists || !isProUser(userSnap.data())) return fallback;
+  } catch {
+    // Fail closed: se não for possível comprovar PRO, não fazemos chamada paga.
+    return fallback;
+  }
+
   const apiKey = getAiApiKey();
   if (!apiKey) return fallback;
   const model = getAiHabitModel();
