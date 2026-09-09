@@ -8,6 +8,7 @@ import './styles/ChallengeCardioIndoor.css';
 import './styles/ChallengeCardioBackgroundFix.css';
 import './styles/ChallengeCardioReferenceFix.css';
 import './styles/CardioObjectiveReference.css';
+import './styles/JourneyContinueReference.css';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 // #mapa-ios-2026-09-04: efeito colateral, sem exports usados aqui de proposito.
 //
