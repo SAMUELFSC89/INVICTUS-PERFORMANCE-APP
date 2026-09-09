@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { AdminGuard } from './components/AdminGuard';
 import { AuthGuard } from './components/AuthGuard';
 import { MobileBridge } from './components/MobileBridge';
+import { ProFeatureGate } from './components/ProFeatureGate';
 
 import { UserProvider } from './UserContext';
 import { ProProvider } from './ProContext';
@@ -99,7 +100,7 @@ export default function App() {
                 <Route path="/activity/exit" element={<Navigate to="/" replace />} />
                 <Route path="/musculacao" element={<Musculation />} />
                 <Route path="/store" element={<InvictusStore />} />
-                <Route path="/ai" element={<InvictusAI />} />
+                <Route path="/ai" element={<ProFeatureGate feature="ai"><InvictusAI /></ProFeatureGate>} />
                 <Route path="/store/product/:productId" element={<StoreProductDetail />} />
                 <Route path="/store/product/:productId/checkout" element={<StoreCheckout />} />
                 <Route path="/store/orders" element={<StoreOrders />} />
@@ -146,8 +147,8 @@ export default function App() {
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
-                <Route path="/health" element={<Health />} />
-                <Route path="/health/report" element={<HealthReport />} />
+                <Route path="/health" element={<ProFeatureGate feature="health"><Health /></ProFeatureGate>} />
+                <Route path="/health/report" element={<ProFeatureGate feature="health"><HealthReport /></ProFeatureGate>} />
                 <Route path="/health/report/full" element={<Navigate to="/health/report" replace />} />
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
                 <Route path="/pagamento/pendente" element={<PaymentSuccess />} />
