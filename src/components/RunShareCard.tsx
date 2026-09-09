@@ -62,7 +62,7 @@ type CompositionMode = 'map' | 'photo-map' | 'photo-route';
 type Point = { lat: number; lng: number };
 type LayerTransform = { x: number; y: number; scale: number; rotation: number };
 type PointerPosition = { x: number; y: number };
-type PhraseId = 'movement' | 'freedom' | 'choice' | 'discipline';
+type PhraseId = 'movement' | 'freedom' | 'journey' | 'choice' | 'discipline';
 type PhraseLayer = {
   id: PhraseId;
   text: string;
@@ -76,6 +76,7 @@ const DEFAULT_INFO_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation:
 const DEFAULT_PHRASES: PhraseLayer[] = [
   { id: 'movement', text: 'MAIS MOVIMENTO\nMAIS VIDA', transform: { x: 0, y: 0, scale: 1, rotation: 0 }, visible: true },
   { id: 'freedom', text: 'DISCIPLINA\nCONSTRÓI LIBERDADE', transform: { x: 0, y: 0, scale: 1, rotation: 0 }, visible: true },
+  { id: 'journey', text: 'O\nMOVIMENTO\nTE LEVA\nMAIS LONGE', transform: { x: 0, y: 0, scale: 1, rotation: 0 }, visible: true },
   { id: 'choice', text: 'PERFORMANCE\nÉ UMA ESCOLHA\nDIÁRIA', transform: { x: 0, y: 0, scale: 1, rotation: 0 }, visible: true },
   { id: 'discipline', text: 'Disciplina\nTe Leva Mais Longe', transform: { x: 0, y: 0, scale: 1, rotation: -4 }, visible: true },
 ];
@@ -160,6 +161,8 @@ function layerStyle(transform: LayerTransform): CSSProperties {
 
 function RouteLayer({ points, transform }: { points: Array<{ x: number; y: number }>; transform: LayerTransform }) {
   if (points.length < 2) return null;
+  const start = points[0];
+  const finish = points[points.length - 1];
   return (
     <div className="share-card-route-layer" style={layerStyle(transform)} aria-hidden="true">
       <svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
@@ -167,10 +170,18 @@ function RouteLayer({ points, transform }: { points: Array<{ x: number; y: numbe
           points={points.map((point) => `${point.x},${point.y}`).join(' ')}
           fill="none"
           stroke="#f3b324"
-          strokeWidth="15"
+          strokeWidth="13"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+        <g className="share-route-start-marker">
+          <circle cx={start.x} cy={start.y} r="31" fill="#11100c" stroke="#f3b324" strokeWidth="8" />
+          <circle cx={start.x} cy={start.y} r="15" fill="#fff9df" />
+        </g>
+        <g className="share-route-finish-marker">
+          <circle cx={finish.x} cy={finish.y} r="38" fill="#080808" stroke="#f3b324" strokeWidth="7" />
+          <image href="/capacete.webp" x={finish.x - 17} y={finish.y - 22} width="34" height="44" preserveAspectRatio="xMidYMid meet" />
+        </g>
       </svg>
     </div>
   );
@@ -246,10 +257,13 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
   const mapCacheKey = mapVariant;
   const currentMapImage = mapImages[mapCacheKey] ?? null;
-  const preferencesKey = `invictus:share-card-layout:${auth.currentUser?.uid || 'local'}`;
+  const layoutVariant = compositionMode === 'map' ? `${compositionMode}-${mapVariant}` : compositionMode;
+  const preferencesKey = `invictus:share-card-layout:v2:${auth.currentUser?.uid || 'local'}:${layoutVariant}`;
 
   useEffect(() => {
     preferencesHydratedRef.current = false;
+    setInfoTransform(DEFAULT_INFO_TRANSFORM);
+    setPhrases(DEFAULT_PHRASES.map((phrase) => ({ ...phrase, transform: { ...phrase.transform } })));
     try {
       const raw = localStorage.getItem(preferencesKey);
       if (raw) {
@@ -595,7 +609,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       </div>
 
       <div className="share-card-stage" onPointerDown={startContentGesture} onPointerMove={moveContentGesture} onPointerUp={endContentGesture} onPointerCancel={endContentGesture}>
-        <div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`, isGenerating && 'is-exporting')}>
+        <div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`, `share-card-art--${mapVariant}`, isGenerating && 'is-exporting')}>
           <div className="share-card-background" aria-hidden="true">
             {(compositionMode === 'photo-map' || compositionMode === 'photo-route') && selectedPhoto ? <img src={selectedPhoto} alt="" className="share-card-photo" /> : null}
             {compositionMode !== 'photo-route' && currentMapImage ? <div className={mapLayerClass} style={layerStyle(mapTransform)}><img src={currentMapImage} alt="" /></div> : null}
@@ -606,10 +620,22 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           </div>
 
           <div className="share-card-info-block" style={layerStyle(infoTransform)} onPointerDown={startInfoGesture} onPointerMove={moveInfoGesture} onPointerUp={endInfoGesture} onPointerCancel={endInfoGesture}>
-            <div className="share-card-brand"><img src="/capacete.webp" alt="" draggable={false} /><strong>INVICTUS</strong></div>
+            <div className="share-card-brand">
+              <img src="/capacete.webp" alt="" draggable={false} />
+              <strong>INVICTUS</strong>
+              <span>PERFORMANCE</span>
+            </div>
             <div className="share-card-activity-name"><small>{title.toUpperCase()}</small></div>
             <div className="share-card-metrics">
-              {metrics.map((metric) => <div className="share-card-metric" key={metric.label}><span>{metric.label}</span><strong>{metric.value}{metric.unit ? <small> {metric.unit}</small> : null}</strong></div>)}
+              {metrics.map((metric, index) => (
+                <div className={cn('share-card-metric', `share-card-metric--${index}`)} key={metric.label}>
+                  <div className="share-card-metric-icon" aria-hidden="true"><span /></div>
+                  <div className="share-card-metric-copy">
+                    <span>{metric.label}</span>
+                    <strong>{metric.value}{metric.unit ? <small> {metric.unit}</small> : null}</strong>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
