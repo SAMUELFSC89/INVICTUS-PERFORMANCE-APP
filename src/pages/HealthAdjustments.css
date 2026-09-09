@@ -70,7 +70,32 @@
 }
 
 @media print {
+  body.health-report-print-context {
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  body.health-report-print-context > #root {
+    display: none !important;
+  }
+
+  body.health-report-print-context > .health-report-shell {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
   .health-refresh-icon,
   .health-technical-status,
-  .health-export-error { display: none !important; }
+  .health-export-error,
+  .health-report-shell .health-back,
+  .health-report-shell .health-report-actions,
+  .health-report-shell .health-period-picker,
+  .health-report-shell .health-period-bar,
+  .health-report-shell .health-report-data-details,
+  .health-report-shell .health-card-link,
+  .health-report-shell .health-new-footer { display: none !important; }
 }

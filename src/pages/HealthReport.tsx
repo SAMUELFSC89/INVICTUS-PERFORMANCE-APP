@@ -214,6 +214,10 @@ export function HealthReport() {
   const [summary, setSummary] = useState<HealthSummaryResponse | null>(null);
   const [days, setDays] = useState(30);
   const isPro = hasActiveProEntitlement(user);
+  useEffect(() => {
+    document.body.classList.add('health-report-print-context');
+    return () => document.body.classList.remove('health-report-print-context');
+  }, []);
   return createPortal(
     <div className="health-report-shell health-new-shell">
       <div className="health-report-layout">

@@ -37,4 +37,14 @@ describe('health diagnostics and native PDF', () => {
     expect(read('ios/App/App/InvictusBridgeViewController.swift')).toContain('registerPluginInstance(InvictusPdfPlugin())');
     expect(read('ios/App/App.xcodeproj/project.pbxproj')).toContain('InvictusPdfPlugin.swift in Sources');
   });
+
+  test('prints only report content and removes interactive controls from the PDF', () => {
+    const report = read('src/pages/HealthReport.tsx');
+    const styles = read('src/pages/HealthAdjustments.css');
+    expect(report).toContain("document.body.classList.add('health-report-print-context')");
+    expect(report).toContain("document.body.classList.remove('health-report-print-context')");
+    expect(styles).toContain('body.health-report-print-context > #root');
+    expect(styles).toContain('.health-report-shell .health-period-picker');
+    expect(styles).toContain('.health-report-shell .health-new-footer');
+  });
 });
