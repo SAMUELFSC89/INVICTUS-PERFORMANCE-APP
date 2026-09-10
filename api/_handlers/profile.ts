@@ -319,7 +319,7 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
 
       if (existing.termsAccepted === true) {
         // Já onboarded: chamada idempotente não toca em nenhum campo
-        // privilegiado nem repete a concessão inicial de score/xp.
+        // privilegiado nem reaplica os defaults iniciais.
         return { alreadyOnboarded: true, onboardingComplete: true };
       }
 
@@ -356,8 +356,9 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
       };
 
       if (wantsToComplete) {
-        // Concessão inicial de score/xp/plano só acontece uma vez, na
-        // conclusão real do onboarding -- nunca em uma chamada repetida.
+        // Defaults competitivos só são definidos uma vez na conclusão real do
+        // onboarding. Conta nova começa sem pontuação conquistada: IGA/score e
+        // XP só aumentam depois de atividade válida processada pelo servidor.
         Object.assign(privilegedFields, {
           termsVersionAccepted,
           termsAcceptedAt: now,
@@ -375,8 +376,8 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
           isSubscribed: false,
           subscriptionTier: preferredPlan === 'open' ? 'open' : 'Nenhum',
           league: 'Comunidade Invictus',
-          score: 10,
-          xp: 10,
+          score: 0,
+          xp: 0,
           level: 1,
           streak: 0,
           weeklyScore: 0,
@@ -427,7 +428,6 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
     if (!validToken) {
       return res.status(400).json({ error: 'Token de dispositivo inválido.' });
     }
-
     const profileRef = db.collection('users').doc(auth.uid);
     await db.runTransaction(async (transaction: any) => {
       const profileSnap = await transaction.get(profileRef);
