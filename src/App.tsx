@@ -25,6 +25,7 @@ const ActivityTypeChooser = lazyNamed(() => import('./components/ActivityTypeCho
 const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
 const ProfileSecondary = lazyNamed(() => import('./pages/ProfileSecondary'), 'ProfileSecondary');
+const AcademySearch = lazyNamed(() => import('./pages/AcademySearch'), 'AcademySearch');
 const PaymentSuccess = lazyNamed(() => import('./pages/PaymentSuccess'), 'PaymentSuccess');
 const AdminWorkouts = lazyNamed(() => import('./pages/AdminWorkouts'), 'AdminWorkouts');
 const AdminPayouts = lazyNamed(() => import('./pages/AdminPayouts'), 'AdminPayouts');
@@ -106,7 +107,7 @@ export default function App() {
                 <Route path="/store/orders" element={<StoreOrders />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />
                 <Route path="/profile/academy" element={<ProfileSecondary />} />
-                <Route path="/profile/academy/search" element={<ProfileSecondary />} />
+                <Route path="/profile/academy/search" element={<AcademySearch />} />
                 <Route path="/profile/academy/confirm" element={<ProfileSecondary />} />
                 <Route path="/profile/wearables" element={<ProfileSecondary />} />
                 <Route path="/profile/wallet" element={<Navigate to="/store" replace />} />
