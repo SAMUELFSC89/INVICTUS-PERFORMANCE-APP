@@ -25,6 +25,7 @@ const ActivityTypeChooser = lazyNamed(() => import('./components/ActivityTypeCho
 const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
 const ProfileSecondary = lazyNamed(() => import('./pages/ProfileSecondary'), 'ProfileSecondary');
+const IGAExplanation = lazyNamed(() => import('./pages/IGAExplanation'), 'IGAExplanation');
 const PaymentSuccess = lazyNamed(() => import('./pages/PaymentSuccess'), 'PaymentSuccess');
 const AdminWorkouts = lazyNamed(() => import('./pages/AdminWorkouts'), 'AdminWorkouts');
 const AdminPayouts = lazyNamed(() => import('./pages/AdminPayouts'), 'AdminPayouts');
@@ -113,6 +114,7 @@ export default function App() {
                 <Route path="/profile/goals" element={<ProfileSecondary />} />
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
+                <Route path="/profile/preferences/scoring" element={<IGAExplanation />} />
                 <Route path="/profile/preferences/:section" element={<ProfileSecondary />} />
                 <Route path="/profile" element={<ProfileNew />} />
                 <Route path="/championships" element={<ChampionshipsHub />} />
