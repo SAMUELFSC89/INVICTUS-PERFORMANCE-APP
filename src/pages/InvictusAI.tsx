@@ -64,7 +64,7 @@ export function InvictusAI() {
   };
 
   return createPortal(<main className="iai-screen"><div className="iai-page">
-    <header className="iai-header"><button onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><i><Brain /></i></header>
+    <header className="iai-header"><button onClick={() => navigate('/')} aria-label="Voltar para o início"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><i><Brain /></i></header>
     <section className="iai-intro"><small><Sparkles /> INTELIGÊNCIA INVICTUS</small><h1>CONVERSE COM A <span>INVICTUS IA</span></h1><p>Orientação personalizada com base nos dados reais disponíveis na sua conta.</p></section>
     <section className="iai-suggestions" aria-label="Sugestões de conversa">{suggestions.map(item => <button key={item.label} onClick={() => void send(item.prompt)} disabled={loading}>{item.icon}<span>{item.label}</span></button>)}</section>
     <section className="iai-chat" aria-live="polite">{messages.map(message => <article key={message.id} className={`iai-message is-${message.sender}`}>
