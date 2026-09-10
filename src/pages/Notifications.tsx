@@ -16,6 +16,19 @@ const notificationIcons = {
   system: ShieldCheck,
 };
 
+function safeInternalActionUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const path = value.trim();
+  if (!path.startsWith('/') || path.startsWith('//')) return null;
+  return path;
+}
+
+function fallbackNotificationRoute(type: string): string | null {
+  if (type === 'ranking') return '/championships';
+  if (type === 'achievement') return '/achievements';
+  return null;
+}
+
 export function Notifications() {
   const navigate = useNavigate();
   const { user, refreshUser } = useUser();
@@ -23,19 +36,29 @@ export function Notifications() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const markAsRead = async (id: string) => {
-    if (!user || busy) return;
+  const markAsRead = async (id: string): Promise<boolean> => {
+    if (!user || busy) return false;
     setBusy(true);
     setError(null);
     try {
       await updateDoc(doc(db, 'users', user.uid), { notifications: notifications.map((item) => item.id === id ? { ...item, read: true } : item) });
       await refreshUser();
+      return true;
     } catch (err) {
       console.warn('[Notifications] Não foi possível marcar como lida:', err);
       setError('Não foi possível atualizar esta notificação. Tente novamente.');
+      return false;
     } finally {
       setBusy(false);
     }
+  };
+
+  const openNotification = async (notification: (typeof notifications)[number]) => {
+    const persisted = notification.read ? true : await markAsRead(notification.id);
+    if (!persisted) return;
+    const actionUrl = safeInternalActionUrl((notification as any).actionUrl);
+    const target = actionUrl || fallbackNotificationRoute(String(notification.type || ''));
+    if (target) navigate(target);
   };
 
   const markAllAsRead = async () => {
@@ -56,7 +79,7 @@ export function Notifications() {
   return createPortal(
     <main className="notifications-screen notifications-screen-new">
       <header className="notifications-header">
-        <button className="notifications-icon-button" onClick={() => navigate(-1)} aria-label="Voltar"><ChevronLeft /></button>
+        <button className="notifications-icon-button" onClick={() => navigate('/')} aria-label="Voltar para o início"><ChevronLeft /></button>
         <div><InvictusLogo size={42} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div>
         <span />
       </header>
@@ -76,7 +99,7 @@ export function Notifications() {
         <section className="notifications-list" aria-label="Lista de notificações">
           {notifications.map((notification) => {
             const Icon = notificationIcons[notification.type] || ShieldCheck;
-            return <button disabled={busy} className={`notification-row ${notification.read ? 'is-read' : ''}`} key={notification.id} onClick={() => markAsRead(notification.id)}>
+            return <button disabled={busy} className={`notification-row ${notification.read ? 'is-read' : ''}`} key={notification.id} onClick={() => void openNotification(notification)}>
               <span className="notification-row-icon"><Icon /></span>
               <span className="notification-row-copy"><b>{notification.title}</b><small>{notification.message}</small></span>
               {!notification.read && <span className="notification-unread" aria-label="Não lida" />}
