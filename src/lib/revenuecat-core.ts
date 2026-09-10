@@ -15,15 +15,17 @@ export interface PerformancePurchaseResult {
   expiresAt: string;
 }
 
+export interface RevenueCatStoreProductLike {
+  identifier: string;
+  price: number;
+  priceString: string;
+  currencyCode: string;
+  subscriptionPeriod: string | null;
+}
+
 export interface RevenueCatPackageLike {
   identifier: string;
-  product: {
-    identifier: string;
-    price: number;
-    priceString: string;
-    currencyCode: string;
-    subscriptionPeriod: string | null;
-  };
+  product: RevenueCatStoreProductLike;
 }
 
 export interface RevenueCatCustomerInfoLike {
@@ -47,7 +49,13 @@ export interface RevenueCatSdkLike {
   getOfferings(): Promise<{
     current: { availablePackages: RevenueCatPackageLike[] } | null;
   }>;
+  getProducts(options: { productIdentifiers: string[] }): Promise<{
+    products: RevenueCatStoreProductLike[];
+  }>;
   purchasePackage(options: { aPackage: RevenueCatPackageLike }): Promise<{
+    customerInfo: RevenueCatCustomerInfoLike;
+  }>;
+  purchaseStoreProduct(options: { product: RevenueCatStoreProductLike }): Promise<{
     customerInfo: RevenueCatCustomerInfoLike;
   }>;
   restorePurchases(): Promise<{ customerInfo: RevenueCatCustomerInfoLike }>;
@@ -68,14 +76,17 @@ interface RevenueCatClientOptions {
   now?: () => number;
 }
 
+type PurchaseTarget =
+  | { kind: 'package'; aPackage: RevenueCatPackageLike }
+  | { kind: 'product'; product: RevenueCatStoreProductLike };
+
 function nativeOnlyError(): Error {
   return new Error('A assinatura do Plano Performance só pode ser gerenciada pelo aplicativo instalado (Android ou iOS).');
 }
 
 /**
- * Wrapper serializado do SDK. A fila não protege apenas configure/logIn: ela
- * inclui getOfferings, purchase e restore, impedindo logout/troca de UID no
- * meio de uma operação de loja.
+ * Wrapper serializado do SDK. A fila protege configure/login, consulta da loja,
+ * compra e restore para impedir troca de identidade no meio de uma operação.
  */
 export function createRevenueCatClient(options: RevenueCatClientOptions) {
   let sdkQueue: Promise<void> = Promise.resolve();
@@ -126,8 +137,6 @@ export function createRevenueCatClient(options: RevenueCatClientOptions) {
     } else {
       const { appUserID } = await options.sdk.getAppUserID();
       if (appUserID !== uid) {
-        // Troca direta é a recomendação da RevenueCat: logOut antes criaria um
-        // usuário anônimo intermediário capaz de receber a compra.
         await options.sdk.logIn({ appUserID: uid });
       }
     }
@@ -141,40 +150,63 @@ export function createRevenueCatClient(options: RevenueCatClientOptions) {
     let selected: RevenueCatPackageLike | undefined;
     if (configuration.packageIdentifier) {
       selected = packages.find((candidate) => candidate.identifier === configuration.packageIdentifier);
-      if (!selected) {
-        throw new Error(`O pacote Performance configurado (${configuration.packageIdentifier}) não está disponível nesta loja.`);
-      }
-    } else {
+    } else if (configuration.productIdentifier) {
       selected = packages.find((candidate) => candidate.product.identifier === configuration.productIdentifier);
-      if (!selected) {
-        throw new Error(`O produto Performance configurado (${configuration.productIdentifier}) não está disponível nesta loja.`);
-      }
     }
 
+    if (!selected) {
+      throw new Error('O plano Pro não foi encontrado na offering atual da loja.');
+    }
     if (configuration.productIdentifier && selected.product.identifier !== configuration.productIdentifier) {
       throw new Error(`O pacote ${selected.identifier} não contém o produto Performance esperado (${configuration.productIdentifier}).`);
     }
     return selected;
   }
 
-  async function loadPackage(
-    configuration: RevenueCatStoreConfiguration
-  ): Promise<RevenueCatPackageLike> {
-    const offerings = await options.sdk.getOfferings();
-    if (!offerings.current) {
-      throw new Error('Nenhuma oferta de assinatura está disponível no momento. Tente novamente mais tarde.');
+  async function loadDirectProduct(configuration: RevenueCatStoreConfiguration): Promise<RevenueCatStoreProductLike> {
+    const productIdentifier = configuration.productIdentifier.trim();
+    if (!productIdentifier) {
+      throw new Error('A offering atual não está disponível e nenhum product ID do Plano Performance foi configurado para fallback.');
     }
-    return selectPerformancePackage(offerings.current.availablePackages, configuration);
+    const { products } = await options.sdk.getProducts({ productIdentifiers: [productIdentifier] });
+    const selected = products.find((product) => product.identifier === productIdentifier) || products[0];
+    if (!selected) {
+      throw new Error(`O produto Performance configurado (${productIdentifier}) não está disponível na loja.`);
+    }
+    if (selected.identifier !== productIdentifier) {
+      throw new Error(`A loja devolveu um produto diferente do Performance esperado (${productIdentifier}).`);
+    }
+    return selected;
   }
 
-  function toOffer(aPackage: RevenueCatPackageLike): PerformanceSubscriptionOffer {
+  async function loadPurchaseTarget(configuration: RevenueCatStoreConfiguration): Promise<PurchaseTarget> {
+    try {
+      const offerings = await options.sdk.getOfferings();
+      if (offerings.current) {
+        try {
+          return { kind: 'package', aPackage: selectPerformancePackage(offerings.current.availablePackages, configuration) };
+        } catch (offeringSelectionError) {
+          if (!configuration.productIdentifier) throw offeringSelectionError;
+        }
+      } else if (!configuration.productIdentifier) {
+        throw new Error('Nenhuma offering atual está disponível para o Plano Performance.');
+      }
+    } catch (offeringError) {
+      if (!configuration.productIdentifier) throw offeringError;
+    }
+
+    return { kind: 'product', product: await loadDirectProduct(configuration) };
+  }
+
+  function toOffer(target: PurchaseTarget): PerformanceSubscriptionOffer {
+    const product = target.kind === 'package' ? target.aPackage.product : target.product;
     return {
-      packageIdentifier: aPackage.identifier,
-      productIdentifier: aPackage.product.identifier,
-      price: aPackage.product.price,
-      priceString: aPackage.product.priceString,
-      currencyCode: aPackage.product.currencyCode,
-      subscriptionPeriod: aPackage.product.subscriptionPeriod,
+      packageIdentifier: target.kind === 'package' ? target.aPackage.identifier : '',
+      productIdentifier: product.identifier,
+      price: product.price,
+      priceString: product.priceString,
+      currencyCode: product.currencyCode,
+      subscriptionPeriod: product.subscriptionPeriod,
     };
   }
 
@@ -216,9 +248,9 @@ export function createRevenueCatClient(options: RevenueCatClientOptions) {
     const configuration = storeConfiguration(platform, true);
     return enqueueSdkOperation(async () => {
       await ensureSdkUser(uid, configuration);
-      const selected = await loadPackage(configuration);
+      const target = await loadPurchaseTarget(configuration);
       await assertSdkUser(uid);
-      return toOffer(selected);
+      return toOffer(target);
     });
   }
 
@@ -228,37 +260,33 @@ export function createRevenueCatClient(options: RevenueCatClientOptions) {
     const configuration = storeConfiguration(platform, true);
     return enqueueSdkOperation(async () => {
       await ensureSdkUser(uid, configuration);
-      const selected = await loadPackage(configuration);
+      const target = await loadPurchaseTarget(configuration);
       await assertSdkUser(uid);
-      const { customerInfo } = await options.sdk.purchasePackage({ aPackage: selected });
+      const productIdentifier = target.kind === 'package'
+        ? target.aPackage.product.identifier
+        : target.product.identifier;
+      const { customerInfo } = target.kind === 'package'
+        ? await options.sdk.purchasePackage({ aPackage: target.aPackage })
+        : await options.sdk.purchaseStoreProduct({ product: target.product });
       await assertSdkUser(uid);
-      return toPurchaseResult(customerInfo, selected.product.identifier);
+      return toPurchaseResult(customerInfo, productIdentifier);
     });
   }
 
   async function restorePerformanceSubscription(firebaseUid: string): Promise<PerformancePurchaseResult> {
     const uid = checkedUid(firebaseUid);
     const platform = nativePlatform();
-    // Restore só precisa da chave da plataforma. Package/product atuais podem
-    // ter sido removidos da offering enquanto um SKU legado segue válido.
     const configuration = storeConfiguration(platform, false);
     return enqueueSdkOperation(async () => {
       await ensureSdkUser(uid, configuration);
       const { customerInfo } = await options.sdk.restorePurchases();
       await assertSdkUser(uid);
-      // Restore pode devolver um SKU antigo que não faz mais parte da oferta
-      // atual. O cliente valida apenas a entitlement Performance vigente; o
-      // backend valida o productIdentifier real contra sua allowlist.
       return toPurchaseResult(customerInfo);
     });
   }
 
   async function disconnectRevenueCat(): Promise<void> {
     if (!options.isNativePlatform()) return;
-    // Este app usa exclusivamente Firebase UIDs próprios. `logOut()` criaria
-    // um `$RCAnonymousID` capaz de receber/transferir o recibo entre sessões.
-    // Enfileirar um no-op drena operações em voo; o próximo login troca A→B
-    // diretamente via `logIn({ appUserID: B })`.
     return enqueueSdkOperation(async () => undefined);
   }
 
