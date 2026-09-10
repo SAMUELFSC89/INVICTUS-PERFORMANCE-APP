@@ -7,7 +7,7 @@ import {
   signInWithPopup, 
   signInWithRedirect as firebaseSignInWithRedirect,
   signInWithCredential,
-  getRedirectResult, 
+  getRedirectResult as firebaseGetRedirectResult, 
   GoogleAuthProvider, 
   FacebookAuthProvider, 
   OAuthProvider, 
@@ -185,6 +185,20 @@ async function signInWithRedirect(authInstance: any, provider: any): Promise<voi
   }
 
   await firebaseSignInWithRedirect(authInstance, provider);
+}
+
+// getRedirectResult pertence ao fluxo Web do Firebase Auth. No app Capacitor
+// nativo o login Google iOS e concluido acima por credencial nativa, e nao ha
+// um redirect Web pendente para restaurar. Chamar getRedirectResult no boot do
+// WKWebView pode lançar auth/argument-error antes de qualquer tentativa de
+// login e exibir um erro falso na tela inicial. Em ambiente nativo tratamos a
+// consulta como no-op; Web/desktop continuam usando o comportamento original.
+async function getRedirectResult(authInstance: any): Promise<any> {
+  if (Capacitor.isNativePlatform()) {
+    marcarDiag('getRedirectResult ignorado no app nativo');
+    return null;
+  }
+  return firebaseGetRedirectResult(authInstance);
 }
 
 export { 
