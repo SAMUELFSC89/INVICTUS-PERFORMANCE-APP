@@ -1,74 +1,114 @@
 /**
  * IGA (Índice Global de Atividade) - Normalizers
- * 
- * Implementação parametrizada e isolada das funções de normalização (Fn, Tn, In).
- * Permite calibrações futuras dos limites sem impactar a fórmula central do IGA.
+ *
+ * IGA 2.0 usa fatores relativos em torno de 1.00, mas NÃO os limita a 1.00.
+ * Isso permite diferenciar desempenho acima da referência sem criar teto
+ * artificial de 100 pontos no IGA final.
  */
 
 import { FrequencyConfig, TimeConfig, IntensityConfig } from './types.js';
 
 export const DEFAULT_FREQUENCY_CONFIG: FrequencyConfig = {
-  maxSessions: 5,
+  maxSessions: 6,
   targetFrequency: 5,
+  // 0, 1, 2, 3, 4, 5, 6+ sessões válidas.
+  scoreBySessions: [0, 15, 30, 55, 80, 100, 105],
 };
 
 export const DEFAULT_TIME_CONFIG: TimeConfig = {
   minWorkoutMinutes: 30,
   minCardioMinutes: 20,
-  targetTimeMinutes: 250, // 5 sessões x 50 min
-  maxCountedMinutesPerSession: 90, // #239: teto pontuável por sessão
+  targetTimeMinutes: 300,
+  maxCountedMinutesPerSession: 90,
+  // Retorno decrescente: depois de 60 min o ganho é residual.
+  scoreCurve: [
+    { minutes: 0, score: 0 },
+    { minutes: 20, score: 70 },
+    { minutes: 30, score: 85 },
+    { minutes: 45, score: 95 },
+    { minutes: 60, score: 100 },
+    { minutes: 75, score: 102 },
+    { minutes: 90, score: 104 },
+  ],
 };
 
 export const DEFAULT_INTENSITY_CONFIG: IntensityConfig = {
-  targetRelativeHR: 0.85,          // 85% da FC Max = Intensidade Máxima Normalizada (1.0)
-  minRelativeHR: 0.50,             // 50% da FC Max = Ponto de partida
-  defaultWorkoutRelativeHR: 0.70,  // Estimativa segura para Musculação sem monitor cardíaco
-  defaultCardioRelativeHR: 0.75,   // Estimativa segura para Cardio sem monitor cardíaco
+  // Legado/fallback sem série de FC.
+  targetRelativeHR: 0.85,
+  minRelativeHR: 0.50,
+  defaultWorkoutRelativeHR: 0.70,
+  defaultCardioRelativeHR: 0.75,
   defaultOtherRelativeHR: 0.65,
+  // Fronteiras: Z1/Z2 em 60%, Z2/Z3 em 70%, Z3/Z4 em 80%, Z4/Z5 em 90%.
+  zoneBoundaries: [0.60, 0.70, 0.80, 0.90],
+  // Z4 é o maior bônus. Z5 continua alta, mas não recompensa FC extrema acima de Z4.
+  zoneScores: [40, 75, 100, 115, 110],
+  transitionBpm: 5,
+  smoothingWindowSeconds: 30,
 };
 
 /**
- * Normaliza a frequência semanal (Fn)
- * @param frequency Número de sessões válidas na semana (máximo 5)
- * @param config Configurações parametrizáveis de frequência
- * @returns Fn valor entre 0.0 e 1.0
+ * Frequência semanal do IGA 2.0.
+ * 1=15, 2=30, 3=55, 4=80, 5=100, 6+=105.
+ * @returns fator relativo (ex.: 100 -> 1.00; 105 -> 1.05)
  */
 export function normalizeFrequency(
   frequency: number,
   config?: Partial<FrequencyConfig>
 ): number {
   const cfg = { ...DEFAULT_FREQUENCY_CONFIG, ...config };
-  const safeFreq = Math.max(0, Number(frequency) || 0);
-  const cappedFreq = Math.min(safeFreq, cfg.maxSessions);
-  if (cfg.targetFrequency <= 0) return 0;
-  
-  const Fn = cappedFreq / cfg.targetFrequency;
-  return Math.min(1.0, Math.max(0, Fn));
+  const safeFreq = Math.max(0, Math.floor(Number(frequency) || 0));
+  const capped = Math.min(safeFreq, cfg.maxSessions);
+  const table = cfg.scoreBySessions?.length ? cfg.scoreBySessions : DEFAULT_FREQUENCY_CONFIG.scoreBySessions;
+  const tableIndex = Math.min(capped, table.length - 1);
+  return Math.max(0, Number(table[tableIndex]) || 0) / 100;
+}
+
+/** Interpolação linear entre os pontos da curva de tempo. */
+function interpolateTimeScore(minutes: number, curve: Array<{ minutes: number; score: number }>): number {
+  const sorted = [...curve]
+    .filter(p => Number.isFinite(p.minutes) && Number.isFinite(p.score))
+    .sort((a, b) => a.minutes - b.minutes);
+  if (!sorted.length) return 0;
+  if (minutes <= sorted[0].minutes) return sorted[0].score;
+  if (minutes >= sorted[sorted.length - 1].minutes) return sorted[sorted.length - 1].score;
+
+  for (let i = 1; i < sorted.length; i += 1) {
+    const right = sorted[i];
+    const left = sorted[i - 1];
+    if (minutes <= right.minutes) {
+      const span = right.minutes - left.minutes;
+      if (span <= 0) return right.score;
+      const ratio = (minutes - left.minutes) / span;
+      return left.score + (right.score - left.score) * ratio;
+    }
+  }
+  return sorted[sorted.length - 1].score;
 }
 
 /**
- * Normaliza o tempo total elegível de exercício na semana (Tn)
- * @param totalMinutes Tempo total em minutos das melhores até 5 sessões válidas
- * @param config Configurações parametrizáveis de tempo
- * @returns Tn valor entre 0.0 e 1.0
+ * Fator de tempo de UMA sessão válida.
+ * A curva reconhece duração suficiente sem transformar disponibilidade de tempo
+ * em vantagem dominante. 60 min = 1.00; 90 min = 1.04.
  */
 export function normalizeTime(
-  totalMinutes: number,
+  sessionMinutes: number,
   config?: Partial<TimeConfig>
 ): number {
   const cfg = { ...DEFAULT_TIME_CONFIG, ...config };
-  const safeMinutes = Math.max(0, Number(totalMinutes) || 0);
-  if (cfg.targetTimeMinutes <= 0) return 0;
-
-  const Tn = safeMinutes / cfg.targetTimeMinutes;
-  return Math.min(1.0, Math.max(0, Tn));
+  const capped = Math.min(
+    Math.max(0, Number(sessionMinutes) || 0),
+    Math.max(0, cfg.maxCountedMinutesPerSession || 90),
+  );
+  const curve = cfg.scoreCurve?.length ? cfg.scoreCurve : DEFAULT_TIME_CONFIG.scoreCurve;
+  return Math.max(0, interpolateTimeScore(capped, curve)) / 100;
 }
 
 /**
- * Normaliza a intensidade cardiovascular relativa (In)
- * @param avgRelativeHR Frequência cardíaca relativa (FC Média / FC Máxima)
- * @param config Configurações parametrizáveis de intensidade
- * @returns In valor entre 0.0 e 1.0
+ * Compatibilidade com chamadas antigas que calculavam intensidade a partir de
+ * uma única FC média. O motor IGA 2.0 prefere a função por zonas/série de FC,
+ * mas este fallback continua contínuo e sem teto artificial em 100 por regra
+ * antiga. A implementação oficial de zonas fica em intensity.ts.
  */
 export function normalizeIntensity(
   avgRelativeHR: number,
@@ -76,13 +116,27 @@ export function normalizeIntensity(
 ): number {
   const cfg = { ...DEFAULT_INTENSITY_CONFIG, ...config };
   const safeRelHR = Math.max(0, Number(avgRelativeHR) || 0);
+  if (safeRelHR < cfg.minRelativeHR) return 0;
 
-  if (safeRelHR <= cfg.minRelativeHR) return 0;
-  if (safeRelHR >= cfg.targetRelativeHR) return 1.0;
+  const [b1, b2, b3, b4] = cfg.zoneBoundaries;
+  const [z1, z2, z3, z4, z5] = cfg.zoneScores;
+  const points: Array<[number, number]> = [
+    [cfg.minRelativeHR, z1],
+    [b1, (z1 + z2) / 2],
+    [b2, (z2 + z3) / 2],
+    [b3, (z3 + z4) / 2],
+    [b4, (z4 + z5) / 2],
+    [1.0, z5],
+  ];
 
-  const range = cfg.targetRelativeHR - cfg.minRelativeHR;
-  if (range <= 0) return 1.0;
-
-  const In = (safeRelHR - cfg.minRelativeHR) / range;
-  return Math.min(1.0, Math.max(0, In));
+  if (safeRelHR >= 1) return z5 / 100;
+  for (let i = 1; i < points.length; i += 1) {
+    const [rx, ry] = points[i];
+    const [lx, ly] = points[i - 1];
+    if (safeRelHR <= rx) {
+      const ratio = rx === lx ? 1 : (safeRelHR - lx) / (rx - lx);
+      return Math.max(0, ly + (ry - ly) * ratio) / 100;
+    }
+  }
+  return z5 / 100;
 }
