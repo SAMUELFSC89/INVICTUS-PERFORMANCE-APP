@@ -4,7 +4,7 @@ describe('hasActiveProEntitlement', () => {
   const now = Date.parse('2026-09-06T12:00:00.000Z');
   const canonical = (overrides: Record<string, unknown> = {}) => ({
     version: 1,
-    entitlementId: 'performance',
+    entitlementId: 'invictus_performance_pro',
     tier: 'performance',
     provider: 'revenuecat',
     status: 'active',
@@ -61,6 +61,13 @@ describe('hasActiveProEntitlement', () => {
       expiresAt: '2026-10-06T12:00:00.000Z',
       proEntitlement: { ...canonical(), provider: undefined },
     }, now)).toBe(false);
+  });
+
+  it('aceita o entitlement RevenueCat atual e o identificador legado durante a migração', () => {
+    expect(hasActiveProEntitlement({ proEntitlement: canonical() }, now)).toBe(true);
+    expect(hasActiveProEntitlement({
+      proEntitlement: canonical({ entitlementId: 'performance' }),
+    }, now)).toBe(true);
   });
 
   it('aceita grace period somente até o limite informado pelo provedor', () => {
