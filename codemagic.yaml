@@ -53,17 +53,48 @@ workflows:
         # #222: grupo de variaveis do Codemagic. Precisa conter
         # CERTIFICATE_PRIVATE_KEY (chave RSA privada, marcada como Secure).
         #
-        # Sem ela, o passo de assinatura gera uma chave nova a cada build e
-        # pede um certificado de distribuicao novo para a Apple. A conta so
-        # aceita um numero limitado deles, entao depois de 2 ou 3 builds a
-        # Apple responde HTTP 409 ("You already have a current Distribution
-        # certificate") e o build morre. Com a chave fixa, todo build
-        # reaproveita SEMPRE o mesmo certificado.
+        # Tambem deve conter as variaveis de build do RevenueCat usadas pelo
+        # bundle iOS. O passo de preflight abaixo valida a presenca sem exibir
+        # nenhum valor secreto nos logs:
+        # - VITE_REVENUECAT_IOS_API_KEY
+        # - VITE_REVENUECAT_IOS_PERFORMANCE_PRODUCT_ID (preferencial) OU
+        #   VITE_REVENUECAT_PERFORMANCE_PRODUCT_ID; alternativamente, um
+        #   package ID equivalente pode ser usado pelo codigo.
+        #
+        # Sem a chave RevenueCat antes do `npm run build`, o Vite incorpora
+        # string vazia no bundle e o TestFlight exibe "Compras indisponiveis".
+        #
+        # Sem CERTIFICATE_PRIVATE_KEY, o passo de assinatura gera uma chave nova
+        # a cada build e pede um certificado de distribuicao novo para a Apple.
+        # A conta so aceita um numero limitado deles, entao depois de 2 ou 3
+        # builds a Apple responde HTTP 409. Com a chave fixa, todo build
+        # reaproveita sempre o mesmo certificado.
         - ios_signing
     scripts:
       - name: Instalar dependencias npm
         script: |
           npm ci --no-audit --no-fund
+
+      - name: Validar configuracao RevenueCat iOS
+        script: |
+          set -eu
+
+          if [ -z "${VITE_REVENUECAT_IOS_API_KEY:-}" ]; then
+            echo "ERRO: VITE_REVENUECAT_IOS_API_KEY nao esta disponivel para o workflow ios-testflight."
+            echo "Configure a Public SDK Key do app iOS no grupo de variaveis do Codemagic antes de gerar o TestFlight."
+            exit 1
+          fi
+
+          if [ -z "${VITE_REVENUECAT_IOS_PERFORMANCE_PRODUCT_ID:-}" ] \
+            && [ -z "${VITE_REVENUECAT_PERFORMANCE_PRODUCT_ID:-}" ] \
+            && [ -z "${VITE_REVENUECAT_IOS_PERFORMANCE_PACKAGE_ID:-}" ] \
+            && [ -z "${VITE_REVENUECAT_PERFORMANCE_PACKAGE_ID:-}" ]; then
+            echo "ERRO: nenhum Product ID/Package ID do Plano Performance esta configurado para o build iOS."
+            echo "Defina VITE_REVENUECAT_IOS_PERFORMANCE_PRODUCT_ID com o SKU real da App Store/RevenueCat (preferencial)."
+            exit 1
+          fi
+
+          echo "RevenueCat iOS: variaveis obrigatorias presentes. Valores nao serao exibidos."
 
       - name: Build do app web
         script: |
