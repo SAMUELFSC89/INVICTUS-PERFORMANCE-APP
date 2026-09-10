@@ -114,8 +114,8 @@ describe('AP-01 / SEC-01: action=onboard cria/concluí o perfil com autoridade d
     expect(stored.role).toBe('user');
     expect(stored.isAdmin).toBe(false);
     expect(stored.termsAccepted).toBe(true);
-    expect(stored.score).toBe(10);
-    expect(stored.xp).toBe(10);
+    expect(stored.score).toBe(0);
+    expect(stored.xp).toBe(0);
     expect(stored.level).toBe(1);
     expect(stored.isBlocked).toBe(false);
     expect(stored.isBanned).toBe(false);
@@ -155,8 +155,8 @@ describe('AP-01 / SEC-01: action=onboard cria/concluí o perfil com autoridade d
     // 'performance' forjado pelo cliente é ignorado; só a derivação
     // determinística a partir de preferredPlan é aceita.
     expect(stored.subscriptionTier).toBe('open');
-    expect(stored.score).toBe(10);
-    expect(stored.xp).toBe(10);
+    expect(stored.score).toBe(0);
+    expect(stored.xp).toBe(0);
     expect(stored.level).toBe(1);
     expect(stored.walletBalance).toBe(0);
   });
