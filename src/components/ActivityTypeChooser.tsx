@@ -10,7 +10,7 @@ export function ActivityTypeChooser() {
     <main className="activity-type-screen">
       <div className="activity-type-page">
         <header className="activity-type-header">
-          <button type="button" onClick={() => navigate(-1)} aria-label="Voltar">
+          <button type="button" onClick={() => navigate('/')} aria-label="Voltar para o início">
             <ArrowLeft />
           </button>
           <div>
