@@ -79,7 +79,7 @@ export function PublicProfile() {
 
   return createPortal(<main className="ppn-screen">
     <div className="ppn-page">
-      <header className="ppn-header"><button onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={share} aria-label="Compartilhar perfil"><Share2 /></button></header>
+      <header className="ppn-header"><button onClick={() => navigate('/championships?section=ranking')} aria-label="Voltar ao ranking"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={share} aria-label="Compartilhar perfil"><Share2 /></button></header>
       {loading ? <section className="ppn-state"><i /><p>Carregando atleta...</p></section> : error && !profile ? <section className="ppn-state"><Award /><p>{error}</p><button onClick={() => navigate('/championships?section=ranking')}>VOLTAR AO RANKING</button></section> : profile ? <>
         <section className="ppn-hero">
           <div className="ppn-photo">{profile.photoURL ? <img src={profile.photoURL} alt={`Foto de ${profile.displayName || 'atleta'}`} referrerPolicy="no-referrer" /> : <UserRound />}</div>

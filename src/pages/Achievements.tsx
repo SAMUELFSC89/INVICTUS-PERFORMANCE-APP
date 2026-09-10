@@ -49,7 +49,7 @@ export function Achievements() {
 
   if (!user) return null;
   return createPortal(<main className="an-screen"><div className="an-page">
-    <header className="an-header"><button onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={() => navigate('/profile')} aria-label="Perfil"><UserRound /></button></header>
+    <header className="an-header"><button onClick={() => navigate('/profile')} aria-label="Voltar para o perfil"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={() => navigate('/profile')} aria-label="Perfil"><UserRound /></button></header>
     <section className="an-title"><small>SUA EVOLUÇÃO</small><h1>MINHAS <span>CONQUISTAS</span></h1><p>Marcos liberados apenas por atividades e resultados validados.</p></section>
     <section className="an-summary"><div><Trophy /><span><b>{unlockedCount}</b><small>DESBLOQUEADAS</small></span></div><div className="an-track"><span>{progress}% da coleção</span><i><b style={{width:`${progress}%`}} /></i></div></section>
     <nav className="an-filters">{CATEGORIES.map(item => <button key={item.id} className={category === item.id ? 'is-active' : ''} onClick={() => setCategory(item.id)}>{item.label}</button>)}</nav>
