@@ -4,7 +4,7 @@ describe('hasActiveProEntitlement', () => {
   const now = Date.parse('2026-09-06T12:00:00.000Z');
   const canonical = (overrides: Record<string, unknown> = {}) => ({
     version: 1,
-    entitlementId: 'performance',
+    entitlementId: 'invictus_performance_pro',
     tier: 'performance',
     provider: 'revenuecat',
     status: 'active',
@@ -12,6 +12,12 @@ describe('hasActiveProEntitlement', () => {
     providerObservedAt: '2026-09-06T11:59:00.000Z',
     expiresAt: '2026-10-06T12:00:00.000Z',
     ...overrides,
+  });
+
+  it('aceita temporariamente o entitlement legado performance', () => {
+    expect(hasActiveProEntitlement({
+      proEntitlement: canonical({ entitlementId: 'performance' }),
+    }, now)).toBe(true);
   });
 
   it('não trata o Plano Open nem flags legadas isoladas como PRO', () => {
