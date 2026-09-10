@@ -11,6 +11,7 @@ type EntitlementLike = {
 };
 
 const PRO_TIERS = new Set(['performance', 'pro', 'invictus_performance']);
+const PRO_ENTITLEMENT_IDS = new Set(['invictus_performance_pro', 'performance']);
 const ACTIVE_STATUSES = new Set(['active', 'active_premium']);
 const GRACE_STATUSES = new Set(['grace', 'grace_period']);
 
@@ -61,7 +62,7 @@ export function hasActiveProEntitlement(profile: unknown, at: Date | number = Da
     : null;
   if (!entitlement
     || entitlement.version !== 1
-    || normalized(entitlement.entitlementId) !== 'performance'
+    || !PRO_ENTITLEMENT_IDS.has(normalized(entitlement.entitlementId))
     || normalized(entitlement.provider) !== 'revenuecat'
     || typeof entitlement.productId !== 'string'
     || !entitlement.productId.trim()
