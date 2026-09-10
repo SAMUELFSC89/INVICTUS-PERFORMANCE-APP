@@ -5,7 +5,8 @@ import {
   browserLocalPersistence, 
   onAuthStateChanged, 
   signInWithPopup, 
-  signInWithRedirect, 
+  signInWithRedirect as firebaseSignInWithRedirect,
+  signInWithCredential,
   getRedirectResult, 
   GoogleAuthProvider, 
   FacebookAuthProvider, 
@@ -24,7 +25,7 @@ import {
   setLogLevel
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 // #223 - INSTRUMENTACAO TEMPORARIA.
 // Nao ha console acessivel no iPhone sem um Mac. Registramos marcos do boot
@@ -154,6 +155,37 @@ onAuthStateChanged(auth, (u) => {
 });
 marcarDiag('firestore pronto (cache: ' + (ehNativo ? 'memoria' : 'persistente') + ')');
 const storage = getStorage(app);
+
+type InvictusGoogleAuthResult = {
+  idToken: string;
+  accessToken?: string;
+};
+
+type InvictusGoogleAuthPlugin = {
+  signIn: () => Promise<InvictusGoogleAuthResult>;
+};
+
+const nativeGoogleAuth = registerPlugin<InvictusGoogleAuthPlugin>('InvictusGoogleAuth');
+
+// No iOS nativo, Firebase Web Auth via popup/redirect roda dentro do WKWebView
+// e pode perder o retorno da conta Google. Interceptamos somente esse caso:
+// o iOS faz OAuth nativo com ASWebAuthenticationSession + PKCE, devolve os
+// tokens e o Firebase Web SDK cria a mesma sessao usada pelo restante do app.
+// Web e Android continuam exatamente no fluxo Firebase existente.
+async function signInWithRedirect(authInstance: any, provider: any): Promise<void> {
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && provider instanceof GoogleAuthProvider) {
+    const result = await nativeGoogleAuth.signIn();
+    if (!result?.idToken) {
+      throw new Error('O Google não retornou um token de identidade válido.');
+    }
+    const credential = GoogleAuthProvider.credential(result.idToken, result.accessToken);
+    await signInWithCredential(authInstance, credential);
+    marcarDiag('login Google nativo iOS -> Firebase concluido');
+    return;
+  }
+
+  await firebaseSignInWithRedirect(authInstance, provider);
+}
 
 export { 
   app, 

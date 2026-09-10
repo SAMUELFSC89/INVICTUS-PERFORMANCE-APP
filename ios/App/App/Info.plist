@@ -29,7 +29,19 @@
 				<string>invictus</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>google-sign-in</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.477394623748-ugnc921oeqh3ith5iiqskv4pu87p958f</string>
+			</array>
+		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>477394623748-ugnc921oeqh3ith5iiqskv4pu87p958f.apps.googleusercontent.com</string>
+	<key>GIDReversedClientID</key>
+	<string>com.googleusercontent.apps.477394623748-ugnc921oeqh3ith5iiqskv4pu87p958f</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
