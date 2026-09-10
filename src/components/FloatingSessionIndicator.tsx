@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, MapPin, Square, Timer, Zap } from 'lucide-react';
@@ -13,9 +13,6 @@ export function FloatingSessionIndicator() {
   const [activeSession, setActiveSession] = useState<any>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
 
-  // A sessão canônica fica em `activityService`. O indicador também tenta
-  // restaurar uma sessão remota uma vez ao abrir o app, para que o atleta não
-  // perca o acesso depois de recarregar a página ou trocar de rota.
   useEffect(() => {
     let cancelled = false;
 
@@ -65,9 +62,7 @@ export function FloatingSessionIndicator() {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
-    if (h > 0) {
-      return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
-    }
+    if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
@@ -80,9 +75,7 @@ export function FloatingSessionIndicator() {
     ? <Zap size={14} className="text-primary" />
     : <MapPin size={14} className="text-secondary" />;
 
-  const handleAction = () => {
-    navigate('/activity/ongoing');
-  };
+  const handleAction = () => navigate('/activity/ongoing');
 
   const handleCancel = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -94,8 +87,12 @@ export function FloatingSessionIndicator() {
     }
   };
 
-  return (
-    <div className="floating-session-indicator">
+  const indicator = (
+    <div
+      className="floating-session-indicator"
+      style={{ zIndex: 9000 }}
+      aria-live="polite"
+    >
       <motion.div
         initial={{ y: -50, opacity: 0, scale: 0.9 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
@@ -103,9 +100,7 @@ export function FloatingSessionIndicator() {
         className="floating-session-card"
       >
         <div className="floating-session-copy">
-          <div className="floating-session-icon" aria-hidden="true">
-            {icon}
-          </div>
+          <div className="floating-session-icon" aria-hidden="true">{icon}</div>
           <div className="floating-session-text">
             <p><i />{label}</p>
             <strong>{modalityLabel}</strong>
@@ -130,4 +125,10 @@ export function FloatingSessionIndicator() {
       </motion.div>
     </div>
   );
+
+  // As telas novas são majoritariamente portais em document.body. Se o card
+  // ficar dentro de Layout, o stacking context do shell pode colocá-lo atrás
+  // da tela atual mesmo com z-index alto. Portalamos o indicador para a mesma
+  // raiz visual e mantemos a camada abaixo apenas dos modais bloqueantes.
+  return createPortal(indicator, document.body);
 }
