@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowRight, MapPin, Square, Timer, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowRight, MapPin, RefreshCw, Square, Timer, Zap } from 'lucide-react';
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
 import { activityLiveActivityService } from '../services/activityLiveActivityService';
@@ -12,38 +12,66 @@ export function FloatingSessionIndicator() {
   const location = useLocation();
   const [activeSession, setActiveSession] = useState<any>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  const applySession = (session: any) => {
+    if (!session) {
+      setActiveSession(null);
+      return;
+    }
+    setRestoreError(null);
+    setActiveSession(session);
+    const start = new Date(session.startTime).getTime();
+    const pauseStarted = session.pauseStartedAt ? new Date(session.pauseStartedAt).getTime() : 0;
+    const pausedMs = Number(session.pausedMs) || 0;
+    const currentPauseMs = session.isPaused && pauseStarted ? Math.max(0, Date.now() - pauseStarted) : 0;
+    setElapsedTime(Math.max(0, Math.floor((Date.now() - start - pausedMs - currentPauseMs) / 1000)));
+  };
+
+  const restoreSession = async () => {
+    if (restoring) return;
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      const session = await activityService.restoreActiveSession();
+      applySession(session);
+    } catch (error) {
+      console.warn('[FloatingSessionIndicator] Não foi possível restaurar a atividade:', error);
+      setRestoreError('Não foi possível verificar sua atividade em andamento. Confira a conexão e tente novamente.');
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
 
-    const applySession = (session: any) => {
-      if (!session) {
-        setActiveSession(null);
-        return;
-      }
-      setActiveSession(session);
-      const start = new Date(session.startTime).getTime();
-      const pauseStarted = session.pauseStartedAt ? new Date(session.pauseStartedAt).getTime() : 0;
-      const pausedMs = Number(session.pausedMs) || 0;
-      const currentPauseMs = session.isPaused && pauseStarted ? Math.max(0, Date.now() - pauseStarted) : 0;
-      setElapsedTime(Math.max(0, Math.floor((Date.now() - start - pausedMs - currentPauseMs) / 1000)));
+    const applyIfMounted = (session: any) => {
+      if (!cancelled) applySession(session);
     };
 
     const checkSessions = () => {
       const session = activityService.getCurrentSession();
       if (session) {
-        applySession(session);
+        applyIfMounted(session);
         return;
       }
-      applySession(null);
+      if (!restoreError) applyIfMounted(null);
     };
 
     checkSessions();
     if (!activityService.getCurrentSession()) {
+      setRestoring(true);
       void activityService.restoreActiveSession().then((session) => {
-        if (!cancelled && session) applySession(session);
+        if (!cancelled) applySession(session);
       }).catch((error) => {
-        if (!cancelled) console.warn('[FloatingSessionIndicator] Não foi possível restaurar a atividade:', error);
+        if (!cancelled) {
+          console.warn('[FloatingSessionIndicator] Não foi possível restaurar a atividade:', error);
+          setRestoreError('Não foi possível verificar sua atividade em andamento. Confira a conexão e tente novamente.');
+        }
+      }).finally(() => {
+        if (!cancelled) setRestoring(false);
       });
     }
     const interval = setInterval(checkSessions, 1000);
@@ -53,10 +81,33 @@ export function FloatingSessionIndicator() {
     };
   }, []);
 
-  if (!activeSession) return null;
-
   // Nessas rotas a própria tela de atividade já está visível.
   if (location.pathname.startsWith('/challenges') || location.pathname === '/activity/ongoing' || location.pathname === '/running') return null;
+
+  if (!activeSession && restoreError) {
+    return createPortal(
+      <div className="floating-session-indicator" style={{ zIndex: 9000 }} role="alert">
+        <div className="floating-session-card" style={{ alignItems: 'center', gap: 12 }}>
+          <div className="floating-session-copy">
+            <div className="floating-session-icon" aria-hidden="true"><AlertTriangle size={16} /></div>
+            <div className="floating-session-text">
+              <p>ATIVIDADE EM ANDAMENTO</p>
+              <strong>Não foi possível confirmar o estado do treino</strong>
+              <span>{restoreError}</span>
+            </div>
+          </div>
+          <div className="floating-session-actions">
+            <button type="button" className="floating-session-open" disabled={restoring} onClick={() => void restoreSession()}>
+              <span>{restoring ? 'VERIFICANDO...' : 'TENTAR NOVAMENTE'}</span><RefreshCw />
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
+  if (!activeSession) return null;
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
