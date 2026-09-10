@@ -154,9 +154,11 @@ export default function App() {
                 <Route path="/pagamento/pendente" element={<PaymentSuccess />} />
                 <Route path="/pagamento/falha" element={<PaymentSuccess />} />
                 <Route path="/my-diet" element={<Navigate to="/" replace />} />
-                <Route path="/saude" element={<Navigate to="/" replace />} />
-                <Route path="/medical" element={<Navigate to="/" replace />} />
-                <Route path="/clinical" element={<Navigate to="/" replace />} />
+                {/* Deep links legados de saúde devem preservar o contexto da
+                    funcionalidade, em vez de jogar o usuário na Home. */}
+                <Route path="/saude" element={<Navigate to="/health" replace />} />
+                <Route path="/medical" element={<Navigate to="/health" replace />} />
+                <Route path="/clinical" element={<Navigate to="/health" replace />} />
                 <Route path="/admin/workouts" element={<AdminGuard><AdminWorkouts /></AdminGuard>} />
                 <Route path="/admin/payouts" element={<AdminGuard><AdminPayouts /></AdminGuard>} />
                 <Route path="/admin/gym-audit" element={<AdminGuard><AdminGymAudit /></AdminGuard>} />
@@ -169,6 +171,9 @@ export default function App() {
                 <Route path="/admin/store/orders" element={<AdminGuard><AdminStoreOrders /></AdminGuard>} />
                 <Route path="/admin/wearables" element={<AdminGuard><ProfileSecondary /></AdminGuard>} />
                 <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
+                {/* Qualquer rota desconhecida ou deep link antigo recupera para
+                    a Home, evitando tela vazia/órfã. */}
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
             </Suspense>
