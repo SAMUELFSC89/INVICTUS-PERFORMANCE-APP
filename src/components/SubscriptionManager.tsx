@@ -206,10 +206,6 @@ export function SubscriptionManager() {
       return;
     }
     const selectedOffer = offer;
-    if (operation === 'purchase' && !selectedOffer) {
-      setError(currentOfferState?.error || 'A oferta da loja ainda não está disponível. Tente novamente.');
-      return;
-    }
 
     await runAction(operation === 'purchase' ? 'purchasing' : 'restoring', uid, async () => {
       const result = operation === 'purchase'
@@ -224,7 +220,7 @@ export function SubscriptionManager() {
         platform,
         operation,
         productIdentifier: result.productIdentifier,
-        packageIdentifier: operation === 'purchase' ? selectedOffer?.packageIdentifier : undefined,
+        packageIdentifier: operation === 'purchase' ? selectedOffer?.packageIdentifier || undefined : undefined,
       });
       const persisted = savePendingSubscriptionVerification(pending);
       if (auth.currentUser?.uid === uid) setPendingVerification(pending);
@@ -252,6 +248,7 @@ export function SubscriptionManager() {
   const returnToOrigin = () => navigate(safeReturnPath((location.state as any)?.returnTo));
   const busy = state === 'purchasing' || state === 'restoring' || state === 'verifying';
   const showSuccess = isPro;
+  const offerError = currentOfferState?.status === 'error' ? currentOfferState.error : '';
 
   return <section className="subscription-manager">
     <article className="subscription-manager-card">
@@ -277,11 +274,12 @@ export function SubscriptionManager() {
         <small>{periodLabel(offer.subscriptionPeriod)} · {offer.productIdentifier}</small>
       </div> : null}
 
-      {error && !currentOfferState?.error ? <div className="subscription-manager-error" role="alert"><span>{error}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />{currentPending ? 'CONFIRMAR NOVAMENTE' : 'TENTAR NOVAMENTE'}</button></div> : null}
+      {offerError && !currentPending ? <div className="subscription-manager-error" role="alert"><span>{offerError}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />CONSULTAR NOVAMENTE</button></div> : null}
+      {error ? <div className="subscription-manager-error" role="alert"><span>{error}</span><button onClick={retry} disabled={!isNative || busy || !hydrated}><RefreshCw />{currentPending ? 'CONFIRMAR NOVAMENTE' : 'TENTAR NOVAMENTE'}</button></div> : null}
 
-      {!showSuccess && !offer ? <div className="subscription-manager-offer"><span>Invictus Pro</span><b>R$ 29,90</b><small>por mês</small></div> : null}
+      {!showSuccess && !offer ? <div className="subscription-manager-offer"><span>Invictus Pro</span><b>R$ 29,90</b><small>valor de referência; a loja confirma o preço antes da compra</small></div> : null}
 
-      {isNative && !showSuccess ? <button className="profile-flow-primary" onClick={() => void runStoreOperation('purchase')} disabled={busy || !hydrated || offerLoading || (!currentPending && !offer)}>
+      {isNative && !showSuccess ? <button className="profile-flow-primary" onClick={() => void runStoreOperation('purchase')} disabled={busy || !hydrated || offerLoading}>
         {state === 'purchasing' ? <><Loader2 /> PROCESSANDO NA LOJA…</> : state === 'verifying' ? <><Loader2 /> CONFIRMANDO BENEFÍCIO…</> : currentPending ? 'CONFIRMAR ASSINATURA' : <>ASSINAR PRO · {offer?.priceString || 'R$ 29,90'}/MÊS</>}
       </button> : null}
       {isNative && !showSuccess ? <button className="subscription-manager-secondary" onClick={() => void runStoreOperation('restore')} disabled={busy || !hydrated}>

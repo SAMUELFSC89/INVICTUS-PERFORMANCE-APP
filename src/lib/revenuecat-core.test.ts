@@ -59,7 +59,13 @@ function setup(configurationOverrides: Partial<RevenueCatStoreConfiguration> = {
     logIn: jest.fn(async ({ appUserID }) => { currentUser = appUserID; return {}; }),
     logOut: jest.fn(async () => { currentUser = '$RCAnonymousID:generated'; return {}; }),
     getOfferings: jest.fn(async () => ({ current: { availablePackages: packages } })),
+    getProducts: jest.fn(async ({ productIdentifiers }) => ({
+      products: packages
+        .map(candidate => candidate.product)
+        .filter(product => productIdentifiers.includes(product.identifier)),
+    })),
     purchasePackage: jest.fn(async ({ aPackage: selected }) => ({ customerInfo: customerInfo(selected.product.identifier) })),
+    purchaseStoreProduct: jest.fn(async ({ product }) => ({ customerInfo: customerInfo(product.identifier) })),
     restorePurchases: jest.fn(async () => ({ customerInfo: customerInfo('performance.monthly') })),
   };
   const configuration: RevenueCatStoreConfiguration = {
@@ -100,6 +106,34 @@ describe('RevenueCat client serializado', () => {
     });
     expect(sdk.configure).toHaveBeenCalledWith({ apiKey: 'public-android-key', appUserID: 'user-A' });
     expect(sdk.getOfferings).toHaveBeenCalledTimes(1);
+    expect(sdk.getProducts).not.toHaveBeenCalled();
+  });
+
+  test('usa o SKU direto quando não existe Current Offering', async () => {
+    const { client, sdk } = setup({ packageIdentifier: '', productIdentifier: 'performance.monthly' });
+    sdk.getOfferings.mockResolvedValueOnce({ current: null });
+
+    await expect(client.getPerformanceSubscriptionOffer('user-A')).resolves.toEqual({
+      packageIdentifier: '',
+      productIdentifier: 'performance.monthly',
+      price: 29.9,
+      priceString: 'R$ 29,90',
+      currencyCode: 'BRL',
+      subscriptionPeriod: 'P1M',
+    });
+    expect(sdk.getProducts).toHaveBeenCalledWith({ productIdentifiers: ['performance.monthly'] });
+  });
+
+  test('compra pelo SKU direto quando a offering falha', async () => {
+    const { client, sdk } = setup({ packageIdentifier: '', productIdentifier: 'performance.monthly' });
+    sdk.getOfferings.mockRejectedValueOnce(new Error('offering unavailable'));
+
+    await expect(client.purchasePerformanceSubscription('user-A')).resolves.toMatchObject({
+      active: true,
+      productIdentifier: 'performance.monthly',
+    });
+    expect(sdk.purchasePackage).not.toHaveBeenCalled();
+    expect(sdk.purchaseStoreProduct).toHaveBeenCalledTimes(1);
   });
 
   test('falha antes de tocar no SDK quando package e product IDs não foram configurados', async () => {
@@ -160,14 +194,15 @@ describe('RevenueCat client serializado', () => {
     await expect(client.purchasePerformanceSubscription('user-A')).rejects.toThrow('identidade da loja mudou');
   });
 
-  test('valida que o package ID contém exatamente o product ID configurado', async () => {
+  test('não compra produto diferente do SKU configurado', async () => {
     const { client, sdk } = setup({ productIdentifier: 'different-product' });
 
-    await expect(client.purchasePerformanceSubscription('user-A')).rejects.toThrow('não contém o produto Performance esperado');
+    await expect(client.purchasePerformanceSubscription('user-A')).rejects.toThrow('different-product');
     expect(sdk.purchasePackage).not.toHaveBeenCalled();
+    expect(sdk.purchaseStoreProduct).not.toHaveBeenCalled();
   });
 
-  test('restore é serializado, verifica produto/expiração e não chama purchasePackage', async () => {
+  test('restore é serializado, verifica produto/expiração e não chama compra', async () => {
     const { client, sdk } = setup();
 
     await expect(client.restorePerformanceSubscription('user-A')).resolves.toEqual({
@@ -178,6 +213,7 @@ describe('RevenueCat client serializado', () => {
     expect(sdk.restorePurchases).toHaveBeenCalledTimes(1);
     expect(sdk.getOfferings).not.toHaveBeenCalled();
     expect(sdk.purchasePackage).not.toHaveBeenCalled();
+    expect(sdk.purchaseStoreProduct).not.toHaveBeenCalled();
   });
 
   test('restore aceita SKU Performance legado fora da oferta atual e devolve o ID real', async () => {

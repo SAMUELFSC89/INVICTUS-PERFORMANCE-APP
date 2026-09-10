@@ -2,8 +2,10 @@ import { Capacitor } from '@capacitor/core';
 import {
   Purchases,
   LOG_LEVEL,
+  PRODUCT_CATEGORY,
   type CustomerInfo,
   type PurchasesPackage,
+  type PurchasesStoreProduct,
 } from '@revenuecat/purchases-capacitor';
 import {
   createRevenueCatClient,
@@ -12,6 +14,7 @@ import {
   type PerformanceSubscriptionOffer,
   type RevenueCatCustomerInfoLike,
   type RevenueCatPackageLike,
+  type RevenueCatStoreProductLike,
 } from './revenuecat-core';
 
 /**
@@ -50,8 +53,19 @@ const revenueCatClient = createRevenueCatClient({
           : null,
       };
     },
+    getProducts: async ({ productIdentifiers }) => {
+      const result = await Purchases.getProducts({
+        productIdentifiers,
+        type: PRODUCT_CATEGORY.SUBSCRIPTION,
+      });
+      return { products: result.products as RevenueCatStoreProductLike[] };
+    },
     purchasePackage: async ({ aPackage }) => {
       const result = await Purchases.purchasePackage({ aPackage: aPackage as PurchasesPackage });
+      return { customerInfo: result.customerInfo as RevenueCatCustomerInfoLike };
+    },
+    purchaseStoreProduct: async ({ product }) => {
+      const result = await Purchases.purchaseStoreProduct({ product: product as PurchasesStoreProduct });
       return { customerInfo: result.customerInfo as RevenueCatCustomerInfoLike };
     },
     restorePurchases: async () => {
@@ -71,12 +85,6 @@ const revenueCatClient = createRevenueCatClient({
 
     return {
       apiKey: platform === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY,
-      // Quando temos o SKU real da App Store, ele é a fonte mais estável para
-      // localizar a oferta. O package `$rc_monthly` é configuração da offering
-      // e pode mudar/ser recriado sem que o produto `invictus_pro_monthly`
-      // mude. O core já seleciona por product ID quando packageIdentifier está
-      // vazio. Se não houver SKU configurado, preservamos o package como
-      // fallback para compatibilidade.
       packageIdentifier: productIdentifier ? '' : configuredPackageIdentifier,
       productIdentifier,
     };
@@ -87,10 +95,10 @@ const revenueCatClient = createRevenueCatClient({
 /** Vincula o Firebase UID ao SDK. */
 export const configureRevenueCat = revenueCatClient.configureRevenueCat;
 
-/** Retorna pacote, produto, preço localizado e período publicados pela loja. */
+/** Retorna preço/período do plano via offering ou, se necessário, pelo SKU direto da loja. */
 export const getPerformanceSubscriptionOffer = revenueCatClient.getPerformanceSubscriptionOffer;
 
-/** Compra apenas o pacote/produto explicitamente configurado para a plataforma. */
+/** Compra o plano pela offering atual ou diretamente pelo SKU configurado como fallback. */
 export const purchasePerformanceSubscription = revenueCatClient.purchasePerformanceSubscription;
 
 /** Restauração explícita acionada pelo usuário. */
