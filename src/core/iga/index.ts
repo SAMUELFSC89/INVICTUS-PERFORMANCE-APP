@@ -4,6 +4,7 @@
 
 export * from './types.js';
 export * from './normalizers.js';
+export * from './intensity.js';
 export * from './calorieGate.js';
 export * from './ageHandicap.js';
 export * from './igaEngine.js';
