@@ -61,22 +61,30 @@ const revenueCatClient = createRevenueCatClient({
   },
   isNativePlatform: () => Capacitor.isNativePlatform(),
   getPlatform: () => Capacitor.getPlatform(),
-  getStoreConfiguration: (platform) => ({
-    apiKey: platform === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY,
-    packageIdentifier: platform === 'ios'
-      ? IOS_PERFORMANCE_PACKAGE_ID || PERFORMANCE_PACKAGE_ID
-      : ANDROID_PERFORMANCE_PACKAGE_ID || PERFORMANCE_PACKAGE_ID,
-    productIdentifier: platform === 'ios'
+  getStoreConfiguration: (platform) => {
+    const productIdentifier = platform === 'ios'
       ? IOS_PERFORMANCE_PRODUCT_ID || PERFORMANCE_PRODUCT_ID
-      : ANDROID_PERFORMANCE_PRODUCT_ID || PERFORMANCE_PRODUCT_ID,
-  }),
+      : ANDROID_PERFORMANCE_PRODUCT_ID || PERFORMANCE_PRODUCT_ID;
+    const configuredPackageIdentifier = platform === 'ios'
+      ? IOS_PERFORMANCE_PACKAGE_ID || PERFORMANCE_PACKAGE_ID
+      : ANDROID_PERFORMANCE_PACKAGE_ID || PERFORMANCE_PACKAGE_ID;
+
+    return {
+      apiKey: platform === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY,
+      // Quando temos o SKU real da App Store, ele é a fonte mais estável para
+      // localizar a oferta. O package `$rc_monthly` é configuração da offering
+      // e pode mudar/ser recriado sem que o produto `invictus_pro_monthly`
+      // mude. O core já seleciona por product ID quando packageIdentifier está
+      // vazio. Se não houver SKU configurado, preservamos o package como
+      // fallback para compatibilidade.
+      packageIdentifier: productIdentifier ? '' : configuredPackageIdentifier,
+      productIdentifier,
+    };
+  },
   logLevel: LOG_LEVEL.WARN,
 });
 
-/**
- * Vincula o Firebase UID ao SDK. É seguro chamar repetidamente e em trocas de
- * conta; a fila compartilhada impede interleaving com compra/restore/logout.
- */
+/** Vincula o Firebase UID ao SDK. */
 export const configureRevenueCat = revenueCatClient.configureRevenueCat;
 
 /** Retorna pacote, produto, preço localizado e período publicados pela loja. */

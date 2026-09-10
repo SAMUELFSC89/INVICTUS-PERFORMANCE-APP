@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Share2, X } from 'lucide-react';
 import { Achievement } from '../types';
@@ -22,8 +23,6 @@ export function AchievementTracker() {
 
     const unlockedIds = new Set(user.achievements || []);
     if (!knownAchievementIds.current || knownUserId.current !== user.uid) {
-      // A primeira carga só estabelece a referência. Exibir uma celebração
-      // nessa etapa faria parecer que o navegador acabou de concedê-la.
       knownAchievementIds.current = unlockedIds;
       knownUserId.current = user.uid;
       return;
@@ -52,49 +51,33 @@ export function AchievementTracker() {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  return (
+  const content = (
     <AnimatePresence>
       {newAchievement && (
         <motion.div
           initial={{ y: -100, opacity: 0 }}
-          animate={{ y: 20, opacity: 1 }}
+          animate={{ y: 0, opacity: 1 }}
           exit={{ y: -100, opacity: 0 }}
-          className="fixed top-0 left-4 right-4 z-[200] flex justify-center"
+          className="fixed left-4 right-4 z-[9200] flex justify-center"
+          style={{ top: 'max(env(safe-area-inset-top, 0px), 14px)' }}
         >
-          <div className="bg-surface-container border border-primary/30 rounded-3xl p-6 shadow-2xl flex items-center gap-6 max-w-md w-full relative overflow-hidden">
-            <div className="absolute inset-0 bg-primary/5 animate-pulse"></div>
-            
-            <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-4xl relative z-10">
-              {newAchievement.icon}
+          <div className="relative flex w-full max-w-md items-center gap-5 overflow-hidden rounded-3xl border border-[#F5A623]/30 bg-[#11100E]/98 p-5 text-white shadow-2xl backdrop-blur-xl">
+            <div className="absolute inset-0 animate-pulse bg-[#F5A623]/5" />
+            <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F5A623]/10 text-3xl">{newAchievement.icon}</div>
+            <div className="relative z-10 flex-grow space-y-1">
+              <span className="block font-label text-[10px] font-black uppercase tracking-widest text-[#F5A623]">NOVA CONQUISTA!</span>
+              <h3 className="font-headline text-xl font-black uppercase italic leading-none tracking-tight text-white">{newAchievement.name}</h3>
+              <p className="font-label text-[10px] font-bold uppercase text-white/55">{newAchievement.description}</p>
             </div>
-
-            <div className="flex-grow space-y-1 relative z-10">
-              <span className="font-label text-[10px] font-black text-primary uppercase tracking-widest block">NOVA CONQUISTA!</span>
-              <h3 className="font-headline italic font-black text-xl text-on-surface uppercase leading-none tracking-tight">
-                {newAchievement.name}
-              </h3>
-              <p className="text-on-surface-variant font-label text-[10px] uppercase font-bold">
-                {newAchievement.description}
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2 relative z-10">
-              <button 
-                onClick={handleShare}
-                className="w-10 h-10 bg-primary text-on-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20"
-              >
-                <Share2 size={18} />
-              </button>
-              <button 
-                onClick={() => setNewAchievement(null)}
-                className="w-10 h-10 bg-surface-container-highest text-on-surface-variant rounded-xl flex items-center justify-center"
-              >
-                <X size={18} />
-              </button>
+            <div className="relative z-10 flex flex-col gap-2">
+              <button onClick={handleShare} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F5A623] text-black"><Share2 size={18} /></button>
+              <button onClick={() => setNewAchievement(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/8 text-white/60"><X size={18} /></button>
             </div>
           </div>
         </motion.div>
       )}
     </AnimatePresence>
   );
+
+  return createPortal(content, document.body);
 }
