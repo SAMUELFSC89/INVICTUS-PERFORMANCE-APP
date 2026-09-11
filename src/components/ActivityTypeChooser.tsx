@@ -48,7 +48,7 @@ export function ActivityTypeChooser() {
           </button>
         </section>
 
-        <p className="activity-type-note">Você poderá escolher o tipo específico de cardio na próxima tela.</p>
+        <p className="activity-type-note">Se a atividade contar para o IGA, inicie também um treino no seu relógio antes de começar e mantenha-o ativo até finalizar. Isso melhora a coleta de frequência cardíaca usada para medir a intensidade do esforço. Você poderá escolher o tipo específico de cardio na próxima tela.</p>
       </div>
     </main>,
     document.body,
