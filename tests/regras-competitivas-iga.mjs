@@ -45,13 +45,15 @@ conferir('60 min usa T=100', t60.Tn === 1, `T=${t60.Tn}`);
 conferir('90 min usa T=104', t90.Tn === 1.04, `T=${t90.Tn}`);
 conferir('300 min pontua como 90 min', t90.igaRanking === t300.igaRanking, `90=${t90.igaRanking} 300=${t300.igaRanking}`);
 
-// 3. Frequência: 5=100; sexta sessão dá bônus pequeno 105; 7ª não aumenta.
+// 3. Frequência: 5=100; 6ª e seguintes não aumentam o IGA.
 const cinco = calculateWeeklyIGA(Array.from({ length: 5 }, () => sessao(60)), perfil);
 const seis = calculateWeeklyIGA(Array.from({ length: 6 }, () => sessao(60)), perfil);
 const sete = calculateWeeklyIGA(Array.from({ length: 7 }, () => sessao(60)), perfil);
 conferir('5 sessões usam F=100', cinco.Fn === 1, `F=${cinco.Fn}`);
-conferir('6 sessões usam F=105', seis.Fn === 1.05, `F=${seis.Fn}`);
-conferir('7ª sessão não aumenta além de 6+', sete.igaRanking === seis.igaRanking, `${sete.igaRanking}=${seis.igaRanking}`);
+conferir('6ª sessão não aumenta F', seis.Fn === 1, `F=${seis.Fn}`);
+conferir('6ª sessão não aumenta o IGA', seis.igaRanking === cinco.igaRanking, `${seis.igaRanking}=${cinco.igaRanking}`);
+conferir('7ª sessão também não aumenta o IGA', sete.igaRanking === cinco.igaRanking, `${sete.igaRanking}=${cinco.igaRanking}`);
+conferir('Frequência auditada fica limitada a 5', seis.frequency === 5 && sete.frequency === 5, `6->${seis.frequency} 7->${sete.frequency}`);
 
 // 4. Sessão reprovada pelo antifraude não entra.
 const comReprovada = calculateWeeklyIGA([sessao(60), sessao(60), sessao(60, 'workout', 143, 0, false)], perfil);
@@ -76,8 +78,8 @@ const z4 = heartRateToIntensityFactor(165, 190); // dentro de Z4 fora das transi
 const z5 = heartRateToIntensityFactor(180, 190); // Z5
 conferir('Z4 vale mais que Z5', z4 > z5, `Z4=${z4.toFixed(3)} Z5=${z5.toFixed(3)}`);
 
-// 8. Sem teto artificial: combinação acima da referência pode passar de 100.
-const acima100 = calculateWeeklyIGA(Array.from({ length: 6 }, () => sessao(90, 'workout', 165)), perfil);
+// 8. Sem teto artificial: 5 sessões fortes ainda podem passar de 100.
+const acima100 = calculateWeeklyIGA(Array.from({ length: 5 }, () => sessao(90, 'workout', 165)), perfil);
 conferir('IGA pode passar de 100', acima100.igaRanking > 100, `IGA=${acima100.igaRanking}`);
 
 // 9. Série de FC é preferida à FC média e passa por suavização/zonas.
