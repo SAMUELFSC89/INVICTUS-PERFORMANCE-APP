@@ -178,10 +178,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return () => unsubAuth();
   }, [loadUserProfile]);
 
+  // O subtree do aplicativo também é escopado ao UID autenticado. Isso força
+  // páginas com estado próprio (Musculação, Cardio, Saúde, Perfil etc.) a serem
+  // desmontadas e recriadas quando a identidade muda, em vez de carregarem
+  // arrays, planos, modais ou sessões da conta anterior até o próximo efeito.
+  const authScopeKey = auth.currentUser?.uid || 'guest';
+
   // Removed UI-blocking quota screen per user request
   return (
     <UserContext.Provider value={{ user, loading, refreshUser }}>
-      {children}
+      <React.Fragment key={authScopeKey}>{children}</React.Fragment>
     </UserContext.Provider>
   );
 }
