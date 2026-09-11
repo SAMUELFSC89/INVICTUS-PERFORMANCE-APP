@@ -18,6 +18,30 @@ const UserContext = createContext<UserContextType>({
   refreshUser: async () => null
 });
 
+const ACTIVE_SESSION_KEY = 'current_activity_session';
+
+function clearForeignOrGuestSession(nextUid: string | null) {
+  try {
+    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!raw) return;
+
+    const parsed = JSON.parse(raw) as { userId?: unknown };
+    const ownerUid = typeof parsed?.userId === 'string' ? parsed.userId : null;
+
+    // A sessão ativa é estado privado do atleta. Durante logout ela não pode
+    // permanecer visível para o estado guest; durante troca de conta ela só
+    // pode sobreviver se pertencer exatamente ao UID que o Firebase acabou de
+    // autenticar. O documento remoto continua existindo e pode ser restaurado
+    // com segurança quando o mesmo atleta entrar novamente.
+    if (!nextUid || !ownerUid || ownerUid !== nextUid) {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    }
+  } catch {
+    // Estado corrompido/desconhecido nunca é promovido para a nova conta.
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+  }
+}
+
 export function UserProvider({ children }: { children: React.ReactNode }) {
   // O cache nunca pode ser usado como identidade/autorização. No primeiro
   // frame ainda não sabemos qual conta o Firebase restaurará; renderizar o
@@ -128,6 +152,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       setUser(null);
       localStorage.removeItem('last_user_profile');
+      clearForeignOrGuestSession(firebaseUser?.uid || null);
       if (firebaseUser) {
         console.log(`[AUTH] [SESSION_CHANGE] [${firebaseUser.uid}] [INFO] Estado de autenticação alterado: Logado`);
         // BILL-02: antecipamos a vinculação do SDK, mas não bloqueamos a carga
