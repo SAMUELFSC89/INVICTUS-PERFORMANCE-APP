@@ -214,8 +214,15 @@ test.each(['approved', 'not-eligible', 'security-pending', 'geofence-pending'] a
   expect(persisted.healthSession.points).toBeUndefined();
   expect(result.healthSession).toEqual(persisted.healthSession);
   expect(result.workout.healthSession).toEqual(persisted.healthSession);
-  expect(result.healthSessionStatus).toBe('available');
-  expect(result.workout.healthSessionStatus).toBe('available');
+  expect(result.healthSessionStatus).toBe('partial');
+  expect(result.workout.healthSessionStatus).toBe('partial');
+  expect(result.healthSessionReason).toMatch(/Cobertura parcial de FC/);
+  expect(result.healthSession.heartRate.audit).toMatchObject({
+    receivedSampleCount: 1,
+    validSampleCount: 1,
+    coveragePercent: 0,
+    quality: 'insufficient',
+  });
   expect(persisted.points).toBe(144);
   expect(persisted.competitionPoints).toBe(branch === 'approved' ? 144 : 0);
   for (const [entry] of audit.log.mock.calls) expect(entry.details?.activityData?.healthSession).toBeUndefined();
