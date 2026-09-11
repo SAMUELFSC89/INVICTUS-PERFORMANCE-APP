@@ -1,4 +1,3 @@
-import React from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Trophy, Plus, ShieldCheck, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
