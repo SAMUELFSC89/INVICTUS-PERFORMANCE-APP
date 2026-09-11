@@ -1,5 +1,7 @@
-/** Documentos públicos do ecossistema Invictus — versão de produto 4.0.0. */
-export const CURRENT_LEGAL_VERSION = 4;
+import { COMPETITIVE_HR_FULL_TEXT, COMPETITIVE_HR_TITLE, TERMS_VERSION } from '../../shared/competitiveHeartRatePolicy';
+
+/** Documentos públicos do ecossistema Invictus — versão de produto 5.0.0. */
+export const CURRENT_LEGAL_VERSION = 5;
 export interface FAQItem {
   id: number;
   question: string;
@@ -7,7 +9,7 @@ export interface FAQItem {
   category: 'Geral' | 'Conta & Perfil' | 'Pontuação & IGA' | 'Assinaturas PRO' | 'Health & Wearables' | 'Desafios e Power Lift' | 'Campeonatos' | 'Invictus Coins e Loja' | 'Antifraude & Auditoria' | 'Privacidade & LGPD';
 }
 
-const HEADER = 'Última atualização: 31 de agosto de 2026 | Versão: 4.0.0';
+const HEADER = `Última atualização: 11 de setembro de 2026 | Versão: ${TERMS_VERSION}`;
 
 export const LEGAL_TERMS_OF_USE = `
 TERMOS DE USO DA PLATAFORMA INVICTUS
@@ -56,6 +58,9 @@ GPS, sensores, mapas, notificações, serviços de saúde, autenticação, pagam
 
 13. DIREITOS E CONTATO
 Marca, software, modelos, textos e assets do INVICTUS são protegidos. O usuário mantém direitos sobre seu conteúdo e concede licença limitada para operar os recursos escolhidos. Alterações materiais serão apresentadas em nova versão. Contato: contato@invictusperformance.app.br. Aplicam-se as leis brasileiras e os direitos obrigatórios do consumidor e do titular de dados.
+
+14. FREQUÊNCIA CARDÍACA EM COMPETIÇÕES
+Quando a frequência cardíaca influenciar validação, intensidade, métricas, pontuação, desempate ou classificação, a participação exige ciência competitiva específica e destacada, separada das permissões e bases legais para tratamento de saúde. A leitura depende de sensores e serviços externos sujeitos a variação, ausência, atraso e descarte legítimo de amostras. O usuário pode não participar sem perder os recursos não competitivos e pode solicitar revisão nos casos previstos. O aceite não implica renúncia a direitos.
 `;
 
 export const LEGAL_PRIVACY_POLICY = `
@@ -110,6 +115,12 @@ ${HEADER}
 7. Cada amostra importada mantém identificação técnica, origem, aparelho quando informado e data/hora inicial e final. Janelas sobrepostas de sincronização usam esses identificadores para evitar duplicidade entre leituras.
 
 8. A Invictus IA pode resumir exclusivamente os dados do titular autenticado em linguagem educativa. Ela deve explicar termos técnicos, indicar cobertura e incerteza, não diagnosticar, não prescrever e não substituir profissional de saúde.
+
+9. CIÊNCIA COMPETITIVA SEPARADA
+Autorizar a leitura de saúde ou aceitar esta política não equivale a aceitar regras competitivas. Da mesma forma, aceitar a ciência sobre limitações da FC para uma competição não autoriza tratamento genérico ou futuro de saúde. Quando a base aplicável exigir consentimento, ele será específico, destacado, vinculado à finalidade e passível de revogação nos termos legais.
+
+10. ${COMPETITIVE_HR_TITLE}
+${COMPETITIVE_HR_FULL_TEXT}
 `;
 
 export const LEGAL_ANTI_FRAUD_POLICY = `
@@ -126,6 +137,8 @@ ${HEADER}
 4. No Power Lift, o vídeo deve ser próprio, contínuo e legível. Cortes, reuso, mídia sintética enganosa, cenário inconsistente, peso não verificável ou amplitude insuficiente podem causar revisão ou reprovação. A análise não certifica técnica segura.
 
 5. Podem ocorrer remoção da sessão, correção de pontos/XP/Coins, ajuste de ranking, suspensão ou encerramento. O usuário pode pedir revisão pelo suporte e enviar arquivos originais. Detalhes que permitam contornar controles podem ser omitidos.
+
+6. O usuário pode contestar atividade, FC processada, descarte de amostras, validação, pontuação, classificação ou possível falha técnica. A solicitação é registrada e não altera automaticamente o resultado. Quando disponíveis, a auditoria preserva fonte e horários da FC, amostras recebidas/aceitas/descartadas, motivos de descarte, cobertura, maior lacuna, qualidade, identificador de integridade e versões do algoritmo e das regras.
 `;
 
 export const LEGAL_PROMOTIONAL_RULES = `
@@ -154,6 +167,9 @@ ${HEADER}
 7. Os lançamentos são segregados por origem: missão base, consistência, missão PRO, conclusão de campeonato, pódio, promoção e ajuste administrativo. Premiação de pódio não integra eventual limite mensal de missões. A emissão pode respeitar orçamento global configurável e ser redimensionada conforme usuários e grupos ativos.
 
 8. Coins são cumulativos durante a conta ativa e sujeitos a correção de erro ou fraude. Não têm valor monetário, não podem ser sacados, vendidos ou transferidos e só servem aos resgates disponíveis na Loja.
+
+9. FREQUÊNCIA CARDÍACA E RESULTADO
+Em modalidades que usem FC, relógios, pulseiras, sensores ópticos, monitores, HealthKit, Health Connect, Strava e outros serviços podem entregar leituras diferentes, atrasadas, incompletas ou indisponíveis. Movimento, intensidade, posição, pele, ajuste, suor, ambiente, sensor, algoritmo do fabricante, amostragem, bateria, conexão e sincronização podem influenciar a origem. O Invictus não cria percentual fixo de erro nem corrige artificialmente a leitura: aplica as regras publicadas aos dados efetivamente recebidos e considerados válidos. Diferenças legítimas podem refletir em intensidade, zonas, métricas, validação, pontuação, desempate e classificação. O aceite específico e destacado é exigido antes da participação e a revisão continua disponível quando aplicável.
 `;
 
 export const LEGAL_ACCOUNT_DELETION_POLICY = `
@@ -214,6 +230,8 @@ O aceite geral não substitui autorizações específicas. Cada permissão deve 
 4. ANÁLISE AUTOMATIZADA: dados e mídias podem gerar recomendações, métricas e sinais antifraude, com revisão quando aplicável.
 5. NOTIFICAÇÕES: envio das categorias habilitadas; atividade persistente depende do suporte e permissão do sistema.
 6. SOCIAL: adesão opcional autoriza exibição dos campos informados, como nome público, foto, pontuação, posição e resultados.
+
+7. CIÊNCIA COMPETITIVA DE FC: é um aceite de participação conforme regras e limitações técnicas publicadas. Não substitui nem amplia consentimento de saúde, e a recusa impede apenas a modalidade competitiva que dependa dessa ciência.
 `;
 
 export const LEGAL_FAQ_100: FAQItem[] = [

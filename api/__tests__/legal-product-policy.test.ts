@@ -8,8 +8,8 @@ import {
 
 describe('políticas do ecossistema atual', () => {
   it('exige a versão nova dos termos', () => {
-    expect(CURRENT_LEGAL_VERSION).toBe(4);
-    expect(LEGAL_TERMS_OF_USE).toContain('Versão: 4.0.0');
+    expect(CURRENT_LEGAL_VERSION).toBe(5);
+    expect(LEGAL_TERMS_OF_USE).toContain('Versão: 5.0.0');
   });
 
   it('define Coins como recompensa sem valor monetário ou saque', () => {

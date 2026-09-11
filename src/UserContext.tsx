@@ -3,6 +3,10 @@ import { auth, db, onAuthStateChanged } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { UserProfile } from './types';
 import { configureRevenueCat, disconnectRevenueCat } from './lib/revenuecat';
+import { nativeBackgroundLocationService } from './services/nativeBackgroundLocationService';
+import { webGpsTrackingService } from './services/webGpsTrackingService';
+import { activityNotificationService } from './services/activityNotificationService';
+import { activityLiveActivityService } from './services/activityLiveActivityService';
 
 
 
@@ -20,10 +24,24 @@ const UserContext = createContext<UserContextType>({
 
 const ACTIVE_SESSION_KEY = 'current_activity_session';
 
+function stopPrivateActivitySurfaces() {
+  localStorage.removeItem('kmfatal_active_run');
+  localStorage.removeItem('kmfatal_start_time');
+  localStorage.removeItem('kmfatal_total_distance');
+  localStorage.removeItem('kmfatal_run_points');
+  webGpsTrackingService.stop();
+  void nativeBackgroundLocationService.stop().catch(() => {});
+  activityNotificationService.stop();
+  activityLiveActivityService.stop();
+}
+
 function clearForeignOrGuestSession(nextUid: string | null) {
   try {
     const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
-    if (!raw) return;
+    if (!raw) {
+      stopPrivateActivitySurfaces();
+      return;
+    }
 
     const parsed = JSON.parse(raw) as { userId?: unknown };
     const ownerUid = typeof parsed?.userId === 'string' ? parsed.userId : null;
@@ -35,10 +53,12 @@ function clearForeignOrGuestSession(nextUid: string | null) {
     // com segurança quando o mesmo atleta entrar novamente.
     if (!nextUid || !ownerUid || ownerUid !== nextUid) {
       localStorage.removeItem(ACTIVE_SESSION_KEY);
+      stopPrivateActivitySurfaces();
     }
   } catch {
     // Estado corrompido/desconhecido nunca é promovido para a nova conta.
     localStorage.removeItem(ACTIVE_SESSION_KEY);
+    stopPrivateActivitySurfaces();
   }
 }
 

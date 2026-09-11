@@ -193,6 +193,23 @@ function sessionFromActiveDocument(data: Record<string, any>): ActivitySession {
   };
 }
 
+/**
+ * Uma tentativa de finalizar só pode desligar os coletores quando o servidor
+ * devolveu um estado terminal. Nos demais casos, persiste tudo o que acabou de
+ * ser drenado e reabre os coletores idempotentes para a sessão continuar.
+ */
+async function continueAfterNonTerminalFinalization(session: ActivitySession): Promise<void> {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  ensureCompetitionMotionTracking(session);
+  if (!session.requiresGpsDistance || session.isPaused) return;
+  await withTimeout(
+    nativeBackgroundLocationService.start(),
+    4000,
+    'Tempo limite ao retomar o rastreamento nativo.',
+  ).catch((error) => console.warn('[ActivityService] Não foi possível retomar o GPS nativo:', error));
+  webGpsTrackingService.start(session);
+}
+
 export const activityService = {
   async performGymCheckIn(policy: ActivityCompetitionPolicy): Promise<{ checkInId: string; location: { lat: number; lng: number; accuracy?: number }; gymName?: string }> {
     const user = auth.currentUser;
@@ -268,11 +285,118 @@ export const activityService = {
     return 'granted';
   },
 
+  /**
+   * Única barreira autoritativa antes de criar uma atividade.
+   *
+   * `null` só significa "nenhuma sessão ativa" quando a leitura local e a
+   * consulta remota terminaram de forma conclusiva. Timeout, erro de rede,
+   * documento ambíguo ou falha de restauração bloqueiam o novo início.
+   */
+  async verifyActiveSessionBeforeStart(): Promise<ActivitySession | null> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Entre novamente na sua conta antes de iniciar uma atividade.');
+
+    // Leia primeiro a identidade bruta. getCurrentSession() também reativa
+    // sensores e, portanto, não deve tocar uma sessão deixada por outra conta.
+    const rawLocal = localStorage.getItem(SESSION_KEY);
+    if (rawLocal) {
+      try {
+        const local = JSON.parse(rawLocal) as ActivitySession;
+        if (local.status === 'active' && local.userId && local.userId !== user.uid && !isTombstoned(local.id)) {
+          throw new Error('Existe uma atividade de outra conta salva neste aparelho. Entre na conta que a iniciou para concluí-la ou descartá-la.');
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('atividade de outra conta')) throw error;
+        // Estado ilegível não prova uma sessão ativa e é removido pelo leitor
+        // oficial abaixo antes da verificação remota.
+      }
+    }
+
+    const localSession = this.getCurrentSession();
+    if (localSession) return localSession;
+
+    let snapshot;
+    try {
+      snapshot = await withTimeout(
+        getDocs(query(
+          collection(db, 'active_sessions'),
+          where('userId', '==', user.uid),
+          where('status', '==', 'active'),
+        )),
+        5000,
+        'Não foi possível verificar sua atividade em andamento. Confira a conexão e tente novamente.',
+      );
+    } catch (error) {
+      console.warn('[ActivityService] Falha ao confirmar sessões ativas antes do início:', error);
+      throw new Error('Não foi possível verificar sua atividade em andamento. Confira a conexão e tente novamente.');
+    }
+
+    const documents = snapshot.docs
+      .map((item) => ({ ref: item.ref, data: item.data() as Record<string, any> }))
+      .sort((a, b) => Date.parse(String(b.data.startTime || '')) - Date.parse(String(a.data.startTime || '')));
+
+    for (const item of documents) {
+      const sessionId = String(item.data.id || '');
+      if (!sessionId || item.data.userId !== user.uid || !item.data.startTime
+        || (item.data.type !== 'workout' && item.data.type !== 'cardio')) {
+        throw new Error('O servidor encontrou uma atividade ativa com dados incompletos. Tente novamente antes de iniciar outra.');
+      }
+      if (isTombstoned(sessionId)) {
+        void withTimeout(updateDoc(item.ref, {
+          status: 'completed',
+          updatedAt: new Date().toISOString(),
+        }), 4000, 'Tempo limite ao reconciliar sessão encerrada.').catch(() => {});
+        continue;
+      }
+
+      const startTimeMs = Date.parse(String(item.data.startTime));
+      if (!Number.isFinite(startTimeMs)) {
+        throw new Error('O servidor encontrou uma atividade ativa sem horário confiável. Tente novamente antes de iniciar outra.');
+      }
+      const pausedMs = Math.max(0, Number(item.data.pausedMs) || 0);
+      const pauseStartedAtMs = item.data.pauseStartedAt ? Date.parse(String(item.data.pauseStartedAt)) : NaN;
+      const openPauseMs = Number.isFinite(pauseStartedAtMs) ? Math.max(0, Date.now() - pauseStartedAtMs) : 0;
+      const elapsedActiveMinutes = (Date.now() - startTimeMs - pausedMs - openPauseMs) / 60000;
+      const limit = item.data.type === 'cardio' ? MAX_SESSION_MINUTES.cardio : MAX_SESSION_MINUTES.workout;
+      if (elapsedActiveMinutes > limit) {
+        void withTimeout(updateDoc(item.ref, {
+          status: 'abandoned',
+          abandonedReason: `Sessão abandonada (tempo limite de ${limit} minutos excedido)`,
+          endTime: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }), 8000, 'Tempo limite ao encerrar sessão expirada.').catch((error) => {
+          console.warn('[ActivityService] Não foi possível reconciliar sessão expirada:', error);
+        });
+        continue;
+      }
+
+      const restored = sessionFromActiveDocument(item.data);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(restored));
+      ensureCompetitionMotionTracking(restored);
+      if (restored.requiresGpsDistance) {
+        await withTimeout(
+          nativeBackgroundLocationService.start(),
+          4000,
+          'A atividade foi recuperada, mas o GPS não respondeu a tempo.',
+        ).catch((error) => console.warn('[ActivityService] GPS nativo indisponível ao restaurar sessão:', error));
+        webGpsTrackingService.start(restored);
+      }
+      return restored;
+    }
+
+    return null;
+  },
+
   async startSession(type: 'workout' | 'cardio', providedLocation?: { lat: number; lng: number; accuracy?: number }, cardioType?: string, smartwatchData?: any, checkInId?: string, muscleGroup?: string, workoutContext?: Pick<ActivitySession, 'workoutPlanId' | 'workoutId' | 'plannedExercises'>, competitionPolicy?: ActivityCompetitionPolicy): Promise<ActivitySession> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
-    const existing = this.getCurrentSession();
-    if (existing) throw new Error('Já existe uma atividade em andamento.');
+    const existing = await this.verifyActiveSessionBeforeStart();
+    if (existing) {
+      const activeError = new Error('Você já possui uma atividade ativa em andamento. Retomando sua sessão.');
+      (activeError as any).code = 'ACTIVE_SESSION_EXISTS';
+      (activeError as any).sessionId = existing.id;
+      throw activeError;
+    }
     if (!competitionPolicy || competitionPolicy.version !== 'activity-competition-v2') {
       throw new Error('O modo pessoal ou competitivo da atividade não foi definido. Tente iniciar novamente.');
     }
@@ -309,83 +433,6 @@ export const activityService = {
         if (!snapshot.exists()) console.warn('[ActivityService] Profile document not found; session will continue locally.');
       })
       .catch((profileError) => console.warn('[ActivityService] Profile read failed; session will continue locally:', profileError));
-
-    try {
-      const activeSessionsQuery = query(
-        collection(db, 'active_sessions'),
-        where('userId', '==', user.uid),
-        where('status', '==', 'active')
-      );
-      // Essa consulta é uma proteção adicional, não um pré-requisito para
-      // abrir o cronômetro. Em projetos com faturamento/Firestore pendente,
-      // esperar 12s fazia o botão parecer travado; após 3s seguimos com a
-      // sessão local e a escrita remota continua sendo best-effort.
-      const activeSessionsSnap = await withTimeout(getDocs(activeSessionsQuery), 3000, 'Tempo limite ao verificar sessões ativas no servidor.');
-
-      for (const docSnap of activeSessionsSnap.docs) {
-        const sessData = docSnap.data();
-        if (isTombstoned(sessData.id)) {
-          // ACT-04: esta sessão já foi encerrada/cancelada localmente (a
-          // escrita final no servidor que falhou é a única razão do
-          // documento ainda dizer 'active'). Não bloqueia o novo
-          // startSession nem a restaura -- só tenta, best-effort, fechar o
-          // documento remoto para não repetir esta checagem para sempre.
-          void withTimeout(updateDoc(docSnap.ref, {
-            status: 'completed',
-            updatedAt: new Date().toISOString()
-          }), 4000, 'Tempo limite ao confirmar encerramento de sessão anterior.').catch(() => {});
-          continue;
-        }
-        const startTimeMs = new Date(sessData.startTime).getTime();
-        const diffMs = Date.now() - startTimeMs;
-
-        const serverSessionLimitMinutes = sessData.type === 'cardio'
-          ? MAX_SESSION_MINUTES.cardio
-          : MAX_SESSION_MINUTES.workout;
-        if (diffMs > serverSessionLimitMinutes * 60 * 1000) {
-          await withTimeout(updateDoc(docSnap.ref, {
-            status: 'abandoned',
-            abandonedReason: `Sessão abandonada (tempo limite de ${serverSessionLimitMinutes} minutos excedido)`,
-            endTime: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }), 8000, 'Tempo limite ao encerrar sessão antiga.').catch(e => console.warn('[ActivityService] Could not update abandoned session:', e));
-        } else {
-          const restoredSession: ActivitySession = {
-            id: sessData.id,
-            userId: sessData.userId,
-            type: sessData.type,
-            cardioType: sessData.cardioType || undefined,
-            cardioTypeLabel: sessData.cardioTypeLabel || undefined,
-            muscleGroup: sessData.muscleGroup || undefined,
-            workoutPlanId: sessData.workoutPlanId || undefined,
-            workoutId: sessData.workoutId || undefined,
-            plannedExercises: Array.isArray(sessData.plannedExercises) ? sessData.plannedExercises : undefined,
-            isIndoorCardio: sessData.isIndoorCardio,
-            requiresGpsDistance: sessData.requiresGpsDistance,
-            smartwatchData: sessData.smartwatchData || undefined,
-            startTime: sessData.startTime,
-            startLocation: sessData.startLocation || undefined,
-            status: 'active',
-            checkInId: sessData.checkInId || undefined,
-            competitionPolicy: sessData.competitionPolicy || undefined,
-            checkpoints: sessData.checkpoints || [],
-            maxObservedSpeedKmH: Number(sessData.maxObservedSpeedKmH) || 0,
-            gpsSpeedSampleCount: Number(sessData.gpsSpeedSampleCount) || 0,
-            isPaused: !!sessData.isPaused,
-            pausedMs: Number(sessData.pausedMs) || 0,
-            pauseStartedAt: sessData.pauseStartedAt || null,
-            gpsSegmentId: Number.isFinite(Number(sessData.gpsSegmentId)) ? Number(sessData.gpsSegmentId) : 0
-          };
-          localStorage.setItem(SESSION_KEY, JSON.stringify(restoredSession));
-          throw new Error('Você já possui uma atividade ativa em andamento! Recuperamos sua sessão ativa do servidor.');
-        }
-      }
-    } catch (checkErr: any) {
-      if (checkErr.message?.includes('Você já possui uma atividade ativa')) {
-        throw checkErr;
-      }
-      console.warn('[ActivityService] Server check for active sessions failed, proceeding locally:', checkErr);
-    }
 
     if (type === 'cardio' && !cardioMapEntry) {
       throw new Error('Modalidade de cardio inválida ou não suportada. Selecione novamente antes de iniciar.');
@@ -445,7 +492,8 @@ export const activityService = {
       webGpsTrackingService.start(session);
     }
 
-    setDoc(doc(db, 'active_sessions', session.id), {
+    try {
+      await withTimeout(setDoc(doc(db, 'active_sessions', session.id), {
       id: session.id,
       userId: session.userId,
       type: session.type,
@@ -471,8 +519,16 @@ export const activityService = {
       pauseStartedAt: null,
       gpsSegmentId: session.gpsSegmentId || 0,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).catch(err => console.warn('[ActivityService] Failed to write active session registry to Firestore:', err));
+        updatedAt: new Date().toISOString()
+      }), 8000, 'Tempo limite ao registrar a atividade em andamento.');
+    } catch (error) {
+      // Uma sessão que o servidor não conseguiu registrar não pode permanecer
+      // ativa apenas neste aparelho: outro acesso concluiria incorretamente
+      // que não existe atividade e permitiria concorrência.
+      this.limparEstadoLocal();
+      console.warn('[ActivityService] Falha ao registrar a sessão ativa:', error);
+      throw new Error('Não foi possível registrar a atividade com segurança. Confira a conexão e tente novamente.');
+    }
 
     return session;
   },
@@ -483,6 +539,13 @@ export const activityService = {
     try {
       const session = JSON.parse(data) as ActivitySession;
       if (session.status !== 'active') return null;
+
+      // Uma sessão pertence exclusivamente à identidade que a iniciou. Durante
+      // logout/troca de conta o efeito de limpeza pode ainda não ter rodado;
+      // nesse intervalo nenhum consumidor pode ler, retomar ou expor os dados
+      // locais do atleta anterior.
+      const currentUserId = auth.currentUser?.uid;
+      if (!currentUserId || session.userId !== currentUserId) return null;
 
       // ACT-04: uma escrita final que falhou no servidor não pode virar uma
       // sessão que ressuscita sozinha -- se este id já foi marcado como
@@ -855,7 +918,23 @@ export const activityService = {
 
   async endSession(photoBase64?: string, externalSignal?: AbortSignal): Promise<EndSessionResult> {
     const session = this.getCurrentSession();
-    if (!session) throw new Error('Nenhuma atividade em andamento.');
+    if (!session) {
+      // getCurrentSession oculta corretamente sessões de outra identidade.
+      // A finalização, porém, precisa distinguir esse bloqueio de uma simples
+      // ausência de sessão sem ler ou enviar qualquer observação privada.
+      const rawSession = localStorage.getItem(SESSION_KEY);
+      if (rawSession) {
+        try {
+          const stored = JSON.parse(rawSession) as ActivitySession;
+          if (stored.status === 'active' && stored.userId && stored.userId !== auth.currentUser?.uid) {
+            throw new Error('Esta atividade pertence a outra conta.');
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('pertence a outra conta')) throw error;
+        }
+      }
+      throw new Error('Nenhuma atividade em andamento.');
+    }
     const securityRequired = session.competitionPolicy?.requiresSecurityReview === true;
 
     const user = auth.currentUser;
@@ -933,6 +1012,11 @@ export const activityService = {
         location: endLocation
       });
     }
+
+    // collectAndStop() drena o buffer nativo para esta cópia. Grave antes de
+    // qualquer chamada de rede: se a validação não terminar, os pontos nunca
+    // podem existir apenas em memória.
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 
     const startTime = new Date(session.startTime);
     // #324: se por algum motivo chegar aqui ainda pausada (o normal e a UI
@@ -1161,15 +1245,7 @@ export const activityService = {
       // decide tentar de novo desaparecia silenciosamente. Reiniciar o
       // coletor aqui e best-effort: garante que o proximo trecho continue
       // sendo capturado ate a proxima tentativa de finalizar.
-      if (session.requiresGpsDistance) {
-        void nativeBackgroundLocationService.start().catch((restartErr) => {
-          console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após falha de envio:', restartErr);
-        });
-        // ACT-10: mesmo raciocinio do restart nativo acima, para o watcher
-        // web -- start() aqui é idempotente e serve de garantia caso algo o
-        // tenha derrubado nesse meio-tempo.
-        webGpsTrackingService.start(session);
-      }
+      await continueAfterNonTerminalFinalization(session);
       if (fetchErr?.name === 'AbortError') {
         if (externalSignal?.aborted) {
           const cancelledErr = new Error('Envio cancelado pelo atleta.');
@@ -1189,14 +1265,7 @@ export const activityService = {
       // (ex.: persistencia falhou no servidor) tambem significa que o
       // atleta vai tentar de novo, e o coletor nativo ja foi parado antes
       // desta chamada.
-      if (session.requiresGpsDistance) {
-        void nativeBackgroundLocationService.start().catch((restartErr) => {
-          console.warn('[activityService] Não foi possível reiniciar o rastreamento nativo após erro do servidor:', restartErr);
-        });
-        // ACT-10: garantia idempotente equivalente do lado web -- ver
-        // comentário no catch de rede acima.
-        webGpsTrackingService.start(session);
-      }
+      await continueAfterNonTerminalFinalization(session);
       const errorData = await response.json().catch(() => ({}));
       // BUG CONFIRMADO (achado ao vivo via Chrome): api/_middleware/error.ts
       // (errorHandler) devolve o motivo especifico do bloqueio (antifraude,
@@ -1213,11 +1282,16 @@ export const activityService = {
     try {
       respData = await response.json();
     } catch {
+      await continueAfterNonTerminalFinalization(session);
       throw new Error('O servidor respondeu em formato inválido. Sua atividade continua salva; tente finalizar novamente.');
     }
     if (auth.currentUser?.uid !== user.uid) throw new Error('A conta mudou. Consulte esta atividade no histórico da conta original.');
 
     if (respData.presenceCheckRequired) {
+      // A câmera é apenas uma etapa intermediária. Fechar, cancelar, usar o
+      // botão voltar ou deixar o modal aberto não encerra GPS, cronômetro,
+      // sensores, notificação persistente nem Live Activity.
+      await continueAfterNonTerminalFinalization(session);
       return {
         healthSession: respData.healthSession,
         healthSessionStatus: respData.healthSessionStatus,
@@ -1344,17 +1418,22 @@ export const activityService = {
       try {
         const session = JSON.parse(data) as ActivitySession;
         try { workoutSetJournal.clear(session.userId, session.id); } catch { /* Local cancellation remains available. */ }
-        updateDoc(doc(db, 'active_sessions', session.id), {
-          status: 'cancelled',
-          endTime: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }).catch(err => {
-          console.warn('[activityService] Falha ao cancelar a sessao no servidor:', err);
-          // ACT-04: sem esta marca, um cancelamento cuja escrita falhou
-          // deixava o documento remoto 'active' -- exatamente o cenário que
-          // fazia uma sessão já descartada pelo atleta "ressuscitar" sozinha.
-          markTombstoned(session.id);
-        });
+        // Nunca permita que uma conta recém-autenticada cancele no servidor a
+        // atividade pertencente à identidade anterior. O estado local é limpo,
+        // mas a sessão remota continua restaurável pelo dono original.
+        if (auth.currentUser?.uid === session.userId) {
+          updateDoc(doc(db, 'active_sessions', session.id), {
+            status: 'cancelled',
+            endTime: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }).catch(err => {
+            console.warn('[activityService] Falha ao cancelar a sessao no servidor:', err);
+            // ACT-04: sem esta marca, um cancelamento cuja escrita falhou
+            // deixava o documento remoto 'active' -- exatamente o cenário que
+            // fazia uma sessão já descartada pelo atleta "ressuscitar" sozinha.
+            markTombstoned(session.id);
+          });
+        }
       } catch (e) {}
     }
     this.limparEstadoLocal();

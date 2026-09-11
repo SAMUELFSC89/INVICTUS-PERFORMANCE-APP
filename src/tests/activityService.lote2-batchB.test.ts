@@ -23,7 +23,7 @@
 // servidor responde com erro), a sessão local continua "active" mas sem
 // NENHUM coletor de GPS rodando -- um novo trecho percorrido enquanto o
 // atleta decide tentar de novo desaparecia silenciosamente.
-import { getDocs, updateDoc } from 'firebase/firestore';
+import { getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { nativeBackgroundLocationService } from '../services/nativeBackgroundLocationService';
 import { activityService } from '../services/activityService';
@@ -260,5 +260,96 @@ describe('ACT-06: uma falha ao enviar a finalização reinicia o coletor nativo 
     await activityService.endSession();
 
     expect(nativeBackgroundLocationService.start).not.toHaveBeenCalled();
+  });
+
+  test('confirmação de presença é intermediária: preserva a sessão e retoma o GPS drenado', async () => {
+    const session = seedLocalSession({ id: 'session-presence-open' });
+    mockFetchOnce({
+      ok: true,
+      json: async () => ({ presenceCheckRequired: true, presenceCheckId: 'presence-1', livenessPrompt: 'pisque' }),
+    });
+
+    const result = await activityService.endSession();
+
+    expect(result.presenceCheckRequired).toBe(true);
+    expect(nativeBackgroundLocationService.start).toHaveBeenCalledTimes(1);
+    const persisted = JSON.parse(localStorage.getItem(SESSION_KEY) || '{}');
+    expect(persisted.id).toBe(session.id);
+    expect(persisted.status).toBe('active');
+    expect(persisted.checkpoints).toHaveLength(2);
+  });
+});
+
+describe('barreira central de início: ausência só é aceita após resposta confiável', () => {
+  test('falha remota bloqueia startSession e não cria o registro ativo', async () => {
+    (getDocs as jest.Mock).mockRejectedValue(new Error('offline'));
+    const now = Date.now();
+    const policy = {
+      version: 'activity-competition-v2' as const,
+      activityType: 'workout' as const,
+      isIndoorCardio: false,
+      resolvedAt: new Date(now).toISOString(),
+      effectiveAt: new Date(now).toISOString(),
+      contexts: [],
+      requiresSecurityReview: false,
+      requiresGymCheckIn: false,
+      requiresContinuousGps: false,
+      requiresMotionSensors: false,
+      snapshotId: 'policy-1',
+      sessionId: 'session-new',
+      startBy: new Date(now + 60_000).toISOString(),
+      expiresAt: new Date(now + 3_600_000).toISOString(),
+    };
+
+    await expect(activityService.startSession('workout', undefined, undefined, undefined, undefined, 'Peito', undefined, policy))
+      .rejects.toThrow(/Não foi possível verificar sua atividade/);
+    expect(setDoc).not.toHaveBeenCalled();
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+
+  test('falha ao publicar o registro ativo desfaz o início local e permanece fail-closed', async () => {
+    (getDocs as jest.Mock).mockResolvedValue({ docs: [] });
+    (setDoc as jest.Mock).mockRejectedValue(new Error('write unavailable'));
+    const now = Date.now();
+    const policy = {
+      version: 'activity-competition-v2' as const,
+      activityType: 'workout' as const,
+      isIndoorCardio: false,
+      resolvedAt: new Date(now).toISOString(),
+      effectiveAt: new Date(now).toISOString(),
+      contexts: [],
+      requiresSecurityReview: false,
+      requiresGymCheckIn: false,
+      requiresContinuousGps: false,
+      requiresMotionSensors: false,
+      snapshotId: 'policy-write-fail',
+      sessionId: 'session-write-fail',
+      startBy: new Date(now + 60_000).toISOString(),
+      expiresAt: new Date(now + 3_600_000).toISOString(),
+    };
+
+    await expect(activityService.startSession('workout', undefined, undefined, undefined, undefined, 'Peito', undefined, policy))
+      .rejects.toThrow(/registrar a atividade com segurança/);
+    expect(setDoc).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+
+  test('sessão remota ativa é restaurada e bloqueia um segundo início', async () => {
+    const remote = baseSession({ id: 'remote-active' });
+    (getDocs as jest.Mock).mockResolvedValue({ docs: [{ ref: { id: remote.id }, data: () => remote }] });
+
+    const restored = await activityService.verifyActiveSessionBeforeStart();
+
+    expect(restored?.id).toBe(remote.id);
+    expect(JSON.parse(localStorage.getItem(SESSION_KEY) || '{}').id).toBe(remote.id);
+    expect(nativeBackgroundLocationService.start).toHaveBeenCalledTimes(1);
+  });
+
+  test('sessão local de outra conta bloqueia o início sem apagar seus dados', async () => {
+    seedLocalSession({ id: 'other-user-session', userId: 'user-B' });
+
+    await expect(activityService.verifyActiveSessionBeforeStart()).rejects.toThrow(/outra conta/);
+    expect(JSON.parse(localStorage.getItem(SESSION_KEY) || '{}').id).toBe('other-user-session');
+    expect(getDocs).not.toHaveBeenCalled();
   });
 });

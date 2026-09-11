@@ -7,6 +7,8 @@ import {
   hasTrustedCompetitionEvidence,
   readCompetitionEvidenceMetrics,
 } from './competition-evidence.js';
+import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
+import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 
 const COMMUNITY_EVENT_ID = 'community_friends_v1';
 
@@ -22,7 +24,9 @@ async function submitActivityToCommunityGymChampionship(input: ChampionshipActiv
     input.contexts ? Promise.resolve(null) : db.collection('community_championship_enrollments').doc(`${COMMUNITY_EVENT_ID}_${input.userId}`).get(),
     db.collection('users').doc(input.userId).get(),
   ]);
-  if (!input.contexts && enrollmentSnap?.data()?.status !== 'active') return;
+  const enrollment = enrollmentSnap?.data();
+  if (!input.contexts && (enrollment?.status !== 'active'
+    || !isCurrentCompetitiveHrAcknowledgement(enrollment, COMMUNITY_EVENT_ID, COMPETITION_RULES_VERSIONS.community_friends_v1))) return;
   const user = userSnap.data() || {};
   const gymId = String(frozenContext?.gymId || user.gymId || user.academyId || 'community_global');
   const gymName = String(user.gymName || input.userGymName || 'Comunidade Invictus');

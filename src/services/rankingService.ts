@@ -4,6 +4,7 @@ import type { RankingSnapshot } from '../types';
 import { QuotaExhaustedError, isQuotaError } from './errors';
 import { redisService } from './redisService';
 import { API_CONFIG } from '../config';
+import type { CompetitiveHrAcknowledgementInput } from '../lib/competitiveHeartRateAcknowledgement';
 
 export type AcademyRankingPeriod = 'all' | 'weekly' | 'monthly';
 
@@ -47,10 +48,10 @@ export const rankingService = {
     return result;
   },
 
-  async enroll(): Promise<{ enrolled: boolean; gymId: string }> {
+  async enroll(hrAcknowledgement: CompetitiveHrAcknowledgementInput): Promise<{ enrolled: boolean; gymId: string }> {
     const response = await authenticatedRequest('/api/ranking-enrollment', {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({ hrAcknowledgement }),
     });
     const result = await readJson(response);
     if (!response.ok) throw new Error(responseError(response, result, 'Não foi possível entrar no ranking.'));

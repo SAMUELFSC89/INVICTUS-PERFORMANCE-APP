@@ -7,6 +7,7 @@ import {
   marcarInscricaoChampionshipComoReembolsada,
   getUserRegistrations,
 } from '../_lib/championship-inscription-service.js';
+import { recordCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
 import { getChampionshipProgress, getChampionshipLeaderboard, getUserChampionshipActivities } from '../_lib/championship-scoring-service.js';
 import { db } from '../_lib/common.js';
 import { criarPresenceCheck } from '../_lib/presence-check-service.js';
@@ -37,7 +38,7 @@ import { criarPresenceCheck } from '../_lib/presence-check-service.js';
 
 function erroComoResposta(erro: any): { status: number; message: string } {
   const mensagem = erro?.message || 'Falha ao processar a solicitacao.';
-  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad/i.test(mensagem);
+  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad|frequência cardíaca|aceite|regras competitivas/i.test(mensagem);
   return { status: ehRegra ? 400 : 500, message: mensagem };
 }
 
@@ -140,9 +141,23 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
       return res.status(400).json({ error: 'championshipId e obrigatorio.' });
     }
 
+    const championship = getChampionship(championshipId);
+    if (!championship) {
+      return res.status(404).json({ error: 'Campeonato nao encontrado.' });
+    }
+    if (regulationVersion !== championship.regulationVersion || regulationHash !== championship.regulationHash) {
+      return res.status(400).json({ error: 'O regulamento foi atualizado. Reabra a inscricao, leia e aceite a versao vigente.' });
+    }
+
     const clientIp = (req.headers?.['x-forwarded-for'] as string) || req.socket?.remoteAddress || '127.0.0.1';
     const userAgent = req.headers?.['user-agent'] || 'Invictus Client';
 
+    const hrAcknowledgement = await recordCompetitiveHrAcknowledgement(
+      auth.uid,
+      championshipId,
+      championship.regulationVersion,
+      req.body?.hrAcknowledgement,
+    );
     const resultado = await registrarAceiteRegulamento({
       userId: auth.uid,
       championshipId,
@@ -152,6 +167,8 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
       userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent,
       locale,
       platform,
+      hrAcknowledgementId: hrAcknowledgement.acknowledgementId,
+      hrAcknowledgementVersion: hrAcknowledgement.hrAcknowledgementVersion,
     });
 
     return res.status(201).json({ success: true, ...resultado });

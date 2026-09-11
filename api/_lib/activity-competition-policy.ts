@@ -1,6 +1,8 @@
 import { db } from './common.js';
 import { matchActiveChampionshipsForActivity } from './championship-catalog.js';
 import { normalizeSessionPolicyModality } from './modality-config.js';
+import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
+import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 
 export type ActivityCompetitionContextType =
   | 'gym_ranking'
@@ -164,7 +166,9 @@ export async function resolveActivityCompetitionPolicy(
   const isIndoorCardio = input.isIndoorCardio === true;
 
   const rankingGymId = String(ranking?.gymId || '').trim();
-  if (rankingGymId && activeAt(ranking, when, ranking?.enrolled === true, 'enrolledAt')) {
+  if (rankingGymId
+    && isCurrentCompetitiveHrAcknowledgement(ranking, 'gym_ranking', COMPETITION_RULES_VERSIONS.gym_ranking)
+    && activeAt(ranking, when, ranking?.enrolled === true, 'enrolledAt')) {
     contexts.push(buildContext(
       'gym_ranking',
       rankingGymId,
@@ -176,7 +180,8 @@ export async function resolveActivityCompetitionPolicy(
     ));
   }
 
-  if (activeAt(community, when, community?.status === 'active', 'joinedAt')) {
+  if (isCurrentCompetitiveHrAcknowledgement(community, COMMUNITY_EVENT_ID, COMPETITION_RULES_VERSIONS.community_friends_v1)
+    && activeAt(community, when, community?.status === 'active', 'joinedAt')) {
     contexts.push(buildContext(
       'community_championship',
       COMMUNITY_EVENT_ID,

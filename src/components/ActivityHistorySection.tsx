@@ -23,6 +23,7 @@ import { WorkoutFeedbackPanel } from './health/WorkoutFeedbackPanel';
 import { loadWorkoutFeedbackHistory, readWorkoutHealthRecord, type WorkoutFeedbackHistory } from '../services/workoutFeedbackHistoryService';
 import { workoutHealthRefreshService } from '../services/workoutHealthRefreshService';
 import { hasActiveProEntitlement } from '../lib/proEntitlement';
+import { requestCompetitionReview, type CompetitionReviewCategory } from '../services/competitionReviewService';
 
 export interface ActivityHistoryItem {
   id: string;
@@ -218,6 +219,26 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
 
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
+  const [showReviewRequest, setShowReviewRequest] = useState(false);
+  const [reviewCategory, setReviewCategory] = useState<CompetitionReviewCategory>('validation');
+  const [reviewReason, setReviewReason] = useState('');
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+
+  const submitReviewRequest = async () => {
+    if (reviewBusy || reviewReason.trim().length < 10) return;
+    setReviewBusy(true);
+    setReviewMessage(null);
+    try {
+      const result = await requestCompetitionReview({ source: item.source, subjectId: item.id, category: reviewCategory, reason: reviewReason.trim() });
+      setReviewMessage(result.message);
+      setReviewReason('');
+    } catch (error) {
+      setReviewMessage(error instanceof Error ? error.message : 'Não foi possível registrar a contestação.');
+    } finally {
+      setReviewBusy(false);
+    }
+  };
 
   // #215: percentual REAL de ranking (nunca um numero chutado) -- busca a lista
   // de topUsers em /api/ranking e calcula em que percentil o usuario esta a
@@ -463,6 +484,26 @@ export function ActivityDetailScreen({ item, onClose, onShare }: { item: Activit
             <img src={item.photoUrl} alt="Comprovante" className="w-full max-h-64 object-cover rounded-2xl border border-white/10" />
           </div>
         )}
+
+        <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+          <button type="button" onClick={() => setShowReviewRequest(value => !value)} className="flex w-full items-center justify-between gap-3 text-left">
+            <span><b className="block text-xs text-white">Contestar ou solicitar revisão</b><small className="mt-1 block text-[10px] leading-relaxed text-white/45">Atividade, FC, amostras descartadas, validação, pontuação, classificação ou falha técnica.</small></span>
+            <ChevronRight size={16} className={cn('shrink-0 text-primary transition-transform', showReviewRequest && 'rotate-90')} />
+          </button>
+          {showReviewRequest ? <div className="mt-4 space-y-3 border-t border-white/8 pt-4">
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-white/55">Assunto
+              <select value={reviewCategory} onChange={(event) => setReviewCategory(event.target.value as CompetitionReviewCategory)} className="mt-1.5 min-h-11 w-full rounded-xl border border-white/10 bg-black px-3 text-xs text-white">
+                <option value="activity">Atividade</option><option value="heart_rate">Frequência cardíaca processada</option><option value="discarded_samples">Amostras excluídas</option><option value="validation">Validação</option><option value="score">Pontuação</option><option value="ranking">Classificação</option><option value="technical_failure">Possível falha técnica</option>
+              </select>
+            </label>
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-white/55">O que deve ser revisado?
+              <textarea value={reviewReason} maxLength={1500} onChange={(event) => setReviewReason(event.target.value)} placeholder="Descreva a possível inconsistência com pelo menos 10 caracteres." className="mt-1.5 min-h-24 w-full resize-y rounded-xl border border-white/10 bg-black p-3 text-xs font-normal normal-case text-white" />
+            </label>
+            <p className="text-[10px] leading-relaxed text-white/40">A solicitação fica registrada com os dados técnicos disponíveis para auditoria e não altera o resultado automaticamente.</p>
+            {reviewMessage ? <p className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-[10px] text-white/70" role="status">{reviewMessage}</p> : null}
+            <button type="button" disabled={reviewBusy || reviewReason.trim().length < 10 || item.id.startsWith('local_')} onClick={() => void submitReviewRequest()} className="min-h-11 w-full rounded-xl border border-primary/40 bg-primary/10 text-xs font-black uppercase text-primary disabled:opacity-35">{reviewBusy ? 'ENVIANDO…' : item.id.startsWith('local_') ? 'AGUARDE A SINCRONIZAÇÃO' : 'ENVIAR SOLICITAÇÃO'}</button>
+          </div> : null}
+        </div>
 
         {/* Verificado -- com icones de privacidade e compartilhamento rapido */}
         <div className={cn(
