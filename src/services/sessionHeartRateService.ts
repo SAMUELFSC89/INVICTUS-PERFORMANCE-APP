@@ -29,8 +29,6 @@ export function sessionHeartRateSourceKey(sample: Partial<HealthSample>, source:
     .map(value => typeof value === 'string' ? value.trim() : '');
   if (!fields.some(Boolean)) return null;
   const key = `${source}:${JSON.stringify(fields)}`;
-  // Long identifiers must not be truncated into a false match with another
-  // source. Unknown identity is safer than an invented or colliding key.
   return key.length <= 256 ? key : null;
 }
 
@@ -44,32 +42,31 @@ export function normalizeSessionHeartRateEvidence(
 
   type Origin = { key: string | null; values: Map<number, number>; conflicts: Set<number> };
   const origins = new Map<string, Origin>();
+  const discardedReasons: Record<string, number> = {};
+  const bump = (reason: string, amount = 1) => { discardedReasons[reason] = (discardedReasons[reason] || 0) + amount; };
   let excluded = 0;
   let shortIntervals = 0;
   for (const record of records) {
-    if (!record || record.dataType !== 'heartRate') { excluded++; continue; }
+    if (!record || record.dataType !== 'heartRate') { excluded++; bump('tipo_incompativel'); continue; }
     const sampleStart = strictTime(record.startDate);
     const sampleEnd = strictTime(record.endDate);
-    // Apple HKQuantitySample may represent an interval. Short native windows
-    // retain their real end timestamp; long windows cannot become invented
-    // points within one exercise. Never expand or interpolate quantities.
-    if (sampleStart === null || sampleEnd === null || sampleEnd < sampleStart || sampleEnd - sampleStart > SESSION_HEART_RATE_MAX_INTERVAL_MS
-      || record.unit !== 'bpm'
-      || typeof record.value !== 'number' || !Number.isFinite(record.value) || record.value < 30 || record.value > 240
-      || record.recordingMethod === 'manual') { excluded++; continue; }
-    if (sampleStart < start || sampleEnd >= end) { excluded++; continue; }
+    if (sampleStart === null || sampleEnd === null || sampleEnd < sampleStart) { excluded++; bump('timestamp_invalido'); continue; }
+    if (sampleEnd - sampleStart > SESSION_HEART_RATE_MAX_INTERVAL_MS) { excluded++; bump('intervalo_agregado'); continue; }
+    if (record.unit !== 'bpm') { excluded++; bump('unidade_invalida'); continue; }
+    if (typeof record.value !== 'number' || !Number.isFinite(record.value) || record.value < 30 || record.value > 240) { excluded++; bump('bpm_invalido'); continue; }
+    if (record.recordingMethod === 'manual') { excluded++; bump('manual'); continue; }
+    if (sampleStart < start || sampleEnd >= end) { excluded++; bump('fora_da_janela'); continue; }
     if (sampleEnd > sampleStart) shortIntervals++;
     const key = sessionHeartRateSourceKey(record, source);
     const groupKey = key || '__unknown_origin__';
     const origin = origins.get(groupKey) || { key, values: new Map<number, number>(), conflicts: new Set<number>() };
-    if (origin.conflicts.has(sampleEnd)) { excluded++; continue; }
+    if (origin.conflicts.has(sampleEnd)) { excluded++; bump('timestamp_conflitante'); continue; }
     const existing = origin.values.get(sampleEnd);
     if (existing !== undefined && existing !== record.value) {
-      // Two contradictory readings for the same instant and origin are not
-      // averaged, and input order must never decide the user's heart rate.
       origin.values.delete(sampleEnd);
       origin.conflicts.add(sampleEnd);
       excluded += 2;
+      bump('timestamp_conflitante', 2);
     } else {
       origin.values.set(sampleEnd, record.value);
     }
@@ -86,6 +83,7 @@ export function normalizeSessionHeartRateEvidence(
 
   const sorted = [...selected.values.entries()].sort(([a], [b]) => a - b);
   const truncated = sorted.length > SESSION_HEART_RATE_MAX_SAMPLES;
+  if (truncated) bump('limite_de_armazenamento', sorted.length - SESSION_HEART_RATE_MAX_SAMPLES);
   const samples = sorted.slice(0, SESSION_HEART_RATE_MAX_SAMPLES)
     .map(([time, bpm]) => ({ timestamp: new Date(time).toISOString(), bpm }));
   const audit = buildHeartRateAudit({
@@ -93,6 +91,9 @@ export function normalizeSessionHeartRateEvidence(
     startedAt,
     endedAt,
     receivedSampleCount: records.length,
+    discardedReasons,
+    selectedSourceKey: selected.key,
+    sourceCandidateCount: candidates.length,
   });
 
   const reasons: string[] = [];
@@ -105,7 +106,7 @@ export function normalizeSessionHeartRateEvidence(
   else if (audit.quality === 'partial') reasons.push('A frequência cardíaca cobre apenas parte do treino; lacunas não foram preenchidas artificialmente.');
 
   const hasStructuralLimitation = candidates.length > 1 || excluded > 0 || truncated || selected.key === null;
-  const status: WorkoutHeartRateEvidence['status'] = audit.quality === 'good' && !hasStructuralLimitation ? 'available' : 'partial';
+  const status: WorkoutHeartRateEvidence['status'] = ['excellent', 'good'].includes(audit.quality) && !hasStructuralLimitation ? 'available' : 'partial';
   return {
     status,
     source,
@@ -118,9 +119,7 @@ export function normalizeSessionHeartRateEvidence(
   };
 }
 
-/** Private health-only reading; does not request permissions or query a native workout.
- * The same bounded reader supports finalization and a later explicit refresh.
- */
+/** Private health-only reading; does not request permissions or query a native workout. */
 export const sessionHeartRateService = {
   async read(uid: string, startedAt: string, endedAt: string, signal?: AbortSignal): Promise<WorkoutHeartRateEvidence> {
     if (!uid || auth.currentUser?.uid !== uid) return unavailable('A conta mudou. A leitura de batimentos foi cancelada.');
@@ -149,9 +148,6 @@ export const sessionHeartRateService = {
       };
       const operation = async (): Promise<WorkoutHeartRateEvidence> => {
         assertOwner();
-        // This gate checks the user's configured connection. It intentionally
-        // does not call provider.isConnected(), which can require GPS/route
-        // permissions unrelated to an already-authorized heart-rate reading.
         const providers = await manager.getConnectedNativeProviders();
         assertOwner();
         if (!providers.some(provider => provider.id === source) || !manager.isProviderEnabledForUser(source, uid)) {
