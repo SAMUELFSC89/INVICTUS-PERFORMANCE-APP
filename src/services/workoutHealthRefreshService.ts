@@ -28,11 +28,21 @@ export const workoutHealthRefreshService = {
             else controller.signal.addEventListener('abort', () => reject(new Error('A consulta demorou demais. Tente novamente.')), { once: true });
           }),
         ]);
-        const [heartRate, token] = await Promise.all([
+        const [freshHeartRate, token] = await Promise.all([
           sessionHeartRateService.read(user.uid, record.startedAt, record.endedAt, controller.signal), boundedToken,
         ]);
         if (auth.currentUser?.uid !== user.uid) return null;
-        if (!heartRate.samples.length) throw new Error(heartRate.reason || 'Ainda não chegaram leituras deste treino. Sincronize seu relógio e tente novamente.');
+        if (!freshHeartRate.samples.length) throw new Error(freshHeartRate.reason || 'Ainda não chegaram leituras deste treino. Sincronize seu relógio e tente novamente.');
+        // The server recomputes coverage/hash from the fresh series. We only carry
+        // the previously server-returned bounded sync history so a refresh can append
+        // rather than erase the earlier audit trail.
+        const heartRate = {
+          ...freshHeartRate,
+          audit: {
+            ...freshHeartRate.audit,
+            syncHistory: record.heartRate.audit?.syncHistory || [],
+          },
+        };
         const response = await fetch(`${API_CONFIG.baseUrl}/api/wearables`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ action: 'refresh-session-heart-rate', workoutId, heartRate }), signal: controller.signal,
