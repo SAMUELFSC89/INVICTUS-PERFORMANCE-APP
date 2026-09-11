@@ -743,6 +743,8 @@ export function Challenges() {
                 .catch(() => setNotice('Atividade salva. Abra Meu Objetivo para verificar a sincronização da meta.'));
             }
             await activityService.completeSessionAfterPresence();
+            activityNotificationService.stop();
+            activityLiveActivityService.stop();
             setActiveSession(null);
             const points = typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded) && result.pointsAwarded > 0
               ? result.pointsAwarded
