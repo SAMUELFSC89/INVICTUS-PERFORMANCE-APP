@@ -38,16 +38,16 @@ export function Layout() {
     || location.pathname === '/achievements'
     || location.pathname.startsWith('/pagamento/');
 
-  // Mantém o comportamento já estabilizado do indicador de sessão: ele não
-  // compete com as telas que já possuem a própria UI de atividade. O indicador
-  // é funcionalidade atual, não faz parte do chrome legado removido abaixo.
+  // O indicador deve desaparecer apenas onde a sessão em andamento já tem
+  // superfície própria. /musculacao é o hub/planejador: depois de iniciar um
+  // treino ele redireciona para Challenges, portanto esconder o indicador no
+  // hub tornava uma sessão ativa invisível ao voltar para a musculação.
   const routeOwnsSessionSurface = location.pathname.startsWith('/power')
     || location.pathname.startsWith('/health')
     || location.pathname.startsWith('/championships')
     || location.pathname.startsWith('/challenges')
     || location.pathname.startsWith('/activity')
-    || location.pathname === '/running'
-    || location.pathname === '/musculacao';
+    || location.pathname === '/running';
 
   // Several full-screen routes are rendered in document.body through portals.
   // Keeping the route surface on body lets the shared backdrop style reach both
