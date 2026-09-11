@@ -16,7 +16,7 @@ export interface WorkoutFeedbackPanelProps {
 }
 
 const format = (value: number) => value.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-const formatTime = (value: string) => {
+const formatTime = (value: string | number) => {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Horário indisponível';
 };
@@ -28,10 +28,11 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [visibleSamples, setVisibleSamples] = useState(30);
+  const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const revision = useRef(0);
   useEffect(() => {
     revision.current += 1;
-    setUpdated(null); setMessage(null); setRefreshing(false); setVisibleSamples(30);
+    setUpdated(null); setMessage(null); setRefreshing(false); setVisibleSamples(30); setSelectedBucket(null);
     return () => { revision.current += 1; };
   }, [record]);
   const current = updated?.sessionId === record?.sessionId ? updated ?? record : record;
@@ -44,10 +45,38 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
       return Number.isFinite(time) && time >= start && time <= end && Number.isFinite(sample.bpm) && sample.bpm >= 30 && sample.bpm <= 240;
     }).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
   }, [current]);
+  const fiveMinuteBuckets = useMemo(() => {
+    if (!current) return [];
+    const start = Date.parse(current.startedAt), end = Date.parse(current.endedAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+    const size = 5 * 60_000;
+    const buckets: Array<{ index: number; start: number; end: number; count: number }> = [];
+    for (let cursor = start, index = 0; cursor < end; cursor += size, index += 1) {
+      const bucketEnd = Math.min(end, cursor + size);
+      const count = samples.filter(sample => {
+        const at = Date.parse(sample.timestamp);
+        return at >= cursor && (bucketEnd === end ? at <= bucketEnd : at < bucketEnd);
+      }).length;
+      buckets.push({ index, start: cursor, end: bucketEnd, count });
+    }
+    return buckets;
+  }, [current, samples]);
+  const filteredSamples = useMemo(() => {
+    if (selectedBucket === null) return samples;
+    const bucket = fiveMinuteBuckets.find(item => item.index === selectedBucket);
+    if (!bucket) return samples;
+    return samples.filter(sample => {
+      const at = Date.parse(sample.timestamp);
+      return at >= bucket.start && (bucket.end === Date.parse(current!.endedAt) ? at <= bucket.end : at < bucket.end);
+    });
+  }, [samples, selectedBucket, fiveMinuteBuckets, current]);
+  const audit = current?.heartRate.audit;
   const hasLegacyAverage = Number.isFinite(fallbackAverageBpm) && fallbackAverageBpm! >= 30 && fallbackAverageBpm! <= 240;
   const hasSessionAverage = feedback?.session.averageBpm !== null && feedback?.session.averageBpm !== undefined;
   const statusLabel = current?.heartRate.status === 'pending' ? 'Aguardando sincronização'
     : !samples.length ? 'Sem FC pontual'
+    : audit?.quality === 'insufficient' ? 'Cobertura insuficiente'
+    : audit?.quality === 'partial' ? 'Cobertura parcial'
     : !hasSessionAverage ? 'Leituras incompletas' : 'Leituras disponíveis';
   const sourceLabel = current?.heartRate.source === 'apple_health' ? 'Apple Saúde'
     : current?.heartRate.source === 'health_connect' ? 'Health Connect' : 'Origem não identificada';
@@ -64,7 +93,7 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
       if (requestRevision !== revision.current) return;
       if (next && next.sessionId === current?.sessionId) {
         setUpdated(next);
-        setMessage(next.heartRate.status === 'available' ? 'Leituras atualizadas. A análise verifica a cobertura antes de comparar.' : 'A consulta terminou, mas ainda não há cobertura completa. Seus registros foram mantidos.');
+        setMessage(next.heartRate.status === 'available' ? 'Leituras atualizadas. A análise verificou a cobertura temporal.' : 'A consulta terminou, mas ainda não há cobertura completa. Seus registros foram mantidos.');
       } else setMessage('Não foi possível atualizar agora. Seus registros anteriores foram mantidos.');
     } catch (error) {
       if (requestRevision === revision.current) setMessage(error instanceof Error && error.message.trim() && error.message.length <= 250
@@ -85,10 +114,16 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
       <div className="workout-feedback__metrics">
         <div><span>{hasSessionAverage ? 'Média das leituras' : hasLegacyAverage ? 'Média salva no treino' : 'Média das leituras'}</span><strong>{hasSessionAverage ? format(feedback!.session.averageBpm!) : hasLegacyAverage ? format(fallbackAverageBpm!) : '—'}{(hasSessionAverage || hasLegacyAverage) && <small>bpm</small>}</strong></div>
         <div><span>Maior leitura</span><strong>{feedback?.session.maxBpm !== null && feedback?.session.maxBpm !== undefined ? <>{format(feedback.session.maxBpm)}<small>bpm</small></> : '—'}</strong></div>
-        <div><span>Cobertura temporal</span><strong>{feedback && samples.length ? `${feedback.session.coveragePercent}%` : '—'}</strong></div>
+        <div><span>Cobertura temporal</span><strong>{audit ? `${audit.coveragePercent}%` : feedback && samples.length ? `${feedback.session.coveragePercent}%` : '—'}</strong></div>
       </div>
       {!samples.length && <p className="workout-feedback__explanation">{hasLegacyAverage ? 'A média salva resume o treino; ela não informa em qual exercício os batimentos variaram.' : 'Ainda não recebemos batimentos com horário para este treino.'} Para relacionar batimentos aos exercícios, precisamos dessas leituras e do início e fim de cada série.</p>}
-      {samples.length > 0 && <p className="workout-feedback__explanation">{sourceLabel} · {feedback?.session.sampleCount ?? 0} leituras aceitas. A cobertura considera intervalos curtos entre leituras; não preenche lacunas.{!hasSessionAverage && ' Cobertura insuficiente para resumir os batimentos da sessão.'}</p>}
+      {samples.length > 0 && <p className="workout-feedback__explanation">{sourceLabel} · {audit?.validSampleCount ?? feedback?.session.sampleCount ?? samples.length} leituras aceitas{audit ? ` de ${audit.receivedSampleCount} recebidas` : ''}. A cobertura considera somente intervalos reais entre leituras; o Invictus não preenche lacunas artificialmente.</p>}
+      {audit && <div className="workout-feedback__metrics">
+        <div><span>Recebidas</span><strong>{audit.receivedSampleCount}</strong></div>
+        <div><span>Aceitas</span><strong>{audit.validSampleCount}</strong></div>
+        <div><span>Descartadas</span><strong>{audit.discardedSampleCount}</strong></div>
+        <div><span>Maior lacuna</span><strong>{format(audit.largestGapSeconds)}<small>s</small></strong></div>
+      </div>}
       {onRefresh && current && <button type="button" className="workout-feedback__refresh" onClick={refresh} disabled={refreshing}><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />{refreshing ? 'Consultando batimentos…' : 'Atualizar batimentos deste treino'}</button>}
       {message && <p className="workout-feedback__message" role="status">{message}</p>}
 
@@ -102,7 +137,17 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
       {isPro && historyStatus && <p className="workout-feedback__scope">{historyStatus.status === 'unavailable' ? 'O histórico não pôde ser consultado. Nenhuma comparação com sessões anteriores foi feita.' : `A consulta considerou ${historyStatus.reviewedCount} registros recentes. A comparação usa apenas sessões anteriores compatíveis, dentro de 90 dias.${historyStatus.limitReached ? ' Limite de 30 registros atingido; não representa todo o seu histórico.' : ''}`}</p>}
 
       {current && current.sets.length > 0 && <details className="workout-feedback__details"><summary>Suas séries registradas ({current.sets.length})</summary><ul className="workout-feedback__sets">{current.sets.map((set, index) => <li key={`${set.id}:${index}`}><strong>{set.exerciseName}</strong><span>{set.status === 'interrupted' ? 'Interrompida' : 'Marcada como concluída'} · {formatTime(set.startedAt)}–{formatTime(set.endedAt)}</span><span>{Number.isFinite(set.reps) && set.reps !== null ? `${format(set.reps)} repetições` : 'Repetições não informadas'} · {Number.isFinite(set.loadKg) && set.loadKg !== null ? `${format(set.loadKg)} kg` : 'Carga não informada'}</span></li>)}</ul></details>}
-      {samples.length > 0 && <details className="workout-feedback__details"><summary>Leituras recebidas ({samples.length})</summary><p className="workout-feedback__scope">Horários locais do dispositivo. As leituras abaixo não são batimentos em tempo real; valores conflitantes no mesmo horário são excluídos da análise.</p><ol className="workout-feedback__samples">{samples.slice(0, visibleSamples).map((sample, index) => <li key={`${sample.timestamp}:${index}`}><time dateTime={sample.timestamp}>{formatTime(sample.timestamp)}</time><strong>{format(sample.bpm)} bpm</strong></li>)}</ol>{visibleSamples < samples.length && <button type="button" className="workout-feedback__refresh" onClick={() => setVisibleSamples(count => count + 30)}>Mostrar mais leituras</button>}</details>}
+      {samples.length > 0 && <details className="workout-feedback__details"><summary>Auditoria das leituras ({samples.length})</summary>
+        <p className="workout-feedback__scope">Filtre a sessão em blocos de 5 minutos. Cada item abaixo conserva o horário exato e o BPM recebido da fonte. Leituras rejeitadas pelo saneamento não entram na curva nem no cálculo fisiológico.</p>
+        <div className="workout-feedback__samples">
+          <button type="button" className="workout-feedback__refresh" onClick={() => { setSelectedBucket(null); setVisibleSamples(30); }}>Treino inteiro ({samples.length})</button>
+          {fiveMinuteBuckets.map(bucket => <button type="button" className="workout-feedback__refresh" key={bucket.index} onClick={() => { setSelectedBucket(bucket.index); setVisibleSamples(30); }}>
+            {formatTime(bucket.start).slice(0, 5)}–{formatTime(bucket.end).slice(0, 5)} · {bucket.count}
+          </button>)}
+        </div>
+        <ol className="workout-feedback__samples">{filteredSamples.slice(0, visibleSamples).map((sample, index) => <li key={`${sample.timestamp}:${index}`}><time dateTime={sample.timestamp}>{formatTime(sample.timestamp)}</time><strong>{format(sample.bpm)} bpm</strong><span>Aceita na auditoria</span></li>)}</ol>
+        {visibleSamples < filteredSamples.length && <button type="button" className="workout-feedback__refresh" onClick={() => setVisibleSamples(count => count + 30)}>Mostrar mais leituras</button>}
+      </details>}
       <details className="workout-feedback__details"><summary>Como interpretar e quando buscar ajuda</summary><p>A frequência cardíaca isolada não confirma evolução, técnica ou segurança do exercício. Um batimento mais alto não significa um treino melhor.</p>{deferredInsufficient.map(insight => <div key={insight.id}><p><strong>{insight.title}</strong></p><p>{insight.evidence} {insight.meaning}</p><p>{insight.nextStep}</p></div>)}{feedback?.limitations.map((limitation, index) => <p key={index}>{limitation}</p>)}<p>Se estiver com dor súbita no peito, falta de ar intensa ou desmaio, interrompa o exercício e procure atendimento de emergência. No Brasil, ligue 192. <a href="https://www.gov.br/saude/pt-br/composicao/saes/samu-192" target="_blank" rel="noreferrer">Orientações do SAMU</a>.</p></details>
     </section>
   );
