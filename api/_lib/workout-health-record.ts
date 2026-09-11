@@ -1,5 +1,6 @@
 import type { RecordedExerciseSet, WorkoutHealthRecord, WorkoutHeartRateEvidence } from '../../src/core/health/workoutHealthTypes.js';
 import { buildHeartRateAudit } from '../../src/core/health/heartRateAudit.js';
+import { appendHeartRateSyncHistory, heartRateSeriesHash } from './heart-rate-audit-server.js';
 
 export const MAX_WORKOUT_HEALTH_SETS = 200;
 export const MAX_WORKOUT_HEART_RATE_SAMPLES = 5000;
@@ -32,6 +33,10 @@ function timestamp(value: unknown, now: number): { iso: string; ms: number } | n
 
 function actualNumber(value: unknown, max: number, integer = false): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max && (!integer || Number.isInteger(value)) ? value : null;
+}
+
+function bump(reasons: Record<string, number>, reason: string, amount = 1) {
+  reasons[reason] = (reasons[reason] || 0) + amount;
 }
 
 /**
@@ -81,11 +86,9 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
       invalidActualValues = true; setsPartial = true;
     }
     seenIds.add(id);
-    sets.push({
-      id, exerciseId, exerciseName, equipment, startedAt: start.iso, endedAt: end.iso,
+    sets.push({ id, exerciseId, exerciseName, equipment, startedAt: start.iso, endedAt: end.iso,
       status: set.status as RecordedExerciseSet['status'], timingSource: 'user_marked', reps, loadKg,
-      ...(hasActualRir ? { actualRir } : {})
-    });
+      ...(hasActualRir ? { actualRir } : {}) });
   }
   sets.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const unambiguousSets: RecordedExerciseSet[] = [];
@@ -104,8 +107,11 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
   const sourceKey = heart?.sourceKey === null || heart?.sourceKey === undefined ? null : boundedText(heart.sourceKey, 256);
   const fetchedAt = timestamp(heart?.fetchedAt, now);
   const rawSamples = Array.isArray(heart?.samples) ? heart.samples : [];
-  let discardedHeartRateSamples = (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0) + Math.max(0, rawSamples.length - MAX_WORKOUT_HEART_RATE_SAMPLES);
-  let heartPartial = !Array.isArray(heart?.samples) || rawSamples.length > MAX_WORKOUT_HEART_RATE_SAMPLES || heart?.truncated === true || discardedHeartRateSamples > 0;
+  const discardReasons: Record<string, number> = {};
+  const overflow = Math.max(0, rawSamples.length - MAX_WORKOUT_HEART_RATE_SAMPLES);
+  if (overflow) bump(discardReasons, 'limite_de_armazenamento', overflow);
+  let discardedHeartRateSamples = (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0) + overflow;
+  let heartPartial = !Array.isArray(heart?.samples) || overflow > 0 || heart?.truncated === true || discardedHeartRateSamples > 0;
   const validStatuses = ['available', 'pending', 'partial', 'unavailable'];
   const validHeartEnvelope = heart && typeof heart.status === 'string' && validStatuses.includes(heart.status) && fetchedAt && fetchedAt.ms >= endedAt.ms
     && (heart.sourceKey === undefined || heart.sourceKey === null || sourceKey !== null);
@@ -116,29 +122,30 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
       const sample = object(value);
       const time = timestamp(sample?.timestamp, now);
       const bpm = sample?.bpm;
-      if (!time || time.ms < startedAt.ms || time.ms > endedAt.ms || typeof bpm !== 'number' || !Number.isFinite(bpm) || bpm < 30 || bpm > 240) {
-        discardedHeartRateSamples += 1; heartPartial = true; continue;
-      }
-      if (ambiguousTimes.has(time.iso)) { discardedHeartRateSamples += 1; heartPartial = true; continue; }
+      if (!time) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'timestamp_invalido'); continue; }
+      if (time.ms < startedAt.ms || time.ms > endedAt.ms) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'fora_da_janela'); continue; }
+      if (typeof bpm !== 'number' || !Number.isFinite(bpm) || bpm < 30 || bpm > 240) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'bpm_invalido'); continue; }
+      if (ambiguousTimes.has(time.iso)) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'timestamp_conflitante'); continue; }
       const previous = samplesByTime.get(time.iso);
       if (previous !== undefined && previous !== bpm) {
-        samplesByTime.delete(time.iso); ambiguousTimes.add(time.iso); discardedHeartRateSamples += 2; heartPartial = true; continue;
+        samplesByTime.delete(time.iso); ambiguousTimes.add(time.iso); discardedHeartRateSamples += 2; heartPartial = true; bump(discardReasons, 'timestamp_conflitante', 2); continue;
       }
       samplesByTime.set(time.iso, bpm);
     }
   } else if (rawSamples.length > 0) {
     discardedHeartRateSamples += Math.min(rawSamples.length, MAX_WORKOUT_HEART_RATE_SAMPLES); heartPartial = true;
+    bump(discardReasons, source ? 'envelope_de_coleta_invalido' : 'origem_nao_identificada', Math.min(rawSamples.length, MAX_WORKOUT_HEART_RATE_SAMPLES));
   }
   const samples = [...samplesByTime].sort(([a], [b]) => a.localeCompare(b)).map(([time, bpm]) => ({ timestamp: time, bpm }));
   const audit = buildHeartRateAudit({
-    samples,
-    startedAt: startedAt.iso,
-    endedAt: endedAt.iso,
+    samples, startedAt: startedAt.iso, endedAt: endedAt.iso,
     receivedSampleCount: rawSamples.length + (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0),
+    discardedReasons: discardReasons,
+    selectedSourceKey: sourceKey,
   });
-  // A cobertura é recomputada no servidor. Um cliente não pode declarar uma
-  // leitura isolada como monitoramento completo apenas enviando status=available.
-  if (samples.length > 0 && audit.quality !== 'good') heartPartial = true;
+  if (samples.length > 0) audit.seriesHash = heartRateSeriesHash(samples);
+  audit.syncHistory = appendHeartRateSyncHistory([], audit, fetchedAt?.iso ?? null);
+  if (samples.length > 0 && !['excellent', 'good'].includes(audit.quality)) heartPartial = true;
   const status: WorkoutHeartRateEvidence['status'] = samples.length > 0
     ? (heartPartial || heart?.status === 'partial' ? 'partial' : 'available')
     : validHeartEnvelope && heart?.status === 'pending' ? 'pending' : 'unavailable';
