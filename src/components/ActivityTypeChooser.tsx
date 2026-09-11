@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, ArrowLeft, ChevronRight, Dumbbell, Footprints, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { InvictusLogo } from './InvictusLogo';
-import { activityService } from '../services/activityService';
+import { verifyActiveSessionBeforeStart } from '../services/activeSessionStartGuard';
 
 export function ActivityTypeChooser() {
   const navigate = useNavigate();
@@ -13,20 +13,15 @@ export function ActivityTypeChooser() {
   const checkActiveSession = async () => {
     setCheckingActiveSession(true);
     setRestoreError(null);
-    const localSession = activityService.getCurrentSession();
-    if (localSession) {
-      navigate('/activity/ongoing', { replace: true });
-      return;
-    }
     try {
-      const session = await activityService.restoreActiveSession();
+      const session = await verifyActiveSessionBeforeStart();
       if (session) {
         navigate('/activity/ongoing', { replace: true });
         return;
       }
       setCheckingActiveSession(false);
-    } catch {
-      setRestoreError('Não foi possível verificar sua atividade em andamento. Confira a conexão antes de iniciar outra atividade.');
+    } catch (error: any) {
+      setRestoreError(error?.message || 'Não foi possível verificar sua atividade em andamento. Confira a conexão antes de iniciar outra atividade.');
       setCheckingActiveSession(false);
     }
   };
@@ -36,21 +31,15 @@ export function ActivityTypeChooser() {
     setCheckingActiveSession(true);
     setRestoreError(null);
 
-    const localSession = activityService.getCurrentSession();
-    if (localSession) {
-      navigate('/activity/ongoing', { replace: true });
-      return () => { cancelled = true; };
-    }
-
-    void activityService.restoreActiveSession()
+    void verifyActiveSessionBeforeStart()
       .then((session) => {
         if (cancelled) return;
         if (session) navigate('/activity/ongoing', { replace: true });
         else setCheckingActiveSession(false);
       })
-      .catch(() => {
+      .catch((error: any) => {
         if (!cancelled) {
-          setRestoreError('Não foi possível verificar sua atividade em andamento. Confira a conexão antes de iniciar outra atividade.');
+          setRestoreError(error?.message || 'Não foi possível verificar sua atividade em andamento. Confira a conexão antes de iniciar outra atividade.');
           setCheckingActiveSession(false);
         }
       });
