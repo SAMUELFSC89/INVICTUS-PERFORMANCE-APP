@@ -20,6 +20,13 @@ const formatTime = (value: string | number) => {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Horário indisponível';
 };
+const qualityLabel = (value?: string) => value === 'excellent' ? 'Excelente' : value === 'good' ? 'Boa' : value === 'partial' ? 'Parcial' : 'Insuficiente';
+const discardLabel: Record<string, string> = {
+  timestamp_invalido: 'Horário inválido', fora_da_janela: 'Fora do intervalo do treino', bpm_invalido: 'BPM inválido',
+  timestamp_conflitante: 'Conflito no mesmo horário', limite_de_armazenamento: 'Acima do limite técnico',
+  envelope_de_coleta_invalido: 'Registro de coleta inválido', origem_nao_identificada: 'Origem não identificada',
+};
+const shortSourceKey = (value?: string | null) => !value ? 'Não identificada' : value.length > 42 ? `${value.slice(0, 18)}…${value.slice(-14)}` : value;
 
 /** Private, evidence-based post-workout feedback. No generative AI or scoring input. */
 export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, history = [], historyStatus, isPro }: WorkoutFeedbackPanelProps) {
@@ -45,22 +52,28 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
       return Number.isFinite(time) && time >= start && time <= end && Number.isFinite(sample.bpm) && sample.bpm >= 30 && sample.bpm <= 240;
     }).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
   }, [current]);
+  const audit = current?.heartRate.audit;
   const fiveMinuteBuckets = useMemo(() => {
+    if (audit?.fiveMinuteBuckets?.length) return audit.fiveMinuteBuckets.map((bucket, index) => ({
+      index, start: Date.parse(bucket.startedAt), end: Date.parse(bucket.endedAt), count: bucket.sampleCount,
+      averageBpm: bucket.averageBpm, coveragePercent: bucket.coveragePercent,
+    }));
     if (!current) return [];
     const start = Date.parse(current.startedAt), end = Date.parse(current.endedAt);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
     const size = 5 * 60_000;
-    const buckets: Array<{ index: number; start: number; end: number; count: number }> = [];
+    const buckets: Array<{ index: number; start: number; end: number; count: number; averageBpm: number | null; coveragePercent: number | null }> = [];
     for (let cursor = start, index = 0; cursor < end; cursor += size, index += 1) {
       const bucketEnd = Math.min(end, cursor + size);
-      const count = samples.filter(sample => {
+      const points = samples.filter(sample => {
         const at = Date.parse(sample.timestamp);
         return at >= cursor && (bucketEnd === end ? at <= bucketEnd : at < bucketEnd);
-      }).length;
-      buckets.push({ index, start: cursor, end: bucketEnd, count });
+      });
+      buckets.push({ index, start: cursor, end: bucketEnd, count: points.length,
+        averageBpm: points.length ? points.reduce((sum, point) => sum + point.bpm, 0) / points.length : null, coveragePercent: null });
     }
     return buckets;
-  }, [current, samples]);
+  }, [audit, current, samples]);
   const filteredSamples = useMemo(() => {
     if (selectedBucket === null) return samples;
     const bucket = fiveMinuteBuckets.find(item => item.index === selectedBucket);
@@ -70,13 +83,11 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
       return at >= bucket.start && (bucket.end === Date.parse(current!.endedAt) ? at <= bucket.end : at < bucket.end);
     });
   }, [samples, selectedBucket, fiveMinuteBuckets, current]);
-  const audit = current?.heartRate.audit;
   const hasLegacyAverage = Number.isFinite(fallbackAverageBpm) && fallbackAverageBpm! >= 30 && fallbackAverageBpm! <= 240;
   const hasSessionAverage = feedback?.session.averageBpm !== null && feedback?.session.averageBpm !== undefined;
   const statusLabel = current?.heartRate.status === 'pending' ? 'Aguardando sincronização'
     : !samples.length ? 'Sem FC pontual'
-    : audit?.quality === 'insufficient' ? 'Cobertura insuficiente'
-    : audit?.quality === 'partial' ? 'Cobertura parcial'
+    : audit ? `Qualidade da coleta: ${qualityLabel(audit.quality)}`
     : !hasSessionAverage ? 'Leituras incompletas' : 'Leituras disponíveis';
   const sourceLabel = current?.heartRate.source === 'apple_health' ? 'Apple Saúde'
     : current?.heartRate.source === 'health_connect' ? 'Health Connect' : 'Origem não identificada';
@@ -118,12 +129,32 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
       </div>
       {!samples.length && <p className="workout-feedback__explanation">{hasLegacyAverage ? 'A média salva resume o treino; ela não informa em qual exercício os batimentos variaram.' : 'Ainda não recebemos batimentos com horário para este treino.'} Para relacionar batimentos aos exercícios, precisamos dessas leituras e do início e fim de cada série.</p>}
       {samples.length > 0 && <p className="workout-feedback__explanation">{sourceLabel} · {audit?.validSampleCount ?? feedback?.session.sampleCount ?? samples.length} leituras aceitas{audit ? ` de ${audit.receivedSampleCount} recebidas` : ''}. A cobertura considera somente intervalos reais entre leituras; o Invictus não preenche lacunas artificialmente.</p>}
-      {audit && <div className="workout-feedback__metrics">
-        <div><span>Recebidas</span><strong>{audit.receivedSampleCount}</strong></div>
-        <div><span>Aceitas</span><strong>{audit.validSampleCount}</strong></div>
-        <div><span>Descartadas</span><strong>{audit.discardedSampleCount}</strong></div>
-        <div><span>Maior lacuna</span><strong>{format(audit.largestGapSeconds)}<small>s</small></strong></div>
-      </div>}
+
+      {audit && <>
+        <div className="workout-feedback__metrics">
+          <div><span>Qualidade</span><strong>{qualityLabel(audit.quality)}</strong></div>
+          <div><span>Recebidas</span><strong>{audit.receivedSampleCount}</strong></div>
+          <div><span>Aceitas</span><strong>{audit.validSampleCount}</strong></div>
+          <div><span>Descartadas</span><strong>{audit.discardedSampleCount}</strong></div>
+          <div><span>Maior lacuna</span><strong>{format(audit.largestGapSeconds)}<small>s</small></strong></div>
+        </div>
+        <details className="workout-feedback__details"><summary>Origem e rastreabilidade</summary>
+          <p><strong>Fonte:</strong> {sourceLabel}</p>
+          <p><strong>Origem técnica usada:</strong> {shortSourceKey(audit.selectedSourceKey ?? current?.heartRate.sourceKey)}</p>
+          {Number(audit.sourceCandidateCount) > 1 && <p>Foram detectadas {audit.sourceCandidateCount} origens candidatas. O Invictus usa uma única origem técnica por série e não mistura sensores.</p>}
+          <p><strong>Workout do relógio detectado:</strong> {audit.workoutDetected === true ? 'Sim' : audit.workoutDetected === false ? 'Não' : 'Não informado pela fonte'}</p>
+          {audit.seriesHash && <p><strong>Hash da série:</strong> <code>{audit.seriesHash}</code></p>}
+          {audit.archivedChunkCount !== undefined && <p><strong>Arquivo denso:</strong> {audit.archivedChunkCount} bloco(s) preservado(s) no servidor.</p>}
+        </details>
+        {audit.discardedReasons && Object.keys(audit.discardedReasons).length > 0 && <details className="workout-feedback__details"><summary>Por que leituras foram descartadas</summary><ul>{Object.entries(audit.discardedReasons).map(([reason, count]) => <li key={reason}>{discardLabel[reason] || reason}: <strong>{count}</strong></li>)}</ul></details>}
+        {audit.syncHistory && audit.syncHistory.length > 0 && <details className="workout-feedback__details"><summary>Histórico de sincronização ({audit.syncHistory.length})</summary><ol>{audit.syncHistory.map((event, index) => <li key={`${event.fetchedAt}:${index}`}>{new Date(event.fetchedAt).toLocaleString('pt-BR')} · {event.validSampleCount} leituras · {event.coveragePercent}% de cobertura</li>)}</ol></details>}
+        <details className="workout-feedback__details"><summary>Como esta FC foi usada no IGA</summary>
+          <p>O IGA usa a frequência cardíaca para representar a intensidade relativa do esforço. Quando a série temporal possui qualidade suficiente, ela é a fonte preferida para a intensidade.</p>
+          <p>Se a série estiver parcial ou insuficiente, o motor pode usar o fallback previsto na metodologia. A ausência de leituras não é preenchida artificialmente e usar um relógio mais caro não gera bônus de pontuação.</p>
+          <p>Esta tela mostra evidência de saúde e qualidade da coleta; detalhes internos do antifraude competitivo não são expostos.</p>
+        </details>
+      </>}
+
       {onRefresh && current && <button type="button" className="workout-feedback__refresh" onClick={refresh} disabled={refreshing}><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />{refreshing ? 'Consultando batimentos…' : 'Atualizar batimentos deste treino'}</button>}
       {message && <p className="workout-feedback__message" role="status">{message}</p>}
 
@@ -138,11 +169,11 @@ export function WorkoutFeedbackPanel({ record, fallbackAverageBpm, onRefresh, hi
 
       {current && current.sets.length > 0 && <details className="workout-feedback__details"><summary>Suas séries registradas ({current.sets.length})</summary><ul className="workout-feedback__sets">{current.sets.map((set, index) => <li key={`${set.id}:${index}`}><strong>{set.exerciseName}</strong><span>{set.status === 'interrupted' ? 'Interrompida' : 'Marcada como concluída'} · {formatTime(set.startedAt)}–{formatTime(set.endedAt)}</span><span>{Number.isFinite(set.reps) && set.reps !== null ? `${format(set.reps)} repetições` : 'Repetições não informadas'} · {Number.isFinite(set.loadKg) && set.loadKg !== null ? `${format(set.loadKg)} kg` : 'Carga não informada'}</span></li>)}</ul></details>}
       {samples.length > 0 && <details className="workout-feedback__details"><summary>Auditoria das leituras ({samples.length})</summary>
-        <p className="workout-feedback__scope">Filtre a sessão em blocos de 5 minutos. Cada item abaixo conserva o horário exato e o BPM recebido da fonte. Leituras rejeitadas pelo saneamento não entram na curva nem no cálculo fisiológico.</p>
+        <p className="workout-feedback__scope">Filtre a sessão em blocos de 5 minutos. Cada bloco mostra quantidade, média e cobertura quando o servidor conseguiu calculá-la; cada leitura conserva horário exato e BPM.</p>
         <div className="workout-feedback__samples">
           <button type="button" className="workout-feedback__refresh" onClick={() => { setSelectedBucket(null); setVisibleSamples(30); }}>Treino inteiro ({samples.length})</button>
           {fiveMinuteBuckets.map(bucket => <button type="button" className="workout-feedback__refresh" key={bucket.index} onClick={() => { setSelectedBucket(bucket.index); setVisibleSamples(30); }}>
-            {formatTime(bucket.start).slice(0, 5)}–{formatTime(bucket.end).slice(0, 5)} · {bucket.count}
+            {formatTime(bucket.start).slice(0, 5)}–{formatTime(bucket.end).slice(0, 5)} · {bucket.count} leituras{bucket.averageBpm !== null ? ` · ${format(bucket.averageBpm)} bpm` : ''}{bucket.coveragePercent !== null ? ` · ${bucket.coveragePercent}%` : ''}
           </button>)}
         </div>
         <ol className="workout-feedback__samples">{filteredSamples.slice(0, visibleSamples).map((sample, index) => <li key={`${sample.timestamp}:${index}`}><time dateTime={sample.timestamp}>{formatTime(sample.timestamp)}</time><strong>{format(sample.bpm)} bpm</strong><span>Aceita na auditoria</span></li>)}</ol>
