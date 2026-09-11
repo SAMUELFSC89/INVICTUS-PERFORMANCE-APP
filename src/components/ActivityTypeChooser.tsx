@@ -1,10 +1,34 @@
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ChevronRight, Dumbbell, Footprints } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { InvictusLogo } from './InvictusLogo';
+import { activityService } from '../services/activityService';
 
 export function ActivityTypeChooser() {
   const navigate = useNavigate();
+  const [checkingActiveSession, setCheckingActiveSession] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const localSession = activityService.getCurrentSession();
+    if (localSession) {
+      navigate('/activity/ongoing', { replace: true });
+      return () => { cancelled = true; };
+    }
+
+    void activityService.restoreActiveSession()
+      .then((session) => {
+        if (cancelled) return;
+        if (session) navigate('/activity/ongoing', { replace: true });
+        else setCheckingActiveSession(false);
+      })
+      .catch(() => {
+        if (!cancelled) setCheckingActiveSession(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [navigate]);
 
   return createPortal(
     <main className="activity-type-screen">
@@ -22,12 +46,12 @@ export function ActivityTypeChooser() {
 
         <section className="activity-type-heading" aria-labelledby="activity-type-title">
           <small>INICIAR ATIVIDADE</small>
-          <h1 id="activity-type-title">O QUE VOCÊ VAI TREINAR?</h1>
-          <p>Escolha uma modalidade para continuar.</p>
+          <h1 id="activity-type-title">{checkingActiveSession ? 'VERIFICANDO ATIVIDADE…' : 'O QUE VOCÊ VAI TREINAR?'}</h1>
+          <p>{checkingActiveSession ? 'Estamos conferindo se existe um treino em andamento antes de abrir uma nova atividade.' : 'Escolha uma modalidade para continuar.'}</p>
         </section>
 
-        <section className="activity-type-options" aria-label="Escolha da modalidade">
-          <button type="button" className="activity-type-option" onClick={() => navigate('/musculacao')}>
+        <section className="activity-type-options" aria-label="Escolha da modalidade" aria-busy={checkingActiveSession}>
+          <button type="button" className="activity-type-option" disabled={checkingActiveSession} onClick={() => navigate('/musculacao')}>
             <span className="activity-type-icon"><Dumbbell /></span>
             <span className="activity-type-copy">
               <small>FORÇA E HIPERTROFIA</small>
@@ -37,7 +61,7 @@ export function ActivityTypeChooser() {
             <ChevronRight />
           </button>
 
-          <button type="button" className="activity-type-option" onClick={() => navigate('/challenges/cardio')}>
+          <button type="button" className="activity-type-option" disabled={checkingActiveSession} onClick={() => navigate('/challenges/cardio')}>
             <span className="activity-type-icon"><Footprints /></span>
             <span className="activity-type-copy">
               <small>RESISTÊNCIA E CONDICIONAMENTO</small>
