@@ -1,7 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { Health } from 'capacitor-health';
-import type { WearableProvider, WearableActivity } from './types';
+import type { WearableProvider, WearableActivity, WearableHeartRateSample } from './types';
 import { normalizeHeartRateSamples, normalizeIsoTimestamp, normalizePositiveNumber } from './heartRateSamples';
+import { auditSessionHeartRate, collectHeartRateFromWorkouts, type SessionHeartRateAudit } from './sessionHeartRateAudit';
 
 // Plugin real: pacote npm "capacitor-health" (mley/capacitor-health), que expõe
 // uma API única para Apple HealthKit (iOS) e Google Health Connect (Android).
@@ -24,8 +25,6 @@ function mapWorkoutType(hkType: string): string {
   if (typeStr.includes('rowing') || typeStr.includes('remo')) return 'Remo';
   if (typeStr.includes('stair') || typeStr.includes('escada')) return 'Escada';
   if (typeStr.includes('crossfit') || typeStr.includes('functional')) return 'Treino funcional';
-  // Preserve the provider value. The server, not the client mapping, decides
-  // whether an unknown modality can earn XP or complete a mission.
   return String(hkType).trim().slice(0, 120) || 'Desconhecido';
 }
 
@@ -33,9 +32,6 @@ export class AppleHealthProvider implements WearableProvider {
   id = 'apple_health' as const;
   name = 'Apple HealthKit';
   description = 'Integração nativa com o Apple Health para iOS e Apple Watch.';
-  // O HealthKit não expõe concessão de leitura de forma confiável. Mantemos
-  // apenas o consentimento desta instância e uma leitura bem-sucedida, nunca
-  // um valor persistido em localStorage como se fosse uma permissão real.
   private consentRequestedInSession = false;
   private hasSuccessfulRead = false;
 
@@ -60,9 +56,6 @@ export class AppleHealthProvider implements WearableProvider {
         return false;
       }
       const response = await Health.requestHealthPermissions({ permissions: [...READ_PERMISSIONS] as any });
-      // iOS nunca informa com certeza se o usuário negou leitura. Este sinal
-      // representa apenas o consentimento/configuração da sessão; uma falha
-      // de leitura abaixo volta a exigir reconexão, sem alegar acesso real.
       const granted = !!response;
       this.consentRequestedInSession = granted;
       return granted;
@@ -79,12 +72,7 @@ export class AppleHealthProvider implements WearableProvider {
         startDate: since.toISOString(),
         endDate: new Date().toISOString(),
         includeHeartRate: true,
-        // #248: precisa da rota real pra corrida/caminhada/bike passarem na
-        // checagem de GPS do antifraude -- sem isso toda atividade de cardio
-        // caia em "sem evidencia de deslocamento".
         includeRoute: true,
-        // Os passos já existem no HKWorkout. Sem esta flag o app Saúde mostra
-        // passos que nunca chegam ao Invictus.
         includeSteps: true,
       });
       this.hasSuccessfulRead = true;
@@ -93,9 +81,6 @@ export class AppleHealthProvider implements WearableProvider {
       console.error('[AppleHealthProvider] Erro ao buscar atividades do HealthKit:', error);
       this.hasSuccessfulRead = false;
       this.consentRequestedInSession = false;
-      // Uma falha não é “nenhuma atividade”: o manager precisa manter o
-      // cursor de backfill pendente para tentar de novo após a permissão ser
-      // corrigida no app Saúde.
       throw error;
     }
   }
@@ -111,6 +96,8 @@ export class AppleHealthProvider implements WearableProvider {
     steps?: number;
     calories?: number;
     workoutFound?: boolean;
+    heartRateSamples?: WearableHeartRateSample[];
+    heartRateAudit?: SessionHeartRateAudit;
   } | null> {
     if (!this.isSupportedPlatform()) return null;
     try {
@@ -122,28 +109,22 @@ export class AppleHealthProvider implements WearableProvider {
         includeSteps: true,
       });
 
-      const allHr: number[] = [];
+      const workoutList = workouts || [];
+      const workoutFound = workoutList.length > 0;
+      const audit = auditSessionHeartRate(
+        collectHeartRateFromWorkouts(workoutList),
+        startDate,
+        endDate,
+        'apple_health',
+        workoutFound,
+      );
+      const allHr = audit.samples.map((sample) => sample.bpm);
       let totalSteps = 0;
       let totalCalories = 0;
-      let workoutFound = false;
 
-      if (workouts && workouts.length > 0) {
-        workoutFound = true;
-        for (const w of workouts) {
-          if (Array.isArray(w.heartRate)) {
-            for (const hr of w.heartRate) {
-              if (hr && typeof hr.bpm === 'number' && hr.bpm >= 35 && hr.bpm <= 230) {
-                allHr.push(hr.bpm);
-              }
-            }
-          }
-          if (typeof w.steps === 'number' && Number.isFinite(w.steps) && w.steps > 0) {
-            totalSteps += w.steps;
-          }
-          if (typeof w.calories === 'number' && Number.isFinite(w.calories) && w.calories > 0) {
-            totalCalories += w.calories;
-          }
-        }
+      for (const w of workoutList) {
+        if (typeof w.steps === 'number' && Number.isFinite(w.steps) && w.steps > 0) totalSteps += w.steps;
+        if (typeof w.calories === 'number' && Number.isFinite(w.calories) && w.calories > 0) totalCalories += w.calories;
       }
 
       const avgHeartRate = allHr.length ? Math.round(allHr.reduce((a, b) => a + b, 0) / allHr.length) : undefined;
@@ -155,7 +136,9 @@ export class AppleHealthProvider implements WearableProvider {
         maxHeartRate,
         steps: totalSteps > 0 ? Math.round(totalSteps) : undefined,
         calories: totalCalories > 0 ? Math.round(totalCalories) : undefined,
-        workoutFound
+        workoutFound,
+        heartRateSamples: audit.samples.length > 0 ? audit.samples : undefined,
+        heartRateAudit: audit,
       };
     } catch (err) {
       console.warn('[AppleHealthProvider] Erro ao consultar métricas da sessão:', err);
@@ -168,11 +151,6 @@ export class AppleHealthProvider implements WearableProvider {
     const heartRates = heartRateSamples.map((sample) => sample.bpm);
     const averageHeartRate = heartRates.length ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : undefined;
     const maxHeartRate = heartRates.length ? Math.max(...heartRates) : undefined;
-    // #248: RouteSample vem como {timestamp, lat, lng, alt} -- convertido pro
-    // formato latitude/longitude que o antifraude (validation-engine,
-    // integrity-engine) ja espera em `activity.checkpoints`. O timestamp é
-    // preservado porque o servidor precisa calcular distância/velocidade
-    // entre pontos reais; sem ele toda rota vira apenas uma lista de locais.
     const checkpoints = Array.isArray(w.route) && w.route.length > 0
       ? w.route
           .filter((p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
