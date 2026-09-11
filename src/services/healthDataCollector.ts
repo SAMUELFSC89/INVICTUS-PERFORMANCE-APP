@@ -1,6 +1,8 @@
 import { WearableManager } from './wearables/WearableManager.js';
 import { AppleHealthProvider } from './wearables/AppleHealthProvider.js';
 import { HealthConnectProvider } from './wearables/HealthConnectProvider.js';
+import type { WearableHeartRateSample } from './wearables/types.js';
+import type { SessionHeartRateAudit } from './wearables/sessionHeartRateAudit.js';
 
 export interface CollectedHealthMetrics {
   healthTelemetry?: {
@@ -9,6 +11,8 @@ export interface CollectedHealthMetrics {
     steps?: number;
     calories?: number;
     source?: 'apple_health' | 'health_connect' | 'wearable' | 'none';
+    heartRateSamples?: WearableHeartRateSample[];
+    heartRateAudit?: SessionHeartRateAudit;
   };
   metricSources: {
     heartRate?: string;
@@ -24,6 +28,9 @@ export interface CollectedHealthMetrics {
     calories?: number;
     dataSource?: string;
     hasWearableSync?: boolean;
+    workoutDetected?: boolean;
+    heartRateCoverageRatio?: number;
+    heartRateSampleCount?: number;
   };
 }
 
@@ -55,6 +62,8 @@ export class HealthDataCollector {
       maxHeartRate?: number;
       steps?: number;
       calories?: number;
+      heartRateSamples?: WearableHeartRateSample[];
+      heartRateAudit?: SessionHeartRateAudit;
       source: 'apple_health' | 'health_connect' | 'none';
     } = { source: 'none' };
 
@@ -67,15 +76,17 @@ export class HealthDataCollector {
         if (provider.id === 'apple_health' && provider instanceof AppleHealthProvider) {
           const res = await this.withTimeout(provider.querySessionMetrics(startDate, endDate), 1200);
           if (!manager.isProviderEnabledForUser(provider.id, userId)) break;
-          if (res && (res.avgHeartRate || res.steps || res.calories)) {
+          if (res && (res.avgHeartRate || res.steps || res.calories || res.heartRateAudit)) {
             collected = {
               avgHeartRate: res.avgHeartRate,
               maxHeartRate: res.maxHeartRate,
               steps: res.steps,
               calories: res.calories,
+              heartRateSamples: res.heartRateSamples,
+              heartRateAudit: res.heartRateAudit,
               source: 'apple_health',
             };
-            if (res.avgHeartRate) metricSources.heartRate = 'apple_health';
+            if (res.avgHeartRate || res.heartRateSamples?.length) metricSources.heartRate = 'apple_health';
             if (res.steps) metricSources.steps = 'apple_health';
             if (res.calories) metricSources.calories = 'apple_health';
             break;
@@ -83,15 +94,17 @@ export class HealthDataCollector {
         } else if (provider.id === 'health_connect' && provider instanceof HealthConnectProvider) {
           const res = await this.withTimeout(provider.querySessionMetrics(startDate, endDate), 1200);
           if (!manager.isProviderEnabledForUser(provider.id, userId)) break;
-          if (res && (res.avgHeartRate || res.steps || res.calories)) {
+          if (res && (res.avgHeartRate || res.steps || res.calories || res.heartRateAudit)) {
             collected = {
               avgHeartRate: res.avgHeartRate,
               maxHeartRate: res.maxHeartRate,
               steps: res.steps,
               calories: res.calories,
+              heartRateSamples: res.heartRateSamples,
+              heartRateAudit: res.heartRateAudit,
               source: 'health_connect',
             };
-            if (res.avgHeartRate) metricSources.heartRate = 'health_connect';
+            if (res.avgHeartRate || res.heartRateSamples?.length) metricSources.heartRate = 'health_connect';
             if (res.steps) metricSources.steps = 'health_connect';
             if (res.calories) metricSources.calories = 'health_connect';
             break;
@@ -103,10 +116,7 @@ export class HealthDataCollector {
     }
 
     const finalSteps = collected.steps ?? pedometerSteps;
-
-    const result: CollectedHealthMetrics = {
-      metricSources,
-    };
+    const result: CollectedHealthMetrics = { metricSources };
 
     if (collected.source !== 'none' || collected.avgHeartRate || finalSteps || collected.calories) {
       result.healthTelemetry = {
@@ -115,6 +125,8 @@ export class HealthDataCollector {
         steps: finalSteps,
         calories: collected.calories,
         source: collected.source,
+        heartRateSamples: collected.heartRateSamples,
+        heartRateAudit: collected.heartRateAudit,
       };
 
       result.smartwatchData = {
@@ -124,6 +136,9 @@ export class HealthDataCollector {
         calories: collected.calories,
         dataSource: collected.source,
         hasWearableSync: collected.source !== 'none',
+        workoutDetected: collected.heartRateAudit?.workoutFound,
+        heartRateCoverageRatio: collected.heartRateAudit?.coverageRatio,
+        heartRateSampleCount: collected.heartRateAudit?.validSampleCount,
       };
     }
 

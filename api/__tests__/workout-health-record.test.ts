@@ -13,8 +13,21 @@ function record(): WorkoutHealthRecord {
 test('roundtrip mantém somente observações e horários reais; não importa proprietário ou pontuação', () => {
   const input = { ...record(), ownerId: 'another-user', points: 100000, durationMins: 999, hidden: 'discard' };
   const result = sanitizeWorkoutHealthRecord(input, now);
-  expect(result.healthSession).toEqual({ ...record(), integrity: { status: 'complete', discardedSets: 0, discardedHeartRateSamples: 0 } });
-  expect(result.healthSessionStatus).toBe('available');
+  expect(result.healthSession).toMatchObject({
+    version: 1,
+    sessionId: record().sessionId,
+    startedAt: record().startedAt,
+    endedAt: record().endedAt,
+    sets: record().sets,
+    heartRate: {
+      status: 'partial', source: 'apple_health', sourceKey: 'device-A',
+      samples: record().heartRate.samples, fetchedAt: record().heartRate.fetchedAt, truncated: false,
+      audit: { validSampleCount: 1, coverageSeconds: 0, coveragePercent: 0, quality: 'insufficient' },
+    },
+    integrity: { status: 'partial', discardedSets: 0, discardedHeartRateSamples: 0 },
+  });
+  expect(result.healthSessionStatus).toBe('partial');
+  expect(result.healthSessionReason).toContain('Cobertura parcial');
   expect(sanitizeWorkoutHealthRecord(result.healthSession, now)).toEqual(result);
   expect(input).toHaveProperty('ownerId', 'another-user');
 });
@@ -35,7 +48,9 @@ test('horários ISO com timezone são normalizados; duplicata idêntica de FC n�
   input.heartRate.samples.push({ timestamp: '2026-09-05T07:01:20-03:00', bpm: 135 });
   const result = sanitizeWorkoutHealthRecord(input, now);
   expect(result.healthSession!.heartRate.samples).toHaveLength(1);
-  expect(result.healthSessionStatus).toBe('available');
+  expect(result.healthSession!.heartRate.status).toBe('partial');
+  expect(result.healthSession!.heartRate.audit).toMatchObject({ validSampleCount: 1, quality: 'insufficient' });
+  expect(result.healthSessionStatus).toBe('partial');
 });
 
 test('FC conflitante no mesmo instante é descartada, não escolhe máximo nem média fabricada', () => {
@@ -53,6 +68,7 @@ test('datas fora do treino, FC não numérica e fontes não permitidas são reje
   const result = sanitizeWorkoutHealthRecord(input, now);
   expect(result.healthSession!.heartRate.samples).toHaveLength(1);
   expect(result.healthSession!.heartRate.status).toBe('partial');
+  expect(result.healthSession!.heartRate.audit).toMatchObject({ validSampleCount: 1, quality: 'insufficient' });
   expect(result.healthSession!.integrity!.discardedHeartRateSamples).toBe(4);
   const invalidSource = sanitizeWorkoutHealthRecord({ ...record(), heartRate: { ...record().heartRate, source: 'manual' } }, now);
   expect(invalidSource.healthSession!.heartRate.samples).toEqual([]);
@@ -87,6 +103,7 @@ test('séries sem fim, fora da sessão, com identidade inválida ou sobrepostas 
   expect(result.healthSession!.sets).toEqual([]);
   expect(result.healthSession!.integrity).toMatchObject({ status: 'partial', discardedSets: 5 });
   expect(result.healthSession!.heartRate.samples).toHaveLength(1);
+  expect(result.healthSession!.heartRate.status).toBe('partial');
 });
 
 test('limites de séries e amostras são explícitos; re-sanitizar não promove registro parcial', () => {
@@ -98,6 +115,7 @@ test('limites de séries e amostras são explícitos; re-sanitizar não promove 
   expect(result.healthSession!.heartRate.samples).toHaveLength(MAX_WORKOUT_HEART_RATE_SAMPLES);
   expect(result.healthSession!.heartRate.truncated).toBe(true);
   expect(result.healthSession!.integrity).toEqual({ status: 'partial', discardedSets: 1, discardedHeartRateSamples: 3 });
+  expect(result.healthSession!.heartRate.status).toBe('partial');
   expect(sanitizeWorkoutHealthRecord(result.healthSession, now)).toEqual(result);
 });
 

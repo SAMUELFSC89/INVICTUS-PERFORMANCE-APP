@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import type { HealthSample } from 'capgo-capacitor-health';
 import { auth } from '../firebase';
 import type { WorkoutHeartRateEvidence } from '../core/health/workoutHealthTypes';
+import { buildHeartRateAudit } from '../core/health/heartRateAudit';
 import { WearableManager } from './wearables/WearableManager';
 import { readCompleteHealthRange } from './wearables/HealthVitalsProvider';
 
@@ -28,8 +29,6 @@ export function sessionHeartRateSourceKey(sample: Partial<HealthSample>, source:
     .map(value => typeof value === 'string' ? value.trim() : '');
   if (!fields.some(Boolean)) return null;
   const key = `${source}:${JSON.stringify(fields)}`;
-  // Long identifiers must not be truncated into a false match with another
-  // source. Unknown identity is safer than an invented or colliding key.
   return key.length <= 256 ? key : null;
 }
 
@@ -43,32 +42,31 @@ export function normalizeSessionHeartRateEvidence(
 
   type Origin = { key: string | null; values: Map<number, number>; conflicts: Set<number> };
   const origins = new Map<string, Origin>();
+  const discardedReasons: Record<string, number> = {};
+  const bump = (reason: string, amount = 1) => { discardedReasons[reason] = (discardedReasons[reason] || 0) + amount; };
   let excluded = 0;
   let shortIntervals = 0;
   for (const record of records) {
-    if (!record || record.dataType !== 'heartRate') { excluded++; continue; }
+    if (!record || record.dataType !== 'heartRate') { excluded++; bump('tipo_incompativel'); continue; }
     const sampleStart = strictTime(record.startDate);
     const sampleEnd = strictTime(record.endDate);
-    // Apple HKQuantitySample may represent an interval. Short native windows
-    // retain their real end timestamp; long windows cannot become invented
-    // points within one exercise. Never expand or interpolate quantities.
-    if (sampleStart === null || sampleEnd === null || sampleEnd < sampleStart || sampleEnd - sampleStart > SESSION_HEART_RATE_MAX_INTERVAL_MS
-      || record.unit !== 'bpm'
-      || typeof record.value !== 'number' || !Number.isFinite(record.value) || record.value < 30 || record.value > 240
-      || record.recordingMethod === 'manual') { excluded++; continue; }
-    if (sampleStart < start || sampleEnd >= end) continue;
+    if (sampleStart === null || sampleEnd === null || sampleEnd < sampleStart) { excluded++; bump('timestamp_invalido'); continue; }
+    if (sampleEnd - sampleStart > SESSION_HEART_RATE_MAX_INTERVAL_MS) { excluded++; bump('intervalo_agregado'); continue; }
+    if (record.unit !== 'bpm') { excluded++; bump('unidade_invalida'); continue; }
+    if (typeof record.value !== 'number' || !Number.isFinite(record.value) || record.value < 30 || record.value > 240) { excluded++; bump('bpm_invalido'); continue; }
+    if (record.recordingMethod === 'manual') { excluded++; bump('manual'); continue; }
+    if (sampleStart < start || sampleEnd >= end) { excluded++; bump('fora_da_janela'); continue; }
     if (sampleEnd > sampleStart) shortIntervals++;
     const key = sessionHeartRateSourceKey(record, source);
     const groupKey = key || '__unknown_origin__';
     const origin = origins.get(groupKey) || { key, values: new Map<number, number>(), conflicts: new Set<number>() };
-    if (origin.conflicts.has(sampleEnd)) { excluded++; continue; }
+    if (origin.conflicts.has(sampleEnd)) { excluded++; bump('timestamp_conflitante'); continue; }
     const existing = origin.values.get(sampleEnd);
     if (existing !== undefined && existing !== record.value) {
-      // Two contradictory readings for the same instant and origin are not
-      // averaged, and input order must never decide the user's heart rate.
       origin.values.delete(sampleEnd);
       origin.conflicts.add(sampleEnd);
       excluded += 2;
+      bump('timestamp_conflitante', 2);
     } else {
       origin.values.set(sampleEnd, record.value);
     }
@@ -85,23 +83,43 @@ export function normalizeSessionHeartRateEvidence(
 
   const sorted = [...selected.values.entries()].sort(([a], [b]) => a - b);
   const truncated = sorted.length > SESSION_HEART_RATE_MAX_SAMPLES;
+  if (truncated) bump('limite_de_armazenamento', sorted.length - SESSION_HEART_RATE_MAX_SAMPLES);
+  const samples = sorted.slice(0, SESSION_HEART_RATE_MAX_SAMPLES)
+    .map(([time, bpm]) => ({ timestamp: new Date(time).toISOString(), bpm }));
+  const audit = buildHeartRateAudit({
+    samples,
+    startedAt,
+    endedAt,
+    receivedSampleCount: records.length,
+    discardedReasons,
+    selectedSourceKey: selected.key,
+    sourceCandidateCount: candidates.length,
+  });
+
   const reasons: string[] = [];
   if (candidates.length > 1) reasons.push('Foram recebidas origens diferentes; usamos somente uma origem, sem combinar relógios ou aplicativos.');
   if (selected.key === null) reasons.push('A fonte não identificou a origem técnica das leituras. Comparações entre sessões ficam limitadas.');
-  if (excluded) reasons.push('Leituras manuais, fora do intervalo, sem horário pontual válido ou conflitantes foram excluídas.');
+  if (excluded) reasons.push(`${excluded} leitura(s) foram descartadas por estarem fora da janela, serem manuais, inválidas ou conflitantes.`);
   if (shortIntervals) reasons.push('Leituras em janelas de até 5 segundos usam o horário final informado pela fonte. Não foram criados pontos intermediários.');
   if (truncated) reasons.push('O volume de dados excedeu o limite desta análise. Apenas as primeiras 5.000 leituras válidas da origem selecionada estão disponíveis.');
+  if (audit.quality === 'insufficient') reasons.push('A cobertura temporal de frequência cardíaca é insuficiente para representar o treino inteiro.');
+  else if (audit.quality === 'partial') reasons.push('A frequência cardíaca cobre apenas parte do treino; lacunas não foram preenchidas artificialmente.');
+
+  const hasStructuralLimitation = candidates.length > 1 || excluded > 0 || truncated || selected.key === null;
+  const status: WorkoutHeartRateEvidence['status'] = ['excellent', 'good'].includes(audit.quality) && !hasStructuralLimitation ? 'available' : 'partial';
   return {
-    status: candidates.length > 1 || excluded > 0 || truncated ? 'partial' : 'available', source, sourceKey: selected.key,
-    samples: sorted.slice(0, SESSION_HEART_RATE_MAX_SAMPLES).map(([time, bpm]) => ({ timestamp: new Date(time).toISOString(), bpm })),
-    fetchedAt: new Date().toISOString(), truncated,
+    status,
+    source,
+    sourceKey: selected.key,
+    samples,
+    fetchedAt: new Date().toISOString(),
+    truncated,
+    audit,
     ...(reasons.length ? { reason: reasons.join(' ') } : {}),
   };
 }
 
-/** Private health-only reading; does not request permissions or query a native workout.
- * The same bounded reader supports finalization and a later explicit refresh.
- */
+/** Private health-only reading; does not request permissions or query a native workout. */
 export const sessionHeartRateService = {
   async read(uid: string, startedAt: string, endedAt: string, signal?: AbortSignal): Promise<WorkoutHeartRateEvidence> {
     if (!uid || auth.currentUser?.uid !== uid) return unavailable('A conta mudou. A leitura de batimentos foi cancelada.');
@@ -130,9 +148,6 @@ export const sessionHeartRateService = {
       };
       const operation = async (): Promise<WorkoutHeartRateEvidence> => {
         assertOwner();
-        // This gate checks the user's configured connection. It intentionally
-        // does not call provider.isConnected(), which can require GPS/route
-        // permissions unrelated to an already-authorized heart-rate reading.
         const providers = await manager.getConnectedNativeProviders();
         assertOwner();
         if (!providers.some(provider => provider.id === source) || !manager.isProviderEnabledForUser(source, uid)) {

@@ -36,14 +36,15 @@ afterEach(() => jest.useRealTimers());
 
 test('reads timestamped heart rate directly without requesting permissions or requiring a native workout', async () => {
   const result = await sessionHeartRateService.read('athlete-a', start, end);
-  expect(result).toMatchObject({ status: 'available', source: 'apple_health', truncated: false, samples: [{ timestamp: start, bpm: 110 }] });
+  expect(result).toMatchObject({ status: 'partial', source: 'apple_health', truncated: false, samples: [{ timestamp: start, bpm: 110 }] });
+  expect(result.audit).toMatchObject({ quality: 'insufficient', validSampleCount: 1, sourceCandidateCount: 1 });
   expect(result.sourceKey).toContain('device-1');
   expect(readCompleteHealthRange).toHaveBeenCalledWith('heartRate', new Date(start), new Date(end), 1000, expect.any(AbortSignal));
 });
 
 test('selects Health Connect on native Android without a route permission gate', async () => {
   (Capacitor.getPlatform as jest.Mock).mockReturnValue('android');
-  expect(await sessionHeartRateService.read('athlete-a', start, end)).toMatchObject({ source: 'health_connect', status: 'available' });
+  expect(await sessionHeartRateService.read('athlete-a', start, end)).toMatchObject({ source: 'health_connect', status: 'partial' });
   expect(manager.isProviderEnabledForUser).toHaveBeenCalledWith('health_connect', 'athlete-a');
 });
 
@@ -118,7 +119,8 @@ test('deduplicates identical timestamps without collapsing all points from a sha
   const records = [sample({ platformId: 'record' }), sample({ platformId: 'record' }), sample({ platformId: 'record', startDate: next, endDate: next, value: 115 })];
   const result = normalizeSessionHeartRateEvidence(records, 'apple_health', start, end);
   expect(result.samples).toEqual([{ timestamp: start, bpm: 110 }, { timestamp: next, bpm: 115 }]);
-  expect(result.status).toBe('available');
+  expect(result.status).toBe('partial');
+  expect(result.audit?.quality).toBe('insufficient');
 });
 
 test('conflicting values at the same origin/time are removed rather than averaged or picked by input order', () => {
@@ -126,6 +128,7 @@ test('conflicting values at the same origin/time are removed rather than average
   const result = normalizeSessionHeartRateEvidence([sample(), sample({ value: 150 }), sample({ startDate: later, endDate: later, value: 120 })], 'apple_health', start, end);
   expect(result.status).toBe('partial');
   expect(result.samples).toEqual([{ timestamp: later, bpm: 120 }]);
+  expect(result.audit?.discardedReasons?.timestamp_conflitante).toBe(2);
 });
 
 test('multiple origins are never merged; a single known origin is selected and partial status is explicit', () => {
@@ -133,11 +136,12 @@ test('multiple origins are never merged; a single known origin is selected and p
   expect(result.status).toBe('partial');
   expect(result.samples).toHaveLength(1);
   expect(result.reason).toContain('origens diferentes');
+  expect(result.audit?.sourceCandidateCount).toBe(2);
 });
 
 test('display-only identity remains unknown and does not prevent honest within-session descriptions', () => {
   const result = normalizeSessionHeartRateEvidence([sample({ sourceId: undefined, localIdentifier: undefined, sourceName: 'My Watch' })], 'apple_health', start, end);
-  expect(result).toMatchObject({ status: 'available', sourceKey: null, samples: [{ timestamp: start, bpm: 110 }] });
+  expect(result).toMatchObject({ status: 'partial', sourceKey: null, samples: [{ timestamp: start, bpm: 110 }] });
   expect(result.reason).toContain('identificou');
   expect(sessionHeartRateSourceKey({ sourceName: 'A' }, 'apple_health')).toBeNull();
 });
@@ -148,11 +152,12 @@ test('device source keys ignore visual names and software updates but distinguis
   expect(sessionHeartRateSourceKey(sample({ localIdentifier: 'device-2' }), 'apple_health')).not.toBe(key);
 });
 
-test('boundaries are exact; out-of-window samples are excluded without marking usable in-window data incomplete', () => {
+test('boundaries are exact; out-of-window samples are excluded and remain auditable', () => {
   const before = '2026-09-05T09:59:59.000Z';
   const result = normalizeSessionHeartRateEvidence([sample(), sample({ startDate: before, endDate: before }), sample({ startDate: end, endDate: end })], 'apple_health', start, end);
   expect(result.samples).toEqual([{ timestamp: start, bpm: 110 }]);
-  expect(result.status).toBe('available');
+  expect(result.status).toBe('partial');
+  expect(result.audit?.discardedReasons?.fora_da_janela).toBe(2);
 });
 
 test('short native quantity windows retain actual end timestamp; long aggregate intervals are excluded', () => {
@@ -161,6 +166,7 @@ test('short native quantity windows retain actual end timestamp; long aggregate 
   expect(result.samples).toEqual([{ timestamp: shortEnd, bpm: 110 }]);
   expect(result.reason).toContain('janelas de até 5 segundos');
   expect(result.status).toBe('partial');
+  expect(result.audit?.discardedReasons?.intervalo_agregado).toBe(1);
 });
 
 test('manual, implausible, nonnumeric and incompatible-unit data never become sensor measurements', () => {

@@ -1,4 +1,6 @@
-import type { RecordedExerciseSet, WorkoutHealthRecord, WorkoutHeartRateEvidence } from '../../src/core/health/workoutHealthTypes.js';
+import type { RecordedExerciseSet, WorkoutHealthRecord, WorkoutHeartRateEvidence, WorkoutHeartRateSyncEvent } from '../../src/core/health/workoutHealthTypes.js';
+import { buildHeartRateAudit } from '../../src/core/health/heartRateAudit.js';
+import { appendHeartRateSyncHistory, heartRateSeriesHash } from './heart-rate-audit-server.js';
 
 export const MAX_WORKOUT_HEALTH_SETS = 200;
 export const MAX_WORKOUT_HEART_RATE_SAMPLES = 5000;
@@ -23,7 +25,6 @@ function timestamp(value: unknown, now: number): { iso: string; ms: number } | n
   if (typeof value !== 'string' || value.length > 40 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return null;
   const ms = Date.parse(value);
   if (!Number.isFinite(ms) || ms > now) return null;
-  // Date.parse normalizes impossible calendar dates (e.g. February 30).
   const date = value.slice(0, 10);
   const [year, month, day] = date.split('-').map(Number);
   if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null;
@@ -32,6 +33,31 @@ function timestamp(value: unknown, now: number): { iso: string; ms: number } | n
 
 function actualNumber(value: unknown, max: number, integer = false): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max && (!integer || Number.isInteger(value)) ? value : null;
+}
+
+function bump(reasons: Record<string, number>, reason: string, amount = 1) {
+  reasons[reason] = (reasons[reason] || 0) + amount;
+}
+
+const ALLOWED_HR_DISCARD_REASONS = new Set([
+  'tipo_incompativel', 'timestamp_invalido', 'intervalo_agregado', 'unidade_invalida', 'bpm_invalido',
+  'manual', 'fora_da_janela', 'timestamp_conflitante', 'limite_de_armazenamento',
+  'envelope_de_coleta_invalido', 'origem_nao_identificada',
+]);
+
+function readPriorSyncHistory(value: unknown, now: number): WorkoutHeartRateSyncEvent[] {
+  if (!Array.isArray(value)) return [];
+  const output: WorkoutHeartRateSyncEvent[] = [];
+  for (const raw of value.slice(-10)) {
+    const item = object(raw);
+    const fetched = timestamp(item?.fetchedAt, now);
+    const validSampleCount = actualNumber(item?.validSampleCount, MAX_WORKOUT_HEART_RATE_SAMPLES, true);
+    const coveragePercent = actualNumber(item?.coveragePercent, 100);
+    const seriesHash = typeof item?.seriesHash === 'string' && /^sha256:[a-f0-9]{64}$/.test(item.seriesHash) ? item.seriesHash : undefined;
+    if (!fetched || validSampleCount === null || coveragePercent === null) continue;
+    output.push({ fetchedAt: fetched.iso, validSampleCount, coveragePercent, ...(seriesHash ? { seriesHash } : {}) });
+  }
+  return output;
 }
 
 /**
@@ -50,9 +76,6 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
   }
 
   const priorIntegrity = object(raw.integrity);
-  // A second sanitation (e.g. after presence confirmation) must not promote a
-  // previously incomplete record into complete evidence after discarded items
-  // have already disappeared from the payload.
   let discardedSets = actualNumber(priorIntegrity?.discardedSets, 10000000, true) ?? 0;
   let invalidActualValues = false;
   const rawSets = Array.isArray(raw.sets) ? raw.sets : [];
@@ -84,15 +107,11 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
       invalidActualValues = true; setsPartial = true;
     }
     seenIds.add(id);
-    sets.push({
-      id, exerciseId, exerciseName, equipment, startedAt: start.iso, endedAt: end.iso,
+    sets.push({ id, exerciseId, exerciseName, equipment, startedAt: start.iso, endedAt: end.iso,
       status: set.status as RecordedExerciseSet['status'], timingSource: 'user_marked', reps, loadKg,
-      ...(hasActualRir ? { actualRir } : {})
-    });
+      ...(hasActualRir ? { actualRir } : {}) });
   }
   sets.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-  // Two simultaneously marked sets cannot identify which exercise produced a
-  // heart-rate observation. Keep no ambiguous intervals in the health record.
   const unambiguousSets: RecordedExerciseSet[] = [];
   const ambiguous = new Set<string>();
   for (let i = 0; i < sets.length; i += 1) {
@@ -109,8 +128,19 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
   const sourceKey = heart?.sourceKey === null || heart?.sourceKey === undefined ? null : boundedText(heart.sourceKey, 256);
   const fetchedAt = timestamp(heart?.fetchedAt, now);
   const rawSamples = Array.isArray(heart?.samples) ? heart.samples : [];
-  let discardedHeartRateSamples = (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0) + Math.max(0, rawSamples.length - MAX_WORKOUT_HEART_RATE_SAMPLES);
-  let heartPartial = !Array.isArray(heart?.samples) || rawSamples.length > MAX_WORKOUT_HEART_RATE_SAMPLES || heart?.truncated === true || discardedHeartRateSamples > 0;
+  const incomingAudit = object(heart?.audit);
+  const discardReasons: Record<string, number> = {};
+  const incomingReasons = object(incomingAudit?.discardedReasons);
+  if (incomingReasons) {
+    for (const [reason, value] of Object.entries(incomingReasons)) {
+      const count = actualNumber(value, 10000000, true);
+      if (ALLOWED_HR_DISCARD_REASONS.has(reason) && count !== null && count > 0) bump(discardReasons, reason, count);
+    }
+  }
+  const overflow = Math.max(0, rawSamples.length - MAX_WORKOUT_HEART_RATE_SAMPLES);
+  if (overflow) bump(discardReasons, 'limite_de_armazenamento', overflow);
+  let discardedHeartRateSamples = (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0) + overflow;
+  let heartPartial = !Array.isArray(heart?.samples) || overflow > 0 || heart?.truncated === true || discardedHeartRateSamples > 0;
   const validStatuses = ['available', 'pending', 'partial', 'unavailable'];
   const validHeartEnvelope = heart && typeof heart.status === 'string' && validStatuses.includes(heart.status) && fetchedAt && fetchedAt.ms >= endedAt.ms
     && (heart.sourceKey === undefined || heart.sourceKey === null || sourceKey !== null);
@@ -121,29 +151,45 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
       const sample = object(value);
       const time = timestamp(sample?.timestamp, now);
       const bpm = sample?.bpm;
-      if (!time || time.ms < startedAt.ms || time.ms > endedAt.ms || typeof bpm !== 'number' || !Number.isFinite(bpm) || bpm < 30 || bpm > 240) {
-        discardedHeartRateSamples += 1; heartPartial = true; continue;
-      }
-      if (ambiguousTimes.has(time.iso)) { discardedHeartRateSamples += 1; continue; }
+      if (!time) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'timestamp_invalido'); continue; }
+      if (time.ms < startedAt.ms || time.ms > endedAt.ms) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'fora_da_janela'); continue; }
+      if (typeof bpm !== 'number' || !Number.isFinite(bpm) || bpm < 30 || bpm > 240) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'bpm_invalido'); continue; }
+      if (ambiguousTimes.has(time.iso)) { discardedHeartRateSamples += 1; heartPartial = true; bump(discardReasons, 'timestamp_conflitante'); continue; }
       const previous = samplesByTime.get(time.iso);
       if (previous !== undefined && previous !== bpm) {
-        samplesByTime.delete(time.iso); ambiguousTimes.add(time.iso); discardedHeartRateSamples += 2; heartPartial = true; continue;
+        samplesByTime.delete(time.iso); ambiguousTimes.add(time.iso); discardedHeartRateSamples += 2; heartPartial = true; bump(discardReasons, 'timestamp_conflitante', 2); continue;
       }
       samplesByTime.set(time.iso, bpm);
     }
   } else if (rawSamples.length > 0) {
     discardedHeartRateSamples += Math.min(rawSamples.length, MAX_WORKOUT_HEART_RATE_SAMPLES); heartPartial = true;
+    bump(discardReasons, source ? 'envelope_de_coleta_invalido' : 'origem_nao_identificada', Math.min(rawSamples.length, MAX_WORKOUT_HEART_RATE_SAMPLES));
   }
   const samples = [...samplesByTime].sort(([a], [b]) => a.localeCompare(b)).map(([time, bpm]) => ({ timestamp: time, bpm }));
+  const reportedReceived = actualNumber(incomingAudit?.receivedSampleCount, 10000000, true);
+  const sourceCandidateCount = actualNumber(incomingAudit?.sourceCandidateCount, 100, true);
+  const workoutDetected = typeof incomingAudit?.workoutDetected === 'boolean' ? incomingAudit.workoutDetected : undefined;
+  const audit = buildHeartRateAudit({
+    samples, startedAt: startedAt.iso, endedAt: endedAt.iso,
+    receivedSampleCount: Math.max(rawSamples.length + (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0), reportedReceived ?? 0),
+    discardedReasons: discardReasons,
+    selectedSourceKey: sourceKey,
+    sourceCandidateCount: sourceCandidateCount ?? undefined,
+    workoutDetected,
+  });
+  if (samples.length > 0) audit.seriesHash = heartRateSeriesHash(samples);
+  audit.syncHistory = appendHeartRateSyncHistory(readPriorSyncHistory(incomingAudit?.syncHistory, now), audit, fetchedAt?.iso ?? null);
+  if (samples.length > 0 && !['excellent', 'good'].includes(audit.quality)) heartPartial = true;
   const status: WorkoutHeartRateEvidence['status'] = samples.length > 0
     ? (heartPartial || heart?.status === 'partial' ? 'partial' : 'available')
     : validHeartEnvelope && heart?.status === 'pending' ? 'pending' : 'unavailable';
   const heartRate: WorkoutHeartRateEvidence = {
     status, source, sourceKey, samples, fetchedAt: fetchedAt?.iso ?? null,
     truncated: heart?.truncated === true || rawSamples.length > MAX_WORKOUT_HEART_RATE_SAMPLES,
+    audit,
     ...(status !== 'available' ? { reason: status === 'pending'
       ? 'O dispositivo ainda não disponibilizou os batimentos deste treino.'
-      : status === 'partial' ? 'Parte das leituras não pôde ser usada. A análise considera somente amostras válidas.'
+      : status === 'partial' ? `Cobertura parcial de FC (${audit.coveragePercent}%). A análise considera somente amostras reais e válidas; lacunas não são preenchidas.`
         : 'Não há leituras válidas de batimentos para este intervalo.' } : {})
   };
   const integrityPartial = setsPartial || heartPartial || priorIntegrity?.status === 'partial';
