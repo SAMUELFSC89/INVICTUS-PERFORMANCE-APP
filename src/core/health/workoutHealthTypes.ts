@@ -15,6 +15,18 @@ export interface RecordedExerciseSet {
   actualRir?: number | null;
 }
 
+export interface WorkoutHeartRateAudit {
+  receivedSampleCount: number;
+  validSampleCount: number;
+  discardedSampleCount: number;
+  coverageSeconds: number;
+  coveragePercent: number;
+  largestGapSeconds: number;
+  quality: 'good' | 'partial' | 'insufficient';
+  /** Optional corroborating evidence from a workout record created by the watch. */
+  workoutDetected?: boolean;
+}
+
 export interface WorkoutHeartRateEvidence {
   status: 'available' | 'pending' | 'partial' | 'unavailable';
   source: 'apple_health' | 'health_connect' | null;
@@ -23,6 +35,7 @@ export interface WorkoutHeartRateEvidence {
   samples: Array<{ timestamp: string; bpm: number }>;
   fetchedAt: string | null;
   truncated: boolean;
+  audit?: WorkoutHeartRateAudit;
   reason?: string;
 }
 
@@ -74,5 +87,16 @@ export function readWorkoutHealthRecord(value: unknown): WorkoutHealthRecord | n
     && (set.reps === null || typeof set.reps === 'number') && (set.loadKg === null || typeof set.loadKg === 'number')
     && (set.actualRir === undefined || set.actualRir === null || (typeof set.actualRir === 'number' && Number.isInteger(set.actualRir) && set.actualRir >= 0 && set.actualRir <= 5)))) return null;
   if (!record.heartRate.samples.every(sample => sample && typeof sample.timestamp === 'string' && typeof sample.bpm === 'number')) return null;
+  if (record.heartRate.audit !== undefined) {
+    const audit = record.heartRate.audit;
+    if (!audit || !Number.isInteger(audit.receivedSampleCount) || audit.receivedSampleCount < 0
+      || !Number.isInteger(audit.validSampleCount) || audit.validSampleCount < 0
+      || !Number.isInteger(audit.discardedSampleCount) || audit.discardedSampleCount < 0
+      || typeof audit.coverageSeconds !== 'number' || !Number.isFinite(audit.coverageSeconds) || audit.coverageSeconds < 0
+      || typeof audit.coveragePercent !== 'number' || !Number.isFinite(audit.coveragePercent) || audit.coveragePercent < 0 || audit.coveragePercent > 100
+      || typeof audit.largestGapSeconds !== 'number' || !Number.isFinite(audit.largestGapSeconds) || audit.largestGapSeconds < 0
+      || !['good', 'partial', 'insufficient'].includes(audit.quality)
+      || (audit.workoutDetected !== undefined && typeof audit.workoutDetected !== 'boolean')) return null;
+  }
   return record;
 }
