@@ -5,6 +5,7 @@ import { readWorkoutHealthRecord } from './workoutFeedbackHistoryService';
 import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
 
 const pending = new Map<string, Promise<WorkoutHealthRecord | null>>();
+const DENSE_HEART_RATE_ARCHIVE_THRESHOLD = 500;
 
 /** A user-requested retry for watch data that arrived after the workout ended. */
 export const workoutHealthRefreshService = {
@@ -33,13 +34,10 @@ export const workoutHealthRefreshService = {
         ]);
         if (auth.currentUser?.uid !== user.uid) return null;
         if (!freshHeartRate.samples.length) throw new Error(freshHeartRate.reason || 'Ainda não chegaram leituras deste treino. Sincronize seu relógio e tente novamente.');
-        const heartRate = {
-          ...freshHeartRate,
-          audit: {
-            ...freshHeartRate.audit,
-            syncHistory: record.heartRate.audit?.syncHistory || [],
-          },
-        };
+        const priorHistory = record.heartRate.audit?.syncHistory;
+        const heartRate = priorHistory?.length
+          ? { ...freshHeartRate, audit: { ...freshHeartRate.audit, syncHistory: priorHistory } }
+          : freshHeartRate;
         const response = await fetch(`${API_CONFIG.baseUrl}/api/wearables`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ action: 'refresh-session-heart-rate', workoutId, heartRate }), signal: controller.signal,
@@ -52,21 +50,24 @@ export const workoutHealthRefreshService = {
           throw new Error('A atualização não confirmou os dados deste treino.');
         }
 
-        // Best-effort second step: archive the already server-sanitized series in
-        // deterministic Firestore chunks. Failure here never rolls back the valid
-        // health refresh or affects scoring.
-        try {
-          const archiveResponse = await fetch(`${API_CONFIG.baseUrl}/api/health`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ action: 'archive-workout-heart-rate', workoutId }), signal: controller.signal,
-          });
-          if (archiveResponse.ok) {
-            const archiveResult = await archiveResponse.json().catch(() => ({}));
-            const archived = readWorkoutHealthRecord(archiveResult.healthSession);
-            if (archived && archived.sessionId === updated.sessionId) return archived;
+        // Dense curves are additionally archived in deterministic subcollection
+        // chunks. Short/normal curves stay only in the bounded workout envelope,
+        // avoiding needless Firestore writes. Failure to archive never rolls back
+        // a successful health refresh and never affects scoring.
+        if (updated.heartRate.samples.length > DENSE_HEART_RATE_ARCHIVE_THRESHOLD) {
+          try {
+            const archiveResponse = await fetch(`${API_CONFIG.baseUrl}/api/health`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ action: 'archive-workout-heart-rate', workoutId }), signal: controller.signal,
+            });
+            if (archiveResponse.ok) {
+              const archiveResult = await archiveResponse.json().catch(() => ({}));
+              const archived = readWorkoutHealthRecord(archiveResult.healthSession);
+              if (archived && archived.sessionId === updated.sessionId) return archived;
+            }
+          } catch (archiveError) {
+            console.warn('[WorkoutHealthRefresh] Série densa atualizada, mas o arquivo em chunks ficou pendente:', archiveError);
           }
-        } catch (archiveError) {
-          console.warn('[WorkoutHealthRefresh] Série atualizada, mas o arquivo em chunks ficou pendente:', archiveError);
         }
         return updated;
       } catch (error) {
