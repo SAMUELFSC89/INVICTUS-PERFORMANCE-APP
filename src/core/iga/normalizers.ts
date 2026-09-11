@@ -9,10 +9,10 @@
 import { FrequencyConfig, TimeConfig, IntensityConfig } from './types.js';
 
 export const DEFAULT_FREQUENCY_CONFIG: FrequencyConfig = {
-  maxSessions: 6,
+  maxSessions: 5,
   targetFrequency: 5,
-  // 0, 1, 2, 3, 4, 5, 6+ sessões válidas.
-  scoreBySessions: [0, 15, 30, 55, 80, 100, 105],
+  // 0, 1, 2, 3, 4, 5 sessões válidas. Sessões adicionais não aumentam F.
+  scoreBySessions: [0, 15, 30, 55, 80, 100],
 };
 
 export const DEFAULT_TIME_CONFIG: TimeConfig = {
@@ -49,8 +49,8 @@ export const DEFAULT_INTENSITY_CONFIG: IntensityConfig = {
 
 /**
  * Frequência semanal do IGA 2.0.
- * 1=15, 2=30, 3=55, 4=80, 5=100, 6+=105.
- * @returns fator relativo (ex.: 100 -> 1.00; 105 -> 1.05)
+ * 1=15, 2=30, 3=55, 4=80, 5+=100.
+ * @returns fator relativo (ex.: 100 -> 1.00)
  */
 export function normalizeFrequency(
   frequency: number,
