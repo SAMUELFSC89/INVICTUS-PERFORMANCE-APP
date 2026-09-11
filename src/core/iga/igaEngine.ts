@@ -8,7 +8,7 @@
  * então a forma equivalente é 100 × ∛(Fn × Tn × In).
  *
  * Regras centrais:
- * - F: consistência semanal com curva 15/30/55/80/100/105.
+ * - F: consistência semanal com curva 15/30/55/80/100 e máximo útil de 5 sessões.
  * - T: qualidade de duração POR SESSÃO; retorno fortemente decrescente após 60 min.
  * - I: qualidade da FC por zonas, com suavização e transição contínua de ±5 bpm.
  * - Z4 é a maior recompensa e satura; Z5 não supera Z4.
@@ -162,8 +162,9 @@ export function calculateWeeklyIGA(
     };
   });
 
-  // 2. Até 6 sessões: 5 = referência de consistência; a sexta recebe apenas o
-  // pequeno bônus definido em F=105. A 7ª+ não aumenta o score.
+  // 2. O IGA considera no máximo as 5 melhores sessões válidas da semana.
+  // A 6ª e as seguintes podem ser registradas normalmente, mas não aumentam F,
+  // T ou I e não geram vantagem competitiva.
   const eligibleSessions = evaluatedSessions
     .filter(s => s.eligible)
     .sort((a, b) => ((b.timeFactor || 0) * (b.intensityFactor || 0)) - ((a.timeFactor || 0) * (a.intensityFactor || 0)))
@@ -214,7 +215,7 @@ export function calculateWeeklyIGA(
   const ageHandicapMultiplier = calculateAgeHandicap(userProfile.age, handicapCfg);
   const igaRanking = Math.round(igaFinal * ageHandicapMultiplier);
 
-  const auditSummary = `[IGA-2.0] Sessões: ${F}/6 | Tempo contado: ${totalTimeMinutes} min | F: ${(Fn * 100).toFixed(0)} | T: ${(Tn * 100).toFixed(1)} | I: ${(In * 100).toFixed(1)} | FC média auditada: ${avgHeartRate} bpm (${Math.round(avgRelativeHR * 100)}% FCmáx) | Calorias: informativas, sem efeito | IGA: ${igaRanking} pts.`;
+  const auditSummary = `[IGA-2.0] Sessões: ${F}/5 | Tempo contado: ${totalTimeMinutes} min | F: ${(Fn * 100).toFixed(0)} | T: ${(Tn * 100).toFixed(1)} | I: ${(In * 100).toFixed(1)} | FC média auditada: ${avgHeartRate} bpm (${Math.round(avgRelativeHR * 100)}% FCmáx) | Calorias: informativas, sem efeito | IGA: ${igaRanking} pts.`;
 
   return {
     formulaVersion: 'IGA-2.0',
