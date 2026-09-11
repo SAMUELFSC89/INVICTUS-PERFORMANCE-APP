@@ -1,4 +1,5 @@
 import type { RecordedExerciseSet, WorkoutHealthRecord, WorkoutHeartRateEvidence } from '../../src/core/health/workoutHealthTypes.js';
+import { buildHeartRateAudit } from '../../src/core/health/heartRateAudit.js';
 
 export const MAX_WORKOUT_HEALTH_SETS = 200;
 export const MAX_WORKOUT_HEART_RATE_SAMPLES = 5000;
@@ -23,7 +24,6 @@ function timestamp(value: unknown, now: number): { iso: string; ms: number } | n
   if (typeof value !== 'string' || value.length > 40 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return null;
   const ms = Date.parse(value);
   if (!Number.isFinite(ms) || ms > now) return null;
-  // Date.parse normalizes impossible calendar dates (e.g. February 30).
   const date = value.slice(0, 10);
   const [year, month, day] = date.split('-').map(Number);
   if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null;
@@ -50,9 +50,6 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
   }
 
   const priorIntegrity = object(raw.integrity);
-  // A second sanitation (e.g. after presence confirmation) must not promote a
-  // previously incomplete record into complete evidence after discarded items
-  // have already disappeared from the payload.
   let discardedSets = actualNumber(priorIntegrity?.discardedSets, 10000000, true) ?? 0;
   let invalidActualValues = false;
   const rawSets = Array.isArray(raw.sets) ? raw.sets : [];
@@ -91,8 +88,6 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
     });
   }
   sets.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-  // Two simultaneously marked sets cannot identify which exercise produced a
-  // heart-rate observation. Keep no ambiguous intervals in the health record.
   const unambiguousSets: RecordedExerciseSet[] = [];
   const ambiguous = new Set<string>();
   for (let i = 0; i < sets.length; i += 1) {
@@ -124,7 +119,7 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
       if (!time || time.ms < startedAt.ms || time.ms > endedAt.ms || typeof bpm !== 'number' || !Number.isFinite(bpm) || bpm < 30 || bpm > 240) {
         discardedHeartRateSamples += 1; heartPartial = true; continue;
       }
-      if (ambiguousTimes.has(time.iso)) { discardedHeartRateSamples += 1; continue; }
+      if (ambiguousTimes.has(time.iso)) { discardedHeartRateSamples += 1; heartPartial = true; continue; }
       const previous = samplesByTime.get(time.iso);
       if (previous !== undefined && previous !== bpm) {
         samplesByTime.delete(time.iso); ambiguousTimes.add(time.iso); discardedHeartRateSamples += 2; heartPartial = true; continue;
@@ -135,15 +130,25 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
     discardedHeartRateSamples += Math.min(rawSamples.length, MAX_WORKOUT_HEART_RATE_SAMPLES); heartPartial = true;
   }
   const samples = [...samplesByTime].sort(([a], [b]) => a.localeCompare(b)).map(([time, bpm]) => ({ timestamp: time, bpm }));
+  const audit = buildHeartRateAudit({
+    samples,
+    startedAt: startedAt.iso,
+    endedAt: endedAt.iso,
+    receivedSampleCount: rawSamples.length + (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0),
+  });
+  // A cobertura é recomputada no servidor. Um cliente não pode declarar uma
+  // leitura isolada como monitoramento completo apenas enviando status=available.
+  if (samples.length > 0 && audit.quality !== 'good') heartPartial = true;
   const status: WorkoutHeartRateEvidence['status'] = samples.length > 0
     ? (heartPartial || heart?.status === 'partial' ? 'partial' : 'available')
     : validHeartEnvelope && heart?.status === 'pending' ? 'pending' : 'unavailable';
   const heartRate: WorkoutHeartRateEvidence = {
     status, source, sourceKey, samples, fetchedAt: fetchedAt?.iso ?? null,
     truncated: heart?.truncated === true || rawSamples.length > MAX_WORKOUT_HEART_RATE_SAMPLES,
+    audit,
     ...(status !== 'available' ? { reason: status === 'pending'
       ? 'O dispositivo ainda não disponibilizou os batimentos deste treino.'
-      : status === 'partial' ? 'Parte das leituras não pôde ser usada. A análise considera somente amostras válidas.'
+      : status === 'partial' ? `Cobertura parcial de FC (${audit.coveragePercent}%). A análise considera somente amostras reais e válidas; lacunas não são preenchidas.`
         : 'Não há leituras válidas de batimentos para este intervalo.' } : {})
   };
   const integrityPartial = setsPartial || heartPartial || priorIntegrity?.status === 'partial';
