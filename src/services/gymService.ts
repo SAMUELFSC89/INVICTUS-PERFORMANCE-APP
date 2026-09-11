@@ -17,6 +17,10 @@ export const gymService = {
     if (city) url += `&city=${encodeURIComponent(city)}`;
     if (q) url += `&q=${encodeURIComponent(q)}`;
     
+    return this.fetchGyms(url);
+  },
+
+  async fetchGyms(url: string): Promise<any[]> {
     try {
       const user = auth.currentUser;
       const headers: Record<string, string> = {
@@ -56,7 +60,6 @@ export const gymService = {
         throw new Error(data.error || 'Erro desconhecido na busca');
       }
       
-      // Adapt the new format to the component's expectations
       return (data.gyms || []).map((g: any) => ({
         place_id: g.id,
         name: g.name,
@@ -74,11 +77,21 @@ export const gymService = {
   },
 
   /**
-   * Search for gyms by text query (Unified in new backend)
+   * Busca por nome funciona com ou sem GPS. Quando há coordenadas elas são
+   * usadas apenas como viés de relevância; sem elas o backend faz text search
+   * normal, sem bloquear o usuário.
    */
-  async searchGymsByText(query: string, lat: number, lng: number): Promise<any[]> {
-    console.log(`[GymService] Searching by text: "${query}" near ${lat}, ${lng}`);
-    return this.searchNearbyGyms(lat, lng, undefined, undefined, query);
+  async searchGymsByText(query: string, lat?: number, lng?: number): Promise<any[]> {
+    const clean = query.trim();
+    if (!clean) return [];
+    let url = `${API_CONFIG.baseUrl}/api/gyms?q=${encodeURIComponent(clean)}`;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      url += `&lat=${lat}&lng=${lng}`;
+      console.log(`[GymService] Searching by text: "${clean}" near ${lat}, ${lng}`);
+    } else {
+      console.log(`[GymService] Searching by text without GPS: "${clean}"`);
+    }
+    return this.fetchGyms(url);
   },
 
   /**
@@ -96,7 +109,6 @@ export const gymService = {
     if (!user) throw new Error('Usuário não autenticado.');
 
     try {
-      // Use secure backend API instead of direct client-side write
       const idToken = await user.getIdToken();
       const response = await fetch('/api/gyms/join', {
         method: 'POST',
@@ -152,7 +164,6 @@ export const gymService = {
         createdAt: new Date().toISOString()
       });
 
-      // Update user
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, {
         gymId: gymId,
