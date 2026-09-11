@@ -22,6 +22,7 @@ export function Home() {
   const [activities, setActivities] = useState<Workout[]>([]);
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [objective, setObjective] = useState<ObjectiveView['summary']>(null);
+  const [championship, setChampionship] = useState<{ rank: number | null; prizes: { 1: number } } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -31,16 +32,47 @@ export function Home() {
       .catch(() => {}); // Optional summary never blocks Home or fabricates a journey.
     return () => controller.abort();
   }, [user?.uid]);
-  const [championship, setChampionship] = useState<{ rank: number | null; prizes: { 1: number } } | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([workoutService.getUserWorkouts(100), workoutPlanService.list(), communityChampionshipService.status().catch(() => null)]).then(([workouts, plans, championshipStatus]) => {
+
+    // Nunca deixe o resumo do usuário anterior visível enquanto a nova conta
+    // carrega. Além de confuso, isso pode vazar por alguns instantes plano,
+    // posição e métricas de outra sessão após logout/login no mesmo aparelho.
+    setActivities([]);
+    setPlan(null);
+    setChampionship(null);
+
+    if (!user?.uid) return () => { mounted = false; };
+
+    // As três fontes são independentes. Um erro temporário no campeonato não
+    // pode apagar plano/atividades da Home, e o inverso também é verdadeiro.
+    void Promise.allSettled([
+      workoutService.getUserWorkouts(100),
+      workoutPlanService.list(),
+      communityChampionshipService.status(),
+    ]).then(([workoutsResult, plansResult, championshipResult]) => {
       if (!mounted) return;
-      setActivities(workouts);
-      setPlan(plans.find(item => item.status === 'active') || null);
-      setChampionship(championshipStatus?.championship ? { rank: championshipStatus.championship.rank, prizes: championshipStatus.championship.prizes } : null);
-    }).catch(error => console.warn('[Home] Falha ao carregar resumo real:', error));
+
+      if (workoutsResult.status === 'fulfilled') setActivities(workoutsResult.value);
+      else console.warn('[Home] Falha ao carregar atividades:', workoutsResult.reason);
+
+      if (plansResult.status === 'fulfilled') {
+        setPlan(plansResult.value.find(item => item.status === 'active') || null);
+      } else {
+        console.warn('[Home] Falha ao carregar plano:', plansResult.reason);
+      }
+
+      if (championshipResult.status === 'fulfilled') {
+        const championshipStatus = championshipResult.value;
+        setChampionship(championshipStatus?.championship
+          ? { rank: championshipStatus.championship.rank, prizes: championshipStatus.championship.prizes }
+          : null);
+      } else {
+        console.warn('[Home] Falha ao carregar campeonato:', championshipResult.reason);
+      }
+    });
+
     return () => { mounted = false; };
   }, [user?.uid]);
 
