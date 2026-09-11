@@ -1,4 +1,4 @@
-import type { RecordedExerciseSet, WorkoutHealthRecord, WorkoutHeartRateEvidence } from '../../src/core/health/workoutHealthTypes.js';
+import type { RecordedExerciseSet, WorkoutHealthRecord, WorkoutHeartRateEvidence, WorkoutHeartRateSyncEvent } from '../../src/core/health/workoutHealthTypes.js';
 import { buildHeartRateAudit } from '../../src/core/health/heartRateAudit.js';
 import { appendHeartRateSyncHistory, heartRateSeriesHash } from './heart-rate-audit-server.js';
 
@@ -37,6 +37,27 @@ function actualNumber(value: unknown, max: number, integer = false): number | nu
 
 function bump(reasons: Record<string, number>, reason: string, amount = 1) {
   reasons[reason] = (reasons[reason] || 0) + amount;
+}
+
+const ALLOWED_HR_DISCARD_REASONS = new Set([
+  'tipo_incompativel', 'timestamp_invalido', 'intervalo_agregado', 'unidade_invalida', 'bpm_invalido',
+  'manual', 'fora_da_janela', 'timestamp_conflitante', 'limite_de_armazenamento',
+  'envelope_de_coleta_invalido', 'origem_nao_identificada',
+]);
+
+function readPriorSyncHistory(value: unknown, now: number): WorkoutHeartRateSyncEvent[] {
+  if (!Array.isArray(value)) return [];
+  const output: WorkoutHeartRateSyncEvent[] = [];
+  for (const raw of value.slice(-10)) {
+    const item = object(raw);
+    const fetched = timestamp(item?.fetchedAt, now);
+    const validSampleCount = actualNumber(item?.validSampleCount, MAX_WORKOUT_HEART_RATE_SAMPLES, true);
+    const coveragePercent = actualNumber(item?.coveragePercent, 100);
+    const seriesHash = typeof item?.seriesHash === 'string' && /^sha256:[a-f0-9]{64}$/.test(item.seriesHash) ? item.seriesHash : undefined;
+    if (!fetched || validSampleCount === null || coveragePercent === null) continue;
+    output.push({ fetchedAt: fetched.iso, validSampleCount, coveragePercent, ...(seriesHash ? { seriesHash } : {}) });
+  }
+  return output;
 }
 
 /**
@@ -107,7 +128,15 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
   const sourceKey = heart?.sourceKey === null || heart?.sourceKey === undefined ? null : boundedText(heart.sourceKey, 256);
   const fetchedAt = timestamp(heart?.fetchedAt, now);
   const rawSamples = Array.isArray(heart?.samples) ? heart.samples : [];
+  const incomingAudit = object(heart?.audit);
   const discardReasons: Record<string, number> = {};
+  const incomingReasons = object(incomingAudit?.discardedReasons);
+  if (incomingReasons) {
+    for (const [reason, value] of Object.entries(incomingReasons)) {
+      const count = actualNumber(value, 10000000, true);
+      if (ALLOWED_HR_DISCARD_REASONS.has(reason) && count !== null && count > 0) bump(discardReasons, reason, count);
+    }
+  }
   const overflow = Math.max(0, rawSamples.length - MAX_WORKOUT_HEART_RATE_SAMPLES);
   if (overflow) bump(discardReasons, 'limite_de_armazenamento', overflow);
   let discardedHeartRateSamples = (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0) + overflow;
@@ -137,14 +166,19 @@ export function sanitizeWorkoutHealthRecord(input: unknown, now = Date.now()): S
     bump(discardReasons, source ? 'envelope_de_coleta_invalido' : 'origem_nao_identificada', Math.min(rawSamples.length, MAX_WORKOUT_HEART_RATE_SAMPLES));
   }
   const samples = [...samplesByTime].sort(([a], [b]) => a.localeCompare(b)).map(([time, bpm]) => ({ timestamp: time, bpm }));
+  const reportedReceived = actualNumber(incomingAudit?.receivedSampleCount, 10000000, true);
+  const sourceCandidateCount = actualNumber(incomingAudit?.sourceCandidateCount, 100, true);
+  const workoutDetected = typeof incomingAudit?.workoutDetected === 'boolean' ? incomingAudit.workoutDetected : undefined;
   const audit = buildHeartRateAudit({
     samples, startedAt: startedAt.iso, endedAt: endedAt.iso,
-    receivedSampleCount: rawSamples.length + (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0),
+    receivedSampleCount: Math.max(rawSamples.length + (actualNumber(priorIntegrity?.discardedHeartRateSamples, 10000000, true) ?? 0), reportedReceived ?? 0),
     discardedReasons: discardReasons,
     selectedSourceKey: sourceKey,
+    sourceCandidateCount: sourceCandidateCount ?? undefined,
+    workoutDetected,
   });
   if (samples.length > 0) audit.seriesHash = heartRateSeriesHash(samples);
-  audit.syncHistory = appendHeartRateSyncHistory([], audit, fetchedAt?.iso ?? null);
+  audit.syncHistory = appendHeartRateSyncHistory(readPriorSyncHistory(incomingAudit?.syncHistory, now), audit, fetchedAt?.iso ?? null);
   if (samples.length > 0 && !['excellent', 'good'].includes(audit.quality)) heartPartial = true;
   const status: WorkoutHeartRateEvidence['status'] = samples.length > 0
     ? (heartPartial || heart?.status === 'partial' ? 'partial' : 'available')
