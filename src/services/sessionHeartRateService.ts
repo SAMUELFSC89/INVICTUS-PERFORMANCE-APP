@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import type { HealthSample } from 'capgo-capacitor-health';
 import { auth } from '../firebase';
 import type { WorkoutHeartRateEvidence } from '../core/health/workoutHealthTypes';
+import { buildHeartRateAudit } from '../core/health/heartRateAudit';
 import { WearableManager } from './wearables/WearableManager';
 import { readCompleteHealthRange } from './wearables/HealthVitalsProvider';
 
@@ -56,7 +57,7 @@ export function normalizeSessionHeartRateEvidence(
       || record.unit !== 'bpm'
       || typeof record.value !== 'number' || !Number.isFinite(record.value) || record.value < 30 || record.value > 240
       || record.recordingMethod === 'manual') { excluded++; continue; }
-    if (sampleStart < start || sampleEnd >= end) continue;
+    if (sampleStart < start || sampleEnd >= end) { excluded++; continue; }
     if (sampleEnd > sampleStart) shortIntervals++;
     const key = sessionHeartRateSourceKey(record, source);
     const groupKey = key || '__unknown_origin__';
@@ -85,16 +86,34 @@ export function normalizeSessionHeartRateEvidence(
 
   const sorted = [...selected.values.entries()].sort(([a], [b]) => a - b);
   const truncated = sorted.length > SESSION_HEART_RATE_MAX_SAMPLES;
+  const samples = sorted.slice(0, SESSION_HEART_RATE_MAX_SAMPLES)
+    .map(([time, bpm]) => ({ timestamp: new Date(time).toISOString(), bpm }));
+  const audit = buildHeartRateAudit({
+    samples,
+    startedAt,
+    endedAt,
+    receivedSampleCount: records.length,
+  });
+
   const reasons: string[] = [];
   if (candidates.length > 1) reasons.push('Foram recebidas origens diferentes; usamos somente uma origem, sem combinar relógios ou aplicativos.');
   if (selected.key === null) reasons.push('A fonte não identificou a origem técnica das leituras. Comparações entre sessões ficam limitadas.');
-  if (excluded) reasons.push('Leituras manuais, fora do intervalo, sem horário pontual válido ou conflitantes foram excluídas.');
+  if (excluded) reasons.push(`${excluded} leitura(s) foram descartadas por estarem fora da janela, serem manuais, inválidas ou conflitantes.`);
   if (shortIntervals) reasons.push('Leituras em janelas de até 5 segundos usam o horário final informado pela fonte. Não foram criados pontos intermediários.');
   if (truncated) reasons.push('O volume de dados excedeu o limite desta análise. Apenas as primeiras 5.000 leituras válidas da origem selecionada estão disponíveis.');
+  if (audit.quality === 'insufficient') reasons.push('A cobertura temporal de frequência cardíaca é insuficiente para representar o treino inteiro.');
+  else if (audit.quality === 'partial') reasons.push('A frequência cardíaca cobre apenas parte do treino; lacunas não foram preenchidas artificialmente.');
+
+  const hasStructuralLimitation = candidates.length > 1 || excluded > 0 || truncated || selected.key === null;
+  const status: WorkoutHeartRateEvidence['status'] = audit.quality === 'good' && !hasStructuralLimitation ? 'available' : 'partial';
   return {
-    status: candidates.length > 1 || excluded > 0 || truncated ? 'partial' : 'available', source, sourceKey: selected.key,
-    samples: sorted.slice(0, SESSION_HEART_RATE_MAX_SAMPLES).map(([time, bpm]) => ({ timestamp: new Date(time).toISOString(), bpm })),
-    fetchedAt: new Date().toISOString(), truncated,
+    status,
+    source,
+    sourceKey: selected.key,
+    samples,
+    fetchedAt: new Date().toISOString(),
+    truncated,
+    audit,
     ...(reasons.length ? { reason: reasons.join(' ') } : {}),
   };
 }
