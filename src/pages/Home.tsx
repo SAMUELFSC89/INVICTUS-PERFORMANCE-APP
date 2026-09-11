@@ -7,7 +7,7 @@ import { useUser } from '../UserContext';
 import { workoutService } from '../services/workoutService';
 import { workoutPlanService } from '../services/workoutPlanService';
 import { communityChampionshipService } from '../services/communityChampionshipService';
-import { activityService } from '../services/activityService';
+import { verifyActiveSessionBeforeStart } from '../services/activeSessionStartGuard';
 import type { Workout } from '../types';
 import type { WorkoutPlan } from '../types/workoutPlan';
 import { hasActiveProEntitlement } from '../lib/proEntitlement';
@@ -24,6 +24,8 @@ export function Home() {
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [objective, setObjective] = useState<ObjectiveView['summary']>(null);
   const [championship, setChampionship] = useState<{ rank: number | null; prizes: { 1: number } } | null>(null);
+  const [trainingNavigationPending, setTrainingNavigationPending] = useState(false);
+  const [trainingStartError, setTrainingStartError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -43,6 +45,8 @@ export function Home() {
     setActivities([]);
     setPlan(null);
     setChampionship(null);
+    setTrainingStartError(null);
+    setTrainingNavigationPending(false);
 
     if (!user?.uid) return () => { mounted = false; };
 
@@ -77,16 +81,25 @@ export function Home() {
     return () => { mounted = false; };
   }, [user?.uid]);
 
-  const openTrainingDestination = (destination: '/musculacao' | '/challenges/cardio') => {
-    // Se uma sessão já estiver materializada localmente (inclusive depois de
-    // restauração pelo indicador global), qualquer CTA de treino na Home deve
-    // retomá-la em vez de levar o atleta para uma tela onde tentaria iniciar
-    // outra atividade e receberia erro de duplicidade.
-    if (activityService.getCurrentSession()) {
-      navigate('/activity/ongoing');
-      return;
+  const openTrainingDestination = async (destination: '/musculacao' | '/challenges/cardio') => {
+    if (trainingNavigationPending) return;
+    setTrainingNavigationPending(true);
+    setTrainingStartError(null);
+    try {
+      // A Home também precisa da verificação remota fail-closed. Consultar só
+      // localStorage permite abrir um novo fluxo quando a sessão ativa existe
+      // no Firestore, mas ainda não foi restaurada neste aparelho.
+      const activeSession = await verifyActiveSessionBeforeStart();
+      if (activeSession) {
+        navigate('/activity/ongoing');
+        return;
+      }
+      navigate(destination);
+    } catch (error: any) {
+      setTrainingStartError(error?.message || 'Não foi possível verificar sua atividade em andamento. Confira a conexão e tente novamente.');
+    } finally {
+      setTrainingNavigationPending(false);
     }
-    navigate(destination);
   };
 
   const firstName = (user?.displayName || user?.name || 'Atleta').trim().split(/\s+/)[0];
@@ -113,8 +126,8 @@ export function Home() {
     <section className="nh-greeting"><h1>{greeting}, {firstName.toUpperCase()}!</h1><p>Cada treino te aproxima da sua melhor versão.</p></section>
     {objective ? <button className="nh-objective-summary" onClick={() => navigate('/challenges/cardio/objective')}><Target size={22} /><span><small>MEU OBJETIVO · CARDIO</small><strong>{objective.goalLabel}</strong><small>{objective.status === 'paused' ? 'Jornada pausada · rever meu retorno' : objective.nextMission ? `Próxima: ${objectiveModalityLabels[objective.nextMission.modality]} · ${objective.nextMission.targetMetric === 'distance' ? `${objective.nextMission.distanceKm?.toLocaleString('pt-BR')} km` : `${objective.nextMission.durationMinutes} min`}` : `${objective.totalCompleted} metas concluídas · abrir jornada`}</small></span><ArrowRight size={20} /></button> : null}
     <section className="nh-season"><div><small>TEMPORADA INVICTUS</small><h2>TREINE. EVOLUA. SUPERE.</h2><p>Mostre sua força. Supere seus limites.</p><button onClick={() => navigate('/championships')}>VER MAIS <ArrowRight /></button></div></section>
-    <h2 className="nh-title">O QUE VOCÊ QUER FAZER?</h2><section className="nh-actions"><article className="nh-action-musculacao"><span className="nh-action-icon"><Dumbbell /></span><h3>MUSCULAÇÃO</h3><p>Seu plano, cargas e evolução.</p><button onClick={() => openTrainingDestination('/musculacao')}>COMEÇAR <ArrowRight /></button></article><article className="nh-action-cardio"><span className="nh-action-icon"><Flame /></span><h3>CARDIO</h3><p>Corrida, bike e atividades ao ar livre.</p><button onClick={() => openTrainingDestination('/challenges/cardio')}>COMEÇAR <ArrowRight /></button></article></section>
-    <h2 className="nh-title">HOJE</h2><section className={`nh-next ${plan && nextWorkout ? '' : 'is-empty'}`}><span><Dumbbell /></span><div><small>SEU PRÓXIMO TREINO</small><h3>{nextWorkout?.focus || nextWorkout?.name || 'PLANO AINDA NÃO CRIADO'}</h3><p>{plan && nextWorkout ? `${nextWorkout.name} · ~${plan.durationMinutes} min · ${nextWorkout.exercises.length} exercícios` : 'Crie manualmente ou com a Invictus IA.'}</p></div><button onClick={() => openTrainingDestination('/musculacao')}>{plan ? 'INICIAR TREINO' : 'CRIAR PLANO'} <ArrowRight /></button></section>
+    <h2 className="nh-title">O QUE VOCÊ QUER FAZER?</h2>{trainingStartError ? <p role="alert" className="nh-training-start-error">{trainingStartError}</p> : null}<section className="nh-actions"><article className="nh-action-musculacao"><span className="nh-action-icon"><Dumbbell /></span><h3>MUSCULAÇÃO</h3><p>Seu plano, cargas e evolução.</p><button disabled={trainingNavigationPending} onClick={() => void openTrainingDestination('/musculacao')}>{trainingNavigationPending ? 'VERIFICANDO…' : 'COMEÇAR'} <ArrowRight /></button></article><article className="nh-action-cardio"><span className="nh-action-icon"><Flame /></span><h3>CARDIO</h3><p>Corrida, bike e atividades ao ar livre.</p><button disabled={trainingNavigationPending} onClick={() => void openTrainingDestination('/challenges/cardio')}>{trainingNavigationPending ? 'VERIFICANDO…' : 'COMEÇAR'} <ArrowRight /></button></article></section>
+    <h2 className="nh-title">HOJE</h2><section className={`nh-next ${plan && nextWorkout ? '' : 'is-empty'}`}><span><Dumbbell /></span><div><small>SEU PRÓXIMO TREINO</small><h3>{nextWorkout?.focus || nextWorkout?.name || 'PLANO AINDA NÃO CRIADO'}</h3><p>{plan && nextWorkout ? `${nextWorkout.name} · ~${plan.durationMinutes} min · ${nextWorkout.exercises.length} exercícios` : 'Crie manualmente ou com a Invictus IA.'}</p></div><button disabled={trainingNavigationPending} onClick={() => void openTrainingDestination('/musculacao')}>{trainingNavigationPending ? 'VERIFICANDO…' : plan ? 'INICIAR TREINO' : 'CRIAR PLANO'} <ArrowRight /></button></section>
     <section className="nh-progress-grid"><article className="nh-week"><h3>SUA SEMANA</h3><div className="nh-days">{['SEG','TER','QUA','QUI','SEX','SÁB','DOM'].map((label,index) => { const jsDay = index === 6 ? 0 : index + 1; const done = weekActivities.some(item => item.type === 'workout' && new Date(item.timestamp).getDay() === jsDay); return <span key={label}><b>{label}</b><i className={done ? 'is-done' : ''}>{done ? '✓' : ''}</i></span>; })}</div><p><b>{weekDays} treino{weekDays === 1 ? '' : 's'} realizado{weekDays === 1 ? '' : 's'}</b>{target ? `Meta: ${target} treinos` : 'Defina um plano para acompanhar a meta'}</p><strong>{targetPercent !== null ? `${targetPercent}%` : '—'}</strong><div className="nh-bar"><i style={{width:`${targetPercent || 0}%`}} /></div></article><article className="nh-rank"><h3>CAMPEONATO DA ACADEMIA</h3><Trophy /><strong>{championship?.rank ? `#${championship.rank}` : Number.isFinite(gymPosition) && gymPosition > 0 ? `#${gymPosition}` : '—'}</strong><span>SUA POSIÇÃO</span><em>1º LUGAR — {firstPrize !== null ? `${firstPrize.toLocaleString('pt-BR')} COINS` : 'A DEFINIR'}</em><small>{Number.isFinite(iga) ? `${Math.round(iga)} IGA · mesma regra FREE e PRO` : 'Entre no ranking para acompanhar'}</small><button onClick={() => navigate('/championships/community')}>VER CAMPEONATO <ArrowRight /></button></article></section>
     <section className="nh-metrics"><article><Flame /><b>{calories > 0 ? Math.round(calories).toLocaleString('pt-BR') : '—'}</b><span>KCAL GASTAS</span></article><article><HeartPulse /><b>{activeMinutes > 0 ? `${Math.floor(activeMinutes / 60)}h${String(Math.round(activeMinutes % 60)).padStart(2,'0')}` : '—'}</b><span>TEMPO ATIVO</span></article><article><Target /><b>{targetPercent !== null ? `${targetPercent}%` : '—'}</b><span>FOCO DA META</span></article></section>
     {/* #252: o botao "Progresso" apontava pra /performance -- uma tela
