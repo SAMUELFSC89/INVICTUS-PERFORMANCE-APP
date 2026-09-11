@@ -1,0 +1,60 @@
+/*
+ * Cardio Objective asset wiring hardening.
+ *
+ * These selectors are deliberately scoped to the objective flow. The approved
+ * artwork already lives under /public/assets/objective; this file only makes
+ * its use explicit and reliable in WKWebView/TestFlight, without replacing or
+ * regenerating any asset.
+ */
+.objective-onboarding-hero {
+  background-image:
+    linear-gradient(90deg, #050505 0%, rgba(5,5,5,.86) 35%, rgba(5,5,5,.15) 72%, rgba(5,5,5,.5) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.78) 88%),
+    url('/assets/objective/goal-onboarding-hero.webp?v=20260910') !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-position: center top !important;
+}
+
+.objective-journey-hero {
+  isolation: isolate;
+  background-image: url('/assets/objective/journey-hero.webp?v=20260910') !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-position: center center !important;
+}
+
+.objective-journey-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(3,3,3,.72) 0%, rgba(3,3,3,.28) 48%, rgba(3,3,3,.08) 100%);
+}
+
+.objective-hero-copy {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 1 !important;
+}
+
+.objective-journey-summary {
+  background-image:
+    linear-gradient(90deg, rgba(5,5,5,.98) 0%, rgba(5,5,5,.88) 45%, rgba(5,5,5,.2) 100%),
+    url('/assets/objective/journey-card-helmet.webp?v=20260910') !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-position: center center !important;
+}
+
+@media (max-width: 420px) {
+  .objective-onboarding-hero {
+    background-position: 62% top !important;
+  }
+
+  .objective-journey-hero {
+    background-position: center center !important;
+  }
+}
