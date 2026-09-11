@@ -33,9 +33,6 @@ export const workoutHealthRefreshService = {
         ]);
         if (auth.currentUser?.uid !== user.uid) return null;
         if (!freshHeartRate.samples.length) throw new Error(freshHeartRate.reason || 'Ainda não chegaram leituras deste treino. Sincronize seu relógio e tente novamente.');
-        // The server recomputes coverage/hash from the fresh series. We only carry
-        // the previously server-returned bounded sync history so a refresh can append
-        // rather than erase the earlier audit trail.
         const heartRate = {
           ...freshHeartRate,
           audit: {
@@ -53,6 +50,23 @@ export const workoutHealthRefreshService = {
         const updated = readWorkoutHealthRecord(result.healthSession);
         if (!updated || updated.sessionId !== record.sessionId || updated.startedAt !== record.startedAt || updated.endedAt !== record.endedAt) {
           throw new Error('A atualização não confirmou os dados deste treino.');
+        }
+
+        // Best-effort second step: archive the already server-sanitized series in
+        // deterministic Firestore chunks. Failure here never rolls back the valid
+        // health refresh or affects scoring.
+        try {
+          const archiveResponse = await fetch(`${API_CONFIG.baseUrl}/api/health`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ action: 'archive-workout-heart-rate', workoutId }), signal: controller.signal,
+          });
+          if (archiveResponse.ok) {
+            const archiveResult = await archiveResponse.json().catch(() => ({}));
+            const archived = readWorkoutHealthRecord(archiveResult.healthSession);
+            if (archived && archived.sessionId === updated.sessionId) return archived;
+          }
+        } catch (archiveError) {
+          console.warn('[WorkoutHealthRefresh] Série atualizada, mas o arquivo em chunks ficou pendente:', archiveError);
         }
         return updated;
       } catch (error) {
