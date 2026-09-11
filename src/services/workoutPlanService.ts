@@ -6,8 +6,14 @@ import { buildTrainingEnginePlan } from '../core/training/trainingEngine';
 import { applyTrainingMemoryToPlan, deriveTrainingMemory } from '../core/training/trainingMemory';
 import { loadWorkoutFeedbackHistory } from './workoutFeedbackHistoryService';
 
-const DRAFT_KEY = 'invictus_workout_plan_draft_v1';
+const LEGACY_DRAFT_KEY = 'invictus_workout_plan_draft_v1';
+const DRAFT_KEY_PREFIX = 'invictus_workout_plan_draft_v2';
 const LOCAL_PLANS_KEY = 'invictus_workout_plans_local_v1';
+
+const currentDraftKey = () => {
+  const uid = auth.currentUser?.uid;
+  return uid ? `${DRAFT_KEY_PREFIX}:${uid}` : null;
+};
 
 type RequestError = Error & { status?: number; code?: string; retryable?: boolean };
 
@@ -174,15 +180,28 @@ export const workoutPlanService = {
     }
   },
   saveDraft(value: unknown) {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ version: 1, savedAt: Date.now(), value }));
+    const key = currentDraftKey();
+    const uid = auth.currentUser?.uid;
+    if (!key || !uid) return;
+    localStorage.setItem(key, JSON.stringify({ version: 2, userId: uid, savedAt: Date.now(), value }));
+    // Remove o formato antigo sem dono explícito para impedir que um rascunho
+    // de outra conta seja exibido depois de logout/troca de usuário no aparelho.
+    localStorage.removeItem(LEGACY_DRAFT_KEY);
   },
   loadDraft<T>(): T | null {
+    const key = currentDraftKey();
+    const uid = auth.currentUser?.uid;
+    if (!key || !uid) return null;
     try {
-      const raw = localStorage.getItem(DRAFT_KEY);
+      const raw = localStorage.getItem(key);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      return parsed?.version === 1 ? parsed.value as T : null;
+      return parsed?.version === 2 && parsed?.userId === uid ? parsed.value as T : null;
     } catch { return null; }
   },
-  clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+  clearDraft() {
+    const key = currentDraftKey();
+    if (key) localStorage.removeItem(key);
+    localStorage.removeItem(LEGACY_DRAFT_KEY);
+  }
 };
