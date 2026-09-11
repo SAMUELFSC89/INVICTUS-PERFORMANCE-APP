@@ -39,12 +39,11 @@ export function Layout() {
     || location.pathname.startsWith('/pagamento/');
 
   // O indicador deve desaparecer apenas onde a sessão em andamento já tem
-  // superfície própria. /musculacao é o hub/planejador: depois de iniciar um
-  // treino ele redireciona para Challenges, portanto esconder o indicador no
-  // hub tornava uma sessão ativa invisível ao voltar para a musculação.
+  // superfície própria. Saúde, campeonatos e musculação são telas de consulta/
+  // hub; esconder o indicador nelas fazia a sessão ativa parecer ter sumido.
+  // Challenges/Activity/Running já exibem o fluxo ativo; Power possui o fluxo
+  // próprio do Power Lift.
   const routeOwnsSessionSurface = location.pathname.startsWith('/power')
-    || location.pathname.startsWith('/health')
-    || location.pathname.startsWith('/championships')
     || location.pathname.startsWith('/challenges')
     || location.pathname.startsWith('/activity')
     || location.pathname === '/running';
