@@ -160,7 +160,7 @@ service cloud.firestore {
            'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
             'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
             'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes', 'isAdmin', 'email', 'uid',
-            'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt'
+            'notifications', 'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt'
           ])
       );
       
@@ -210,7 +210,7 @@ service cloud.firestore {
     match /activity_identity_claims/{claimId} {
       allow read, write: if false;
     }
-    match /activity_reward_quotas/{quotaId} {
+    match /activity_reward_quotas/{entryId} {
       allow read, write: if false;
     }
 
