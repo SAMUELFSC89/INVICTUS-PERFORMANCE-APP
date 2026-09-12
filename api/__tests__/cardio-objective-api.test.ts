@@ -100,7 +100,7 @@ test('only persisted eligible activity advances mission; retries never double co
   await request({ action: 'start', ...ids, sessionId: 's' });
   const completion = { action: 'complete', ...ids, activityId: 'a', duration: 999 };
   expect((await request(completion)).status).toBe(409);
-  records.set('workouts/a', { userId: 'other', type: 'cardio', cardioType: 'walking', sessionId: 's', startTime: now, duration: 10, distance: 1, recordStatus: 'completed' });
+  records.set('workouts/a', { userId: 'other', type: 'cardio', cardioType: 'walking', sessionId: 's', startTime: now, duration: 15, distance: 1, recordStatus: 'completed' });
   expect((await request(completion)).status).toBe(409);
   records.get('workouts/a').userId = 'u';
   expect((await request(completion)).body.journey.totalCompleted).toBe(1);
@@ -158,7 +158,7 @@ test('distance objective completes from persisted distance and records achieveme
 });
 test('persisted activity recovers an objective link if initial session publication raced', async () => {
   const ids = await create();
-  records.set('workouts/a', { userId: 'u', type: 'cardio', cardioType: 'walking', sessionId: 'late-session', startTime: now, duration: 12, distance: 1, recordStatus: 'completed' });
+  records.set('workouts/a', { userId: 'u', type: 'cardio', cardioType: 'walking', sessionId: 'late-session', startTime: now, duration: 15, distance: 1, recordStatus: 'completed' });
   const result = await request({ action: 'complete', ...ids, activityId: 'a' });
   expect(result.status).toBe(200);
   expect(result.body.journey.totalCompleted).toBe(1);
