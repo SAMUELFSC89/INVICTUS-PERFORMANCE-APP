@@ -5,6 +5,7 @@ import { getAiApiKey, getAiHabitModel } from './ai-config.js';
 import { extractUsage, logAiUsage, newAiRequestId } from './ai-usage-logger.js';
 import { isProUser } from './entitlement.js';
 import { buildCardioBaseline, validateMissionCoherence } from '../../src/core/cardioObjective/engine.js';
+import { CARDIO_RESEARCH_VERSION, buildResearchDecisionTrace } from '../../src/core/cardioObjective/research.js';
 import type { Journey, ObjectiveAnswers, Prescription, ProfileSnapshot, Review } from '../../src/core/cardioObjective/types.js';
 
 const responseSchema = z.object({ explanation: z.string().trim().min(12).max(420) }).strict();
@@ -23,8 +24,9 @@ export interface ObjectiveMissionRefinement {
 
 /**
  * Híbrido com autoridade determinística: a IA só pode escolher um tempo dentro
- * da faixa calculada pelo motor. Modalidade, métrica, segurança e limites finais
- * continuam sendo validados pelo código antes de qualquer missão ser persistida.
+ * da faixa calculada pelo motor. A camada de pesquisa é enviada como contexto,
+ * mas modalidade, métrica, segurança e limites finais continuam validados pelo
+ * código antes de qualquer missão ser persistida.
  */
 export async function refineInitialObjectiveMission(
   userId: string,
@@ -33,6 +35,7 @@ export async function refineInitialObjectiveMission(
   deterministic: Prescription,
 ): Promise<ObjectiveMissionRefinement> {
   const bounds = buildCardioBaseline(answers, profile);
+  const decisionTrace = buildResearchDecisionTrace(answers, profile, bounds.profileClass);
   const fallback: ObjectiveMissionRefinement = {
     prescription: validateMissionCoherence(answers, deterministic, profile),
     rationale: bounds.reason,
@@ -48,6 +51,9 @@ export async function refineInitialObjectiveMission(
   if (!apiKey) return fallback;
   const model = getAiHabitModel();
   const context = {
+    researchVersion: CARDIO_RESEARCH_VERSION,
+    evidenceIds: bounds.evidenceIds,
+    decisionTrace,
     goalType: answers.goalType,
     runningAbility: answers.runningAbility,
     walkingMinutes: answers.walkingMinutes,
@@ -61,7 +67,7 @@ export async function refineInitialObjectiveMission(
     deterministicDurationMinutes: deterministic.durationMinutes,
     allowedDurationMinutes: { min: bounds.minMinutes, max: bounds.maxMinutes },
   };
-  const prompt = `Você está refinando uma missão inicial de cardio do Invictus. O motor determinístico já definiu os limites obrigatórios. Escolha apenas um durationMinutes inteiro dentro da faixa permitida e escreva uma rationale curta em português brasileiro. Não altere modalidade, intensidade, frequência, distância ou regras de segurança. Não reduza um corredor para uma missão trivial. Para sedentário, nunca use menos de 15 minutos. Não diagnostique e não prometa resultado. Retorne apenas JSON {"durationMinutes":number,"rationale":"..."}. Contexto: ${JSON.stringify(context)}`;
+  const prompt = `Você está refinando uma missão inicial de cardio do Invictus. O motor determinístico e a camada de evidência já definiram o perfil e os limites obrigatórios. Use o decisionTrace para personalizar, mas escolha apenas um durationMinutes inteiro dentro da faixa permitida e escreva uma rationale curta em português brasileiro. Não altere modalidade, intensidade, frequência, distância, regras de segurança ou fontes de evidência. Não reduza um corredor/atleta para uma missão trivial. Para sedentário, nunca use menos de 15 minutos. Para pessoa treinada, não introduza intensidade alta automaticamente: a evidência não justifica um único modelo universal e o motor ainda não comprovou recuperação/carga suficiente. Não diagnostique e não prometa resultado. Retorne apenas JSON {"durationMinutes":number,"rationale":"..."}. Contexto: ${JSON.stringify(context)}`;
   const requestId = newAiRequestId();
   const startedAt = Date.now();
   try {
