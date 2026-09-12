@@ -1,4 +1,4 @@
-import { createSign } from 'node:crypto';
+import { createHash, createSign } from 'node:crypto';
 import * as http2 from 'node:http2';
 import { db, app, FieldValue } from '../_lib/common.js';
 import { getMessaging } from 'firebase-admin/messaging';
@@ -178,6 +178,49 @@ function sendApnsRequest(
   });
 }
 
+/**
+ * Verifica a propriedade do token antes de qualquer entrega externa.
+ *
+ * Tokens registrados pelo app atual possuem push_device_tokens/{sha256} com
+ * ownerUid único. Para tokens legados sem índice, só permitimos envio quando a
+ * busca nos perfis encontra exatamente um proprietário e ele é o destinatário.
+ * Duplicidade, erro de consulta ou dono divergente => fail-closed (sem push).
+ */
+async function filterOwnedPushTokens(
+  userId: string,
+  platform: 'ios' | 'android',
+  tokens: string[]
+): Promise<string[]> {
+  const tokenField = platform === 'ios' ? 'apnsTokens' : 'fcmTokens';
+  const allowed: string[] = [];
+
+  for (const token of tokens) {
+    try {
+      const registryId = createHash('sha256').update(`${platform}:${token}`).digest('hex');
+      const registry = await db.collection('push_device_tokens').doc(registryId).get();
+      if (registry.exists) {
+        if (registry.data()?.ownerUid === userId) allowed.push(token);
+        else console.warn(`[NotificationService] Token ${platform} ignorado: proprietário divergente.`);
+        continue;
+      }
+
+      const legacyOwners = await db.collection('users')
+        .where(tokenField, 'array-contains', token)
+        .limit(2)
+        .get();
+      if (legacyOwners.size === 1 && legacyOwners.docs[0].id === userId) {
+        allowed.push(token);
+      } else {
+        console.warn(`[NotificationService] Token ${platform} legado ambíguo/sem proprietário único; envio bloqueado.`);
+      }
+    } catch (error: any) {
+      console.error(`[NotificationService] Falha ao validar proprietário do token ${platform}; envio bloqueado: ${error?.message || error}`);
+    }
+  }
+
+  return allowed;
+}
+
 export class NotificationService {
   /**
    * Registra uma notificação no centro in-app e tenta entregá-la a todos os
@@ -228,12 +271,20 @@ export class NotificationService {
       console.error(`[NotificationService] Falha ao gravar notificação in-app para ${userId}: ${error?.message || 'erro desconhecido'}`);
     }
 
+    // Antes de sair do servidor, confirme que cada token ainda pertence ao
+    // destinatário. Isso também protege instalações de versões antigas do app
+    // que tenham deixado o mesmo token salvo em mais de uma conta.
+    const [ownedFcmTokens, ownedApnsTokens] = await Promise.all([
+      filterOwnedPushTokens(userId, 'android', fcmTokens),
+      filterOwnedPushTokens(userId, 'ios', apnsTokens),
+    ]);
+
     await Promise.all([
-      fcmTokens.length > 0
-        ? this.sendFcmPush(userId, fcmTokens, title, message, actionUrl, payload.data)
+      ownedFcmTokens.length > 0
+        ? this.sendFcmPush(userId, ownedFcmTokens, title, message, actionUrl, payload.data)
         : Promise.resolve(),
-      apnsTokens.length > 0
-        ? this.sendApnsPush(userId, apnsTokens, title, message, actionUrl, payload.data)
+      ownedApnsTokens.length > 0
+        ? this.sendApnsPush(userId, ownedApnsTokens, title, message, actionUrl, payload.data)
         : Promise.resolve()
     ]);
   }
