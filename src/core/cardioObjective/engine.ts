@@ -42,24 +42,28 @@ export function readiness(a: ObjectiveAnswers): number {
 }
 
 /**
- * Classification combines self-report with canonical 7/28-day history. Running
- * ability remains sport-specific: a competitive cyclist/fighter/team athlete is
- * not treated as sedentary just because they do not run.
+ * Classification combines self-report with canonical 7/28-day history and the
+ * individual capacity signature. Running ability remains sport-specific: a
+ * competitive cyclist/fighter/team athlete is not sedentary merely because they
+ * do not run.
  */
 export function classifyCardioProfile(a: ObjectiveAnswers, profile?: ProfileSnapshot): CardioProfileClass {
   const history = profile?.cardioHistory;
+  const signature = history?.capacitySignature;
   const sessions = history?.sessions28d ?? profile?.recentCardioSessions ?? 0;
   const activeDays = history?.activeDays28d ?? 0;
   const minutes28d = history?.minutes28d ?? 0;
   const averageMinutes = history?.averageSessionMinutes28d ?? 0;
-  const longestRun = profile?.recentLongestRunKm || 0;
+  const longestRun = signature?.longestRunningDistanceKm28d ?? profile?.recentLongestRunKm ?? 0;
   const background = a.trainingBackground;
   const typical = a.typicalCardioMinutes || 0;
   const practicesSport = !!a.primarySport && a.primarySport !== 'none';
+  const consistentHistory = signature?.consistencyBand === 'consistent' || signature?.consistencyBand === 'highly_consistent';
   const wasTrained = ['regular', 'structured'].includes(a.runningAbility)
     || ['regular', 'structured', 'competitive'].includes(background || '')
     || longestRun >= 3
-    || (sessions >= 6 && minutes28d >= 180);
+    || (sessions >= 6 && minutes28d >= 180)
+    || (consistentHistory && (signature?.sessionsPerWeek28d || 0) >= 2);
 
   if (a.goalType === 'gradual_return' || a.safety.signals.includes('surgical_recovery')) return 'returning';
   if (a.goalType === 'return_cardio' || (a.barrier === 'restart' && wasTrained && sessions <= 2)) return 'returning';
@@ -68,6 +72,7 @@ export function classifyCardioProfile(a: ObjectiveAnswers, profile?: ProfileSnap
     || a.runningAbility === 'structured'
     || (sessions >= 8 && longestRun >= 5)
     || (sessions >= 10 && activeDays >= 8 && minutes28d >= 360 && averageMinutes >= 35)
+    || (consistentHistory && (signature?.sessionsPerWeek28d || 0) >= 3 && minutes28d >= 300)
     || (activeDays >= 12 && minutes28d >= 480)) return 'advanced';
   if (a.runningAbility === 'regular' || (sessions >= 4 && longestRun >= 2)) return 'runner';
   if (background === 'structured' || background === 'regular'
@@ -75,7 +80,8 @@ export function classifyCardioProfile(a: ObjectiveAnswers, profile?: ProfileSnap
     || a.runningAbility === 'minutes'
     || sessions >= 3
     || activeDays >= 4
-    || minutes28d >= 90) return 'active';
+    || minutes28d >= 90
+    || (consistentHistory && (signature?.sessionsPerWeek28d || 0) >= 1.5)) return 'active';
   if (background === 'occasional' || a.runningAbility === 'seconds' || a.walkingMinutes >= 30 || sessions >= 1 || minutes28d >= 30) return 'beginner';
   return 'sedentary';
 }
@@ -90,35 +96,41 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
   const maxMinutes = Math.max(MIN_ACTIVE_MISSION_MINUTES, a.availableMinutes);
   const classFloor = Math.min(maxMinutes, Math.max(MIN_ACTIVE_MISSION_MINUTES, policy.floorMinutes));
   const history = profile?.cardioHistory;
+  const signature = history?.capacitySignature;
 
   let baselineMinutes = Math.max(policy.fallbackMinutes, Math.round(maxMinutes * policy.availabilityFraction));
 
   // Real history increases confidence that a non-trivial challenge is appropriate.
   const recentSessions = history?.sessions28d ?? profile?.recentCardioSessions ?? 0;
-  const longestRun = profile?.recentLongestRunKm || 0;
+  const longestRun = signature?.longestRunningDistanceKm28d ?? profile?.recentLongestRunKm ?? 0;
   if (recentSessions >= 4) baselineMinutes += profileClass === 'runner' || profileClass === 'advanced' ? 2 : 1;
   if (longestRun >= 5 && (profileClass === 'runner' || profileClass === 'advanced')) baselineMinutes += 2;
 
-  // Anchor the first mission to what the person actually sustains, not just what
-  // they declared. Average and longest session are context, never medical limits.
+  // Anchor the first mission to what the person actually sustains. Median is used
+  // as a robust typical-session anchor; the longest session only gets meaningful
+  // weight when the pattern exists across several weeks.
   const observedAverage = history?.averageSessionMinutes28d || 0;
+  const observedMedian = signature?.medianSessionMinutes28d || 0;
   const observedLongest = history?.longestSessionMinutes28d || 0;
-  if (observedAverage >= 10) {
+  const consistency = signature?.consistencyBand || 'insufficient';
+  if (Math.max(observedAverage, observedMedian) >= 10) {
     const observedFraction = profileClass === 'advanced' ? 0.82
       : profileClass === 'runner' ? 0.78
         : profileClass === 'active' ? 0.72
           : profileClass === 'returning' ? 0.55
             : profileClass === 'beginner' ? 0.68
               : 0.60;
-    const averageAnchor = Math.round(observedAverage * observedFraction);
-    const longestAnchor = Math.round(observedLongest * (profileClass === 'returning' ? 0.45 : 0.55));
-    baselineMinutes = Math.max(baselineMinutes, Math.min(maxMinutes, Math.max(averageAnchor, longestAnchor)));
+    const typicalObserved = Math.max(observedMedian, observedAverage * 0.9);
+    const typicalAnchor = Math.round(typicalObserved * observedFraction);
+    const mayUseLongest = ['consistent', 'highly_consistent'].includes(consistency);
+    const longestAnchor = mayUseLongest ? Math.round(observedLongest * (profileClass === 'returning' ? 0.42 : 0.55)) : 0;
+    baselineMinutes = Math.max(baselineMinutes, Math.min(maxMinutes, Math.max(typicalAnchor, longestAnchor)));
   }
 
-  // A rapid recent increase is a context signal to avoid adding another automatic
-  // increase. It is explicitly NOT interpreted as an injury-risk score.
-  if (history && ['rising', 'spiking'].includes(history.loadTrend) && observedAverage >= classFloor) {
-    baselineMinutes = Math.min(baselineMinutes, Math.max(classFloor, Math.round(observedAverage)));
+  // A rapid recent increase is context to avoid stacking another automatic jump.
+  // It is explicitly NOT interpreted as an injury-risk or recovery score.
+  if (history && ['rising', 'spiking'].includes(history.loadTrend) && Math.max(observedMedian, observedAverage) >= classFloor) {
+    baselineMinutes = Math.min(baselineMinutes, Math.max(classFloor, Math.round(observedMedian || observedAverage)));
   }
 
   // Self-report matters for training performed outside Invictus/Health sources.
@@ -152,7 +164,7 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
             ? 'Perfil avançado/competitivo: preservar carga significativa e esforço predominantemente fácil; intensidade alta não é adicionada automaticamente sem contexto suficiente de carga, recuperação e fase de treino.'
             : 'Retorno: reconhecer a experiência anterior, reduzir a carga em relação ao nível habitual e progredir somente após resposta real da semana, respeitando os bloqueios de segurança.';
   const historyReason = history && history.sessions28d > 0
-    ? ` Histórico canônico considerado: ${history.sessions28d} sessão(ões), ${history.minutes28d} min em 28 dias, média de ${history.averageSessionMinutes28d ?? 0} min e tendência recente ${history.loadTrend}.`
+    ? ` Histórico canônico considerado: ${history.sessions28d} sessão(ões), ${history.minutes28d} min em 28 dias, mediana de ${signature?.medianSessionMinutes28d ?? 'n/d'} min, consistência ${signature?.consistencyBand ?? 'n/d'}, modalidade dominante ${signature?.dominantModality ?? 'n/d'} e tendência recente ${history.loadTrend}.`
     : '';
 
   return {
@@ -193,6 +205,15 @@ export function validateMissionCoherence(a: ObjectiveAnswers, prescription: Pres
   return next;
 }
 
+function targetWeeklySessions(profileClass: CardioProfileClass, profile: ProfileSnapshot | undefined): number {
+  const signature = profile?.cardioHistory?.capacitySignature;
+  if (profileClass === 'sedentary' || profileClass === 'returning') return 2;
+  if (profileClass === 'beginner') return signature && ['consistent', 'highly_consistent'].includes(signature.consistencyBand) && signature.sessionsPerWeek28d >= 2.5 ? 3 : 2;
+  if (profileClass === 'active') return signature && signature.consistencyBand === 'highly_consistent' && signature.sessionsPerWeek28d >= 3.5 ? 4 : 3;
+  if (profileClass === 'runner' || profileClass === 'advanced') return signature && ['consistent', 'highly_consistent'].includes(signature.consistencyBand) && signature.sessionsPerWeek28d >= 3.5 ? 4 : 3;
+  return 3;
+}
+
 export function initialPrescription(a: ObjectiveAnswers, profile?: ProfileSnapshot): Prescription {
   const level = readiness(a);
   const baseline = buildCardioBaseline(a, profile);
@@ -204,11 +225,13 @@ export function initialPrescription(a: ObjectiveAnswers, profile?: ProfileSnapsh
 
   const distanceGoal = ['run_5k', 'run_10k', 'race', 'weekly_distance'].includes(a.goalType) && ['running', 'walking'].includes(modality);
   const outcomeDistance = a.goalType === 'run_5k' ? 5 : a.goalType === 'run_10k' ? 10 : a.targetDistanceKm || null;
-  const inferredStart = profile?.recentLongestRunKm ? Math.max(0.5, profile.recentLongestRunKm * 0.75) : [0.5, 0.75, 1, 1.5, 2, 2.5][level];
+  const signatureLongestRun = profile?.cardioHistory?.capacitySignature.longestRunningDistanceKm28d;
+  const knownLongestRun = signatureLongestRun ?? profile?.recentLongestRunKm;
+  const inferredStart = knownLongestRun ? Math.max(0.5, knownLongestRun * 0.75) : [0.5, 0.75, 1, 1.5, 2, 2.5][level];
   const distanceKm = distanceGoal ? Math.round(Math.min(outcomeDistance || inferredStart, inferredStart) * 10) / 10 : null;
   const runSecondsPerInterval = modality === 'running' && level < 4 ? (level === 2 ? 30 : 60) : 0;
   const walkSecondsPerInterval = modality === 'running' && level < 4 ? 90 : 0;
-  const targetSessions = baseline.profileClass === 'returning' ? 2 : 3;
+  const targetSessions = targetWeeklySessions(baseline.profileClass, profile);
   const prescription: Prescription = {
     modality,
     targetMetric: distanceGoal ? 'distance' : 'duration',
