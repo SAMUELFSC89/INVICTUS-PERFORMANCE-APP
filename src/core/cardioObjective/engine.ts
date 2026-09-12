@@ -1,4 +1,5 @@
 import { GOALS, OBJECTIVE_VERSIONS, type Baseline, type CardioAchievement, type HabitIntervention, type Journey, type Mission, type ObjectiveAnswers, type Prescription, type ProfessionalUnlock, type ProfileSnapshot, type Review, type SafetyAnswers, type WeightMeasurement, type WeeklyAnswers } from './types.js';
+import { CARDIO_RESEARCH_VERSION, buildResearchDecisionTrace, evidenceForProfile } from './research.js';
 
 const DAY = 86400000;
 const MIN_ACTIVE_MISSION_MINUTES = 15;
@@ -11,7 +12,17 @@ export interface CardioBaselineDecision {
   minMinutes: number;
   maxMinutes: number;
   reason: string;
+  evidenceIds: string[];
 }
+
+const profilePolicy: Record<CardioProfileClass, { fallbackMinutes: number; floorMinutes: number; availabilityFraction: number; progressionRate: number; regressionFactor: number }> = {
+  sedentary: { fallbackMinutes: 15, floorMinutes: 15, availabilityFraction: 0.45, progressionRate: 0.08, regressionFactor: 0.80 },
+  beginner: { fallbackMinutes: 18, floorMinutes: 15, availabilityFraction: 0.60, progressionRate: 0.08, regressionFactor: 0.80 },
+  active: { fallbackMinutes: 24, floorMinutes: 20, availabilityFraction: 0.68, progressionRate: 0.07, regressionFactor: 0.85 },
+  runner: { fallbackMinutes: 30, floorMinutes: 25, availabilityFraction: 0.76, progressionRate: 0.06, regressionFactor: 0.90 },
+  advanced: { fallbackMinutes: 35, floorMinutes: 30, availabilityFraction: 0.82, progressionRate: 0.05, regressionFactor: 0.90 },
+  returning: { fallbackMinutes: 18, floorMinutes: 15, availabilityFraction: 0.60, progressionRate: 0.05, regressionFactor: 0.80 },
+};
 
 export function safetyDecision(safety: SafetyAnswers, gradualReturn: boolean) {
   if (!safety.screened) return { blocked: true, urgent: false, reason: 'Precisamos confirmar os sinais de segurança antes de continuar.' };
@@ -30,51 +41,75 @@ export function readiness(a: ObjectiveAnswers): number {
   return runningLevel;
 }
 
+/**
+ * Classification uses both self-report and recent canonical activity history.
+ * Recent history can elevate confidence in a trained classification, while a
+ * declared return/restart prevents an old fitness identity from creating an
+ * aggressive first mission after a break.
+ */
 export function classifyCardioProfile(a: ObjectiveAnswers, profile?: ProfileSnapshot): CardioProfileClass {
-  if (a.goalType === 'gradual_return' || a.safety.signals.includes('surgical_recovery')) return 'returning';
   const sessions = profile?.recentCardioSessions || 0;
   const longestRun = profile?.recentLongestRunKm || 0;
-  if (a.runningAbility === 'structured' || (sessions >= 8 && longestRun >= 5)) return 'advanced';
-  if (a.runningAbility === 'regular' || (sessions >= 4 && longestRun >= 2)) return 'runner';
+  const wasTrained = ['regular', 'structured'].includes(a.runningAbility) || longestRun >= 3;
+
+  if (a.goalType === 'gradual_return' || a.safety.signals.includes('surgical_recovery')) return 'returning';
+  if (a.goalType === 'return_cardio' || (a.barrier === 'restart' && wasTrained && sessions <= 2)) return 'returning';
+  if (a.runningAbility === 'structured' || (sessions >= 8 && longestRun >= 5) || (sessions >= 12 && a.walkingMinutes >= 45)) return 'advanced';
+  if (a.runningAbility === 'regular' || (sessions >= 4 && longestRun >= 2) || sessions >= 8) return 'runner';
   if (a.runningAbility === 'minutes' || sessions >= 3) return 'active';
   if (a.runningAbility === 'seconds' || a.walkingMinutes >= 30 || sessions >= 1) return 'beginner';
   return 'sedentary';
 }
 
+/**
+ * Research-backed principles determine the shape of the decision; exact minute
+ * values below are versioned Invictus product guardrails, not clinical claims.
+ */
 export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapshot): CardioBaselineDecision {
   const profileClass = classifyCardioProfile(a, profile);
+  const policy = profilePolicy[profileClass];
   const maxMinutes = Math.max(MIN_ACTIVE_MISSION_MINUTES, a.availableMinutes);
-  const baseByClass: Record<CardioProfileClass, number> = {
-    sedentary: 15,
-    beginner: 18,
-    active: 22,
-    runner: 30,
-    advanced: 35,
-    returning: 15,
-  };
-  let baselineMinutes = baseByClass[profileClass];
+  const classFloor = Math.min(maxMinutes, Math.max(MIN_ACTIVE_MISSION_MINUTES, policy.floorMinutes));
 
-  // A pessoa que já corre não deve receber uma caminhada simbólica de poucos minutos.
-  // A disponibilidade declarada é usada como teto, mas também ajuda a calibrar quem já possui base.
-  if (a.runningAbility === 'minutes') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.6));
-  if (a.runningAbility === 'regular') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.7));
-  if (a.runningAbility === 'structured') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.75));
-  if ((profile?.recentCardioSessions || 0) >= 6) baselineMinutes += 2;
+  let baselineMinutes = Math.max(policy.fallbackMinutes, Math.round(maxMinutes * policy.availabilityFraction));
 
-  // Barreiras podem suavizar a missão, mas nunca a reduzir abaixo de 15 minutos.
-  if (a.barrier === 'time') baselineMinutes = Math.min(baselineMinutes, Math.max(MIN_ACTIVE_MISSION_MINUTES, Math.round(maxMinutes * 0.7)));
-  if (a.confidenceScore <= 4) baselineMinutes = Math.round(baselineMinutes * 0.8);
-  else if (a.confidenceScore <= 7 || a.barrier === 'restart') baselineMinutes = Math.round(baselineMinutes * 0.9);
-  baselineMinutes = clamp(baselineMinutes, MIN_ACTIVE_MISSION_MINUTES, maxMinutes);
+  // Real history increases confidence that a non-trivial challenge is appropriate.
+  const recentSessions = profile?.recentCardioSessions || 0;
+  const longestRun = profile?.recentLongestRunKm || 0;
+  if (recentSessions >= 4) baselineMinutes += profileClass === 'runner' || profileClass === 'advanced' ? 2 : 1;
+  if (longestRun >= 5 && (profileClass === 'runner' || profileClass === 'advanced')) baselineMinutes += 2;
+
+  // Self-report still matters for users who trained outside Invictus/Health sources.
+  if (a.runningAbility === 'minutes') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.62));
+  if (a.runningAbility === 'regular') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.72));
+  if (a.runningAbility === 'structured') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.78));
+
+  // Barriers soften the challenge without erasing the person's demonstrated level.
+  if (a.barrier === 'time') baselineMinutes = Math.min(baselineMinutes, Math.max(classFloor, Math.round(maxMinutes * 0.72)));
+  if (a.confidenceScore <= 4) baselineMinutes = Math.max(classFloor, Math.round(baselineMinutes * 0.85));
+  else if (a.confidenceScore <= 7 || a.barrier === 'restart') baselineMinutes = Math.max(classFloor, Math.round(baselineMinutes * 0.92));
+  baselineMinutes = clamp(baselineMinutes, classFloor, maxMinutes);
 
   const reason = profileClass === 'sedentary'
-    ? 'Começo mínimo de 15 minutos para criar estímulo real sem transformar a missão em uma tarefa cotidiana trivial.'
-    : profileClass === 'runner' || profileClass === 'advanced'
-      ? 'A missão respeita a capacidade de quem já corre e usa uma fração conservadora do tempo disponível, sem regredir para caminhada curta.'
-      : profileClass === 'returning'
-        ? 'Retorno conservador, condicionado às regras de segurança e liberação aplicáveis.'
-        : 'A missão parte da capacidade declarada e do histórico recente, mantendo progressão conservadora.';
-  return { profileClass, baselineMinutes, minMinutes: MIN_ACTIVE_MISSION_MINUTES, maxMinutes, reason };
+    ? 'Perfil sedentário: começar com intensidade fácil e progressão gradual, mas com uma missão ativa de pelo menos 15 minutos para que o desafio não seja apenas uma tarefa cotidiana trivial.'
+    : profileClass === 'beginner'
+      ? 'Perfil iniciante: preservar aderência e progressão gradual, usando capacidade declarada e histórico recente sem saltos bruscos.'
+      : profileClass === 'active'
+        ? 'Perfil ativo: a missão usa uma parcela relevante do tempo disponível e evita rebaixar quem já sustenta alguns minutos de cardio.'
+        : profileClass === 'runner'
+          ? 'Corredor regular: manter corrida e uma duração compatível com a base já demonstrada; o motor não volta para caminhada curta sem motivo de segurança ou retorno.'
+          : profileClass === 'advanced'
+            ? 'Perfil avançado: preservar carga significativa e esforço predominantemente fácil; intensidade alta não é adicionada automaticamente sem contexto suficiente de carga e recuperação.'
+            : 'Retorno: reduzir a carga em relação à identidade anterior de treino e progredir somente após resposta real da semana, respeitando os bloqueios de segurança.';
+
+  return {
+    profileClass,
+    baselineMinutes,
+    minMinutes: classFloor,
+    maxMinutes,
+    reason,
+    evidenceIds: evidenceForProfile(profileClass),
+  };
 }
 
 export function onboardingSteps(goal: ObjectiveAnswers['goalType']) {
@@ -86,6 +121,7 @@ export function onboardingSteps(goal: ObjectiveAnswers['goalType']) {
 export function validateMissionCoherence(a: ObjectiveAnswers, prescription: Prescription, profile?: ProfileSnapshot): Prescription {
   const level = readiness(a);
   const next = { ...prescription };
+  const baseline = buildCardioBaseline(a, profile);
   next.durationMinutes = Math.max(MIN_ACTIVE_MISSION_MINUTES, next.durationMinutes);
 
   if (a.preferredActivity === 'running' && level >= 2 && a.barrier !== 'dislike_running' && a.goalType !== 'gradual_return') {
@@ -94,13 +130,12 @@ export function validateMissionCoherence(a: ObjectiveAnswers, prescription: Pres
   if (next.modality === 'running' && level < 2) next.modality = 'walking';
   if (a.goalType === 'gradual_return') next.modality = 'walking';
 
-  // Quem corre regularmente não recebe intervalos artificiais de 60s/120s.
+  // A trained runner does not get artificial 60s/120s run-walk intervals by default.
   if (next.modality === 'running' && level >= 4) {
     next.runSecondsPerInterval = 0;
     next.walkSecondsPerInterval = 0;
   }
 
-  const baseline = buildCardioBaseline(a, profile);
   if (next.targetMetric === 'duration') next.durationMinutes = clamp(next.durationMinutes, baseline.minMinutes, baseline.maxMinutes);
   return next;
 }
@@ -120,12 +155,13 @@ export function initialPrescription(a: ObjectiveAnswers, profile?: ProfileSnapsh
   const distanceKm = distanceGoal ? Math.round(Math.min(outcomeDistance || inferredStart, inferredStart) * 10) / 10 : null;
   const runSecondsPerInterval = modality === 'running' && level < 4 ? (level === 2 ? 30 : 60) : 0;
   const walkSecondsPerInterval = modality === 'running' && level < 4 ? 90 : 0;
+  const targetSessions = baseline.profileClass === 'returning' ? 2 : 3;
   const prescription: Prescription = {
     modality,
     targetMetric: distanceGoal ? 'distance' : 'duration',
     durationMinutes: baseline.baselineMinutes,
     distanceKm,
-    sessions: Math.min(a.availableDays.length, a.goalType === 'gradual_return' ? 2 : 3),
+    sessions: Math.min(a.availableDays.length, targetSessions),
     intensity: 'easy',
     runSecondsPerInterval,
     walkSecondsPerInterval,
@@ -154,7 +190,13 @@ export function createJourney(id: string, uid: string, a: ObjectiveAnswers, prof
   if (a.goalType === 'lose_weight' && (!a.weightConfirmed || !a.currentWeightKg || !a.loseKg)) throw new Error('Confirme seu peso e o objetivo antes de continuar.');
   const behavior = initialPrescription(a, profile);
   const safety = safetyDecision(a.safety, a.goalType === 'gradual_return');
-  const baseline: Baseline = { id: 'initial', capturedAt: now, profile, answers: a, startingWeightKg: a.currentWeightKg ?? null, readinessLevel: readiness(a), versions: OBJECTIVE_VERSIONS };
+  const profileClass = classifyCardioProfile(a, profile);
+  const evidenceDecisionTrace = buildResearchDecisionTrace(a, profile, profileClass);
+  const baseline: Baseline = {
+    id: 'initial', capturedAt: now, profile, answers: a, startingWeightKg: a.currentWeightKg ?? null,
+    readinessLevel: readiness(a), versions: OBJECTIVE_VERSIONS, profileClass,
+    evidenceVersion: CARDIO_RESEARCH_VERSION, evidenceDecisionTrace,
+  };
   return { baseline, journey: {
     id, userId: uid, status: safety.blocked ? 'paused' : 'active', goalType: a.goalType,
     goalLabel: a.goalType === 'lose_weight' ? `Perder ${a.loseKg} kg` : a.goalType === 'other' ? a.otherGoal || GOALS.other : GOALS[a.goalType],
@@ -176,7 +218,7 @@ export function makeMissions(j: Journey, now: string): Mission[] {
     const day = new Date(`${today}T12:00:00Z`); day.setUTCDate(day.getUTCDate() + offset);
     if (j.availableDays.includes(day.getUTCDay()) && dates.length < j.behavior.sessions) dates.push(day.toISOString().slice(0, 10));
   }
-  const context = j.goalType === 'post_workout' ? 'Faça após a musculação, apenas se ainda estiver se sentindo bem.' : j.goalType === 'rest_days' ? 'Planejada para um dia sem musculação. Mantenha esforço confortável.' : 'A meta respeita seu ponto de partida e sua capacidade atual. Faça no seu ritmo e pare diante de sintomas.';
+  const context = j.goalType === 'post_workout' ? 'Faça após a musculação, apenas se ainda estiver se sentindo bem.' : j.goalType === 'rest_days' ? 'Planejada para um dia sem musculação. Mantenha esforço confortável.' : 'A meta respeita seu ponto de partida, seu histórico e a resposta da jornada. Faça no seu ritmo e pare diante de sintomas.';
   return dates.map((date, index) => ({ id: `w${j.currentWeek}_${index}`, journeyId: j.id, week: j.currentWeek, goalType: j.goalType, localDate: date, state: index === 0 ? 'available' : 'locked', prescription: { ...j.behavior }, context, ruleVersion: OBJECTIVE_VERSIONS.mission, createdAt: now, startedAt: null, completedAt: null, sessionId: null, activityId: null }));
 }
 const mean = (values: number[]) => values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -217,17 +259,20 @@ export function reviewWeek(j: Journey, baseline: Baseline, missions: Mission[], 
   let decision: Review['decision'] = 'maintain';
   let reason = 'Vamos consolidar o que já cabe na sua rotina.';
   const plateau = weightPlateau(weights, now);
+  const profileClass = (baseline.profileClass || classifyCardioProfile(baseline.answers, baseline.profile)) as CardioProfileClass;
+  const policy = profilePolicy[profileClass] || profilePolicy.beginner;
   if (safetyDecision(answers.safety, j.goalType === 'gradual_return').blocked) {
     decision = 'pause'; reason = safetyDecision(answers.safety, j.goalType === 'gradual_return').reason;
   } else if (adherence < 0.6 || answers.confidenceScore <= 4 || answers.energy === 'poor' || ['hard', 'very_hard'].includes(answers.difficulty)) {
     if (after.targetMetric === 'distance' && after.distanceKm) {
-      after.distanceKm = Math.max(0.2, Math.round(after.distanceKm * 0.8 * 10) / 10);
+      const regression = profileClass === 'runner' || profileClass === 'advanced' ? 0.9 : 0.8;
+      after.distanceKm = Math.max(0.2, Math.round(after.distanceKm * regression * 10) / 10);
       decision = after.distanceKm < (j.behavior.distanceKm || 0) ? 'regress' : 'maintain';
     } else {
-      after.durationMinutes = Math.max(MIN_ACTIVE_MISSION_MINUTES, Math.floor(after.durationMinutes * 0.8));
+      after.durationMinutes = Math.max(MIN_ACTIVE_MISSION_MINUTES, Math.floor(after.durationMinutes * policy.regressionFactor));
       decision = after.durationMinutes < j.behavior.durationMinutes ? 'regress' : 'maintain';
     }
-    reason = 'Essa meta ficou difícil nesta semana. Vamos facilitar a retomada sem transformar a missão em uma atividade curta demais para gerar progresso.';
+    reason = 'A resposta da semana pede menos carga. Vamos reduzir de forma proporcional ao seu perfil, sem transformar a missão em uma atividade curta demais para ser útil.';
   } else if (j.goalType === 'lose_weight' && plateau === 'persistent' && adherence >= 0.8 && answers.habitAdherence === 'yes') {
     reason = 'Seu peso ficou estável apesar da boa adesão. Vamos revisar o contexto e, se houver outra ação simples possível, mudar somente uma coisa nesta semana.';
   } else if (j.goalType === 'lose_weight' && plateau === 'investigate') {
@@ -235,15 +280,17 @@ export function reviewWeek(j: Journey, baseline: Baseline, missions: Mission[], 
   } else if (adherence >= 0.8 && answers.confidenceScore >= 8 && ['good', 'great'].includes(answers.energy) && !['high', 'very_high'].includes(answers.hunger || '') && answers.habitAdherence !== 'no') {
     if (after.targetMetric === 'distance' && after.distanceKm) {
       const goalCap = j.outcome.distanceKm || Number.POSITIVE_INFINITY;
-      const nextDistance = Math.min(goalCap, after.distanceKm + Math.min(0.5, Math.max(0.1, Math.round(after.distanceKm * 0.1 * 10) / 10)));
+      const distanceRate = policy.progressionRate;
+      const distanceStep = Math.min(0.5, Math.max(0.1, Math.round(after.distanceKm * distanceRate * 10) / 10));
+      const nextDistance = Math.min(goalCap, after.distanceKm + distanceStep);
       after.distanceKm = Math.round(nextDistance * 10) / 10;
       decision = after.distanceKm > (j.behavior.distanceKm || 0) ? 'progress' : 'maintain';
-      reason = decision === 'progress' ? 'Vamos aumentar somente um pouco a distância. Frequência e esforço continuam iguais.' : 'Você está mantendo uma boa base dentro da distância planejada.';
+      reason = decision === 'progress' ? 'Sua semana sustentou a carga. A próxima distância sobe em um passo pequeno, ajustado ao perfil em vez de usar uma porcentagem universal.' : 'Você está mantendo uma boa base dentro da distância planejada.';
     } else {
-      const step = j.goalType === 'gradual_return' ? 1 : Math.max(1, Math.floor(after.durationMinutes * 0.1));
+      const step = j.goalType === 'gradual_return' ? 1 : Math.max(1, Math.round(after.durationMinutes * policy.progressionRate));
       after.durationMinutes = Math.min(Math.max(MIN_ACTIVE_MISSION_MINUTES, baseline.answers.availableMinutes), after.durationMinutes + Math.min(3, step));
       decision = after.durationMinutes > j.behavior.durationMinutes ? 'progress' : 'maintain';
-      reason = decision === 'progress' ? 'Vamos aumentar somente um pouco o tempo. Frequência e intensidade continuam iguais.' : 'Você está mantendo uma boa base dentro do tempo disponível.';
+      reason = decision === 'progress' ? 'Sua semana sustentou a carga. Vamos aumentar somente um pouco o tempo, usando um passo compatível com o seu perfil e mantendo a intensidade fácil.' : 'Você está mantendo uma boa base dentro do tempo disponível.';
     }
   }
   const result: Review = { id: `week_${j.currentWeek}`, journeyId: j.id, week: j.currentWeek, createdAt: now, completed, planned, adherence, answers, before: { ...j.behavior }, after, decision, reason, habitConfidence: 0, plateau, versions: OBJECTIVE_VERSIONS };
