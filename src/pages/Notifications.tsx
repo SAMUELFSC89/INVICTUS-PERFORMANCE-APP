@@ -1,9 +1,9 @@
 import { Bell, CheckCheck, ChevronLeft, Dumbbell, Gift, Info, Medal, Plus, ShieldCheck, TrendingUp, Trophy, UserRound } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { doc, runTransaction } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
-import { db } from '../firebase';
+import { auth } from '../firebase';
+import { API_CONFIG } from '../config';
 import { useUser } from '../UserContext';
 import { InvictusLogo } from '../components/InvictusLogo';
 import './NotificationsNew.css';
@@ -29,6 +29,23 @@ function fallbackNotificationRoute(type: string): string | null {
   return null;
 }
 
+async function notificationAction(expectedUid: string, body: Record<string, unknown>): Promise<void> {
+  const account = auth.currentUser;
+  if (!account || account.uid !== expectedUid) throw new Error('A conta mudou.');
+  const token = await account.getIdToken();
+  if (auth.currentUser?.uid !== expectedUid) throw new Error('A conta mudou.');
+  const response = await fetch(`${API_CONFIG.baseUrl || ''}/api/notifications`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  if (auth.currentUser?.uid !== expectedUid) throw new Error('A conta mudou.');
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload?.error || 'Não foi possível atualizar as notificações.');
+  }
+}
+
 export function Notifications() {
   const navigate = useNavigate();
   const { user, refreshUser } = useUser();
@@ -38,26 +55,20 @@ export function Notifications() {
 
   const markAsRead = async (id: string): Promise<boolean> => {
     if (!user || busy) return false;
+    const expectedUid = user.uid;
     setBusy(true);
     setError(null);
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await runTransaction(db, async (transaction) => {
-        const snapshot = await transaction.get(userRef);
-        if (!snapshot.exists()) throw new Error('Perfil não encontrado.');
-        const latest = Array.isArray(snapshot.data()?.notifications) ? snapshot.data()!.notifications : [];
-        transaction.update(userRef, {
-          notifications: latest.map((item: any) => item?.id === id ? { ...item, read: true } : item),
-        });
-      });
+      await notificationAction(expectedUid, { action: 'mark-read', notificationId: id });
+      if (auth.currentUser?.uid !== expectedUid) return false;
       await refreshUser();
-      return true;
+      return auth.currentUser?.uid === expectedUid;
     } catch (err) {
       console.warn('[Notifications] Não foi possível marcar como lida:', err);
-      setError('Não foi possível atualizar esta notificação. Tente novamente.');
+      if (auth.currentUser?.uid === expectedUid) setError('Não foi possível atualizar esta notificação. Tente novamente.');
       return false;
     } finally {
-      setBusy(false);
+      if (auth.currentUser?.uid === expectedUid) setBusy(false);
     }
   };
 
@@ -71,28 +82,22 @@ export function Notifications() {
 
   const markAllAsRead = async () => {
     if (!user || busy) return;
-    const unreadAtClick = new Set(notifications.filter((item) => !item.read).map((item) => item.id));
-    if (!unreadAtClick.size) return;
+    const unreadAtClick = notifications.filter((item) => !item.read).map((item) => item.id);
+    if (!unreadAtClick.length) return;
+    const expectedUid = user.uid;
     setBusy(true);
     setError(null);
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await runTransaction(db, async (transaction) => {
-        const snapshot = await transaction.get(userRef);
-        if (!snapshot.exists()) throw new Error('Perfil não encontrado.');
-        const latest = Array.isArray(snapshot.data()?.notifications) ? snapshot.data()!.notifications : [];
-        transaction.update(userRef, {
-          // Só marca os IDs que estavam visíveis quando o usuário tocou. Uma
-          // notificação criada durante a transação continua nova/não lida.
-          notifications: latest.map((item: any) => unreadAtClick.has(item?.id) ? { ...item, read: true } : item),
-        });
-      });
+      // O backend recebe só os IDs que estavam não lidos no clique. Se uma
+      // notificação nova chegar durante a requisição, ela continua não lida.
+      await notificationAction(expectedUid, { action: 'mark-all-read', notificationIds: unreadAtClick });
+      if (auth.currentUser?.uid !== expectedUid) return;
       await refreshUser();
     } catch (err) {
       console.warn('[Notifications] Não foi possível marcar todas como lidas:', err);
-      setError('Não foi possível atualizar as notificações. Tente novamente.');
+      if (auth.currentUser?.uid === expectedUid) setError('Não foi possível atualizar as notificações. Tente novamente.');
     } finally {
-      setBusy(false);
+      if (auth.currentUser?.uid === expectedUid) setBusy(false);
     }
   };
 
