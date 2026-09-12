@@ -21,6 +21,16 @@ describe('rodada campeonatos e ranking', () => {
     expect(cards).toContain('VER RANKING');
   });
 
+  it('mantém participação fail-closed quando o status remoto é inconclusivo', () => {
+    const hub = read('src/pages/championships/ChampionshipsHub.tsx');
+    const community = read('src/pages/championships/CommunityChampionship.tsx');
+    expect(hub).toContain("setFriendsEnrolled(null)");
+    expect(hub).toContain('friendsStatusError');
+    expect(hub).not.toContain(".catch(() => { if (!cancelled) setFriendsEnrolled(false); })");
+    expect(community).toContain('statusResolved');
+    expect(community).toContain('Confirmando sua participação atual antes de liberar uma nova inscrição');
+  });
+
   it('constrói ranking dedicado a partir do visual aprovado', () => {
     const app = read('src/App.tsx');
     const ranking = read('src/pages/championships/CommunityRanking.tsx');
@@ -34,6 +44,12 @@ describe('rodada campeonatos e ranking', () => {
     expect(ranking).toContain('SUA POSIÇÃO');
   });
 
+  it('não mantém classificação antiga enquanto outro período carrega', () => {
+    const ranking = read('src/pages/championships/CommunityRanking.tsx');
+    expect(ranking).toContain('setStatus(null);');
+    expect(ranking).toContain("loading ? <section className=\"academy-ranking-state academy-ranking-loading\"");
+  });
+
   it('preserva coroas e usa as três bases de pódio aprovadas', () => {
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
     expect(podium).toContain('/ranking-frame-gold-reference.png');
@@ -42,5 +58,15 @@ describe('rodada campeonatos e ranking', () => {
     expect(podium).toContain('/assets/ranking/podium-top1.webp');
     expect(podium).toContain('/assets/ranking/podium-top2.webp');
     expect(podium).toContain('/assets/ranking/podium-top3.webp');
+  });
+
+  it('recupera confirmação de academia após reload/deep link sem seleção', () => {
+    const app = read('src/App.tsx');
+    const confirm = read('src/pages/AcademyConfirm.tsx');
+    expect(app).toContain("import('./pages/AcademyConfirm')");
+    expect(app).toContain('<Route path="/profile/academy/confirm" element={<AcademyConfirm />} />');
+    expect(confirm).toContain('SELEÇÃO EXPIRADA');
+    expect(confirm).toContain("navigate('/profile/academy/search', { replace: true })");
+    expect(confirm).toContain('Number.isFinite');
   });
 });
