@@ -42,19 +42,24 @@ export function readiness(a: ObjectiveAnswers): number {
 }
 
 /**
- * Classification uses running ability, broader sport background and recent
- * canonical activity history. This prevents a competitive cyclist/fighter/team
- * athlete from being treated as sedentary merely because they are not a runner.
+ * Classification combines self-report with canonical 7/28-day history. Running
+ * ability remains sport-specific: a competitive cyclist/fighter/team athlete is
+ * not treated as sedentary just because they do not run.
  */
 export function classifyCardioProfile(a: ObjectiveAnswers, profile?: ProfileSnapshot): CardioProfileClass {
-  const sessions = profile?.recentCardioSessions || 0;
+  const history = profile?.cardioHistory;
+  const sessions = history?.sessions28d ?? profile?.recentCardioSessions ?? 0;
+  const activeDays = history?.activeDays28d ?? 0;
+  const minutes28d = history?.minutes28d ?? 0;
+  const averageMinutes = history?.averageSessionMinutes28d ?? 0;
   const longestRun = profile?.recentLongestRunKm || 0;
   const background = a.trainingBackground;
   const typical = a.typicalCardioMinutes || 0;
   const practicesSport = !!a.primarySport && a.primarySport !== 'none';
   const wasTrained = ['regular', 'structured'].includes(a.runningAbility)
     || ['regular', 'structured', 'competitive'].includes(background || '')
-    || longestRun >= 3;
+    || longestRun >= 3
+    || (sessions >= 6 && minutes28d >= 180);
 
   if (a.goalType === 'gradual_return' || a.safety.signals.includes('surgical_recovery')) return 'returning';
   if (a.goalType === 'return_cardio' || (a.barrier === 'restart' && wasTrained && sessions <= 2)) return 'returning';
@@ -62,12 +67,16 @@ export function classifyCardioProfile(a: ObjectiveAnswers, profile?: ProfileSnap
     || (background === 'structured' && typical >= 60)
     || a.runningAbility === 'structured'
     || (sessions >= 8 && longestRun >= 5)
-    || (sessions >= 12 && a.walkingMinutes >= 45)) return 'advanced';
+    || (sessions >= 10 && activeDays >= 8 && minutes28d >= 360 && averageMinutes >= 35)
+    || (activeDays >= 12 && minutes28d >= 480)) return 'advanced';
   if (a.runningAbility === 'regular' || (sessions >= 4 && longestRun >= 2)) return 'runner';
   if (background === 'structured' || background === 'regular'
     || (practicesSport && typical >= 45)
-    || a.runningAbility === 'minutes' || sessions >= 3) return 'active';
-  if (background === 'occasional' || a.runningAbility === 'seconds' || a.walkingMinutes >= 30 || sessions >= 1) return 'beginner';
+    || a.runningAbility === 'minutes'
+    || sessions >= 3
+    || activeDays >= 4
+    || minutes28d >= 90) return 'active';
+  if (background === 'occasional' || a.runningAbility === 'seconds' || a.walkingMinutes >= 30 || sessions >= 1 || minutes28d >= 30) return 'beginner';
   return 'sedentary';
 }
 
@@ -80,14 +89,37 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
   const policy = profilePolicy[profileClass];
   const maxMinutes = Math.max(MIN_ACTIVE_MISSION_MINUTES, a.availableMinutes);
   const classFloor = Math.min(maxMinutes, Math.max(MIN_ACTIVE_MISSION_MINUTES, policy.floorMinutes));
+  const history = profile?.cardioHistory;
 
   let baselineMinutes = Math.max(policy.fallbackMinutes, Math.round(maxMinutes * policy.availabilityFraction));
 
   // Real history increases confidence that a non-trivial challenge is appropriate.
-  const recentSessions = profile?.recentCardioSessions || 0;
+  const recentSessions = history?.sessions28d ?? profile?.recentCardioSessions ?? 0;
   const longestRun = profile?.recentLongestRunKm || 0;
   if (recentSessions >= 4) baselineMinutes += profileClass === 'runner' || profileClass === 'advanced' ? 2 : 1;
   if (longestRun >= 5 && (profileClass === 'runner' || profileClass === 'advanced')) baselineMinutes += 2;
+
+  // Anchor the first mission to what the person actually sustains, not just what
+  // they declared. Average and longest session are context, never medical limits.
+  const observedAverage = history?.averageSessionMinutes28d || 0;
+  const observedLongest = history?.longestSessionMinutes28d || 0;
+  if (observedAverage >= 10) {
+    const observedFraction = profileClass === 'advanced' ? 0.82
+      : profileClass === 'runner' ? 0.78
+        : profileClass === 'active' ? 0.72
+          : profileClass === 'returning' ? 0.55
+            : profileClass === 'beginner' ? 0.68
+              : 0.60;
+    const averageAnchor = Math.round(observedAverage * observedFraction);
+    const longestAnchor = Math.round(observedLongest * (profileClass === 'returning' ? 0.45 : 0.55));
+    baselineMinutes = Math.max(baselineMinutes, Math.min(maxMinutes, Math.max(averageAnchor, longestAnchor)));
+  }
+
+  // A rapid recent increase is a context signal to avoid adding another automatic
+  // increase. It is explicitly NOT interpreted as an injury-risk score.
+  if (history && ['rising', 'spiking'].includes(history.loadTrend) && observedAverage >= classFloor) {
+    baselineMinutes = Math.min(baselineMinutes, Math.max(classFloor, Math.round(observedAverage)));
+  }
 
   // Self-report matters for training performed outside Invictus/Health sources.
   if (a.runningAbility === 'minutes') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.62));
@@ -119,13 +151,16 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
           : profileClass === 'advanced'
             ? 'Perfil avançado/competitivo: preservar carga significativa e esforço predominantemente fácil; intensidade alta não é adicionada automaticamente sem contexto suficiente de carga, recuperação e fase de treino.'
             : 'Retorno: reconhecer a experiência anterior, reduzir a carga em relação ao nível habitual e progredir somente após resposta real da semana, respeitando os bloqueios de segurança.';
+  const historyReason = history && history.sessions28d > 0
+    ? ` Histórico canônico considerado: ${history.sessions28d} sessão(ões), ${history.minutes28d} min em 28 dias, média de ${history.averageSessionMinutes28d ?? 0} min e tendência recente ${history.loadTrend}.`
+    : '';
 
   return {
     profileClass,
     baselineMinutes,
     minMinutes: classFloor,
     maxMinutes,
-    reason,
+    reason: `${reason}${historyReason}`,
     evidenceIds: evidenceForProfile(profileClass),
   };
 }
