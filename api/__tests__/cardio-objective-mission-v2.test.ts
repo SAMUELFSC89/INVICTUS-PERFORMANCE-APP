@@ -86,7 +86,9 @@ it('IA só refina dentro dos limites do motor e a API persiste a prescrição re
   const handler = fs.readFileSync(path.resolve(process.cwd(), 'api/_handlers/cardio-objective.ts'), 'utf8');
   expect(ai).toContain('Math.max(bounds.minMinutes, Math.min(bounds.maxMinutes, parsed.data.durationMinutes))');
   expect(ai).toContain('validateMissionCoherence(answers, { ...deterministic, durationMinutes }, profile)');
-  expect(ai).toContain("answers.goalType === 'gradual_return' || answers.safety.signals.length > 0");
+  expect(ai).toContain("const canRefineDuration = deterministic.targetMetric === 'duration'");
+  expect(ai).toContain("&& answers.goalType !== 'gradual_return'");
+  expect(ai).toContain('&& answers.safety.signals.length === 0;');
   expect(handler).toContain('refineInitialObjectiveMission(auth.uid, a, profile, created.journey.behavior)');
   expect(handler).toContain('created.journey.behavior = refinement.prescription');
   expect(handler).toContain('missionPersonalizationSource: refinement.source');
