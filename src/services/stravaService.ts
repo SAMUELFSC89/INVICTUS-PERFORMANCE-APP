@@ -13,20 +13,21 @@ export interface StravaStatus {
   athleteId: string | null;
 }
 
-// Cache for Strava status to reduce backend Firestore reads
-let statusCache: { data: StravaStatus, timestamp: number } | null = null;
-const STATUS_CACHE_TTL = 120000; // 2 minutes cache to prevent rate limit issues
+// O cache é estritamente por UID. Status de conexão/athleteId são dados
+// privados da conta e nunca podem sobreviver a uma troca de usuário.
+let statusCache: { userId: string; data: StravaStatus; timestamp: number } | null = null;
+const STATUS_CACHE_TTL = 120000; // 2 minutos para reduzir leituras do backend
 
 export const stravaService = {
   async getAuthUser(): Promise<any> {
     if (auth.currentUser) return auth.currentUser;
-    
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         unsubscribe();
         reject(new Error('Not authenticated'));
       }, 3000);
-      
+
       const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
         clearTimeout(timeout);
         unsubscribe();
@@ -40,13 +41,21 @@ export const stravaService = {
   },
 
   async getStatus(forceRefresh?: boolean): Promise<StravaStatus> {
-    if (!forceRefresh && statusCache && Date.now() - statusCache.timestamp < STATUS_CACHE_TTL) {
-      return statusCache.data;
-    }
-
+    let userId: string | null = null;
     try {
+      // Resolva a identidade ANTES de olhar o cache. A implementação anterior
+      // devolvia o cache global antes mesmo de verificar auth, permitindo que a
+      // conta B visse por até 2 minutos o status/athleteId da conta A.
       const user = await this.getAuthUser();
+      userId = user.uid;
+      if (!forceRefresh && statusCache?.userId === userId && Date.now() - statusCache.timestamp < STATUS_CACHE_TTL) {
+        return statusCache.data;
+      }
+
       const idToken = await user.getIdToken();
+      // A conta pode ter mudado enquanto o token era obtido. Não associe uma
+      // resposta ao UID anterior nesse caso.
+      if (auth.currentUser?.uid !== userId) throw new Error('A conta mudou durante a consulta do Strava.');
       const url = `${getApiBase()}/status`;
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${idToken}` }
@@ -55,20 +64,17 @@ export const stravaService = {
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
         console.warn('[stravaService] Status fetch warning:', res.status, errText);
-        if (statusCache) {
-          return statusCache.data;
-        }
+        if (statusCache?.userId === userId) return statusCache.data;
         return { connected: false, lastSync: null, athleteId: null };
       }
-      
+
       const data = await res.json();
-      statusCache = { data, timestamp: Date.now() };
+      if (auth.currentUser?.uid !== userId) throw new Error('A conta mudou durante a consulta do Strava.');
+      statusCache = { userId, data, timestamp: Date.now() };
       return data;
     } catch (error: any) {
       console.warn('[stravaService] getStatus fallback:', error?.message || error);
-      if (statusCache) {
-        return statusCache.data;
-      }
+      if (userId && statusCache?.userId === userId) return statusCache.data;
       return { connected: false, lastSync: null, athleteId: null };
     }
   },
@@ -104,6 +110,7 @@ export const stravaService = {
     const url = `${getApiBase()}/callback?code=${code}&state=${state}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to complete Strava connection');
+    statusCache = null;
   },
 
   async sync(): Promise<{ syncCount: number }> {
@@ -124,7 +131,9 @@ export const stravaService = {
       } catch (e) {}
       throw new Error(errMsg);
     }
-    return res.json();
+    const result = await res.json();
+    if (statusCache?.userId === user.uid) statusCache = null;
+    return result;
   },
 
   async disconnect(): Promise<void> {
@@ -138,5 +147,6 @@ export const stravaService = {
     });
 
     if (!res.ok) throw new Error('Failed to disconnect Strava');
+    if (statusCache?.userId === user.uid) statusCache = null;
   }
 };
