@@ -4,7 +4,7 @@ import { cors, db, verifyAuth } from '../_lib/common.js';
 import { answersSchema, identifierSchema, reviewSchema, safetySchema } from '../../src/core/cardioObjective/validation.js';
 import { activityAchievementSeeds, adaptHabit, createJourney, goalReached, habitConfidence, localDate, makeMissions, missionMeetsActivity, professionalNextLevel, reviewAchievementSeeds, reviewWeek, safetyDecision, type VerifiedActivity } from '../../src/core/cardioObjective/engine.js';
 import { OBJECTIVE_VERSIONS, type Baseline, type CardioAchievement, type Journey, type Mission, type ObjectiveAnswers, type ProfileSnapshot, type Review, type SafetyAnswers, type WeeklyAnswers, type WeightMeasurement } from '../../src/core/cardioObjective/types.js';
-import { explainObjectiveDecision } from '../_lib/cardio-objective-ai.js';
+import { explainObjectiveDecision, refineInitialObjectiveMission } from '../_lib/cardio-objective-ai.js';
 
 const root = (uid: string) => db.collection('cardio_objectives').doc(uid);
 class ObjectiveError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -102,6 +102,8 @@ export default async function handler(req: any, res: any) {
       if (a.goalType === 'lose_weight' && profile.heightCm && (a.currentWeightKg! - a.loseKg!) / (profile.heightCm / 100) ** 2 < 18.5) throw new ObjectiveError('Esse objetivo requer avaliação profissional individual. Não vamos gerar uma meta de perda de peso automaticamente.');
       const ref = account.collection('journeys').doc();
       const created = createJourney(ref.id, auth.uid, a, profile, now);
+      const refinement = await refineInitialObjectiveMission(auth.uid, a, profile, created.journey.behavior);
+      created.journey.behavior = refinement.prescription;
       await db.runTransaction(async tx => {
         const index = await tx.get(account);
         const priorId = index.data()?.currentJourneyId;
@@ -114,7 +116,12 @@ export default async function handler(req: any, res: any) {
         for (const mission of makeMissions(created.journey, now)) tx.create(ref.collection('missions').doc(mission.id), mission);
         if (a.currentWeightKg) tx.create(ref.collection('weights').doc('initial'), { id: 'initial', kg: a.currentWeightKg, measuredAt: now, recordedAt: now, source: 'confirmed_profile', sourceId: null });
         tx.set(account, { currentJourneyId: ref.id, updatedAt: now });
-        event(tx, ref, 'created', 'goal_created', now, ref.id);
+        event(tx, ref, 'created', 'goal_created', now, ref.id, {
+          missionPersonalizationSource: refinement.source,
+          missionPersonalizationModel: refinement.model,
+          missionPersonalizationRationale: refinement.rationale,
+          durationMinutes: refinement.prescription.durationMinutes,
+        });
       });
       return res.status(201).json(await currentView(auth.uid, ref.id));
     }
