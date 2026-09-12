@@ -35,10 +35,10 @@ export async function reconcileWeeklyRankingAchievements(userId: string, rank: n
     if (!userSnap.exists) throw new Error('Perfil do atleta não encontrado para reconciliar ranking.');
 
     const userData = userSnap.data() || {};
-    const existingAchievements = Array.isArray(userData.achievements)
-      ? userData.achievements.filter((value: unknown): value is string => typeof value === 'string')
+    const existingAchievements: string[] = Array.isArray(userData.achievements)
+      ? (userData.achievements as unknown[]).filter((value: unknown): value is string => typeof value === 'string')
       : [];
-    const achievementSet = new Set(existingAchievements);
+    const achievementSet = new Set<string>(existingAchievements);
     const ledgerSnaps = reads.slice(1);
     const unlockedAchievementIds: string[] = [];
     let xpCredit = 0;
@@ -69,8 +69,9 @@ export async function reconcileWeeklyRankingAchievements(userId: string, rank: n
     const newXP = currentXP + xpCredit;
     const currentLevel = Math.max(1, Number(userData.level) || getLevelFromXP(currentXP));
     const newLevel = xpCredit > 0 ? getLevelFromXP(newXP) : currentLevel;
+    const achievements: string[] = [...achievementSet];
     const patch: Record<string, unknown> = {
-      achievements: [...achievementSet],
+      achievements,
       rankingAchievementsVersion: 1,
       rankingAchievementsReconciledAt: now,
     };
@@ -84,7 +85,7 @@ export async function reconcileWeeklyRankingAchievements(userId: string, rank: n
     return {
       unlockedAchievementIds,
       xpCredit,
-      achievements: [...achievementSet],
+      achievements,
       xp: newXP,
       totalXp: newXP,
       level: newLevel,
