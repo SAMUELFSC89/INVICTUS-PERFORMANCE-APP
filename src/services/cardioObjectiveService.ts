@@ -1,6 +1,6 @@
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
-import type { Baseline, CardioAchievement, Journey, Mission, ProfessionalUnlock, ProfileSnapshot, Review, WeightMeasurement } from '../core/cardioObjective/types';
+import type { Baseline, CardioAchievement, ChallengePresentation, Journey, Mission, ProfessionalUnlock, ProfileSnapshot, Review, WeightMeasurement } from '../core/cardioObjective/types';
 
 export interface ObjectiveView {
   journey: Journey | null; profile?: ProfileSnapshot; baseline?: Baseline;
@@ -10,7 +10,10 @@ export interface ObjectiveView {
   explanation?: { text: string; source: 'gemini' | 'deterministic'; model: string | null };
   items?: Array<{ id: string; goalLabel: string; status: Journey['status']; createdAt: string }>;
   nextCursor?: string | null;
-  summary?: Pick<Journey, 'id' | 'goalLabel' | 'status' | 'totalCompleted'> & { nextMission: null | Pick<Mission, 'localDate' | 'state'> & Pick<Mission['prescription'], 'modality' | 'targetMetric' | 'durationMinutes' | 'distanceKm'> } | null;
+  summary?: Pick<Journey, 'id' | 'goalLabel' | 'status' | 'totalCompleted'> & {
+    challengePresentation?: ChallengePresentation | null;
+    nextMission: null | Pick<Mission, 'localDate' | 'state'> & Pick<Mission['prescription'], 'modality' | 'targetMetric' | 'durationMinutes' | 'distanceKm'>
+  } | null;
 }
 export class ObjectiveRequestError extends Error {
   constructor(message: string, public status: number) { super(message); }
