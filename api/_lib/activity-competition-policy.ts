@@ -26,6 +26,8 @@ export interface ActivityCompetitionContext {
   maxDurationMinutes?: number;
   regulationVersion?: string;
   regulationHash?: string;
+  /** Modalidades de cardio aceitas pelo regulamento desta edição. */
+  allowedCardioTypes?: string[];
 }
 
 export interface ActivityCompetitionPolicy {
@@ -199,6 +201,7 @@ export async function resolveActivityCompetitionPolicy(
 
   const candidates = matchActiveChampionshipsForActivity({
     activityType,
+    cardioType: input.cardioType,
     isIndoorCardio,
     when,
   });
@@ -225,6 +228,9 @@ export async function resolveActivityCompetitionPolicy(
         maxDurationMinutes: championship.antiFraudProfile?.maxDurationMinutes,
         regulationVersion: String(registration.regulationVersion || championship.regulationVersion || ''),
         regulationHash: String(registration.regulationHash || championship.regulationHash || ''),
+        allowedCardioTypes: championship.antiFraudProfile?.allowedCardioTypes
+          ? [...championship.antiFraudProfile.allowedCardioTypes]
+          : undefined,
         requiresGymCheckIn: activityType === 'workout' && championship.antiFraudProfile?.requireGeofence !== false,
         requiresContinuousGps: activityType === 'cardio' && championship.antiFraudProfile?.requireContinuousGPS !== false,
       }
@@ -364,6 +370,7 @@ export async function persistActivityCompetitionEntries(params: {
       epochStartedAt: context.epochStartedAt || null,
       gymId: context.gymId || null,
       cycleKey: context.cycleKey || null,
+      allowedCardioTypes: context.allowedCardioTypes || null,
       reviewStatus: params.reviewStatus,
       competitionPoints: params.reviewStatus === 'approved' ? Math.max(0, Number(params.score) || 0) : 0,
       riskScore: Number.isFinite(Number(params.riskScore)) ? Number(params.riskScore) : null,
