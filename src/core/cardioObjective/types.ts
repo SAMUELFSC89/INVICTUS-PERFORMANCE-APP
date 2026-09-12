@@ -1,10 +1,10 @@
 import type { CardioHistorySummary } from './history.js';
 
 export const OBJECTIVE_VERSIONS = {
-  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V3', mission: 'MISSION_V2',
-  progression: 'CARDIO_PROGRESSION_V3', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
+  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V4', mission: 'MISSION_V3',
+  progression: 'CARDIO_PROGRESSION_V4', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
   habitConfidence: 'HABIT_CONFIDENCE_V1', nextLevel: 'NEXT_LEVEL_V1', safety: 'SAFETY_V1',
-  evidence: 'CARDIO_EVIDENCE_2026_09_V2',
+  evidence: 'CARDIO_EVIDENCE_2026_09_V2', challengeCopy: 'CHALLENGE_COPY_V1',
 } as const;
 
 export const GOALS = {
@@ -73,6 +73,14 @@ export interface Prescription {
   modality: Modality; targetMetric: 'duration' | 'distance'; durationMinutes: number; distanceKm: number | null;
   sessions: number; intensity: 'easy'; runSecondsPerInterval: number; walkSecondsPerInterval: number;
 }
+export interface ChallengePresentation {
+  name: string;
+  message: string;
+  cue: string;
+  source: 'gemini' | 'deterministic';
+  model: string | null;
+  version: typeof OBJECTIVE_VERSIONS.challengeCopy;
+}
 export type MissionState = 'locked' | 'available' | 'started' | 'completed' | 'skipped' | 'failed' | 'rescheduled';
 export interface Mission {
   id: string; journeyId: string; week: number; goalType: GoalType; localDate: string;
@@ -107,6 +115,8 @@ export interface Journey {
   weekStartedAt: string; currentWeek: number; totalCompleted: number;
   habitConfidence: number; consolidated: boolean; availableDays: number[]; timeZone: string;
   habit: HabitIntervention; safety: SafetyAnswers; completedAt?: string | null; versions: typeof OBJECTIVE_VERSIONS;
+  /** User-facing wording only. It never changes the deterministic prescription. */
+  challengePresentation?: ChallengePresentation;
 }
 export type ProfessionalKind = 'nutritionist' | 'personal_trainer' | 'running_coach' | 'physiotherapist';
 export interface ProfessionalUnlock { journeyId: string; kind: ProfessionalKind; eligibleAt: string | null; status: 'COMING_SOON'; partnerId: null; canBook: false; canShare: false; reason: string; version: string }
