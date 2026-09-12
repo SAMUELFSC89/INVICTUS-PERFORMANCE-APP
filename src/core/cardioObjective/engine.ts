@@ -33,7 +33,7 @@ export function safetyDecision(safety: SafetyAnswers, gradualReturn: boolean) {
   return { blocked: false, urgent: false, reason: 'Mantenha um esforço confortável, em que consiga conversar. Pare se surgir algum sintoma incomum.' };
 }
 
-/** Capability is not medical clearance. Self-report is deliberately conservative. */
+/** Running capability is not medical clearance nor general athletic level. */
 export function readiness(a: ObjectiveAnswers): number {
   if (a.goalType === 'gradual_return') return 0;
   const runningLevel = ({ none: 1, seconds: 2, minutes: 3, regular: 4, structured: 5 } as const)[a.runningAbility];
@@ -42,22 +42,32 @@ export function readiness(a: ObjectiveAnswers): number {
 }
 
 /**
- * Classification uses both self-report and recent canonical activity history.
- * Recent history can elevate confidence in a trained classification, while a
- * declared return/restart prevents an old fitness identity from creating an
- * aggressive first mission after a break.
+ * Classification uses running ability, broader sport background and recent
+ * canonical activity history. This prevents a competitive cyclist/fighter/team
+ * athlete from being treated as sedentary merely because they are not a runner.
  */
 export function classifyCardioProfile(a: ObjectiveAnswers, profile?: ProfileSnapshot): CardioProfileClass {
   const sessions = profile?.recentCardioSessions || 0;
   const longestRun = profile?.recentLongestRunKm || 0;
-  const wasTrained = ['regular', 'structured'].includes(a.runningAbility) || longestRun >= 3;
+  const background = a.trainingBackground;
+  const typical = a.typicalCardioMinutes || 0;
+  const practicesSport = !!a.primarySport && a.primarySport !== 'none';
+  const wasTrained = ['regular', 'structured'].includes(a.runningAbility)
+    || ['regular', 'structured', 'competitive'].includes(background || '')
+    || longestRun >= 3;
 
   if (a.goalType === 'gradual_return' || a.safety.signals.includes('surgical_recovery')) return 'returning';
   if (a.goalType === 'return_cardio' || (a.barrier === 'restart' && wasTrained && sessions <= 2)) return 'returning';
-  if (a.runningAbility === 'structured' || (sessions >= 8 && longestRun >= 5) || (sessions >= 12 && a.walkingMinutes >= 45)) return 'advanced';
-  if (a.runningAbility === 'regular' || (sessions >= 4 && longestRun >= 2) || sessions >= 8) return 'runner';
-  if (a.runningAbility === 'minutes' || sessions >= 3) return 'active';
-  if (a.runningAbility === 'seconds' || a.walkingMinutes >= 30 || sessions >= 1) return 'beginner';
+  if (background === 'competitive'
+    || (background === 'structured' && typical >= 60)
+    || a.runningAbility === 'structured'
+    || (sessions >= 8 && longestRun >= 5)
+    || (sessions >= 12 && a.walkingMinutes >= 45)) return 'advanced';
+  if (a.runningAbility === 'regular' || (sessions >= 4 && longestRun >= 2)) return 'runner';
+  if (background === 'structured' || background === 'regular'
+    || (practicesSport && typical >= 45)
+    || a.runningAbility === 'minutes' || sessions >= 3) return 'active';
+  if (background === 'occasional' || a.runningAbility === 'seconds' || a.walkingMinutes >= 30 || sessions >= 1) return 'beginner';
   return 'sedentary';
 }
 
@@ -79,12 +89,20 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
   if (recentSessions >= 4) baselineMinutes += profileClass === 'runner' || profileClass === 'advanced' ? 2 : 1;
   if (longestRun >= 5 && (profileClass === 'runner' || profileClass === 'advanced')) baselineMinutes += 2;
 
-  // Self-report still matters for users who trained outside Invictus/Health sources.
+  // Self-report matters for training performed outside Invictus/Health sources.
   if (a.runningAbility === 'minutes') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.62));
   if (a.runningAbility === 'regular') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.72));
   if (a.runningAbility === 'structured') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.78));
+  if (a.typicalCardioMinutes) {
+    const typicalFraction = profileClass === 'advanced' ? 0.78
+      : profileClass === 'runner' ? 0.72
+        : profileClass === 'active' ? 0.65
+          : profileClass === 'returning' ? 0.55
+            : 0.60;
+    baselineMinutes = Math.max(baselineMinutes, Math.min(maxMinutes, Math.round(a.typicalCardioMinutes * typicalFraction)));
+  }
 
-  // Barriers soften the challenge without erasing the person's demonstrated level.
+  // Barriers soften the challenge without erasing demonstrated capacity.
   if (a.barrier === 'time') baselineMinutes = Math.min(baselineMinutes, Math.max(classFloor, Math.round(maxMinutes * 0.72)));
   if (a.confidenceScore <= 4) baselineMinutes = Math.max(classFloor, Math.round(baselineMinutes * 0.85));
   else if (a.confidenceScore <= 7 || a.barrier === 'restart') baselineMinutes = Math.max(classFloor, Math.round(baselineMinutes * 0.92));
@@ -95,12 +113,12 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
     : profileClass === 'beginner'
       ? 'Perfil iniciante: preservar aderência e progressão gradual, usando capacidade declarada e histórico recente sem saltos bruscos.'
       : profileClass === 'active'
-        ? 'Perfil ativo: a missão usa uma parcela relevante do tempo disponível e evita rebaixar quem já sustenta alguns minutos de cardio.'
+        ? 'Perfil ativo/esportivo: usar uma carga compatível com a prática já existente, a modalidade preferida e o tempo real disponível, sem aplicar fallback de sedentário.'
         : profileClass === 'runner'
           ? 'Corredor regular: manter corrida e uma duração compatível com a base já demonstrada; o motor não volta para caminhada curta sem motivo de segurança ou retorno.'
           : profileClass === 'advanced'
-            ? 'Perfil avançado: preservar carga significativa e esforço predominantemente fácil; intensidade alta não é adicionada automaticamente sem contexto suficiente de carga e recuperação.'
-            : 'Retorno: reduzir a carga em relação à identidade anterior de treino e progredir somente após resposta real da semana, respeitando os bloqueios de segurança.';
+            ? 'Perfil avançado/competitivo: preservar carga significativa e esforço predominantemente fácil; intensidade alta não é adicionada automaticamente sem contexto suficiente de carga, recuperação e fase de treino.'
+            : 'Retorno: reconhecer a experiência anterior, reduzir a carga em relação ao nível habitual e progredir somente após resposta real da semana, respeitando os bloqueios de segurança.';
 
   return {
     profileClass,
@@ -113,7 +131,7 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
 }
 
 export function onboardingSteps(goal: ObjectiveAnswers['goalType']) {
-  return ['goal', ...(goal === 'other' ? ['otherGoal'] : []), 'safety', 'capacity', 'availability', 'schedule', 'modality', 'barrier',
+  return ['goal', ...(goal === 'other' ? ['otherGoal'] : []), 'safety', 'capacity', 'trainingProfile', 'availability', 'schedule', 'modality', 'barrier',
     ...(goal === 'lose_weight' ? ['weight', 'weightTarget', 'nutrition'] : []),
     ...(goal === 'race' ? ['distance'] : []), 'confidence', 'consent'];
 }
@@ -130,7 +148,7 @@ export function validateMissionCoherence(a: ObjectiveAnswers, prescription: Pres
   if (next.modality === 'running' && level < 2) next.modality = 'walking';
   if (a.goalType === 'gradual_return') next.modality = 'walking';
 
-  // A trained runner does not get artificial 60s/120s run-walk intervals by default.
+  // A trained runner does not get artificial beginner run/walk intervals by default.
   if (next.modality === 'running' && level >= 4) {
     next.runSecondsPerInterval = 0;
     next.walkSecondsPerInterval = 0;
