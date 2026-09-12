@@ -19,6 +19,30 @@ function validPeer(value: unknown, userId: string): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 128 && value !== userId;
 }
 
+export function deriveSocialStatsFromRecords(
+  userId: string,
+  postRecords: Array<Record<string, any>>,
+  followingRecords: Array<Record<string, any>>,
+  followerRecords: Array<Record<string, any>>,
+): SocialAchievementStats {
+  const uniqueFollowing = new Set<string>();
+  for (const record of followingRecords) {
+    const peer = record?.followingId;
+    if (validPeer(peer, userId)) uniqueFollowing.add(peer);
+  }
+  const uniqueFollowers = new Set<string>();
+  for (const record of followerRecords) {
+    const peer = record?.followerId;
+    if (validPeer(peer, userId)) uniqueFollowers.add(peer);
+  }
+
+  return {
+    postsCount: postRecords.length,
+    followersCount: uniqueFollowers.size,
+    followingCount: uniqueFollowing.size,
+  };
+}
+
 /**
  * Social counters are derived from canonical documents instead of client-side
  * increments. Sets intentionally deduplicate malformed/legacy duplicate follow
@@ -31,22 +55,12 @@ export async function deriveUserSocialStats(userId: string): Promise<SocialAchie
     db.collection('follows').where('followingId', '==', userId).get(),
   ]);
 
-  const uniqueFollowing = new Set<string>();
-  for (const doc of following.docs) {
-    const peer = doc.data()?.followingId;
-    if (validPeer(peer, userId)) uniqueFollowing.add(peer);
-  }
-  const uniqueFollowers = new Set<string>();
-  for (const doc of followers.docs) {
-    const peer = doc.data()?.followerId;
-    if (validPeer(peer, userId)) uniqueFollowers.add(peer);
-  }
-
-  return {
-    postsCount: posts.size,
-    followersCount: uniqueFollowers.size,
-    followingCount: uniqueFollowing.size,
-  };
+  return deriveSocialStatsFromRecords(
+    userId,
+    posts.docs.map((doc: any) => doc.data() || {}),
+    following.docs.map((doc: any) => doc.data() || {}),
+    followers.docs.map((doc: any) => doc.data() || {}),
+  );
 }
 
 /**
