@@ -319,10 +319,81 @@ describe('IGA + missões — stress antifraude', () => {
     expect(progress(cardioMission.id)?.currentProgress).toBe(EXPECTED_MISSION_PER_MODALITY);
   });
 
+  test('fraude não substitui a última repetição necessária para concluir missão de musculação ou cardio', async () => {
+    const strengthGoal = { ...strengthMission, target: 3 };
+    const cardioGoal = { ...cardioMission, target: 2 };
+    (MissionEngine.getMissions as jest.Mock).mockResolvedValue([strengthGoal, cardioGoal]);
+    mockDb = createDb({
+      [`workouts/strength-valid-1`]: activity('approved', 'workout', 1),
+      [`workouts/strength-valid-2`]: activity('personal', 'workout', 2),
+      [`workouts/strength-fraud`]: activity('fraud_rejected', 'workout', 3),
+      [`workouts/cardio-valid-1`]: activity('approved', 'cardio', 1),
+      [`workouts/cardio-fraud`]: activity('fraud_rejected', 'cardio', 2),
+    });
+
+    await MissionEngine.syncUserProgressFromCompletedActivities(USER_ID);
+    expect(progress(strengthGoal.id)).toMatchObject({ currentProgress: 2, completed: false });
+    expect(progress(cardioGoal.id)).toMatchObject({ currentProgress: 1, completed: false });
+
+    mockDb.store.set('workouts/strength-valid-3', activity('competition_ineligible', 'workout', 4));
+    mockDb.store.set('workouts/cardio-valid-2', activity('personal', 'cardio', 3));
+    await MissionEngine.syncUserProgressFromCompletedActivities(USER_ID);
+
+    expect(progress(strengthGoal.id)).toMatchObject({ currentProgress: 3, completed: true });
+    expect(progress(cardioGoal.id)).toMatchObject({ currentProgress: 2, completed: true });
+  });
+
+  test('falha técnica não conta antes da decisão; se aprovada depois, entra exatamente uma vez em ambas modalidades', async () => {
+    const strengthGoal = { ...strengthMission, target: 1 };
+    const cardioGoal = { ...cardioMission, target: 1 };
+    (MissionEngine.getMissions as jest.Mock).mockResolvedValue([strengthGoal, cardioGoal]);
+    mockDb = createDb({
+      [`workouts/strength-pending`]: activity('technical_pending', 'workout', 1),
+      [`workouts/cardio-pending`]: activity('technical_pending', 'cardio', 1),
+    });
+
+    await MissionEngine.syncUserProgressFromCompletedActivities(USER_ID);
+    expect(progress(strengthGoal.id)).toMatchObject({ currentProgress: 0, completed: false });
+    expect(progress(cardioGoal.id)).toMatchObject({ currentProgress: 0, completed: false });
+
+    mockDb.store.set('workouts/strength-pending', activity('approved', 'workout', 1));
+    mockDb.store.set('workouts/cardio-pending', activity('approved', 'cardio', 1));
+    await MissionEngine.syncUserProgressFromCompletedActivities(USER_ID);
+    await MissionEngine.syncUserProgressFromCompletedActivities(USER_ID);
+
+    expect(progress(strengthGoal.id)).toMatchObject({ currentProgress: 1, completed: true });
+    expect(progress(cardioGoal.id)).toMatchObject({ currentProgress: 1, completed: true });
+  });
+
+  test('falha técnica que termina rejeitada continua em zero para musculação e cardio', async () => {
+    const strengthGoal = { ...strengthMission, target: 1 };
+    const cardioGoal = { ...cardioMission, target: 1 };
+    (MissionEngine.getMissions as jest.Mock).mockResolvedValue([strengthGoal, cardioGoal]);
+    mockDb = createDb({
+      [`workouts/strength-pending`]: activity('technical_pending', 'workout', 1),
+      [`workouts/cardio-pending`]: activity('technical_pending', 'cardio', 1),
+    });
+
+    await MissionEngine.syncUserProgressFromCompletedActivities(USER_ID);
+    mockDb.store.set('workouts/strength-pending', activity('fraud_rejected', 'workout', 1));
+    mockDb.store.set('workouts/cardio-pending', activity('fraud_rejected', 'cardio', 1));
+    await MissionEngine.syncUserProgressFromCompletedActivities(USER_ID);
+
+    expect(progress(strengthGoal.id)).toMatchObject({ currentProgress: 0, completed: false });
+    expect(progress(cardioGoal.id)).toMatchObject({ currentProgress: 0, completed: false });
+  });
+
   test('Buscar Objetivo rejeita também o estado terminal antifraude, não só pendingReview', () => {
     const source = readFileSync(resolve(process.cwd(), 'api/_lib/cardio-objective-activity-sync.ts'), 'utf8');
     expect(source).toContain('competitionReviewStatus');
     expect(source).toContain('validationStatus');
     expect(source).toContain('securityDecision');
+  });
+
+  test('reconciliador técnico sincroniza missões e Buscar Objetivo após aprovação automática', () => {
+    const source = readFileSync(resolve(process.cwd(), 'api/_lib/pending-review-reconciler.ts'), 'utf8');
+    expect(source).toContain('MissionEngine.syncUserProgressFromCompletedActivities');
+    expect(source).toContain('reconcileCardioObjectiveActivity');
+    expect(source).toContain("status === 'rejected' ? { missionEligible: false }");
   });
 });
