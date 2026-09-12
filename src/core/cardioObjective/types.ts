@@ -19,6 +19,8 @@ export type GoalType = keyof typeof GOALS;
 export type Modality = 'walking' | 'running' | 'bike' | 'stationary_bike' | 'treadmill';
 export type Barrier = 'time' | 'fatigue' | 'starting' | 'hunger' | 'sweets' | 'anxiety' | 'dislike_running' | 'pain' | 'restart' | 'unpredictable' | 'food' | 'other';
 export type SafetySignal = 'chest_pain' | 'fainting' | 'dizziness' | 'unusual_breathlessness' | 'surgical_recovery' | 'pain';
+export type TrainingBackground = 'inactive' | 'occasional' | 'regular' | 'structured' | 'competitive';
+export type PrimarySport = 'none' | 'running' | 'cycling' | 'team_sport' | 'combat' | 'cross_training' | 'other';
 export interface SafetyAnswers { screened: boolean; signals: SafetySignal[]; medicalClearance: boolean | null }
 export type FoodFrequency = 'rarely' | 'weekly' | 'daily' | 'multiple_daily';
 export const FOOD_LABELS = { soda: 'Refrigerante', alcohol: 'Bebida alcoólica', sweets: 'Doces', chocolate: 'Chocolate', fast_food: 'Fast food', delivery: 'Delivery', snacks: 'Salgadinhos', dessert: 'Sobremesas', large_meals: 'Refeições muito grandes', grazing: 'Beliscos', night_eating: 'Alimentação noturna' } as const;
@@ -31,6 +33,10 @@ export interface ObjectiveAnswers {
   goalType: GoalType; otherGoal?: string;
   walkingMinutes: 5 | 15 | 30 | 45;
   runningAbility: 'none' | 'seconds' | 'minutes' | 'regular' | 'structured';
+  /** Optional for backwards compatibility; new onboarding always captures these fields. */
+  trainingBackground?: TrainingBackground;
+  primarySport?: PrimarySport;
+  typicalCardioMinutes?: 15 | 30 | 45 | 60 | 90;
   availableMinutes: 10 | 15 | 25 | 40 | 50;
   availableDays: number[]; timeZone: string;
   preferredMoment: 'post_workout' | 'pre_workout' | 'rest_days' | 'morning' | 'afternoon' | 'night' | 'any';
