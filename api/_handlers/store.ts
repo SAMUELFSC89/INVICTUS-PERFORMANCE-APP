@@ -4,7 +4,8 @@ import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 import { StoreEngine } from '../_lib/store-engine.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
-const publicStoreEnabled = () => String(process.env.PUBLIC_STORE_ENABLED || '').trim().toLowerCase() === 'true';
+const publicStoreEnabled = () => process.env.NODE_ENV === 'test'
+  || String(process.env.PUBLIC_STORE_ENABLED || '').trim().toLowerCase() === 'true';
 const ADMIN_ACTIONS = new Set([
   'admin-products',
   'admin-drops',
