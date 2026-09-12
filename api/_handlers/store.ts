@@ -2,11 +2,12 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 import { StoreEngine } from '../_lib/store-engine.js';
+import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
 async function requireAdmin(userId: string) {
   if (!db) return false;
   const snapshot = await db.collection('users').doc(userId).get();
-  return snapshot.exists && snapshot.data()?.role === 'admin';
+  return snapshot.exists && hasActiveAdminAuthority(snapshot.data());
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
