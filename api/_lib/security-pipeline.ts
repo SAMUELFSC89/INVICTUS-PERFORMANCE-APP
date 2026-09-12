@@ -43,10 +43,35 @@ export interface SecurityReportDocument {
   activityType?: string;
 }
 
+const DECISION_RANK: Record<AutomaticDecision, number> = {
+  APPROVED: 0,
+  PARTIALLY_APPROVED: 1,
+  UNDER_REVIEW: 2,
+  BLOCKED: 3,
+};
+
+function decisionFromRiskScore(riskScore: number): AutomaticDecision {
+  if (riskScore <= SECURITY_CONFIG.decisionThresholds.approveMaxRiskScore) return 'APPROVED';
+  if (riskScore <= SECURITY_CONFIG.decisionThresholds.partiallyApproveMaxRiskScore) return 'PARTIALLY_APPROVED';
+  if (riskScore <= SECURITY_CONFIG.decisionThresholds.underReviewMaxRiskScore) return 'UNDER_REVIEW';
+  return 'BLOCKED';
+}
+
+function stricterDecision(a: AutomaticDecision, b: AutomaticDecision): AutomaticDecision {
+  return DECISION_RANK[a] >= DECISION_RANK[b] ? a : b;
+}
+
+function riskLevelFromScore(riskScore: number): RiskAnalysis['riskLevel'] {
+  if (riskScore <= SECURITY_CONFIG.riskLevels.lowMax) return 'LOW';
+  if (riskScore <= SECURITY_CONFIG.riskLevels.mediumMax) return 'MEDIUM';
+  if (riskScore <= SECURITY_CONFIG.riskLevels.highMax) return 'HIGH';
+  return 'CRITICAL';
+}
+
 export class SecurityPipeline {
   /**
    * Enterprise Grade Security Pipeline (Enterprise Version 2.0.0)
-   * 
+   *
    * Strict Pipeline Order:
    * Activity -> Validation -> Integrity -> Behavior -> Device Fingerprint -> Network ->
    * Fraud -> Reputation -> Trust -> Risk -> Explainability -> Security Events -> Immutable Audit Log
@@ -67,7 +92,7 @@ export class SecurityPipeline {
 
     const versions = {
       securityVersion: '2.0.0',
-      pipelineVersion: '3.0.0',
+      pipelineVersion: '3.1.0',
       rulesVersion: SECURITY_CONFIG.ruleVersion || '2026.2',
       engineVersions: {
         validation: '2.0.0',
@@ -83,7 +108,6 @@ export class SecurityPipeline {
       }
     };
 
-    // Extract active trace ID if available
     const traceId = reqContext?.traceId || activityPayload?._traceIds?.traceId;
 
     // 1. Validation Engine
@@ -133,8 +157,15 @@ export class SecurityPipeline {
 
     // 9. Risk Engine
     const risk = RiskEngine.evaluate(validation, integrity, fraud);
+    // Guardamos a classificação original porque ela incorpora severidade das
+    // evidências (HIGH/CRITICAL), não apenas a soma numérica das penalidades.
+    const evidenceDecision = risk.automaticDecision;
 
-    // Adjust risk slightly based on Trust Engine & Network Risk
+    // Ajustes de confiança/rede podem elevar o risco. Uma reputação alta pode
+    // reduzir alguns pontos do escore, mas NUNCA pode apagar uma decisão mais
+    // severa já produzida por uma evidência concreta de fraude. Antes, o bloco
+    // seguinte reclassificava só pelo número final e uma evidência HIGH de 20
+    // pontos podia voltar de UNDER_REVIEW para APPROVED.
     if (network.networkRiskScore > 50) {
       risk.riskScore = Math.min(100, risk.riskScore + 15);
     }
@@ -144,16 +175,9 @@ export class SecurityPipeline {
       risk.riskScore = Math.max(0, risk.riskScore - 5);
     }
 
-    // Re-assign decision after trust adjustment
-    if (risk.riskScore <= SECURITY_CONFIG.decisionThresholds.approveMaxRiskScore) {
-      risk.automaticDecision = 'APPROVED';
-    } else if (risk.riskScore <= SECURITY_CONFIG.decisionThresholds.partiallyApproveMaxRiskScore) {
-      risk.automaticDecision = 'PARTIALLY_APPROVED';
-    } else if (risk.riskScore <= SECURITY_CONFIG.decisionThresholds.underReviewMaxRiskScore) {
-      risk.automaticDecision = 'UNDER_REVIEW';
-    } else {
-      risk.automaticDecision = 'BLOCKED';
-    }
+    const scoreDecision = decisionFromRiskScore(risk.riskScore);
+    risk.automaticDecision = stricterDecision(evidenceDecision, scoreDecision);
+    risk.riskLevel = riskLevelFromScore(risk.riskScore);
 
     if (traceId) {
       recordPipelineStage(traceId, 'Risk', risk.automaticDecision === 'APPROVED' ? 'SUCCESS' : risk.automaticDecision === 'BLOCKED' ? 'FAILED' : 'WARNING', `Análise de Risco: ${risk.automaticDecision} (Escore: ${risk.riskScore}/100)`, { riskScore: risk.riskScore, decision: risk.automaticDecision });
@@ -174,7 +198,6 @@ export class SecurityPipeline {
       integrity.integrityScore
     );
 
-    // Construct full audit report document
     const report: SecurityReportDocument = {
       activityId,
       userId,
@@ -207,7 +230,6 @@ export class SecurityPipeline {
       activityType: activityPayload.activityType || activityPayload.type || 'GYM_WORKOUT'
     };
 
-    // Console Logging strictly adhering to required format
     console.log(`\n==================================================`);
     console.log(`ENTERPRISE SECURITY PIPELINE v${versions.securityVersion} [${activityId}] [USER: ${userId}]`);
     console.log(`==================================================`);
@@ -280,9 +302,9 @@ export class SecurityPipeline {
       console.error(`[SecurityPipeline] Error writing audit log:`, saveErr);
     }
 
-    // Para um produto competitivo, "parcialmente aprovado" ainda significa
-    // que faltou evidência. Apenas APPROVED libera pontos automaticamente;
-    // qualquer dúvida permanece em análise, sem pontuar antecipadamente.
+    // Apenas APPROVED libera score. PARTIALLY_APPROVED e UNDER_REVIEW são
+    // estados técnicos do motor; o fluxo competitivo do app os converte em
+    // rejeição terminal, conforme política de produto.
     const shouldScore = risk.automaticDecision === 'APPROVED';
 
     return {
