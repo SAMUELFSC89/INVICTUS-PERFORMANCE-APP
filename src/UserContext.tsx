@@ -7,6 +7,7 @@ import { nativeBackgroundLocationService } from './services/nativeBackgroundLoca
 import { webGpsTrackingService } from './services/webGpsTrackingService';
 import { activityNotificationService } from './services/activityNotificationService';
 import { activityLiveActivityService } from './services/activityLiveActivityService';
+import { reconcilePushNotificationsForAuthChange } from './services/pushNotificationService';
 
 
 
@@ -173,6 +174,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       localStorage.removeItem('last_user_profile');
       clearForeignOrGuestSession(firebaseUser?.uid || null);
+
+      // Push também é estado privado da identidade. O token nativo pertence ao
+      // aparelho, então precisa ser invalidado no logout ou reivindicado pela
+      // conta nova. A rotina não solicita nova permissão: ela só reconcilia uma
+      // autorização já concedida pelo usuário.
+      void reconcilePushNotificationsForAuthChange(firebaseUser?.uid || null).catch((error: any) => {
+        console.error(`[AUTH] [PUSH] [${firebaseUser?.uid || 'GUEST'}] [FAILURE] ${error?.message || 'Falha ao reconciliar dispositivo'}`);
+      });
+
       if (firebaseUser) {
         console.log(`[AUTH] [SESSION_CHANGE] [${firebaseUser.uid}] [INFO] Estado de autenticação alterado: Logado`);
         // BILL-02: antecipamos a vinculação do SDK, mas não bloqueamos a carga
