@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { answersSchema, identifierSchema, reviewSchema, safetySchema } from '../../src/core/cardioObjective/validation.js';
 import { activityAchievementSeeds, adaptHabit, createJourney, goalReached, habitConfidence, localDate, makeMissions, missionMeetsActivity, professionalNextLevel, reviewAchievementSeeds, reviewWeek, safetyDecision, type VerifiedActivity } from '../../src/core/cardioObjective/engine.js';
+import { summarizeCardioHistory } from '../../src/core/cardioObjective/history.js';
 import { OBJECTIVE_VERSIONS, type Baseline, type CardioAchievement, type Journey, type Mission, type ObjectiveAnswers, type ProfileSnapshot, type Review, type SafetyAnswers, type WeeklyAnswers, type WeightMeasurement } from '../../src/core/cardioObjective/types.js';
 import { explainObjectiveDecision, refineInitialObjectiveMission } from '../_lib/cardio-objective-ai.js';
 
@@ -31,9 +32,20 @@ async function getBaselineProfile(uid: string, user: Record<string, any>, now: s
     return ['apple_health', 'health_connect'].includes(w.source) && w.quality === 'sensor_verified' && safeNumber(w.value, 30, 350) !== null && w.timestamp <= now;
   }) : undefined;
   const weight = weightDoc?.data();
-  const activities = activitiesResult.status === 'fulfilled' ? activitiesResult.value.docs.map(d => d.data()).filter(w => w.type === 'cardio' && w.recordStatus === 'completed' && w.timestamp <= now && !w.securityBlocked && !['rejected', 'suspicious'].includes(w.status)) : null;
+  const activities = activitiesResult.status === 'fulfilled' ? activitiesResult.value.docs.map(d => d.data()).filter(w => w.type === 'cardio' && w.recordStatus === 'completed' && typeof w.timestamp === 'string' && w.timestamp <= now && !w.securityBlocked && !['rejected', 'suspicious'].includes(w.status)) : null;
+  const historyPoints = activities?.flatMap(w => {
+    const occurredAt = typeof w.timestamp === 'string' ? w.timestamp : null;
+    let durationMinutes = safeNumber(w.duration, 1, 600);
+    if (durationMinutes === null && typeof w.startTime === 'string' && typeof w.endTime === 'string') {
+      const elapsed = (Date.parse(w.endTime) - Date.parse(w.startTime)) / 60000;
+      durationMinutes = safeNumber(elapsed, 1, 600);
+    }
+    if (!occurredAt || durationMinutes === null) return [];
+    return [{ occurredAt, durationMinutes, modality: typeof w.cardioType === 'string' ? w.cardioType : null, distanceKm: safeNumber(w.distance, 0, 300) }];
+  }) || [];
+  const cardioHistory = activities ? summarizeCardioHistory(historyPoints, now) : null;
   const runs = activities?.filter(w => w.cardioType === 'running' && safeNumber(w.distance, 0, 300) !== null).map(w => w.distance as number) || [];
-  return { capturedAt: now, source: 'users', planId: planData ? planId : null, heightCm: safeNumber(user.height, 100, 250), weightKg: weight?.value ?? safeNumber(user.weight, 30, 350), ageYears: age && age > 0 && age < 120 ? age : null, strengthDays: [...new Set(days)], recentCardioSessions: activities?.length ?? null, recentLongestRunKm: runs.length ? Math.max(...runs) : null,
+  return { capturedAt: now, source: 'users', planId: planData ? planId : null, heightCm: safeNumber(user.height, 100, 250), weightKg: weight?.value ?? safeNumber(user.weight, 30, 350), ageYears: age && age > 0 && age < 120 ? age : null, strengthDays: [...new Set(days)], recentCardioSessions: cardioHistory?.sessions28d ?? activities?.length ?? null, recentLongestRunKm: runs.length ? Math.max(...runs) : null, cardioHistory,
     weightSource: weight ? weight.source : safeNumber(user.weight, 30, 350) !== null ? 'profile' : null, weightMeasuredAt: weight?.timestamp || null, weightSourceId: weightDoc?.id || null, historyStatus: activities ? 'available' : 'unavailable', historyWindowDays: 28 };
 }
 async function currentView(uid: string, id: string) {
@@ -121,6 +133,9 @@ export default async function handler(req: any, res: any) {
           missionPersonalizationModel: refinement.model,
           missionPersonalizationRationale: refinement.rationale,
           durationMinutes: refinement.prescription.durationMinutes,
+          historySessions28d: profile.cardioHistory?.sessions28d ?? null,
+          historyMinutes28d: profile.cardioHistory?.minutes28d ?? null,
+          historyLoadTrend: profile.cardioHistory?.loadTrend ?? null,
         });
       });
       return res.status(201).json(await currentView(auth.uid, ref.id));
