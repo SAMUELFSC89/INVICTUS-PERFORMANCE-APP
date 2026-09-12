@@ -3,6 +3,12 @@ import { cors, verifyAuth } from '../_lib/common.js';
 import { MissionEngine } from '../_lib/mission-engine.js';
 import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 import { reconcileUserActivityStats } from '../_lib/user-activity-stats.js';
+import { reconcileUserSocialStats } from '../_lib/user-social-stats.js';
+
+function safeUserId(value: unknown): string | null {
+  const id = typeof value === 'string' ? value.trim() : '';
+  return id && id.length <= 128 && /^[A-Za-z0-9_-]+$/.test(id) ? id : null;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -65,6 +71,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // idempotente, portanto também recupera perfis antigos que ficaram com
       // totalWorkouts/streak defasados depois da migração para o fluxo v2.
       const stats = await reconcileUserActivityStats(auth.uid);
+      return res.status(200).json({ success: true, stats });
+    }
+
+    if (req.method === 'POST' && action === 'sync-social-stats') {
+      // O cliente informa no máximo qual outro perfil foi afetado por um
+      // follow/unfollow. Nenhum contador é aceito do aparelho: ambos os perfis
+      // são recalculados a partir das coleções posts/follows do servidor.
+      const affectedUserId = safeUserId(req.body?.affectedUserId);
+      const stats = await reconcileUserSocialStats(auth.uid);
+      if (affectedUserId && affectedUserId !== auth.uid) {
+        await reconcileUserSocialStats(affectedUserId).catch((error) => {
+          console.warn('[Social Stats Peer Sync Warning]:', error);
+        });
+      }
       return res.status(200).json({ success: true, stats });
     }
 
