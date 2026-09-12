@@ -1,8 +1,10 @@
+import type { CardioHistorySummary } from './history.js';
+
 export const OBJECTIVE_VERSIONS = {
-  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V2', mission: 'MISSION_V2',
-  progression: 'CARDIO_PROGRESSION_V2', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
+  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V3', mission: 'MISSION_V2',
+  progression: 'CARDIO_PROGRESSION_V3', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
   habitConfidence: 'HABIT_CONFIDENCE_V1', nextLevel: 'NEXT_LEVEL_V1', safety: 'SAFETY_V1',
-  evidence: 'CARDIO_EVIDENCE_2026_09_V1',
+  evidence: 'CARDIO_EVIDENCE_2026_09_V2',
 } as const;
 
 export const GOALS = {
@@ -49,6 +51,8 @@ export interface ProfileSnapshot {
   capturedAt: string; weightKg: number | null; heightCm: number | null; ageYears: number | null;
   strengthDays: number[]; source: 'users'; planId: string | null;
   recentCardioSessions: number | null; recentLongestRunKm: number | null;
+  /** Canonical 7/28-day workload context. Optional so old persisted baselines remain readable. */
+  cardioHistory?: CardioHistorySummary | null;
   weightSource?: 'profile' | 'apple_health' | 'health_connect' | null;
   weightMeasuredAt?: string | null; weightSourceId?: string | null;
   historyStatus?: 'available' | 'unavailable'; historyWindowDays?: number;
