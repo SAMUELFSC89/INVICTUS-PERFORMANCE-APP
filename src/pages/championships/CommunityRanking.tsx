@@ -47,6 +47,10 @@ export function CommunityRanking() {
     if (!user) return;
     setLoading(true);
     setError('');
+    // Não mantenha classificação de outro período na tela enquanto a nova
+    // consulta ainda está pendente. Ranking antigo parecendo atual é pior do
+    // que um estado de carregamento explícito.
+    setStatus(null);
     try {
       const result = await communityChampionshipService.status(period);
       if (result.enrolled !== true) {
@@ -85,9 +89,9 @@ export function CommunityRanking() {
 
     <section className="community-ranking-hero"><div><small>CLASSIFICAÇÃO EXCLUSIVA</small><h1>RANKING DA ACADEMIA</h1><p><Building2 /> {gymName}</p><em>CAMPEONATO ENTRE AMIGOS</em></div><div className="community-ranking-hero-motto"><span>MAIS QUE TREINO<br/>É EVOLUÇÃO.</span><i /></div></section>
 
-    <div className="academy-ranking-periods community-ranking-periods" role="tablist" aria-label="Período do ranking">{periods.map((option) => <button type="button" role="tab" aria-selected={period === option.value} className={period === option.value ? 'is-active' : ''} key={option.value} onClick={() => setPeriod(option.value)}>{option.label}</button>)}</div>
+    <div className="academy-ranking-periods community-ranking-periods" role="tablist" aria-label="Período do ranking">{periods.map((option) => <button type="button" role="tab" aria-selected={period === option.value} className={period === option.value ? 'is-active' : ''} key={option.value} onClick={() => setPeriod(option.value)} disabled={loading}>{option.label}</button>)}</div>
 
-    {loading && !status ? <section className="academy-ranking-state academy-ranking-loading"><RefreshCw /><p>ATUALIZANDO CLASSIFICAÇÃO…</p></section> : error ? <section className="academy-ranking-state"><RefreshCw /><h2>NÃO FOI POSSÍVEL CARREGAR</h2><p>{error}</p><button type="button" onClick={() => void load()}>TENTAR NOVAMENTE <RefreshCw /></button></section> : athletes.length === 0 ? <section className="academy-ranking-state"><Medal /><h2>O PÓDIO AINDA ESTÁ ABERTO</h2><p>Finalize atividades válidas para inaugurar a classificação deste período.</p></section> : <>
+    {loading ? <section className="academy-ranking-state academy-ranking-loading"><RefreshCw /><p>ATUALIZANDO CLASSIFICAÇÃO…</p></section> : error ? <section className="academy-ranking-state"><RefreshCw /><h2>NÃO FOI POSSÍVEL CARREGAR</h2><p>{error}</p><button type="button" onClick={() => void load()}>TENTAR NOVAMENTE <RefreshCw /></button></section> : athletes.length === 0 ? <section className="academy-ranking-state"><Medal /><h2>O PÓDIO AINDA ESTÁ ABERTO</h2><p>Finalize atividades válidas para inaugurar a classificação deste período.</p></section> : <>
       <section className="community-ranking-top3"><header><span /><h2>TOP 3</h2><span /></header><p>ATLETAS QUE FAZEM A DIFERENÇA</p><PodiumTopThree entries={topThree} currentUserId={user.uid} onSelect={(uid) => navigate(`/profile/${uid}`)} /></section>
 
       {rows.length ? <section className="community-ranking-list" aria-label="Demais posições"><header><span>POS</span><span>ATLETA</span><span>PONTOS IGA</span></header>{rows.map((entry) => <button key={entry.uid} type="button" className={entry.uid === user.uid ? 'is-current' : ''} onClick={() => navigate(`/profile/${entry.uid}`)}><b>{entry.rank}</b><img src={entry.photoURL || fallbackAvatar} alt="" onError={(event) => { event.currentTarget.src = fallbackAvatar; }} /><strong>{entry.uid === user.uid ? 'Você' : entry.displayName}</strong><span>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></span></button>)}</section> : null}
