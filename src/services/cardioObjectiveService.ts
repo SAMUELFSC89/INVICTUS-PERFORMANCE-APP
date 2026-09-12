@@ -21,24 +21,33 @@ export class ObjectiveRequestError extends Error {
 }
 
 /**
- * O backend pode deixar a próxima missão em `available` logo após concluir a
- * atual. Isso é útil para a progressão interna, mas não significa que ela deve
- * aparecer como uma segunda missão no mesmo dia. No cliente, missões futuras
- * continuam visualmente bloqueadas até a data programada. Assim a tela mostra
- * o estado de conclusão do dia e a próxima missão só aparece quando chegar a
- * data dela.
+ * O backend pode liberar internamente a próxima missão assim que a anterior é
+ * concluída. Na experiência do usuário existe no máximo uma missão por dia
+ * local: depois de uma conclusão hoje, qualquer outra missão disponível ou
+ * iniciada fica visualmente bloqueada até o próximo dia. Missões futuras também
+ * nunca aparecem antes da própria `localDate`.
  */
 export function normalizeObjectiveDailyAvailability(view: ObjectiveView, now = new Date().toISOString()): ObjectiveView {
   const journey = view.journey;
   if (!journey) return view;
   const today = localDate(now, journey.timeZone);
+  const completedToday = (view.missions || []).some((mission) =>
+    'prescription' in mission
+      && mission.state === 'completed'
+      && typeof mission.completedAt === 'string'
+      && localDate(mission.completedAt, journey.timeZone) === today,
+  );
   const missions = view.missions?.map((mission) => {
-    if ('prescription' in mission && mission.state === 'available' && mission.localDate > today) {
+    if ('prescription' in mission
+      && ['available', 'started'].includes(mission.state)
+      && (completedToday || mission.localDate > today)) {
       return { id: mission.id, state: 'locked' as const, week: mission.week };
     }
     return mission;
   });
-  const summary = view.summary?.nextMission && view.summary.nextMission.localDate > today
+  const hideNextMission = completedToday
+    || Boolean(view.summary?.nextMission && view.summary.nextMission.localDate > today);
+  const summary = hideNextMission && view.summary
     ? { ...view.summary, nextMission: null }
     : view.summary;
   return { ...view, ...(missions ? { missions } : {}), ...(summary !== undefined ? { summary } : {}) };

@@ -63,6 +63,17 @@ function candidateMission(
   const weekEnd = Date.parse(journey.weekStartedAt) + WEEK_MS;
   if (startedMs < Date.parse(journey.weekStartedAt) || startedMs >= weekEnd) return null;
 
+  // Regra de produto: no máximo uma missão de Buscar Objetivo por dia local.
+  // Mesmo que existam missões atrasadas, um segundo cardio no mesmo dia não
+  // consome outra etapa da jornada. A próxima oportunidade começa no dia local
+  // seguinte.
+  const alreadyCompletedOnActivityDay = missions.some((mission) =>
+    mission.state === 'completed'
+      && typeof mission.completedAt === 'string'
+      && localDate(mission.completedAt, journey.timeZone) === activityDate,
+  );
+  if (alreadyCompletedOnActivityDay) return null;
+
   const ordered = missions
     .filter((mission) => ['started', 'available'].includes(mission.state) && mission.localDate <= activityDate)
     .sort((left, right) => {
