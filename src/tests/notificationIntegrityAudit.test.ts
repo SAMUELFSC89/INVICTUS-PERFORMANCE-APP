@@ -25,4 +25,10 @@ describe('integridade da Central de Notificações', () => {
     const rules = read('firestore.rules');
     expect(rules).toContain("'notifications', 'fcmTokens', 'apnsTokens'");
   });
+
+  it('token de cliente não pode fabricar alerta oficial', () => {
+    const handler = read('api/_handlers/notifications.ts');
+    expect(handler).not.toContain('notificationService.notify({');
+    expect(handler).toContain("return res.status(403).json({ error: 'Notificações são geradas apenas por fluxos oficiais do servidor.' })");
+  });
 });
