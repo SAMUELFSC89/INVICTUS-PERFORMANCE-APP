@@ -90,8 +90,8 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(handler).toContain("case 'gyms-audit'");
     expect(handler).toContain("case 'fix-gym-coordinates'");
     expect(engine).toContain('distanceMeters > 30');
-    expect(engine).toContain('GOOGLE_PLACE_TIMEOUT_MS = 8_000');
-    expect(engine).toContain('AUDIT_CONCURRENCY = 8');
+    expect(engine).toContain('GOOGLE_PLACE_TIMEOUT_MS = 5_000');
+    expect(engine).toContain('AUDIT_CONCURRENCY = 20');
     expect(engine).toContain('new AbortController()');
     expect(engine).toContain('Promise.all(results.slice(index, index + AUDIT_CONCURRENCY)');
     expect(engine).toContain("db.collection('users').where('gymId', '==', id).get()");
