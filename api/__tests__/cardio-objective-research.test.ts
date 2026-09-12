@@ -48,6 +48,18 @@ const history = (overrides: Partial<CardioHistorySummary> = {}): CardioHistorySu
   },
   ...overrides,
 });
+const neutralActiveHistory = (overrides: Partial<CardioHistorySummary> = {}): CardioHistorySummary => history({
+  capacitySignature: {
+    ...history().capacitySignature,
+    dominantModality: 'bike',
+    modalityMinutes28d: { bike: 240 },
+    totalDistanceKm28d: 80,
+    runningDistanceKm28d: null,
+    longestDistanceKm28d: 20,
+    longestRunningDistanceKm28d: null,
+  },
+  ...overrides,
+});
 
 it('mantém uma biblioteca de evidência versionada e auditável', () => {
   expect(CARDIO_RESEARCH_VERSION).toBe('CARDIO_EVIDENCE_2026_09_V2');
@@ -97,7 +109,7 @@ it('usa histórico real de 7/28 dias para corrigir um autorrelato raso', () => {
   const observed: ProfileSnapshot = {
     ...profile,
     recentCardioSessions: 6,
-    cardioHistory: history(),
+    cardioHistory: neutralActiveHistory(),
   };
   const activeFromHistory = { ...base, goalType: 'conditioning' as const };
   expect(classifyCardioProfile(activeFromHistory, observed)).toBe('active');
@@ -109,25 +121,36 @@ it('usa histórico real de 7/28 dias para corrigir um autorrelato raso', () => {
 
 it('diferencia frequência semanal mesmo com a mesma classe ativa', () => {
   const activeAnswers: ObjectiveAnswers = { ...base, goalType: 'conditioning', runningAbility: 'minutes', preferredActivity: 'running', availableDays: [1, 2, 3, 5] };
-  const regular: ProfileSnapshot = { ...profile, cardioHistory: history({
-    capacitySignature: { ...history().capacitySignature, sessionsPerWeek28d: 2.5, consistencyBand: 'consistent', activeWeeks28d: 3 },
+  const regular: ProfileSnapshot = { ...profile, cardioHistory: neutralActiveHistory({
+    capacitySignature: { ...neutralActiveHistory().capacitySignature, sessionsPerWeek28d: 2.5, consistencyBand: 'consistent', activeWeeks28d: 3 },
   }) };
-  const veryConsistent: ProfileSnapshot = { ...profile, cardioHistory: history({
+  const veryConsistent: ProfileSnapshot = { ...profile, cardioHistory: neutralActiveHistory({
     sessions28d: 16,
     activeDays28d: 14,
     minutes28d: 560,
     averageSessionMinutes28d: 35,
-    capacitySignature: { ...history().capacitySignature, sessionsPerWeek28d: 4, consistencyBand: 'highly_consistent', activeWeeks28d: 4 },
+    capacitySignature: { ...neutralActiveHistory().capacitySignature, sessionsPerWeek28d: 4, consistencyBand: 'highly_consistent', activeWeeks28d: 4 },
   }) };
   expect(initialPrescription(activeAnswers, regular).sessions).toBe(3);
   expect(initialPrescription(activeAnswers, veryConsistent).sessions).toBe(4);
 });
 
 it('usa aumento recente só como contexto e evita acrescentar outra escalada automática', () => {
+  const risingSignature = {
+    ...neutralActiveHistory().capacitySignature,
+    dominantModality: 'bike' as const,
+    modalityMinutes28d: { bike: 210 },
+    totalDistanceKm28d: 60,
+    runningDistanceKm28d: null,
+    longestDistanceKm28d: 20,
+    longestRunningDistanceKm28d: null,
+    medianSessionMinutes28d: 30,
+    weeklyMinutesRecentFirst: [120, 60, 15, 15] as [number, number, number, number],
+  };
   const rising: ProfileSnapshot = {
     ...profile,
     recentCardioSessions: 6,
-    cardioHistory: history({
+    cardioHistory: neutralActiveHistory({
       minutes7d: 120,
       previous7dMinutes: 60,
       minutes28d: 210,
@@ -135,7 +158,7 @@ it('usa aumento recente só como contexto e evita acrescentar outra escalada aut
       longestSessionMinutes28d: 45,
       loadRatio7d: 2,
       loadTrend: 'spiking',
-      capacitySignature: { ...history().capacitySignature, medianSessionMinutes28d: 30, weeklyMinutesRecentFirst: [120, 60, 15, 15] },
+      capacitySignature: risingSignature,
     }),
   };
   const answers: ObjectiveAnswers = { ...base, goalType: 'conditioning', availableMinutes: 50 };
