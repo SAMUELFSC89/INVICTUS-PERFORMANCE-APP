@@ -50,6 +50,17 @@ describe('rodada campeonatos e ranking', () => {
     expect(ranking).toContain("loading ? <section className=\"academy-ranking-state academy-ranking-loading\"");
   });
 
+  it('preserva período e caminho de retorno ao abrir perfil pelo ranking', () => {
+    const ranking = read('src/pages/championships/CommunityRanking.tsx');
+    const profile = read('src/pages/PublicProfile.tsx');
+    expect(ranking).toContain("useSearchParams");
+    expect(ranking).toContain("searchParams.get('period')");
+    expect(ranking).toContain("/championships/community/ranking?period=${encodeURIComponent(period)}");
+    expect(ranking).toContain("state: { returnTo }");
+    expect(profile).toContain('safeReturnTo');
+    expect(profile).toContain('navigate(returnTo)');
+  });
+
   it('preserva coroas e usa as três bases de pódio aprovadas', () => {
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
     expect(podium).toContain('/ranking-frame-gold-reference.png');
@@ -68,5 +79,21 @@ describe('rodada campeonatos e ranking', () => {
     expect(confirm).toContain('SELEÇÃO EXPIRADA');
     expect(confirm).toContain("navigate('/profile/academy/search', { replace: true })");
     expect(confirm).toContain('Number.isFinite');
+  });
+
+  it('usa o seletor central de modalidade nos rodapés genéricos auditados', () => {
+    const files = [
+      'src/pages/ProfileNew.tsx',
+      'src/pages/PublicProfile.tsx',
+      'src/pages/AcademySearch.tsx',
+      'src/pages/AcademyConfirm.tsx',
+      'src/pages/championships/ChampionshipsHub.tsx',
+      'src/pages/championships/CommunityRanking.tsx',
+    ];
+    files.forEach((file) => {
+      const content = read(file);
+      expect(content).toContain("'/activity'");
+      expect(content).toContain('Escolher modalidade');
+    });
   });
 });
