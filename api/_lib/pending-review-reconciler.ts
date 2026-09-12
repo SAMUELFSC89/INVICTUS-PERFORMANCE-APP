@@ -5,6 +5,8 @@ import { resolveModality } from './modality-config.js';
 import { recalculateAllUserScores } from './igaService.js';
 import { syncReviewedActivityCompetitionScores } from './championship-scoring-service.js';
 import { classifyPendingReview, resolveSecurityRetryResult } from './pending-review-policy.js';
+import { MissionEngine } from './mission-engine.js';
+import { reconcileCardioObjectiveActivity } from './cardio-objective-activity-sync.js';
 
 export interface PendingReviewReconcileStats {
   checked: number;
@@ -42,6 +44,7 @@ async function finalizeCompetitionReview(params: {
     : 0;
   const reason = approved ? null : (params.reason || reviewReason(workout));
   const now = new Date().toISOString();
+  const userId = String(workout.userId || '');
   const entriesSnap = await db.collection('activity_competition_entries')
     .where('activityId', '==', doc.id)
     .get();
@@ -55,6 +58,9 @@ async function finalizeCompetitionReview(params: {
     competitionPoints,
     isScoringEligible: approved,
     pendingReview: false,
+    // Fraude terminal nunca pode continuar marcada como elegível a missão.
+    // Inelegibilidade exclusivamente competitiva preserva a validade casual.
+    ...(status === 'rejected' ? { missionEligible: false } : {}),
     nonScoringReason: reason,
     rejectionReason: reason,
     processingStatus: 'complete',
@@ -80,9 +86,14 @@ async function finalizeCompetitionReview(params: {
   });
   await batch.commit();
 
+  if (!userId) return;
+  const affectedAt = workout.endTime ?? workout.startTime ?? workout.timestamp ?? workout.createdAt;
   await Promise.all([
     syncReviewedActivityCompetitionScores(doc.id),
-    recalculateAllUserScores(String(workout.userId || '')),
+    recalculateAllUserScores(userId),
+    MissionEngine.syncUserProgressFromCompletedActivities(userId, affectedAt ? [affectedAt] : []),
+    ...(approved && String(workout.type || '').toLowerCase() === 'cardio'
+      ? [reconcileCardioObjectiveActivity(userId, doc.id)] : []),
   ]);
 }
 
