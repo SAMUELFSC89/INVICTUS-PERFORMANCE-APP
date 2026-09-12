@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, verifyAuth } from '../_lib/common.js';
 import { MissionEngine } from '../_lib/mission-engine.js';
 import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
+import { reconcileUserActivityStats } from '../_lib/user-activity-stats.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -56,6 +57,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         userProgress,
         coinWallet,
       });
+    }
+
+    if (req.method === 'POST' && action === 'sync-activity-stats') {
+      // Estatísticas do perfil são derivadas do histórico canônico do próprio
+      // atleta e nunca de números enviados pelo cliente. A operação é
+      // idempotente, portanto também recupera perfis antigos que ficaram com
+      // totalWorkouts/streak defasados depois da migração para o fluxo v2.
+      const stats = await reconcileUserActivityStats(auth.uid);
+      return res.status(200).json({ success: true, stats });
     }
 
     if (req.method === 'POST' && action === 'claim') {
