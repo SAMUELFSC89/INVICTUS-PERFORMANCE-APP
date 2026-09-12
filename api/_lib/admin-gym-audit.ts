@@ -37,8 +37,8 @@ type CanonicalPlace = {
   longitude: number;
 };
 
-const GOOGLE_PLACE_TIMEOUT_MS = 8_000;
-const AUDIT_CONCURRENCY = 8;
+const GOOGLE_PLACE_TIMEOUT_MS = 5_000;
+const AUDIT_CONCURRENCY = 20;
 const FIRESTORE_BATCH_SIZE = 450;
 
 function validCoordinate(latitude: number, longitude: number): boolean {
@@ -175,9 +175,8 @@ export async function runAdminGymAudit(limit = 100): Promise<GymAuditReport> {
   if (!apiKey) {
     results.forEach((item) => item.warnings.push('Google Places não está configurado; auditoria externa não executada.'));
   } else {
-    // A auditoria pode consultar dezenas de academias. Processar em pequenos
-    // lotes evita tanto o timeout serial da função quanto uma rajada excessiva
-    // contra o Google Places.
+    // A auditoria pode consultar dezenas de academias. Lotes limitados evitam
+    // tanto execução serial longa quanto uma rajada irrestrita no Google Places.
     for (let index = 0; index < results.length; index += AUDIT_CONCURRENCY) {
       await Promise.all(results.slice(index, index + AUDIT_CONCURRENCY).map((item) => enrichAuditItem(item, apiKey)));
     }
