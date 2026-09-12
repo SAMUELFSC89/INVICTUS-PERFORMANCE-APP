@@ -94,6 +94,25 @@ Safety/medical-return flows are different: when the safety gate blocks progressi
 
 Fractions such as the portion of declared available time used for the initial mission are **versioned product heuristics** informed by the evidence principles above. They are not quoted as exact research prescriptions.
 
+## Inputs used to characterize the person
+
+New journeys collect and combine:
+
+- declared walking capacity;
+- running ability;
+- broader training background: inactive, occasional, regular, structured or competitive;
+- primary sport: running, cycling, team sport, combat sport, functional/cross training, other or none;
+- typical duration of a cardio/sport session;
+- time actually available for the Invictus mission;
+- days available and preferred schedule;
+- preferred cardio modality;
+- main adherence barrier;
+- confidence in maintaining the plan;
+- recent canonical Invictus/connected activity history when available;
+- safety answers.
+
+This separation is important: **not being a runner is not the same thing as being sedentary**. A competitive cyclist, fighter or team-sport athlete must not receive a sedentary fallback merely because they report little running experience.
+
 ## Profile classes
 
 ### `sedentary`
@@ -101,7 +120,8 @@ Fractions such as the portion of declared available time used for the initial mi
 Typical signals:
 - cannot run yet;
 - low comfortable walking capacity;
-- no meaningful recent cardio history.
+- no meaningful recent cardio history;
+- no regular sport/training background.
 
 Engine behavior:
 - easy intensity;
@@ -113,7 +133,7 @@ Engine behavior:
 
 Typical signals:
 - some walking capacity;
-- seconds of running or a small amount of recent cardio.
+- seconds of running, occasional sport or a small amount of recent cardio.
 
 Engine behavior:
 - easy intensity;
@@ -124,12 +144,13 @@ Engine behavior:
 ### `active`
 
 Typical signals:
-- can run for some minutes and/or has recurring recent cardio.
+- can run for some minutes, has recurring recent cardio, or reports regular/structured sport outside running.
 
 Engine behavior:
 - mission must be meaningfully above sedentary fallback;
-- modality should respect the user’s real capability and goal;
-- availability is a ceiling, not proof of capacity.
+- modality should respect the user’s real capability, sport and goal;
+- availability is a ceiling, not proof of capacity;
+- a non-runner athlete is not downgraded to sedentary by default.
 
 ### `runner`
 
@@ -145,11 +166,14 @@ Engine behavior:
 ### `advanced`
 
 Typical signals:
-- structured training and/or high, consistent recent endurance volume.
+- competitive sport background;
+- structured high-volume endurance context;
+- structured running and/or high, consistent recent endurance history.
 
 Engine behavior:
 - preserve a substantial mission duration;
-- do not use beginner run/walk intervals;
+- do not use beginner run/walk intervals for trained runners;
+- preserve the chosen sport modality for non-runners;
 - do not automatically prescribe HIIT;
 - use mostly easy automatic work until the product has enough information about recent load, recovery and training phase to justify more complex intensity decisions.
 
@@ -170,13 +194,14 @@ Engine behavior:
 Every initial journey stores a decision trace answering at least:
 
 1. Is there a safety reason to block or constrain training?
-2. Is the person sedentary, beginner, active, runner, advanced or returning?
-3. What continuous capacity is declared/observed?
-4. What is the actual goal (health, consistency, run distance, performance, return)?
-5. What time/days really fit the routine?
-6. What barrier most threatens adherence?
-7. If trained, should intensity automatically be increased? (default: no)
-8. Is there a universal evidence-based safe percentage for weekly load increase? (no)
+2. Is the person sedentary, beginner, active, regular runner, advanced/competitive or returning?
+3. Does the person practice another sport with meaningful cardiovascular demand?
+4. What continuous capacity is declared/observed?
+5. What is the actual goal (health, consistency, run distance, performance, return)?
+6. What time/days really fit the routine?
+7. What barrier most threatens adherence?
+8. If trained, should intensity automatically be increased? (default: no)
+9. Is there a universal evidence-based safe percentage for weekly load increase? (no)
 
 The trace includes evidence IDs and is persisted in the baseline so a mission can be audited later.
 
@@ -197,6 +222,7 @@ The trace includes evidence IDs and is persisted in the baseline so a mission ca
 ### AI may do
 
 - choose a duration **inside** the allowed range for duration-based initial missions;
+- use sport/training context to select the most coherent point inside that range;
 - write a short personalized rationale;
 - later, phrase weekly explanations naturally.
 
@@ -206,6 +232,7 @@ The trace includes evidence IDs and is persisted in the baseline so a mission ca
 - change the sport modality outside deterministic rules;
 - create a duration below the floor or above the cap;
 - invent a research source;
+- treat a non-running athlete as sedentary when the deterministic engine classified otherwise;
 - add HIIT to an advanced athlete without deterministic permission;
 - promise outcomes or diagnose conditions.
 
@@ -232,9 +259,9 @@ Before changing `CARDIO_RESEARCH_VERSION`:
 
 1. review WHO/ACSM guidance for updates;
 2. search systematic reviews/meta-analyses published since the current version;
-3. specifically review evidence for inactive adults, novice runners, recreational athletes and trained/elite endurance athletes;
+3. specifically review evidence for inactive adults, novice exercisers, recreational athletes, cross-sport athletes and trained/elite endurance athletes;
 4. document what changed and why;
 5. add/update regression tests for each affected profile;
 6. never silently change historical journeys — their evidence version remains attached to the baseline used at creation.
 
-Recommended review cadence: at least every 6 months, and immediately before introducing automated high-intensity prescriptions or new athlete classes.
+Recommended review cadence: at least every 6 months, and immediately before introducing automated high-intensity prescriptions, recovery/load models or new athlete classes.
