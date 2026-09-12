@@ -115,7 +115,6 @@ async function adminRequest<T = any>(action: string, init?: RequestInit): Promis
   const currentUser = auth.currentUser;
   if (!currentUser) throw new Error('Sessão administrativa expirada.');
   const token = await currentUser.getIdToken();
-  const separator = action.includes('?') ? '&' : '?';
   const response = await fetch(`/api/admin?action=${encodeURIComponent(action.split('?')[0])}${action.includes('?') ? `&${action.split('?')[1]}` : ''}`, {
     ...init,
     headers: {
@@ -124,7 +123,6 @@ async function adminRequest<T = any>(action: string, init?: RequestInit): Promis
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
     },
   });
-  void separator;
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success === false) {
     throw new Error(payload?.error || payload?.message || 'Falha na operação administrativa.');
@@ -248,7 +246,7 @@ export function AdminDashboard() {
   }, [filter, recentUsers, searchQuery, searchResults]);
 
   const changeRole = async (user: UserProfile) => {
-    const nextRole = user.role === 'admin' ? 'user' : 'admin';
+    const nextRole: 'admin' | 'user' = user.role === 'admin' ? 'user' : 'admin';
     const verb = nextRole === 'admin' ? 'promover a administrador' : 'remover o acesso administrativo de';
     if (!window.confirm(`Confirma ${verb} ${user.displayName || user.email || user.uid}?`)) return;
 
@@ -259,7 +257,7 @@ export function AdminDashboard() {
         method: 'POST',
         body: JSON.stringify({ targetUid: user.uid, role: nextRole }),
       });
-      const patch = (list: UserProfile[]) => list.map((item) => item.uid === user.uid ? { ...item, role: nextRole } : item);
+      const patch = (list: UserProfile[]): UserProfile[] => list.map((item) => item.uid === user.uid ? { ...item, role: nextRole } : item);
       setRecentUsers(patch);
       setSearchResults(patch);
       setFeedback({ type: 'success', text: `${user.displayName || 'Usuário'} agora está como ${nextRole === 'admin' ? 'ADMINISTRADOR' : 'USUÁRIO'}.` });
