@@ -8,10 +8,12 @@
   left: 0;
 }
 
-.share-card-round-v3.share-card-art--map .share-card-vignette {
-  background:
-    linear-gradient(180deg, rgba(3,4,6,.72) 0%, rgba(3,4,6,.36) 15%, transparent 35%, transparent 72%, rgba(2,2,3,.18) 84%, rgba(2,2,3,.7) 100%),
-    linear-gradient(90deg, rgba(0,0,0,.12), transparent 18%, transparent 82%, rgba(0,0,0,.12));
+/* Sem vinheta/escurecimento artificial nas bordas. O contraste necessário já
+   vem do próprio mapa, das sombras de texto e do bloco de métricas. */
+.share-card-round-v3 .share-card-vignette,
+.share-card-round-v3.share-card-art--map .share-card-vignette,
+.share-card-round-v3.share-card-art--map.share-card-art--outdoors .share-card-vignette {
+  background: transparent !important;
 }
 
 .share-card-round-v3.share-card-art--photo-map .share-card-map-layer--inset {
@@ -19,7 +21,6 @@
   left: 28%;
   width: 72%;
   height: 48%;
-  opacity: var(--share-map-opacity, .5);
   border: 0;
   border-radius: 0;
   overflow: hidden;
@@ -27,10 +28,10 @@
   mask-image: radial-gradient(ellipse 72% 50% at 62% 45%, #000 32%, rgba(0,0,0,.9) 58%, transparent 94%);
 }
 
-/* Branding: mantém INVICTUS PERFORMANCE, remove somente o capacete no mapa e foto+mapa. */
-.share-card-round-v3.share-card-art--map .share-card-brand img,
-.share-card-round-v3.share-card-art--photo-map .share-card-brand img {
-  display: none;
+/* O capacete não faz mais parte do bloco de informações. Mantém proteção
+   defensiva caso algum cache antigo ainda injete o elemento. */
+.share-card-round-v3 .share-card-brand img {
+  display: none !important;
 }
 
 .share-card-round-v3.share-card-art--map .share-card-info-block,
@@ -105,7 +106,8 @@
   bottom: 4.5%;
 }
 
-/* Marcadores da rota: bandeira apenas no início e ponto simples na chegada. */
+/* Marcadores da rota: bandeira no início, com a BASE do mastro ancorada no
+   primeiro ponto, e ponto simples exatamente no último ponto. */
 .share-card-round-v3 .share-route-start-marker circle {
   display: none;
 }
@@ -129,13 +131,14 @@
 .share-round-map-marker {
   position: absolute;
   display: block;
-  transform: translate(-50%, -50%);
   filter: drop-shadow(0 0 7px rgba(243,179,36,.82));
 }
 
 .share-round-map-marker--start {
   width: 30px;
   height: 34px;
+  /* O ponto calculado representa a base do mastro, não o centro do ícone. */
+  transform: translate(-8px, -32px);
 }
 
 .share-round-map-marker--start::before {
@@ -159,7 +162,6 @@
   height: 12px;
   clip-path: polygon(0 0, 100% 28%, 0 100%);
   background: #f3b324;
-  outline: 1px solid rgba(255,244,207,.85);
 }
 
 .share-round-map-marker--finish {
@@ -169,66 +171,141 @@
   border-radius: 50%;
   background: #f3b324;
   box-shadow: 0 0 0 2px rgba(8,8,8,.55), 0 0 10px rgba(243,179,36,.8);
+  transform: translate(-50%, -50%);
 }
 
-/* Controles adicionados ao personalizador. */
-.share-round-controls {
-  display: grid;
-  gap: 11px;
-  margin-top: 12px;
-  padding: 11px 12px;
-  border: 1px solid rgba(243,179,36,.22);
-  border-radius: 13px;
-  background: rgba(243,179,36,.035);
-}
-
-.share-round-privacy {
-  margin: 0;
-  color: rgba(255,255,255,.62);
-  font-size: 9px;
-  line-height: 1.35;
-}
-
-.share-round-toggle {
+/* Seleção contextual: nada de modal cheio de controles. */
+.share-context-controls {
+  position: absolute;
+  z-index: 60;
+  left: 50%;
+  bottom: 8px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: #ddd;
-  font-size: 10px;
+  width: min(calc(100% - 16px), 460px);
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(243,179,36,.34);
+  border-radius: 15px;
+  background: rgba(8,8,8,.9);
+  box-shadow: 0 12px 32px rgba(0,0,0,.42);
+  backdrop-filter: blur(12px);
+  transform: translateX(-50%);
+}
+
+.share-context-slider {
+  display: grid;
+  flex: 1 1 145px;
+  min-width: 120px;
+  gap: 5px;
+  color: rgba(255,255,255,.82);
+  font-size: 9px;
   font-weight: 600;
 }
 
-.share-round-toggle input {
-  width: 18px;
-  height: 18px;
-  accent-color: #f3b324;
-}
-
-.share-round-slider {
-  display: grid;
-  gap: 7px;
-}
-
-.share-round-slider > div {
+.share-context-slider > span {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #ddd;
-  font-size: 10px;
+  gap: 8px;
+  white-space: nowrap;
 }
 
-.share-round-slider b {
+.share-context-slider b {
   color: #f3b324;
-  font-size: 10px;
+  font-size: 9px;
 }
 
-.share-round-slider input {
+.share-context-slider input {
   width: 100%;
+  height: 22px;
   accent-color: #f3b324;
+}
+
+.share-context-action,
+.share-context-icon {
+  min-height: 34px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 10px;
+  color: #f3b324;
+  background: #171717;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.share-context-action {
+  padding: 0 11px;
+  white-space: nowrap;
+}
+
+.share-context-icon {
+  display: grid;
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  place-items: center;
+}
+
+.share-context-icon--danger {
+  color: #fff;
+  border-color: rgba(244,63,94,.5);
+  background: rgba(127,29,29,.72);
+}
+
+.share-card-round-v3 .share-card-info-block.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: -7px -9px;
+  border: 1px solid rgba(243,179,36,.5);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+/* O seletor de composição só escolhe Mapa ou Foto + mapa. Foto + rota nasce
+   ao tocar no mapa e removê-lo pelo X contextual. */
+.share-customizer--compact {
+  max-width: 430px;
+}
+
+.share-customizer-modes--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.share-hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.share-customizer-reset--single {
+  grid-template-columns: 1fr 1fr;
+}
+
+.share-customizer-reset--single button:last-child {
+  grid-column: auto !important;
 }
 
 .share-card-round-v3.is-exporting .share-card-info-block,
 .share-card-round-v3.is-exporting .share-card-phrase {
   outline: none !important;
+}
+
+.share-card-round-v3.is-exporting .share-card-info-block.is-selected::after {
+  display: none;
+}
+
+@media (max-width: 420px) {
+  .share-context-controls {
+    bottom: 5px;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .share-context-slider {
+    flex-basis: 128px;
+  }
 }
