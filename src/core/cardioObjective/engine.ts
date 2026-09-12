@@ -128,10 +128,13 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
   }
 
   // A rapid recent increase is context to avoid stacking another automatic jump.
-  // It is explicitly NOT interpreted as an injury-risk or recovery score.
-  if (history && ['rising', 'spiking'].includes(history.loadTrend) && Math.max(observedMedian, observedAverage) >= classFloor) {
-    baselineMinutes = Math.min(baselineMinutes, Math.max(classFloor, Math.round(observedMedian || observedAverage)));
-  }
+  // It is explicitly NOT interpreted as an injury-risk or recovery score. Apply
+  // this cap only after self-report/barrier adjustments so those later signals
+  // cannot accidentally undo the recent-load guardrail.
+  const recentLoadCap = history && ['rising', 'spiking'].includes(history.loadTrend)
+    && Math.max(observedMedian, observedAverage) >= classFloor
+    ? Math.max(classFloor, Math.round(observedMedian || observedAverage))
+    : null;
 
   // Self-report matters for training performed outside Invictus/Health sources.
   if (a.runningAbility === 'minutes') baselineMinutes = Math.max(baselineMinutes, Math.round(maxMinutes * 0.62));
@@ -150,6 +153,7 @@ export function buildCardioBaseline(a: ObjectiveAnswers, profile?: ProfileSnapsh
   if (a.barrier === 'time') baselineMinutes = Math.min(baselineMinutes, Math.max(classFloor, Math.round(maxMinutes * 0.72)));
   if (a.confidenceScore <= 4) baselineMinutes = Math.max(classFloor, Math.round(baselineMinutes * 0.85));
   else if (a.confidenceScore <= 7 || a.barrier === 'restart') baselineMinutes = Math.max(classFloor, Math.round(baselineMinutes * 0.92));
+  if (recentLoadCap !== null) baselineMinutes = Math.min(baselineMinutes, recentLoadCap);
   baselineMinutes = clamp(baselineMinutes, classFloor, maxMinutes);
 
   const reason = profileClass === 'sedentary'
