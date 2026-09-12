@@ -53,13 +53,15 @@ export const stravaService = {
       }
 
       const idToken = await user.getIdToken();
-      // A conta pode ter mudado enquanto o token era obtido. Não associe uma
-      // resposta ao UID anterior nesse caso.
       if (auth.currentUser?.uid !== userId) throw new Error('A conta mudou durante a consulta do Strava.');
       const url = `${getApiBase()}/status`;
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
+      // A resposta pertence ao UID que iniciou a chamada. Se a sessão mudou
+      // enquanto a rede estava pendente, nem resposta nem cache antigo podem
+      // ser reaproveitados pela nova conta.
+      if (auth.currentUser?.uid !== userId) throw new Error('A conta mudou durante a consulta do Strava.');
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
@@ -74,7 +76,7 @@ export const stravaService = {
       return data;
     } catch (error: any) {
       console.warn('[stravaService] getStatus fallback:', error?.message || error);
-      if (userId && statusCache?.userId === userId) return statusCache.data;
+      if (userId && auth.currentUser?.uid === userId && statusCache?.userId === userId) return statusCache.data;
       return { connected: false, lastSync: null, athleteId: null };
     }
   },
