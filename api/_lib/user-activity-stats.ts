@@ -20,16 +20,19 @@ function previousDayKey(key: string): string {
 }
 
 /**
- * Estatísticas pessoais contam registros concluídos da fonte canônica, não a
- * elegibilidade competitiva. Uma atividade pode ser válida como histórico
- * pessoal e ficar fora do ranking; duplicatas e registros descartados nunca
- * devem inflar total, dias ativos ou streak.
+ * Estatísticas pessoais contam registros concluídos e economicamente válidos
+ * da fonte canônica, não a elegibilidade competitiva. Uma atividade pode ser
+ * válida como histórico pessoal e ficar fora do ranking; duplicatas, sessões
+ * técnicas curtas, registros descartados e bloqueios de segurança nunca devem
+ * inflar total, dias ativos ou streak.
  */
 export function isCanonicalCompletedActivityForStats(data: Record<string, any>): boolean {
   const quality = String(data?.dataQualityStatus || '').toLowerCase();
   const reason = String(data?.nonScoringReason || '').toUpperCase();
   if (['duplicate', 'discarded', 'dedup_pending'].includes(quality)) return false;
   if (reason === 'DUPLICATE_ACTIVITY') return false;
+  if (data?.economyEligible === false || data?.missionEligible === false) return false;
+  if (data?.securityBlocked === true || data?.pendingReview === true) return false;
   return resolveActivityState(data).isCompleted;
 }
 
@@ -62,7 +65,7 @@ export function deriveUserActivityStats(
     cursor = previousDayKey(cursor);
   }
 
-  const latest = completed.at(-1);
+  const latest = completed.length ? completed[completed.length - 1] : undefined;
   return {
     totalWorkouts: completed.length,
     totalActiveDays: activeDays.size,
