@@ -7,16 +7,53 @@ import { API_CONFIG } from '../config';
  * REAL PUSH NOTIFICATION REGISTRATION (Android/iOS notification bar)
  * --------------------------------------------------------------------
  * A push token represents the physical app installation, not a user. Because
- * more than one Invictus account can use the same device, the token owner must
- * be rebound whenever auth changes; otherwise account A could keep receiving
- * notifications after account B logs in on the same phone.
+ * more than one Invictus account can use the same device, both token ownership
+ * and the app-level notification preference must be scoped by authenticated
+ * UID. A device-wide preference would let account B silently inherit account
+ * A's choice after a login switch.
  */
 
 let initialized = false;
 let initializedUserId: string | null = null;
 const DEVICE_TOKEN_KEY = 'invictus_push_device_token';
 const DEVICE_TOKEN_OWNER_KEY = 'invictus_push_device_token_owner';
+const LEGACY_NOTIFICATION_PREFERENCE_KEY = 'notifications-enabled';
+const notificationPreferenceKey = (uid: string) => `notifications-enabled:${uid}`;
 const currentPushPlatform = () => Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+
+export function pushNotificationsEnabledForUser(uid: string): boolean {
+  const scopedKey = notificationPreferenceKey(uid);
+  const scoped = localStorage.getItem(scopedKey);
+  if (scoped !== null) return scoped === 'true';
+
+  // Migração conservadora: a preferência antiga só pode ser atribuída a uma
+  // conta quando o token salvo confirma que aquela mesma conta era a dona.
+  // Sem essa prova, a conta que acabou de entrar começa desativada.
+  const legacy = localStorage.getItem(LEGACY_NOTIFICATION_PREFERENCE_KEY);
+  const tokenOwner = localStorage.getItem(DEVICE_TOKEN_OWNER_KEY);
+  if (tokenOwner === uid && legacy !== null) {
+    const enabled = legacy === 'true';
+    localStorage.setItem(scopedKey, String(enabled));
+    return enabled;
+  }
+  return false;
+}
+
+function setPushNotificationPreference(uid: string, enabled: boolean): void {
+  localStorage.setItem(notificationPreferenceKey(uid), String(enabled));
+  // A tela de Preferências ainda lê esta chave legada. Espelhamos somente a
+  // preferência da identidade atual; reconcile() a troca sincronicamente antes
+  // do subtree do novo usuário ser renderizado.
+  localStorage.setItem(LEGACY_NOTIFICATION_PREFERENCE_KEY, String(enabled));
+}
+
+function mirrorCurrentPreference(uid: string | null): void {
+  if (!uid) {
+    localStorage.setItem(LEGACY_NOTIFICATION_PREFERENCE_KEY, 'false');
+    return;
+  }
+  localStorage.setItem(LEGACY_NOTIFICATION_PREFERENCE_KEY, String(pushNotificationsEnabledForUser(uid)));
+}
 
 async function updateDeviceTokenOwnership(action: 'claim-device-token' | 'remove-device-token', token: string, expectedUid: string): Promise<void> {
   const currentUser = auth.currentUser;
@@ -97,7 +134,10 @@ export async function initPushNotifications(onNavigate?: (url: string) => void):
 
   const expectedUid = auth.currentUser?.uid;
   if (!expectedUid) return false;
-  if (initialized && initializedUserId === expectedUid) return true;
+  if (initialized && initializedUserId === expectedUid) {
+    setPushNotificationPreference(expectedUid, true);
+    return true;
+  }
 
   try {
     if (initializedUserId && initializedUserId !== expectedUid) await unregisterLocalPush();
@@ -111,6 +151,7 @@ export async function initPushNotifications(onNavigate?: (url: string) => void):
     }
 
     await installListeners(expectedUid, onNavigate);
+    setPushNotificationPreference(expectedUid, true);
     return true;
   } catch (err) {
     console.error('[Push] Falha ao inicializar push notifications:', err);
@@ -120,11 +161,16 @@ export async function initPushNotifications(onNavigate?: (url: string) => void):
 
 /**
  * Chamado pelo ciclo global de autenticação. Não abre prompt de permissão.
- * - logout/troca: invalida o token nativo local para o usuário anterior;
- * - login com permissão já concedida: registra novamente e o servidor transfere
- *   a propriedade exclusiva do token para o UID autenticado.
+ * A preferência é por conta, não por aparelho:
+ * - conta sem opt-in: não recebe push só porque outra conta autorizou antes;
+ * - conta com opt-in: o token é transferido com segurança para o UID atual;
+ * - troca de conta: antes de invalidar o token local, reivindicamos o token
+ *   antigo para a identidade nova. Isso fecha a janela de entrega cruzada mesmo
+ *   se unregister() nativo falhar; depois removemos novamente se a nova conta
+ *   não tiver opt-in.
  */
 export async function reconcilePushNotificationsForAuthChange(nextUid: string | null): Promise<void> {
+  mirrorCurrentPreference(nextUid);
   if (!Capacitor.isNativePlatform()) return;
 
   if (!nextUid) {
@@ -134,6 +180,26 @@ export async function reconcilePushNotificationsForAuthChange(nextUid: string | 
 
   if (auth.currentUser?.uid !== nextUid) return;
   try {
+    const enabledForAccount = pushNotificationsEnabledForUser(nextUid);
+    const existingToken = localStorage.getItem(DEVICE_TOKEN_KEY);
+    const existingOwner = localStorage.getItem(DEVICE_TOKEN_OWNER_KEY);
+
+    // Transfira a propriedade ANTES de invalidar o token local. Se unregister
+    // falhar, o token já não pertence à conta anterior no servidor.
+    if (existingToken && existingOwner !== nextUid) {
+      await saveDeviceToken(existingToken, nextUid);
+    }
+
+    if (!enabledForAccount) {
+      const tokenToRemove = localStorage.getItem(DEVICE_TOKEN_KEY);
+      if (tokenToRemove) {
+        await updateDeviceTokenOwnership('remove-device-token', tokenToRemove, nextUid);
+      }
+      await unregisterLocalPush();
+      setPushNotificationPreference(nextUid, false);
+      return;
+    }
+
     const permission = await PushNotifications.checkPermissions();
     if (permission.receive !== 'granted') {
       // Nunca solicite uma permissão sensível só porque a conta mudou.
@@ -142,15 +208,6 @@ export async function reconcilePushNotificationsForAuthChange(nextUid: string | 
     }
 
     if (initializedUserId && initializedUserId !== nextUid) await unregisterLocalPush();
-
-    // Se já temos um token desta instalação, reivindique-o imediatamente. Isso
-    // fecha a janela de privacidade antes mesmo do callback de register().
-    const existingToken = localStorage.getItem(DEVICE_TOKEN_KEY);
-    const existingOwner = localStorage.getItem(DEVICE_TOKEN_OWNER_KEY);
-    if (existingToken && existingOwner !== nextUid) {
-      await saveDeviceToken(existingToken, nextUid);
-    }
-
     if (!initialized || initializedUserId !== nextUid) {
       await installListeners(nextUid);
     }
@@ -173,4 +230,6 @@ export async function disablePushNotifications(): Promise<void> {
     await updateDeviceTokenOwnership('remove-device-token', token, currentUser.uid);
   }
   await unregisterLocalPush();
+  if (currentUser) setPushNotificationPreference(currentUser.uid, false);
+  else localStorage.setItem(LEGACY_NOTIFICATION_PREFERENCE_KEY, 'false');
 }
