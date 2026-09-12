@@ -37,6 +37,10 @@ type CanonicalPlace = {
   longitude: number;
 };
 
+const GOOGLE_PLACE_TIMEOUT_MS = 8_000;
+const AUDIT_CONCURRENCY = 8;
+const FIRESTORE_BATCH_SIZE = 450;
+
 function validCoordinate(latitude: number, longitude: number): boolean {
   return Number.isFinite(latitude)
     && Number.isFinite(longitude)
@@ -57,32 +61,43 @@ export function distanceMetersBetween(lat1: number, lng1: number, lat2: number, 
 }
 
 async function fetchCanonicalPlace(placeId: string, apiKey: string): Promise<CanonicalPlace> {
-  const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
-    headers: {
-      'X-Goog-Api-Key': apiKey,
-      'X-Goog-FieldMask': 'id,displayName,formattedAddress,location',
-    },
-  });
-  const payload: any = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = String(payload?.error?.message || payload?.error?.status || `HTTP_${response.status}`);
-    throw new Error(message.slice(0, 240));
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GOOGLE_PLACE_TIMEOUT_MS);
 
-  const id = String(payload?.id || '').trim();
-  const latitude = Number(payload?.location?.latitude);
-  const longitude = Number(payload?.location?.longitude);
-  if (id !== placeId || !validCoordinate(latitude, longitude)) {
-    throw new Error('Google Places retornou coordenadas canônicas inválidas.');
-  }
+  try {
+    const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+      headers: {
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'id,displayName,formattedAddress,location',
+      },
+      signal: controller.signal,
+    });
+    const payload: any = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = String(payload?.error?.message || payload?.error?.status || `HTTP_${response.status}`);
+      throw new Error(message.slice(0, 240));
+    }
 
-  return {
-    id,
-    name: String(payload?.displayName?.text || '').trim().slice(0, 128),
-    address: String(payload?.formattedAddress || '').trim().slice(0, 256),
-    latitude,
-    longitude,
-  };
+    const id = String(payload?.id || '').trim();
+    const latitude = Number(payload?.location?.latitude);
+    const longitude = Number(payload?.location?.longitude);
+    if (id !== placeId || !validCoordinate(latitude, longitude)) {
+      throw new Error('Google Places retornou coordenadas canônicas inválidas.');
+    }
+
+    return {
+      id,
+      name: String(payload?.displayName?.text || '').trim().slice(0, 128),
+      address: String(payload?.formattedAddress || '').trim().slice(0, 256),
+      latitude,
+      longitude,
+    };
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new Error('Tempo limite da consulta ao Google Places excedido.');
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function localAuditItem(id: string, data: Record<string, any>): GymAuditItem {
@@ -115,52 +130,62 @@ function localAuditItem(id: string, data: Record<string, any>): GymAuditItem {
   };
 }
 
+async function enrichAuditItem(item: GymAuditItem, apiKey: string): Promise<void> {
+  if (!item.placeId || item.placeId.length > 128) return;
+
+  try {
+    const canonical = await fetchCanonicalPlace(item.placeId, apiKey);
+    item.googleMapsAddress = canonical.address;
+    item.googleMapsLat = canonical.latitude;
+    item.googleMapsLng = canonical.longitude;
+    if (item.latitude !== null && item.longitude !== null) {
+      item.distanceMeters = Number(distanceMetersBetween(
+        item.latitude,
+        item.longitude,
+        canonical.latitude,
+        canonical.longitude,
+      ).toFixed(1));
+      if (item.distanceMeters > 30) {
+        item.errors.push(`Coordenada local está ${item.distanceMeters.toFixed(1)} m distante do ponto canônico do Google.`);
+      }
+    }
+    if (canonical.name && item.name && canonical.name.toLocaleLowerCase('pt-BR') !== item.name.toLocaleLowerCase('pt-BR')) {
+      item.warnings.push(`Nome Google: ${canonical.name}`);
+    }
+  } catch (error: any) {
+    item.warnings.push(`Google Places indisponível para este cadastro: ${String(error?.message || error).slice(0, 180)}`);
+  }
+}
+
 export async function runAdminGymAudit(limit = 100): Promise<GymAuditReport> {
   const max = Math.min(200, Math.max(1, Number(limit) || 100));
   const snapshot = await db.collection('gyms').limit(max).get();
   const apiKey = getGooglePlacesApiKey();
   const seenPlaceIds = new Map<string, string>();
-  const results: GymAuditItem[] = [];
+  const results = snapshot.docs.map((document) => localAuditItem(document.id, document.data() || {}));
 
-  for (const document of snapshot.docs) {
-    const item = localAuditItem(document.id, document.data() || {});
-
+  for (const item of results) {
     if (item.placeId) {
       const existing = seenPlaceIds.get(item.placeId);
       if (existing && existing !== item.id) item.warnings.push(`Place ID também usado pela academia ${existing}.`);
       else seenPlaceIds.set(item.placeId, item.id);
     }
-
-    if (!apiKey) {
-      item.warnings.push('Google Places não está configurado; auditoria externa não executada.');
-    } else if (item.placeId && item.placeId.length <= 128) {
-      try {
-        const canonical = await fetchCanonicalPlace(item.placeId, apiKey);
-        item.googleMapsAddress = canonical.address;
-        item.googleMapsLat = canonical.latitude;
-        item.googleMapsLng = canonical.longitude;
-        if (item.latitude !== null && item.longitude !== null) {
-          item.distanceMeters = Number(distanceMetersBetween(
-            item.latitude,
-            item.longitude,
-            canonical.latitude,
-            canonical.longitude,
-          ).toFixed(1));
-          if (item.distanceMeters > 30) {
-            item.errors.push(`Coordenada local está ${item.distanceMeters.toFixed(1)} m distante do ponto canônico do Google.`);
-          }
-        }
-        if (canonical.name && item.name && canonical.name.toLocaleLowerCase('pt-BR') !== item.name.toLocaleLowerCase('pt-BR')) {
-          item.warnings.push(`Nome Google: ${canonical.name}`);
-        }
-      } catch (error: any) {
-        item.warnings.push(`Google Places indisponível para este cadastro: ${String(error?.message || error).slice(0, 180)}`);
-      }
-    }
-
-    item.status = item.errors.length ? 'ERROR' : item.warnings.length ? 'WARNING' : 'OK';
-    results.push(item);
   }
+
+  if (!apiKey) {
+    results.forEach((item) => item.warnings.push('Google Places não está configurado; auditoria externa não executada.'));
+  } else {
+    // A auditoria pode consultar dezenas de academias. Processar em pequenos
+    // lotes evita tanto o timeout serial da função quanto uma rajada excessiva
+    // contra o Google Places.
+    for (let index = 0; index < results.length; index += AUDIT_CONCURRENCY) {
+      await Promise.all(results.slice(index, index + AUDIT_CONCURRENCY).map((item) => enrichAuditItem(item, apiKey)));
+    }
+  }
+
+  results.forEach((item) => {
+    item.status = item.errors.length ? 'ERROR' : item.warnings.length ? 'WARNING' : 'OK';
+  });
 
   return {
     success: true,
@@ -198,10 +223,10 @@ export async function fixGymFromGoogle(gymId: string, reviewerId: string) {
     updatedAt: now,
   }, { merge: true });
 
-  const usersSnap = await db.collection('users').where('gymId', '==', id).limit(400).get();
-  if (!usersSnap.empty) {
+  const usersSnap = await db.collection('users').where('gymId', '==', id).get();
+  for (let index = 0; index < usersSnap.docs.length; index += FIRESTORE_BATCH_SIZE) {
     const batch = db.batch();
-    usersSnap.docs.forEach((userDoc) => batch.set(userDoc.ref, {
+    usersSnap.docs.slice(index, index + FIRESTORE_BATCH_SIZE).forEach((userDoc) => batch.set(userDoc.ref, {
       gymName: canonical.name || existing.name || 'Academia',
       gymLocation: { lat: canonical.latitude, lng: canonical.longitude },
       updatedAt: now,
