@@ -4,10 +4,12 @@ import { resolve } from 'node:path';
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('Buscar Objetivo automatic cardio completion', () => {
-  test('future mission unlocked internally is hidden until its scheduled date', () => {
+  test('future or second same-day mission stays hidden after daily completion', () => {
     const service = read('src/services/cardioObjectiveService.ts');
     expect(service).toContain('normalizeObjectiveDailyAvailability');
-    expect(service).toContain("mission.state === 'available' && mission.localDate > today");
+    expect(service).toContain('const completedToday =');
+    expect(service).toContain("['available', 'started'].includes(mission.state)");
+    expect(service).toContain('(completedToday || mission.localDate > today)');
     expect(service).toContain("state: 'locked' as const");
     expect(service).toContain('return normalizeObjectiveDailyAvailability(result)');
   });
@@ -22,6 +24,13 @@ describe('Buscar Objetivo automatic cardio completion', () => {
     expect(sync).toContain('missionMeetsActivity(journey, synthetic, activity)');
     expect(sync).toContain("account.collection('activity_claims').doc(activityId)");
     expect(sync).toContain("source: 'canonical_cardio_auto_sync'");
+  });
+
+  test('a second cardio on the same local day cannot consume another objective mission', () => {
+    const sync = read('api/_lib/cardio-objective-activity-sync.ts');
+    expect(sync).toContain('const alreadyCompletedOnActivityDay = missions.some');
+    expect(sync).toContain("localDate(mission.completedAt, journey.timeZone) === activityDate");
+    expect(sync).toContain('if (alreadyCompletedOnActivityDay) return null;');
   });
 
   test('duplicate, blocked and ineligible cardios cannot complete a mission', () => {
