@@ -8,14 +8,15 @@ The Cardio Objective engine must not be a shallow lookup table or a free-form AI
 
 1. **Safety gate** blocks or constrains the flow when required.
 2. **Canonical training history** summarizes what the person actually did in the last 7/28 days when trustworthy data exists.
-3. **Deterministic profile classification** combines real history, sport background and declared capability.
-4. **Research-backed principles** define how each class should be treated.
-5. **Invictus product guardrails** convert those principles into bounded mission ranges.
-6. **Gemini may refine only inside the deterministic bounds**.
-7. **The deterministic validator runs again** before persistence.
-8. **Weekly real-world response** (completion, difficulty, energy, confidence and barriers) changes the next step.
+3. **Individual capacity signature** characterizes frequency, consistency across weeks, dominant modality, session duration and distance without turning those values into a clinical score.
+4. **Deterministic profile classification** combines real history, sport background and declared capability.
+5. **Research-backed principles** define how each class should be treated.
+6. **Invictus product guardrails** convert those principles into an exact bounded prescription.
+7. **Gemini acts as the language layer**: it translates that prescription and personal context into a challenge that sounds specific to the user. It cannot change deterministic safety or prescription authority.
+8. **The deterministic validator runs again** whenever Gemini is allowed to refine an initial duration.
+9. **Weekly real-world response** (completion, difficulty, energy, confidence and barriers) changes the deterministic next step; Gemini then rewrites that result as the next personalized challenge.
 
-The AI is never the authority for modality, safety, mission minimums, distance validity or progression bounds.
+The AI is never the authority for modality, safety, mission minimums, distance validity, session frequency, intervals or progression bounds. Its primary responsibility is user-facing challenge language.
 
 ## Evidence hierarchy
 
@@ -115,15 +116,20 @@ Fractions such as the portion of available time or observed session length used 
 
 The `declining`, `stable`, `rising` and `spiking` load labels are also product heuristics. They describe the relationship between the last 7 days and the preceding 7 days only when enough valid data exists. They do **not** estimate injury probability or physiological recovery.
 
+### Capacity-signature bands
+
+`sporadic`, `building`, `consistent` and `highly_consistent` are Invictus characterization labels derived from how many of the four recent weeks contain valid cardio. They help distinguish two users who may have similar total minutes but very different training patterns. They are not validated physiological states and do not imply health, fitness or injury conclusions.
+
 ## Source priority for personalization
 
 When inputs disagree, the motor uses this order:
 
 1. safety gate;
 2. canonical completed activity history when sufficient;
-3. explicit current sport/training background and capability answers;
-4. practical availability and adherence barriers;
-5. conservative fallback when history is unavailable or insufficient.
+3. individual capacity signature derived from that history;
+4. explicit current sport/training background and capability answers;
+5. practical availability and adherence barriers;
+6. conservative fallback when history is unavailable or insufficient.
 
 Real history does not erase legitimate external training. A person may train outside Invictus/Health sources, so self-report remains meaningful when canonical history is incomplete.
 
@@ -136,17 +142,24 @@ For eligible completed cardio in the 28-day window, the engine calculates:
 - minutes in the last 7 days;
 - minutes in the preceding 7 days;
 - total minutes in 28 days;
-- average session duration in 28 days;
+- average and median session duration in 28 days;
 - longest session duration in 28 days;
+- minutes by observed cardio modality;
+- dominant observed modality;
+- sessions per week across the 28-day window;
+- number of active weeks among the four recent weeks;
+- total observed distance when available;
+- running distance and longest running distance when available;
 - last eligible cardio timestamp and days since that activity;
 - a descriptive 7-day load ratio only when both periods contain enough activity.
 
 Activities in the future, invalid durations, security-blocked records and rejected/suspicious activities are excluded. A failed history query is `unavailable`, never interpreted as zero training.
 
-The history has two jobs:
+The resulting `CARDIO_CAPACITY_SIGNATURE_V1` has three jobs:
 
 1. prevent a capable user from receiving a trivial mission because of a shallow questionnaire answer;
-2. prevent automatic escalation when the person has already increased recent volume substantially.
+2. distinguish users who have similar total volume but different frequency, consistency, modality and distance patterns;
+3. prevent automatic escalation when the person has already increased recent volume substantially.
 
 It does **not** diagnose fatigue, overtraining, injury risk or readiness. Specific physiological recovery remains unknown unless the product later gains a validated recovery model with appropriate inputs.
 
@@ -164,7 +177,7 @@ New journeys collect and combine:
 - preferred cardio modality;
 - main adherence barrier;
 - confidence in maintaining the plan;
-- canonical 7/28-day activity history when available;
+- canonical 7/28-day activity history and capacity signature when available;
 - safety answers.
 
 This separation is important: **not being a runner is not the same thing as being sedentary**. A competitive cyclist, fighter or team-sport athlete must not receive a sedentary fallback merely because they report little running experience.
@@ -182,6 +195,7 @@ Typical signals:
 Engine behavior:
 - easy intensity;
 - minimum useful mission (15 min normal floor);
+- normally two initial sessions rather than inflating frequency;
 - no artificial high intensity;
 - gradual progression only after real adherence.
 
@@ -195,6 +209,7 @@ Engine behavior:
 - easy intensity;
 - modest but non-trivial starting dose;
 - run/walk may be appropriate when running is the chosen modality;
+- frequency can differ according to actual multi-week consistency;
 - small progression.
 
 ### `active`
@@ -204,8 +219,9 @@ Typical signals:
 
 Engine behavior:
 - mission must be meaningfully above sedentary fallback;
-- observed average/longest sessions can anchor the initial dose;
+- observed median/average sessions can anchor the initial dose;
 - modality should respect the user’s real capability, sport and goal;
+- weekly frequency can be higher when a stable multi-week pattern actually supports it;
 - availability is a ceiling, not proof of capacity;
 - a non-runner athlete is not downgraded to sedentary by default.
 
@@ -218,6 +234,7 @@ Engine behavior:
 - do not regress to a short walking mission without a clear return/safety reason;
 - continuous running is preserved by default;
 - meaningful fraction of the observed/declarative session capacity is used;
+- recent running distance informs distance-based starting points;
 - automatic intensity remains easy initially.
 
 ### `advanced`
@@ -231,6 +248,7 @@ Engine behavior:
 - preserve a substantial mission duration;
 - do not use beginner run/walk intervals for trained runners;
 - preserve the chosen sport modality for non-runners;
+- allow higher weekly frequency only when the observed pattern supports it and the user's available days permit it;
 - do not automatically prescribe HIIT;
 - use mostly easy automatic work until the product has enough information about recent load, recovery and training phase to justify more complex intensity decisions.
 
@@ -244,6 +262,7 @@ Typical signals:
 Engine behavior:
 - recognize prior ability but reduce the starting load;
 - do not treat the person as lifelong sedentary;
+- normally reduce weekly frequency while re-establishing the routine;
 - progression depends on actual weekly response.
 
 ## Internal decision questions
@@ -253,15 +272,16 @@ Every initial journey stores a decision trace answering at least:
 1. Is there a safety reason to block or constrain training?
 2. Is the person sedentary, beginner, active, regular runner, advanced/competitive or returning?
 3. What did the person actually do in the last 7 and 28 days?
-4. Did recent volume rise sharply relative to the preceding 7 days, with enough data to make that comparison?
-5. Does the person practice another sport with meaningful cardiovascular demand?
-6. What continuous capacity is declared/observed?
-7. What is the actual goal (health, consistency, run distance, performance, return)?
-8. What time/days really fit the routine?
-9. What barrier most threatens adherence?
-10. Is there enough information to claim physiological recovery? (normally no at onboarding)
-11. If trained, should intensity automatically be increased? (default: no)
-12. Is there a universal evidence-based safe percentage or workload-ratio threshold? (no)
+4. What capacity signature appears in frequency, consistency, modality and distance?
+5. Did recent volume rise sharply relative to the preceding 7 days, with enough data to make that comparison?
+6. Does the person practice another sport with meaningful cardiovascular demand?
+7. What continuous capacity is declared/observed?
+8. What is the actual goal (health, consistency, run distance, performance, return)?
+9. What time/days really fit the routine?
+10. What barrier most threatens adherence?
+11. Is there enough information to claim physiological recovery? (normally no at onboarding)
+12. If trained, should intensity automatically be increased? (default: no)
+13. Is there a universal evidence-based safe percentage or workload-ratio threshold? (no)
 
 The trace includes evidence IDs and is persisted in the baseline so a mission can be audited later.
 
@@ -271,36 +291,48 @@ The trace includes evidence IDs and is persisted in the baseline so a mission ca
 
 - safety gates;
 - profile class;
-- canonical history summary;
+- canonical history summary and capacity signature;
 - modality validity;
 - duration/distance bounds;
+- exact target shown by the app;
 - minimum mission floor;
 - interval-vs-continuous structure;
 - number of sessions;
 - progression/regression limits;
 - evidence version and trace.
 
-### AI may do
+### AI owns the challenge language
 
-- choose a duration **inside** the allowed range for duration-based initial missions;
-- use sport/training/history context to select the most coherent point inside that range;
-- write a short personalized rationale;
-- later, phrase weekly explanations naturally.
+The normal product contract is **motor decides → AI translates**.
+
+The AI receives the deterministic prescription plus the minimum context necessary to make the challenge sound specific: goal, adherence barrier, sport background, declared capability, capacity signature and weekly response when available. It returns:
+
+- a short challenge `name`;
+- a personalized `message` explaining why this challenge fits now;
+- a practical `cue` for how to approach it.
+
+The exact numeric target remains outside the generated copy and is rendered directly from the deterministic prescription. Generated `name`, `message` and `cue` are rejected if they contain digits. This prevents a fluent AI sentence from disagreeing with the actual mission target.
+
+For the initial duration-based mission only, Gemini may additionally choose a duration **inside** the deterministic min/max range when safety allows. The deterministic validator runs again before persistence. For distance missions, safety/return paths and all later weekly decisions, AI language cannot modify the prescription.
+
+If Gemini is unavailable, times out or returns invalid content, the app receives deterministic fallback wording and the mission remains fully usable.
 
 ### AI may not do
 
 - override safety;
 - change the sport modality outside deterministic rules;
 - create a duration below the floor or above the cap;
-- invent a research source;
+- change distance, interval structure or weekly session count;
+- invent a research source or historical activity;
 - treat a non-running athlete as sedentary when the deterministic engine classified otherwise;
 - turn a load trend into an injury/overtraining/recovery diagnosis;
+- expose internal class names, workload ratios or implementation details to the user;
 - add HIIT to an advanced athlete without deterministic permission;
 - promise outcomes or diagnose conditions.
 
 ## Weekly adaptation
 
-The next mission is based on actual response, not only the onboarding identity.
+The next prescription is based on actual response, not only the onboarding identity.
 
 Signals include:
 - adherence/completion;
@@ -311,7 +343,9 @@ Signals include:
 - safety answers;
 - verified activity completion.
 
-A good week can produce a small progression. A difficult week can regress. At the 15-minute floor a regression can become `maintain` instead of creating an 8–12 minute trivial mission.
+A good week can produce a small deterministic progression. A difficult week can regress. At the 15-minute floor a regression can become `maintain` instead of creating an 8–12 minute trivial mission.
+
+After the deterministic weekly decision is committed, Gemini receives the result and translates it into the next personalized challenge. That translation is written only if the journey is still active and on the same week, preventing a stale AI response from overwriting a newer state.
 
 Profile-specific progression rates are product guardrails. They intentionally avoid a universal fixed percentage.
 
