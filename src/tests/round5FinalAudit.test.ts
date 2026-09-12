@@ -31,4 +31,13 @@ describe('Round 5 final audit guards', () => {
     expect(ledger).toContain("origin: alreadyListed || legacyEquivalent ? 'legacy_ranking_achievement_reconciliation' : 'weekly_ranking_achievement'");
     expect(ledger).toContain("db.collection('achievement_reward_ledger')");
   });
+
+  test('gym association has no client-side manual write fallback', () => {
+    const service = read('src/services/gymService.ts');
+    expect(service).toContain("fetch('/api/gyms/join'");
+    expect(service).not.toContain('registerGymManual');
+    expect(service).not.toContain("doc(db, 'gyms'");
+    expect(service).not.toContain("doc(db, 'users'");
+    expect(service).not.toContain('updateDoc(');
+  });
 });
