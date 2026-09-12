@@ -1,1041 +1,461 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Users, 
-  Dumbbell, 
-  MapPin, 
-  Globe, 
-  DollarSign, 
-  TrendingUp, 
-  Search, 
-  Filter, 
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
   Activity,
-  Award,
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
   ChevronRight,
-  UserCheck,
+  CreditCard,
+  PackageCheck,
+  Search,
   Shield,
   ShieldAlert,
-  CreditCard,
-  RefreshCw,
-  Sparkles,
-  Sliders,
+  ShieldCheck,
+  ShoppingBag,
   Trash2,
-  AlertTriangle,
-  Loader2,
+  UserCheck,
+  Users,
   X,
-  Watch,
-  Wrench,
-FlaskConical
 } from 'lucide-react';
-import { motion } from 'motion/react';
-import { db, auth } from '../firebase';
-import { collection, query, getDocs, limit, orderBy, where, getCountFromServer, doc, updateDoc } from 'firebase/firestore';
-import { UserProfile } from '../types';
-import { cn } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { CreatorSandbox } from '../components/CreatorSandbox';
+import {
+  collection,
+  getCountFromServer,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  where,
+} from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { hasActiveProEntitlement } from '../lib/proEntitlement';
+import type { UserProfile } from '../types';
 
-async function requestAdminDeletion(target: string): Promise<{ deletedUids: string[]; message: string }> {
-  const currentUser = auth.currentUser;
-  if (!currentUser) throw new Error('Sessão administrativa indisponível.');
-  const idToken = await currentUser.getIdToken();
-  const response = await fetch('/api/admin?action=delete-user', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${idToken}`,
-    },
-    body: JSON.stringify({ target }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.success !== true) {
-    throw new Error(payload.error || 'Não foi possível desativar a conta.');
+interface OpsMetrics {
+  totalUsers: number;
+  totalPro: number;
+  pendingActivities: number;
+  pendingWithdrawals: number;
+}
+
+type Feedback = { type: 'success' | 'error'; text: string } | null;
+type UserFilter = 'all' | 'pro' | 'free';
+
+const MODULES = [
+  {
+    title: 'Pendências de atividade',
+    description: 'Fila canônica de exceções técnicas que ainda exigem decisão administrativa.',
+    path: '/admin/flagged-activities',
+    icon: ShieldAlert,
+    accent: 'amber',
+  },
+  {
+    title: 'Atividades',
+    description: 'Consulta e inspeção do histórico consolidado. Alterações competitivas passam pela fila canônica.',
+    path: '/admin/workouts',
+    icon: Activity,
+    accent: 'gold',
+  },
+  {
+    title: 'Antifraude',
+    description: 'Diagnóstico do pipeline de segurança, rastreabilidade e readiness de produção.',
+    path: '/admin/security',
+    icon: ShieldCheck,
+    accent: 'red',
+  },
+  {
+    title: 'Financeiro',
+    description: 'Saques PIX, estados do provedor e conciliação operacional.',
+    path: '/admin/payouts',
+    icon: CreditCard,
+    accent: 'green',
+  },
+  {
+    title: 'Academias',
+    description: 'Auditoria de cadastro, coordenadas e geofence das unidades parceiras.',
+    path: '/admin/gym-audit',
+    icon: Building2,
+    accent: 'blue',
+  },
+  {
+    title: 'Loja · preços',
+    description: 'Catálogo, valores, disponibilidade e regras comerciais da Invictus Store.',
+    path: '/admin/store/pricing',
+    icon: ShoppingBag,
+    accent: 'gold',
+  },
+  {
+    title: 'Loja · drops',
+    description: 'Lançamentos e janelas de disponibilidade do catálogo.',
+    path: '/admin/store/drops',
+    icon: PackageCheck,
+    accent: 'purple',
+  },
+  {
+    title: 'Loja · pedidos',
+    description: 'Acompanhamento operacional dos pedidos e estados de pagamento/entrega.',
+    path: '/admin/store/orders',
+    icon: PackageCheck,
+    accent: 'green',
+  },
+] as const;
+
+function moduleAccent(accent: string): string {
+  switch (accent) {
+    case 'red': return 'border-rose-500/25 bg-rose-500/[0.06] text-rose-300';
+    case 'green': return 'border-emerald-500/20 bg-emerald-500/[0.05] text-emerald-300';
+    case 'blue': return 'border-sky-500/20 bg-sky-500/[0.05] text-sky-300';
+    case 'purple': return 'border-violet-500/20 bg-violet-500/[0.05] text-violet-300';
+    case 'amber': return 'border-amber-500/25 bg-amber-500/[0.06] text-amber-300';
+    default: return 'border-yellow-500/20 bg-yellow-500/[0.05] text-yellow-200';
   }
-  return {
-    deletedUids: Array.isArray(payload.deletedUids) ? payload.deletedUids : [],
-    message: String(payload.message || 'Conta desativada com sucesso.'),
-  };
+}
+
+async function adminRequest<T = any>(action: string, init?: RequestInit): Promise<T> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error('Sessão administrativa expirada.');
+  const token = await currentUser.getIdToken();
+  const separator = action.includes('?') ? '&' : '?';
+  const response = await fetch(`/api/admin?action=${encodeURIComponent(action.split('?')[0])}${action.includes('?') ? `&${action.split('?')[1]}` : ''}`, {
+    ...init,
+    headers: {
+      ...(init?.headers || {}),
+      Authorization: `Bearer ${token}`,
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+  });
+  void separator;
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.success === false) {
+    throw new Error(payload?.error || payload?.message || 'Falha na operação administrativa.');
+  }
+  return payload as T;
+}
+
+function userCreatedAt(user: UserProfile): string {
+  const raw = (user as any).createdAt;
+  const date = raw?.toDate?.() || (raw ? new Date(raw) : null);
+  if (!date || !Number.isFinite(date.getTime())) return 'Cadastro sem data';
+  return date.toLocaleDateString('pt-BR');
 }
 
 export function AdminDashboard() {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({
-    totalUsers: 0,
-    totalSubscribers: 0,
-    totalRevenue: null as number | null,
-    activePhase: 1,
-    pools: { gym: 0, city: 0, national: 0 }
-  });
+  const [metrics, setMetrics] = useState<OpsMetrics>({ totalUsers: 0, totalPro: 0, pendingActivities: 0, pendingWithdrawals: 0 });
   const [recentUsers, setRecentUsers] = useState<UserProfile[]>([]);
-  const [topUsers, setTopUsers] = useState<UserProfile[]>([]);
+  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'premium' | 'free'>('all');
-
-  const [dbSearchResults, setDbSearchResults] = useState<UserProfile[]>([]);
   const [searching, setSearching] = useState(false);
-  const [adminFeedback, setAdminFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [showCreatorSandbox, setShowCreatorSandbox] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<UserFilter>('all');
+  const [feedback, setFeedback] = useState<Feedback>(null);
+  const [roleUpdatingUid, setRoleUpdatingUid] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserProfile | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  // Deletion modal & loading states
-  const [userToDelete, setUserToDelete] = useState<{ uid: string; name: string } | null>(null);
-  const [deletingUser, setDeletingUser] = useState(false);
-  const [deletingQueryLoading, setDeletingQueryLoading] = useState(false);
-
-  // Simulation states
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [simulating, setSimulating] = useState(false);
-  const [simError, setSimError] = useState<string | null>(null);
-  const [simResult, setSimResult] = useState<{
-    success: boolean;
-    message: string;
-    usersCount: number;
-    clearedLegacyCount: number;
-    users: { uid: string; name: string; age: number; objective: string; weeklyFrequency: string; tier: string }[];
-  } | null>(null);
-
-  const handleRunSimulation = async () => {
-    setSimulating(true);
-    setSimError(null);
-    setSimResult(null);
+  const loadOverview = useCallback(async () => {
+    setLoading(true);
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        throw new Error('Sessão expirada. Por favor, refaça o login admin.');
-      }
-      const idToken = await currentUser.getIdToken();
-      const response = await fetch('/api/admin?action=simulate-perf-users', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const usersCol = collection(db, 'users');
+      const [usersCountResult, proResult, recentResult, flaggedResult, withdrawalsResult] = await Promise.allSettled([
+        getCountFromServer(usersCol),
+        getDocs(query(usersCol, where('subscriptionTier', 'in', ['performance', 'pro']))),
+        getDocs(query(usersCol, orderBy('createdAt', 'desc'), limit(12))),
+        adminRequest<any>('list-flagged-activities?limit=100'),
+        adminRequest<any>('list-withdrawals'),
+      ]);
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Erro inesperado na geração da simulação.');
-      }
+      const totalUsers = usersCountResult.status === 'fulfilled' ? usersCountResult.value.data().count : 0;
+      const totalPro = proResult.status === 'fulfilled'
+        ? proResult.value.docs.filter((document) => hasActiveProEntitlement(document.data())).length
+        : 0;
+      const recent = recentResult.status === 'fulfilled'
+        ? recentResult.value.docs.map((document) => ({ uid: document.id, ...document.data() } as UserProfile))
+        : [];
+      const pendingActivities = flaggedResult.status === 'fulfilled'
+        ? Number(flaggedResult.value?.count ?? flaggedResult.value?.activities?.length ?? 0)
+        : 0;
+      const withdrawals = withdrawalsResult.status === 'fulfilled'
+        ? (Array.isArray(withdrawalsResult.value) ? withdrawalsResult.value : withdrawalsResult.value?.withdrawals || [])
+        : [];
+      const pendingWithdrawals = withdrawals.filter((item: any) => item?.status === 'pending' || item?.status === 'under_review' || item?.status === 'approved' || item?.status === 'processing').length;
 
-      const resData = await response.json();
-      
-      // Clear rankings/stats caches in localStorage to display fresh simulated metrics immediately across the app
-      try {
-        const keysToRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.startsWith('rankings_data_') || key.startsWith('km_redis_') || key.includes('ranking') || key.includes('stats'))) {
-            keysToRemove.push(key);
-          }
-        }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
-      } catch (cacheErr) {
-        console.warn('Failed to clear client-side ranking cache:', cacheErr);
-      }
-
-      setSimResult(resData);
-      setRefreshTrigger(prev => prev + 1);
-    } catch (err: any) {
-      console.error('[Simulation Error]', err);
-      setSimError(err.message || 'Falha ao processar simulação.');
+      setMetrics({ totalUsers, totalPro, pendingActivities, pendingWithdrawals });
+      setRecentUsers(recent);
+    } catch (error: any) {
+      console.error('[AdminDashboard] overview error', error);
+      setFeedback({ type: 'error', text: error?.message || 'Não foi possível carregar o painel.' });
     } finally {
-      setSimulating(false);
+      setLoading(false);
     }
-  };
+  }, []);
 
-  // Debounced search directly in Firestore to allow finding any user by Name, Email, or CPF
+  useEffect(() => { void loadOverview(); }, [loadOverview]);
+
   useEffect(() => {
-    const searchDbUsers = async () => {
-      const trimmed = searchQuery.trim().toLowerCase();
+    const timer = window.setTimeout(async () => {
+      const trimmed = searchQuery.trim();
       if (!trimmed) {
-        setDbSearchResults([]);
+        setSearchResults([]);
+        setSearching(false);
         return;
       }
+
       setSearching(true);
       try {
         const usersCol = collection(db, 'users');
-        const resultsMap = new Map<string, UserProfile>();
+        const normalized = trimmed.toLowerCase();
+        const found = new Map<string, UserProfile>();
+        const jobs: Promise<any>[] = [];
 
-        // 1. Search by exact numeric CPF if digits are present
-        const numericCpf = trimmed.replace(/\D/g, '');
-        if (numericCpf && numericCpf.length >= 3) {
-          const qCpf = query(usersCol, where('cpf', '==', numericCpf), limit(5));
-          const snapCpf = await getDocs(qCpf);
-          snapCpf.forEach(d => resultsMap.set(d.id, { uid: d.id, ...d.data() } as UserProfile));
+        if (normalized.includes('@')) {
+          jobs.push(getDocs(query(usersCol, where('email', '==', normalized), limit(5))));
         }
-
-        // 2. Search by exact e-mail (all lowercase)
-        if (trimmed.includes('@')) {
-          const qEmail = query(usersCol, where('email', '==', trimmed), limit(5));
-          const snapEmail = await getDocs(qEmail);
-          snapEmail.forEach(d => resultsMap.set(d.id, { uid: d.id, ...d.data() } as UserProfile));
+        const cpf = trimmed.replace(/\D/g, '');
+        if (cpf.length >= 3) {
+          jobs.push(getDocs(query(usersCol, where('cpf', '==', cpf), limit(5))));
         }
+        jobs.push(getDocs(query(
+          usersCol,
+          where('displayNameLower', '>=', normalized),
+          where('displayNameLower', '<=', `${normalized}\uf8ff`),
+          limit(20),
+        )));
 
-        // 3. Prefix search by displayNameLower (case-insensitive indexing)
-        const qName = query(
-          usersCol, 
-          where('displayNameLower', '>=', trimmed), 
-          where('displayNameLower', '<=', trimmed + '\uf8ff'),
-          limit(15)
-        );
-        const nameSnap = await getDocs(qName);
-        nameSnap.forEach(d => resultsMap.set(d.id, { uid: d.id, ...d.data() } as UserProfile));
-
-        // Fallback prefix search: search raw displayName for legacy entries
-        if (resultsMap.size === 0) {
-          const qNameCapitalized = query(
-            usersCol,
-            where('displayName', '>=', searchQuery.trim()),
-            where('displayName', '<=', searchQuery.trim() + '\uf8ff'),
-            limit(15)
-          );
-          const nameSnapCap = await getDocs(qNameCapitalized);
-          nameSnapCap.forEach(d => resultsMap.set(d.id, { uid: d.id, ...d.data() } as UserProfile));
-        }
-
-        setDbSearchResults(Array.from(resultsMap.values()));
-      } catch (err) {
-        console.error('[-] Error searching in backend:', err);
+        const settled = await Promise.allSettled(jobs);
+        settled.forEach((result) => {
+          if (result.status !== 'fulfilled') return;
+          result.value.docs.forEach((document: any) => found.set(document.id, { uid: document.id, ...document.data() } as UserProfile));
+        });
+        setSearchResults(Array.from(found.values()));
+      } catch (error) {
+        console.error('[AdminDashboard] user search error', error);
       } finally {
         setSearching(false);
       }
-    };
+    }, 350);
 
-    const delayDebounce = setTimeout(() => {
-      searchDbUsers();
-    }, 450);
-
-    return () => clearTimeout(delayDebounce);
+    return () => window.clearTimeout(timer);
   }, [searchQuery]);
 
-  // Fast direct role toggler for admin list rows
-  const handlePromoteToggle = async (targetUid: string, currentRole: 'user' | 'admin') => {
-    const newRole: 'user' | 'admin' = currentRole === 'admin' ? 'user' : 'admin';
+  const visibleUsers = useMemo(() => {
+    const source = searchQuery.trim() ? searchResults : recentUsers;
+    return source.filter((user) => {
+      if (filter === 'all') return true;
+      const pro = hasActiveProEntitlement(user);
+      return filter === 'pro' ? pro : !pro;
+    });
+  }, [filter, recentUsers, searchQuery, searchResults]);
+
+  const changeRole = async (user: UserProfile) => {
+    const nextRole = user.role === 'admin' ? 'user' : 'admin';
+    const verb = nextRole === 'admin' ? 'promover a administrador' : 'remover o acesso administrativo de';
+    if (!window.confirm(`Confirma ${verb} ${user.displayName || user.email || user.uid}?`)) return;
+
+    setRoleUpdatingUid(user.uid);
+    setFeedback(null);
     try {
-      const userDocRef = doc(db, 'users', targetUid);
-      await updateDoc(userDocRef, { role: newRole });
-
-      const updateList = (list: UserProfile[]): UserProfile[] => 
-        list.map(u => u.uid === targetUid ? { ...u, role: newRole } : u);
-
-      setRecentUsers(prev => updateList(prev));
-      setDbSearchResults(prev => updateList(prev));
-
-      setAdminFeedback({ 
-        type: 'success', 
-        text: `Perfil atualizado para ${newRole.toUpperCase()} com sucesso!` 
+      await adminRequest('set-user-role', {
+        method: 'POST',
+        body: JSON.stringify({ targetUid: user.uid, role: nextRole }),
       });
-      setTimeout(() => setAdminFeedback(null), 4000);
-    } catch (err: any) {
-      console.error('[-] Error updating user role:', err);
-      setAdminFeedback({ 
-        type: 'error', 
-        text: `Erro ao atualizar papel: ${err.message || err}` 
-      });
-      setTimeout(() => setAdminFeedback(null), 5000);
-    }
-  };
-
-  const handleDeleteUser = (targetUid: string, targetName?: string) => {
-    setUserToDelete({ uid: targetUid, name: targetName || targetUid });
-  };
-
-  const confirmDeleteUserModal = async () => {
-    if (!userToDelete) return;
-    setDeletingUser(true);
-    const targetUid = userToDelete.uid;
-    const targetName = userToDelete.name;
-
-    try {
-      const result = await requestAdminDeletion(targetUid);
-
-      setRecentUsers(prev => prev.filter(u => u.uid !== targetUid));
-      setDbSearchResults(prev => prev.filter(u => u.uid !== targetUid));
-      setUserToDelete(null);
-      setAdminFeedback({
-        type: 'success',
-        text: `${targetName}: ${result.message}`
-      });
-      setTimeout(() => setAdminFeedback(null), 6000);
-    } catch (err: any) {
-      console.error('[-] Error deleting user:', err);
-      setAdminFeedback({
-        type: 'error',
-        text: `Erro ao excluir usuário: ${err.message || err}`
-      });
-      setTimeout(() => setAdminFeedback(null), 6000);
+      const patch = (list: UserProfile[]) => list.map((item) => item.uid === user.uid ? { ...item, role: nextRole } : item);
+      setRecentUsers(patch);
+      setSearchResults(patch);
+      setFeedback({ type: 'success', text: `${user.displayName || 'Usuário'} agora está como ${nextRole === 'admin' ? 'ADMINISTRADOR' : 'USUÁRIO'}.` });
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error?.message || 'Não foi possível alterar o papel do usuário.' });
     } finally {
-      setDeletingUser(false);
+      setRoleUpdatingUid(null);
     }
   };
 
-  const handleDeleteUserByQuery = async (queryInput: string) => {
-    const rawVal = queryInput.trim();
-    if (!rawVal) {
-      setAdminFeedback({ type: 'error', text: "Por favor, digite o e-mail ou o CPF do cadastro que deseja excluir." });
-      setTimeout(() => setAdminFeedback(null), 5000);
-      return;
-    }
-    
-    setDeletingQueryLoading(true);
-    const cleanCpf = rawVal.replace(/\D/g, '');
-    const cleanEmail = rawVal.toLowerCase();
-    
+  const deactivateUser = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setFeedback(null);
     try {
-      const result = await requestAdminDeletion(rawVal);
-      const deletedUids = result.deletedUids;
-      setRecentUsers(prev => prev.filter(u =>
-        !deletedUids.includes(u.uid) &&
-        u.uid !== rawVal &&
-        (!u.email || u.email.toLowerCase() !== cleanEmail) &&
-        (!u.cpf || u.cpf.replace(/\D/g, '') !== cleanCpf)
-      ));
-      setDbSearchResults(prev => prev.filter(u =>
-        !deletedUids.includes(u.uid) &&
-        u.uid !== rawVal &&
-        (!u.email || u.email.toLowerCase() !== cleanEmail) &&
-        (!u.cpf || u.cpf.replace(/\D/g, '') !== cleanCpf)
-      ));
-
-      const inputEl = document.getElementById('delete-user-search') as HTMLInputElement;
-      if (inputEl) inputEl.value = '';
-
-      setAdminFeedback({
-        type: 'success',
-        text: result.message
+      const result = await adminRequest<any>('delete-user', {
+        method: 'POST',
+        body: JSON.stringify({ target: deleteTarget.uid }),
       });
-      setTimeout(() => setAdminFeedback(null), 6000);
-    } catch (err: any) {
-      console.error("Erro ao excluir usuário:", err);
-      setAdminFeedback({ type: 'error', text: "Erro ao excluir cadastro: " + (err.message || err) });
-      setTimeout(() => setAdminFeedback(null), 6000);
+      const deletedIds = Array.isArray(result.deletedUids) ? result.deletedUids : [deleteTarget.uid];
+      setRecentUsers((list) => list.filter((item) => !deletedIds.includes(item.uid)));
+      setSearchResults((list) => list.filter((item) => !deletedIds.includes(item.uid)));
+      setFeedback({ type: 'success', text: result.message || 'Conta desativada com sucesso.' });
+      setDeleteTarget(null);
+    } catch (error: any) {
+      setFeedback({ type: 'error', text: error?.message || 'Não foi possível desativar a conta.' });
     } finally {
-      setDeletingQueryLoading(false);
+      setDeleting(false);
     }
   };
-
-  useEffect(() => {
-    const fetchAdminData = async () => {
-      setLoading(true);
-      try {
-        // 1. Core Metrics
-        const usersCol = collection(db, 'users');
-        const [totalUsersSnap, proCandidatesSnap] = await Promise.all([
-          getCountFromServer(usersCol),
-          getDocs(query(usersCol, where('subscriptionTier', 'in', ['performance', 'pro'])))
-        ]);
-
-        const totalUsers = totalUsersSnap.data().count;
-        const totalSubscribers = proCandidatesSnap.docs.filter(document => hasActiveProEntitlement(document.data())).length;
-        // RevenueCat pode vender períodos e moedas diferentes. Sem uma
-        // agregação financeira por transação/moeda, não inventamos receita a
-        // partir da quantidade de assinantes.
-        const totalRevenue = null;
-        const activePhase = totalSubscribers >= 150 ? 3 : (totalSubscribers >= 50 ? 2 : 1);
-        
-        const pools = {
-          gym: 0,
-          city: 0,
-          national: 0
-        };
-
-        setStats({
-          totalUsers,
-          totalSubscribers,
-          totalRevenue,
-          activePhase,
-          pools
-        });
-
-        // 2. Recent Users
-        const recentQuery = query(usersCol, orderBy('createdAt', 'desc'), limit(10));
-        const recentSnap = await getDocs(recentQuery);
-        setRecentUsers(recentSnap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)));
-
-        // 3. Top Users (XP)
-        const topQuery = query(usersCol, orderBy('score', 'desc'), limit(10));
-        const topSnap = await getDocs(topQuery);
-        setTopUsers(topSnap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)));
-
-      } catch (error) {
-        console.error('Error fetching admin data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAdminData();
-  }, [refreshTrigger]);
-
-  const activeUserList = searchQuery.trim() ? dbSearchResults : recentUsers;
-
-  const filteredUsers = activeUserList.filter(u => {
-    const matchesFilter = filter === 'all' ? true : 
-                         filter === 'premium' ? hasActiveProEntitlement(u) : !hasActiveProEntitlement(u);
-    return matchesFilter;
-  });
-
-  if (loading) {
-    return (
-      <div className="p-12 flex flex-col items-center justify-center min-h-screen space-y-4">
-        <Activity className="animate-spin text-primary" size={48} />
-        <p className="font-headline italic font-black text-on-surface-variant uppercase tracking-widest animate-pulse">CARREGANDO SISTEMA...</p>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      {/* Header */}
-      <header className="px-6 pt-12 pb-8 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <Shield className="text-secondary" size={24} />
-              <h1 className="font-headline italic font-black text-3xl text-on-surface uppercase tracking-tight">PAINEL DE CONTROLE</h1>
+    <div className="space-y-7 pb-16">
+      <section className="overflow-hidden rounded-[32px] border border-yellow-500/20 bg-gradient-to-br from-yellow-500/[0.08] via-neutral-950 to-neutral-950 p-6 md:p-8">
+        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.24em] text-yellow-400">
+              <Shield size={16} /> Operação Invictus
             </div>
-            <p className="font-label text-[10px] font-black text-on-surface-variant uppercase tracking-widest leading-none mt-1">Visão geral do ecossistema moove</p>
+            <h1 className="font-headline text-3xl font-black uppercase tracking-tight text-white md:text-4xl">Central administrativa</h1>
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-neutral-400">
+              Um painel focado em operação real: usuários, segurança, atividades, financeiro, academias e loja. Ferramentas de laboratório e geração de usuários artificiais foram removidas do ambiente de produção.
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setShowCreatorSandbox(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600/20 border border-red-500/40 hover:bg-red-600/30 text-red-300 font-headline italic font-black text-xs uppercase tracking-wider rounded-full transition-colors cursor-pointer"
-            >
-              <Wrench className="w-4 h-4 text-red-400" />
-              Módulo do Criador
-            </button>
-            <button
-              onClick={() => navigate('/admin/security')}
-              className="flex items-center gap-2 px-4 py-2 bg-rose-600/20 border border-rose-500/40 hover:bg-rose-600/30 text-rose-300 font-headline italic font-black text-xs uppercase tracking-wider rounded-full transition-colors"
-            >
-              <Shield className="w-4 h-4 text-rose-400" />
-              Central de Segurança
-            </button>
-            <button
-              onClick={() => navigate('/admin/gym-audit')}
-              className="flex items-center gap-2 px-4 py-2 bg-neutral-800 border border-neutral-700 hover:bg-neutral-700 text-neutral-200 font-headline italic font-black text-xs uppercase tracking-wider rounded-full transition-colors"
-            >
-              Auditoria de Academias
-            </button>
+          <button
+            onClick={() => void loadOverview()}
+            className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 px-5 py-3 text-xs font-black uppercase tracking-wider text-yellow-300 transition hover:bg-yellow-500/15"
+          >
+            Atualizar visão geral
+          </button>
+        </div>
+      </section>
+
+      {feedback && (
+        <div className={`flex items-center justify-between gap-4 rounded-2xl border p-4 text-xs font-bold ${feedback.type === 'success' ? 'border-emerald-500/25 bg-emerald-500/[0.07] text-emerald-300' : 'border-rose-500/25 bg-rose-500/[0.07] text-rose-300'}`}>
+          <div className="flex items-center gap-3">
+            {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+            <span>{feedback.text}</span>
+          </div>
+          <button onClick={() => setFeedback(null)} aria-label="Fechar aviso"><X size={16} /></button>
+        </div>
+      )}
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric label="Usuários" value={loading ? '—' : metrics.totalUsers.toLocaleString('pt-BR')} icon={Users} />
+        <Metric label="PRO ativos" value={loading ? '—' : metrics.totalPro.toLocaleString('pt-BR')} icon={UserCheck} />
+        <Metric label="Pendências técnicas" value={loading ? '—' : metrics.pendingActivities.toLocaleString('pt-BR')} icon={ShieldAlert} attention={metrics.pendingActivities > 0} />
+        <Metric label="Saques em fluxo" value={loading ? '—' : metrics.pendingWithdrawals.toLocaleString('pt-BR')} icon={CreditCard} attention={metrics.pendingWithdrawals > 0} />
+      </section>
+
+      <section>
+        <div className="mb-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-yellow-400">Operação</p>
+          <h2 className="mt-1 font-headline text-2xl font-black uppercase text-white">Áreas administrativas</h2>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {MODULES.map((module) => {
+            const Icon = module.icon;
+            return (
+              <button
+                key={module.path}
+                onClick={() => navigate(module.path)}
+                className={`group min-h-[166px] rounded-[26px] border p-5 text-left transition hover:-translate-y-0.5 ${moduleAccent(module.accent)}`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="grid h-11 w-11 place-items-center rounded-2xl border border-current/20 bg-black/20"><Icon size={21} /></div>
+                  <ChevronRight className="opacity-45 transition group-hover:translate-x-1 group-hover:opacity-100" size={19} />
+                </div>
+                <h3 className="mt-5 text-sm font-black uppercase tracking-wide text-white">{module.title}</h3>
+                <p className="mt-2 text-xs leading-relaxed text-neutral-400">{module.description}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-[30px] border border-white/[0.08] bg-white/[0.025] p-5 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-yellow-400">Acesso e contas</p>
+            <h2 className="mt-1 font-headline text-2xl font-black uppercase text-white">Gerenciar usuários</h2>
+            <p className="mt-2 max-w-xl text-xs text-neutral-500">Busque por nome, e-mail ou CPF. Promoções de administrador e desativações passam pelo backend autenticado e entram na trilha de auditoria.</p>
+          </div>
+          <div className="flex gap-2">
+            {(['all', 'pro', 'free'] as const).map((key) => (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${filter === key ? 'border-yellow-500/60 bg-yellow-500/15 text-yellow-300' : 'border-white/10 bg-black/20 text-neutral-500'}`}
+              >
+                {key === 'all' ? 'Todos' : key === 'pro' ? 'PRO' : 'Open'}
+              </button>
+            ))}
           </div>
         </div>
-      </header>
 
-      <div className="px-6 space-y-8">
-        {/* Top-level Feedback Banner */}
-        {adminFeedback && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={cn(
-              "p-4 rounded-2xl flex items-center justify-between gap-4 font-bold text-xs uppercase tracking-wide border shadow-lg",
-              adminFeedback.type === 'success' 
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" 
-                : "bg-red-500/10 border-red-500/30 text-red-400"
-            )}
-          >
-            <div className="flex items-center gap-3">
-              {adminFeedback.type === 'success' ? <UserCheck size={18} /> : <AlertTriangle size={18} />}
-              <span>{adminFeedback.text}</span>
-            </div>
-            <button onClick={() => setAdminFeedback(null)} className="opacity-80 hover:opacity-100 transition-opacity">
-              <X size={16} />
-            </button>
-          </motion.div>
-        )}
-
-        {/* Main Stats Grid */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard 
-            label="Total Usuários" 
-            value={stats.totalUsers.toLocaleString()} 
-            icon={<Users size={20} />} 
-            color="text-primary"
+        <div className="relative mt-5">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-600" size={18} />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Buscar usuário por nome, e-mail ou CPF..."
+            className="h-13 w-full rounded-2xl border border-white/10 bg-black/30 py-4 pl-12 pr-4 text-sm text-white outline-none transition placeholder:text-neutral-600 focus:border-yellow-500/40"
           />
-          <StatCard 
-            label="Membros PRO" 
-            value={stats.totalSubscribers.toLocaleString()} 
-            icon={<UserCheck size={20} />} 
-            color="text-secondary"
-          />
-          <StatCard 
-            label="Fase Ativa" 
-            value={`FASE ${stats.activePhase}`} 
-            icon={<TrendingUp size={20} />} 
-            color="text-alert-orange"
-            subtitle={stats.activePhase === 1 ? "Academia" : stats.activePhase === 2 ? "Cidade" : "Nacional"}
-          />
-          <StatCard 
-            label="Receita confirmada"
-            value={stats.totalRevenue === null ? '—' : `R$ ${stats.totalRevenue.toLocaleString('pt-BR')}`}
-            icon={<DollarSign size={20} />} 
-            color="text-tertiary"
-            subtitle="Consultar por moeda e período na RevenueCat"
-          />
-        </section>
+        </div>
 
-        {/* Growth & Phase Progress */}
-        <section className="bg-surface-container-low p-8 rounded-[40px] border border-outline-variant/10 space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight">PROGRESSO DE LIGAS</h3>
-            <div className="flex items-center gap-2">
-              <span className="font-label text-[10px] font-black text-primary uppercase">META NACIONAL</span>
-              <span className="font-mono text-xs text-on-surface-variant">{(stats.totalSubscribers / 10000 * 100).toFixed(1)}%</span>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <ProgressBar 
-              label="Cidade (5k)" 
-              current={stats.totalSubscribers} 
-              target={5000} 
-              active={stats.activePhase >= 2}
-            />
-            <ProgressBar 
-              label="Nacional (10k)" 
-              current={stats.totalSubscribers} 
-              target={10000} 
-              active={stats.activePhase >= 3}
-            />
-          </div>
-        </section>
-
-        {/* Pools Overview */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <PoolCard 
-            label="POOL ACADEMIAS" 
-            value={stats.pools.gym} 
-            icon={<Dumbbell size={24} />} 
-            color="bg-primary/20 text-primary"
-            description="Total distribuído entre todas as academias"
-          />
-          <PoolCard 
-            label="POOL CIDADE" 
-            value={stats.pools.city} 
-            icon={<MapPin size={24} />} 
-            color="bg-secondary/20 text-secondary"
-            description="Liga municipal ativa a partir de 5k subs"
-          />
-          <PoolCard 
-            label="POOL NACIONAL" 
-            value={stats.pools.national} 
-            icon={<Globe size={24} />} 
-            color="bg-tertiary/20 text-tertiary"
-            description="Liga nacional ativa a partir de 10k subs"
-          />
-        </section>
-
-        {/* Quick Actions */}
-        <section className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-          <ActionButton label="Sandbox Smartwatch" icon={<Watch size={18} />} onClick={() => navigate('/wearables')} />
-          <ActionButton label="Simulador de Rankings" icon={<Sliders size={18} />} onClick={() => navigate('/admin/ranking-simulator')} />
-<ActionButton label="IGA Original (Teste)" icon={<FlaskConical size={18} />} onClick={() => navigate('/admin/iga-teste-original')} />
-          <ActionButton label="Payouts" icon={<CreditCard size={18} />} onClick={() => navigate('/admin/payouts')} />
-          <ActionButton label="Workouts" icon={<Activity size={18} />} onClick={() => navigate('/admin/workouts')} />
-          <ActionButton label="Auditar Academias" icon={<MapPin size={18} />} onClick={() => navigate('/admin/gym-audit')} />
-          {/* #249: sem este link nao havia como um admin encontrar a fila de
-              revisao manual (o endpoint list-flagged-activities ja existia,
-              so faltava a tela) -- atividades pendentes ficavam paradas pra
-              sempre. */}
-          <ActionButton label="Fila de Revisão" icon={<ShieldAlert size={18} />} onClick={() => navigate('/admin/flagged-activities')} />
-        </section>
-
-        {/* Simulador de Atletas Performance */}
-        <section className="bg-gradient-to-r from-secondary/15 via-primary/5 to-tertiary/15 p-8 rounded-[40px] border border-outline-variant/10 space-y-6">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <Users className="text-secondary animate-pulse shrink-0" size={26} />
-                <h3 className="font-headline italic font-black text-2xl text-on-surface uppercase tracking-tight">GERENCIADOR DE BASE E POVOAMENTO DE ATLETAS</h3>
-              </div>
-              <p className="text-xs sm:text-sm text-on-surface-variant font-medium max-w-3xl leading-relaxed">
-                Povoa a base administrativa com <strong>50 atletas categorizados no plano Performance e Open</strong> (idades de 18 a 65 anos). Cada perfil possui parâmetros fisiológicos, frequência semanal e treinos validados para estruturação inicial dos rankings da liga em produção!
-              </p>
-            </div>
-            
-            <button
-              onClick={handleRunSimulation}
-              disabled={simulating}
-              className="lg:min-w-[240px] bg-secondary text-black px-8 py-5 rounded-[24px] font-headline italic font-black uppercase tracking-widest hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all shadow-xl flex items-center justify-center gap-3 text-sm shrink-0 border border-secondary/20 cursor-pointer"
-            >
-              {simulating ? (
-                <>
-                  <RefreshCw size={18} className="animate-spin" />
-                  GERANDO...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={18} />
-                  SIMULAR 50 ATLETAS
-                </>
-              )}
-            </button>
-          </div>
-
-          {simError && (
-            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl text-xs font-bold text-red-400 uppercase tracking-wider text-center">
-              ❌ Erro ao simular usuários: {simError}
-            </div>
-          )}
-
-          {simResult && (
-            <div className="bg-surface-container-high/60 border border-outline-variant/15 p-6 rounded-3xl space-y-4 animate-fadeIn">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-headline italic font-black text-sm text-secondary uppercase tracking-tight">SIMULAÇÃO DE CONTA PERFORMANCE EXECUTADA COM SUCESSO!</h4>
-                  <p className="text-[10px] text-on-surface-variant uppercase font-mono mt-0.5">
-                    {simResult.usersCount} atletas gerados | {simResult.clearedLegacyCount} robôs antigos limpos
-                  </p>
+        <div className="mt-4 space-y-2">
+          {searching && <div className="rounded-2xl border border-white/5 bg-black/20 p-4 text-center text-[10px] font-black uppercase tracking-widest text-yellow-400">Buscando...</div>}
+          {!searching && visibleUsers.length === 0 && <div className="rounded-2xl border border-white/5 bg-black/20 p-8 text-center text-xs text-neutral-500">Nenhum usuário encontrado.</div>}
+          {!searching && visibleUsers.map((user) => (
+            <div key={user.uid} className="flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-black/25 p-4 md:flex-row md:items-center md:justify-between">
+              <button onClick={() => navigate(`/profile/${user.uid}`)} className="flex min-w-0 items-center gap-3 text-left">
+                <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-neutral-900">
+                  {user.photoURL ? <img src={user.photoURL} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-yellow-400"><Users size={18} /></div>}
                 </div>
-                <button 
-                  onClick={() => setSimResult(null)}
-                  className="font-mono text-[9px] font-black text-on-surface-variant/60 uppercase tracking-wider hover:text-white transition-colors cursor-pointer"
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-black text-white">{user.displayName || 'Usuário sem nome'}</span>
+                    {user.role === 'admin' && <span className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-yellow-300">Admin</span>}
+                    {hasActiveProEntitlement(user) && <span className="rounded-md border border-violet-500/25 bg-violet-500/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-violet-300">PRO</span>}
+                  </div>
+                  <p className="mt-1 truncate text-[10px] text-neutral-500">{user.email || user.uid} · {userCreatedAt(user)}</p>
+                </div>
+              </button>
+
+              <div className="flex items-center gap-2 self-end md:self-auto">
+                <button
+                  disabled={roleUpdatingUid === user.uid}
+                  onClick={() => void changeRole(user)}
+                  className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-[9px] font-black uppercase tracking-wider text-neutral-300 transition hover:border-yellow-500/30 hover:text-yellow-300 disabled:opacity-40"
                 >
-                  [LIMPAR PAINEL DE SIMULAÇÃO]
+                  {roleUpdatingUid === user.uid ? 'Salvando...' : user.role === 'admin' ? 'Remover admin' : 'Tornar admin'}
+                </button>
+                <button
+                  onClick={() => setDeleteTarget(user)}
+                  className="grid h-9 w-9 place-items-center rounded-xl border border-rose-500/20 bg-rose-500/[0.06] text-rose-400 transition hover:bg-rose-500/10"
+                  aria-label={`Desativar ${user.displayName || 'usuário'}`}
+                >
+                  <Trash2 size={15} />
                 </button>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto no-scrollbar pr-1">
-                {simResult.users.map((u, _i) => (
-                  <div key={u.uid} className="bg-black/30 p-3 rounded-2xl border border-white/5 space-y-2 hover:border-secondary/20 transition-all">
-                    <div className="flex items-center gap-2">
-                      <img 
-                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${u.uid}`} 
-                        alt="" 
-                        className="w-8 h-8 rounded-full bg-secondary/10 border border-secondary/20 shrink-0" 
-                      />
-                      <div className="truncate">
-                        <p className="text-xs font-bold text-white truncate">{u.name}</p>
-                        <p className="text-[8px] font-mono text-secondary uppercase font-black tracking-widest">{u.tier}</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[9px] font-mono text-on-surface-variant uppercase leading-tight border-t border-white/5 pt-2">
-                      <div>Idade: <span className="text-white font-bold">{u.age} anos</span></div>
-                      <div>Freq: <span className="text-white font-bold">{u.weeklyFrequency}</span></div>
-                      <div className="col-span-2 truncate">Objetivo: <span className="text-white font-bold">{u.objective}</span></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
-          )}
-        </section>
+          ))}
+        </div>
+      </section>
 
-        {/* Add Admin by CPF Section */}
-        <section className="bg-surface-container-low p-8 rounded-[40px] border border-outline-variant/10 space-y-6">
-          <div className="flex items-center gap-3">
-            <Shield className="text-primary" size={24} />
-            <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight">ADICIONAR ADMIN POR CPF</h3>
-          </div>
-          
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <input 
-                type="text" 
-                placeholder="CPF (apenas números)" 
-                id="cpf-admin-search"
-                className="w-full bg-surface-container-high border border-outline-variant/10 rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:border-primary/40"
-              />
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[140] grid place-items-center bg-black/80 p-4 backdrop-blur-md">
+          <div className="w-full max-w-md rounded-[30px] border border-rose-500/25 bg-[#0b0b0c] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl border border-rose-500/25 bg-rose-500/10 text-rose-400"><Trash2 size={21} /></div>
+              <button disabled={deleting} onClick={() => setDeleteTarget(null)} className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 text-neutral-500"><X size={16} /></button>
             </div>
-            <button 
-              id="promote-user-button"
-              onClick={async () => {
-                const cpfInput = document.getElementById('cpf-admin-search') as HTMLInputElement;
-                const cpf = cpfInput?.value.replace(/\D/g, '');
-                if (!cpf) {
-                  setAdminFeedback({ type: 'error', text: "Por favor, insira o CPF comercial ou pessoal do usuário." });
-                  return;
-                }
-                
-                try {
-                  const usersRef = collection(db, 'users');
-                  const q = query(usersRef, where('cpf', '==', cpf));
-                  const querySnapshot = await getDocs(q);
-                  
-                  if (querySnapshot.empty) {
-                    setAdminFeedback({ type: 'error', text: "Nenhum atleta foi localizado com este CPF cadastrado." });
-                    setSearchQuery(cpf); // Ajuda ele a ver se existe um usuário CPF parecido na lista
-                    return;
-                  }
-                  
-                  const userDoc = querySnapshot.docs[0];
-                  await updateDoc(doc(db, 'users', userDoc.id), {
-                    role: 'admin'
-                  });
-                  
-                  const targetUid = userDoc.id;
-                  const updateList = (list: UserProfile[]): UserProfile[] => 
-                    list.map(u => u.uid === targetUid ? { ...u, role: 'admin' as const } : u);
-
-                  setRecentUsers(prev => updateList(prev));
-                  setDbSearchResults(prev => updateList(prev));
-                  
-                  setAdminFeedback({ 
-                    type: 'success', 
-                    text: `Atleta ${userDoc.data().displayName || 'identificado'} foi promovido a administrador!` 
-                  });
-                  if (cpfInput) cpfInput.value = '';
-                  setTimeout(() => setAdminFeedback(null), 5000);
-                } catch (error: any) {
-                  console.error("Erro ao promover usuário por CPF:", error);
-                  setAdminFeedback({ type: 'error', text: "Erro ao atualizar permissões do usuário: " + (error.message || error) });
-                }
-              }}
-              className="bg-primary text-black px-8 py-4 rounded-2xl font-headline italic font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg text-sm"
-            >
-              PROMOVER A ADMIN
-            </button>
-          </div>
-
-          {adminFeedback && (
-            <div className={cn(
-              "p-4 rounded-2xl text-xs font-bold uppercase tracking-wider text-center border animate-pulse",
-              adminFeedback.type === 'success' 
-                ? "bg-primary/20 text-primary border-primary/20" 
-                : "bg-red-500/20 text-red-400 border-red-500/20"
-            )}>
-              {adminFeedback.text}
-            </div>
-          )}
-
-          <p className="font-label text-[10px] font-black invictus-text-muted uppercase tracking-widest">
-            Cuidado: Esta ação concede acesso total ao sistema ao usuário indicado.
-          </p>
-        </section>
-
-        {/* Delete User Section */}
-        <section className="bg-red-500/5 p-8 rounded-[40px] border border-red-500/20 space-y-6">
-          <div className="flex items-center gap-3">
-            <Trash2 className="text-red-400" size={24} />
-            <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight">DESATIVAR CONTA DO APP</h3>
-          </div>
-          <p className="text-xs text-on-surface-variant font-medium">
-            Digite o e-mail ou o CPF do atleta para bloquear a conta, revogar sessões e preservar a trilha de auditoria. A conta não poderá ser recriada pelo login.
-          </p>
-          
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <input 
-                type="text" 
-                placeholder="E-mail ou CPF (ex: valdocidasilva@gmail.com ou 44922027068)" 
-                id="delete-user-search"
-                className="w-full bg-surface-container-high border border-outline-variant/10 rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:border-red-500/40"
-              />
-            </div>
-            <button 
-              disabled={deletingQueryLoading}
-              onClick={() => {
-                const deleteInput = document.getElementById('delete-user-search') as HTMLInputElement;
-                if (deleteInput) {
-                  handleDeleteUserByQuery(deleteInput.value);
-                }
-              }}
-              className="bg-red-500 text-white px-8 py-4 rounded-2xl font-headline italic font-black uppercase tracking-widest hover:bg-red-600 active:scale-95 transition-all shadow-lg text-sm shrink-0 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {deletingQueryLoading ? (
-                <>
-                  <Loader2 className="animate-spin" size={18} />
-                  <span>DESATIVANDO...</span>
-                </>
-              ) : (
-                <>
-                  <Trash2 size={18} />
-                  <span>DESATIVAR CONTA</span>
-                </>
-              )}
-            </button>
-          </div>
-        </section>
-
-        {/* User Management List */}
-        <section className="space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight">USUÁRIOS RECENTES</h3>
-            <div className="flex items-center gap-4">
-              <div className="relative flex-1 md:w-64">
-                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/40" />
-                <input 
-                  type="text" 
-                  placeholder="Buscar..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-surface-container-high border border-outline-variant/10 rounded-2xl pl-12 pr-4 py-3 text-xs font-bold focus:outline-none focus:border-primary/40"
-                />
-              </div>
-              <button 
-                onClick={() => setFilter(f => f === 'all' ? 'premium' : f === 'premium' ? 'free' : 'all')}
-                className={cn(
-                  "p-3 rounded-2xl border transition-all",
-                  filter !== 'all' ? "bg-primary border-primary text-black" : "bg-surface-container-high border-outline-variant/10 text-on-surface-variant"
-                )}
-              >
-                <Filter size={18} />
-              </button>
+            <h3 className="mt-5 font-headline text-xl font-black uppercase text-white">Desativar conta</h3>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-400">O acesso de <strong className="text-white">{deleteTarget.displayName || deleteTarget.email || deleteTarget.uid}</strong> será bloqueado, sessões serão revogadas e o tombstone de auditoria será preservado.</p>
+            <div className="mt-6 flex gap-3">
+              <button disabled={deleting} onClick={() => setDeleteTarget(null)} className="flex-1 rounded-2xl border border-white/10 px-4 py-3 text-xs font-black uppercase text-neutral-300">Cancelar</button>
+              <button disabled={deleting} onClick={() => void deactivateUser()} className="flex-1 rounded-2xl bg-rose-500 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{deleting ? 'Desativando...' : 'Desativar'}</button>
             </div>
           </div>
-
-          <div className="space-y-2">
-            {searching && (
-              <div className="text-center py-4 bg-surface-container-low border border-outline-variant/10 rounded-2xl animate-pulse">
-                <span className="text-[10px] font-black uppercase text-secondary tracking-widest">Pesquisando usuários no banco...</span>
-              </div>
-            )}
-            {!searching && filteredUsers.length === 0 && (
-              <div className="text-center py-8 bg-surface-container-low border border-outline-variant/10 rounded-2xl">
-                <span className="text-xs font-bold text-on-surface-variant uppercase">Nenhum usuário localizado</span>
-              </div>
-            )}
-            {filteredUsers.map(user => (
-              <UserRow 
-                key={user.uid} 
-                user={user} 
-                onClick={() => navigate(`/profile/${user.uid}`)} 
-                onPromoteToggle={handlePromoteToggle}
-                onDelete={handleDeleteUser}
-              />
-            ))}
-          </div>
-        </section>
-
-        {/* Leaderboard Summary */}
-        <section className="bg-surface-container-high/40 p-8 rounded-[40px] border border-outline-variant/10 space-y-6">
-          <div className="flex items-center gap-3">
-             <Award className="text-secondary" size={24} />
-             <h3 className="font-headline italic font-black text-xl text-on-surface uppercase tracking-tight leading-none">RANKING XP GLOBAL</h3>
-          </div>
-          <div className="space-y-3">
-            {topUsers.map((user, i) => (
-              <div key={user.uid} className="flex items-center justify-between p-3 bg-black/20 rounded-2xl border border-white/5">
-                <div className="flex items-center gap-3">
-                  <span className="font-headline italic font-black text-on-surface-variant/40 text-lg w-6">#{i + 1}</span>
-                  <div className="w-10 h-10 rounded-xl bg-surface-container-highest overflow-hidden border border-white/5">
-                    <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-xs text-on-surface truncate max-w-[120px]">{user.displayName}</span>
-                    <span className="font-label text-[8px] text-on-surface-variant uppercase tracking-widest">{user.gymName || 'NÃO ATRIBUÍDO'}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="font-headline italic font-black text-primary leading-none">{user.score.toLocaleString()}</span>
-                  <span className="font-label text-[8px] text-on-surface-variant uppercase ml-2">XP</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Creator Sandbox Section */}
-        <section>
-          <CreatorSandbox inline={true} />
-        </section>
-      </div>
-
-      {/* Creator Sandbox Slide-over Drawer */}
-      <CreatorSandbox isOpen={showCreatorSandbox} onClose={() => setShowCreatorSandbox(false)} />
-
-      {/* Delete Confirmation Modal */}
-      {userToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-surface-container p-8 rounded-[32px] border border-red-500/30 max-w-md w-full space-y-6 shadow-2xl relative"
-          >
-            <button 
-              onClick={() => !deletingUser && setUserToDelete(null)}
-              className="absolute top-6 right-6 p-2 text-on-surface-variant hover:text-on-surface transition-colors rounded-full bg-white/5"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center shrink-0 border border-red-500/30">
-                <AlertTriangle size={24} />
-              </div>
-              <div>
-                <h3 className="font-headline italic font-black text-lg text-on-surface uppercase tracking-tight">DESATIVAR CONTA</h3>
-                <p className="text-[10px] font-mono font-bold text-red-400 uppercase tracking-widest mt-0.5">AÇÃO ADMINISTRATIVA AUDITADA</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
-              Tem certeza de que deseja desativar <strong className="text-on-surface">{userToDelete.name}</strong>? O acesso será bloqueado, as sessões serão revogadas e um tombstone impedirá a recriação automática; os registros necessários à auditoria serão preservados.
-            </p>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button 
-                disabled={deletingUser}
-                onClick={() => setUserToDelete(null)}
-                className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-on-surface text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors disabled:opacity-50"
-              >
-                CANCELAR
-              </button>
-              <button 
-                disabled={deletingUser}
-                onClick={confirmDeleteUserModal}
-                className="flex-1 py-3 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-headline italic font-black uppercase tracking-wider transition-colors shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {deletingUser ? (
-                  <>
-                    <Loader2 className="animate-spin" size={16} />
-                    <span>DESATIVANDO...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 size={16} />
-                    <span>DESATIVAR AGORA</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </motion.div>
         </div>
       )}
     </div>
   );
 }
 
-function StatCard({ label, value, icon, color, subtitle }: { label: string, value: string, icon: React.ReactNode, color: string, subtitle?: string }) {
+function Metric({ label, value, icon: Icon, attention = false }: { label: string; value: string; icon: typeof Users; attention?: boolean }) {
   return (
-    <div className="bg-surface-container p-5 rounded-[32px] border border-outline-variant/10 space-y-2">
-      <div className={cn("w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center", color)}>
-        {icon}
-      </div>
-      <div>
-        <p className="font-label text-[8px] font-black text-on-surface-variant uppercase tracking-widest leading-none mb-1">{label}</p>
-        <p className="font-headline italic font-black text-2xl text-on-surface leading-none">{value}</p>
-        {subtitle && <p className="font-label text-[8px] font-black text-on-surface/40 uppercase tracking-widest mt-1">{subtitle}</p>}
+    <div className={`rounded-[24px] border p-4 md:p-5 ${attention ? 'border-amber-500/30 bg-amber-500/[0.06]' : 'border-white/[0.08] bg-white/[0.025]'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-neutral-500">{label}</p>
+          <p className={`mt-2 font-headline text-3xl font-black ${attention ? 'text-amber-300' : 'text-white'}`}>{value}</p>
+        </div>
+        <div className={`grid h-10 w-10 place-items-center rounded-2xl ${attention ? 'bg-amber-500/10 text-amber-300' : 'bg-yellow-500/[0.08] text-yellow-400'}`}><Icon size={19} /></div>
       </div>
     </div>
-  );
-}
-
-function ProgressBar({ label, current, target, active }: { label: string, current: number, target: number, active: boolean }) {
-  const percentage = Math.min(100, (current / target) * 100);
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-[0.2em]">
-        <span className={cn(active ? "text-primary" : "text-on-surface-variant")}>{label}</span>
-        <span className="text-on-surface-variant">{current.toLocaleString()} / {target.toLocaleString()}</span>
-      </div>
-      <div className="h-4 w-full bg-surface-container-highest rounded-xl p-1 border border-white/5 overflow-hidden">
-        <motion.div 
-          initial={{ width: 0 }}
-          animate={{ width: `${percentage}%` }}
-          className={cn(
-            "h-full rounded-lg transition-all duration-1000",
-            active ? "bg-primary shadow-[0_0_10px_rgba(var(--primary-rgb),0.5)]" : "bg-primary/20"
-          )}
-        />
-      </div>
-    </div>
-  );
-}
-
-function PoolCard({ label, value, icon, color, description }: { label: string, value: number, icon: React.ReactNode, color: string, description: string }) {
-  return (
-    <div className="bg-surface-container-low p-6 rounded-[32px] border border-outline-variant/10 space-y-4">
-      <div className="flex justify-between items-start">
-        <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center", color)}>
-          {icon}
-        </div>
-        <div className="text-right">
-          <p className="font-label text-[9px] font-black text-on-surface-variant uppercase tracking-widest leading-none mb-1">{label}</p>
-          <p className="font-headline italic font-black text-2xl text-on-surface">R$ {value.toLocaleString()}</p>
-        </div>
-      </div>
-      <p className="text-[9px] font-medium invictus-text-muted leading-relaxed uppercase tracking-tight">{description}</p>
-    </div>
-  );
-}
-
-function UserRow({ 
-  user, 
-  onClick, 
-  onPromoteToggle,
-  onDelete 
-}: { 
-  user: UserProfile, 
-  onClick: () => void, 
-  onPromoteToggle?: (uid: string, currentRole: 'user' | 'admin') => void,
-  onDelete?: (uid: string, name?: string) => void
-}) {
-  const isPro = hasActiveProEntitlement(user);
-  return (
-    <div 
-      onClick={onClick}
-      className="bg-surface-container p-4 rounded-2xl border border-outline-variant/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group cursor-pointer hover:bg-surface-container-high transition-all"
-    >
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-surface-container-highest overflow-hidden border border-white/5 relative shrink-0">
-          <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="" className="w-full h-full object-cover" />
-          {isPro && (
-            <div className="absolute top-0 right-0 w-4 h-4 bg-secondary rounded-bl-lg flex items-center justify-center">
-              <TrendingUp size={8} className="text-black" />
-            </div>
-          )}
-        </div>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className="font-bold text-sm text-on-surface group-hover:text-primary transition-colors truncate">{user.displayName}</h4>
-            {isPro && <span className="bg-secondary/20 text-secondary text-[8px] font-black px-1.5 py-0.5 rounded uppercase font-mono">PRO</span>}
-            {user.role === 'admin' && <span className="bg-primary/20 text-primary text-[8px] font-black px-1.5 py-0.5 rounded uppercase border border-primary/20 font-mono">ADMIN</span>}
-          </div>
-          <p className="text-[10px] invictus-text-muted font-medium truncate max-w-[200px]">{user.email || 'Sem e-mail'}</p>
-          {user.cpf && <p className="text-[9px] font-mono text-on-surface-variant/40 mt-0.5">CPF: {user.cpf}</p>}
-        </div>
-      </div>
-      
-      <div className="flex items-center gap-3 sm:gap-4 justify-between sm:justify-end w-full sm:w-auto shrink-0">
-        {onPromoteToggle && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onPromoteToggle(user.uid, user.role || 'user');
-            }}
-            className={cn(
-              "px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all text-center min-w-[100px]",
-              user.role === 'admin' 
-                ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/10" 
-                : "bg-primary/10 hover:bg-primary/20 text-primary border-primary/10"
-            )}
-          >
-            {user.role === 'admin' ? 'REBAIXAR USER' : 'TORNAR ADMIN'}
-          </button>
-        )}
-        {onDelete && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(user.uid, user.displayName || user.email || user.cpf);
-            }}
-            title="Desativar conta"
-            className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all"
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
-        <div className="hidden md:block text-right">
-          <p className="font-label text-[8px] font-black text-on-surface-variant uppercase tracking-widest leading-none mb-1">DATA CADASTRO</p>
-          <p className="font-mono text-[10px] text-on-surface">{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</p>
-        </div>
-        <ChevronRight size={18} className="text-on-surface-variant/40 group-hover:text-primary group-hover:translate-x-1 transition-all" />
-      </div>
-    </div>
-  );
-}
-
-function ActionButton({ label, icon, onClick }: { label: string, icon: React.ReactNode, onClick: () => void }) {
-  return (
-    <button 
-      onClick={onClick}
-      className="flex items-center gap-3 bg-surface-container border border-outline-variant/10 px-5 py-4 rounded-2xl hover:bg-primary hover:text-black transition-all shrink-0 active:scale-95 group"
-    >
-      <div className="text-primary group-hover:text-black transition-colors">
-        {icon}
-      </div>
-      <span className="font-headline italic font-black text-sm uppercase tracking-tighter">{label}</span>
-    </button>
   );
 }
