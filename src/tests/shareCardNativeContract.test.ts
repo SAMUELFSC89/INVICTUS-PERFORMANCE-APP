@@ -12,6 +12,16 @@ describe('contrato nativo do card de compartilhamento', () => {
     expect(read('ios/App/App.xcodeproj/project.pbxproj')).toContain('InvictusShareCardPlugin.swift in Sources');
   });
 
+  it('usa snapshot nativo da WKWebView no iOS antes do PNG rasterizado pelo frontend', () => {
+    const iosPlugin = read('ios/App/App/InvictusShareCardPlugin.swift');
+    expect(iosPlugin).toContain('import WebKit');
+    expect(iosPlugin).toContain("document.querySelector('.share-card-art')");
+    expect(iosPlugin).toContain('WKSnapshotConfiguration()');
+    expect(iosPlugin).toContain('webView.takeSnapshot');
+    expect(iosPlugin).toContain('configuration.snapshotWidth = NSNumber(value: 1080)');
+    expect(iosPlugin).toContain('completion(self.imageData(from: call))');
+  });
+
   it('remove velocidade e divisórias antigas, mas mantém os ícones do layout aprovado', () => {
     const card = read('src/components/RunShareCard.tsx');
     expect(card).not.toContain('VELOCIDADE');
@@ -19,4 +29,3 @@ describe('contrato nativo do card de compartilhamento', () => {
     expect(card).toContain('share-card-metric-icon');
   });
 });
-
