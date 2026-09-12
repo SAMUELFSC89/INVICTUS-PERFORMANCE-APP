@@ -21,6 +21,16 @@ const LEGACY_NOTIFICATION_PREFERENCE_KEY = 'notifications-enabled';
 const notificationPreferenceKey = (uid: string) => `notifications-enabled:${uid}`;
 const currentPushPlatform = () => Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
 
+function safeInternalActionPath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const path = value.trim();
+  // Nunca abra protocolo, host externo ou forma ambígua com barra invertida a
+  // partir de payload de push. Os destinos válidos do app são rotas relativas
+  // à própria origem, sempre iniciadas por uma única '/'.
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return null;
+  return path;
+}
+
 export function pushNotificationsEnabledForUser(uid: string): boolean {
   const scopedKey = notificationPreferenceKey(uid);
   const scoped = localStorage.getItem(scopedKey);
@@ -105,8 +115,10 @@ async function installListeners(expectedUid: string, onNavigate?: (url: string) 
   });
 
   await PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
-    const actionUrl = action.notification?.data?.actionUrl;
-    if (actionUrl && onNavigate) onNavigate(actionUrl);
+    const actionPath = safeInternalActionPath(action.notification?.data?.actionUrl);
+    if (!actionPath) return;
+    if (onNavigate) onNavigate(actionPath);
+    else window.location.assign(actionPath);
   });
 
   await PushNotifications.register();
