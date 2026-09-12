@@ -20,7 +20,7 @@ export const CARDIO_RESEARCH_SOURCES = {
   },
   CDC_START_SLOW: {
     kind: 'public_health_guidance',
-    year: 2026,
+    year: 2025,
     title: 'CDC: Steps for Getting Started With Physical Activity',
     url: 'https://www.cdc.gov/healthy-weight-growth/physical-activity/getting-started.html',
     supports: 'Start slowly and work toward more time or more challenging activity while fitting activity into a realistic routine.',
@@ -44,7 +44,7 @@ export const CARDIO_RESEARCH_SOURCES = {
     year: 2025,
     title: 'Training-intensity distribution interventions in endurance athletes',
     url: 'https://pubmed.ncbi.nlm.nih.gov/39888556/',
-    supports: 'There is no single universally superior intensity-distribution model for every trained athlete; personalization and a predominance of low-intensity work remain important.',
+    supports: 'Endurance athletes usually accumulate most volume at low intensity; evidence does not support blindly assigning one identical intensity-distribution model to every athlete.',
   },
   ELITE_TID_2023: {
     kind: 'systematic_review',
@@ -55,10 +55,10 @@ export const CARDIO_RESEARCH_SOURCES = {
   },
   RUNNING_LOAD_2021: {
     kind: 'systematic_review',
-    year: 2021,
-    title: 'Association Between Running Injuries and Training Parameters',
+    year: 2022,
+    title: 'The Association Between Running Injuries and Training Parameters: A Systematic Review',
     url: 'https://pubmed.ncbi.nlm.nih.gov/34478518/',
-    supports: 'Evidence does not justify a universal precise safe progression percentage; fixed rules such as a single weekly percentage should be treated cautiously.',
+    supports: 'Evidence linking injury onset to specific running distance, duration, frequency, intensity or recent changes is conflicting; caution is warranted when recommending universal progression parameters.',
   },
 } as const;
 
@@ -85,8 +85,8 @@ export function evidenceForProfile(profileClass: ResearchProfileClass): CardioEv
 
 /**
  * Questions the deterministic engine must answer before setting the mission.
- * They are persisted/logged as a decision trace so we can later audit why two
- * users with different profiles received different challenges.
+ * They are persisted as a decision trace so we can audit why two people with
+ * different training backgrounds received different challenges.
  */
 export function buildResearchDecisionTrace(
   answers: ObjectiveAnswers,
@@ -95,8 +95,9 @@ export function buildResearchDecisionTrace(
 ): ResearchDecisionAnswer[] {
   const recentSessions = profile?.recentCardioSessions;
   const longestRun = profile?.recentLongestRunKm;
-  const structured = answers.runningAbility === 'structured';
-  const regularRunner = answers.runningAbility === 'regular' || structured;
+  const structuredRunner = answers.runningAbility === 'structured';
+  const trainedBackground = ['regular', 'structured', 'competitive'].includes(answers.trainingBackground || '');
+  const trained = answers.runningAbility === 'regular' || structuredRunner || trainedBackground || profileClass === 'advanced';
   const hasHistory = profile?.historyStatus === 'available' || typeof recentSessions === 'number';
 
   return [
@@ -109,30 +110,39 @@ export function buildResearchDecisionTrace(
     },
     {
       id: 'current_activity',
-      question: 'A pessoa está sedentária, começando, ativa ou já treina de forma consistente?',
-      answer: `${profileClass}; histórico=${hasHistory ? 'disponível' : 'indisponível'}; sessões28d=${recentSessions ?? 'n/d'}`,
-      impact: profileClass === 'sedentary' ? 'começar com carga útil, fácil e gradual' : 'evitar missão trivial incompatível com o nível',
+      question: 'A pessoa está sedentária, começando, ativa, treinada ou em nível competitivo?',
+      answer: `${profileClass}; contexto=${answers.trainingBackground || 'legado/não informado'}; esporte=${answers.primarySport || 'não informado'}; histórico=${hasHistory ? 'disponível' : 'indisponível'}; sessões28d=${recentSessions ?? 'n/d'}`,
+      impact: profileClass === 'sedentary' ? 'começar com carga útil, fácil e gradual' : 'evitar missão trivial incompatível com o nível atual',
       evidenceIds: profileClass === 'sedentary' || profileClass === 'beginner' ? ['WHO_2020', 'CDC_START_SLOW'] : ['ACSM_FITT'],
+    },
+    {
+      id: 'sport_transfer',
+      question: 'A pessoa já pratica outro esporte com exigência cardiovascular relevante?',
+      answer: `esporte=${answers.primarySport || 'não informado'}; rotina=${answers.trainingBackground || 'não informada'}`,
+      impact: answers.primarySport && answers.primarySport !== 'none' && trainedBackground
+        ? 'não confundir falta de experiência em corrida com sedentarismo geral; transferir capacidade cardiovascular com cautela para a modalidade escolhida'
+        : 'usar capacidade específica declarada como referência principal',
+      evidenceIds: ['ACSM_FITT'],
     },
     {
       id: 'continuous_capacity',
       question: 'Qual capacidade contínua já foi declarada ou observada?',
-      answer: `caminhada=${answers.walkingMinutes}min; corrida=${answers.runningAbility}; maior corrida recente=${longestRun ?? 'n/d'}km`,
-      impact: regularRunner ? 'preservar corrida e usar fração significativa da capacidade' : 'não exceder a capacidade declarada e progredir gradualmente',
+      answer: `caminhada=${answers.walkingMinutes}min; corrida=${answers.runningAbility}; sessão típica=${answers.typicalCardioMinutes ?? 'n/d'}min; maior corrida recente=${longestRun ?? 'n/d'}km`,
+      impact: trained ? 'usar uma fração significativa da capacidade sem ultrapassar o tempo real disponível' : 'não exceder a capacidade declarada e progredir gradualmente',
       evidenceIds: ['ACSM_FITT', 'WHO_2020'],
     },
     {
       id: 'goal_specificity',
-      question: 'O objetivo pede corrida, saúde geral, consistência ou retorno?',
+      question: 'O objetivo pede corrida, saúde geral, consistência, performance ou retorno?',
       answer: answers.goalType,
-      impact: runningGoal(answers.goalType) ? 'priorizar modalidade e métrica específicas de corrida quando coerentes com a capacidade' : 'priorizar aderência e modalidade preferida',
+      impact: runningGoal(answers.goalType) ? 'priorizar modalidade e métrica específicas de corrida quando coerentes com a capacidade' : 'priorizar aderência, modalidade preferida e contexto esportivo',
       evidenceIds: ['ACSM_FITT'],
     },
     {
       id: 'real_life_constraint',
       question: 'Quanto tempo e quantos dias realmente cabem na rotina?',
-      answer: `${answers.availableMinutes}min; ${answers.availableDays.length} dia(s) possíveis`,
-      impact: 'o plano deve caber na rotina; disponibilidade é teto, não prova de capacidade',
+      answer: `${answers.availableMinutes}min disponíveis; ${answers.availableDays.length} dia(s) possíveis; sessão habitual=${answers.typicalCardioMinutes ?? 'n/d'}min`,
+      impact: 'o plano deve caber na rotina; disponibilidade é teto de agenda e não deve apagar a capacidade atlética conhecida',
       evidenceIds: ['CDC_START_SLOW', 'ACSM_FITT'],
     },
     {
@@ -145,17 +155,17 @@ export function buildResearchDecisionTrace(
     {
       id: 'trained_intensity_distribution',
       question: 'Se a pessoa já é treinada, o desafio deve aumentar intensidade automaticamente?',
-      answer: regularRunner || profileClass === 'advanced' ? 'não automaticamente' : 'não aplicável nesta fase',
-      impact: regularRunner || profileClass === 'advanced'
-        ? 'preservar predominância de esforço fácil; intensidade alta exige contexto de carga e recuperação que este onboarding ainda não comprova'
+      answer: trained ? 'não automaticamente' : 'não aplicável nesta fase',
+      impact: trained
+        ? 'preservar predominância de esforço fácil; intensidade alta exige contexto de carga, recuperação e fase de treino que o onboarding ainda não comprova'
         : 'manter intensidade fácil enquanto a base é construída',
-      evidenceIds: regularRunner || profileClass === 'advanced' ? ['SEILER_2010', 'ENDURANCE_TID_2025', 'ELITE_TID_2023'] : ['WHO_2020'],
+      evidenceIds: trained ? ['SEILER_2010', 'ENDURANCE_TID_2025', 'ELITE_TID_2023'] : ['WHO_2020'],
     },
     {
       id: 'progression_uncertainty',
       question: 'Existe uma porcentagem universal comprovada para aumentar carga com segurança?',
       answer: 'não',
-      impact: 'usar passos pequenos, resposta semanal e limites individualizados; não codificar uma regra universal de 10%',
+      impact: 'usar passos pequenos, resposta semanal e limites individualizados; não codificar a regra de 10% como lei científica universal',
       evidenceIds: ['RUNNING_LOAD_2021'],
     },
   ];
