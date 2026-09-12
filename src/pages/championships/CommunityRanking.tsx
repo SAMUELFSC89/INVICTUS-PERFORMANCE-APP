@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Medal, Plus, RefreshCw, ShieldCheck, Trophy, UserRound } from 'lucide-react';
 import { InvictusLogo } from '../../components/InvictusLogo';
 import { PodiumTopThree } from '../../components/ranking/PodiumTopThree';
@@ -23,6 +23,10 @@ const periods: { value: CommunityRankingPeriod; label: string }[] = [
 ];
 const fallbackAvatar = '/capacete.webp';
 
+function parsePeriod(value: string | null): CommunityRankingPeriod {
+  return value === 'monthly' || value === 'all' ? value : 'weekly';
+}
+
 function toRankingEntry(entry: CommunityLeaderboardEntry, gymId: string): RankingEntry {
   return {
     uid: entry.userId,
@@ -37,8 +41,9 @@ function toRankingEntry(entry: CommunityLeaderboardEntry, gymId: string): Rankin
 
 export function CommunityRanking() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useUser();
-  const [period, setPeriod] = useState<CommunityRankingPeriod>('weekly');
+  const [period, setPeriod] = useState<CommunityRankingPeriod>(() => parsePeriod(searchParams.get('period')));
   const [status, setStatus] = useState<CommunityChampionshipStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -67,6 +72,21 @@ export function CommunityRanking() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Mantém o período no endereço para que abrir um perfil e voltar preserve
+  // exatamente Semana/Mês/Temporada, inclusive após reload/deep link.
+  const selectPeriod = (next: CommunityRankingPeriod) => {
+    if (loading || next === period) return;
+    setPeriod(next);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('period', next);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const openProfile = (uid: string) => {
+    const returnTo = `/championships/community/ranking?period=${encodeURIComponent(period)}`;
+    navigate(`/profile/${uid}`, { state: { returnTo } });
+  };
+
   if (!user) return null;
   const championship = status?.championship;
   const gymId = championship?.gymId || user.gymId || '';
@@ -89,14 +109,14 @@ export function CommunityRanking() {
 
     <section className="community-ranking-hero"><div><small>CLASSIFICAÇÃO EXCLUSIVA</small><h1>RANKING DA ACADEMIA</h1><p><Building2 /> {gymName}</p><em>CAMPEONATO ENTRE AMIGOS</em></div><div className="community-ranking-hero-motto"><span>MAIS QUE TREINO<br/>É EVOLUÇÃO.</span><i /></div></section>
 
-    <div className="academy-ranking-periods community-ranking-periods" role="tablist" aria-label="Período do ranking">{periods.map((option) => <button type="button" role="tab" aria-selected={period === option.value} className={period === option.value ? 'is-active' : ''} key={option.value} onClick={() => setPeriod(option.value)} disabled={loading}>{option.label}</button>)}</div>
+    <div className="academy-ranking-periods community-ranking-periods" role="tablist" aria-label="Período do ranking">{periods.map((option) => <button type="button" role="tab" aria-selected={period === option.value} className={period === option.value ? 'is-active' : ''} key={option.value} onClick={() => selectPeriod(option.value)} disabled={loading}>{option.label}</button>)}</div>
 
     {loading ? <section className="academy-ranking-state academy-ranking-loading"><RefreshCw /><p>ATUALIZANDO CLASSIFICAÇÃO…</p></section> : error ? <section className="academy-ranking-state"><RefreshCw /><h2>NÃO FOI POSSÍVEL CARREGAR</h2><p>{error}</p><button type="button" onClick={() => void load()}>TENTAR NOVAMENTE <RefreshCw /></button></section> : athletes.length === 0 ? <section className="academy-ranking-state"><Medal /><h2>O PÓDIO AINDA ESTÁ ABERTO</h2><p>Finalize atividades válidas para inaugurar a classificação deste período.</p></section> : <>
-      <section className="community-ranking-top3"><header><span /><h2>TOP 3</h2><span /></header><p>ATLETAS QUE FAZEM A DIFERENÇA</p><PodiumTopThree entries={topThree} currentUserId={user.uid} onSelect={(uid) => navigate(`/profile/${uid}`)} /></section>
+      <section className="community-ranking-top3"><header><span /><h2>TOP 3</h2><span /></header><p>ATLETAS QUE FAZEM A DIFERENÇA</p><PodiumTopThree entries={topThree} currentUserId={user.uid} onSelect={openProfile} /></section>
 
-      {rows.length ? <section className="community-ranking-list" aria-label="Demais posições"><header><span>POS</span><span>ATLETA</span><span>PONTOS IGA</span></header>{rows.map((entry) => <button key={entry.uid} type="button" className={entry.uid === user.uid ? 'is-current' : ''} onClick={() => navigate(`/profile/${entry.uid}`)}><b>{entry.rank}</b><img src={entry.photoURL || fallbackAvatar} alt="" onError={(event) => { event.currentTarget.src = fallbackAvatar; }} /><strong>{entry.uid === user.uid ? 'Você' : entry.displayName}</strong><span>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></span></button>)}</section> : null}
+      {rows.length ? <section className="community-ranking-list" aria-label="Demais posições"><header><span>POS</span><span>ATLETA</span><span>PONTOS IGA</span></header>{rows.map((entry) => <button key={entry.uid} type="button" className={entry.uid === user.uid ? 'is-current' : ''} onClick={() => openProfile(entry.uid)}><b>{entry.rank}</b><img src={entry.photoURL || fallbackAvatar} alt="" onError={(event) => { event.currentTarget.src = fallbackAvatar; }} /><strong>{entry.uid === user.uid ? 'Você' : entry.displayName}</strong><span>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></span></button>)}</section> : null}
 
       {current ? <section className="community-current-position"><div><small>SUA POSIÇÃO</small><strong>{current.rank}º</strong></div><span><img src={current.photoURL || fallbackAvatar} alt="" /><b>{current.uid === user.uid ? 'Você' : current.displayName}<small>{Number(current.score || 0).toLocaleString('pt-BR')} IGA</small></b></span><p>CONSTÂNCIA<br/>TE COLOCA<br/>SEMPRE MAIS LONGE.<i /></p></section> : null}
     </>}
-  </div><nav className="ch-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button className="is-active" onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Iniciar treino"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav></main>, document.body);
+  </div><nav className="ch-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button className="is-active" onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav></main>, document.body);
 }
