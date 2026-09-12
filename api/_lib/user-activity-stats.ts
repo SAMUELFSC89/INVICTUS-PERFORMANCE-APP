@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { db } from './common.js';
 import { getLevelFromXP } from './xpConfig.js';
+import { reconcileRecentCardioObjectives } from './cardio-objective-activity-sync.js';
 import { activityAchievementsForStats } from '../../src/achievements.js';
 import { readActivityTimestamp, resolveActivityState } from '../../src/lib/workoutData.js';
 
@@ -107,7 +108,7 @@ export async function reconcileUserActivityStats(userId: string): Promise<UserAc
   const ledgerRefs = eligibleAchievements.map((achievement) =>
     db.collection('achievement_reward_ledger').doc(achievementLedgerId(userId, achievement.id)));
 
-  return db.runTransaction(async (transaction: any): Promise<UserActivityStatsReconciliation> => {
+  const reconciled = await db.runTransaction(async (transaction: any): Promise<UserActivityStatsReconciliation> => {
     const reads = await Promise.all([
       transaction.get(userRef),
       ...ledgerRefs.map((ref) => transaction.get(ref)),
@@ -172,4 +173,15 @@ export async function reconcileUserActivityStats(userId: string): Promise<UserAc
       unlockedAchievementIds,
     };
   });
+
+  // O mesmo ponto de reconciliação executado após atividades e no carregamento
+  // do perfil recupera missões de cardio independentemente da tela que iniciou
+  // a sessão. Falha aqui nunca invalida os contadores pessoais já reconciliados.
+  try {
+    await reconcileRecentCardioObjectives(userId);
+  } catch (error: any) {
+    console.warn(`[ACTIVITY_STATS] Falha não bloqueante ao reconciliar Buscar Objetivo: ${error?.message || error}`);
+  }
+
+  return reconciled;
 }
