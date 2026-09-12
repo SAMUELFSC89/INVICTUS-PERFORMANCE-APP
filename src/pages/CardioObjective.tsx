@@ -34,7 +34,7 @@ const signalLabels = {
 } as const;
 const blankSafety: SafetyAnswers = { screened: false, signals: [], medicalClearance: null };
 const initialAnswers = (): ObjectiveAnswers => ({
-  goalType: 'sedentary', walkingMinutes: 5, runningAbility: 'none', availableMinutes: 10,
+  goalType: 'sedentary', walkingMinutes: 5, runningAbility: 'none', availableMinutes: 15,
   availableDays: [], timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
   preferredMoment: 'any', preferredActivity: 'walking', barrier: 'starting', confidenceScore: 5,
   safety: { ...blankSafety }, productConsent: true
@@ -54,8 +54,11 @@ function ChoiceDeck<T extends string | number>({ value, options, onChange, label
   const ordered = useMemo(() => {
     const preferred = (recommended || []).flatMap(id => options.filter(([optionId]) => optionId === id));
     const rest = options.filter(([id]) => !preferred.some(([preferredId]) => preferredId === id));
-    return [...preferred, ...rest];
-  }, [options, recommended]);
+    const base = [...preferred, ...rest];
+    const selected = options.find(([id]) => id === value);
+    if (!selected || base.slice(0, 2).some(([id]) => id === value)) return base;
+    return [selected, ...base.filter(([id]) => id !== value)];
+  }, [options, recommended, value]);
   const primary = ordered.slice(0, 2);
   const secondary = ordered.slice(2);
   return <fieldset className={`objective-choice-deck ${compact ? 'is-compact' : ''}`}>
@@ -199,10 +202,10 @@ function Onboarding({ view, onSave, busy }: { view: ObjectiveView; onSave: (answ
 
       {key === 'availability' ? <>
         <h1>Quanto tempo cabe <em>de verdade?</em></h1>
-        <p className="objective-lead">A meta precisa caber na sua vida, não o contrário.</p>
+        <p className="objective-lead">A meta precisa caber na sua vida, não o contrário. As missões ativas começam em 15 minutos para não virar uma tarefa cotidiana sem estímulo real.</p>
         <ChoiceDeck label="Tempo por atividade" value={answers.availableMinutes}
-          options={[[10, '10 min'], [15, '15 min'], [25, '20–30 min'], [40, '30–45 min'], [50, 'Mais de 45 min']]}
-          recommended={answers.walkingMinutes <= 15 ? [10, 15] : [25, 40]} onChange={availableMinutes => patch({ availableMinutes })}/>
+          options={[[15, '15 min'], [25, '20–30 min'], [40, '30–45 min'], [50, 'Mais de 45 min']]}
+          recommended={answers.walkingMinutes <= 15 ? [15, 25] : [25, 40]} onChange={availableMinutes => patch({ availableMinutes })}/>
       </> : null}
 
       {key === 'schedule' ? <>
@@ -280,7 +283,7 @@ function Onboarding({ view, onSave, busy }: { view: ObjectiveView; onSave: (answ
       {key === 'confidence' ? <>
         <h1>Vamos escolher um começo <em>possível.</em></h1>
         <label className="objective-confidence">Quanto acredita que consegue manter uma pequena meta?<input type="range" min={0} max={10} value={answers.confidenceScore} onChange={event => patch({ confidenceScore: Number(event.target.value) })}/><output>{answers.confidenceScore}/10</output></label>
-        <p className="objective-soft-note">Se a confiança estiver baixa, a primeira meta será menor de propósito.</p>
+        <p className="objective-soft-note">Se a confiança estiver baixa, a primeira meta será suavizada dentro de um limite coerente, sem cair abaixo de 15 minutos.</p>
       </> : null}
 
       {key === 'consent' ? <>
