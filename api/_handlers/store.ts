@@ -4,7 +4,7 @@ import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 import { StoreEngine } from '../_lib/store-engine.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
-const PUBLIC_STORE_ENABLED = String(process.env.PUBLIC_STORE_ENABLED || '').trim().toLowerCase() === 'true';
+const publicStoreEnabled = () => String(process.env.PUBLIC_STORE_ENABLED || '').trim().toLowerCase() === 'true';
 const ADMIN_ACTIONS = new Set([
   'admin-products',
   'admin-drops',
@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Pré-lançamento: toda a estrutura comercial permanece disponível apenas
     // no backoffice. Usuários não recebem catálogo, produto, checkout, pedidos
     // ou qualquer outro sinal de uma loja ainda não lançada.
-    if (!PUBLIC_STORE_ENABLED && !ADMIN_ACTIONS.has(action)) {
+    if (!publicStoreEnabled() && !ADMIN_ACTIONS.has(action)) {
       return res.status(404).json({ success: false, error: 'Recurso indisponível.' });
     }
 
