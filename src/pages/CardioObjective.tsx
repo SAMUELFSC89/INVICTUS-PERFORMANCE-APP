@@ -24,8 +24,18 @@ const barriers = {
   food: 'Alimentação', other: 'Outro'
 } as const;
 const modalities = {
-  walking: 'Caminhada', running: 'Corrida com pausas de caminhada', bike: 'Bicicleta',
+  walking: 'Caminhada', running: 'Corrida', bike: 'Bicicleta',
   stationary_bike: 'Bike ergométrica', treadmill: 'Esteira'
+} as const;
+const trainingBackgrounds = {
+  inactive: 'Quase não pratico cardio/esporte', occasional: 'Pratico de vez em quando',
+  regular: 'Treino com regularidade', structured: 'Sigo treinamento estruturado',
+  competitive: 'Compito ou treino em alto nível'
+} as const;
+const primarySports = {
+  none: 'Nenhum esporte principal', running: 'Corrida', cycling: 'Ciclismo',
+  team_sport: 'Esporte coletivo', combat: 'Luta / esporte de combate',
+  cross_training: 'Funcional / Cross training', other: 'Outro esporte'
 } as const;
 const signalLabels = {
   chest_pain: 'Dor no peito', fainting: 'Desmaio', dizziness: 'Tontura importante',
@@ -34,8 +44,10 @@ const signalLabels = {
 } as const;
 const blankSafety: SafetyAnswers = { screened: false, signals: [], medicalClearance: null };
 const initialAnswers = (): ObjectiveAnswers => ({
-  goalType: 'sedentary', walkingMinutes: 5, runningAbility: 'none', availableMinutes: 15,
-  availableDays: [], timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
+  goalType: 'sedentary', walkingMinutes: 5, runningAbility: 'none',
+  trainingBackground: 'inactive', primarySport: 'none', typicalCardioMinutes: 15,
+  availableMinutes: 15, availableDays: [],
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
   preferredMoment: 'any', preferredActivity: 'walking', barrier: 'starting', confidenceScore: 5,
   safety: { ...blankSafety }, productConsent: true
 });
@@ -134,6 +146,7 @@ function Onboarding({ view, onSave, busy }: { view: ObjectiveView; onSave: (answ
   const patch = (update: Partial<ObjectiveAnswers>) => setAnswers(previous => ({ ...previous, ...update }));
   const nutrition = answers.nutrition || { meals: 'variable' as const, frequencies: {}, hardestTime: 'night' as const };
   const runnerGoal = ['start_running', 'run_5k', 'run_10k', 'pace', 'race', 'weekly_distance', 'endurance'].includes(answers.goalType);
+  const recentSessions = view.profile?.recentCardioSessions || 0;
 
   const next = () => {
     setError('');
@@ -200,6 +213,23 @@ function Onboarding({ view, onSave, busy }: { view: ObjectiveView; onSave: (answ
           recommended={runnerGoal ? ['seconds', 'minutes'] : ['none', 'seconds']} onChange={runningAbility => patch({ runningAbility })}/>
       </> : null}
 
+      {key === 'trainingProfile' ? <>
+        <h1>Como é seu treino <em>hoje?</em></h1>
+        <p className="objective-lead">Não queremos confundir “não corro” com “sou sedentário”. Sua experiência em outros esportes também muda o desafio.</p>
+        <ChoiceDeck label="Qual frase descreve melhor sua rotina atual?" value={answers.trainingBackground || 'inactive'}
+          options={Object.entries(trainingBackgrounds) as [NonNullable<ObjectiveAnswers['trainingBackground']>, string][]}
+          recommended={recentSessions >= 8 ? ['structured', 'regular'] : recentSessions >= 3 ? ['regular', 'occasional'] : ['inactive', 'occasional']}
+          onChange={trainingBackground => patch({ trainingBackground })}/>
+        <ChoiceDeck label="Tem um esporte principal?" value={answers.primarySport || 'none'}
+          options={Object.entries(primarySports) as [NonNullable<ObjectiveAnswers['primarySport']>, string][]}
+          recommended={runnerGoal ? ['running', 'none'] : ['none', 'cross_training']}
+          onChange={primarySport => patch({ primarySport })}/>
+        <ChoiceDeck label="Quanto costuma durar uma sessão de cardio/esporte contínuo?" value={answers.typicalCardioMinutes || 15}
+          options={[[15, 'Até 15 min'], [30, '20–30 min'], [45, '30–45 min'], [60, '45–60 min'], [90, 'Mais de 60 min']]}
+          recommended={answers.trainingBackground === 'competitive' || answers.trainingBackground === 'structured' ? [60, 90] : answers.trainingBackground === 'regular' ? [45, 60] : [15, 30]}
+          onChange={typicalCardioMinutes => patch({ typicalCardioMinutes })}/>
+      </> : null}
+
       {key === 'availability' ? <>
         <h1>Quanto tempo cabe <em>de verdade?</em></h1>
         <p className="objective-lead">A meta precisa caber na sua vida, não o contrário. As missões ativas começam em 15 minutos para não virar uma tarefa cotidiana sem estímulo real.</p>
@@ -231,7 +261,7 @@ function Onboarding({ view, onSave, busy }: { view: ObjectiveView; onSave: (answ
         <p className="objective-lead">Essa escolha também pode mudar ao longo da jornada.</p>
         <ChoiceDeck label="Modalidade preferida" value={answers.preferredActivity}
           options={Object.entries(modalities) as [ObjectiveAnswers['preferredActivity'], string][]}
-          recommended={runnerGoal && answers.runningAbility !== 'none' ? ['running', 'treadmill'] : ['walking', 'bike']}
+          recommended={runnerGoal && answers.runningAbility !== 'none' ? ['running', 'treadmill'] : answers.primarySport === 'cycling' ? ['bike', 'stationary_bike'] : ['walking', 'bike']}
           onChange={preferredActivity => patch({ preferredActivity })}/>
       </> : null}
 
