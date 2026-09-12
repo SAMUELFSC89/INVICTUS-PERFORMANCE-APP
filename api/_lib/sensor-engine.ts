@@ -28,17 +28,6 @@ export class SensorEngine {
         );
 
     // 1. Motion Variance (Accelerometer / Gyroscope).
-    // Antes, quando activity.sensorTelemetry vinha completamente ausente (ex.: o app nunca
-    // pediu ou nunca recebeu permissao de DeviceMotionEvent no iOS), o codigo aplicava
-    // valores padrao "plausiveis" (accelVariance=1.2, gyroVariance=0.8) e a checagem so
-    // gerava uma ameaca quando sensorTelemetry EXISTIA mas mostrava variancia baixa --
-    // ou seja, a AUSENCIA total de dados de sensor era tratada como "motion valida por
-    // padrao" (fail-open). Foi exatamente essa brecha que permitiu uma atividade de
-    // cardio feita de onibus ser homologada sem nenhum dado real de acelerometro/giroscopio.
-    // Agora a ausencia de telemetria para atividades que dependem de movimento real
-    // (corrida, caminhada, ciclismo ao ar livre) e tratada como evidencia insuficiente
-    // (fail-closed), gerando uma ameaca MISSING_SENSOR_TELEMETRY em vez de passar batido.
-    // Ver auditoria antifraude 2026-08.
     const hasSensorTelemetry = !!activity.sensorTelemetry && (
       activity.sensorTelemetry.accelVariance !== undefined || activity.sensorTelemetry.gyroVariance !== undefined
     );
@@ -47,7 +36,7 @@ export class SensorEngine {
     if (hasSensorTelemetry) {
       const accelVariance = Number(activity.sensorTelemetry.accelVariance ?? 0);
       const gyroVariance = Number(activity.sensorTelemetry.gyroVariance ?? 0);
-      hasMotionVariance = accelVariance > 0.35 && gyroVariance > 0.12; // #200: limiar elevado para exigir variancia coerente com corrida/caminhada real (vibracao de veiculo em movimento passava facilmente no limiar antigo de 0.05/0.02)
+      hasMotionVariance = accelVariance > 0.35 && gyroVariance > 0.12;
       if (!hasMotionVariance) {
         threats.push('NO_SENSOR_MOTION_VARIANCE');
       }
@@ -59,18 +48,19 @@ export class SensorEngine {
     }
 
     // 2. Gait / Step to Distance Ratio.
-    // Para corrida e caminhada competitivas, variancia do acelerometro sozinha
-    // nao prova que o deslocamento foi feito a pe: uma bicicleta, moto ou carro
-    // tambem produz vibracao. Exigimos evidencia de passada do pedometro e
-    // cruzamos passos, duracao e distancia reconstruida. Isso fecha o ataque de
-    // usar uma bike em velocidade ainda plausivel para corrida (ex. 18-25 km/h).
+    // Acelerometro sozinho nao diferencia uma passada de vibracao de bicicleta,
+    // moto ou carro. Para corrida/caminhada competitivas cruzamos GPS, passos,
+    // cadencia e distancia. A falta de evidencia de passada e fail-closed.
     const steps = Number(activity.steps || activity.stepCount || activity.pedometerSteps || 0);
     const distanceMeters = Number(activity.distanceMeters || (activity.distanceKm ? activity.distanceKm * 1000 : 0));
     const durationMins = Number(activity.durationMins || activity.duration || 30);
-    const gaitProfile = modality?.antiFraudProfile === 'RUNNING'
-      || modality?.antiFraudProfile === 'WALKING'
-      || ['RUNNING', 'WALKING'].includes(activityType)
-      || ['RUNNING', 'WALKING'].includes(cardioType);
+    const isRunningGait = modality?.antiFraudProfile === 'RUNNING'
+      || activityType === 'RUNNING'
+      || cardioType === 'RUNNING';
+    const isWalkingGait = modality?.antiFraudProfile === 'WALKING'
+      || activityType === 'WALKING'
+      || cardioType === 'WALKING';
+    const gaitProfile = isRunningGait || isWalkingGait;
     let stepToDistanceRatioValid = true;
 
     if (requiresMotionEvidence && gaitProfile && steps <= 0) {
@@ -89,11 +79,27 @@ export class SensorEngine {
 
     if (requiresMotionEvidence && gaitProfile && steps > 0 && durationMins > 0) {
       const stepsPerMinute = steps / durationMins;
-      // Faixa propositalmente larga; o objetivo e detectar trajeto longo com
-      // poucos passos (bike/carro) e cadencias impossiveis/injetadas.
+      const averageSpeedKmH = distanceMeters > 0
+        ? (distanceMeters / 1000) / (durationMins / 60)
+        : 0;
+
       if (stepsPerMinute < 45 || stepsPerMinute > 260) {
         stepToDistanceRatioValid = false;
         threats.push(`UNREALISTIC_GAIT_CADENCE (${stepsPerMinute.toFixed(0)} spm)`);
+      }
+
+      // Ataque de baixa velocidade: uma bike/moto pode ficar abaixo do teto de
+      // velocidade da corrida. Em corrida sustentada muito rapida a cadencia de
+      // passada tambem precisa subir; 18+ km/h com menos de 150 spm e um padrao
+      // fortemente incompatível com corrida real. Para caminhada usamos um
+      // limiar separado e conservador.
+      if (isRunningGait && averageSpeedKmH >= 18 && stepsPerMinute < 150) {
+        stepToDistanceRatioValid = false;
+        threats.push(`SPEED_GAIT_MISMATCH (${averageSpeedKmH.toFixed(1)} km/h; ${stepsPerMinute.toFixed(0)} spm)`);
+      }
+      if (isWalkingGait && averageSpeedKmH >= 9 && stepsPerMinute < 100) {
+        stepToDistanceRatioValid = false;
+        threats.push(`SPEED_GAIT_MISMATCH (${averageSpeedKmH.toFixed(1)} km/h; ${stepsPerMinute.toFixed(0)} spm)`);
       }
     }
 
