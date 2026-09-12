@@ -1,7 +1,28 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors, verifyAuth } from '../_lib/common.js';
+import { cors, db, increment, verifyAuth } from '../_lib/common.js';
 import { MissionEngine } from '../_lib/mission-engine.js';
 import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
+import { reconcileUserActivityStats } from '../_lib/user-activity-stats.js';
+import { reconcileUserSocialStats } from '../_lib/user-social-stats.js';
+
+function safeUserId(value: unknown): string | null {
+  const id = typeof value === 'string' ? value.trim() : '';
+  return id && id.length <= 128 && /^[A-Za-z0-9_-]+$/.test(id) ? id : null;
+}
+
+function safePostId(value: unknown): string | null {
+  const id = typeof value === 'string' ? value.trim() : '';
+  return id && id.length <= 128 && /^[A-Za-z0-9_-]+$/.test(id) ? id : null;
+}
+
+function normalizeSearchTerm(value: unknown): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .slice(0, 128);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -56,6 +77,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         userProgress,
         coinWallet,
       });
+    }
+
+    if (req.method === 'POST' && action === 'sync-activity-stats') {
+      // Login/refresh is also the backfill point for legacy Social counters.
+      // Both reconciliations are server-derived and idempotent; social runs
+      // second so the returned XP/achievements reflect every newly unlocked
+      // activity + social achievement after both transactions settle.
+      const activityStats = await reconcileUserActivityStats(auth.uid);
+      const socialStats = await reconcileUserSocialStats(auth.uid);
+      return res.status(200).json({ success: true, stats: { ...activityStats, ...socialStats } });
+    }
+
+    if (req.method === 'POST' && action === 'sync-social-stats') {
+      // O cliente informa no máximo qual outro perfil foi afetado por um
+      // follow/unfollow. Nenhum contador é aceito do aparelho: ambos os perfis
+      // são recalculados a partir das coleções posts/follows do servidor.
+      const affectedUserId = safeUserId(req.body?.affectedUserId);
+      const stats = await reconcileUserSocialStats(auth.uid);
+      if (affectedUserId && affectedUserId !== auth.uid) {
+        await reconcileUserSocialStats(affectedUserId).catch((error) => {
+          console.warn('[Social Stats Peer Sync Warning]:', error);
+        });
+      }
+      return res.status(200).json({ success: true, stats });
+    }
+
+    if (req.method === 'POST' && action === 'record-post-share') {
+      const postId = safePostId(req.body?.postId);
+      if (!postId) return res.status(400).json({ success: false, error: 'Post inválido.' });
+      const postRef = db.collection('posts').doc(postId);
+      const snapshot = await postRef.get();
+      if (!snapshot.exists) return res.status(404).json({ success: false, error: 'Post não encontrado.' });
+      await postRef.set({ sharesCount: increment(1), lastSharedAt: new Date().toISOString() }, { merge: true });
+      return res.status(200).json({ success: true });
+    }
+
+    if (req.method === 'POST' && action === 'search-users') {
+      const searchTerm = normalizeSearchTerm(req.body?.searchTerm);
+      if (!searchTerm) return res.status(200).json({ success: true, users: [] });
+      const snap = await db.collection('users')
+        .where('searchKeywords', 'array-contains', searchTerm)
+        .limit(15)
+        .get();
+
+      const users = snap.docs
+        .filter((doc: any) => doc.id !== auth.uid)
+        .map((doc: any) => {
+          const data = doc.data() || {};
+          return {
+            uid: doc.id,
+            displayName: String(data.displayName || 'Atleta'),
+            displayNameLower: String(data.displayNameLower || data.displayName || '').toLowerCase(),
+            username: typeof data.username === 'string' ? data.username : '',
+            photoURL: typeof data.photoURL === 'string' ? data.photoURL : '',
+            bio: typeof data.bio === 'string' ? data.bio : '',
+            city: typeof data.city === 'string' ? data.city : '',
+            state: typeof data.state === 'string' ? data.state : '',
+            gymId: typeof data.gymId === 'string' ? data.gymId : '',
+            gymName: typeof data.gymName === 'string' ? data.gymName : '',
+            followersCount: Math.max(0, Number(data.followersCount) || 0),
+            followingCount: Math.max(0, Number(data.followingCount) || 0),
+            postsCount: Math.max(0, Number(data.postsCount) || 0),
+          };
+        })
+        .sort((a: any, b: any) => {
+          const aExact = a.username.toLowerCase() === searchTerm ? 0 : 1;
+          const bExact = b.username.toLowerCase() === searchTerm ? 0 : 1;
+          return aExact - bExact || Number(!a.displayNameLower.startsWith(searchTerm)) - Number(!b.displayNameLower.startsWith(searchTerm)) || a.displayName.localeCompare(b.displayName);
+        })
+        .slice(0, 10);
+
+      return res.status(200).json({ success: true, users });
     }
 
     if (req.method === 'POST' && action === 'claim') {

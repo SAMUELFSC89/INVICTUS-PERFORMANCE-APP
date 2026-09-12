@@ -1,39 +1,61 @@
-import { 
-  db, 
-  storage, 
-  auth, 
-  handleFirestoreError, 
-  OperationType 
+import {
+  db,
+  storage,
+  auth,
+  handleFirestoreError,
+  OperationType,
 } from '../firebase';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  updateDoc, 
-  getDoc, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  increment, 
-  arrayUnion, 
-  arrayRemove, 
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  orderBy,
+  limit,
+  increment,
+  arrayUnion,
+  arrayRemove,
   startAfter,
-  runTransaction
+  runTransaction,
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Post, Follow, UserProfile } from '../types';
 import { notificationService } from './notificationService';
 
+async function authenticatedSocialRequest<T = any>(action: string, body: Record<string, unknown> = {}): Promise<T> {
+  await auth.authStateReady();
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error('Sessão inválida. Entre novamente para continuar.');
+  const token = await currentUser.getIdToken();
+  const response = await fetch(`/api/missions?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ action, ...body }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || 'Não foi possível concluir a ação social agora.');
+  return payload as T;
+}
+
+function syncSocialStatsBestEffort(affectedUserId?: string) {
+  void authenticatedSocialRequest('sync-social-stats', affectedUserId ? { affectedUserId } : {})
+    .catch((error) => console.warn('[Social] Falha ao reconciliar contadores:', error));
+}
+
 export const socialService = {
   // --- POSTS ---
   async createPost(userId: string, userDisplayName: string, userPhotoURL: string | undefined, imageBlob: Blob | null, caption: string, points?: number, streak?: number, onProgress?: (progress: number) => void) {
     const currentUid = auth.currentUser?.uid;
-    console.log('Starting createPost. Argument userId:', userId, 'Auth currentUser.uid:', currentUid);
-    
+    if (!currentUid) throw new Error('Sessão inválida. Entre novamente para publicar.');
     if (userId !== currentUid) {
-      console.warn('userId mismatch! Using auth.currentUser.uid instead for storage path.');
+      console.warn('[Social] userId divergente ignorado; usando UID autenticado.');
     }
 
     try {
@@ -41,70 +63,49 @@ export const socialService = {
       let imageUrl = '';
 
       if (imageBlob) {
-        if (imageBlob.size === 0) {
-          throw new Error('O arquivo de imagem está vazio.');
-        }
-        
+        if (imageBlob.size === 0) throw new Error('O arquivo de imagem está vazio.');
+
         try {
-          const uploadUid = currentUid || userId;
-          console.log(`Uploading image to: posts/${uploadUid}/${postId}.jpg | Size: ${imageBlob.size} bytes`);
-          
-          const storageRef = ref(storage, `posts/${uploadUid}/${postId}.jpg`);
-          
+          const storageRef = ref(storage, `posts/${currentUid}/${postId}.jpg`);
           const uploadTask = uploadBytesResumable(storageRef, imageBlob, {
             contentType: 'image/jpeg',
-            customMetadata: {
-              'uploadedBy': uploadUid,
-              'postId': postId
-            }
+            customMetadata: { uploadedBy: currentUid, postId },
           });
 
           try {
             imageUrl = await new Promise<string>((resolve, reject) => {
               const timeout = setTimeout(() => {
-                console.warn('Upload Task TIMEOUT triggered after 20s. Attempting base64 fallback.');
                 uploadTask.cancel();
                 reject(new Error('TIMEOUT'));
-              }, 20000); // Reduced to 20 seconds for faster fallback
-  
-              uploadTask.on('state_changed', 
+              }, 20000);
+
+              uploadTask.on('state_changed',
                 (snapshot) => {
                   const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                  console.log(`Upload process: ${Math.round(progress)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)`);
-                  if (onProgress) onProgress(progress);
-                }, 
+                  onProgress?.(progress);
+                },
                 (error) => {
                   clearTimeout(timeout);
-                  if (error.code === 'storage/canceled') {
-                    console.warn('Upload Task CANCELED (likely due to timeout)');
-                  } else {
-                    console.error('Upload Task ERROR:', error);
-                  }
                   reject(error);
-                }, 
+                },
                 async () => {
                   clearTimeout(timeout);
-                  console.log('Upload Task SUCCESSFUL. Finalizing metadata...');
                   try {
-                    const url = await getDownloadURL(uploadTask.snapshot.ref);
-                    resolve(url);
+                    resolve(await getDownloadURL(uploadTask.snapshot.ref));
                   } catch (urlError) {
-                    console.error('Error getting download URL:', urlError);
                     reject(urlError);
                   }
-                }
+                },
               );
             });
           } catch (uploadError: any) {
-            // Check if it's a timeout or a connectivity error to use fallback
             if (
-              uploadError.message === 'TIMEOUT' || 
-              uploadError.code === 'storage/canceled' ||
-              uploadError.code?.includes('not-found') || 
-              uploadError.code?.includes('retry-limit-exceeded')
+              uploadError?.message === 'TIMEOUT' ||
+              uploadError?.code === 'storage/canceled' ||
+              uploadError?.code?.includes('not-found') ||
+              uploadError?.code?.includes('retry-limit-exceeded')
             ) {
-              console.log('Using Base64 fallback due to storage upload failure/timeout');
-              if (imageBlob.size > 800000) { // ~800KB safety limit for base64 in Firestore
+              if (imageBlob.size > 800000) {
                 throw new Error('A imagem é muito grande para o backup automático. Tente uma foto menor.');
               }
               imageUrl = await new Promise<string>((resolve, reject) => {
@@ -113,25 +114,21 @@ export const socialService = {
                 reader.onerror = reject;
                 reader.readAsDataURL(imageBlob);
               });
-              console.log('Base64 fallback generated successfully.');
             } else {
               throw uploadError;
             }
           }
-          
-          console.log('Image URL/Data obtained.');
         } catch (uploadError: any) {
-          console.error('Error during image upload/fallback:', uploadError);
-          if (uploadError.code === 'storage/unauthorized') {
+          if (uploadError?.code === 'storage/unauthorized') {
             throw new Error('Erro de permissão no Firebase Storage.');
           }
-          throw new Error(`Erro ao enviar imagem: ${uploadError.message || 'Erro desconhecido'}`);
+          throw new Error(`Erro ao enviar imagem: ${uploadError?.message || 'Erro desconhecido'}`);
         }
       }
-      
+
       const post: any = {
         id: postId,
-        userId: currentUid || userId,
+        userId: currentUid,
         userDisplayName: userDisplayName || 'Atleta',
         imageUrl: imageUrl || '',
         caption: caption || '',
@@ -141,30 +138,13 @@ export const socialService = {
         sharesCount: 0,
         createdAt: new Date().toISOString(),
       };
-
       if (userPhotoURL) post.userPhotoURL = userPhotoURL;
       if (points !== undefined) post.points = points;
       if (streak !== undefined) post.streak = streak;
-      
-      console.log('Saving post to Firestore:', postId);
-      
-      // Using direct setDoc and updateDoc instead of transaction for better resilience in poor connections
-      const postRef = doc(db, 'posts', postId);
-      const userRef = doc(db, 'users', currentUid || userId);
 
-      await setDoc(postRef, post);
-      console.log('Post document saved.');
-
-      try {
-        await updateDoc(userRef, {
-          postsCount: increment(1)
-        });
-        console.log('User stats updated.');
-      } catch (userUpdateError) {
-        console.warn('Post created but user stats update failed:', userUpdateError);
-        // We don't throw here because the post was already created successfully
-      }
-      
+      await setDoc(doc(db, 'posts', postId), post);
+      // postsCount/achievement/XP are server-derived from canonical posts.
+      syncSocialStatsBestEffort();
       return post;
     } catch (error) {
       console.error('Final error in createPost:', error);
@@ -176,57 +156,38 @@ export const socialService = {
     try {
       let q;
       const baseLimit = 10;
-      
       if (type === 'following' && followingIds.length > 0) {
-        const limitedFollowing = followingIds.slice(0, 30); // Firestore 'in' limit is 30
         q = query(
           collection(db, 'posts'),
-          where('userId', 'in', limitedFollowing),
+          where('userId', 'in', followingIds.slice(0, 30)),
           orderBy('createdAt', 'desc'),
-          limit(baseLimit)
+          limit(baseLimit),
         );
       } else {
-        q = query(
-          collection(db, 'posts'),
-          orderBy('createdAt', 'desc'),
-          limit(baseLimit)
-        );
+        q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(baseLimit));
       }
+      if (lastDoc) q = query(q, startAfter(lastDoc));
 
-      if (lastDoc) {
-        q = query(q, startAfter(lastDoc));
-      }
-      
       const snap = await getDocs(q);
-      const allPosts = snap.docs.map(doc => doc.data() as Post);
-      
+      const allPosts = snap.docs.map(item => item.data() as Post);
       const filteredPosts = allPosts.filter(post => {
         if (!post.createdAt) return false;
         const postTime = new Date(post.createdAt).getTime();
-        const now = new Date().getTime();
-        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-        const isOld = (now - postTime) > threeDaysMs;
-
+        const isOld = (Date.now() - postTime) > 3 * 24 * 60 * 60 * 1000;
         const nameLower = (post.userDisplayName || '').toLowerCase();
         const captionLower = (post.caption || '').toLowerCase();
-        
-        const isBot = nameLower.includes('bot') || 
-                      nameLower.includes('sistema') || 
-                      nameLower.includes('test') || 
-                      nameLower.includes('thiago melazzo') || 
-                      nameLower.includes('mariana silveira') ||
-                      post.userId?.toLowerCase().includes('bot') ||
-                      captionLower.includes('falso') || 
-                      captionLower.includes('fakes') ||
-                      captionLower.includes('cheat');
-
+        const isBot = nameLower.includes('bot') ||
+          nameLower.includes('sistema') ||
+          nameLower.includes('test') ||
+          nameLower.includes('thiago melazzo') ||
+          nameLower.includes('mariana silveira') ||
+          post.userId?.toLowerCase().includes('bot') ||
+          captionLower.includes('falso') ||
+          captionLower.includes('fakes') ||
+          captionLower.includes('cheat');
         return !isOld && !isBot;
       });
-
-      return {
-        posts: filteredPosts,
-        lastDoc: snap.docs[snap.docs.length - 1]
-      };
+      return { posts: filteredPosts, lastDoc: snap.docs[snap.docs.length - 1] };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'posts');
       return { posts: [], lastDoc: null };
@@ -234,34 +195,28 @@ export const socialService = {
   },
 
   async toggleLike(postId: string, userId: string, postOwnerId: string, isLiked: boolean, senderInfo?: { name: string, photoURL?: string }) {
+    const actorId = auth.currentUser?.uid;
+    if (!actorId) throw new Error('Sessão inválida.');
+    if (userId !== actorId) console.warn('[Social] userId de like divergente ignorado.');
+
     try {
       const postRef = doc(db, 'posts', postId);
-      
       await runTransaction(db, async (transaction) => {
         const postSnap = await transaction.get(postRef);
         if (!postSnap.exists()) return;
-        
         const postData = postSnap.data() as Post;
-        const currentlyLiked = postData.likedBy.includes(userId);
-        
+        const likedBy = Array.isArray(postData.likedBy) ? postData.likedBy : [];
+        const currentlyLiked = likedBy.includes(actorId);
         if (isLiked && currentlyLiked) {
-          transaction.update(postRef, {
-            likesCount: increment(-1),
-            likedBy: arrayRemove(userId)
-          });
+          transaction.update(postRef, { likesCount: increment(-1), likedBy: arrayRemove(actorId) });
         } else if (!isLiked && !currentlyLiked) {
-          transaction.update(postRef, {
-            likesCount: increment(1),
-            likedBy: arrayUnion(userId)
-          });
+          transaction.update(postRef, { likesCount: increment(1), likedBy: arrayUnion(actorId) });
         }
       });
 
-      if (!isLiked) {
-        // Create notification if not self
-        if (userId !== postOwnerId) {
-          await notificationService.createNotification(postOwnerId, userId, 'like', postId, undefined, senderInfo);
-        }
+      if (!isLiked && actorId !== postOwnerId) {
+        void notificationService.createNotification(postOwnerId, actorId, 'like', postId, undefined, senderInfo)
+          .catch((error) => console.warn('[Social] Like salvo, mas notificação falhou:', error));
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `posts/${postId}`);
@@ -270,38 +225,37 @@ export const socialService = {
 
   // --- COMMENTS ---
   async addComment(postId: string, userId: string, userDisplayName: string, userPhotoURL: string | undefined, text: string) {
+    const actorId = auth.currentUser?.uid;
+    if (!actorId) throw new Error('Sessão inválida.');
+    if (userId !== actorId) console.warn('[Social] userId de comentário divergente ignorado.');
+
     try {
       const commentId = doc(collection(db, 'posts', postId, 'comments')).id;
       const comment = {
         id: commentId,
-        userId,
+        userId: actorId,
         userDisplayName,
         userPhotoURL: userPhotoURL || '',
         text,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
-
       await setDoc(doc(db, 'posts', postId, 'comments', commentId), comment);
-      await updateDoc(doc(db, 'posts', postId), {
-        commentsCount: increment(1)
-      });
+      await updateDoc(doc(db, 'posts', postId), { commentsCount: increment(1) });
 
-      // Notify post owner
       const postSnap = await getDoc(doc(db, 'posts', postId));
       if (postSnap.exists()) {
         const postData = postSnap.data() as Post;
-        if (postData.userId !== userId) {
-          await notificationService.createNotification(
-            postData.userId, 
-            userId, 
-            'comment', 
-            postId, 
-            text.substring(0, 50), 
-            { name: userDisplayName, photoURL: userPhotoURL }
-          );
+        if (postData.userId !== actorId) {
+          void notificationService.createNotification(
+            postData.userId,
+            actorId,
+            'comment',
+            postId,
+            text.substring(0, 50),
+            { name: userDisplayName, photoURL: userPhotoURL },
+          ).catch((error) => console.warn('[Social] Comentário salvo, mas notificação falhou:', error));
         }
       }
-
       return comment;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `posts/${postId}/comments`);
@@ -310,13 +264,9 @@ export const socialService = {
 
   async getComments(postId: string) {
     try {
-      const q = query(
-        collection(db, 'posts', postId, 'comments'),
-        orderBy('createdAt', 'asc'),
-        limit(100)
-      );
+      const q = query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc'), limit(100));
       const snap = await getDocs(q);
-      return snap.docs.map(doc => doc.data());
+      return snap.docs.map(item => item.data());
     } catch (error) {
       console.error('Error getting comments:', error);
       return [];
@@ -325,9 +275,7 @@ export const socialService = {
 
   async sharePost(postId: string) {
     try {
-      await updateDoc(doc(db, 'posts', postId), {
-        sharesCount: increment(1)
-      });
+      await authenticatedSocialRequest('record-post-share', { postId });
       return true;
     } catch (error) {
       console.error('Error sharing post:', error);
@@ -337,30 +285,28 @@ export const socialService = {
 
   // --- FOLLOWS ---
   async toggleFollow(followerId: string, followingId: string, isFollowing: boolean, followerInfo?: { name: string, photoURL?: string }) {
+    const actorId = auth.currentUser?.uid;
+    if (!actorId) throw new Error('Sessão inválida.');
+    if (followerId !== actorId) throw new Error('Não é possível alterar a relação de outra conta.');
+    if (!followingId || followingId === actorId) throw new Error('Perfil inválido para seguir.');
+
     try {
-      const followId = `${followerId}_${followingId}`;
+      const followId = `${actorId}_${followingId}`;
       const followRef = doc(db, 'follows', followId);
-      
       await runTransaction(db, async (transaction) => {
         if (isFollowing) {
           transaction.delete(followRef);
-          transaction.update(doc(db, 'users', followerId), { followingCount: increment(-1) });
-          transaction.update(doc(db, 'users', followingId), { followersCount: increment(-1) });
         } else {
-          const follow: Follow = {
-            id: followId,
-            followerId,
-            followingId,
-            createdAt: new Date().toISOString()
-          };
+          const follow: Follow = { id: followId, followerId: actorId, followingId, createdAt: new Date().toISOString() };
           transaction.set(followRef, follow);
-          transaction.update(doc(db, 'users', followerId), { followingCount: increment(1) });
-          transaction.update(doc(db, 'users', followingId), { followersCount: increment(1) });
         }
       });
-      
+
+      // Protected profile counters are recalculated by Admin SDK from follows.
+      syncSocialStatsBestEffort(followingId);
       if (!isFollowing) {
-        await notificationService.createNotification(followingId, followerId, 'follow', undefined, undefined, followerInfo);
+        void notificationService.createNotification(followingId, actorId, 'follow', undefined, undefined, followerInfo)
+          .catch((error) => console.warn('[Social] Follow salvo, mas notificação falhou:', error));
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'follows');
@@ -369,52 +315,26 @@ export const socialService = {
 
   async getFollowingIds(userId: string) {
     try {
-      const q = query(
-        collection(db, 'follows'), 
-        where('followerId', '==', userId),
-        limit(100) // Reasonable limit for feed
-      );
+      const actorId = auth.currentUser?.uid;
+      const scopedUserId = actorId === userId ? actorId : userId;
+      if (!scopedUserId) return [];
+      const q = query(collection(db, 'follows'), where('followerId', '==', scopedUserId), limit(100));
       const snap = await getDocs(q);
-      return snap.docs.map(doc => (doc.data() as Follow).followingId);
-    } catch (error) {
+      return snap.docs.map(item => (item.data() as Follow).followingId);
+    } catch {
       return [];
     }
   },
 
   async searchUsers(searchTerm: string) {
     try {
-      if (!searchTerm.trim()) return [];
-      
-      const term = searchTerm.toLowerCase().trim();
-      const normalizedTerm = term.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-      // Use searchKeywords for prefix matching (much more reliable)
-      const q = query(
-        collection(db, 'users'),
-        where('searchKeywords', 'array-contains', normalizedTerm),
-        limit(15)
-      );
-      
-      const snap = await getDocs(q);
-      let results = snap.docs.map(doc => doc.data() as UserProfile);
-
-      // Simple sorting: exact username matches first, then display name starts
-      results.sort((a, b) => {
-        if (a.username === term) return -1;
-        if (b.username === term) return 1;
-        
-        const aStarts = a.displayNameLower?.startsWith(normalizedTerm);
-        const bStarts = b.displayNameLower?.startsWith(normalizedTerm);
-        if (aStarts && !bStarts) return -1;
-        if (!aStarts && bStarts) return 1;
-        
-        return 0;
-      });
-      
-      return results.slice(0, 10);
+      const clean = searchTerm.trim();
+      if (!clean) return [];
+      const payload = await authenticatedSocialRequest<{ users?: UserProfile[] }>('search-users', { searchTerm: clean });
+      return Array.isArray(payload.users) ? payload.users : [];
     } catch (error) {
       console.error('Error searching users:', error);
       return [];
     }
-  }
+  },
 };

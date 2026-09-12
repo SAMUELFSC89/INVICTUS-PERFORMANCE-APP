@@ -46,7 +46,9 @@ const integrationLabels: Record<string, string> = {
   strava: 'Strava', invictus: 'Invictus', manual: 'Registro manual',
 };
 const unavailableMessage = 'A análise da IA está temporariamente indisponível. Seus registros e a qualidade dos dados continuam disponíveis neste relatório.';
+const timeoutMessage = 'A análise demorou mais que o esperado. Seus dados continuam disponíveis; tente novamente em alguns instantes.';
 const proMessage = 'O Pro explica seus registros em conjunto e destaca o que acompanhar. Seus dados, histórico e relatório continuam disponíveis no plano atual.';
+const HEALTH_AI_TIMEOUT_MS = 45_000;
 
 function measurementForDisplay(metric: string, sample: UltimoValorMetrica) {
   if (!Number.isFinite(sample.value)) return { value: '—', unit: '' };
@@ -121,6 +123,11 @@ function AiHealthNarrative({ days, isPro }: { days: number; isPro: boolean }) {
   const solicitarAnalise = async () => {
     if (requestRef.current) return;
     const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, HEALTH_AI_TIMEOUT_MS);
     requestRef.current = controller;
     setStatus('loading');
     setError('');
@@ -156,11 +163,15 @@ function AiHealthNarrative({ days, isPro }: { days: number; isPro: boolean }) {
       setCacheHit(payload.cacheHit === true);
       setStatus('success');
     } catch {
-      if (!controller.signal.aborted) {
+      if (timedOut) {
+        setError(timeoutMessage);
+        setStatus('error');
+      } else if (!controller.signal.aborted) {
         setError(unavailableMessage);
         setStatus('error');
       }
     } finally {
+      window.clearTimeout(timeoutId);
       if (requestRef.current === controller) requestRef.current = null;
     }
   };

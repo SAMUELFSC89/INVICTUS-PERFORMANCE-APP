@@ -2,9 +2,12 @@ import { createHash } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { cors, db, app, verifyAuth } from '../_lib/common.js';
 import { resolvePowerLiftAuditStatus } from '../_lib/powerlift-audit.js';
+import { mergePowerLiftRankingRows, type PowerLiftExercise } from '../../src/core/powerLift/ranking.js';
 
 const EXERCISES = new Set(['supino', 'agachamento', 'terra']);
+const RANKING_EXERCISES: PowerLiftExercise[] = ['supino', 'agachamento', 'terra'];
 const MAX_RANKING_RESULTS = 100;
+const MAX_RANKING_SCAN = 500;
 const MAX_MY_RECORDS = 100;
 
 type Exercise = 'supino' | 'agachamento' | 'terra';
@@ -276,7 +279,49 @@ async function handleSubmit(req: any, res: any, userId: string) {
   }
 }
 
-async function handleRanking(req: any, res: any) {
+async function approvedExerciseCandidates(exercise: Exercise) {
+  try {
+    const snap = await db.collection('power_records')
+      .where('videoStatus', '==', 'approved')
+      .where('exercise', '==', exercise)
+      .orderBy('weight', 'desc')
+      .limit(MAX_RANKING_SCAN)
+      .get();
+    return { records: snap.docs.map((item: any) => ({ id: item.id, ...item.data() })), degraded: false };
+  } catch (error: any) {
+    // Se o índice composto estiver em criação, preservamos correção funcional
+    // com um scan limitado dos homologados e filtragem no servidor.
+    const snap = await db.collection('power_records').where('videoStatus', '==', 'approved').limit(MAX_RANKING_SCAN).get();
+    const records = snap.docs
+      .map((item: any) => ({ id: item.id, ...item.data() }))
+      .filter((record: any) => record.exercise === exercise)
+      .sort((a: any, b: any) => Number(b.weight || 0) - Number(a.weight || 0));
+    return { records, degraded: true };
+  }
+}
+
+async function approvedOwnRecords(userId: string) {
+  try {
+    const snap = await db.collection('power_records').where('userId', '==', userId).limit(MAX_MY_RECORDS).get();
+    return snap.docs
+      .map((item: any) => ({ id: item.id, ...item.data() }))
+      .filter((record: any) => record.videoStatus === 'approved' && EXERCISES.has(record.exercise));
+  } catch {
+    return [];
+  }
+}
+
+function rankingWindow(records: any[], exercise: Exercise, take: number, userId: string) {
+  const deduped = mergePowerLiftRankingRows(records)
+    .filter((record) => record.exercise === exercise)
+    .sort((a, b) => Number(b.weight) - Number(a.weight));
+  const top = deduped.slice(0, take);
+  const own = deduped.find((record) => record.userId === userId);
+  if (own && !top.some((record) => record.userId === userId)) top.push(own);
+  return top;
+}
+
+async function handleRanking(req: any, res: any, userId: string) {
   const exerciseParam = req.query.exercise;
   const exercise = exerciseParam === undefined || exerciseParam === '' ? null : parseExercise(exerciseParam);
   if (exerciseParam && !exercise) return res.status(400).json({ error: 'Modalidade inválida.' });
@@ -284,27 +329,25 @@ async function handleRanking(req: any, res: any) {
   const take = Math.min(MAX_RANKING_RESULTS, Math.max(1, requestedLimit));
 
   try {
-    let query: any = db.collection('power_records').where('videoStatus', '==', 'approved');
-    if (exercise) query = query.where('exercise', '==', exercise);
-    const snap = await query.orderBy('weight', 'desc').limit(take).get();
-    const records = snap.docs.map((item: any) => publicRecord({ id: item.id, ...item.data() }, false));
-    return res.status(200).json({ success: true, records });
+    const requestedExercises = exercise ? [exercise] : RANKING_EXERCISES;
+    const [own, ...candidateResults] = await Promise.all([
+      approvedOwnRecords(userId),
+      ...requestedExercises.map((item) => approvedExerciseCandidates(item))
+    ]);
+    const records = candidateResults.flatMap((result, index) => {
+      const currentExercise = requestedExercises[index];
+      const ownForExercise = own.filter((record: any) => record.exercise === currentExercise);
+      return rankingWindow([...result.records, ...ownForExercise], currentExercise, take, userId);
+    });
+    return res.status(200).json({
+      success: true,
+      records: records.map((record) => publicRecord(record, false)),
+      rankingMode: exercise ? 'exercise' : 'per_exercise',
+      degraded: candidateResults.some((result) => result.degraded)
+    });
   } catch (error: any) {
-    // Caso o índice composto ainda esteja sendo criado, continue entregando
-    // ranking pequeno e correto sem retornar detalhes internos ao cliente.
-    try {
-      const snap = await db.collection('power_records').where('videoStatus', '==', 'approved').limit(500).get();
-      const records = snap.docs
-        .map((item: any) => ({ id: item.id, ...item.data() }))
-        .filter((record: any) => !exercise || record.exercise === exercise)
-        .sort((a: any, b: any) => Number(b.weight || 0) - Number(a.weight || 0))
-        .slice(0, take)
-        .map((record: any) => publicRecord(record, false));
-      return res.status(200).json({ success: true, records, degraded: true });
-    } catch (fallbackError: any) {
-      console.error('[PowerLift] Falha ao carregar ranking:', fallbackError?.message || error?.message || 'erro desconhecido');
-      return res.status(500).json({ error: 'Não foi possível carregar o ranking agora.' });
-    }
+    console.error('[PowerLift] Falha ao carregar ranking:', error?.message || 'erro desconhecido');
+    return res.status(500).json({ error: 'Não foi possível carregar o ranking agora.' });
   }
 }
 
@@ -435,7 +478,7 @@ export default async function handler(req: any, res: any) {
   const action = safeText(req.query.action || req.body?.action || (req.method === 'GET' ? 'ranking' : ''), 32);
   if (req.method === 'POST' && action === 'submit') return handleSubmit(req, res, auth.uid);
   if (req.method === 'POST' && action === 'finalize-audit') return handleFinalizeAudit(req, res, auth.uid);
-  if (req.method === 'GET' && action === 'ranking') return handleRanking(req, res);
+  if (req.method === 'GET' && action === 'ranking') return handleRanking(req, res, auth.uid);
   if (req.method === 'GET' && action === 'me') return handleMyRecords(req, res, auth.uid);
   if (req.method === 'GET' && action === 'video') return handleVideo(req, res, auth.uid);
   return res.status(405).json({ error: 'Ação Power Lift não suportada.' });

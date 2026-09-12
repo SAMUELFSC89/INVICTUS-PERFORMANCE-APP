@@ -1,10 +1,4 @@
-import { auth, db } from '../firebase';
-import {
-  doc,
-  setDoc,
-  updateDoc,
-  serverTimestamp
-} from 'firebase/firestore';
+import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
 
 export const gymService = {
@@ -100,6 +94,10 @@ export const gymService = {
    * checked again before and after the network mutation. A response started by
    * account A must never be consumed as if it belonged to account B after a
    * fast logout/login on the same device.
+   *
+   * Manual client-side gym creation was intentionally removed. Gym coordinates
+   * become a geofence/security boundary, so unknown gyms must be resolved and
+   * persisted by the authenticated backend instead of trusting client input.
    */
   async joinGym(gymData: {
     place_id: string;
@@ -147,45 +145,6 @@ export const gymService = {
       return { success: true, userId: expectedUid };
     } catch (error) {
       console.error('Error in joinGym:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Register a gym manually (Fallback)
-   */
-  async registerGymManual(data: {
-    name: string;
-    latitude: number;
-    longitude: number;
-    address?: string;
-    photo_url?: string;
-  }) {
-    const user = auth.currentUser;
-    if (!user) throw new Error('Usuário não autenticado.');
-
-    try {
-      const gymId = `manual_${Math.random().toString(36).substring(7)}`;
-      const gymRef = doc(db, 'gyms', gymId);
-
-      await setDoc(gymRef, {
-        ...data,
-        id: gymId,
-        place_id: gymId,
-        createdAt: new Date().toISOString()
-      });
-
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        gymId: gymId,
-        gymName: data.name,
-        gymLocation: { lat: data.latitude, lng: data.longitude },
-        updatedAt: serverTimestamp()
-      });
-
-      return { success: true, gymId };
-    } catch (error) {
-      console.error('Error registering gym manually:', error);
       throw error;
     }
   }
