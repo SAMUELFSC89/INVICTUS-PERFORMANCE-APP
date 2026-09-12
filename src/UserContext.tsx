@@ -25,6 +25,11 @@ const UserContext = createContext<UserContextType>({
 
 const ACTIVE_SESSION_KEY = 'current_activity_session';
 
+type ActivityStatsPatch = Pick<UserProfile, 'totalWorkouts' | 'totalActiveDays' | 'streak'> & {
+  totalTimeSpent: number;
+  lastCheckIn: string | null;
+};
+
 function stopPrivateActivitySurfaces() {
   localStorage.removeItem('kmfatal_active_run');
   localStorage.removeItem('kmfatal_start_time');
@@ -76,6 +81,49 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // -- sem isso, um getDoc() lento de uma conta já deslogada podia "vencer" a
   // corrida contra o logout/troca e reaparecer com dados de outro usuário.
   const generationRef = useRef(0);
+  const statsSyncRef = useRef<{ uid: string; promise: Promise<ActivityStatsPatch | null> } | null>(null);
+
+  const reconcileActivityStats = useCallback(async (uid: string, generation: number): Promise<ActivityStatsPatch | null> => {
+    if (statsSyncRef.current?.uid === uid) return statsSyncRef.current.promise;
+
+    const promise = (async () => {
+      try {
+        const currentUser = auth.currentUser;
+        if (!currentUser || currentUser.uid !== uid) return null;
+        const token = await currentUser.getIdToken();
+        if (generation !== generationRef.current || auth.currentUser?.uid !== uid) return null;
+        const response = await fetch('/api/missions?action=sync-activity-stats', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ action: 'sync-activity-stats' }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.stats) return null;
+        if (generation !== generationRef.current || auth.currentUser?.uid !== uid) return null;
+
+        const stats: ActivityStatsPatch = {
+          totalWorkouts: Math.max(0, Number(payload.stats.totalWorkouts) || 0),
+          totalActiveDays: Math.max(0, Number(payload.stats.totalActiveDays) || 0),
+          totalTimeSpent: Math.max(0, Number(payload.stats.totalTimeSpent) || 0),
+          streak: Math.max(0, Number(payload.stats.streak) || 0),
+          lastCheckIn: typeof payload.stats.lastCheckIn === 'string' ? payload.stats.lastCheckIn : null,
+        };
+        setUser(current => current?.uid === uid ? { ...current, ...stats } : current);
+        return stats;
+      } catch (error: any) {
+        console.warn(`[AUTH] [ACTIVITY_STATS] [${uid}] [WARNING] ${error?.message || 'Falha ao reconciliar estatísticas'}`);
+        return null;
+      } finally {
+        if (statsSyncRef.current?.uid === uid) statsSyncRef.current = null;
+      }
+    })();
+
+    statsSyncRef.current = { uid, promise };
+    return promise;
+  }, []);
 
   // AP-01 / SEC-01 (auditoria 6167c8f): única forma segura de criar o
   // documento users/{uid} quando ele ainda não existe. As Firestore Rules
@@ -129,6 +177,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const userData = { uid: snap.id, ...snap.data() } as UserProfile;
         setUser(userData);
         setLoading(false);
+        // Não bloqueia a primeira pintura do app: o perfil aparece imediatamente
+        // e os contadores derivados são reconciliados em seguida pelo servidor.
+        // A resposta só é aplicada se a mesma conta/geração continuar ativa.
+        void reconcileActivityStats(uid, generation);
         console.log(`[AUTH] [LOAD_PROFILE] [${uid}] [SUCCESS] Perfil do usuário carregado com sucesso`);
         return userData;
       }
@@ -142,6 +194,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (isStale()) return null;
       if (userData) {
         setUser(userData);
+        void reconcileActivityStats(uid, generation);
         console.log(`[AUTH] [ENSURE_PROFILE] [${uid}] [SUCCESS] Perfil mínimo criado no servidor`);
       }
       setLoading(false);
@@ -151,7 +204,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (!isStale()) setLoading(false);
       return null;
     }
-  }, [ensureProfileViaServer]);
+  }, [ensureProfileViaServer, reconcileActivityStats]);
 
   const refreshUser = useCallback(async () => {
     if (auth.currentUser) {
