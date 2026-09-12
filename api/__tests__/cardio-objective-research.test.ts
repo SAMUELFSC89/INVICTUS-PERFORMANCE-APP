@@ -31,7 +31,7 @@ it('mantém uma biblioteca de evidência versionada e auditável', () => {
 it('faz perguntas internas explícitas antes de gerar a missão', () => {
   const trace = buildResearchDecisionTrace(base, profile, 'sedentary');
   expect(trace.map(item => item.id)).toEqual(expect.arrayContaining([
-    'safety_gate', 'current_activity', 'continuous_capacity', 'goal_specificity',
+    'safety_gate', 'current_activity', 'sport_transfer', 'continuous_capacity', 'goal_specificity',
     'real_life_constraint', 'adherence_barrier', 'trained_intensity_distribution', 'progression_uncertainty',
   ]));
   expect(trace.every(item => item.question && item.answer && item.impact && item.evidenceIds.length)).toBe(true);
@@ -58,9 +58,31 @@ it('diferencia sedentário, ativo, corredor e avançado em vez de usar uma recei
   expect([runner, advanced].every(item => item.runSecondsPerInterval === 0 && item.walkSecondsPerInterval === 0)).toBe(true);
 });
 
+it('não trata atleta competitivo de outro esporte como sedentário só porque ele não corre', () => {
+  const cyclist: ObjectiveAnswers = {
+    ...base,
+    goalType: 'conditioning',
+    walkingMinutes: 45,
+    runningAbility: 'none',
+    trainingBackground: 'competitive',
+    primarySport: 'cycling',
+    typicalCardioMinutes: 90,
+    preferredActivity: 'bike',
+    availableMinutes: 50,
+  };
+  expect(classifyCardioProfile(cyclist, profile)).toBe('advanced');
+  const prescription = initialPrescription(cyclist, profile);
+  expect(prescription.modality).toBe('bike');
+  expect(prescription.durationMinutes).toBeGreaterThanOrEqual(35);
+  expect(prescription.durationMinutes).toBeLessThanOrEqual(50);
+  const trace = buildResearchDecisionTrace(cyclist, profile, 'advanced');
+  expect(trace.find(item => item.id === 'sport_transfer')?.answer).toContain('cycling');
+});
+
 it('trata retorno de atleta como retorno, sem apagar a identidade de treino nem manter carga cheia', () => {
   const returningAnswers: ObjectiveAnswers = {
     ...base, goalType: 'return_cardio', walkingMinutes: 45, runningAbility: 'regular',
+    trainingBackground: 'regular', primarySport: 'running', typicalCardioMinutes: 45,
     preferredActivity: 'running', barrier: 'restart', availableMinutes: 40,
   };
   const returningProfile = { ...profile, recentCardioSessions: 1, recentLongestRunKm: 4 };
@@ -75,6 +97,6 @@ it('persiste no baseline a justificativa e as fontes usadas naquela decisão', (
   const created = createJourney('journey', 'user', base, profile, now);
   expect(created.baseline.evidenceVersion).toBe(CARDIO_RESEARCH_VERSION);
   expect(created.baseline.profileClass).toBe('sedentary');
-  expect(created.baseline.evidenceDecisionTrace?.length).toBeGreaterThanOrEqual(8);
+  expect(created.baseline.evidenceDecisionTrace?.length).toBeGreaterThanOrEqual(9);
   expect(buildCardioBaseline(base, profile).evidenceIds).toContain('WHO_2020');
 });
