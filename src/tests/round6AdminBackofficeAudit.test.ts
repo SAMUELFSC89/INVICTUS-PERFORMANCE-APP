@@ -78,7 +78,7 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(existsSync(resolve(process.cwd(), 'api/_lib/production-audit-engine.ts'))).toBe(false);
   });
 
-  test('gym audit is wired to backend and coordinate repair is server-side', () => {
+  test('gym audit is wired to backend, bounded against slow upstream calls and repairs all linked profiles server-side', () => {
     const page = read('src/pages/AdminGymAudit.tsx');
     const handler = read('api/_handlers/admin.ts');
     const engine = read('api/_lib/admin-gym-audit.ts');
@@ -90,7 +90,13 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(handler).toContain("case 'gyms-audit'");
     expect(handler).toContain("case 'fix-gym-coordinates'");
     expect(engine).toContain('distanceMeters > 30');
-    expect(engine).toContain("db.collection('users').where('gymId', '==', id)");
+    expect(engine).toContain('GOOGLE_PLACE_TIMEOUT_MS = 8_000');
+    expect(engine).toContain('AUDIT_CONCURRENCY = 8');
+    expect(engine).toContain('new AbortController()');
+    expect(engine).toContain('Promise.all(results.slice(index, index + AUDIT_CONCURRENCY)');
+    expect(engine).toContain("db.collection('users').where('gymId', '==', id).get()");
+    expect(engine).toContain('FIRESTORE_BATCH_SIZE = 450');
+    expect(engine).not.toContain("where('gymId', '==', id).limit(400)");
   });
 
   test('Store backoffice requires the same active-admin authority as the rest of admin', () => {
