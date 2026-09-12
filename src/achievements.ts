@@ -20,13 +20,15 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'followers_10', name: 'Pequena Audiência', description: 'Conquistou 10 seguidores', icon: '👥', criteria: 'followersCount >= 10', category: 'social', points: 50 },
   { id: 'followers_50', name: 'Influente', description: 'Conquistou 50 seguidores', icon: '🌟', criteria: 'followersCount >= 50', category: 'social', points: 200 },
 
-  // Ranking
+  // Ranking — a fonte canônica é o ranking semanal opt-in da academia.
   { id: 'top_10', name: 'Elite da Academia', description: 'Entrou no Top 10 da sua academia', icon: '🎖️', criteria: 'gym_rank <= 10', category: 'ranking', points: 300 },
   { id: 'top_5', name: 'Destaque da Academia', description: 'Entrou no Top 5 da sua academia', icon: '🏅', criteria: 'gym_rank <= 5', category: 'ranking', points: 600 },
   { id: 'top_3', name: 'Pódio da Academia', description: 'Conquistou o Top 3 da sua academia', icon: '🥈', criteria: 'gym_rank <= 3', category: 'ranking', points: 1000 },
   { id: 'champion', name: 'Campeão da Academia', description: 'Ficou em 1º lugar na sua academia', icon: '🏆', criteria: 'gym_rank == 1', category: 'ranking', points: 2500 },
-  
-  // Layer Specific
+
+  // Legado: versões antigas possuíam um segundo badge para exatamente o mesmo
+  // fato do `champion`. Mantemos no catálogo para renderizar contas antigas,
+  // mas o motor canônico não concede `gym_leader` nem paga XP novo por ele.
   { id: 'gym_leader', name: 'Lenda da Academia', description: 'Ficou em 1º lugar na sua academia', icon: '🏢', criteria: 'gym_rank == 1', category: 'ranking', points: 500 },
 ];
 
@@ -60,6 +62,8 @@ const SOCIAL_ACHIEVEMENT_RULES: Record<string, { metric: keyof SocialAchievement
   followers_50: { metric: 'followersCount', threshold: 50 },
 };
 
+const CANONICAL_RANKING_ACHIEVEMENTS = ['top_10', 'top_5', 'top_3', 'champion'] as const;
+
 /**
  * Fonte compartilhada entre UI e servidor para marcos derivados apenas do
  * histórico de atividades. Conquistas sociais e de ranking têm outras fontes
@@ -78,4 +82,22 @@ export function socialAchievementsForStats(stats: SocialAchievementStats): Achie
     const rule = SOCIAL_ACHIEVEMENT_RULES[achievement.id];
     return Boolean(rule) && Number(stats[rule.metric] || 0) >= rule.threshold;
   });
+}
+
+/**
+ * Conquistas de ranking são cumulativas e permanentes: atingir Top 1 também
+ * implica já ter atingido Top 3/5/10. `gym_leader` fica somente como alias
+ * visual legado e nunca participa da concessão canônica.
+ */
+export function rankingAchievementsForRank(rank: number): Achievement[] {
+  if (!Number.isFinite(rank) || rank < 1) return [];
+  const allowed = new Set<string>();
+  if (rank <= 10) allowed.add('top_10');
+  if (rank <= 5) allowed.add('top_5');
+  if (rank <= 3) allowed.add('top_3');
+  if (rank === 1) allowed.add('champion');
+  return CANONICAL_RANKING_ACHIEVEMENTS
+    .filter((id) => allowed.has(id))
+    .map((id) => ACHIEVEMENTS.find((achievement) => achievement.id === id))
+    .filter((achievement): achievement is Achievement => Boolean(achievement));
 }
