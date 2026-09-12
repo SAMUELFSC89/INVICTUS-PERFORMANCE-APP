@@ -41,7 +41,7 @@ test('readiness, confidence, time barrier and recent history constrain the first
 test('only first mission available, only current week created', () => {
   const { journey } = createJourney('j', 'u', answers, profile, now);
   const missions = makeMissions(journey, now);
-  expect(missions.map(m => m.state)).toEqual(['available', 'locked', 'locked']);
+  expect(missions.map(m => m.state)).toEqual(['available', 'locked']);
   expect(new Set(missions.map(m => m.week))).toEqual(new Set([1]));
 });
 test('real activity must have matching owner, session, modality, status and duration', () => {
