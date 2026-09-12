@@ -34,6 +34,24 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
     expect(context).toContain('reconcilePushNotificationsForAuthChange(firebaseUser?.uid || null)');
   });
 
+  it('mantém a preferência de notificações separada por conta', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    expect(service).toContain('notifications-enabled:${uid}');
+    expect(service).toContain('pushNotificationsEnabledForUser');
+    expect(service).toContain('setPushNotificationPreference(expectedUid, true)');
+    expect(service).toContain('setPushNotificationPreference(currentUser.uid, false)');
+    expect(service).toContain('const enabledForAccount = pushNotificationsEnabledForUser(nextUid)');
+  });
+
+  it('transfere o token antigo antes de invalidá-lo na troca de conta', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    const start = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
+    const end = service.indexOf('/**\n * Desativa', start);
+    const reconciliation = service.slice(start, end);
+    expect(reconciliation.indexOf('await saveDeviceToken(existingToken, nextUid)')).toBeGreaterThan(-1);
+    expect(reconciliation.indexOf('await saveDeviceToken(existingToken, nextUid)')).toBeLessThan(reconciliation.lastIndexOf('await unregisterLocalPush()'));
+  });
+
   it('não solicita permissão de push automaticamente só por trocar de conta', () => {
     const service = read('src/services/pushNotificationService.ts');
     const start = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
