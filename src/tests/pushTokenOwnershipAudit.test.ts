@@ -13,20 +13,32 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
     expect(handler).toContain('currentTokens.filter((value: string) => value !== meta.token)');
   });
 
+  it('bloqueia envio quando a propriedade do token é divergente ou ambígua', () => {
+    const service = read('api/_services/notification-service.ts');
+    expect(service).toContain('filterOwnedPushTokens');
+    expect(service).toContain("collection('push_device_tokens')");
+    expect(service).toContain("where(tokenField, 'array-contains', token)");
+    expect(service).toContain('legacyOwners.size === 1 && legacyOwners.docs[0].id === userId');
+    expect(service).toContain('ownedFcmTokens');
+    expect(service).toContain('ownedApnsTokens');
+  });
+
   it('reivindica ou invalida token quando a identidade Firebase muda', () => {
     const service = read('src/services/pushNotificationService.ts');
     const context = read('src/UserContext.tsx');
     expect(service).toContain('initializedUserId');
     expect(service).toContain('reconcilePushNotificationsForAuthChange');
     expect(service).toContain('PushNotifications.unregister()');
-    expect(service).toContain("DEVICE_TOKEN_OWNER_KEY");
+    expect(service).toContain('DEVICE_TOKEN_OWNER_KEY');
     expect(service).toContain("'claim-device-token'");
     expect(context).toContain('reconcilePushNotificationsForAuthChange(firebaseUser?.uid || null)');
   });
 
   it('não solicita permissão de push automaticamente só por trocar de conta', () => {
     const service = read('src/services/pushNotificationService.ts');
-    const reconciliation = service.slice(service.indexOf('export async function reconcilePushNotificationsForAuthChange'));
+    const start = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
+    const end = service.indexOf('/**\n * Desativa', start);
+    const reconciliation = service.slice(start, end);
     expect(reconciliation).toContain('PushNotifications.checkPermissions()');
     expect(reconciliation).not.toContain('PushNotifications.requestPermissions()');
   });
