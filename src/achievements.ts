@@ -35,6 +35,12 @@ export interface ActivityAchievementStats {
   totalWorkouts: number;
 }
 
+export interface SocialAchievementStats {
+  postsCount: number;
+  followersCount: number;
+  followingCount: number;
+}
+
 const ACTIVITY_ACHIEVEMENT_RULES: Record<string, { metric: keyof ActivityAchievementStats; threshold: number }> = {
   streak_3: { metric: 'streak', threshold: 3 },
   streak_7: { metric: 'streak', threshold: 7 },
@@ -48,6 +54,12 @@ const ACTIVITY_ACHIEVEMENT_RULES: Record<string, { metric: keyof ActivityAchieve
   workouts_100: { metric: 'totalWorkouts', threshold: 100 },
 };
 
+const SOCIAL_ACHIEVEMENT_RULES: Record<string, { metric: keyof SocialAchievementStats; threshold: number }> = {
+  first_post: { metric: 'postsCount', threshold: 1 },
+  followers_10: { metric: 'followersCount', threshold: 10 },
+  followers_50: { metric: 'followersCount', threshold: 50 },
+};
+
 /**
  * Fonte compartilhada entre UI e servidor para marcos derivados apenas do
  * histórico de atividades. Conquistas sociais e de ranking têm outras fontes
@@ -56,6 +68,14 @@ const ACTIVITY_ACHIEVEMENT_RULES: Record<string, { metric: keyof ActivityAchieve
 export function activityAchievementsForStats(stats: ActivityAchievementStats): Achievement[] {
   return ACHIEVEMENTS.filter((achievement) => {
     const rule = ACTIVITY_ACHIEVEMENT_RULES[achievement.id];
+    return Boolean(rule) && Number(stats[rule.metric] || 0) >= rule.threshold;
+  });
+}
+
+/** Conquistas sociais usam exclusivamente contadores derivados de posts/follows canônicos. */
+export function socialAchievementsForStats(stats: SocialAchievementStats): Achievement[] {
+  return ACHIEVEMENTS.filter((achievement) => {
+    const rule = SOCIAL_ACHIEVEMENT_RULES[achievement.id];
     return Boolean(rule) && Number(stats[rule.metric] || 0) >= rule.threshold;
   });
 }
