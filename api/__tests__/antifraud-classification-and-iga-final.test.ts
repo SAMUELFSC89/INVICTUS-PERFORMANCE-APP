@@ -5,6 +5,7 @@ import { FraudEngine } from '../_lib/fraud-engine';
 import { ValidationEngine } from '../_lib/validation-engine';
 import { IntegrityEngine } from '../_lib/integrity-engine';
 import { RiskEngine } from '../_lib/risk-engine';
+import { SecurityPipeline } from '../_lib/security-pipeline';
 import { calculateWeeklyIGA } from '../../src/core/iga';
 
 const DEGREE_LON_KM_AT_EQUATOR = 111.32;
@@ -201,6 +202,34 @@ describe('Antifraude por modalidade — stress de classificação', () => {
   });
 });
 
+describe('SecurityPipeline completo — decisão final preserva fraude detectada', () => {
+  test('evidência HIGH de sensor não pode ser rebaixada para APPROVED por trust alto', async () => {
+    const activity = cardioPayload({
+      cardioType: 'running',
+      speedKmH: 11,
+      sensorTelemetry: { accelVariance: 0.04, gyroVariance: 0.02 },
+    });
+    const result = await SecurityPipeline.runPipeline(activity, 'stress-user', { status: 'ACTIVE' }, []);
+    expect(result.report.fraud.evidences.map((item) => item.code)).toContain('NO_SENSOR_MOTION_VARIANCE');
+    expect(result.decision).not.toBe('APPROVED');
+    expect(result.shouldScore).toBe(false);
+  });
+
+  test('bike disfarçada de corrida em velocidade plausível não libera score sem passos', async () => {
+    const activity = cardioPayload({
+      cardioType: 'running',
+      speedKmH: 22,
+      steps: null,
+      avgHeartRate: 155,
+      sensorTelemetry: { accelVariance: 0.9, gyroVariance: 0.5 },
+    });
+    const result = await SecurityPipeline.runPipeline(activity, 'stress-user', { status: 'ACTIVE' }, []);
+    expect(result.report.fraud.evidences.map((item) => item.code)).toContain('MISSING_GAIT_EVIDENCE');
+    expect(result.decision).not.toBe('APPROVED');
+    expect(result.shouldScore).toBe(false);
+  });
+});
+
 describe('Contrato terminal da decisão competitiva', () => {
   test('decisões antifraude conhecidas não podem voltar para uma fila humana inexistente', () => {
     const source = readFileSync(
@@ -212,6 +241,8 @@ describe('Contrato terminal da decisão competitiva', () => {
     expect(source).toContain("competitionReviewStatus = 'rejected';");
     expect(source).toContain("competitionReviewStatus = 'ineligible';");
     expect(source).toContain("competitionReviewStatus === 'rejected'");
+    expect(source).toContain('aprovadoPeloAntifraude: securityPassed');
+    expect(source).toContain('maxObservedSpeedKmH: rawActivity.maxObservedSpeedKmH');
   });
 });
 
@@ -220,7 +251,7 @@ describe('IGA 2.0 — cálculo final sob matriz de entradas', () => {
 
   test('resultado final bate exatamente com Fn × Tn × In em todas as combinações testadas', () => {
     const durations = [30, 45, 60, 90];
-    const heartRates = [114, 133, 152, 171]; // 60%, 70%, 80%, 90% de 190
+    const heartRates = [114, 133, 152, 171];
     let checked = 0;
 
     for (let frequency = 1; frequency <= 7; frequency += 1) {
