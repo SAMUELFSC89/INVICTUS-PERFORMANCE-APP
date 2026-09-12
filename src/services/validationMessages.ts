@@ -29,7 +29,11 @@ export const VALIDATION_MESSAGES: Record<string, string> = {
   DAILY_LIMIT_REACHED: "Você atingiu o limite de pontos do dia.",
   WEEKLY_LIMIT_REACHED: "Você atingiu o limite de treinos da semana elegíveis para premiação.",
   VALIDATION_SERVICE_UNAVAILABLE: "Atividade recebida. A validação automática não concluiu agora e ela ficará em análise.",
-  PENDING_MANUAL_REVIEW: "Esta atividade foi enviada para análise.",
+  SECURITY_PIPELINE_BLOCKED: "O antifraude não liberou esta atividade para a pontuação competitiva.",
+  SECURITY_PIPELINE_UNDER_REVIEW: "O antifraude não liberou esta atividade para a pontuação competitiva.",
+  SECURITY_PIPELINE_PARTIALLY_APPROVED: "O antifraude não liberou esta atividade para a pontuação competitiva.",
+  SECURITY_PIPELINE_ERROR: "A validação automática encontrou uma falha técnica e será tentada novamente.",
+  PENDING_MANUAL_REVIEW: "Esta atividade ainda possui uma pendência de validação.",
   UNKNOWN_VALIDATION_ERROR: "Não foi possível validar esta atividade."
 };
 
