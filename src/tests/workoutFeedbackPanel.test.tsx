@@ -23,7 +23,8 @@ test('Free users retain their readings, entered sets and safety information with
   expect(html).toContain('Suas séries registradas');
   expect(html).toContain('Agachamento');
   expect(html).toContain('10 repetições');
-  expect(html).toContain('Leituras recebidas');
+  expect(html).toContain('Leituras disponíveis');
+  expect(html).toContain('Auditoria das leituras (13)');
   expect(html).toContain('ligue 192');
   expect(html).toContain('Conhecer o Pro');
   expect(html).not.toContain('Batimentos registrados em Agachamento');
@@ -54,7 +55,8 @@ test('missing measurements stay absent, and sparse raw values remain accessible 
   sparse.heartRate.samples = [{ timestamp: at(30), bpm: 160 }];
   const html = renderToStaticMarkup(<WorkoutFeedbackPanel record={sparse} isPro={false} />);
   expect(html).toContain('Leituras incompletas');
-  expect(html).toContain('Cobertura insuficiente');
+  expect(html).toContain('Cobertura temporal');
+  expect(html).toContain('0%');
   expect(html).toContain('160 bpm');
   expect(html).not.toContain('160<small>');
   expect(html).toContain('Batimentos por exercício ainda sem base suficiente');

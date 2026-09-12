@@ -422,6 +422,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           Date.parse(next.fetchedAt || '') < Date.parse(previous.fetchedAt || '')
           || next.samples.length < previous.samples.length
           || (previous.status === 'available' && next.status !== 'available')
+          || (previous.truncated !== true && next.truncated === true)
         ))) {
           return { code: 200, body: current };
         }

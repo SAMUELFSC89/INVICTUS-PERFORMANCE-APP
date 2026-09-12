@@ -379,6 +379,17 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Aceites e contestações são criados pelo backend com identidade e
+    // timestamp do servidor. O cliente nunca pode forjar ou editar a prova.
+    match /competitive_hr_acknowledgements/{acknowledgementId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+    match /competition_review_requests/{requestId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
     // Redemptions Collection
     match /redemptions/{redemptionId} {
       allow get: if isSignedIn() && isValidId(redemptionId) && (resource.data.userId == request.auth.uid || isAdmin());

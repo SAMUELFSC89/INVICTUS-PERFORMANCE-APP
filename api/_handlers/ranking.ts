@@ -1,5 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
+import { isCurrentCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
+import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 
 type CachedRanking = { topUsers: any[]; gymName: string; timestamp: number };
 const serverRankingCache = new Map<string, CachedRanking>();
@@ -32,7 +34,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const ownEnrollment = ownEnrollmentSnapshot.exists ? ownEnrollmentSnapshot.data() : undefined;
-    if (ownEnrollment?.enrolled !== true) {
+    if (ownEnrollment?.enrolled !== true
+      || !isCurrentCompetitiveHrAcknowledgement(ownEnrollment, 'gym_ranking', COMPETITION_RULES_VERSIONS.gym_ranking)) {
       return res.status(200).json({
         topUsers: [],
         enrolled: false,
@@ -70,7 +73,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .get();
 
     const userRefs = enrollments.docs
-      .filter((entry) => entry.data().enrolled === true)
+      .filter((entry) => entry.data().enrolled === true
+        && isCurrentCompetitiveHrAcknowledgement(entry.data(), 'gym_ranking', COMPETITION_RULES_VERSIONS.gym_ranking))
       .map((entry) => db.collection('users').doc(entry.id));
     const userSnapshots = userRefs.length ? await db.getAll(...userRefs) : [];
     const topUsers = userSnapshots

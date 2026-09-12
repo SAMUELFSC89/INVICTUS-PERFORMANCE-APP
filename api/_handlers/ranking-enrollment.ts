@@ -1,6 +1,8 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { FieldValue, cors, db, verifyAuth } from '../_lib/common.js';
 import { recalculateAllUserScores } from '../_lib/igaService.js';
+import { isCurrentCompetitiveHrAcknowledgement, recordCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
+import { COMPETITION_RULES_VERSIONS, COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION } from '../../shared/competitiveHeartRatePolicy.js';
 
 const CONSENT_VERSION = 'gym-ranking-v1';
 
@@ -17,7 +19,7 @@ async function handleRankingEnrollment(req: VercelRequest, res: VercelResponse) 
     const snapshot = await enrollmentRef.get();
     const data = snapshot.exists ? snapshot.data() : undefined;
     return res.status(200).json({
-      enrolled: data?.enrolled === true,
+      enrolled: data?.enrolled === true && isCurrentCompetitiveHrAcknowledgement(data, 'gym_ranking', COMPETITION_RULES_VERSIONS.gym_ranking),
       gymId: data?.gymId || '',
       consentVersion: data?.consentVersion || null,
       enrolledAt: data?.enrolledAt?.toDate?.()?.toISOString?.() || data?.enrolledAt || null
@@ -44,6 +46,13 @@ async function handleRankingEnrollment(req: VercelRequest, res: VercelResponse) 
       });
     }
 
+    let acknowledgement;
+    try {
+      acknowledgement = await recordCompetitiveHrAcknowledgement(auth.uid, 'gym_ranking', COMPETITION_RULES_VERSIONS.gym_ranking, req.body?.hrAcknowledgement);
+    } catch (error) {
+      return res.status(409).json({ error: error instanceof Error ? error.message : 'Não foi possível registrar o aceite competitivo.' });
+    }
+
     const current = currentEnrollment.data() || {};
     const keepEnrollmentEpoch = current.enrolled === true && current.gymId === gymId && current.enrolledAt;
     await enrollmentRef.set({
@@ -51,6 +60,12 @@ async function handleRankingEnrollment(req: VercelRequest, res: VercelResponse) 
       gymId,
       enrolled: true,
       consentVersion: CONSENT_VERSION,
+      accepted: true,
+      consentType: acknowledgement.consentType,
+      competitionId: 'gym_ranking',
+      competitionRulesVersion: COMPETITION_RULES_VERSIONS.gym_ranking,
+      hrAcknowledgementVersion: COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION,
+      hrAcknowledgementId: acknowledgement.acknowledgementId,
       ...(!keepEnrollmentEpoch ? { enrolledAt: FieldValue.serverTimestamp() } : {}),
       withdrawnAt: null,
       updatedAt: FieldValue.serverTimestamp()

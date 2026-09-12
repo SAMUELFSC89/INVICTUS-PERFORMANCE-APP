@@ -28,6 +28,11 @@ function createDb() {
     'users/user-a': { age: 30, weight: 70 },
     'gym_ranking_enrollments/user-a': {
       enrolled: true, gymId: 'gym-a', enrolledAt: enrollmentStart,
+      accepted: true,
+      consentType: 'competitive_hr_measurement_acknowledgement',
+      competitionId: 'gym_ranking',
+      competitionRulesVersion: 'gym-ranking-v2-hr',
+      hrAcknowledgementVersion: 'competitive-hr-v1',
     },
   };
   const workout = {

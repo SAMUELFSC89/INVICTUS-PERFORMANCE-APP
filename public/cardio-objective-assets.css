@@ -37,7 +37,7 @@
   display: block !important;
   visibility: visible !important;
   opacity: 1 !important;
-  z-index: 1 !important;
+  z-index: 3 !important;
 }
 
 .objective-journey-summary {
@@ -49,6 +49,175 @@
   background-position: center center !important;
 }
 
+/*
+ * Approved journey-dashboard composition (2026-09-11).
+ * Keep the approved assets; only tighten the hero/card relationship and restore
+ * the editorial phrases visible in the product reference.
+ */
+.objective-page.has-journey .objective-journey-dashboard {
+  gap: 12px !important;
+}
+
+.objective-page.has-journey .objective-journey-hero {
+  height: 168px !important;
+  margin-bottom: -46px !important;
+  overflow: visible !important;
+  border-color: rgba(226,177,70,.14) !important;
+  box-shadow: 0 14px 42px rgba(0,0,0,.32) !important;
+}
+
+/* Right-side hero motto from the approved reference. */
+.objective-page.has-journey .objective-journey-hero::before {
+  content: 'MAIS\A FORTE\A A CADA\A DIA';
+  white-space: pre-line;
+  position: absolute;
+  z-index: 2;
+  top: 24px;
+  right: 20px;
+  padding-right: 11px;
+  border-right: 2px solid #e3ad3d;
+  color: rgba(244,239,228,.78);
+  font-size: 10px;
+  line-height: 1.55;
+  letter-spacing: .28em;
+  text-align: right;
+  pointer-events: none;
+}
+
+/* Move SUA JORNADA visually into the card, instead of leaving it low in the hero. */
+.objective-page.has-journey .objective-hero-copy {
+  left: 24px !important;
+  bottom: -58px !important;
+  z-index: 5 !important;
+  pointer-events: none;
+}
+
+.objective-page.has-journey .objective-hero-copy > small {
+  font-size: 0 !important;
+  letter-spacing: 0 !important;
+  color: transparent !important;
+}
+
+.objective-page.has-journey .objective-hero-copy > small::after {
+  content: 'DISCIPLINA\A HOJE.\A RESULTADOS\A SEMPRE.';
+  white-space: pre-line;
+  position: absolute;
+  left: 0;
+  top: -116px;
+  color: rgba(244,239,228,.76);
+  font-size: 10px;
+  line-height: 1.55;
+  letter-spacing: .28em;
+  font-weight: 500;
+}
+
+.objective-page.has-journey .objective-hero-copy h1 {
+  margin: 0 !important;
+  font-size: clamp(2.15rem, 7vw, 3.35rem) !important;
+  line-height: .95 !important;
+  letter-spacing: -.025em;
+  text-shadow: 0 4px 22px rgba(0,0,0,.72);
+}
+
+.objective-page.has-journey .objective-journey-summary {
+  z-index: 4 !important;
+  min-height: 190px !important;
+  padding: 72px 24px 24px !important;
+  border-color: rgba(226,177,70,.30) !important;
+  box-shadow: 0 16px 46px rgba(0,0,0,.38) !important;
+}
+
+.objective-page.has-journey .objective-journey-summary > div {
+  max-width: 68% !important;
+}
+
+/* Match the reference wording visually: “Objetivo: …” on one line. */
+.objective-page.has-journey .objective-journey-summary > div > small {
+  display: inline !important;
+  color: #f5f1e8 !important;
+  font-size: 1rem !important;
+  line-height: 1.35 !important;
+  letter-spacing: 0 !important;
+  font-weight: 400 !important;
+}
+
+.objective-page.has-journey .objective-journey-summary > div > small::after {
+  content: ': ';
+}
+
+.objective-page.has-journey .objective-journey-summary h2 {
+  display: inline !important;
+  margin: 0 !important;
+  color: #f5f1e8 !important;
+  font-size: 1.08rem !important;
+  line-height: 1.35 !important;
+  font-weight: 700 !important;
+}
+
+.objective-page.has-journey .objective-journey-summary p {
+  margin-top: 12px !important;
+  max-width: 390px;
+  color: #aaa49b !important;
+  line-height: 1.5 !important;
+}
+
+.objective-page.has-journey .objective-week-pill {
+  position: absolute !important;
+  top: 18px !important;
+  right: 18px !important;
+  z-index: 3;
+}
+
+/* Card motto that was missing from the implementation. */
+.objective-page.has-journey .objective-journey-summary::after {
+  content: 'DISCIPLINA\A TRANSFORMA\A LIBERDADE';
+  white-space: pre-line;
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+  padding-right: 10px;
+  border-right: 2px solid #e4ae3e;
+  color: rgba(244,239,228,.84);
+  font-size: 9px;
+  line-height: 1.55;
+  letter-spacing: .24em;
+  text-align: right;
+  pointer-events: none;
+}
+
+@media (max-width: 620px) {
+  .objective-page.has-journey .objective-journey-hero {
+    height: 154px !important;
+    margin-bottom: -48px !important;
+  }
+
+  .objective-page.has-journey .objective-hero-copy {
+    left: 20px !important;
+    bottom: -55px !important;
+  }
+
+  .objective-page.has-journey .objective-hero-copy > small::after {
+    top: -103px;
+    font-size: 9px;
+  }
+
+  .objective-page.has-journey .objective-journey-hero::before {
+    top: 20px;
+    right: 16px;
+    font-size: 9px;
+  }
+
+  .objective-page.has-journey .objective-journey-summary {
+    min-height: 182px !important;
+    padding: 70px 20px 22px !important;
+  }
+
+  .objective-page.has-journey .objective-journey-summary > div {
+    max-width: 72% !important;
+  }
+}
+
 @media (max-width: 420px) {
   .objective-onboarding-hero {
     background-position: 62% top !important;
@@ -56,5 +225,68 @@
 
   .objective-journey-hero {
     background-position: center center !important;
+  }
+
+  .objective-page.has-journey .objective-journey-hero {
+    height: 142px !important;
+    margin-bottom: -50px !important;
+  }
+
+  .objective-page.has-journey .objective-hero-copy {
+    left: 16px !important;
+    bottom: -52px !important;
+  }
+
+  .objective-page.has-journey .objective-hero-copy h1 {
+    font-size: clamp(1.85rem, 9.4vw, 2.45rem) !important;
+  }
+
+  .objective-page.has-journey .objective-hero-copy > small::after {
+    top: -94px;
+    font-size: 8px;
+    line-height: 1.5;
+    letter-spacing: .22em;
+  }
+
+  .objective-page.has-journey .objective-journey-hero::before {
+    top: 17px;
+    right: 12px;
+    font-size: 8px;
+    line-height: 1.5;
+    letter-spacing: .22em;
+  }
+
+  .objective-page.has-journey .objective-journey-summary {
+    min-height: 176px !important;
+    padding: 64px 16px 18px !important;
+    border-radius: 20px !important;
+  }
+
+  .objective-page.has-journey .objective-journey-summary > div {
+    max-width: 74% !important;
+  }
+
+  .objective-page.has-journey .objective-journey-summary > div > small,
+  .objective-page.has-journey .objective-journey-summary h2 {
+    font-size: .88rem !important;
+  }
+
+  .objective-page.has-journey .objective-journey-summary p {
+    margin-top: 9px !important;
+    font-size: .82rem;
+    line-height: 1.4 !important;
+  }
+
+  .objective-page.has-journey .objective-week-pill {
+    top: 12px !important;
+    right: 12px !important;
+    font-size: .64rem !important;
+  }
+
+  .objective-page.has-journey .objective-journey-summary::after {
+    right: 12px;
+    bottom: 14px;
+    font-size: 7px;
+    letter-spacing: .18em;
   }
 }

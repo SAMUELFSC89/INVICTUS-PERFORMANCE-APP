@@ -6,6 +6,8 @@ import { rankingService, type AcademyRankingPeriod } from '../../services/rankin
 import type { RankingEntry, RankingSnapshot } from '../../types';
 import { PodiumTopThree } from './PodiumTopThree';
 import './AcademyRanking.css';
+import { CompetitiveHeartRateAcknowledgement } from '../CompetitiveHeartRateAcknowledgement';
+import { COMPETITION_RULES_VERSIONS, type CompetitiveHrAcknowledgementInput } from '../../lib/competitiveHeartRateAcknowledgement';
 
 const periods: { value: AcademyRankingPeriod; label: string }[] = [
   { value: 'weekly', label: 'SEMANA' },
@@ -39,6 +41,7 @@ export function AcademyRanking() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [visibleCount, setVisibleCount] = useState(20);
+  const [showHrAcknowledgement, setShowHrAcknowledgement] = useState(false);
 
   const loadRanking = useCallback(async (force = false) => {
     if (!user) return;
@@ -90,12 +93,13 @@ export function AcademyRanking() {
 
   if (!user) return null;
 
-  const enroll = async () => {
+  const enroll = async (hrAcknowledgement: CompetitiveHrAcknowledgementInput) => {
     setWorking(true);
     setError('');
     try {
-      await rankingService.enroll();
+      await rankingService.enroll(hrAcknowledgement);
       setEnrolled(true);
+      setShowHrAcknowledgement(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível entrar no ranking.');
     } finally {
@@ -127,14 +131,14 @@ export function AcademyRanking() {
 
   if (loading && enrolled === null) return <section className="academy-ranking-state academy-ranking-loading" aria-live="polite"><LoaderCircle /><p>CARREGANDO RANKING…</p></section>;
 
-  if (enrolled !== true) return <section className="academy-ranking-state academy-ranking-consent">
+  if (enrolled !== true) return <><section className="academy-ranking-state academy-ranking-consent">
     <ShieldCheck />
     <h2>ENTRAR NO RANKING DA ACADEMIA</h2>
     <p>A participação é opcional. Seu nome, foto e pontuação IGA ficam visíveis somente para participantes vinculados à mesma academia.</p>
     <ul><li>FREE e PRO competem pela mesma regra.</li><li>Não existe comparação nacional ou entre academias.</li><li>Você pode sair quando quiser.</li></ul>
     {error ? <p className="academy-ranking-error" role="alert">{error}</p> : null}
-    <button type="button" onClick={enroll} disabled={working}>{working ? 'ENTRANDO…' : 'ACEITAR E ENTRAR'} <ChevronRight /></button>
-  </section>;
+    <button type="button" onClick={() => setShowHrAcknowledgement(true)} disabled={working}>{working ? 'ENTRANDO…' : 'ACEITAR E ENTRAR'} <ChevronRight /></button>
+  </section><CompetitiveHeartRateAcknowledgement open={showHrAcknowledgement} competitionId="gym_ranking" competitionRulesVersion={COMPETITION_RULES_VERSIONS.gym_ranking} busy={working} error={error} onDecline={() => setShowHrAcknowledgement(false)} onAccept={enroll} /></>;
 
   return <section className="academy-ranking-content">
     <header className="academy-ranking-header">

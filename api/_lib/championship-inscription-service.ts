@@ -1,6 +1,7 @@
 import { db, FieldValue } from './common.js';
 import { AsaasClient } from './asaas-client.js';
 import { getChampionship, isRegistrationOpen } from './championship-catalog.js';
+import { COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION } from '../../shared/competitiveHeartRatePolicy.js';
 
 /**
  * Inscricao em campeonato (Arena/Run Elite), espelhando o padrao ja
@@ -34,6 +35,8 @@ export async function registrarAceiteRegulamento(params: {
   userAgent?: string;
   locale?: string;
   platform?: string;
+  hrAcknowledgementId: string;
+  hrAcknowledgementVersion: string;
 }) {
   const champ = getChampionship(params.championshipId);
   if (!champ) {
@@ -41,6 +44,9 @@ export async function registrarAceiteRegulamento(params: {
   }
   if (params.regulationVersion !== champ.regulationVersion || params.regulationHash !== champ.regulationHash) {
     throw new Error('O regulamento submetido esta desatualizado ou com hash divergente do oficial vigente.');
+  }
+  if (!params.hrAcknowledgementId || params.hrAcknowledgementVersion !== COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION) {
+    throw new Error('O aceite vigente sobre frequência cardíaca é obrigatório antes da inscrição.');
   }
 
   const acceptanceId = `acc_${params.userId}_${params.championshipId}_${Date.now()}`;
@@ -57,6 +63,8 @@ export async function registrarAceiteRegulamento(params: {
     userAgent: params.userAgent || null,
     locale: params.locale || 'pt-BR',
     platform: params.platform || 'web',
+    hrAcknowledgementId: params.hrAcknowledgementId,
+    hrAcknowledgementVersion: params.hrAcknowledgementVersion,
     createdAt: FieldValue.serverTimestamp(),
   });
 
@@ -89,6 +97,9 @@ export async function criarInscricaoChampionship(userId: string, championshipId:
   }
   if (acceptance.regulationVersion !== champ.regulationVersion || acceptance.regulationHash !== champ.regulationHash) {
     throw new Error('O regulamento foi atualizado. Aceite a versao vigente antes de se inscrever.');
+  }
+  if (!acceptance.hrAcknowledgementId || acceptance.hrAcknowledgementVersion !== COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION) {
+    throw new Error('O aviso de frequência cardíaca foi atualizado. Aceite a versão vigente antes de se inscrever.');
   }
 
   const perfilSnap = await db.collection('users').doc(userId).get();

@@ -63,6 +63,7 @@ import healthSummaryHandler from './_handlers/health-summary.js';
 import healthConfidenceHandler from './_handlers/health-confidence.js';
 import powerLiftHandler from './_handlers/powerlift.js';
 import mapboxConfigHandler from './_handlers/mapbox-config.js';
+import competitionReviewHandler from './_handlers/competition-review.js';
 import {
   acceptChampionshipRegulationHandler,
   createChampionshipPaymentHandler,
@@ -162,6 +163,7 @@ assertHandler('wearablesHandler', wearablesHandler);
 assertHandler('healthSummaryHandler', healthSummaryHandler);
 assertHandler('powerLiftHandler', powerLiftHandler);
 assertHandler('mapboxConfigHandler', mapboxConfigHandler);
+assertHandler('competitionReviewHandler', competitionReviewHandler);
 assertHandler('paymentsVerifyPurchaseHandler', paymentsVerifyPurchaseHandler);
 assertHandler('revenuecatWebhookHandler', revenuecatWebhookHandler);
 assertHandler('paymentsConfigHandler', paymentsConfigHandler);
@@ -302,6 +304,9 @@ router.all('/mapbox-config', wrap(mapboxConfigHandler));
 console.log('[ROUTE] /powerlift', typeof powerLiftHandler);
 router.all('/powerlift', wrap(powerLiftHandler));
 
+console.log('[ROUTE] /competition-review', typeof competitionReviewHandler);
+router.post('/competition-review', wrap(competitionReviewHandler));
+
 console.log('[ROUTE] /championships (GET)', typeof listChampionshipsHandler);
 router.get('/championships', wrap(listChampionshipsHandler));
 
@@ -396,6 +401,7 @@ router.all('/app', (req: any, res: any, next: any) => {
     case 'wearables': return await wearablesHandler(req as any, res as any);
     case 'health-confidence': return await healthConfidenceHandler(req as any, res as any);
     case 'powerlift': return await powerLiftHandler(req as any, res as any);
+    case 'competition-review': return await competitionReviewHandler(req as any, res as any);
     case 'financial': return await financialHandler(req as any, res as any);
     case 'missions': return await missionsHandler(req as any, res as any);
     case 'store': return await storeHandler(req as any, res as any);

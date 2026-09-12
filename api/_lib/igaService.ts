@@ -5,6 +5,8 @@ import {
   hasTrustedCompetitionEvidence,
   readCompetitionEvidenceMetrics,
 } from './competition-evidence.js';
+import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
+import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 
 /**
  * FONTE UNICA DE PONTUACAO DE RANKING.
@@ -238,6 +240,7 @@ export async function recalculateAllUserScores(
     ? enrollmentData.enrolledAt.toDate()
     : new Date(enrollmentData.enrolledAt || '');
   const enrollment: GymRankingEnrollmentEpoch | null = enrollmentData.enrolled === true
+    && isCurrentCompetitiveHrAcknowledgement(enrollmentData, 'gym_ranking', COMPETITION_RULES_VERSIONS.gym_ranking)
     && typeof enrollmentData.gymId === 'string'
     && enrollmentData.gymId
     && Number.isFinite(enrolledAtValue.getTime())

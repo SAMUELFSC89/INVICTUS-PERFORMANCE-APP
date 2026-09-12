@@ -1,5 +1,6 @@
 import { auth } from '../firebase';
 import { API_CONFIG } from '../config';
+import type { CompetitiveHrAcknowledgementInput } from '../lib/competitiveHeartRateAcknowledgement';
 import {
   Championship,
   ChampionshipRegistration,
@@ -136,12 +137,12 @@ class ChampionshipService {
   }
 
   /** Registra o aceite auditado do regulamento vigente (obrigatorio antes do pagamento). */
-  async acceptRegulation(championshipId: string, regulationVersion: string, regulationHash: string): Promise<{ acceptanceId: string }> {
+  async acceptRegulation(championshipId: string, regulationVersion: string, regulationHash: string, hrAcknowledgement: CompetitiveHrAcknowledgementInput): Promise<{ acceptanceId: string }> {
     const headers = await authHeaders();
     const resp = await fetch(`${API_CONFIG.baseUrl}/api/championships/accept-regulation`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ championshipId, regulationVersion, regulationHash, locale: 'pt-BR', platform: 'app' }),
+      body: JSON.stringify({ championshipId, regulationVersion, regulationHash, locale: 'pt-BR', platform: hrAcknowledgement.platform, hrAcknowledgement }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Falha ao registrar aceite do regulamento.');

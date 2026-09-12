@@ -32,12 +32,12 @@ function configureDatabase({ gymId, enrollmentGymId = gymId }: { gymId: string; 
     'cross-gym': { displayName: 'Intruso', gymId: 'outra-academia', weeklyScore: 999 },
     'blocked-user': { displayName: 'Bloqueado', gymId, weeklyScore: 500, isBlocked: true },
   };
-  const enrollmentDocs = Object.keys(profiles).map((id) => documentSnapshot(id, { enrolled: true, gymId }));
+  const enrollmentDocs = Object.keys(profiles).map((id) => documentSnapshot(id, { enrolled: true, gymId, accepted: true, consentType: 'competitive_hr_measurement_acknowledgement', competitionId: 'gym_ranking', competitionRulesVersion: 'gym-ranking-v2-hr', hrAcknowledgementVersion: 'competitive-hr-v1' }));
 
   (db.collection as jest.Mock).mockImplementation((collection: string) => ({
     doc: (id: string) => ({
       get: async () => collection === 'gym_ranking_enrollments'
-        ? documentSnapshot(id, { enrolled: true, gymId: enrollmentGymId })
+        ? documentSnapshot(id, { enrolled: true, gymId: enrollmentGymId, accepted: true, consentType: 'competitive_hr_measurement_acknowledgement', competitionId: 'gym_ranking', competitionRulesVersion: 'gym-ranking-v2-hr', hrAcknowledgementVersion: 'competitive-hr-v1' })
         : documentSnapshot(id, profiles[id], Boolean(profiles[id])),
     }),
     where: () => ({ limit: () => ({ get: async () => ({ docs: enrollmentDocs }) }) }),

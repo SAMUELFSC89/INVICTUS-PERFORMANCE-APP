@@ -58,7 +58,14 @@ test('atualiza só saúde do proprietário e ignora séries, datas e pontuação
   expect(stored!.healthSession.startedAt).toBe(start); expect(stored!.healthSession.endedAt).toBe(end);
   expect(stored!.healthSession.sessionId).toBe('session-A');
   for (const field of ['userId', 'points', 'avgHeartRate', 'duration', 'evidence', 'validationStatus']) expect(stored![field]).toEqual(before![field]);
-  expect(res.body).toMatchObject({ healthSession: { heartRate: evidence() }, healthSessionStatus: 'available', healthSessionReason: null });
+  expect(res.body).toMatchObject({
+    healthSession: { heartRate: {
+      status: 'partial', source: 'apple_health', sourceKey: 'device-A', samples: evidence().samples,
+      audit: { receivedSampleCount: 1, validSampleCount: 1, coveragePercent: 0, quality: 'insufficient' },
+    } },
+    healthSessionStatus: 'partial',
+  });
+  expect(res.body.healthSessionReason).toMatch(/Cobertura parcial de FC/);
 });
 
 test('não permite ler/atualizar treino de outro usuário e não revela sua existência', async () => {
@@ -101,14 +108,29 @@ test.each([
   stored!.healthSession.heartRate = evidence();
   const res = await refresh(incoming);
   expect(res.statusCode).toBe(200); expect(updates).toEqual([]);
-  expect(res.body.healthSession.heartRate).toEqual(evidence());
+  expect(res.body.healthSession.heartRate).toMatchObject({
+    status: 'partial',
+    source: evidence().source,
+    sourceKey: evidence().sourceKey,
+    fetchedAt: evidence().fetchedAt,
+    samples: evidence().samples,
+    truncated: false,
+    audit: { receivedSampleCount: 1, validSampleCount: 1, coveragePercent: 0, quality: 'insufficient' },
+  });
 });
 
 test('consulta parcial ou menor não substitui uma série cardíaca mais completa', async () => {
   const current = evidence(); current.samples.push({ timestamp: '2026-09-05T10:01:00.000Z', bpm: 145 });
   stored!.healthSession.heartRate = current;
-  expect((await refresh({ ...evidence(), fetchedAt: '2026-09-05T11:40:00Z' })).body.healthSession.heartRate).toEqual(current);
-  expect((await refresh({ ...current, status: 'partial', truncated: true, fetchedAt: '2026-09-05T11:45:00Z' })).body.healthSession.heartRate).toEqual(current);
+  const afterSmaller = (await refresh({ ...evidence(), fetchedAt: '2026-09-05T11:40:00Z' })).body.healthSession.heartRate;
+  const afterTruncated = (await refresh({ ...current, status: 'partial', truncated: true, fetchedAt: '2026-09-05T11:45:00Z' })).body.healthSession.heartRate;
+  for (const preserved of [afterSmaller, afterTruncated]) {
+    expect(preserved).toMatchObject({
+      status: 'partial', source: current.source, sourceKey: current.sourceKey,
+      fetchedAt: current.fetchedAt, samples: current.samples, truncated: false,
+      audit: { receivedSampleCount: 2, validSampleCount: 2, quality: 'insufficient' },
+    });
+  }
   expect(updates).toEqual([]);
 });
 

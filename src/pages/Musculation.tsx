@@ -317,6 +317,10 @@ export function Musculation() {
       }, policy);
       navigate('/challenges', { replace: true });
     } catch (err: any) {
+      if (err?.code === 'ACTIVE_SESSION_EXISTS') {
+        navigate('/activity/ongoing', { replace: true });
+        return;
+      }
       setError(err?.message || 'Não foi possível iniciar o treino.');
     } finally {
       setPolicyLoading(false);

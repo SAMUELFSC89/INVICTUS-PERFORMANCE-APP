@@ -3,6 +3,10 @@ import { auth, db, onAuthStateChanged } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { UserProfile } from './types';
 import { configureRevenueCat, disconnectRevenueCat } from './lib/revenuecat';
+import { nativeBackgroundLocationService } from './services/nativeBackgroundLocationService';
+import { webGpsTrackingService } from './services/webGpsTrackingService';
+import { activityNotificationService } from './services/activityNotificationService';
+import { activityLiveActivityService } from './services/activityLiveActivityService';
 
 
 
@@ -17,6 +21,46 @@ const UserContext = createContext<UserContextType>({
   loading: true, 
   refreshUser: async () => null
 });
+
+const ACTIVE_SESSION_KEY = 'current_activity_session';
+
+function stopPrivateActivitySurfaces() {
+  localStorage.removeItem('kmfatal_active_run');
+  localStorage.removeItem('kmfatal_start_time');
+  localStorage.removeItem('kmfatal_total_distance');
+  localStorage.removeItem('kmfatal_run_points');
+  webGpsTrackingService.stop();
+  void nativeBackgroundLocationService.stop().catch(() => {});
+  activityNotificationService.stop();
+  activityLiveActivityService.stop();
+}
+
+function clearForeignOrGuestSession(nextUid: string | null) {
+  try {
+    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!raw) {
+      stopPrivateActivitySurfaces();
+      return;
+    }
+
+    const parsed = JSON.parse(raw) as { userId?: unknown };
+    const ownerUid = typeof parsed?.userId === 'string' ? parsed.userId : null;
+
+    // A sessão ativa é estado privado do atleta. Durante logout ela não pode
+    // permanecer visível para o estado guest; durante troca de conta ela só
+    // pode sobreviver se pertencer exatamente ao UID que o Firebase acabou de
+    // autenticar. O documento remoto continua existindo e pode ser restaurado
+    // com segurança quando o mesmo atleta entrar novamente.
+    if (!nextUid || !ownerUid || ownerUid !== nextUid) {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+      stopPrivateActivitySurfaces();
+    }
+  } catch {
+    // Estado corrompido/desconhecido nunca é promovido para a nova conta.
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+    stopPrivateActivitySurfaces();
+  }
+}
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   // O cache nunca pode ser usado como identidade/autorização. No primeiro
@@ -128,6 +172,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       setUser(null);
       localStorage.removeItem('last_user_profile');
+      clearForeignOrGuestSession(firebaseUser?.uid || null);
       if (firebaseUser) {
         console.log(`[AUTH] [SESSION_CHANGE] [${firebaseUser.uid}] [INFO] Estado de autenticação alterado: Logado`);
         // BILL-02: antecipamos a vinculação do SDK, mas não bloqueamos a carga
@@ -153,10 +198,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return () => unsubAuth();
   }, [loadUserProfile]);
 
+  // O subtree do aplicativo também é escopado ao UID autenticado. Isso força
+  // páginas com estado próprio (Musculação, Cardio, Saúde, Perfil etc.) a serem
+  // desmontadas e recriadas quando a identidade muda, em vez de carregarem
+  // arrays, planos, modais ou sessões da conta anterior até o próximo efeito.
+  const authScopeKey = auth.currentUser?.uid || 'guest';
+
   // Removed UI-blocking quota screen per user request
   return (
     <UserContext.Provider value={{ user, loading, refreshUser }}>
-      {children}
+      <React.Fragment key={authScopeKey}>{children}</React.Fragment>
     </UserContext.Provider>
   );
 }

@@ -368,6 +368,10 @@ export function Challenges() {
       activityLiveActivityService.start(session, 0, 0);
     } catch (err: any) {
       console.error('Error starting activity:', err);
+      if (err?.code === 'ACTIVE_SESSION_EXISTS') {
+        navigate('/activity/ongoing', { replace: true });
+        return;
+      }
       let rawMsg = err.message || 'Falha ao iniciar atividade.';
       if (rawMsg.startsWith('{') && rawMsg.endsWith('}')) {
         try {
@@ -491,10 +495,11 @@ export function Challenges() {
         if (!res.presenceCheckId) {
           throw new Error('A validação de presença foi solicitada sem um identificador válido. Tente finalizar novamente.');
         }
+        const sessionAfterAttempt = activityService.getCurrentSession() || sessionBeforeEnd;
         pendingPresenceSessionRef.current = {
           session: {
-            ...sessionBeforeEnd,
-            checkpoints: [...(sessionBeforeEnd.checkpoints || [])]
+            ...sessionAfterAttempt,
+            checkpoints: [...(sessionAfterAttempt.checkpoints || [])]
           },
           finishedAt: res.healthSession ? Date.parse(res.healthSession.endedAt) : Date.now(),
           healthSession: res.healthSession,
@@ -743,6 +748,8 @@ export function Challenges() {
                 .catch(() => setNotice('Atividade salva. Abra Meu Objetivo para verificar a sincronização da meta.'));
             }
             await activityService.completeSessionAfterPresence();
+            activityNotificationService.stop();
+            activityLiveActivityService.stop();
             setActiveSession(null);
             const points = typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded) && result.pointsAwarded > 0
               ? result.pointsAwarded
@@ -773,6 +780,7 @@ export function Challenges() {
             await Promise.allSettled([refreshUser(), loadSubmissions()]);
           }}
           onClose={() => {
+            pendingPresenceSessionRef.current = null;
             setPresenceCheckRequired(false);
             setPresenceCheckData(null);
             setNotice('A atividade continua em andamento. Finalize novamente quando estiver pronto para concluir a confirmação de presença.');
