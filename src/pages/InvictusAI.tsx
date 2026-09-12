@@ -21,6 +21,7 @@ export function InvictusAI() {
   const navigate = useNavigate();
   const { user } = useUser();
   const endRef = useRef<HTMLDivElement>(null);
+  const inFlightRef = useRef(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<InvictusAiMessage[]>([{
@@ -32,16 +33,22 @@ export function InvictusAI() {
 
   const send = async (text: string) => {
     const clean = text.trim();
-    if (!clean || loading) return;
+    // A ref fecha a janela entre o clique e o próximo render. Somente confiar
+    // em `loading` permite dois requests quando dois eventos chegam no mesmo frame.
+    if (!clean || inFlightRef.current) return;
+    inFlightRef.current = true;
     const userMessage: InvictusAiMessage = { id: `user-${Date.now()}`, sender: 'user', text: clean, timestamp: now() };
-    const history = [...messages, userMessage];
-    setMessages(history);
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
     setInput('');
     setLoading(true);
     try {
       const result = await invictusAiService.ask({
         queryText: clean,
-        history,
+        // `queryText` is already sent separately. History must contain only
+        // completed turns before the current question, otherwise the backend
+        // shows the same question twice to the model.
+        history: messages,
         userProfile: { ...(user || {}), uid: user?.uid },
       });
       setMessages(current => [...current, {
@@ -54,6 +61,7 @@ export function InvictusAI() {
         text: error instanceof Error ? error.message : 'Não foi possível consultar a Invictus IA agora.',
       }]);
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
     }
   };
