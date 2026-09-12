@@ -1,7 +1,8 @@
 export const OBJECTIVE_VERSIONS = {
-  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V1', mission: 'MISSION_V1',
-  progression: 'CARDIO_PROGRESSION_V1', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
+  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V2', mission: 'MISSION_V2',
+  progression: 'CARDIO_PROGRESSION_V2', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
   habitConfidence: 'HABIT_CONFIDENCE_V1', nextLevel: 'NEXT_LEVEL_V1', safety: 'SAFETY_V1',
+  evidence: 'CARDIO_EVIDENCE_2026_09_V1',
 } as const;
 
 export const GOALS = {
@@ -46,9 +47,17 @@ export interface ProfileSnapshot {
   weightMeasuredAt?: string | null; weightSourceId?: string | null;
   historyStatus?: 'available' | 'unavailable'; historyWindowDays?: number;
 }
+export interface EvidenceDecisionSnapshot {
+  id: string;
+  question: string;
+  answer: string;
+  impact: string;
+  evidenceIds: string[];
+}
 export interface Baseline {
   id: string; capturedAt: string; profile: ProfileSnapshot; answers: ObjectiveAnswers;
   startingWeightKg: number | null; readinessLevel: number; versions: typeof OBJECTIVE_VERSIONS;
+  profileClass?: string; evidenceVersion?: string; evidenceDecisionTrace?: EvidenceDecisionSnapshot[];
 }
 export interface Prescription {
   modality: Modality; targetMetric: 'duration' | 'distance'; durationMinutes: number; distanceKm: number | null;
