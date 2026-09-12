@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Check, Plus, ShieldCheck, Trophy, UserRound } from 'lucide-react';
+import { auth } from '../firebase';
 import { InvictusLogo } from '../components/InvictusLogo';
 import { useUser } from '../UserContext';
 import { gymService } from '../services/gymService';
@@ -27,13 +28,14 @@ function coordinate(value: number | (() => number) | undefined): number | null {
 export function AcademyConfirm() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { refreshUser } = useUser();
+  const { user, refreshUser } = useUser();
   const selectedGym = (location.state as { gym?: GymSelection } | null)?.gym || null;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const confirmGym = async () => {
-    if (!selectedGym || loading) return;
+    if (!selectedGym || loading || !user?.uid) return;
+    const expectedUid = user.uid;
     const point = selectedGym.geometry?.location;
     const latitude = coordinate(point?.lat) ?? coordinate(selectedGym.lat);
     const longitude = coordinate(point?.lng) ?? coordinate(selectedGym.lng);
@@ -48,7 +50,7 @@ export function AcademyConfirm() {
     setLoading(true);
     setError('');
     try {
-      await gymService.joinGym({
+      const result = await gymService.joinGym({
         place_id: placeId,
         name,
         latitude,
@@ -56,12 +58,18 @@ export function AcademyConfirm() {
         photo_url: selectedGym.photoUrl,
         address: selectedGym.vicinity || selectedGym.address,
       });
+      if (auth.currentUser?.uid !== expectedUid || result.userId !== expectedUid) return;
       await refreshUser?.();
+      if (auth.currentUser?.uid !== expectedUid) return;
       navigate('/profile', { replace: true });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar sua academia.');
+      // O UserProvider desmonta a tela na troca de conta. Não publique erro de
+      // uma requisição pertencente à identidade anterior na conta nova.
+      if (auth.currentUser?.uid === expectedUid) {
+        setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar sua academia.');
+      }
     } finally {
-      setLoading(false);
+      if (auth.currentUser?.uid === expectedUid) setLoading(false);
     }
   };
 
@@ -84,7 +92,7 @@ export function AcademyConfirm() {
           <h2>{selectedGym.name || 'Academia'}</h2>
           <small>{selectedGym.vicinity || selectedGym.address || 'Localização informada pela busca'}</small>
           {error ? <p className="profile-flow-notice" role="alert">{error}</p> : null}
-          <button className="profile-flow-primary" disabled={loading} onClick={() => void confirmGym()}>{loading ? 'SALVANDO…' : 'DEFINIR COMO MINHA ACADEMIA'}</button>
+          <button className="profile-flow-primary" disabled={loading || !user?.uid} onClick={() => void confirmGym()}>{loading ? 'SALVANDO…' : 'DEFINIR COMO MINHA ACADEMIA'}</button>
           <button className="profile-flow-text" disabled={loading} onClick={() => navigate('/profile/academy/search')}>CANCELAR</button>
         </section> : <section className="profile-flow-confirm">
           <span><Building2 /></span>
