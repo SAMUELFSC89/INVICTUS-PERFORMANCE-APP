@@ -4,6 +4,19 @@ import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 import { StoreEngine } from '../_lib/store-engine.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
+const PUBLIC_STORE_ENABLED = String(process.env.PUBLIC_STORE_ENABLED || '').trim().toLowerCase() === 'true';
+const ADMIN_ACTIONS = new Set([
+  'admin-products',
+  'admin-drops',
+  'admin-orders',
+  'import-catalogue',
+  'update-pricing',
+  'update-supplier-cost',
+  'update-product-configuration',
+  'save-drop',
+  'update-order-status',
+]);
+
 async function requireAdmin(userId: string) {
   if (!db) return false;
   const snapshot = await db.collection('users').doc(userId).get();
@@ -17,6 +30,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = String(req.query.action || req.body?.action || 'catalogue');
 
   try {
+    // Pré-lançamento: toda a estrutura comercial permanece disponível apenas
+    // no backoffice. Usuários não recebem catálogo, produto, checkout, pedidos
+    // ou qualquer outro sinal de uma loja ainda não lançada.
+    if (!PUBLIC_STORE_ENABLED && !ADMIN_ACTIONS.has(action)) {
+      return res.status(404).json({ success: false, error: 'Recurso indisponível.' });
+    }
+
     if (req.method === 'GET' && action === 'catalogue') {
       await StoreEngine.ensureRealCatalogue();
       const [products, activeDrop, coinWallet, coinTransactions] = await Promise.all([
@@ -127,12 +147,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(pending ? 202 : 200).json({ success: true, pending, financialOperation: financialOperation || null });
     }
 
-    return res.status(400).json({ success: false, error: 'Ação de loja não suportada.' });
+    return res.status(400).json({ success: false, error: 'Ação administrativa não suportada.' });
   } catch (error: any) {
     console.error('[Store Handler Error]:', error);
     const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600
       ? error.statusCode
       : error?.retryable ? 503 : 400;
-    return res.status(statusCode).json({ success: false, retryable: Boolean(error?.retryable), error: error?.message || 'Erro ao processar a Loja Invictus.' });
+    return res.status(statusCode).json({ success: false, retryable: Boolean(error?.retryable), error: error?.message || 'Erro ao processar o recurso administrativo.' });
   }
 }
