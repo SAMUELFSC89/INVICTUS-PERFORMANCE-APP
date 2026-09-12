@@ -105,4 +105,34 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(storeHandler).toContain('hasActiveAdminAuthority(snapshot.data())');
     expect(storeHandler).not.toContain("snapshot.data()?.role === 'admin'");
   });
+
+  test('prelaunch store stays hidden from users while Admin remains available and profile shows canonical Coins', () => {
+    const app = read('src/App.tsx');
+    const profile = read('src/pages/ProfileNew.tsx');
+    const challenges = read('src/components/ChallengesHubNew.tsx');
+    const storeHandler = read('api/_handlers/store.ts');
+
+    expect(app).not.toContain("import('./pages/InvictusStore')");
+    expect(app).not.toContain("import('./pages/StoreProductDetail')");
+    expect(app).not.toContain("import('./pages/StoreCheckout')");
+    expect(app).not.toContain("import('./pages/StoreOrders')");
+    expect(app).toContain('<Route path="/store" element={<Navigate to="/" replace />} />');
+    expect(app).toContain('<Route path="/store/product/:productId" element={<Navigate to="/" replace />} />');
+    expect(app).toContain('<Route path="/profile/wallet" element={<Navigate to="/profile" replace />} />');
+    expect(app).toContain('<Route path="/admin/store/drops" element={<AdminGuard><AdminStoreDrops /></AdminGuard>} />');
+
+    expect(profile).toContain('INVICTUS COINS');
+    expect(profile).toContain('missionService.dashboard()');
+    expect(profile).toContain('data.coinWallet?.balance');
+    expect(profile).not.toContain('Loja Invictus');
+    expect(profile).not.toContain("navigate('/store')");
+
+    expect(challenges).not.toContain('futura Loja Invictus');
+    expect(challenges).toContain('Invictus Coins são pontos internos de recompensa vinculados ao seu perfil');
+
+    expect(storeHandler).toContain('PUBLIC_STORE_ENABLED');
+    expect(storeHandler).toContain("process.env.PUBLIC_STORE_ENABLED");
+    expect(storeHandler).toContain('!PUBLIC_STORE_ENABLED && !ADMIN_ACTIONS.has(action)');
+    expect(storeHandler).toContain("'admin-drops'");
+  });
 });
