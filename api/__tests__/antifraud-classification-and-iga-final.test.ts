@@ -121,8 +121,20 @@ describe('Antifraude por modalidade — stress de classificação', () => {
     });
     const sensor = SensorEngine.evaluate(activity);
     expect(sensor.threats).toContain('MISSING_GAIT_EVIDENCE');
-    const result = classify(activity);
-    expect(result.risk.automaticDecision).not.toBe('APPROVED');
+    expect(classify(activity).risk.automaticDecision).not.toBe('APPROVED');
+  });
+
+  test('bike com passos espúrios ainda falha quando velocidade e cadência de passada não combinam', () => {
+    const activity = cardioPayload({
+      cardioType: 'running',
+      speedKmH: 22,
+      steps: 4_000,
+      sensorTelemetry: { accelVariance: 0.9, gyroVariance: 0.5 },
+      avgHeartRate: 155,
+    });
+    const sensor = SensorEngine.evaluate(activity);
+    expect(sensor.threats.some((item) => item.startsWith('SPEED_GAIT_MISMATCH'))).toBe(true);
+    expect(classify(activity).risk.automaticDecision).not.toBe('APPROVED');
   });
 
   test('distância incompatível com os passos acusa passada impossível', () => {
@@ -248,6 +260,31 @@ describe('Contrato terminal da decisão competitiva', () => {
 
 describe('IGA 2.0 — cálculo final sob matriz de entradas', () => {
   const profile = { age: 30, weightKg: 80, maxHeartRate: 190 };
+
+  test('vetores independentes conhecidos batem nos fatores e no IGA final', () => {
+    const vectors = [
+      { frequency: 1, duration: 30, heartRate: 114, Fn: 0.15, Tn: 0.85, In: 0.575, final: 42 },
+      { frequency: 3, duration: 60, heartRate: 152, Fn: 0.55, Tn: 1.00, In: 1.075, final: 84 },
+      { frequency: 5, duration: 90, heartRate: 171, Fn: 1.00, Tn: 1.04, In: 1.125, final: 105 },
+    ];
+
+    for (const vector of vectors) {
+      const sessions = Array.from({ length: vector.frequency }, (_, index) => ({
+        id: `known-${vector.frequency}-${index}`,
+        type: 'cardio',
+        durationMinutes: vector.duration,
+        avgHeartRate: vector.heartRate,
+        isValid: true,
+      }));
+      const result = calculateWeeklyIGA(sessions, profile);
+      expect(result.Fn).toBe(vector.Fn);
+      expect(result.Tn).toBe(vector.Tn);
+      expect(result.In).toBe(vector.In);
+      expect(result.igaBase).toBe(vector.final);
+      expect(result.igaFinal).toBe(vector.final);
+      expect(result.igaRanking).toBe(vector.final);
+    }
+  });
 
   test('resultado final bate exatamente com Fn × Tn × In em todas as combinações testadas', () => {
     const durations = [30, 45, 60, 90];
