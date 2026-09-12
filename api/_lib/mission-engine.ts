@@ -118,6 +118,47 @@ function frozenMissionDefinition(mission: Mission): Record<string, unknown> {
   };
 }
 
+/**
+ * Mission progress and competitive scoring are separate axes, but an activity
+ * that is known fraud (or is still waiting for a technical security result)
+ * cannot be used as a substitute for a legitimate workout. Competition-only
+ * ineligibility such as a missing championship/geofence requirement remains
+ * eligible for casual missions when the underlying activity itself is valid.
+ */
+function missionActivityIsEligible(data: Record<string, any>): boolean {
+  const quality = String(data.dataQualityStatus || '').toLowerCase();
+  if (data.missionEligible === false || data.economyEligible === false
+    || ['duplicate', 'discarded', 'dedup_pending'].includes(quality)) return false;
+
+  const status = String(data.status || '').toLowerCase();
+  const recordStatus = String(data.recordStatus || '').toLowerCase();
+  const validation = String(data.validationStatus ?? data.validation?.status ?? '').toLowerCase();
+  const competitionReviewStatus = String(data.competitionReviewStatus || data.competitionStatus || '').toLowerCase();
+  const securityDecision = String(data.securityDecision || '').toUpperCase();
+  const reason = String(data.nonScoringReason || data.rejectionReason || '').toUpperCase();
+
+  const technicalPending = data.pendingReview === true
+    || competitionReviewStatus === 'pending_review'
+    || validation === 'pending_review'
+    || securityDecision === 'ERROR'
+    || reason === 'SECURITY_PIPELINE_ERROR';
+  const terminalFraud = data.securityBlocked === true
+    || competitionReviewStatus === 'rejected'
+    || validation === 'rejected'
+    || ['BLOCKED', 'UNDER_REVIEW', 'PARTIALLY_APPROVED'].includes(securityDecision)
+    || ['rejected', 'suspicious', 'discarded'].includes(status)
+    || reason === 'COMPETITIVE_SANITY_CHECK'
+    || ['SECURITY_PIPELINE_BLOCKED', 'SECURITY_PIPELINE_UNDER_REVIEW', 'SECURITY_PIPELINE_PARTIALLY_APPROVED'].includes(reason);
+
+  if (technicalPending || terminalFraud) return false;
+  if (recordStatus === 'completed') return true;
+  if (['valid', 'validated', 'approved', 'homologated', 'homologada'].includes(status)
+    || ['valid', 'validated', 'approved', 'homologated', 'homologada'].includes(validation)) return true;
+  // Compatibilidade: o fluxo anterior salvava atividade casual concluída
+  // como completed + not_eligible.
+  return status === 'completed' && ['not_eligible', 'recorded', 'not_required'].includes(validation);
+}
+
 export const DEFAULT_MISSIONS: Mission[] = [
   {
     id: 'miss_trinca_invictus', title: 'Trinca Invictus',
@@ -332,7 +373,8 @@ export class MissionEngine {
   /**
    * Rebuilds mission progress from server-recorded completed activities.
    * Casual activities count here by product rule; competition approval is a
-   * separate axis used only by ranking/championship scoring.
+   * separate axis used only by ranking/championship scoring. Fraud and an
+   * unresolved technical security state never count as casual progress.
    */
   static async syncUserProgressFromCompletedActivities(
     userId: string,
@@ -350,18 +392,7 @@ export class MissionEngine {
       return Number.isNaN(raw.getTime()) ? null : raw;
     };
     const now = new Date();
-    const validated = snap.docs.map(doc => doc.data()).filter(data => {
-      if (data.missionEligible === false || data.economyEligible === false
-        || ['duplicate', 'discarded'].includes(String(data.dataQualityStatus || '').toLowerCase())) return false;
-      if (String(data.recordStatus || '').toLowerCase() === 'completed') return true;
-      const status = String(data.status || '').toLowerCase();
-      const validation = String(data.validationStatus ?? data.validation?.status ?? '').toLowerCase();
-      if (['valid', 'validated', 'approved', 'homologated', 'homologada'].includes(status)
-        || ['valid', 'validated', 'approved', 'homologated', 'homologada'].includes(validation)) return true;
-      // Compatibilidade: o fluxo anterior salvava atividade casual concluída
-      // como completed + not_eligible.
-      return status === 'completed' && ['not_eligible', 'recorded', 'not_required'].includes(validation);
-    }).map(data => ({
+    const validated = snap.docs.map(doc => doc.data()).filter(missionActivityIsEligible).map(data => ({
       ...data,
       // O desafio pertence ao período em que a atividade ocorreu, não ao dia
       // em que um envio offline finalmente chegou ao servidor.
