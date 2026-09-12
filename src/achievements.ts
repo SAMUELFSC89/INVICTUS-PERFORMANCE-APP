@@ -29,3 +29,33 @@ export const ACHIEVEMENTS: Achievement[] = [
   // Layer Specific
   { id: 'gym_leader', name: 'Lenda da Academia', description: 'Ficou em 1º lugar na sua academia', icon: '🏢', criteria: 'gym_rank == 1', category: 'ranking', points: 500 },
 ];
+
+export interface ActivityAchievementStats {
+  streak: number;
+  totalWorkouts: number;
+}
+
+const ACTIVITY_ACHIEVEMENT_RULES: Record<string, { metric: keyof ActivityAchievementStats; threshold: number }> = {
+  streak_3: { metric: 'streak', threshold: 3 },
+  streak_7: { metric: 'streak', threshold: 7 },
+  streak_15: { metric: 'streak', threshold: 15 },
+  streak_30: { metric: 'streak', threshold: 30 },
+  streak_60: { metric: 'streak', threshold: 60 },
+  streak_100: { metric: 'streak', threshold: 100 },
+  first_workout: { metric: 'totalWorkouts', threshold: 1 },
+  workouts_10: { metric: 'totalWorkouts', threshold: 10 },
+  workouts_50: { metric: 'totalWorkouts', threshold: 50 },
+  workouts_100: { metric: 'totalWorkouts', threshold: 100 },
+};
+
+/**
+ * Fonte compartilhada entre UI e servidor para marcos derivados apenas do
+ * histórico de atividades. Conquistas sociais e de ranking têm outras fontes
+ * autoritativas e não são inferidas aqui.
+ */
+export function activityAchievementsForStats(stats: ActivityAchievementStats): Achievement[] {
+  return ACHIEVEMENTS.filter((achievement) => {
+    const rule = ACTIVITY_ACHIEVEMENT_RULES[achievement.id];
+    return Boolean(rule) && Number(stats[rule.metric] || 0) >= rule.threshold;
+  });
+}
