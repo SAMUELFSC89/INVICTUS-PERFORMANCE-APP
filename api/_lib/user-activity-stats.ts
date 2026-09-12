@@ -107,7 +107,7 @@ export async function reconcileUserActivityStats(userId: string): Promise<UserAc
   const ledgerRefs = eligibleAchievements.map((achievement) =>
     db.collection('achievement_reward_ledger').doc(achievementLedgerId(userId, achievement.id)));
 
-  return db.runTransaction(async (transaction: any): Promise<UserActivityStatsReconciliation> => {
+  const reconciled = await db.runTransaction(async (transaction: any): Promise<UserActivityStatsReconciliation> => {
     const reads = await Promise.all([
       transaction.get(userRef),
       ...ledgerRefs.map((ref) => transaction.get(ref)),
@@ -172,4 +172,17 @@ export async function reconcileUserActivityStats(userId: string): Promise<UserAc
       unlockedAchievementIds,
     };
   });
+
+  // O mesmo ponto de reconciliação executado após atividades e no carregamento
+  // do perfil recupera missões de cardio independentemente da tela que iniciou
+  // a sessão. O import é tardio para manter os helpers puros de estatística sem
+  // carregar a infraestrutura de push nos testes/consumidores que só derivam dados.
+  try {
+    const { reconcileRecentCardioObjectives } = await import('./cardio-objective-activity-sync.js');
+    await reconcileRecentCardioObjectives(userId);
+  } catch (error: any) {
+    console.warn(`[ACTIVITY_STATS] Falha não bloqueante ao reconciliar Buscar Objetivo: ${error?.message || error}`);
+  }
+
+  return reconciled;
 }
