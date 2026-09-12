@@ -39,6 +39,12 @@ export interface Championship {
     requireGeofence?: boolean;
     requireContinuousGPS?: boolean;
     maxRiskScore?: number;
+    /**
+     * Modalidades de cardio aceitas pela edição, congeladas no regulamento.
+     * Ex.: um Camp de corrida pode aceitar apenas `running`; bike legítima
+     * continua sendo um cardio válido no app, mas não entra nessa competição.
+     */
+    allowedCardioTypes?: string[];
   };
 }
 
