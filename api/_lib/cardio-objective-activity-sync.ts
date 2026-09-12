@@ -26,12 +26,22 @@ function asVerifiedActivity(id: string, data: Record<string, any>): VerifiedActi
   const sessionId = String(data.activitySessionId || data.sessionId || data.healthSession?.sessionId || '').trim();
   const recordStatus = String(data.recordStatus || data.status || '').toLowerCase();
   const quality = String(data.dataQualityStatus || '').toLowerCase();
-  const reason = String(data.nonScoringReason || '').toUpperCase();
+  const reason = String(data.nonScoringReason || data.rejectionReason || '').toUpperCase();
+  const competitionReviewStatus = String(data.competitionReviewStatus || data.competitionStatus || '').toLowerCase();
+  const validationStatus = String(data.validationStatus ?? data.validation?.status ?? '').toLowerCase();
+  const securityDecision = String(data.securityDecision || '').toUpperCase();
   const rejected = data.securityBlocked === true
     || data.pendingReview === true
+    || competitionReviewStatus === 'pending_review'
+    || validationStatus === 'pending_review'
+    || competitionReviewStatus === 'rejected'
+    || validationStatus === 'rejected'
+    || ['BLOCKED', 'UNDER_REVIEW', 'PARTIALLY_APPROVED', 'ERROR'].includes(securityDecision)
     || ['rejected', 'suspicious', 'discarded'].includes(String(data.status || '').toLowerCase())
     || ['duplicate', 'discarded', 'dedup_pending'].includes(quality)
     || reason === 'DUPLICATE_ACTIVITY'
+    || reason === 'COMPETITIVE_SANITY_CHECK'
+    || ['SECURITY_PIPELINE_BLOCKED', 'SECURITY_PIPELINE_UNDER_REVIEW', 'SECURITY_PIPELINE_PARTIALLY_APPROVED', 'SECURITY_PIPELINE_ERROR'].includes(reason)
     || data.missionEligible === false;
 
   if (data.type !== 'cardio' || recordStatus !== 'completed' || rejected) return null;
