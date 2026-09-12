@@ -8,10 +8,11 @@ describe('fidelidade das referências aprovadas do compartilhamento', () => {
   const card = read('src/components/RunShareCard.tsx');
   const css = read('src/components/RunShareCard.css');
 
-  it('reaproveita o capacete oficial e monta o wordmark completo', () => {
-    expect(card).toContain('src="/capacete.webp"');
+  it('mantém o wordmark e remove o capacete do bloco de informações', () => {
+    expect(card).toContain('<div className="share-card-brand">');
     expect(card).toContain('<strong>INVICTUS</strong>');
     expect(card).toContain('<span>PERFORMANCE</span>');
+    expect(card).not.toContain('<img src="/capacete.webp"');
   });
 
   it('preserva o trio aprovado distância, pace e tempo em cards independentes', () => {

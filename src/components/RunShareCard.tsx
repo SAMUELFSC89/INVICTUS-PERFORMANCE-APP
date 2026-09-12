@@ -15,7 +15,6 @@ import {
   Layers3,
   Map as MapIcon,
   RefreshCw,
-  Route as RouteIcon,
   Share2,
   Trash2,
   X,
@@ -63,6 +62,7 @@ type Point = { lat: number; lng: number };
 type LayerTransform = { x: number; y: number; scale: number; rotation: number };
 type PointerPosition = { x: number; y: number };
 type PhraseId = 'movement' | 'freedom' | 'journey' | 'choice' | 'discipline';
+type SelectedElement = 'map' | 'route' | 'info' | PhraseId | null;
 type PhraseLayer = {
   id: PhraseId;
   text: string;
@@ -70,6 +70,7 @@ type PhraseLayer = {
   visible: boolean;
 };
 
+const MAP_OPACITY_KEY = 'invictus:share-card:map-opacity';
 const DEFAULT_MAP_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
 const DEFAULT_ROUTE_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
 const DEFAULT_INFO_TRANSFORM: LayerTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
@@ -159,6 +160,16 @@ function layerStyle(transform: LayerTransform): CSSProperties {
   };
 }
 
+function savedMapOpacity(): number {
+  if (typeof window === 'undefined') return 0.5;
+  const stored = Number(window.localStorage.getItem(MAP_OPACITY_KEY));
+  return Number.isFinite(stored) ? Math.max(0.1, Math.min(1, stored)) : 0.5;
+}
+
+function isPhraseId(value: SelectedElement): value is PhraseId {
+  return value === 'movement' || value === 'freedom' || value === 'journey' || value === 'choice' || value === 'discipline';
+}
+
 function RouteLayer({ points, transform }: { points: Array<{ x: number; y: number }>; transform: LayerTransform }) {
   if (points.length < 2) return null;
   const start = points[0];
@@ -190,12 +201,12 @@ function RouteLayer({ points, transform }: { points: Array<{ x: number; y: numbe
 export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps) {
   const session = rawSession as ShareableSession;
   const cardRef = useRef<HTMLDivElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const contentPointersRef = useRef(new Map<number, PointerPosition>());
   const infoPointersRef = useRef(new Map<number, PointerPosition>());
   const phrasePointersRef = useRef(new Map<PhraseId, Map<number, PointerPosition>>());
   const phraseGestureRef = useRef(new Map<PhraseId, { transform: LayerTransform; startX: number; startY: number; distance?: number }>());
   const trashArmedRef = useRef<PhraseId | null>(null);
-  const selectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preferencesHydratedRef = useRef(false);
   const contentGestureRef = useRef<{
     transform: LayerTransform;
@@ -247,8 +258,10 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const [mapTransform, setMapTransform] = useState(DEFAULT_MAP_TRANSFORM);
   const [routeTransform, setRouteTransform] = useState(DEFAULT_ROUTE_TRANSFORM);
   const [infoTransform, setInfoTransform] = useState(DEFAULT_INFO_TRANSFORM);
+  const [mapOpacity, setMapOpacity] = useState(savedMapOpacity);
   const [phrases, setPhrases] = useState<PhraseLayer[]>(() => DEFAULT_PHRASES.map((phrase) => ({ ...phrase, transform: { ...phrase.transform } })));
   const [selectedPhraseId, setSelectedPhraseId] = useState<PhraseId | null>(null);
+  const [selectedElement, setSelectedElement] = useState<SelectedElement>(null);
   const [draggingPhraseId, setDraggingPhraseId] = useState<PhraseId | null>(null);
   const [trashArmedPhraseId, setTrashArmedPhraseId] = useState<PhraseId | null>(null);
   const [customizerOpen, setCustomizerOpen] = useState(false);
@@ -283,7 +296,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     } finally {
       queueMicrotask(() => { preferencesHydratedRef.current = true; });
     }
-    return () => { if (selectionTimerRef.current) clearTimeout(selectionTimerRef.current); };
   }, [preferencesKey]);
 
   useEffect(() => {
@@ -294,6 +306,10 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       // Armazenamento indisponível não impede compartilhar.
     }
   }, [infoTransform, phrases, preferencesKey]);
+
+  useEffect(() => {
+    try { localStorage.setItem(MAP_OPACITY_KEY, String(mapOpacity)); } catch { /* best effort */ }
+  }, [mapOpacity]);
 
   useEffect(() => {
     if (!hasRoute || compositionMode === 'photo-route' || mapImages[mapCacheKey]) return undefined;
@@ -344,6 +360,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
   const startContentGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!hasRoute) return;
+    setSelectedElement(compositionMode === 'photo-route' ? 'route' : 'map');
+    setSelectedPhraseId(null);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     contentPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const pointers = Array.from(contentPointersRef.current.values());
@@ -393,6 +411,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
   const startInfoGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
+    setSelectedElement('info');
+    setSelectedPhraseId(null);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     infoPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const pointers = Array.from(infoPointersRef.current.values());
@@ -441,14 +461,6 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     setPhrases((current) => current.map((phrase) => phrase.id === id ? updater(phrase) : phrase));
   }, []);
 
-  const schedulePhraseSelectionClear = useCallback((id: PhraseId) => {
-    if (selectionTimerRef.current) clearTimeout(selectionTimerRef.current);
-    setSelectedPhraseId(id);
-    selectionTimerRef.current = setTimeout(() => {
-      setSelectedPhraseId((current) => current === id ? null : current);
-    }, 1100);
-  }, []);
-
   const setTrashArmed = useCallback((id: PhraseId | null) => {
     trashArmedRef.current = id;
     setTrashArmedPhraseId(id);
@@ -456,8 +468,8 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
 
   const startPhraseGesture = (id: PhraseId, event: ReactPointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
-    if (selectionTimerRef.current) clearTimeout(selectionTimerRef.current);
     setSelectedPhraseId(id);
+    setSelectedElement(id);
     setDraggingPhraseId(id);
     event.currentTarget.setPointerCapture?.(event.pointerId);
 
@@ -515,12 +527,15 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     const pointerMap = phrasePointersRef.current.get(id);
     pointerMap?.delete(event.pointerId);
     if (!pointerMap || pointerMap.size === 0) {
-      if (trashArmedRef.current === id) updatePhrase(id, (phrase) => ({ ...phrase, visible: false }));
+      if (trashArmedRef.current === id) {
+        updatePhrase(id, (phrase) => ({ ...phrase, visible: false }));
+        setSelectedElement(null);
+        setSelectedPhraseId(null);
+      }
       phrasePointersRef.current.delete(id);
       phraseGestureRef.current.delete(id);
       setDraggingPhraseId(null);
       setTrashArmed(null);
-      schedulePhraseSelectionClear(id);
       return;
     }
     const remaining = Array.from(pointerMap.values())[0];
@@ -531,12 +546,14 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const restorePhrases = () => {
     setPhrases(DEFAULT_PHRASES.map((phrase) => ({ ...phrase, transform: { ...phrase.transform }, visible: true })));
     setSelectedPhraseId(null);
+    setSelectedElement(null);
     setDraggingPhraseId(null);
     setTrashArmed(null);
   };
 
-  const handlePhotoSelection = async (event: ChangeEvent<HTMLInputElement>, target: 'photo-map' | 'photo-route') => {
+  const handlePhotoSelection = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setFeedback('Selecione uma imagem válida.');
@@ -544,12 +561,36 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     }
     try {
       setSelectedPhoto(await fileToDataUrl(file));
-      setCompositionMode(target);
+      setCompositionMode('photo-map');
+      setSelectedElement('map');
       setCustomizerOpen(false);
       setFeedback(null);
     } catch {
       setFeedback('Não foi possível carregar essa foto.');
     }
+  };
+
+  const usePhotoMap = () => {
+    if (selectedPhoto) {
+      setCompositionMode('photo-map');
+      setSelectedElement('map');
+      setCustomizerOpen(false);
+      return;
+    }
+    photoInputRef.current?.click();
+  };
+
+  const removeMapFromPhoto = () => {
+    if (!selectedPhoto) return;
+    setCompositionMode('photo-route');
+    setSelectedElement('route');
+    setFeedback(null);
+  };
+
+  const removeSelectedPhrase = (id: PhraseId) => {
+    updatePhrase(id, (phrase) => ({ ...phrase, visible: false }));
+    setSelectedElement(null);
+    setSelectedPhraseId(null);
   };
 
   const handleExport = async (mode: 'download' | 'share') => {
@@ -560,7 +601,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
       await waitForCardAssets(cardRef.current);
       const rect = cardRef.current.getBoundingClientRect();
       if (!rect.width || !rect.height) throw new Error('Card sem dimensão para exportação.');
-      const pixelRatio = Math.max(1, Math.min(4, 1440 / rect.width));
+      const pixelRatio = Math.max(1, Math.min(6, 2160 / rect.width, 3840 / rect.height));
       const dataUrl = await toPng(cardRef.current, {
         pixelRatio,
         cacheBust: true,
@@ -592,12 +633,15 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const mapLayerClass = compositionMode === 'photo-map'
     ? 'share-card-map-layer share-card-map-layer--inset'
     : 'share-card-map-layer share-card-map-layer--full';
+  const selectedPhrase = isPhraseId(selectedElement)
+    ? phrases.find((phrase) => phrase.id === selectedElement) || null
+    : null;
 
   return createPortal(
     <div className="share-screen" role="dialog" aria-modal="true" aria-label="Editor do card da atividade">
       <div className="share-screen-toolbar">
         <button type="button" onClick={onClose} className="share-icon-button" aria-label="Fechar editor"><X size={21} /></button>
-        <button type="button" onClick={() => setCustomizerOpen(true)} className="share-icon-button" aria-label="Personalizar card"><Layers3 size={19} /></button>
+        <button type="button" onClick={() => { setSelectedElement(null); setCustomizerOpen(true); }} className="share-icon-button" aria-label="Escolher composição"><Layers3 size={19} /></button>
         <div className="share-screen-actions">
           <button type="button" onClick={() => void handleExport('share')} className="share-icon-button share-icon-button--accent" disabled={isGenerating} aria-label="Compartilhar imagem">
             {isGenerating ? <RefreshCw size={19} className="share-spin" /> : <Share2 size={19} />}
@@ -612,16 +656,29 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
         <div ref={cardRef} className={cn('share-card-art', `share-card-art--${compositionMode}`, `share-card-art--${mapVariant}`, isGenerating && 'is-exporting')}>
           <div className="share-card-background" aria-hidden="true">
             {(compositionMode === 'photo-map' || compositionMode === 'photo-route') && selectedPhoto ? <img src={selectedPhoto} alt="" className="share-card-photo" /> : null}
-            {compositionMode !== 'photo-route' && currentMapImage ? <div className={mapLayerClass} style={layerStyle(mapTransform)}><img src={currentMapImage} alt="" /></div> : null}
+            {compositionMode !== 'photo-route' && currentMapImage ? (
+              <div
+                className={cn(mapLayerClass, selectedElement === 'map' && 'is-selected')}
+                style={{ ...layerStyle(mapTransform), opacity: compositionMode === 'photo-map' ? mapOpacity : 1 }}
+              >
+                <img src={currentMapImage} alt="" />
+              </div>
+            ) : null}
             {compositionMode === 'photo-route' ? <RouteLayer points={routeSvgPoints} transform={routeTransform} /> : null}
             {!currentMapImage && compositionMode !== 'photo-route' ? <div className="share-card-empty-state">{mapError ? 'Não foi possível carregar o mapa.' : hasRoute ? 'Preparando mapa…' : 'Esta atividade não possui rota GPS.'}</div> : null}
             {!selectedPhoto && compositionMode !== 'map' ? <div className="share-card-empty-state">Escolha uma foto para esta composição.</div> : null}
             <div className="share-card-vignette" />
           </div>
 
-          <div className="share-card-info-block" style={layerStyle(infoTransform)} onPointerDown={startInfoGesture} onPointerMove={moveInfoGesture} onPointerUp={endInfoGesture} onPointerCancel={endInfoGesture}>
+          <div
+            className={cn('share-card-info-block', selectedElement === 'info' && 'is-selected')}
+            style={layerStyle(infoTransform)}
+            onPointerDown={startInfoGesture}
+            onPointerMove={moveInfoGesture}
+            onPointerUp={endInfoGesture}
+            onPointerCancel={endInfoGesture}
+          >
             <div className="share-card-brand">
-              <img src="/capacete.webp" alt="" draggable={false} />
               <strong>INVICTUS</strong>
               <span>PERFORMANCE</span>
             </div>
@@ -661,30 +718,91 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
             </div>
           ) : null}
         </div>
+
+        {selectedElement && !customizerOpen ? (
+          <div className="share-context-controls" onPointerDown={(event) => event.stopPropagation()}>
+            {selectedElement === 'map' ? (
+              <>
+                {compositionMode === 'photo-map' ? (
+                  <label className="share-context-slider">
+                    <span>Opacidade do mapa <b>{Math.round(mapOpacity * 100)}%</b></span>
+                    <input type="range" min="10" max="100" value={Math.round(mapOpacity * 100)} onChange={(event) => setMapOpacity(Number(event.target.value) / 100)} />
+                  </label>
+                ) : (
+                  <button type="button" className="share-context-action" onClick={() => setMapTransform(DEFAULT_MAP_TRANSFORM)}>Recentrar mapa</button>
+                )}
+                {compositionMode === 'photo-map' && selectedPhoto ? (
+                  <button type="button" className="share-context-icon share-context-icon--danger" onClick={removeMapFromPhoto} aria-label="Remover mapa e manter foto com rota"><X size={18} /></button>
+                ) : null}
+              </>
+            ) : null}
+
+            {selectedElement === 'route' ? (
+              <>
+                <label className="share-context-slider">
+                  <span>Tamanho do traçado</span>
+                  <input type="range" min="70" max="220" value={Math.round(routeTransform.scale * 100)} onChange={(event) => setRouteTransform((current) => ({ ...current, scale: Number(event.target.value) / 100 }))} />
+                </label>
+                <label className="share-context-slider">
+                  <span>Ângulo do traçado</span>
+                  <input type="range" min="-35" max="35" value={Math.round(routeTransform.rotation)} onChange={(event) => setRouteTransform((current) => ({ ...current, rotation: Number(event.target.value) }))} />
+                </label>
+                <button type="button" className="share-context-action" onClick={() => setRouteTransform(DEFAULT_ROUTE_TRANSFORM)}>Recentrar</button>
+              </>
+            ) : null}
+
+            {selectedElement === 'info' ? (
+              <>
+                <label className="share-context-slider">
+                  <span>Tamanho das informações</span>
+                  <input type="range" min="55" max="140" value={Math.round(infoTransform.scale * 100)} onChange={(event) => setInfoTransform((current) => ({ ...current, scale: Number(event.target.value) / 100 }))} />
+                </label>
+                <button type="button" className="share-context-action" onClick={() => setInfoTransform(DEFAULT_INFO_TRANSFORM)}>Recentrar</button>
+              </>
+            ) : null}
+
+            {selectedPhrase ? (
+              <>
+                <label className="share-context-slider">
+                  <span>Tamanho da frase</span>
+                  <input type="range" min="50" max="170" value={Math.round(selectedPhrase.transform.scale * 100)} onChange={(event) => updatePhrase(selectedPhrase.id, (phrase) => ({ ...phrase, transform: { ...phrase.transform, scale: Number(event.target.value) / 100 } }))} />
+                </label>
+                <button type="button" className="share-context-icon share-context-icon--danger" onClick={() => removeSelectedPhrase(selectedPhrase.id)} aria-label="Remover frase"><X size={18} /></button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="share-card-notices">
-        <p className="share-card-gesture-hint">Arraste mapa/rota, frases e informações. Use pinça para redimensionar; arraste uma frase até a área de descarte para remover.</p>
+        <p className="share-card-gesture-hint">Toque no elemento para editar. Arraste para mover e use pinça para redimensionar.</p>
         {feedback ? <p className="share-card-feedback" role="status">{feedback}</p> : null}
       </div>
 
       {customizerOpen ? (
         <div className="share-customizer-backdrop" onClick={() => setCustomizerOpen(false)}>
-          <section className="share-customizer" onClick={(event) => event.stopPropagation()} aria-label="Opções do card">
-            <header><strong>PERSONALIZAR</strong><button type="button" onClick={() => setCustomizerOpen(false)} aria-label="Fechar opções"><X size={18} /></button></header>
-            <div className="share-customizer-modes">
-              <button type="button" className={compositionMode === 'map' ? 'is-active' : ''} onClick={() => setCompositionMode('map')}><MapIcon size={18} /><span>Mapa</span></button>
-              <label className={compositionMode === 'photo-map' ? 'is-active' : ''}><ImageIcon size={18} /><span>Foto + mapa</span><input type="file" accept="image/*" onChange={(event) => void handlePhotoSelection(event, 'photo-map')} /></label>
-              <label className={compositionMode === 'photo-route' ? 'is-active' : ''}><RouteIcon size={18} /><span>Foto + rota</span><input type="file" accept="image/*" onChange={(event) => void handlePhotoSelection(event, 'photo-route')} /></label>
+          <section className="share-customizer share-customizer--compact" onClick={(event) => event.stopPropagation()} aria-label="Composição do card">
+            <header><strong>COMPOSIÇÃO</strong><button type="button" onClick={() => setCustomizerOpen(false)} aria-label="Fechar opções"><X size={18} /></button></header>
+            <div className="share-customizer-modes share-customizer-modes--two">
+              <button type="button" className={compositionMode === 'map' ? 'is-active' : ''} onClick={() => { setCompositionMode('map'); setSelectedElement('map'); setCustomizerOpen(false); }}><MapIcon size={18} /><span>Mapa</span></button>
+              <button type="button" className={compositionMode !== 'map' ? 'is-active' : ''} onClick={usePhotoMap}><ImageIcon size={18} /><span>Foto + mapa</span></button>
             </div>
+            <input ref={photoInputRef} className="share-hidden-file-input" type="file" accept="image/*" onChange={(event) => void handlePhotoSelection(event)} />
 
-            {compositionMode !== 'photo-route' ? <div className="share-customizer-row"><span>Estilo do mapa</span><div><button type="button" className={mapVariant === 'satellite' ? 'is-active' : ''} onClick={() => setMapVariant('satellite')}>Satélite</button><button type="button" className={mapVariant === 'outdoors' ? 'is-active' : ''} onClick={() => setMapVariant('outdoors')}>Ruas</button></div></div> : null}
+            {compositionMode !== 'photo-route' ? (
+              <div className="share-customizer-row">
+                <span>Estilo do mapa</span>
+                <div>
+                  <button type="button" className={mapVariant === 'satellite' ? 'is-active' : ''} onClick={() => setMapVariant('satellite')}>Satélite</button>
+                  <button type="button" className={mapVariant === 'outdoors' ? 'is-active' : ''} onClick={() => setMapVariant('outdoors')}>Ruas</button>
+                </div>
+              </div>
+            ) : null}
 
-            <label className="share-customizer-slider"><span>Tamanho das informações</span><input type="range" min="55" max="140" value={Math.round(infoTransform.scale * 100)} onChange={(event) => setInfoTransform((current) => ({ ...current, scale: Number(event.target.value) / 100 }))} /></label>
-            <label className="share-customizer-slider"><span>Tamanho do {compositionMode === 'photo-route' ? 'traçado' : 'mapa'}</span><input type="range" min="70" max="220" value={Math.round(currentContentTransform.scale * 100)} onChange={(event) => setCurrentContentTransform({ ...currentContentTransform, scale: Number(event.target.value) / 100 })} /></label>
-            <label className="share-customizer-slider"><span>Ângulo do {compositionMode === 'photo-route' ? 'traçado' : 'mapa'}</span><input type="range" min="-35" max="35" value={Math.round(currentContentTransform.rotation)} onChange={(event) => setCurrentContentTransform({ ...currentContentTransform, rotation: Number(event.target.value) })} /></label>
-
-            <div className="share-customizer-reset"><button type="button" onClick={resetContent}>Recentrar mapa/rota</button><button type="button" onClick={() => setInfoTransform(DEFAULT_INFO_TRANSFORM)}>Recentrar informações</button><button type="button" onClick={restorePhrases}>Restaurar frases</button></div>
+            <div className="share-customizer-reset share-customizer-reset--single">
+              <button type="button" onClick={restorePhrases}>Restaurar frases</button>
+              <button type="button" onClick={resetContent}>Recentrar conteúdo</button>
+            </div>
           </section>
         </div>
       ) : null}
