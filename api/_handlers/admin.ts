@@ -9,6 +9,7 @@ import { AdminRepository } from '../_repositories/admin-repository.js';
 import { AdminService } from '../_services/admin/admin-service.js';
 import { resolveGymChampionshipReview } from '../_lib/championship-scoring-service.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
+import { fixGymFromGoogle, runAdminGymAudit } from '../_lib/admin-gym-audit.js';
 
 const adminRepository = new AdminRepository();
 const adminService = new AdminService(adminRepository);
@@ -100,6 +101,30 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         });
 
         return res.status(200).json({ success: true, targetUid, role, previousRole });
+      }
+
+      case 'gyms-audit': {
+        const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+        return res.status(200).json(await runAdminGymAudit(limit));
+      }
+
+      case 'fix-gym-coordinates': {
+        const gymId = String(req.body?.gymId || '').trim();
+        if (!gymId) throw new AppError('gymId é obrigatório.', 400);
+        try {
+          const result = await fixGymFromGoogle(gymId, req.userId!);
+          await logEvent({
+            severity: 'INFO',
+            category: 'admin_reviews',
+            message: `Cadastro canônico da academia ${gymId} sincronizado com Google Places.`,
+            userId: req.userId!,
+            route: '/api/admin?action=fix-gym-coordinates',
+            details: { gymId, affectedUsers: result.affectedUsers },
+          });
+          return res.status(200).json(result);
+        } catch (error: any) {
+          throw new AppError(String(error?.message || 'Não foi possível corrigir a academia.'), 409);
+        }
       }
 
       case 'get-reward-economy-config': {
@@ -286,9 +311,6 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         const result = await adminService.upsertEntity(typeMap[action], req.body.id, req.body);
         return res.status(200).json(result);
       }
-
-      case 'production-audit':
-        return res.status(200).json(await adminService.getProductionAudit());
 
       case 'get-trace': {
         const traceId = (req.query.traceId || req.body?.traceId) as string;
