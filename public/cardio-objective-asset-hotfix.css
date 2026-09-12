@@ -1,0 +1,23 @@
+/* Cache-bust layer for the restored user-approved Buscar Objetivo artwork. */
+.objective-page.has-journey .objective-week-progress {
+  background-image:
+    linear-gradient(100deg, rgba(3,3,3,.96) 0%, rgba(5,5,5,.83) 48%, rgba(4,4,3,.34) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.40)),
+    url('/assets/objective/objective-progress-week.webp?v=20260912b') !important;
+}
+.objective-page.has-journey .objective-next-step {
+  background-image:
+    linear-gradient(90deg, rgba(5,5,5,.98) 0%, rgba(5,5,5,.93) 42%, rgba(5,5,5,.44) 68%, rgba(5,5,5,.10) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.30)),
+    url('/assets/objective/objective-next-step.webp?v=20260912b') !important;
+}
+.objective-page.has-journey .objective-week-plan {
+  background-image:
+    linear-gradient(100deg, rgba(5,5,5,.98) 0%, rgba(7,7,7,.92) 52%, rgba(5,5,5,.54) 100%),
+    url('/assets/objective/objective-week-plan.webp?v=20260912b') !important;
+}
+.objective-page.has-journey .objective-utility-card {
+  background-image:
+    linear-gradient(90deg, rgba(5,5,5,.98) 0%, rgba(5,5,5,.91) 55%, rgba(5,5,5,.42) 100%),
+    url('/assets/objective/objective-sync.webp?v=20260912b') !important;
+}
