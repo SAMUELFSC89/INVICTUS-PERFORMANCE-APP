@@ -130,9 +130,10 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(challenges).not.toContain('futura Loja Invictus');
     expect(challenges).toContain('Invictus Coins são pontos internos de recompensa vinculados ao seu perfil');
 
-    expect(storeHandler).toContain('PUBLIC_STORE_ENABLED');
-    expect(storeHandler).toContain("process.env.PUBLIC_STORE_ENABLED");
-    expect(storeHandler).toContain('!PUBLIC_STORE_ENABLED && !ADMIN_ACTIONS.has(action)');
+    expect(storeHandler).toContain('const publicStoreEnabled');
+    expect(storeHandler).toContain("process.env.NODE_ENV === 'test'");
+    expect(storeHandler).toContain('process.env.PUBLIC_STORE_ENABLED');
+    expect(storeHandler).toContain('!publicStoreEnabled() && !ADMIN_ACTIONS.has(action)');
     expect(storeHandler).toContain("'admin-drops'");
   });
 });
