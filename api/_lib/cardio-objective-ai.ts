@@ -57,6 +57,9 @@ export async function refineInitialObjectiveMission(
     goalType: answers.goalType,
     runningAbility: answers.runningAbility,
     walkingMinutes: answers.walkingMinutes,
+    trainingBackground: answers.trainingBackground,
+    primarySport: answers.primarySport,
+    typicalCardioMinutes: answers.typicalCardioMinutes,
     availableMinutes: answers.availableMinutes,
     preferredActivity: answers.preferredActivity,
     barrier: answers.barrier,
@@ -67,7 +70,7 @@ export async function refineInitialObjectiveMission(
     deterministicDurationMinutes: deterministic.durationMinutes,
     allowedDurationMinutes: { min: bounds.minMinutes, max: bounds.maxMinutes },
   };
-  const prompt = `Você está refinando uma missão inicial de cardio do Invictus. O motor determinístico e a camada de evidência já definiram o perfil e os limites obrigatórios. Use o decisionTrace para personalizar, mas escolha apenas um durationMinutes inteiro dentro da faixa permitida e escreva uma rationale curta em português brasileiro. Não altere modalidade, intensidade, frequência, distância, regras de segurança ou fontes de evidência. Não reduza um corredor/atleta para uma missão trivial. Para sedentário, nunca use menos de 15 minutos. Para pessoa treinada, não introduza intensidade alta automaticamente: a evidência não justifica um único modelo universal e o motor ainda não comprovou recuperação/carga suficiente. Não diagnostique e não prometa resultado. Retorne apenas JSON {"durationMinutes":number,"rationale":"..."}. Contexto: ${JSON.stringify(context)}`;
+  const prompt = `Você está refinando uma missão inicial de cardio do Invictus. O motor determinístico e a camada de evidência já definiram o perfil e os limites obrigatórios. Use o decisionTrace, o esporte praticado e a rotina de treino para personalizar, mas escolha apenas um durationMinutes inteiro dentro da faixa permitida e escreva uma rationale curta em português brasileiro. Não altere modalidade, intensidade, frequência, distância, regras de segurança ou fontes de evidência. Não confunda uma pessoa treinada em outro esporte com sedentária apenas porque ela não corre. Não reduza um corredor/atleta para uma missão trivial. Para sedentário, nunca use menos de 15 minutos. Para pessoa treinada, não introduza intensidade alta automaticamente: o motor ainda não comprovou recuperação, carga e fase de treino suficientes. Não diagnostique e não prometa resultado. Retorne apenas JSON {"durationMinutes":number,"rationale":"..."}. Contexto: ${JSON.stringify(context)}`;
   const requestId = newAiRequestId();
   const startedAt = Date.now();
   try {
