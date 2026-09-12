@@ -110,6 +110,7 @@ export interface ObjectiveCardioSyncResult {
   missionId?: string;
   activityId?: string;
   goalReached?: boolean;
+  notificationNeeded?: boolean;
 }
 
 /**
@@ -119,7 +120,9 @@ export interface ObjectiveCardioSyncResult {
  * distância, janela da semana, segurança e estado canônico concluído).
  *
  * activity_claims torna a operação idempotente: uma atividade nunca conclui
- * duas missões e retries não geram nova conquista/notificação.
+ * duas missões e retries não geram nova conquista. completion_notifications
+ * garante uma única notificação oficial mesmo quando o fluxo explícito marcou
+ * a missão antes desta reconciliação automática.
  */
 export async function reconcileCardioObjectiveActivity(
   userId: string,
@@ -133,19 +136,28 @@ export async function reconcileCardioObjectiveActivity(
 
   const account = objectiveRoot(userId);
   const now = new Date().toISOString();
+  const notificationReceiptRef = account.collection('completion_notifications').doc(activityId);
   const result = await db.runTransaction(async (transaction: any): Promise<ObjectiveCardioSyncResult> => {
-    const [index, activityClaim] = await Promise.all([
+    const [index, activityClaim, notificationReceipt] = await Promise.all([
       transaction.get(account),
       transaction.get(account.collection('activity_claims').doc(activityId)),
+      transaction.get(notificationReceiptRef),
     ]);
     if (activityClaim.exists) {
       const claim = activityClaim.data() || {};
-      return {
-        completed: true,
-        journeyId: String(claim.journeyId || ''),
-        missionId: String(claim.missionId || ''),
-        activityId,
-      };
+      const journeyId = String(claim.journeyId || '');
+      const missionId = String(claim.missionId || '');
+      const notificationNeeded = !notificationReceipt.exists && !!journeyId && !!missionId;
+      if (notificationNeeded) {
+        transaction.create(notificationReceiptRef, {
+          journeyId,
+          missionId,
+          activityId,
+          createdAt: now,
+          source: 'objective_completion_reconciliation',
+        });
+      }
+      return { completed: true, journeyId, missionId, activityId, notificationNeeded };
     }
 
     const journeyId = String(index.data()?.currentJourneyId || '').trim();
@@ -193,6 +205,15 @@ export async function reconcileCardioObjectiveActivity(
       createdAt: now,
       source: 'canonical_cardio_auto_sync',
     });
+    if (!notificationReceipt.exists) {
+      transaction.create(notificationReceiptRef, {
+        journeyId,
+        missionId: mission.id,
+        activityId,
+        createdAt: now,
+        source: 'canonical_cardio_auto_sync',
+      });
+    }
     transaction.update(missionRef, {
       state: 'completed',
       activityId,
@@ -238,10 +259,17 @@ export async function reconcileCardioObjectiveActivity(
       source: 'canonical_cardio_auto_sync',
     });
 
-    return { completed: true, journeyId, missionId: mission.id, activityId, goalReached: reached };
+    return {
+      completed: true,
+      journeyId,
+      missionId: mission.id,
+      activityId,
+      goalReached: reached,
+      notificationNeeded: !notificationReceipt.exists,
+    };
   });
 
-  if (result.completed && result.missionId) {
+  if (result.completed && result.missionId && result.notificationNeeded) {
     void notificationService.notify({
       userId,
       title: result.goalReached ? 'Objetivo alcançado! 🏆' : 'Missão concluída! ✅',
