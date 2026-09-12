@@ -75,7 +75,7 @@ export async function reconcileUserSocialStats(userId: string): Promise<UserSoci
   const ledgerRefs = eligibleAchievements.map((achievement) =>
     db.collection('achievement_reward_ledger').doc(achievementLedgerId(userId, achievement.id)));
 
-  return db.runTransaction(async (transaction: any) => {
+  return db.runTransaction(async (transaction: any): Promise<UserSocialStatsReconciliation> => {
     const reads = await Promise.all([
       transaction.get(userRef),
       ...ledgerRefs.map((ref) => transaction.get(ref)),
@@ -84,10 +84,10 @@ export async function reconcileUserSocialStats(userId: string): Promise<UserSoci
     if (!userSnap.exists) throw new Error('Perfil do atleta não encontrado para reconciliar Social.');
     const userData = userSnap.data() || {};
     const ledgerSnaps = reads.slice(1);
-    const existingAchievements = Array.isArray(userData.achievements)
-      ? userData.achievements.filter((value: unknown): value is string => typeof value === 'string')
+    const existingAchievements: string[] = Array.isArray(userData.achievements)
+      ? (userData.achievements as unknown[]).filter((value: unknown): value is string => typeof value === 'string')
       : [];
-    const achievementSet = new Set(existingAchievements);
+    const achievementSet = new Set<string>(existingAchievements);
     const unlockedAchievementIds: string[] = [];
     let xpCredit = 0;
     const now = new Date().toISOString();
@@ -115,7 +115,7 @@ export async function reconcileUserSocialStats(userId: string): Promise<UserSoci
     const newXP = currentXP + xpCredit;
     const currentLevel = Math.max(1, Number(userData.level) || getLevelFromXP(currentXP));
     const newLevel = xpCredit > 0 ? getLevelFromXP(newXP) : currentLevel;
-    const achievements = [...achievementSet];
+    const achievements: string[] = [...achievementSet];
     const patch: Record<string, unknown> = {
       ...stats,
       achievements,
