@@ -76,7 +76,8 @@ service cloud.firestore {
                 'subscriptionStartedAt', 'proPaymentId', 'temporaryPremiumUntil',
                 'lastTransferOutAt', 'lastTransferOutTransactionId', 'lastTransferOutTransactionIds', 'lastTransferInAt',
                 'lastRevenueCatPurchaseEventAt', 'lastRevenueCatPurchaseEventType', 'lastRevenueCatPurchaseEventTransactionId',
-                'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent'
+                'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent',
+                'gymId', 'gymName', 'gymLocation', 'gymAddress', 'lastGymChange'
               ]);
     }
 
@@ -160,7 +161,8 @@ service cloud.firestore {
            'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
             'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
             'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes', 'isAdmin', 'email', 'uid',
-            'notifications', 'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt'
+            'notifications', 'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt',
+            'gymId', 'gymName', 'gymLocation', 'gymAddress', 'lastGymChange'
           ])
       );
       
@@ -210,7 +212,7 @@ service cloud.firestore {
     match /activity_identity_claims/{claimId} {
       allow read, write: if false;
     }
-    match /activity_reward_quotas/{entryId} {
+    match /activity_reward_quotas/{quotaId} {
       allow read, write: if false;
     }
 
