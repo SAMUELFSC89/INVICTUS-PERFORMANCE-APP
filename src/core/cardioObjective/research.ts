@@ -108,8 +108,9 @@ export function buildResearchDecisionTrace(
   profileClass: ResearchProfileClass,
 ): ResearchDecisionAnswer[] {
   const history = profile?.cardioHistory;
+  const signature = history?.capacitySignature;
   const recentSessions = history?.sessions28d ?? profile?.recentCardioSessions;
-  const longestRun = profile?.recentLongestRunKm;
+  const longestRun = signature?.longestRunningDistanceKm28d ?? profile?.recentLongestRunKm;
   const structuredRunner = answers.runningAbility === 'structured';
   const trainedBackground = ['regular', 'structured', 'competitive'].includes(answers.trainingBackground || '');
   const trained = answers.runningAbility === 'regular' || structuredRunner || trainedBackground || profileClass === 'advanced';
@@ -134,11 +135,22 @@ export function buildResearchDecisionTrace(
       id: 'observed_training_history',
       question: 'O que a pessoa realmente fez nos últimos 7 e 28 dias?',
       answer: history
-        ? `7d=${history.sessions7d} sessão(ões)/${history.minutes7d}min/${history.activeDays7d} dia(s); 28d=${history.sessions28d} sessão(ões)/${history.minutes28d}min/${history.activeDays28d} dia(s); média=${history.averageSessionMinutes28d ?? 'n/d'}min; maior=${history.longestSessionMinutes28d ?? 'n/d'}min`
+        ? `7d=${history.sessions7d} sessão(ões)/${history.minutes7d}min/${history.activeDays7d} dia(s); 28d=${history.sessions28d} sessão(ões)/${history.minutes28d}min/${history.activeDays28d} dia(s); média=${history.averageSessionMinutes28d ?? 'n/d'}min; mediana=${signature?.medianSessionMinutes28d ?? 'n/d'}min; maior=${history.longestSessionMinutes28d ?? 'n/d'}min`
         : 'histórico canônico detalhado indisponível',
       impact: history && history.sessions28d > 0
         ? 'ancorar a missão em capacidade observada e evitar depender apenas da identidade declarada no questionário'
         : 'usar autorrelato de forma conservadora até existir histórico suficiente',
+      evidenceIds: ['ACSM_FITT', 'LOAD_PROGRESSION_2021'],
+    },
+    {
+      id: 'capacity_signature',
+      question: 'Qual assinatura de capacidade aparece em frequência, consistência, modalidade e distância?',
+      answer: signature
+        ? `consistência=${signature.consistencyBand}; sessões/semana=${signature.sessionsPerWeek28d}; semanas ativas=${signature.activeWeeks28d}/4; modalidade dominante=${signature.dominantModality ?? 'n/d'}; distância28d=${signature.totalDistanceKm28d ?? 'n/d'}km; corrida28d=${signature.runningDistanceKm28d ?? 'n/d'}km; maior corrida=${signature.longestRunningDistanceKm28d ?? 'n/d'}km`
+        : 'assinatura insuficiente',
+      impact: signature && signature.consistencyBand !== 'insufficient'
+        ? 'diferenciar pessoas com o mesmo rótulo de perfil usando o padrão real de frequência, modalidade, duração e distância'
+        : 'não fabricar precisão quando há poucas atividades observadas',
       evidenceIds: ['ACSM_FITT', 'LOAD_PROGRESSION_2021'],
     },
     {
@@ -153,7 +165,7 @@ export function buildResearchDecisionTrace(
     {
       id: 'sport_transfer',
       question: 'A pessoa já pratica outro esporte com exigência cardiovascular relevante?',
-      answer: `esporte=${answers.primarySport || 'não informado'}; rotina=${answers.trainingBackground || 'não informada'}`,
+      answer: `esporte=${answers.primarySport || 'não informado'}; rotina=${answers.trainingBackground || 'não informada'}; modalidade observada=${signature?.dominantModality ?? 'n/d'}`,
       impact: answers.primarySport && answers.primarySport !== 'none' && trainedBackground
         ? 'não confundir falta de experiência em corrida com sedentarismo geral; transferir capacidade cardiovascular com cautela para a modalidade escolhida'
         : 'usar capacidade específica declarada como referência principal',
@@ -162,7 +174,7 @@ export function buildResearchDecisionTrace(
     {
       id: 'continuous_capacity',
       question: 'Qual capacidade contínua já foi declarada ou observada?',
-      answer: `caminhada=${answers.walkingMinutes}min; corrida=${answers.runningAbility}; sessão típica=${answers.typicalCardioMinutes ?? 'n/d'}min; média observada=${history?.averageSessionMinutes28d ?? 'n/d'}min; maior corrida recente=${longestRun ?? 'n/d'}km`,
+      answer: `caminhada=${answers.walkingMinutes}min; corrida=${answers.runningAbility}; sessão típica=${answers.typicalCardioMinutes ?? 'n/d'}min; mediana observada=${signature?.medianSessionMinutes28d ?? 'n/d'}min; maior corrida recente=${longestRun ?? 'n/d'}km`,
       impact: trained ? 'usar uma fração significativa da capacidade sem ultrapassar o tempo real disponível' : 'não exceder a capacidade declarada/observada e progredir gradualmente',
       evidenceIds: ['ACSM_FITT', 'WHO_2020', 'LOAD_PROGRESSION_2021'],
     },
