@@ -1,370 +1,220 @@
-import { useState, useEffect, useCallback } from 'react';
-import { DollarSign, ArrowRight, Copy, CheckCircle, XCircle, AlertTriangle, RefreshCw, Filter } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  CreditCard,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  XCircle,
+} from 'lucide-react';
 import { auth } from '../firebase';
-import { useNavigate } from 'react-router-dom';
-import { cn } from '../lib/utils';
-import { PIXWithdrawal, WithdrawalStatus } from '../types';
+import type { PIXWithdrawal, WithdrawalStatus } from '../types';
 
-type FilterTab = 'pending_review' | WithdrawalStatus | 'all';
+type FinanceFilter = 'attention' | 'approved' | 'processing' | 'paid' | 'closed' | 'all';
+type Feedback = { type: 'success' | 'error'; text: string } | null;
 
-const STATUS_LABELS: Record<WithdrawalStatus, { label: string; color: string }> = {
-  pending: { label: 'Pendente', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
-  under_review: { label: 'Em Análise Antifraude', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
-  approved: { label: 'Aprovado (Na Fila)', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-processing: { label: 'Processando no Asaas...', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' },
-  paid: { label: 'Pago via PIX', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-  cancelled: { label: 'Cancelado', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
-  rejected: { label: 'Recusado', color: 'bg-rose-500/20 text-rose-400 border-rose-500/30' }
+const STATUS_META: Record<WithdrawalStatus, { label: string; className: string }> = {
+  pending: { label: 'Pendente', className: 'border-amber-500/25 bg-amber-500/10 text-amber-300' },
+  under_review: { label: 'Em análise', className: 'border-amber-500/25 bg-amber-500/10 text-amber-300' },
+  approved: { label: 'Aprovado para envio', className: 'border-sky-500/25 bg-sky-500/10 text-sky-300' },
+  processing: { label: 'Processando no Asaas', className: 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300' },
+  paid: { label: 'Pago', className: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' },
+  cancelled: { label: 'Cancelado', className: 'border-white/10 bg-white/[0.04] text-neutral-400' },
+  rejected: { label: 'Recusado', className: 'border-rose-500/25 bg-rose-500/10 text-rose-300' },
 };
 
+async function requestAdmin(action: string, body?: Record<string, unknown>) {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error('Sessão administrativa expirada.');
+  const token = await currentUser.getIdToken();
+  const response = await fetch(`/api/admin?action=${encodeURIComponent(action)}`, {
+    method: body ? 'POST' : 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.success === false) throw new Error(payload?.error || payload?.message || 'Falha na operação financeira.');
+  return payload;
+}
+
+function money(value: number): string {
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function when(value: string): string {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR') : 'Data indisponível';
+}
+
 export function AdminPayouts() {
-  const navigate = useNavigate();
   const [withdrawals, setWithdrawals] = useState<PIXWithdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterTab>('pending_review');
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [creditingTest, setCreditingTest] = useState(false);
-  const [updatingMin, setUpdatingMin] = useState(false);
+  const [filter, setFilter] = useState<FinanceFilter>('attention');
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Feedback>(null);
 
-  const fetchWithdrawals = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('Sessão de administrador expirada. Faça login novamente.');
-      const idToken = await currentUser.getIdToken();
-
-      const statusParam = filter === 'all' || filter === 'pending_review' ? '' : `&status=${filter}`;
-      const res = await fetch(`/api/admin?action=list-withdrawals${statusParam}`, {
-        headers: { 'Authorization': `Bearer ${idToken}` }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao carregar saques.');
-
-      let list: PIXWithdrawal[] = Array.isArray(data) ? data : (data.withdrawals || []);
-      if (filter === 'pending_review') {
-        list = list.filter(w => w.status === 'pending' || w.status === 'under_review');
-      }
+      const payload = await requestAdmin('list-withdrawals');
+      const list: PIXWithdrawal[] = Array.isArray(payload) ? payload : payload?.withdrawals || [];
       list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setWithdrawals(list);
     } catch (err: any) {
-      console.error('[AdminPayouts] Error fetching withdrawals:', err);
-      setError(err.message || 'Falha ao carregar solicitações de saque.');
+      setError(err?.message || 'Não foi possível carregar os saques.');
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, []);
 
-  useEffect(() => {
-    fetchWithdrawals();
-  }, [fetchWithdrawals]);
+  useEffect(() => { void load(); }, [load]);
 
-  const handleUpdateStatus = async (withdrawal: PIXWithdrawal, status: WithdrawalStatus) => {
-    const actionLabel = status === 'paid' ? 'marcar como PAGO' : status === 'rejected' ? 'REJEITAR' : `mudar para ${status}`;
-    const confirmMsg = status === 'paid'
-      ? `Confirma que o PIX de R$ ${withdrawal.amount.toFixed(2)} para ${withdrawal.userDisplayName} (chave ${withdrawal.pixKey}) já foi transferido manualmente? Esta ação libera definitivamente o saldo retido.`
-      : `Confirma ${actionLabel} a solicitação de R$ ${withdrawal.amount.toFixed(2)} de ${withdrawal.userDisplayName}? O saldo retido será estornado para a carteira do atleta.`;
+  const filtered = useMemo(() => withdrawals.filter((item) => {
+    if (filter === 'all') return true;
+    if (filter === 'attention') return item.status === 'pending' || item.status === 'under_review';
+    if (filter === 'closed') return item.status === 'rejected' || item.status === 'cancelled';
+    return item.status === filter;
+  }), [filter, withdrawals]);
 
-    if (!window.confirm(confirmMsg)) return;
+  const totals = useMemo(() => ({
+    attention: withdrawals.filter((item) => item.status === 'pending' || item.status === 'under_review').length,
+    approved: withdrawals.filter((item) => item.status === 'approved').length,
+    processing: withdrawals.filter((item) => item.status === 'processing').length,
+    paidAmount: withdrawals.filter((item) => item.status === 'paid').reduce((sum, item) => sum + Number(item.amount || 0), 0),
+  }), [withdrawals]);
 
-    let reason: string | undefined;
-    if (status === 'rejected') {
-      reason = window.prompt('Motivo da rejeição (opcional, será salvo para auditoria):') || undefined;
-    }
+  const updateStatus = async (item: PIXWithdrawal, status: 'approved' | 'rejected' | 'cancelled') => {
+    const actionText = status === 'approved' ? 'aprovar para pagamento' : status === 'rejected' ? 'recusar' : 'cancelar';
+    if (!window.confirm(`Confirma ${actionText} o saque de ${money(item.amount)} de ${item.userDisplayName || item.userId}?`)) return;
+    const reason = status === 'rejected' ? window.prompt('Motivo da recusa (opcional):') || undefined : undefined;
 
-    setActionLoadingId(withdrawal.id);
+    setActingId(item.id);
     setFeedback(null);
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('Sessão de administrador expirada.');
-      const idToken = await currentUser.getIdToken();
-
-      const res = await fetch('/api/admin?action=update-withdrawal-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ withdrawalId: withdrawal.id, status, reason })
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.error || 'Falha ao atualizar o saque.');
-
-      setFeedback({ type: 'success', text: data.message || `Saque ${withdrawal.id} atualizado com sucesso.` });
-      await fetchWithdrawals();
+      const result = await requestAdmin('update-withdrawal-status', { withdrawalId: item.id, status, reason });
+      setFeedback({ type: 'success', text: result.message || 'Saque atualizado.' });
+      await load();
     } catch (err: any) {
-      console.error('[AdminPayouts] Error updating withdrawal:', err);
-      setFeedback({ type: 'error', text: err.message || 'Erro ao atualizar solicitação de saque.' });
+      setFeedback({ type: 'error', text: err?.message || 'Falha ao atualizar o saque.' });
     } finally {
-      setActionLoadingId(null);
-      setTimeout(() => setFeedback(null), 6000);
+      setActingId(null);
     }
   };
 
-  const handleProcessPayment = async (withdrawal: PIXWithdrawal) => {
-    const confirmMsg = `Confirma o envio AUTOMÁTICO do PIX de R$ ${withdrawal.amount.toFixed(2)} para ${withdrawal.userDisplayName} (chave ${withdrawal.pixKey})? O valor será transferido de verdade agora mesmo via Asaas e o saldo retido será liberado definitivamente.`;
-
-    if (!window.confirm(confirmMsg)) return;
-
-    setActionLoadingId(withdrawal.id);
+  const sendPix = async (item: PIXWithdrawal) => {
+    if (!window.confirm(`Enviar agora ${money(item.amount)} por PIX via Asaas para ${item.userDisplayName || item.userId}? Esta é uma transferência real.`)) return;
+    setActingId(item.id);
     setFeedback(null);
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('Sessão de administrador expirada.');
-      const idToken = await currentUser.getIdToken();
-
-      const res = await fetch('/api/admin?action=process-withdrawal-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ withdrawalId: withdrawal.id })
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.error || 'Falha ao processar o pagamento PIX.');
-
-      setFeedback({ type: 'success', text: data.message || `PIX de R$ ${withdrawal.amount.toFixed(2)} enviado com sucesso via Asaas.` });
-      await fetchWithdrawals();
+      const result = await requestAdmin('process-withdrawal-payment', { withdrawalId: item.id });
+      setFeedback({ type: 'success', text: result.message || 'PIX enviado ao provedor.' });
+      await load();
     } catch (err: any) {
-      console.error('[AdminPayouts] Error processing payment:', err);
-      setFeedback({ type: 'error', text: err.message || 'Erro ao processar pagamento PIX via Asaas.' });
+      setFeedback({ type: 'error', text: err?.message || 'Falha ao enviar o PIX.' });
     } finally {
-      setActionLoadingId(null);
-      setTimeout(() => setFeedback(null), 6000);
+      setActingId(null);
     }
   };
 
-    
-  const handleCreditTestBalance = async () => {
-    if (!window.confirm('Creditar R$ 1,00 de saldo de TESTE (ledger interno, sem dinheiro real) na sua propria carteira para validar o saque automatizado via Asaas?')) return;
-    setCreditingTest(true);
-    setFeedback(null);
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('Sessao de administrador expirada.');
-      const idToken = await currentUser.getIdToken();
-
-      const res = await fetch('/api/admin?action=credit-test-balance', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ userId: currentUser.uid, amount: 1, description: 'Credito de teste - validacao fluxo Asaas' })
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.error || 'Falha ao creditar saldo de teste.');
-
-      setFeedback({ type: 'success', text: data.message || 'Saldo de teste creditado.' });
-    } catch (err: any) {
-      console.error('[AdminPayouts] Error crediting test balance:', err);
-      setFeedback({ type: 'error', text: err.message || 'Erro ao creditar saldo de teste.' });
-    } finally {
-      setCreditingTest(false);
-      setTimeout(() => setFeedback(null), 6000);
-    }
-  };
-
-  
-  const handleSetWithdrawalMin = async (amount: number) => {
-    if (!window.confirm('Alterar o saque minimo para R$ ' + amount.toFixed(2) + '?')) return;
-    setUpdatingMin(true);
-    setFeedback(null);
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('Sessao de administrador expirada.');
-      const idToken = await currentUser.getIdToken();
-      const res = await fetch('/api/admin?action=update-withdrawal-min-amount', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-        body: JSON.stringify({ minWithdrawalAmount: amount })
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.error || 'Falha ao atualizar saque minimo.');
-      setFeedback({ type: 'success', text: data.message || 'Saque minimo atualizado.' });
-    } catch (err: any) {
-      console.error('[AdminPayouts] Error updating withdrawal min:', err);
-      setFeedback({ type: 'error', text: err.message || 'Erro ao atualizar saque minimo.' });
-    } finally {
-      setUpdatingMin(false);
-      setTimeout(() => setFeedback(null), 6000);
-    }
-  };
-
-const tabs: { key: FilterTab; label: string }[] = [
-    { key: 'pending_review', label: 'Pendentes' },
+  const tabs: { key: FinanceFilter; label: string }[] = [
+    { key: 'attention', label: 'Requer atenção' },
     { key: 'approved', label: 'Aprovados' },
+    { key: 'processing', label: 'Processando' },
     { key: 'paid', label: 'Pagos' },
-    { key: 'rejected', label: 'Recusados/Cancelados' },
-    { key: 'all', label: 'Todos' }
+    { key: 'closed', label: 'Encerrados' },
+    { key: 'all', label: 'Todos' },
   ];
 
   return (
-    <div className="min-h-screen bg-background pb-32">
-      <header className="px-6 py-12 space-y-4">
-        <button
-          onClick={() => navigate('/admin')}
-          className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors font-label text-[10px] font-black uppercase tracking-widest mb-4"
-        >
-          <ArrowRight className="rotate-180" size={14} /> VOLTAR AO PAINEL
-        </button>
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <DollarSign className="text-prize-gold" size={32} />
-            <h1 className="font-headline italic font-black text-4xl uppercase tracking-tighter text-on-surface">SAQUES PIX</h1>
+    <div className="space-y-7 pb-16">
+      <section className="rounded-[30px] border border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.06] via-neutral-950 to-neutral-950 p-6 md:p-8">
+        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.24em] text-emerald-300"><CreditCard size={16} /> Financeiro</div>
+            <h1 className="font-headline text-3xl font-black uppercase text-white">Saques PIX</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-neutral-400">Aprovação administrativa e envio real via Asaas. Estado <strong className="text-white">Pago</strong> continua sendo confirmado pelo fluxo do provedor; não existe mais botão de saldo artificial ou modo de teste nesta tela.</p>
           </div>
-          <button
-            onClick={() => fetchWithdrawals()}
-            className="bg-primary/10 text-primary px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-primary/20 transition-all"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> ATUALIZAR
+          <button onClick={() => void load()} disabled={loading} className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-xs font-black uppercase text-neutral-300 disabled:opacity-50">
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Atualizar
           </button>
-          <button
-            onClick={handleCreditTestBalance}
-            disabled={creditingTest}
-            className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-amber-500/20 transition-all disabled:opacity-50"
-          >
-            <DollarSign size={14} /> CREDITAR R$1 TESTE
-          </button>
-      <button
-        onClick={() => handleSetWithdrawalMin(1)}
-        disabled={updatingMin}
-        className="bg-sky-500/10 text-sky-400 border border-sky-500/20 px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-sky-500/20 transition-all disabled:opacity-50"
-      >
-        MIN R$1 (TESTE)
-      </button>
-      <button
-        onClick={() => handleSetWithdrawalMin(20)}
-        disabled={updatingMin}
-        className="bg-slate-500/10 text-slate-400 border border-slate-500/20 px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-500/20 transition-all disabled:opacity-50"
-      >
-        MIN R$20 (PADRAO)
-      </button>
         </div>
-        <p className="text-on-surface-variant font-label text-xs uppercase tracking-widest text-shadow-sm">
-          Libere ou recuse solicitações reais de saque via PIX. O dinheiro é retido (bloqueado) na carteira do atleta até você marcar como pago.
-        </p>
-      </header>
+      </section>
 
-      <div className="px-6 space-y-6">
-        {feedback && (
-          <div className={cn(
-            'p-4 rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-3 border',
-            feedback.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'
-          )}>
-            {feedback.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-            {feedback.text}
+      {feedback && <div className={`rounded-2xl border p-4 text-xs font-bold ${feedback.type === 'success' ? 'border-emerald-500/25 bg-emerald-500/[0.07] text-emerald-300' : 'border-rose-500/25 bg-rose-500/[0.07] text-rose-300'}`}>{feedback.text}</div>}
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <FinanceMetric label="Requer atenção" value={String(totals.attention)} icon={AlertTriangle} attention={totals.attention > 0} />
+        <FinanceMetric label="Aprovados" value={String(totals.approved)} icon={ShieldCheck} />
+        <FinanceMetric label="Processando" value={String(totals.processing)} icon={Clock3} />
+        <FinanceMetric label="Total pago listado" value={money(totals.paidAmount)} icon={CheckCircle2} />
+      </section>
+
+      <section className="rounded-[28px] border border-white/[0.08] bg-white/[0.025] p-4 md:p-5">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {tabs.map((tab) => <button key={tab.key} onClick={() => setFilter(tab.key)} className={`whitespace-nowrap rounded-xl border px-4 py-2 text-[10px] font-black uppercase tracking-wider ${filter === tab.key ? 'border-yellow-500/50 bg-yellow-500/15 text-yellow-300' : 'border-white/10 bg-black/20 text-neutral-500'}`}>{tab.label}</button>)}
+        </div>
+
+        {error ? (
+          <div className="mt-5 rounded-2xl border border-rose-500/20 bg-rose-500/[0.06] p-6 text-center">
+            <AlertTriangle className="mx-auto text-rose-400" size={28} />
+            <p className="mt-3 text-sm text-rose-300">{error}</p>
+            <button onClick={() => void load()} className="mt-4 rounded-xl border border-rose-500/30 px-4 py-2 text-xs font-black uppercase text-rose-300">Tentar novamente</button>
+          </div>
+        ) : loading ? (
+          <div className="py-16 text-center text-xs font-black uppercase tracking-widest text-neutral-600">Carregando financeiro...</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-16 text-center text-xs text-neutral-500">Nenhum saque nesta categoria.</div>
+        ) : (
+          <div className="mt-5 space-y-3">
+            {filtered.map((item) => {
+              const meta = STATUS_META[item.status];
+              const busy = actingId === item.id;
+              return (
+                <article key={item.id} className="rounded-[24px] border border-white/[0.07] bg-black/25 p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-sm font-black text-white">{item.userDisplayName || item.userId}</h2>
+                        <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-wider ${meta.className}`}>{meta.label}</span>
+                      </div>
+                      <p className="mt-2 break-all text-[10px] text-neutral-500">ID: {item.id} · Usuário: {item.userId}</p>
+                      <p className="mt-1 text-[10px] text-neutral-500">Solicitado em {when(item.createdAt)}</p>
+                    </div>
+                    <div className="lg:text-right">
+                      <p className="font-headline text-2xl font-black text-white">{money(item.amount)}</p>
+                      <p className="mt-1 break-all text-[10px] text-neutral-500">PIX: {item.pixKey || 'chave indisponível'}</p>
+                    </div>
+                  </div>
+
+                  {(item.status === 'pending' || item.status === 'under_review') && (
+                    <div className="mt-5 flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
+                      <button disabled={busy} onClick={() => void updateStatus(item, 'approved')} className="flex items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-[10px] font-black uppercase text-black disabled:opacity-50"><ShieldCheck size={14} /> Aprovar</button>
+                      <button disabled={busy} onClick={() => void updateStatus(item, 'rejected')} className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] px-4 py-2 text-[10px] font-black uppercase text-rose-300 disabled:opacity-50"><XCircle size={14} /> Recusar</button>
+                    </div>
+                  )}
+
+                  {item.status === 'approved' && (
+                    <div className="mt-5 border-t border-white/[0.06] pt-4">
+                      <button disabled={busy} onClick={() => void sendPix(item)} className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-[10px] font-black uppercase text-black disabled:opacity-50"><Send size={14} /> {busy ? 'Enviando...' : 'Enviar PIX via Asaas'}</button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
         )}
-
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-          <Filter size={16} className="text-on-surface-variant shrink-0" />
-          {tabs.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setFilter(t.key)}
-              className={cn(
-                'px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all',
-                filter === t.key ? 'bg-prize-gold text-white' : 'bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest'
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-4">
-          {loading ? (
-            <div className="flex justify-center py-20">
-              <div className="w-8 h-8 border-4 border-prize-gold border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : error ? (
-            <div className="text-center py-16 space-y-3">
-              <AlertTriangle className="mx-auto text-red-400" size={32} />
-              <p className="font-label text-xs text-red-400 uppercase tracking-widest">{error}</p>
-            </div>
-          ) : withdrawals.length === 0 ? (
-            <div className="text-center py-20 space-y-4">
-              <div className="w-16 h-16 bg-surface-container-high rounded-full flex items-center justify-center mx-auto opacity-20">
-                <DollarSign size={32} />
-              </div>
-              <p className="font-label text-xs text-on-surface-variant uppercase tracking-widest">Nenhuma solicitação de saque encontrada nesse filtro</p>
-            </div>
-          ) : (
-            withdrawals.map(w => {
-              const statusInfo = STATUS_LABELS[w.status] || { label: w.status, color: 'bg-surface-container-highest text-on-surface-variant' };
-              const canAct = w.status === 'pending' || w.status === 'under_review' || w.status === 'approved';
-              const isActing = actionLoadingId === w.id;
-              return (
-                <div key={w.id} className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant/10 space-y-4">
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div>
-                      <h3 className="font-headline italic font-black text-xl uppercase leading-tight">{w.userDisplayName}</h3>
-                      <p className="font-label text-[9px] text-on-surface-variant uppercase tracking-widest">{w.userEmail}</p>
-                      <span className={cn('inline-flex items-center gap-1 mt-2 text-[10px] font-black uppercase px-2.5 py-1 rounded-full border', statusInfo.color)}>
-                        {statusInfo.label}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-label text-[9px] text-prize-gold uppercase tracking-widest font-black">VALOR DO SAQUE</p>
-                      <p className="font-headline italic font-black text-2xl text-prize-gold">R$ {w.amount.toFixed(2)}</p>
-                      <p className="font-label text-[8px] text-on-surface-variant uppercase mt-1">{new Date(w.createdAt).toLocaleString('pt-BR')}</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-outline-variant/10 flex items-center justify-between flex-wrap gap-4">
-                    <div className="flex flex-col min-w-[160px]">
-                      <span className="font-label text-[8px] text-prize-gold uppercase tracking-widest font-black">CHAVE PIX ({w.pixKeyType.toUpperCase()})</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-label font-bold text-xs uppercase truncate max-w-[220px]">{w.pixKey}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(w.pixKey); alert('Chave Pix copiada!'); }}
-                          className="p-1 hover:text-prize-gold transition-colors"
-                        >
-                          <Copy size={12} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col">
-                      <span className="font-label text-[8px] text-on-surface-variant uppercase tracking-widest">SCORE ANTIFRAUDE</span>
-                      <span className={cn('font-label font-bold text-xs uppercase', w.antiFraudScore < 80 ? 'text-amber-400' : 'text-emerald-400')}>
-                        {w.antiFraudScore}/100 {w.antiFraudFlags?.length ? `(${w.antiFraudFlags.join(', ')})` : ''}
-                      </span>
-                    </div>
-
-                    {canAct && (
-                      <div className="flex gap-2">
-                        <button
-                          disabled={isActing}
-                          onClick={() => handleUpdateStatus(w, 'rejected')}
-                          className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-red-500/20 transition-all disabled:opacity-50"
-                        >
-                          <XCircle size={14} /> RECUSAR
-                        </button>
-                        <button
-                          disabled={isActing}
-                          onClick={() => handleProcessPayment(w)}
-                          className="bg-prize-gold text-white px-4 py-2 rounded-xl font-label text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-50"
-                        >
-                          {isActing ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />} MARCAR PAGO
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {w.adminNote && (
-                    <p className="text-[10px] text-on-surface-variant italic">Observação do admin: {w.adminNote}</p>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+      </section>
     </div>
   );
+}
+
+function FinanceMetric({ label, value, icon: Icon, attention = false }: { label: string; value: string; icon: typeof CreditCard; attention?: boolean }) {
+  return <div className={`rounded-[24px] border p-4 ${attention ? 'border-amber-500/30 bg-amber-500/[0.06]' : 'border-white/[0.08] bg-white/[0.025]'}`}><div className="flex items-start justify-between gap-3"><div><p className="text-[9px] font-black uppercase tracking-[0.18em] text-neutral-500">{label}</p><p className={`mt-2 font-headline text-2xl font-black ${attention ? 'text-amber-300' : 'text-white'}`}>{value}</p></div><div className={`grid h-10 w-10 place-items-center rounded-2xl ${attention ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/[0.08] text-emerald-300'}`}><Icon size={18} /></div></div></div>;
 }
