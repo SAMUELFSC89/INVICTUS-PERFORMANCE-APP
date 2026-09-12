@@ -25,8 +25,9 @@ const UserContext = createContext<UserContextType>({
 
 const ACTIVE_SESSION_KEY = 'current_activity_session';
 
-type ActivityStatsPatch = Pick<UserProfile, 'totalWorkouts' | 'totalActiveDays' | 'streak'> & {
+type ActivityStatsPatch = Pick<UserProfile, 'totalWorkouts' | 'totalActiveDays' | 'streak' | 'achievements' | 'xp' | 'level'> & {
   totalTimeSpent: number;
+  totalXp?: number;
   lastCheckIn: string | null;
 };
 
@@ -110,6 +111,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           totalTimeSpent: Math.max(0, Number(payload.stats.totalTimeSpent) || 0),
           streak: Math.max(0, Number(payload.stats.streak) || 0),
           lastCheckIn: typeof payload.stats.lastCheckIn === 'string' ? payload.stats.lastCheckIn : null,
+          achievements: Array.isArray(payload.stats.achievements)
+            ? payload.stats.achievements.filter((value: unknown): value is string => typeof value === 'string')
+            : [],
+          xp: Math.max(0, Number(payload.stats.xp) || 0),
+          totalXp: Math.max(0, Number(payload.stats.totalXp ?? payload.stats.xp) || 0),
+          level: Math.max(1, Number(payload.stats.level) || 1),
         };
         setUser(current => current?.uid === uid ? { ...current, ...stats } : current);
         return stats;
