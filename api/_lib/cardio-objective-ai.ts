@@ -4,16 +4,88 @@ import { db } from './common.js';
 import { getAiApiKey, getAiHabitModel } from './ai-config.js';
 import { extractUsage, logAiUsage, newAiRequestId } from './ai-usage-logger.js';
 import { isProUser } from './entitlement.js';
-import type { Journey, Review } from '../../src/core/cardioObjective/types.js';
+import { buildCardioBaseline, validateMissionCoherence } from '../../src/core/cardioObjective/engine.js';
+import type { Journey, ObjectiveAnswers, Prescription, ProfileSnapshot, Review } from '../../src/core/cardioObjective/types.js';
 
 const responseSchema = z.object({ explanation: z.string().trim().min(12).max(420) }).strict();
+const missionRefinementSchema = z.object({
+  durationMinutes: z.number().int().min(1).max(180),
+  rationale: z.string().trim().min(12).max(280),
+}).strict();
 
 export interface ObjectiveExplanation { text: string; source: 'gemini' | 'deterministic'; model: string | null }
+export interface ObjectiveMissionRefinement {
+  prescription: Prescription;
+  rationale: string;
+  source: 'gemini' | 'deterministic';
+  model: string | null;
+}
 
 /**
- * O motor determinístico sempre toma a decisão. Para FREE, a explicação também
+ * Híbrido com autoridade determinística: a IA só pode escolher um tempo dentro
+ * da faixa calculada pelo motor. Modalidade, métrica, segurança e limites finais
+ * continuam sendo validados pelo código antes de qualquer missão ser persistida.
+ */
+export async function refineInitialObjectiveMission(
+  userId: string,
+  answers: ObjectiveAnswers,
+  profile: ProfileSnapshot,
+  deterministic: Prescription,
+): Promise<ObjectiveMissionRefinement> {
+  const bounds = buildCardioBaseline(answers, profile);
+  const fallback: ObjectiveMissionRefinement = {
+    prescription: validateMissionCoherence(answers, deterministic, profile),
+    rationale: bounds.reason,
+    source: 'deterministic',
+    model: null,
+  };
+
+  // Distância permanece 100% determinística nesta versão. Também não usamos IA
+  // em retorno gradual/sinais de segurança: nesses casos, conservadorismo vence personalização.
+  if (deterministic.targetMetric !== 'duration' || answers.goalType === 'gradual_return' || answers.safety.signals.length > 0) return fallback;
+
+  const apiKey = getAiApiKey();
+  if (!apiKey) return fallback;
+  const model = getAiHabitModel();
+  const context = {
+    goalType: answers.goalType,
+    runningAbility: answers.runningAbility,
+    walkingMinutes: answers.walkingMinutes,
+    availableMinutes: answers.availableMinutes,
+    preferredActivity: answers.preferredActivity,
+    barrier: answers.barrier,
+    confidenceScore: answers.confidenceScore,
+    recentCardioSessions: profile.recentCardioSessions,
+    recentLongestRunKm: profile.recentLongestRunKm,
+    profileClass: bounds.profileClass,
+    deterministicDurationMinutes: deterministic.durationMinutes,
+    allowedDurationMinutes: { min: bounds.minMinutes, max: bounds.maxMinutes },
+  };
+  const prompt = `Você está refinando uma missão inicial de cardio do Invictus. O motor determinístico já definiu os limites obrigatórios. Escolha apenas um durationMinutes inteiro dentro da faixa permitida e escreva uma rationale curta em português brasileiro. Não altere modalidade, intensidade, frequência, distância ou regras de segurança. Não reduza um corredor para uma missão trivial. Para sedentário, nunca use menos de 15 minutos. Não diagnostique e não prometa resultado. Retorne apenas JSON {"durationMinutes":number,"rationale":"..."}. Contexto: ${JSON.stringify(context)}`;
+  const requestId = newAiRequestId();
+  const startedAt = Date.now();
+  try {
+    const response = await new GoogleGenAI({ apiKey }).models.generateContent({
+      model,
+      contents: prompt,
+      config: { responseMimeType: 'application/json', maxOutputTokens: 180, temperature: 0.15 },
+    });
+    void logAiUsage({ requestId, userId, feature: 'CARDIO_OBJECTIVE_MISSION_REFINEMENT', model, ...extractUsage(response), durationMs: Date.now() - startedAt, success: true, contextSize: prompt.length });
+    const parsed = missionRefinementSchema.safeParse(JSON.parse((response.text || '{}').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')));
+    if (!parsed.success) return fallback;
+    const durationMinutes = Math.max(bounds.minMinutes, Math.min(bounds.maxMinutes, parsed.data.durationMinutes));
+    const prescription = validateMissionCoherence(answers, { ...deterministic, durationMinutes }, profile);
+    return { prescription, rationale: parsed.data.rationale, source: 'gemini', model };
+  } catch (error) {
+    void logAiUsage({ requestId, userId, feature: 'CARDIO_OBJECTIVE_MISSION_REFINEMENT', model, durationMs: Date.now() - startedAt, success: false, contextSize: prompt.length, errorCode: error instanceof Error ? error.message.slice(0, 120) : 'unknown_error' });
+    return fallback;
+  }
+}
+
+/**
+ * O motor determinístico sempre toma a decisão semanal. Para FREE, a explicação
  * é determinística e não gera custo de IA. Apenas um entitlement PRO canônico
- * permite que o Gemini reescreva a decisão de forma mais natural.
+ * permite que o Gemini reescreva essa decisão de forma mais natural.
  */
 export async function explainObjectiveDecision(userId: string, journey: Journey, review: Review): Promise<ObjectiveExplanation> {
   const fallback = { text: review.reason, source: 'deterministic' as const, model: null };
