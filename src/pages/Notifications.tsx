@@ -1,6 +1,6 @@
 import { Bell, CheckCheck, ChevronLeft, Dumbbell, Gift, Info, Medal, Plus, ShieldCheck, TrendingUp, Trophy, UserRound } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, runTransaction } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { db } from '../firebase';
@@ -41,7 +41,15 @@ export function Notifications() {
     setBusy(true);
     setError(null);
     try {
-      await updateDoc(doc(db, 'users', user.uid), { notifications: notifications.map((item) => item.id === id ? { ...item, read: true } : item) });
+      const userRef = doc(db, 'users', user.uid);
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(userRef);
+        if (!snapshot.exists()) throw new Error('Perfil não encontrado.');
+        const latest = Array.isArray(snapshot.data()?.notifications) ? snapshot.data()!.notifications : [];
+        transaction.update(userRef, {
+          notifications: latest.map((item: any) => item?.id === id ? { ...item, read: true } : item),
+        });
+      });
       await refreshUser();
       return true;
     } catch (err) {
@@ -62,11 +70,23 @@ export function Notifications() {
   };
 
   const markAllAsRead = async () => {
-    if (!user || busy || !notifications.some((item) => !item.read)) return;
+    if (!user || busy) return;
+    const unreadAtClick = new Set(notifications.filter((item) => !item.read).map((item) => item.id));
+    if (!unreadAtClick.size) return;
     setBusy(true);
     setError(null);
     try {
-      await updateDoc(doc(db, 'users', user.uid), { notifications: notifications.map((item) => ({ ...item, read: true })) });
+      const userRef = doc(db, 'users', user.uid);
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(userRef);
+        if (!snapshot.exists()) throw new Error('Perfil não encontrado.');
+        const latest = Array.isArray(snapshot.data()?.notifications) ? snapshot.data()!.notifications : [];
+        transaction.update(userRef, {
+          // Só marca os IDs que estavam visíveis quando o usuário tocou. Uma
+          // notificação criada durante a transação continua nova/não lida.
+          notifications: latest.map((item: any) => unreadAtClick.has(item?.id) ? { ...item, read: true } : item),
+        });
+      });
       await refreshUser();
     } catch (err) {
       console.warn('[Notifications] Não foi possível marcar todas como lidas:', err);
