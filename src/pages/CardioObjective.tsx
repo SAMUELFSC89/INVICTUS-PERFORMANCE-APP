@@ -387,6 +387,7 @@ export function CardioObjective() {
   };
 
   const journey = view?.journey;
+  const challengeCopy = journey?.challengePresentation;
   const fullMissions = (view?.missions || []).filter((mission): mission is Mission => 'prescription' in mission);
   const nextMission = fullMissions.find(mission => ['available', 'started'].includes(mission.state));
   const displayMission = nextMission || fullMissions.find(mission => !['completed', 'rescheduled'].includes(mission.state));
@@ -452,7 +453,7 @@ export function CardioObjective() {
 
         {journey.status === 'active' && displayMission ? <section className={`objective-next-step ${nextMission ? '' : 'is-waiting'}`}>
           <div className="objective-next-icon"><Target/></div>
-          <div><small>{reviewDue ? 'REVISÃO DA SEMANA' : nextMission ? 'PRÓXIMO PASSO' : 'PRÓXIMA ETAPA'}</small><h2>{missionTitle(displayMission).label} {missionTitle(displayMission).target}</h2><p>{nextMission?.prescription.runSecondsPerInterval ? `Alterne ${nextMission.prescription.runSecondsPerInterval}s de corrida leve com ${nextMission.prescription.walkSecondsPerInterval}s caminhando.` : nextMission ? 'Movimento gera progresso.' : 'Conclua ou reagende a etapa pendente para continuar sua jornada.'}</p></div>
+          <div><small>{reviewDue ? 'REVISÃO DA SEMANA' : nextMission ? `PRÓXIMO PASSO${challengeCopy?.name ? ` · ${challengeCopy.name}` : ''}` : 'PRÓXIMA ETAPA'}</small><h2>{missionTitle(displayMission).label} {missionTitle(displayMission).target}</h2><p>{nextMission && challengeCopy ? `${challengeCopy.message} ${challengeCopy.cue}` : nextMission?.prescription.runSecondsPerInterval ? `Alterne ${nextMission.prescription.runSecondsPerInterval}s de corrida leve com ${nextMission.prescription.walkSecondsPerInterval}s caminhando.` : nextMission ? 'Movimento gera progresso.' : 'Conclua ou reagende a etapa pendente para continuar sua jornada.'}</p></div>
           <button aria-label="Iniciar próximo passo" disabled={!nextMission || busy || reviewDue || nextMission.localDate > localDate(new Date().toISOString(), journey.timeZone)} onClick={() => nextMission && startMission(nextMission)}><ArrowRight/></button>
         </section> : journey.status === 'active' ? <section className="objective-next-step is-complete"><div className="objective-next-icon"><Check/></div><div><small>SEMANA EM DIA</small><h2>Metas registradas</h2><p>A próxima etapa será preparada após seu check-in semanal.</p></div></section> : null}
 
