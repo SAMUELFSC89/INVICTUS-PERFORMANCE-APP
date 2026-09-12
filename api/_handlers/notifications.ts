@@ -7,6 +7,9 @@ import { notificationService } from '../_services/notification-service.js';
  * Unified endpoint for signed-in notification operations.
  *
  * - Default body creates a notification for the authenticated user only.
+ * - action=mark-read / mark-all-read changes only the read flag of existing
+ *   notification IDs on the server; clients never replace the notification
+ *   array from a stale snapshot.
  * - action=claim-device-token makes a physical push token single-owner. This
  *   prevents one device token from remaining attached to account A after the
  *   same device changes to account B.
@@ -16,6 +19,7 @@ import { notificationService } from '../_services/notification-service.js';
 
 const ALLOWED_TYPES = ['ranking', 'payment', 'system', 'achievement', 'social'];
 const MAX_TEXT_LEN = 300;
+const MAX_NOTIFICATION_IDS = 50;
 
 function pushTokenMeta(body: any): { token: string; platform: 'ios' | 'android'; tokenField: 'apnsTokens' | 'fcmTokens'; registryId: string } | null {
   const token = String(body?.token || '').trim();
@@ -30,6 +34,35 @@ function pushTokenMeta(body: any): { token: string; platform: 'ios' | 'android';
     tokenField: platform === 'ios' ? 'apnsTokens' : 'fcmTokens',
     registryId: createHash('sha256').update(`${platform}:${token}`).digest('hex'),
   };
+}
+
+function notificationIds(body: any, action: string): string[] | null {
+  const raw = action === 'mark-read' ? [body?.notificationId] : body?.notificationIds;
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_NOTIFICATION_IDS) return null;
+  const ids = raw
+    .map((value: unknown) => typeof value === 'string' ? value.trim() : '')
+    .filter((value: string) => value.length > 0 && value.length <= 160);
+  if (ids.length !== raw.length) return null;
+  return [...new Set(ids)];
+}
+
+async function markNotificationsRead(authUid: string, ids: string[]) {
+  const profileRef = db.collection('users').doc(authUid);
+  let changed = 0;
+  await db.runTransaction(async (transaction: any) => {
+    const snapshot = await transaction.get(profileRef);
+    if (!snapshot.exists) throw new Error('Perfil do usuário não encontrado.');
+    const current = Array.isArray(snapshot.data()?.notifications) ? snapshot.data()!.notifications : [];
+    const targetIds = new Set(ids);
+    const next = current.map((item: any) => {
+      if (!item || typeof item !== 'object' || !targetIds.has(String(item.id || '')) || item.read === true) return item;
+      changed += 1;
+      // O servidor controla o objeto inteiro e altera exclusivamente `read`.
+      return { ...item, read: true };
+    });
+    if (changed > 0) transaction.update(profileRef, { notifications: next });
+  });
+  return { changed };
 }
 
 async function claimDeviceToken(authUid: string, body: any) {
@@ -135,6 +168,12 @@ export default async function handler(req: any, res: any) {
   const action = String(body.action || '').trim();
 
   try {
+    if (action === 'mark-read' || action === 'mark-all-read') {
+      const ids = notificationIds(body, action);
+      if (!ids) return res.status(400).json({ error: 'Notificação inválida.' });
+      const result = await markNotificationsRead(auth.uid, ids);
+      return res.status(200).json({ success: true, ...result });
+    }
     if (action === 'claim-device-token') {
       const result = await claimDeviceToken(auth.uid, body);
       return res.status(200).json({ success: true, registered: true, ...result });
@@ -145,8 +184,8 @@ export default async function handler(req: any, res: any) {
     }
   } catch (err: any) {
     const status = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
-    console.error(`[API /notifications] Erro ao atualizar token de dispositivo: ${err?.message || err}`);
-    return res.status(status).json({ error: status < 500 ? err.message : 'Não foi possível atualizar este dispositivo.' });
+    console.error(`[API /notifications] Erro na ação ${action || 'desconhecida'}: ${err?.message || err}`);
+    return res.status(status).json({ error: status < 500 ? err.message : 'Não foi possível atualizar as notificações agora.' });
   }
 
   const { recipientId, type, title, message, actionUrl } = body;
