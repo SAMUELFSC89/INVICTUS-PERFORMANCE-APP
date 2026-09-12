@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { answersSchema, identifierSchema, reviewSchema, safetySchema } from '../../src/core/cardioObjective/validation.js';
 import { activityAchievementSeeds, adaptHabit, createJourney, goalReached, habitConfidence, localDate, makeMissions, missionMeetsActivity, professionalNextLevel, reviewAchievementSeeds, reviewWeek, safetyDecision, type VerifiedActivity } from '../../src/core/cardioObjective/engine.js';
+import { summarizeCardioHistory } from '../../src/core/cardioObjective/history.js';
 import { OBJECTIVE_VERSIONS, type Baseline, type CardioAchievement, type Journey, type Mission, type ObjectiveAnswers, type ProfileSnapshot, type Review, type SafetyAnswers, type WeeklyAnswers, type WeightMeasurement } from '../../src/core/cardioObjective/types.js';
-import { explainObjectiveDecision } from '../_lib/cardio-objective-ai.js';
+import { describeObjectiveChallenge, explainObjectiveDecision, refineInitialObjectiveMission } from '../_lib/cardio-objective-ai.js';
 
 const root = (uid: string) => db.collection('cardio_objectives').doc(uid);
 class ObjectiveError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -31,9 +32,20 @@ async function getBaselineProfile(uid: string, user: Record<string, any>, now: s
     return ['apple_health', 'health_connect'].includes(w.source) && w.quality === 'sensor_verified' && safeNumber(w.value, 30, 350) !== null && w.timestamp <= now;
   }) : undefined;
   const weight = weightDoc?.data();
-  const activities = activitiesResult.status === 'fulfilled' ? activitiesResult.value.docs.map(d => d.data()).filter(w => w.type === 'cardio' && w.recordStatus === 'completed' && w.timestamp <= now && !w.securityBlocked && !['rejected', 'suspicious'].includes(w.status)) : null;
+  const activities = activitiesResult.status === 'fulfilled' ? activitiesResult.value.docs.map(d => d.data()).filter(w => w.type === 'cardio' && w.recordStatus === 'completed' && typeof w.timestamp === 'string' && w.timestamp <= now && !w.securityBlocked && !['rejected', 'suspicious'].includes(w.status)) : null;
+  const historyPoints = activities?.flatMap(w => {
+    const occurredAt = typeof w.timestamp === 'string' ? w.timestamp : null;
+    let durationMinutes = safeNumber(w.duration, 1, 600);
+    if (durationMinutes === null && typeof w.startTime === 'string' && typeof w.endTime === 'string') {
+      const elapsed = (Date.parse(w.endTime) - Date.parse(w.startTime)) / 60000;
+      durationMinutes = safeNumber(elapsed, 1, 600);
+    }
+    if (!occurredAt || durationMinutes === null) return [];
+    return [{ occurredAt, durationMinutes, modality: typeof w.cardioType === 'string' ? w.cardioType : null, distanceKm: safeNumber(w.distance, 0, 300) }];
+  }) || [];
+  const cardioHistory = activities ? summarizeCardioHistory(historyPoints, now) : null;
   const runs = activities?.filter(w => w.cardioType === 'running' && safeNumber(w.distance, 0, 300) !== null).map(w => w.distance as number) || [];
-  return { capturedAt: now, source: 'users', planId: planData ? planId : null, heightCm: safeNumber(user.height, 100, 250), weightKg: weight?.value ?? safeNumber(user.weight, 30, 350), ageYears: age && age > 0 && age < 120 ? age : null, strengthDays: [...new Set(days)], recentCardioSessions: activities?.length ?? null, recentLongestRunKm: runs.length ? Math.max(...runs) : null,
+  return { capturedAt: now, source: 'users', planId: planData ? planId : null, heightCm: safeNumber(user.height, 100, 250), weightKg: weight?.value ?? safeNumber(user.weight, 30, 350), ageYears: age && age > 0 && age < 120 ? age : null, strengthDays: [...new Set(days)], recentCardioSessions: cardioHistory?.sessions28d ?? activities?.length ?? null, recentLongestRunKm: runs.length ? Math.max(...runs) : null, cardioHistory,
     weightSource: weight ? weight.source : safeNumber(user.weight, 30, 350) !== null ? 'profile' : null, weightMeasuredAt: weight?.timestamp || null, weightSourceId: weightDoc?.id || null, historyStatus: activities ? 'available' : 'unavailable', historyWindowDays: 28 };
 }
 async function currentView(uid: string, id: string) {
@@ -82,7 +94,7 @@ export default async function handler(req: any, res: any) {
         const data = current?.data() as Journey | undefined;
         const missionDocs = data && data.status === 'active' ? (await account.collection('journeys').doc(currentId).collection('missions').where('week', '==', data.currentWeek).get()).docs : [];
         const mission = missionDocs.map(d => d.data() as Mission).filter(m => ['started', 'available'].includes(m.state)).sort((a, b) => a.state === b.state ? a.localDate.localeCompare(b.localDate) : a.state === 'started' ? -1 : 1)[0];
-        return res.json({ journey: null, summary: data && ['active', 'paused'].includes(data.status) ? { id: data.id, goalLabel: data.goalLabel, status: data.status, totalCompleted: data.totalCompleted, nextMission: mission ? { modality: mission.prescription.modality, targetMetric: mission.prescription.targetMetric, durationMinutes: mission.prescription.durationMinutes, distanceKm: mission.prescription.distanceKm, localDate: mission.localDate, state: mission.state } : null } : null });
+        return res.json({ journey: null, summary: data && ['active', 'paused'].includes(data.status) ? { id: data.id, goalLabel: data.goalLabel, status: data.status, totalCompleted: data.totalCompleted, challengePresentation: data.challengePresentation || null, nextMission: mission ? { modality: mission.prescription.modality, targetMetric: mission.prescription.targetMetric, durationMinutes: mission.prescription.durationMinutes, distanceKm: mission.prescription.distanceKm, localDate: mission.localDate, state: mission.state } : null } : null });
       }
       if (req.query?.new === 'true') {
         const currentId = index.data()?.currentJourneyId;
@@ -102,6 +114,9 @@ export default async function handler(req: any, res: any) {
       if (a.goalType === 'lose_weight' && profile.heightCm && (a.currentWeightKg! - a.loseKg!) / (profile.heightCm / 100) ** 2 < 18.5) throw new ObjectiveError('Esse objetivo requer avaliação profissional individual. Não vamos gerar uma meta de perda de peso automaticamente.');
       const ref = account.collection('journeys').doc();
       const created = createJourney(ref.id, auth.uid, a, profile, now);
+      const refinement = await refineInitialObjectiveMission(auth.uid, a, profile, created.journey.behavior);
+      created.journey.behavior = refinement.prescription;
+      created.journey.challengePresentation = refinement.presentation;
       await db.runTransaction(async tx => {
         const index = await tx.get(account);
         const priorId = index.data()?.currentJourneyId;
@@ -114,7 +129,18 @@ export default async function handler(req: any, res: any) {
         for (const mission of makeMissions(created.journey, now)) tx.create(ref.collection('missions').doc(mission.id), mission);
         if (a.currentWeightKg) tx.create(ref.collection('weights').doc('initial'), { id: 'initial', kg: a.currentWeightKg, measuredAt: now, recordedAt: now, source: 'confirmed_profile', sourceId: null });
         tx.set(account, { currentJourneyId: ref.id, updatedAt: now });
-        event(tx, ref, 'created', 'goal_created', now, ref.id);
+        event(tx, ref, 'created', 'goal_created', now, ref.id, {
+          missionPersonalizationSource: refinement.source,
+          missionPersonalizationModel: refinement.model,
+          missionPersonalizationRationale: refinement.rationale,
+          challengeCopySource: refinement.presentation.source,
+          durationMinutes: refinement.prescription.durationMinutes,
+          historySessions28d: profile.cardioHistory?.sessions28d ?? null,
+          historyMinutes28d: profile.cardioHistory?.minutes28d ?? null,
+          historyLoadTrend: profile.cardioHistory?.loadTrend ?? null,
+          capacityConsistency: profile.cardioHistory?.capacitySignature.consistencyBand ?? null,
+          capacityDominantModality: profile.cardioHistory?.capacitySignature.dominantModality ?? null,
+        });
       });
       return res.status(201).json(await currentView(auth.uid, ref.id));
     }
@@ -283,6 +309,24 @@ export default async function handler(req: any, res: any) {
       }
       throw new ObjectiveError('Ação não reconhecida.');
     });
+
+    if (action === 'review') {
+      const view = await currentView(auth.uid, id);
+      const latest = view.reviews[0] as Review | undefined;
+      const baseline = view.baseline as Baseline | undefined;
+      if (latest && baseline && view.journey.status === 'active') {
+        const presentation = await describeObjectiveChallenge(auth.uid, view.journey, baseline, latest);
+        await db.runTransaction(async tx => {
+          const latestJourney = await tx.get(ref);
+          const data = latestJourney.data() as Journey | undefined;
+          if (latestJourney.exists && data?.status === 'active' && data.currentWeek === view.journey.currentWeek) {
+            tx.update(ref, { challengePresentation: presentation, updatedAt: now });
+            event(tx, ref, `${eventId}_challenge_copy`, 'challenge_copy_created', now, latest.id, { source: presentation.source, model: presentation.model });
+          }
+        });
+      }
+    }
+
     return res.json(await currentView(auth.uid, id));
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: 'Confira as respostas e tente novamente.', code: 'INVALID_INPUT' });

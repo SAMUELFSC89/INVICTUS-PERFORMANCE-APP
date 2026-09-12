@@ -76,7 +76,8 @@ service cloud.firestore {
                 'subscriptionStartedAt', 'proPaymentId', 'temporaryPremiumUntil',
                 'lastTransferOutAt', 'lastTransferOutTransactionId', 'lastTransferOutTransactionIds', 'lastTransferInAt',
                 'lastRevenueCatPurchaseEventAt', 'lastRevenueCatPurchaseEventType', 'lastRevenueCatPurchaseEventTransactionId',
-                'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent'
+                'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent',
+                'gymId', 'gymName', 'gymLocation', 'gymAddress', 'lastGymChange'
               ]);
     }
 
@@ -160,7 +161,8 @@ service cloud.firestore {
            'xp', 'level', 'totalActiveDays', 'totalWorkouts', 'totalTimeSpent', 'lastCheckIn',
             'referralStats', 'referralCode', 'referralMilestones', 'followersCount', 'followingCount',
             'postsCount', 'deviceFingerprint', 'infractions', 'profileLikes', 'isAdmin', 'email', 'uid',
-            'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt'
+            'notifications', 'fcmTokens', 'apnsTokens', 'pushTokenUpdatedAt', 'hasSmartwatchConnected', 'smartwatchProvider', 'wearableUpdatedAt',
+            'gymId', 'gymName', 'gymLocation', 'gymAddress', 'lastGymChange'
           ])
       );
       

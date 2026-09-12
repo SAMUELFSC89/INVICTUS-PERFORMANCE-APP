@@ -23,9 +23,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (latitude === undefined || longitude === undefined || accuracy === undefined) {
-    return res.status(400).json({ 
-      status: 'blocked_invalid_coords', 
-      error: 'Coordenadas e precisão de GPS são obrigatórios para validação.' 
+    return res.status(400).json({
+      status: 'blocked_invalid_coords',
+      error: 'Coordenadas e precisão de GPS são obrigatórios para validação.'
     });
   }
 
@@ -53,10 +53,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // 1. Fetch user profile
     const userRef = db.collection('users').doc(auth.uid);
     const userSnap = await userRef.get();
-    
+
     if (!userSnap.exists) {
       return res.status(404).json({ error: 'Perfil do usuário não encontrado.' });
     }
@@ -84,50 +83,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    let gymLat: number | undefined;
-    let gymLng: number | undefined;
-
-    // First try loading canonical coordinates directly from gyms collection
-    try {
-      const gymSnap = await db.collection('gyms').doc(userData.gymId).get();
-      if (gymSnap.exists) {
-        const gymData = gymSnap.data() || {};
-        const gLat = gymData.latitude ?? gymData.lat;
-        const gLng = gymData.longitude ?? gymData.lng;
-        if (gLat !== undefined && gLng !== undefined && !isNaN(Number(gLat)) && !isNaN(Number(gLng))) {
-          gymLat = Number(gLat);
-          gymLng = Number(gLng);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed fetching gym document in gyms_checkin:', e);
-    }
-
-    // Fallback to user.gymLocation if gym document not found or lacks coordinates
-    if (gymLat === undefined || gymLng === undefined) {
-      if (userData.gymLocation && userData.gymLocation.lat !== undefined && userData.gymLocation.lng !== undefined) {
-        const uLat = Number(userData.gymLocation.lat);
-        const uLng = Number(userData.gymLocation.lng);
-        if (!isNaN(uLat) && !isNaN(uLng) && (uLat !== 0 || uLng !== 0)) {
-          gymLat = uLat;
-          gymLng = uLng;
-        }
-      }
-    }
-
-    if (gymLat === undefined || gymLng === undefined) {
-      console.log(`Academia sem coordenadas válidas: ${userData.gymId}, ${auth.uid}, ${new Date().toISOString()}`);
-      return res.status(400).json({
+    // A geofence é exclusivamente server-authoritative. Nunca use
+    // users/{uid}.gymLocation como fallback: perfis legados ou um cliente
+    // adulterado não podem definir o ponto que valida a própria presença.
+    const gymSnap = await db.collection('gyms').doc(String(userData.gymId)).get();
+    if (!gymSnap.exists) {
+      return res.status(409).json({
         status: 'blocked_invalid_coords',
-        error: '⚠ A academia selecionada ainda não tem localização definida no mapa. Por favor, selecione sua academia novamente no menu Academia.'
+        error: 'A academia vinculada não possui cadastro canônico. Selecione sua academia novamente no perfil.'
+      });
+    }
+    const gymData = gymSnap.data() || {};
+    const gymLat = Number(gymData.latitude ?? gymData.lat);
+    const gymLng = Number(gymData.longitude ?? gymData.lng);
+    const canonicalGymName = String(gymData.name || userData.gymName || 'Sua Academia').slice(0, 128);
+    if (!Number.isFinite(gymLat) || !Number.isFinite(gymLng)
+      || gymLat < -90 || gymLat > 90 || gymLng < -180 || gymLng > 180) {
+      console.log(`Academia canônica sem coordenadas válidas: ${userData.gymId}, ${auth.uid}, ${new Date().toISOString()}`);
+      return res.status(409).json({
+        status: 'blocked_invalid_coords',
+        error: 'A academia selecionada precisa ter sua localização revisada. Selecione-a novamente no perfil.'
       });
     }
 
-    // 2. Validate Geofence (Strictly 80m max radius & 30m max GPS accuracy)
     const geofenceResult = validateGeofenceCheckin(
       {
         id: userData.gymId,
-        name: userData.gymName || 'Sua Academia',
+        name: canonicalGymName,
         latitude: gymLat,
         longitude: gymLng
       },
@@ -138,8 +120,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         isMock: isMock === true,
         timestamp: new Date().toISOString()
       },
-      MAX_GEOFENCE_RADIUS_METERS, // 80m
-      MAX_GPS_ACCURACY_METERS   // 30m
+      MAX_GEOFENCE_RADIUS_METERS,
+      MAX_GPS_ACCURACY_METERS
     );
 
     if (!geofenceResult.approved) {
@@ -153,12 +135,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const distanceMeters = geofenceResult.distanceMeters!;
-
-    // 5. Anti-spoofing and security analyses
     const riskFlags: string[] = [];
     let isSuspicious = false;
 
-    // Block simulated/mock locations
     if (isMock) {
       return res.status(400).json({
         status: 'blocked_mock_location',
@@ -166,27 +145,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Anti rapid gym hopping detection
     const latestCheckinSnap = await db.collection('gym_checkins')
       .where('userId', '==', auth.uid)
       .orderBy('confirmedAt', 'desc')
       .limit(1)
       .get();
-    
+
     if (!latestCheckinSnap.empty) {
       const lastCheckin = latestCheckinSnap.docs[0].data();
       const lastGymId = lastCheckin.gymId;
       const lastTime = new Date(lastCheckin.confirmedAt).getTime();
       const timeDiffMins = (Date.now() - lastTime) / 60000;
-      
+
       if (lastGymId !== userData.gymId && timeDiffMins < 15) {
         riskFlags.push('SUSPICIOUS_RAPID_GYM_HOPPING');
         isSuspicious = true;
       }
     }
 
-    // If the action is "verify", we only analyze proximity and eligibility
-    // but do not persist the check-in yet or generate a consumed checkInId
     if (action === 'verify') {
       return res.json({
         success: true,
@@ -205,7 +181,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 6. Record the manual check-in
     const now = new Date();
     const localDay = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -215,7 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : `manual_${createHash('sha256')
           .update(`${auth.uid}\u0000${String(userData.gymId)}\u0000${localDay}`)
           .digest('hex')}`;
-    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString(); // valid for 15 minutes
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
     const checkinStatus = isSuspicious ? 'suspicious' : 'confirmed';
     const checkinMessage = isSuspicious
       ? `Check-in aceito mas marcado para revisão: ${riskFlags.join(', ')} (distância: ${distanceMeters.toFixed(1)}m, precisão GPS: ${accuracy}m)`
@@ -225,7 +200,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       id: checkInId,
       userId: auth.uid,
       gymId: userData.gymId,
-      gymName: userData.gymName || 'Academia Vinculada',
+      gymName: canonicalGymName,
       confirmedAt: now.toISOString(),
       expiresAt,
       userLocation: { lat: Number(latitude), lng: Number(longitude) },
@@ -283,8 +258,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         await checkInRef.set({ pointsAwarded }, { merge: true });
       } catch (scoringError) {
-        // O check-in já foi confirmado. Uma indisponibilidade isolada do motor
-        // não pode induzir o cliente a repetir a presença.
         scoringPending = true;
         console.error('[Gym Checkin] Check-in salvo; pontuação pendente de reconciliação:', scoringError);
         await checkInRef.set({
@@ -295,13 +268,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Log the event for forensic inspection / audit
     try {
       const { logEvent } = require('../_lib/observability');
       await logEvent({
         severity: isSuspicious ? 'WARNING' : 'INFO',
         category: 'fraud_audit_logs',
-        message: `Check-in manual presencial realizado por ${userData.displayName || auth.uid} na academia ${userData.gymName || ''} (Distância: ${Math.round(distanceMeters)}m)`,
+        message: `Check-in manual presencial realizado por ${userData.displayName || auth.uid} na academia ${canonicalGymName} (Distância: ${Math.round(distanceMeters)}m)`,
         userId: auth.uid,
         route: '/api/gyms/checkin',
         details: {
@@ -320,7 +292,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       status: checkinStatus,
       checkInId,
       expiresAt,
-      gymName: userData.gymName,
+      gymName: canonicalGymName,
       distanceMeters: Number(distanceMeters.toFixed(1)),
       gpsAccuracy: accuracy,
       riskFlags,

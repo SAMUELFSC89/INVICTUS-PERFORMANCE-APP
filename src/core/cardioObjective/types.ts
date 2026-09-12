@@ -1,7 +1,10 @@
+import type { CardioHistorySummary } from './history.js';
+
 export const OBJECTIVE_VERSIONS = {
-  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V1', mission: 'MISSION_V1',
-  progression: 'CARDIO_PROGRESSION_V1', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
+  goal: 'GOAL_V1', readiness: 'CARDIO_READINESS_V4', mission: 'MISSION_V3',
+  progression: 'CARDIO_PROGRESSION_V4', habit: 'HABIT_V1', weeklyReview: 'WEEKLY_REVIEW_V1',
   habitConfidence: 'HABIT_CONFIDENCE_V1', nextLevel: 'NEXT_LEVEL_V1', safety: 'SAFETY_V1',
+  evidence: 'CARDIO_EVIDENCE_2026_09_V2', challengeCopy: 'CHALLENGE_COPY_V1',
 } as const;
 
 export const GOALS = {
@@ -18,6 +21,8 @@ export type GoalType = keyof typeof GOALS;
 export type Modality = 'walking' | 'running' | 'bike' | 'stationary_bike' | 'treadmill';
 export type Barrier = 'time' | 'fatigue' | 'starting' | 'hunger' | 'sweets' | 'anxiety' | 'dislike_running' | 'pain' | 'restart' | 'unpredictable' | 'food' | 'other';
 export type SafetySignal = 'chest_pain' | 'fainting' | 'dizziness' | 'unusual_breathlessness' | 'surgical_recovery' | 'pain';
+export type TrainingBackground = 'inactive' | 'occasional' | 'regular' | 'structured' | 'competitive';
+export type PrimarySport = 'none' | 'running' | 'cycling' | 'team_sport' | 'combat' | 'cross_training' | 'other';
 export interface SafetyAnswers { screened: boolean; signals: SafetySignal[]; medicalClearance: boolean | null }
 export type FoodFrequency = 'rarely' | 'weekly' | 'daily' | 'multiple_daily';
 export const FOOD_LABELS = { soda: 'Refrigerante', alcohol: 'Bebida alcoólica', sweets: 'Doces', chocolate: 'Chocolate', fast_food: 'Fast food', delivery: 'Delivery', snacks: 'Salgadinhos', dessert: 'Sobremesas', large_meals: 'Refeições muito grandes', grazing: 'Beliscos', night_eating: 'Alimentação noturna' } as const;
@@ -30,6 +35,10 @@ export interface ObjectiveAnswers {
   goalType: GoalType; otherGoal?: string;
   walkingMinutes: 5 | 15 | 30 | 45;
   runningAbility: 'none' | 'seconds' | 'minutes' | 'regular' | 'structured';
+  /** Optional for backwards compatibility; new onboarding always captures these fields. */
+  trainingBackground?: TrainingBackground;
+  primarySport?: PrimarySport;
+  typicalCardioMinutes?: 15 | 30 | 45 | 60 | 90;
   availableMinutes: 10 | 15 | 25 | 40 | 50;
   availableDays: number[]; timeZone: string;
   preferredMoment: 'post_workout' | 'pre_workout' | 'rest_days' | 'morning' | 'afternoon' | 'night' | 'any';
@@ -42,17 +51,35 @@ export interface ProfileSnapshot {
   capturedAt: string; weightKg: number | null; heightCm: number | null; ageYears: number | null;
   strengthDays: number[]; source: 'users'; planId: string | null;
   recentCardioSessions: number | null; recentLongestRunKm: number | null;
+  /** Canonical 7/28-day workload context. Optional so old persisted baselines remain readable. */
+  cardioHistory?: CardioHistorySummary | null;
   weightSource?: 'profile' | 'apple_health' | 'health_connect' | null;
   weightMeasuredAt?: string | null; weightSourceId?: string | null;
   historyStatus?: 'available' | 'unavailable'; historyWindowDays?: number;
 }
+export interface EvidenceDecisionSnapshot {
+  id: string;
+  question: string;
+  answer: string;
+  impact: string;
+  evidenceIds: string[];
+}
 export interface Baseline {
   id: string; capturedAt: string; profile: ProfileSnapshot; answers: ObjectiveAnswers;
   startingWeightKg: number | null; readinessLevel: number; versions: typeof OBJECTIVE_VERSIONS;
+  profileClass?: string; evidenceVersion?: string; evidenceDecisionTrace?: EvidenceDecisionSnapshot[];
 }
 export interface Prescription {
   modality: Modality; targetMetric: 'duration' | 'distance'; durationMinutes: number; distanceKm: number | null;
   sessions: number; intensity: 'easy'; runSecondsPerInterval: number; walkSecondsPerInterval: number;
+}
+export interface ChallengePresentation {
+  name: string;
+  message: string;
+  cue: string;
+  source: 'gemini' | 'deterministic';
+  model: string | null;
+  version: typeof OBJECTIVE_VERSIONS.challengeCopy;
 }
 export type MissionState = 'locked' | 'available' | 'started' | 'completed' | 'skipped' | 'failed' | 'rescheduled';
 export interface Mission {
@@ -88,6 +115,8 @@ export interface Journey {
   weekStartedAt: string; currentWeek: number; totalCompleted: number;
   habitConfidence: number; consolidated: boolean; availableDays: number[]; timeZone: string;
   habit: HabitIntervention; safety: SafetyAnswers; completedAt?: string | null; versions: typeof OBJECTIVE_VERSIONS;
+  /** User-facing wording only. It never changes the deterministic prescription. */
+  challengePresentation?: ChallengePresentation;
 }
 export type ProfessionalKind = 'nutritionist' | 'personal_trainer' | 'running_coach' | 'physiotherapist';
 export interface ProfessionalUnlock { journeyId: string; kind: ProfessionalKind; eligibleAt: string | null; status: 'COMING_SOON'; partnerId: null; canBook: false; canShare: false; reason: string; version: string }

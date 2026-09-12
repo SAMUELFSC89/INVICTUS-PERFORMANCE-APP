@@ -1,9 +1,10 @@
 import { auth, db } from '../firebase';
-import { 
-  doc, 
-  setDoc, 
-  updateDoc, 
-  serverTimestamp} from 'firebase/firestore';
+import {
+  doc,
+  setDoc,
+  updateDoc,
+  serverTimestamp
+} from 'firebase/firestore';
 import { API_CONFIG } from '../config';
 
 export const gymService = {
@@ -12,11 +13,11 @@ export const gymService = {
    */
   async searchNearbyGyms(lat: number, lng: number, neighborhood?: string, city?: string, q?: string): Promise<any[]> {
     let url = `${API_CONFIG.baseUrl}/api/gyms?lat=${lat}&lng=${lng}`;
-    
+
     if (neighborhood) url += `&neighborhood=${encodeURIComponent(neighborhood)}`;
     if (city) url += `&city=${encodeURIComponent(city)}`;
     if (q) url += `&q=${encodeURIComponent(q)}`;
-    
+
     return this.fetchGyms(url);
   },
 
@@ -37,7 +38,7 @@ export const gymService = {
         console.error(`[GymService] SEARCH Fetch call failed (Net/CORS): ${url}`, e);
         throw e;
       });
-      
+
       if (!response.ok) {
         const text = await response.text();
         console.error(`[GymService] API Error: ${response.status}`, text);
@@ -59,7 +60,7 @@ export const gymService = {
       if (!data.success) {
         throw new Error(data.error || 'Erro desconhecido na busca');
       }
-      
+
       return (data.gyms || []).map((g: any) => ({
         place_id: g.id,
         name: g.name,
@@ -95,21 +96,28 @@ export const gymService = {
   },
 
   /**
-   * Join a gym
+   * Join a gym. The authenticated UID is captured before the token request and
+   * checked again before and after the network mutation. A response started by
+   * account A must never be consumed as if it belonged to account B after a
+   * fast logout/login on the same device.
    */
-  async joinGym(gymData: { 
-    place_id: string; 
-    name: string; 
-    latitude: number; 
-    longitude: number; 
+  async joinGym(gymData: {
+    place_id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
     photo_url?: string;
     address?: string;
   }) {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado.');
+    const expectedUid = user.uid;
 
     try {
       const idToken = await user.getIdToken();
+      if (auth.currentUser?.uid !== expectedUid) {
+        throw new Error('A conta mudou antes da atualização da academia. Tente novamente na conta correta.');
+      }
       const response = await fetch('/api/gyms/join', {
         method: 'POST',
         headers: {
@@ -128,12 +136,15 @@ export const gymService = {
         })
       });
 
+      const payload = await response.json().catch(() => ({}));
+      if (auth.currentUser?.uid !== expectedUid) {
+        throw new Error('A conta mudou durante a atualização da academia. Reabra o perfil da conta atual.');
+      }
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Falha ao vincular academia.');
+        throw new Error(payload.error || 'Falha ao vincular academia.');
       }
 
-      return { success: true };
+      return { success: true, userId: expectedUid };
     } catch (error) {
       console.error('Error in joinGym:', error);
       throw error;
@@ -156,7 +167,7 @@ export const gymService = {
     try {
       const gymId = `manual_${Math.random().toString(36).substring(7)}`;
       const gymRef = doc(db, 'gyms', gymId);
-      
+
       await setDoc(gymRef, {
         ...data,
         id: gymId,

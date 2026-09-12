@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Award, Check, Flame, Heart, MapPin, Plus, Share2, ShieldCheck, Trophy, UserRound, Zap } from 'lucide-react';
 import { auth } from '../firebase';
 import { ACHIEVEMENTS } from '../achievements';
@@ -23,9 +23,17 @@ interface PublicProfileData {
   profileLikesCount?: number;
 }
 
+function safeReturnTo(value: unknown): string {
+  if (typeof value !== 'string') return '/championships/community/ranking';
+  const path = value.trim();
+  return path.startsWith('/') && !path.startsWith('//') ? path : '/championships/community/ranking';
+}
+
 export function PublicProfile() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
+  const routeLocation = useLocation();
+  const returnTo = safeReturnTo((routeLocation.state as { returnTo?: unknown } | null)?.returnTo);
   const [profile, setProfile] = useState<PublicProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -33,7 +41,7 @@ export function PublicProfile() {
   const [recognized, setRecognized] = useState(false);
 
   useEffect(() => {
-    if (!userId) { navigate('/championships?section=ranking', { replace: true }); return; }
+    if (!userId) { navigate(returnTo, { replace: true }); return; }
     const controller = new AbortController();
     setLoading(true); setError('');
     fetch(`${API_CONFIG.baseUrl}/api/profile?id=${encodeURIComponent(userId)}`, { signal: controller.signal })
@@ -46,14 +54,14 @@ export function PublicProfile() {
       .catch(reason => { if (reason?.name !== 'AbortError') setError(reason.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [navigate, userId]);
+  }, [navigate, returnTo, userId]);
 
   const unlocked = useMemo(() => {
     const ids = new Set(profile?.achievements || []);
     return ACHIEVEMENTS.filter(item => ids.has(item.id));
   }, [profile?.achievements]);
   const isMe = auth.currentUser?.uid === profile?.uid;
-  const location = [profile?.city, profile?.state].filter(Boolean).join(' • ');
+  const profileLocation = [profile?.city, profile?.state].filter(Boolean).join(' • ');
 
   const recognize = async () => {
     if (!profile || recognizing || recognized) return;
@@ -79,11 +87,11 @@ export function PublicProfile() {
 
   return createPortal(<main className="ppn-screen">
     <div className="ppn-page">
-      <header className="ppn-header"><button onClick={() => navigate('/championships?section=ranking')} aria-label="Voltar ao ranking"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={share} aria-label="Compartilhar perfil"><Share2 /></button></header>
-      {loading ? <section className="ppn-state"><i /><p>Carregando atleta...</p></section> : error && !profile ? <section className="ppn-state"><Award /><p>{error}</p><button onClick={() => navigate('/championships?section=ranking')}>VOLTAR AO RANKING</button></section> : profile ? <>
+      <header className="ppn-header"><button onClick={() => navigate(returnTo)} aria-label="Voltar ao ranking"><ArrowLeft /></button><div><InvictusLogo size={44} /><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><button onClick={share} aria-label="Compartilhar perfil"><Share2 /></button></header>
+      {loading ? <section className="ppn-state"><i /><p>Carregando atleta...</p></section> : error && !profile ? <section className="ppn-state"><Award /><p>{error}</p><button onClick={() => navigate(returnTo)}>VOLTAR AO RANKING</button></section> : profile ? <>
         <section className="ppn-hero">
           <div className="ppn-photo">{profile.photoURL ? <img src={profile.photoURL} alt={`Foto de ${profile.displayName || 'atleta'}`} referrerPolicy="no-referrer" /> : <UserRound />}</div>
-          <div className="ppn-person"><small>ATLETA INVICTUS</small><h1>{(profile.displayName || 'ATLETA').toUpperCase()}</h1>{location ? <p><MapPin /> {location}</p> : null}{profile.bio ? <blockquote>{profile.bio}</blockquote> : null}</div>
+          <div className="ppn-person"><small>ATLETA INVICTUS</small><h1>{(profile.displayName || 'ATLETA').toUpperCase()}</h1>{profileLocation ? <p><MapPin /> {profileLocation}</p> : null}{profile.bio ? <blockquote>{profile.bio}</blockquote> : null}</div>
           <aside><InvictusLogo size={32} /><small>IGA</small><b>{Number.isFinite(Number(profile.score)) ? Math.round(Number(profile.score)) : '—'}</b><span>Pontuação validada</span></aside>
         </section>
         <section className="ppn-recognition"><div><Heart /><span><b>{Number(profile.profileLikesCount || 0).toLocaleString('pt-BR')}</b><small>RECONHECIMENTOS</small></span></div>{!isMe ? <button className={recognized ? 'is-done' : ''} onClick={recognize} disabled={recognizing || recognized}>{recognized ? <Check /> : <Heart />}{recognized ? 'RECONHECIDO' : recognizing ? 'ENVIANDO...' : 'RECONHECER'}</button> : null}</section>
@@ -98,6 +106,6 @@ export function PublicProfile() {
         <section className="ppn-achievements">{unlocked.length ? unlocked.map(item => <article key={item.id}><span>{item.icon}</span><div><b>{item.name}</b><small>{item.description || item.criteria}</small></div></article>) : <div className="ppn-empty"><Award /><p>Este atleta ainda não possui conquistas públicas.</p></div>}</section>
       </> : null}
     </div>
-    <nav className="ppn-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/musculacao')}><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>
+    <nav className="ppn-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>
   </main>, document.body);
 }

@@ -76,6 +76,35 @@ test('requires authentication and never exposes another account journey', async 
   records.set('cardio_objectives/other/journeys/private', { id: 'private' });
   expect((await request(undefined, { journeyId: 'private' })).status).toBe(404);
 });
+test('baseline profile summarizes canonical recent cardio and persists the snapshot', async () => {
+  records.set('workouts/current_1', { userId: 'u', type: 'cardio', cardioType: 'running', timestamp: '2026-09-07T08:00:00.000Z', duration: 40, distance: 5, recordStatus: 'completed', status: 'completed' });
+  records.set('workouts/current_2', { userId: 'u', type: 'cardio', cardioType: 'running', timestamp: '2026-09-05T08:00:00.000Z', duration: 30, distance: 4, recordStatus: 'completed', status: 'completed' });
+  records.set('workouts/previous_1', { userId: 'u', type: 'cardio', cardioType: 'bike', timestamp: '2026-08-30T08:00:00.000Z', duration: 20, distance: 8, recordStatus: 'completed', status: 'completed' });
+  records.set('workouts/previous_2', { userId: 'u', type: 'cardio', cardioType: 'bike', timestamp: '2026-08-29T08:00:00.000Z', duration: 20, distance: 7, recordStatus: 'completed', status: 'completed' });
+  records.set('workouts/rejected', { userId: 'u', type: 'cardio', cardioType: 'running', timestamp: '2026-09-06T08:00:00.000Z', duration: 90, distance: 15, recordStatus: 'completed', status: 'suspicious' });
+
+  const initial = await request();
+  expect(initial.status).toBe(200);
+  expect(initial.body.profile.cardioHistory).toMatchObject({
+    sessions7d: 2,
+    sessions28d: 4,
+    activeDays7d: 2,
+    activeDays28d: 4,
+    minutes7d: 70,
+    previous7dMinutes: 40,
+    minutes28d: 110,
+    averageSessionMinutes28d: 27.5,
+    longestSessionMinutes28d: 40,
+    loadRatio7d: 1.8,
+    loadTrend: 'spiking',
+  });
+  expect(initial.body.profile.recentLongestRunKm).toBe(5);
+
+  const ids = await create({ ...answers, goalType: 'conditioning', walkingMinutes: 45, runningAbility: 'regular', preferredActivity: 'running', availableMinutes: 40 });
+  const baseline = records.get(`cardio_objectives/u/journeys/${ids.journeyId}/baselines/initial`);
+  expect(baseline.profile.cardioHistory).toMatchObject({ sessions28d: 4, minutes28d: 110, loadTrend: 'spiking' });
+  expect(baseline.evidenceDecisionTrace.map((item: any) => item.id)).toEqual(expect.arrayContaining(['observed_training_history', 'recent_load_change']));
+});
 test('immutable baseline and exact future missions remain private', async () => {
   const created = await create();
   const result = await request();
@@ -100,7 +129,7 @@ test('only persisted eligible activity advances mission; retries never double co
   await request({ action: 'start', ...ids, sessionId: 's' });
   const completion = { action: 'complete', ...ids, activityId: 'a', duration: 999 };
   expect((await request(completion)).status).toBe(409);
-  records.set('workouts/a', { userId: 'other', type: 'cardio', cardioType: 'walking', sessionId: 's', startTime: now, duration: 10, distance: 1, recordStatus: 'completed' });
+  records.set('workouts/a', { userId: 'other', type: 'cardio', cardioType: 'walking', sessionId: 's', startTime: now, duration: 15, distance: 1, recordStatus: 'completed' });
   expect((await request(completion)).status).toBe(409);
   records.get('workouts/a').userId = 'u';
   expect((await request(completion)).body.journey.totalCompleted).toBe(1);
@@ -158,7 +187,7 @@ test('distance objective completes from persisted distance and records achieveme
 });
 test('persisted activity recovers an objective link if initial session publication raced', async () => {
   const ids = await create();
-  records.set('workouts/a', { userId: 'u', type: 'cardio', cardioType: 'walking', sessionId: 'late-session', startTime: now, duration: 12, distance: 1, recordStatus: 'completed' });
+  records.set('workouts/a', { userId: 'u', type: 'cardio', cardioType: 'walking', sessionId: 'late-session', startTime: now, duration: 15, distance: 1, recordStatus: 'completed' });
   const result = await request({ action: 'complete', ...ids, activityId: 'a' });
   expect(result.status).toBe(200);
   expect(result.body.journey.totalCompleted).toBe(1);

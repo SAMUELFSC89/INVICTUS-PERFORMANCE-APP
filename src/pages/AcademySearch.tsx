@@ -144,7 +144,7 @@ export function AcademySearch() {
       <nav className="profile-flow-footer">
         <button onClick={() => go('/')}><InvictusLogo size={23}/><span>Início</span></button>
         <button onClick={() => go('/championships')}><Trophy/><span>Campeonatos</span></button>
-        <button className="is-plus" onClick={() => go('/musculacao')}><Plus/></button>
+        <button className="is-plus" onClick={() => go('/activity')} aria-label="Escolher modalidade"><Plus/></button>
         <button onClick={() => go('/challenges')}><ShieldCheck/><span>Desafios</span></button>
         <button className="is-active" onClick={() => go('/profile')}><UserRound/><span>Perfil</span></button>
       </nav>
