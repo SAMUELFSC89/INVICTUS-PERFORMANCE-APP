@@ -1,6 +1,7 @@
 jest.mock('../_lib/common', () => ({ db: { collection: jest.fn() } }));
 
 import { deriveUserActivityStats, isCanonicalCompletedActivityForStats } from '../_lib/user-activity-stats';
+import { activityAchievementsForStats } from '../../src/achievements';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -66,13 +67,26 @@ describe('canonical user activity stats', () => {
     expect(stats.streak).toBe(0);
   });
 
+  test('activity achievement rules use the same catalogue points without unlocking social or ranking badges', () => {
+    const unlocked = activityAchievementsForStats({ streak: 7, totalWorkouts: 10 });
+    expect(unlocked.map((achievement) => achievement.id)).toEqual([
+      'streak_3', 'streak_7', 'first_workout', 'workouts_10',
+    ]);
+    expect(unlocked.reduce((sum, achievement) => sum + achievement.points, 0)).toBe(95);
+    expect(unlocked.some((achievement) => ['first_post', 'top_10'].includes(achievement.id))).toBe(false);
+  });
+
   test('profile flow requests authenticated reconciliation without trusting client counters', () => {
     const missions = readFileSync(resolve(process.cwd(), 'api/_handlers/missions.ts'), 'utf8');
     const context = readFileSync(resolve(process.cwd(), 'src/UserContext.tsx'), 'utf8');
+    const stats = readFileSync(resolve(process.cwd(), 'api/_lib/user-activity-stats.ts'), 'utf8');
     expect(missions).toContain("action === 'sync-activity-stats'");
     expect(missions).toContain('reconcileUserActivityStats(auth.uid)');
     expect(context).toContain("fetch('/api/missions?action=sync-activity-stats'");
     expect(context).toContain('auth.currentUser?.uid !== uid');
     expect(context).toContain('setUser(current => current?.uid === uid ? { ...current, ...stats } : current)');
+    expect(stats).toContain("db.collection('achievement_reward_ledger')");
+    expect(stats).toContain("origin: alreadyListed ? 'legacy_achievement_reconciliation' : 'activity_achievement'");
+    expect(stats).toContain('transaction.create(ledgerRefs[index]');
   });
 });
