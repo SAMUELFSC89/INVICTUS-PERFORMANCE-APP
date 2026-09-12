@@ -58,23 +58,47 @@ export class SensorEngine {
       }
     }
 
-    // 2. Step to Distance Ratio
-    const steps = Number(activity.steps || activity.stepCount || 0);
+    // 2. Gait / Step to Distance Ratio.
+    // Para corrida e caminhada competitivas, variancia do acelerometro sozinha
+    // nao prova que o deslocamento foi feito a pe: uma bicicleta, moto ou carro
+    // tambem produz vibracao. Exigimos evidencia de passada do pedometro e
+    // cruzamos passos, duracao e distancia reconstruida. Isso fecha o ataque de
+    // usar uma bike em velocidade ainda plausivel para corrida (ex. 18-25 km/h).
+    const steps = Number(activity.steps || activity.stepCount || activity.pedometerSteps || 0);
     const distanceMeters = Number(activity.distanceMeters || (activity.distanceKm ? activity.distanceKm * 1000 : 0));
+    const durationMins = Number(activity.durationMins || activity.duration || 30);
+    const gaitProfile = modality?.antiFraudProfile === 'RUNNING'
+      || modality?.antiFraudProfile === 'WALKING'
+      || ['RUNNING', 'WALKING'].includes(activityType)
+      || ['RUNNING', 'WALKING'].includes(cardioType);
     let stepToDistanceRatioValid = true;
+
+    if (requiresMotionEvidence && gaitProfile && steps <= 0) {
+      stepToDistanceRatioValid = false;
+      threats.push('MISSING_GAIT_EVIDENCE');
+    }
 
     if (steps > 0 && distanceMeters > 0) {
       const strideMeters = distanceMeters / steps;
-      // Stride between 0.3m (short shuffle) and 2.5m (long sprint/stride)
+      // Limites amplos para nao punir passada curta nem sprint real.
       if (strideMeters < 0.2 || strideMeters > 3.0) {
         stepToDistanceRatioValid = false;
         threats.push(`UNREALISTIC_STRIDE_LENGTH (${strideMeters.toFixed(2)}m/step)`);
       }
     }
 
+    if (requiresMotionEvidence && gaitProfile && steps > 0 && durationMins > 0) {
+      const stepsPerMinute = steps / durationMins;
+      // Faixa propositalmente larga; o objetivo e detectar trajeto longo com
+      // poucos passos (bike/carro) e cadencias impossiveis/injetadas.
+      if (stepsPerMinute < 45 || stepsPerMinute > 260) {
+        stepToDistanceRatioValid = false;
+        threats.push(`UNREALISTIC_GAIT_CADENCE (${stepsPerMinute.toFixed(0)} spm)`);
+      }
+    }
+
     // 3. Heart Rate to Motion Correlation
     const avgHr = Number(activity.avgHeartRate || activity.heartRate || 0);
-    const durationMins = Number(activity.durationMins || activity.duration || 30);
     let hrToMotionCorrelated = true;
 
     if (steps > 5000 && durationMins > 20 && avgHr > 0 && avgHr < 60) {
