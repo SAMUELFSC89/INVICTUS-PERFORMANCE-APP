@@ -40,7 +40,8 @@ type CompetitionReviewStatus =
   | 'not_required'
   | 'approved'
   | 'pending_review'
-  | 'ineligible';
+  | 'ineligible'
+  | 'rejected';
 
 function normalizeTimestamp(value: Date | string | undefined | null): string {
   if (!value) return new Date().toISOString();
@@ -114,7 +115,6 @@ export class ValidateActivityService {
     if (!Number.isFinite(duration) || duration < 0) {
       throw new AppError('Duração da atividade deve ser um número válido de minutos', 400);
     }
-    // Limite técnico do gravador, não uma análise antifraude.
     if (duration > 360) throw new AppError('Duração excessiva (> 6 horas contínuas)', 422);
     if (data.intensity && !['low', 'moderate', 'high'].includes(data.intensity)) {
       throw new AppError('Intensidade inválida. Opções aceitas: low, moderate, high', 400);
@@ -138,8 +138,6 @@ export class ValidateActivityService {
       || !['approved', 'pending_review', 'rejected', 'ineligible'].includes(beforeStatus)
       || !existing.competitionPolicySnapshotId || !existing.sessionId) return;
 
-    // Recarregar o snapshot assinado impede que um registro legado com
-    // metadata de modalidade manipulada seja promovido em um retry.
     const policy = await loadActivityCompetitionPolicySnapshot({
       snapshotId: existing.competitionPolicySnapshotId,
       userId: existing.userId,
@@ -205,8 +203,6 @@ export class ValidateActivityService {
       };
     }
 
-    // Ledger e usuário na mesma transação: repetir o mesmo sessionId não
-    // duplica XP. O fallback mantém repositórios falsos de testes compatíveis.
     if (typeof (db as any).runTransaction === 'function') {
       return db.runTransaction(async (transaction: any) => {
         const ledgerRef = db.collection('activity_reward_ledger').doc(activityId);
@@ -252,11 +248,6 @@ export class ValidateActivityService {
     return { ...result, credited: true };
   }
 
-  /**
-   * Concilia todos os efeitos derivados de uma atividade que já está salva.
-   * Cada destino usa o ID determinístico da atividade, portanto repetir esta
-   * rotina recupera uma falha parcial sem duplicar XP ou placares.
-   */
   private async reconcileCompletedActivity(
     existing: any,
     user: any,
@@ -316,11 +307,13 @@ export class ValidateActivityService {
           ? String(existing.competitionReviewStatusBeforeDedup || '')
           : '';
         const restoredCompetitionReason = existing.nonScoringReasonBeforeDedup ?? null;
+        const restoredMissionEligible = eligible
+          && !['rejected', 'pending_review'].includes(restoredCompetitionStatus);
         const patch = {
           dataQualityStatus: duplicate ? 'duplicate' : 'accepted',
           canonicalActivityId: duplicate ? identity.canonicalActivityId : null,
           economyEligible: eligible,
-          missionEligible: eligible,
+          missionEligible: restoredMissionEligible,
           activityXpAwarded: recoveredXP,
           points: recoveredXP,
           pointsEarned: recoveredXP,
@@ -331,8 +324,9 @@ export class ValidateActivityService {
             competitionStatus: restoredCompetitionStatus,
             validationStatus: restoredCompetitionStatus === 'approved' ? 'validated'
               : restoredCompetitionStatus === 'not_required' ? 'recorded'
-                : restoredCompetitionStatus === 'ineligible' || restoredCompetitionStatus === 'rejected'
-                  ? 'not_eligible' : 'pending_review',
+                : restoredCompetitionStatus === 'ineligible'
+                  ? 'not_eligible'
+                  : restoredCompetitionStatus === 'rejected' ? 'rejected' : 'pending_review',
             pendingReview: restoredCompetitionStatus === 'pending_review',
             isScoringEligible: restoredCompetitionStatus === 'approved',
             competitionPoints: restoredCompetitionStatus === 'approved' ? recoveredXP : 0,
@@ -347,6 +341,7 @@ export class ValidateActivityService {
             isScoringEligible: false,
             competitionPoints: 0,
             securityDecision: 'DUPLICATE',
+            missionEligible: false,
             nonScoringReason: 'DUPLICATE_ACTIVITY',
           } : {}),
         };
@@ -398,8 +393,6 @@ export class ValidateActivityService {
         }
         competitionStatus = String(existing.competitionReviewStatus || existing.competitionStatus || 'not_required');
       } catch {
-        // O registro pessoal já existe, mas a resposta pede retry para que a
-        // reserva econômica não fique abandonada indefinidamente.
         throw new AppError('Atividade salva; não foi possível conciliar XP e desafios agora. Tente finalizar novamente.', 503);
       }
     }
@@ -482,8 +475,10 @@ export class ValidateActivityService {
   private responseFromExisting(existing: any, traceId: string): ValidateActivityResponse {
     const competitionStatus = String(existing.competitionReviewStatus || existing.competitionStatus || 'not_required');
     const message = existing.userMessage || (competitionStatus === 'pending_review'
-      ? 'Atividade concluída e salva. Somente a pontuação competitiva está em análise.'
-      : 'Atividade já registrada e disponível no seu histórico.');
+      ? 'Atividade concluída e salva. A validação automática teve uma falha técnica e será tentada novamente.'
+      : competitionStatus === 'rejected'
+        ? 'Atividade concluída e salva. O antifraude não liberou esta atividade para a pontuação competitiva.'
+        : 'Atividade já registrada e disponível no seu histórico.');
     return {
       success: true,
       activityId: existing.id,
@@ -558,9 +553,6 @@ export class ValidateActivityService {
     const requiresSessionPolicy = ['workout', 'cardio'].includes(String(rawActivity.type).toLowerCase());
     let policy: ActivityCompetitionPolicy;
     if (requiresSessionPolicy) {
-      // O snapshot é obrigatório para atividades pessoais e competitivas. A
-      // decisão não pode depender de um marcador opcional enviado pelo cliente,
-      // pois isso permitiria omitir a versão e recalcular a participação no fim.
       if (!rawActivity.competitionPolicySnapshotId || !rawActivity.sessionId) {
         throw new AppError('A autorização desta sessão está ausente. A atividade continua no aparelho; atualize o app e tente finalizar novamente.', 409);
       }
@@ -612,18 +604,12 @@ export class ValidateActivityService {
     }
 
     if (requiresSessionPolicy) {
-      // Daqui em diante a policy assinada é a fonte de verdade. Usar outra
-      // vez strings cruas do payload reabriria divergências de case/espaço e
-      // permitiria avaliar uma corrida outdoor como CARDIO genérico.
       rawActivity.type = policy.activityType;
       rawActivity.cardioType = policy.cardioType;
       rawActivity.isIndoorCardio = policy.isIndoorCardio;
     }
 
     const modality = resolveModality(rawActivity);
-    // Reconstruir e validar a rota faz parte da análise competitiva. Uma
-    // atividade casual usa as métricas registradas pelo aparelho sem passar
-    // pelo motor antifraude.
     const routeReport = policy.requiresSecurityReview && policy.requiresContinuousGps
       ? GpsEngine.evaluate(rawActivity)
       : null;
@@ -648,18 +634,19 @@ export class ValidateActivityService {
     let securityRiskScore: number | undefined;
     let securityReportId: string | null = null;
     let securityReviewApplied = false;
+    let securityPassed = !policy.requiresSecurityReview;
 
     if (policy.requiresSecurityReview) {
       const simpleFraudReason = this.detectCompetitiveFraud(request.activityData);
       if (simpleFraudReason) {
-        competitionReviewStatus = 'pending_review';
+        competitionReviewStatus = 'rejected';
         competitionReason = 'COMPETITIVE_SANITY_CHECK';
         securityDecision = 'UNDER_REVIEW';
       }
 
-      if (competitionReviewStatus === 'approved' && policy.requiresGymCheckIn) {
+      if (competitionReviewStatus !== 'rejected' && policy.requiresGymCheckIn) {
         if (!rawActivity.checkInId) {
-          competitionReviewStatus = 'pending_review';
+          competitionReviewStatus = 'ineligible';
           competitionReason = 'GEOFENCE_CHECKIN_REQUIRED';
         } else {
           const checkIn = await validateCheckInOwnership({
@@ -673,13 +660,16 @@ export class ValidateActivityService {
             activityStart,
           });
           if (!checkIn.valid) {
-            competitionReviewStatus = 'pending_review';
+            competitionReviewStatus = 'ineligible';
             competitionReason = 'GEOFENCE_CHECKIN_INVALID';
           }
         }
       }
 
-      if (competitionReviewStatus === 'approved') {
+      // Mesmo quando uma regra objetiva torna a sessão inelegível para a
+      // competição (ex.: check-in ausente), o antifraude ainda roda para que
+      // uma atividade fraudada não possa alimentar missões/recompensas casuais.
+      if (competitionReviewStatus !== 'rejected') {
         securityReviewApplied = true;
         try {
           const userHistory = await buscarHistoricoRecente(request.userId);
@@ -690,13 +680,20 @@ export class ValidateActivityService {
             muscleGroup: rawActivity.muscleGroup,
             cardioType: rawActivity.cardioType,
             durationMins: duration,
+            activeTimeMins: rawActivity.activeTimeMins,
             distanceKm,
             checkpoints: rawActivity.checkpoints,
             timestamp: rawActivity.startTime || new Date().toISOString(),
             source: 'UNIFIED_ACTIVITY_ENGINE',
+            dataSource: rawActivity.dataSource ?? rawActivity.healthTelemetry?.source,
             avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
+            maxHeartRate: rawActivity.maxHeartRate ?? rawActivity.healthTelemetry?.maxHeartRate,
             steps: rawActivity.pedometerSteps ?? rawActivity.healthTelemetry?.steps ?? rawActivity.evidence?.steps,
             calories,
+            cadence: rawActivity.cadence ?? rawActivity.smartwatchData?.cadence,
+            powerWatts: rawActivity.powerWatts ?? rawActivity.smartwatchData?.powerWatts,
+            maxObservedSpeedKmH: rawActivity.maxObservedSpeedKmH,
+            gpsSpeedSampleCount: rawActivity.gpsSpeedSampleCount,
             smartwatchData: rawActivity.smartwatchData,
             healthTelemetry: rawActivity.healthTelemetry,
             metricSources: rawActivity.metricSources,
@@ -711,17 +708,23 @@ export class ValidateActivityService {
           securityDecision = securityResult.decision;
           securityRiskScore = Number(securityResult.report?.risk?.riskScore);
           securityReportId = securityResult.report?.activityId || activityId || null;
-          if (!securityResult.shouldScore) {
-            competitionReviewStatus = 'pending_review';
+          securityPassed = securityResult.shouldScore;
+
+          if (['BLOCKED', 'UNDER_REVIEW', 'PARTIALLY_APPROVED'].includes(securityResult.decision)) {
+            competitionReviewStatus = 'rejected';
             competitionReason = `SECURITY_PIPELINE_${securityResult.decision}`;
           } else if (!securityResult.report.validation.competitivelyEligible) {
             competitionReviewStatus = 'ineligible';
             competitionReason = securityResult.report.validation.ineligibleReason || 'COMPETITION_RULE_NOT_MET';
+          } else if (competitionReviewStatus !== 'ineligible') {
+            competitionReviewStatus = 'approved';
+            competitionReason = null;
           }
         } catch (error: any) {
           competitionReviewStatus = 'pending_review';
           competitionReason = 'SECURITY_PIPELINE_ERROR';
           securityDecision = 'ERROR';
+          securityPassed = false;
           console.error(`[ValidateActivityService] [${traceId}] Falha no pipeline competitivo:`, error);
         }
       }
@@ -789,13 +792,20 @@ export class ValidateActivityService {
       }
     }
     const competitionApproved = competitionReviewStatus === 'approved';
+    const missionEligible = economyEligible
+      && dataQualityStatus === 'accepted'
+      && securityPassed
+      && competitionReviewStatus !== 'rejected'
+      && competitionReviewStatus !== 'pending_review';
     const validationStatus = competitionReviewStatus === 'not_required'
       ? 'recorded'
       : competitionReviewStatus === 'approved'
         ? 'validated'
         : competitionReviewStatus === 'ineligible'
           ? 'not_eligible'
-          : 'pending_review';
+          : competitionReviewStatus === 'rejected'
+            ? 'rejected'
+            : 'pending_review';
     const activityMode = policy.requiresSecurityReview ? 'competitive' : 'personal';
 
     const activityPayload = {
@@ -838,7 +848,7 @@ export class ValidateActivityService {
       securityRiskScore: Number.isFinite(securityRiskScore) ? securityRiskScore : null,
       securityReportId,
       economyEligible,
-      missionEligible: economyEligible,
+      missionEligible,
       economyVersion: ACTIVITY_ECONOMY_VERSION,
       dataQualityStatus,
       canonicalActivityId,
@@ -929,8 +939,7 @@ export class ValidateActivityService {
       source: healthSampleSource,
       sourceActivityId: savedActivity.id!,
       timestamp: normalizeTimestamp(rawActivity.startTime),
-      // Personal health provenance is independent of the ranking projection.
-      aprovadoPeloAntifraude: true,
+      aprovadoPeloAntifraude: securityPassed,
       pularDuplicata: savedActivity.dataQualityStatus !== 'accepted',
       avgHeartRate: rawActivity.avgHeartRate ?? rawActivity.healthTelemetry?.avgHeartRate,
       calories,
@@ -940,16 +949,20 @@ export class ValidateActivityService {
     const { xpResult, recalculated } = reconciliation;
     const weeklyIgaScore = recalculated?.weekly.igaRanking || 0;
 
-    const rewardMessage = economyEligible
+    const rewardMessage = missionEligible
       ? `Você ganhou +${activityXP} XP e a atividade conta para seus desafios.`
-      : 'Sessões com menos de 1 minuto ficam no histórico, mas não geram XP, missão ou Coins.';
+      : economyEligible
+        ? `Você ganhou +${activityXP} XP, mas esta atividade não conta para missões enquanto não estiver validada.`
+        : 'Sessões com menos de 1 minuto ficam no histórico, mas não geram XP, missão ou Coins.';
     const message = competitionReviewStatus === 'not_required'
       ? `Atividade concluída e salva! ${rewardMessage}`
       : competitionReviewStatus === 'approved'
         ? `Atividade concluída! ${rewardMessage} Sua pontuação competitiva foi validada.`
         : competitionReviewStatus === 'ineligible'
           ? `Atividade concluída e salva! ${rewardMessage} Ela não entrou na pontuação desta competição.`
-          : `Atividade concluída e salva! ${rewardMessage} Somente a pontuação competitiva está em análise.`;
+          : competitionReviewStatus === 'rejected'
+            ? `Atividade concluída e salva! ${rewardMessage} O antifraude não liberou esta atividade para a pontuação competitiva.`
+            : `Atividade concluída e salva! ${rewardMessage} A validação automática teve uma falha técnica e será tentada novamente.`;
 
     await Promise.all([
       this.auditRepository.log({
@@ -964,13 +977,17 @@ export class ValidateActivityService {
           competitionReviewStatus,
           competitionContexts: policy.contexts.map((context) => ({ type: context.type, id: context.id })),
         },
-        result: competitionReviewStatus === 'pending_review' ? 'FLAGGED' : 'SUCCESS',
+        result: ['pending_review', 'rejected'].includes(competitionReviewStatus) ? 'FLAGGED' : 'SUCCESS',
       }).catch((error) => {
         console.error(`[ValidateActivityService] [${traceId}] Log de auditoria não persistido (não fatal):`, error);
       }),
       this.notificationService.send({
         userId: request.userId,
-        title: competitionReviewStatus === 'pending_review' ? 'Atividade salva' : 'Atividade concluída!',
+        title: competitionReviewStatus === 'pending_review'
+          ? 'Atividade salva'
+          : competitionReviewStatus === 'rejected'
+            ? 'Atividade não validada'
+            : 'Atividade concluída!',
         body: message,
         type: 'activity_validated',
         data: { activityId: savedActivity.id, activityXP, competitionReviewStatus, traceId },
@@ -1028,7 +1045,7 @@ export class ValidateActivityService {
       isScoringEligible: competitionApproved,
       nonScoringReason: competitionReason,
       reasonCode: competitionReason,
-      canRetry: false,
+      canRetry: competitionReviewStatus === 'pending_review',
     } as any;
   }
 }
