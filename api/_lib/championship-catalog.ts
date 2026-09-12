@@ -50,7 +50,10 @@ export function matchActiveChampionshipsForActivity(params: {
       const allowed = (championship.antiFraudProfile?.allowedCardioTypes || [])
         .map((value) => String(value || '').trim().toLowerCase())
         .filter(Boolean);
-      if (allowed.length > 0 && (!cardioType || !allowed.includes(cardioType))) return false;
+      // Campeonato pago de cardio sem allowlist explícita não aceita nenhuma
+      // atividade. A edição precisa declarar, no regulamento congelado, se é
+      // corrida, caminhada, bike etc.; omissão de configuração nunca abre o Camp.
+      if (allowed.length === 0 || !cardioType || !allowed.includes(cardioType)) return false;
     }
 
     return true;
