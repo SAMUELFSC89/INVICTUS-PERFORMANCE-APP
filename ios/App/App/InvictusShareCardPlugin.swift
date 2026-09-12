@@ -133,6 +133,7 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
 
                 let configuration = WKSnapshotConfiguration()
                 configuration.rect = CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
+                configuration.afterScreenUpdates = true
 
                 // O snapshot é renderizado pelo próprio WebKit, como o preview/screenshot
                 // nativo. Isso evita rasterizar o DOM via SVG foreignObject (html-to-image),
