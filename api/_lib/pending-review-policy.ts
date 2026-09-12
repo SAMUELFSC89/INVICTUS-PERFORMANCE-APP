@@ -17,15 +17,22 @@ function normalized(value: unknown): string {
 
 /**
  * Decide o que pode sair automaticamente de `pending_review` sem abrir brecha
- * competitiva. Pendência humana continua humana; falha objetiva ou decisão
- * BLOCKED nunca deve permanecer eternamente como "em análise".
+ * competitiva.
+ *
+ * Regra de produto consolidada: o antifraude automático é terminal. Apenas
+ * `APPROVED` pode liberar pontuação; `PARTIALLY_APPROVED`, `UNDER_REVIEW` e
+ * `BLOCKED` significam que a atividade NÃO foi aprovada pelo motor e devem
+ * encerrar como rejeitadas. Somente falhas técnicas reais continuam pendentes
+ * para nova tentativa automática.
  */
 export function classifyPendingReview(workout: Record<string, any>): PendingReviewAction {
   const decision = normalized(workout.securityDecision);
   const reason = normalized(workout.nonScoringReason || workout.rejectionReason);
   const dataQuality = normalized(workout.dataQualityStatus);
 
-  if (decision === 'BLOCKED') return 'reject';
+  if (decision === 'BLOCKED' || decision === 'UNDER_REVIEW' || decision === 'PARTIALLY_APPROVED') {
+    return 'reject';
+  }
 
   // Regras objetivas já conhecidas no encerramento da atividade. Não existe
   // evidência futura que torne um check-in ausente/pertencente a outra sessão
@@ -52,10 +59,8 @@ export function classifyPendingReview(workout: Record<string, any>): PendingRevi
     return 'technical_pending';
   }
 
-  if (decision === 'PARTIALLY_APPROVED' || decision === 'UNDER_REVIEW') {
-    return 'manual_review';
-  }
-
+  // Estado legado/inconsistente sem decisão terminal conhecida. Não rejeitamos
+  // no escuro; ele continua visível para diagnóstico em vez de ganhar pontos.
   return 'manual_review';
 }
 
@@ -67,6 +72,7 @@ export function resolveSecurityRetryResult(input: {
   if (!input.competitivelyEligible) return 'ineligible';
   const decision = normalized(input.decision);
   if (decision === 'APPROVED') return 'approved';
-  if (decision === 'BLOCKED') return 'rejected';
-  return 'pending_review';
+  if (decision === 'ERROR' || !decision) return 'pending_review';
+  // Qualquer decisão antifraude não aprovada é terminal e não cria fila humana.
+  return 'rejected';
 }

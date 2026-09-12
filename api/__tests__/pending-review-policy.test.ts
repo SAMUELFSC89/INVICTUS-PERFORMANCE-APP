@@ -1,8 +1,10 @@
 import { classifyPendingReview, resolveSecurityRetryResult } from '../_lib/pending-review-policy';
 
 describe('pending review policy', () => {
-  test('BLOCKED é terminal e não fica eternamente em análise', () => {
+  test('decisões antifraude não aprovadas são terminais e não ficam em fila humana', () => {
     expect(classifyPendingReview({ securityDecision: 'BLOCKED' })).toBe('reject');
+    expect(classifyPendingReview({ securityDecision: 'UNDER_REVIEW' })).toBe('reject');
+    expect(classifyPendingReview({ securityDecision: 'PARTIALLY_APPROVED' })).toBe('reject');
   });
 
   test('check-in competitivo ausente ou inválido é inelegível, não revisão eterna', () => {
@@ -14,19 +16,16 @@ describe('pending review policy', () => {
     expect(classifyPendingReview({ securityDecision: 'ERROR', nonScoringReason: 'SECURITY_PIPELINE_ERROR' })).toBe('retry_security');
   });
 
-  test('UNDER_REVIEW e PARTIALLY_APPROVED continuam na fila humana', () => {
-    expect(classifyPendingReview({ securityDecision: 'UNDER_REVIEW' })).toBe('manual_review');
-    expect(classifyPendingReview({ securityDecision: 'PARTIALLY_APPROVED' })).toBe('manual_review');
-  });
-
   test('deduplicação indisponível é identificada como pendência técnica', () => {
     expect(classifyPendingReview({ dataQualityStatus: 'dedup_pending' })).toBe('technical_pending');
   });
 
-  test('retry de segurança aprova, rejeita ou mantém revisão conforme decisão real', () => {
+  test('retry de segurança só aprova APPROVED; demais decisões do antifraude rejeitam', () => {
     expect(resolveSecurityRetryResult({ decision: 'APPROVED', competitivelyEligible: true })).toBe('approved');
     expect(resolveSecurityRetryResult({ decision: 'BLOCKED', competitivelyEligible: true })).toBe('rejected');
-    expect(resolveSecurityRetryResult({ decision: 'UNDER_REVIEW', competitivelyEligible: true })).toBe('pending_review');
+    expect(resolveSecurityRetryResult({ decision: 'UNDER_REVIEW', competitivelyEligible: true })).toBe('rejected');
+    expect(resolveSecurityRetryResult({ decision: 'PARTIALLY_APPROVED', competitivelyEligible: true })).toBe('rejected');
+    expect(resolveSecurityRetryResult({ decision: 'ERROR', competitivelyEligible: true })).toBe('pending_review');
     expect(resolveSecurityRetryResult({ decision: 'APPROVED', competitivelyEligible: false })).toBe('ineligible');
   });
 });
