@@ -18,9 +18,10 @@ const base: ObjectiveAnswers = {
 };
 
 it('mantém uma biblioteca de evidência versionada e auditável', () => {
-  expect(CARDIO_RESEARCH_VERSION).toBe('CARDIO_EVIDENCE_2026_09_V1');
+  expect(CARDIO_RESEARCH_VERSION).toBe('CARDIO_EVIDENCE_2026_09_V2');
   expect(Object.keys(CARDIO_RESEARCH_SOURCES)).toEqual(expect.arrayContaining([
-    'WHO_2020', 'CDC_START_SLOW', 'ACSM_FITT', 'SEILER_2010', 'ENDURANCE_TID_2025', 'RUNNING_LOAD_2021',
+    'WHO_2020', 'CDC_START_SLOW', 'ACSM_FITT', 'SEILER_2010', 'ENDURANCE_TID_2025',
+    'RUNNING_LOAD_2021', 'LOAD_PROGRESSION_2021', 'ACWR_2025',
   ]));
   for (const source of Object.values(CARDIO_RESEARCH_SOURCES)) {
     expect(source.url).toMatch(/^https:\/\//);
@@ -31,8 +32,9 @@ it('mantém uma biblioteca de evidência versionada e auditável', () => {
 it('faz perguntas internas explícitas antes de gerar a missão', () => {
   const trace = buildResearchDecisionTrace(base, profile, 'sedentary');
   expect(trace.map(item => item.id)).toEqual(expect.arrayContaining([
-    'safety_gate', 'current_activity', 'sport_transfer', 'continuous_capacity', 'goal_specificity',
-    'real_life_constraint', 'adherence_barrier', 'trained_intensity_distribution', 'progression_uncertainty',
+    'safety_gate', 'current_activity', 'observed_training_history', 'recent_load_change',
+    'sport_transfer', 'continuous_capacity', 'goal_specificity', 'real_life_constraint',
+    'adherence_barrier', 'recovery_information', 'trained_intensity_distribution', 'progression_uncertainty',
   ]));
   expect(trace.every(item => item.question && item.answer && item.impact && item.evidenceIds.length)).toBe(true);
 });
@@ -56,6 +58,62 @@ it('diferencia sedentário, ativo, corredor e avançado em vez de usar uma recei
   expect(runner.durationMinutes).toBeGreaterThan(active.durationMinutes);
   expect(advanced.durationMinutes).toBeGreaterThan(runner.durationMinutes);
   expect([runner, advanced].every(item => item.runSecondsPerInterval === 0 && item.walkSecondsPerInterval === 0)).toBe(true);
+});
+
+it('usa histórico real de 7/28 dias para corrigir um autorrelato raso', () => {
+  const observed: ProfileSnapshot = {
+    ...profile,
+    recentCardioSessions: 6,
+    cardioHistory: {
+      windowDays: 28,
+      sessions7d: 3,
+      sessions28d: 6,
+      activeDays7d: 3,
+      activeDays28d: 6,
+      minutes7d: 105,
+      previous7dMinutes: 90,
+      minutes28d: 240,
+      averageSessionMinutes28d: 40,
+      longestSessionMinutes28d: 60,
+      loadRatio7d: 1.2,
+      loadTrend: 'stable',
+      lastCardioAt: '2026-09-11T08:00:00.000Z',
+      daysSinceLastCardio: 0,
+    },
+  };
+  const activeFromHistory = { ...base, goalType: 'conditioning' as const };
+  expect(classifyCardioProfile(activeFromHistory, observed)).toBe('active');
+  expect(buildCardioBaseline(activeFromHistory, observed).baselineMinutes).toBeGreaterThan(buildCardioBaseline(base, profile).baselineMinutes);
+  const trace = buildResearchDecisionTrace(activeFromHistory, observed, 'active');
+  expect(trace.find(item => item.id === 'observed_training_history')?.answer).toContain('240min');
+});
+
+it('usa aumento recente só como contexto e evita acrescentar outra escalada automática', () => {
+  const rising: ProfileSnapshot = {
+    ...profile,
+    recentCardioSessions: 6,
+    cardioHistory: {
+      windowDays: 28,
+      sessions7d: 3,
+      sessions28d: 6,
+      activeDays7d: 3,
+      activeDays28d: 6,
+      minutes7d: 120,
+      previous7dMinutes: 60,
+      minutes28d: 210,
+      averageSessionMinutes28d: 30,
+      longestSessionMinutes28d: 45,
+      loadRatio7d: 2,
+      loadTrend: 'spiking',
+      lastCardioAt: '2026-09-11T08:00:00.000Z',
+      daysSinceLastCardio: 0,
+    },
+  };
+  const answers: ObjectiveAnswers = { ...base, goalType: 'conditioning', availableMinutes: 50 };
+  const decision = buildCardioBaseline(answers, rising);
+  expect(decision.profileClass).toBe('active');
+  expect(decision.baselineMinutes).toBeLessThanOrEqual(30);
+  expect(buildResearchDecisionTrace(answers, rising, 'active').find(item => item.id === 'recent_load_change')?.impact).toContain('nunca como diagnóstico');
 });
 
 it('não trata atleta competitivo de outro esporte como sedentário só porque ele não corre', () => {
@@ -97,6 +155,6 @@ it('persiste no baseline a justificativa e as fontes usadas naquela decisão', (
   const created = createJourney('journey', 'user', base, profile, now);
   expect(created.baseline.evidenceVersion).toBe(CARDIO_RESEARCH_VERSION);
   expect(created.baseline.profileClass).toBe('sedentary');
-  expect(created.baseline.evidenceDecisionTrace?.length).toBeGreaterThanOrEqual(9);
+  expect(created.baseline.evidenceDecisionTrace?.length).toBeGreaterThanOrEqual(12);
   expect(buildCardioBaseline(base, profile).evidenceIds).toContain('WHO_2020');
 });
