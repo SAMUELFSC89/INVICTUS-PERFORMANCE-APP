@@ -1,18 +1,19 @@
 # Cardio Objective Engine — Evidence & Personalization Model
 
-Version: `CARDIO_EVIDENCE_2026_09_V1`
+Version: `CARDIO_EVIDENCE_2026_09_V2`
 
 ## Purpose
 
 The Cardio Objective engine must not be a shallow lookup table or a free-form AI coach. It is a versioned hybrid decision system:
 
 1. **Safety gate** blocks or constrains the flow when required.
-2. **Deterministic profile classification** identifies the current training context.
-3. **Research-backed principles** define how the class should be treated.
-4. **Invictus product guardrails** convert those principles into bounded mission ranges.
-5. **Gemini may refine only inside the deterministic bounds**.
-6. **The deterministic validator runs again** before persistence.
-7. **Weekly real-world response** (completion, difficulty, energy, confidence and barriers) changes the next step.
+2. **Canonical training history** summarizes what the person actually did in the last 7/28 days when trustworthy data exists.
+3. **Deterministic profile classification** combines real history, sport background and declared capability.
+4. **Research-backed principles** define how each class should be treated.
+5. **Invictus product guardrails** convert those principles into bounded mission ranges.
+6. **Gemini may refine only inside the deterministic bounds**.
+7. **The deterministic validator runs again** before persistence.
+8. **Weekly real-world response** (completion, difficulty, energy, confidence and barriers) changes the next step.
 
 The AI is never the authority for modality, safety, mission minimums, distance validity or progression bounds.
 
@@ -80,6 +81,24 @@ Used for:
 - the engine must not encode the popular `10% rule` as a universal scientific law;
 - progression is therefore bounded, small, profile-dependent and adjusted using the user’s weekly response.
 
+### Individualized load progression
+
+Source: https://bjsm.bmj.com/content/55/17/947
+
+Used for:
+- current sport-specific capacity matters when progressing training load;
+- load should be interpreted in the context of what the athlete is already tolerating;
+- a single detached workload number should not replace individualized decision-making.
+
+### Recent-vs-prior workload ratios
+
+Source: https://pubmed.ncbi.nlm.nih.gov/41029871/
+
+Used for:
+- recent/prior workload ratios can provide descriptive context;
+- methods and thresholds vary substantially across studies;
+- the engine must **not** treat any ratio band as a universal injury-risk threshold, diagnosis, proof of overtraining or proof of insufficient recovery.
+
 ## Product guardrails vs. research claims
 
 ### 15-minute active-mission floor
@@ -90,9 +109,46 @@ This is an **Invictus product rule**, not a claim that WHO/ACSM define 15 minute
 
 Safety/medical-return flows are different: when the safety gate blocks progression, the system should pause/refer rather than bypass the rule with an arbitrary tiny workout.
 
-### Exact profile fractions
+### Exact profile fractions and load bands
 
-Fractions such as the portion of declared available time used for the initial mission are **versioned product heuristics** informed by the evidence principles above. They are not quoted as exact research prescriptions.
+Fractions such as the portion of available time or observed session length used for the initial mission are **versioned product heuristics** informed by the evidence principles above. They are not quoted as exact research prescriptions.
+
+The `declining`, `stable`, `rising` and `spiking` load labels are also product heuristics. They describe the relationship between the last 7 days and the preceding 7 days only when enough valid data exists. They do **not** estimate injury probability or physiological recovery.
+
+## Source priority for personalization
+
+When inputs disagree, the motor uses this order:
+
+1. safety gate;
+2. canonical completed activity history when sufficient;
+3. explicit current sport/training background and capability answers;
+4. practical availability and adherence barriers;
+5. conservative fallback when history is unavailable or insufficient.
+
+Real history does not erase legitimate external training. A person may train outside Invictus/Health sources, so self-report remains meaningful when canonical history is incomplete.
+
+## Real training-history model
+
+For eligible completed cardio in the 28-day window, the engine calculates:
+
+- sessions in the last 7 and 28 days;
+- active days in the last 7 and 28 days;
+- minutes in the last 7 days;
+- minutes in the preceding 7 days;
+- total minutes in 28 days;
+- average session duration in 28 days;
+- longest session duration in 28 days;
+- last eligible cardio timestamp and days since that activity;
+- a descriptive 7-day load ratio only when both periods contain enough activity.
+
+Activities in the future, invalid durations, security-blocked records and rejected/suspicious activities are excluded. A failed history query is `unavailable`, never interpreted as zero training.
+
+The history has two jobs:
+
+1. prevent a capable user from receiving a trivial mission because of a shallow questionnaire answer;
+2. prevent automatic escalation when the person has already increased recent volume substantially.
+
+It does **not** diagnose fatigue, overtraining, injury risk or readiness. Specific physiological recovery remains unknown unless the product later gains a validated recovery model with appropriate inputs.
 
 ## Inputs used to characterize the person
 
@@ -108,7 +164,7 @@ New journeys collect and combine:
 - preferred cardio modality;
 - main adherence barrier;
 - confidence in maintaining the plan;
-- recent canonical Invictus/connected activity history when available;
+- canonical 7/28-day activity history when available;
 - safety answers.
 
 This separation is important: **not being a runner is not the same thing as being sedentary**. A competitive cyclist, fighter or team-sport athlete must not receive a sedentary fallback merely because they report little running experience.
@@ -148,6 +204,7 @@ Typical signals:
 
 Engine behavior:
 - mission must be meaningfully above sedentary fallback;
+- observed average/longest sessions can anchor the initial dose;
 - modality should respect the user’s real capability, sport and goal;
 - availability is a ceiling, not proof of capacity;
 - a non-runner athlete is not downgraded to sedentary by default.
@@ -160,7 +217,7 @@ Typical signals:
 Engine behavior:
 - do not regress to a short walking mission without a clear return/safety reason;
 - continuous running is preserved by default;
-- meaningful fraction of the available session is used;
+- meaningful fraction of the observed/declarative session capacity is used;
 - automatic intensity remains easy initially.
 
 ### `advanced`
@@ -195,13 +252,16 @@ Every initial journey stores a decision trace answering at least:
 
 1. Is there a safety reason to block or constrain training?
 2. Is the person sedentary, beginner, active, regular runner, advanced/competitive or returning?
-3. Does the person practice another sport with meaningful cardiovascular demand?
-4. What continuous capacity is declared/observed?
-5. What is the actual goal (health, consistency, run distance, performance, return)?
-6. What time/days really fit the routine?
-7. What barrier most threatens adherence?
-8. If trained, should intensity automatically be increased? (default: no)
-9. Is there a universal evidence-based safe percentage for weekly load increase? (no)
+3. What did the person actually do in the last 7 and 28 days?
+4. Did recent volume rise sharply relative to the preceding 7 days, with enough data to make that comparison?
+5. Does the person practice another sport with meaningful cardiovascular demand?
+6. What continuous capacity is declared/observed?
+7. What is the actual goal (health, consistency, run distance, performance, return)?
+8. What time/days really fit the routine?
+9. What barrier most threatens adherence?
+10. Is there enough information to claim physiological recovery? (normally no at onboarding)
+11. If trained, should intensity automatically be increased? (default: no)
+12. Is there a universal evidence-based safe percentage or workload-ratio threshold? (no)
 
 The trace includes evidence IDs and is persisted in the baseline so a mission can be audited later.
 
@@ -211,6 +271,7 @@ The trace includes evidence IDs and is persisted in the baseline so a mission ca
 
 - safety gates;
 - profile class;
+- canonical history summary;
 - modality validity;
 - duration/distance bounds;
 - minimum mission floor;
@@ -222,7 +283,7 @@ The trace includes evidence IDs and is persisted in the baseline so a mission ca
 ### AI may do
 
 - choose a duration **inside** the allowed range for duration-based initial missions;
-- use sport/training context to select the most coherent point inside that range;
+- use sport/training/history context to select the most coherent point inside that range;
 - write a short personalized rationale;
 - later, phrase weekly explanations naturally.
 
@@ -233,6 +294,7 @@ The trace includes evidence IDs and is persisted in the baseline so a mission ca
 - create a duration below the floor or above the cap;
 - invent a research source;
 - treat a non-running athlete as sedentary when the deterministic engine classified otherwise;
+- turn a load trend into an injury/overtraining/recovery diagnosis;
 - add HIIT to an advanced athlete without deterministic permission;
 - promise outcomes or diagnose conditions.
 
@@ -260,8 +322,9 @@ Before changing `CARDIO_RESEARCH_VERSION`:
 1. review WHO/ACSM guidance for updates;
 2. search systematic reviews/meta-analyses published since the current version;
 3. specifically review evidence for inactive adults, novice exercisers, recreational athletes, cross-sport athletes and trained/elite endurance athletes;
-4. document what changed and why;
-5. add/update regression tests for each affected profile;
-6. never silently change historical journeys — their evidence version remains attached to the baseline used at creation.
+4. review evidence around workload monitoring without converting uncertain associations into universal risk thresholds;
+5. document what changed and why;
+6. add/update regression tests for each affected profile;
+7. never silently change historical journeys — their evidence version remains attached to the baseline used at creation.
 
 Recommended review cadence: at least every 6 months, and immediately before introducing automated high-intensity prescriptions, recovery/load models or new athlete classes.
