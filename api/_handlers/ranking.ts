@@ -1,11 +1,24 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { isCurrentCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
+import { reconcileWeeklyRankingAchievements } from '../_lib/user-ranking-achievements.js';
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 
 type CachedRanking = { topUsers: any[]; gymName: string; timestamp: number };
 const serverRankingCache = new Map<string, CachedRanking>();
 const CACHE_TTL = 3 * 60 * 1000;
+
+async function reconcileCanonicalRankingAchievement(userId: string, period: string, currentUser: any) {
+  // Somente o ranking semanal opt-in é fonte de conquista. Monthly/all são
+  // visualizações alternativas e não podem criar novas oportunidades de XP.
+  if (period !== 'weekly' || !currentUser || !Number.isFinite(Number(currentUser.rank))) return;
+  await reconcileWeeklyRankingAchievements(userId, Number(currentUser.rank)).catch((error) => {
+    // Ranking precisa continuar disponível mesmo se o ledger estiver
+    // temporariamente indisponível; a concessão é idempotente e será tentada
+    // novamente na próxima leitura semanal.
+    console.warn('[Ranking API] Falha ao reconciliar conquista semanal:', error);
+  });
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -56,9 +69,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const now = Date.now();
     const cached = serverRankingCache.get(cacheKey);
     if (cached && now - cached.timestamp < CACHE_TTL && cached.topUsers.some((entry) => entry.uid === auth.uid)) {
+      const currentUser = cached.topUsers.find((entry) => entry.uid === auth.uid) || null;
+      await reconcileCanonicalRankingAchievement(auth.uid, period, currentUser);
       return res.status(200).json({
         topUsers: cached.topUsers.slice(0, responseLimit),
-        currentUser: cached.topUsers.find((entry) => entry.uid === auth.uid) || null,
+        currentUser,
         participantCount: cached.topUsers.length,
         enrolled: true,
         gymId,
@@ -108,9 +123,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .map((entry, index) => ({ ...entry, rank: index + 1 }));
 
     serverRankingCache.set(cacheKey, { topUsers, gymName, timestamp: now });
+    const currentUser = topUsers.find((entry) => entry.uid === auth.uid) || null;
+    await reconcileCanonicalRankingAchievement(auth.uid, period, currentUser);
     return res.status(200).json({
       topUsers: topUsers.slice(0, responseLimit),
-      currentUser: topUsers.find((entry) => entry.uid === auth.uid) || null,
+      currentUser,
       participantCount: topUsers.length,
       enrolled: true,
       gymId,
