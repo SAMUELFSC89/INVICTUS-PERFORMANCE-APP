@@ -47,13 +47,6 @@ const missionForProgress = (mission: Mission, list: UserMissionProgress[]): Miss
   };
 };
 
-// #250: clicar num desafio precisa levar pra tela da atividade que de fato
-// cumpre esse desafio -- antes os cards de "DESAFIOS EM DESTAQUE" nao tinham
-// nenhum onClick, e os de "DESAFIOS DISPONÍVEIS" so mostravam um ChevronRight
-// decorativo sem acao nenhuma (parecia clicavel mas nao levava a lugar
-// nenhum). Mapeia o tipo real da missao pro fluxo que a cumpre; quando o
-// tipo nao aponta pra uma unica atividade (habitos/consistencia/eventos),
-// cai no seletor de modalidade (/activity) em vez de nao fazer nada.
 const missionActivityType = (mission: Mission): 'workout' | 'cardio' | 'other' => {
   if (['workout_count', 'strength_workout_count', 'gym_checkins'].includes(mission.type)) return 'workout';
   if (['cardio_count', 'cardio_minutes'].includes(mission.type)) return 'cardio';
@@ -95,10 +88,6 @@ export function ChallengesHubNew({ onCardio, onHistory, onPrivate, errorMessage,
     requestAnimationFrame(() => availableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
-  // #250: leva pra tela real da atividade que cumpre o desafio clicado.
-  // Missoes PRO travadas continuam indo pra assinatura -- clicar num
-  // desafio bloqueado nao deveria abrir a atividade sem o atleta saber que
-  // ela nao vale a recompensa daquele desafio especifico.
   const openMissionActivity = (mission: Mission, locked: boolean) => {
     if (locked) { navigate('/profile/preferences/subscriptions'); return; }
     const kind = missionActivityType(mission);
@@ -130,6 +119,6 @@ export function ChallengesHubNew({ onCardio, onHistory, onPrivate, errorMessage,
     <section className="dc-activities"><button onClick={() => navigate('/musculacao')}><Dumbbell /><span><b>INICIAR MUSCULAÇÃO</b>Treino e plano de hoje</span><ArrowRight /></button><button onClick={onCardio}><Footprints /><span><b>INICIAR CARDIO</b>Escolha a modalidade</span><ArrowRight /></button><button onClick={() => navigate('/power')}><Trophy /><span><b>POWER LIFT</b>Desafios de força</span><ArrowRight /></button></section>
     <section className="dc-premium"><Users /><div><h2>DESAFIOS PRIVADOS</h2><p>Crie ou entre em uma disputa com seus parceiros de treino usando o fluxo atual de desafios privados.</p></div><button onClick={onPrivate}>ABRIR DESAFIOS PRIVADOS <ArrowRight /></button></section>
     <section className="dc-premium"><Trophy /><div><h2>DESAFIOS PREMIUM</h2><p>Desafios PRO não oferecem dinheiro: ampliam reconhecimento, XP e Invictus Coins.</p></div><button onClick={openProChallenges}>VER DESAFIOS PRO <ArrowRight /></button></section>
-    <div className="dc-coin-note"><ShieldCheck /><span>Invictus Coins não têm valor monetário, não podem ser sacadas e serão usadas somente na futura Loja Invictus.</span></div>
+    <div className="dc-coin-note"><ShieldCheck /><span>Invictus Coins são pontos internos de recompensa vinculados ao seu perfil. Não têm valor monetário e não podem ser sacados ou convertidos em dinheiro.</span></div>
   </div><nav className="dc-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button className="is-active"><ShieldCheck /><span>Desafios</span></button><button onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav></main>, document.body);
 }
