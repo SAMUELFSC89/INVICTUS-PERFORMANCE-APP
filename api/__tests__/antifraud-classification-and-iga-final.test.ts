@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { GpsEngine } from '../_lib/gps-engine';
 import { SensorEngine } from '../_lib/sensor-engine';
 import { FraudEngine } from '../_lib/fraud-engine';
 import { ValidationEngine } from '../_lib/validation-engine';
