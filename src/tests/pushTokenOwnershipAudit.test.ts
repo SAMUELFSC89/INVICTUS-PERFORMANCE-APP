@@ -60,4 +60,12 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
     expect(reconciliation).toContain('PushNotifications.checkPermissions()');
     expect(reconciliation).not.toContain('PushNotifications.requestPermissions()');
   });
+
+  it('abre toque em push mesmo sem callback, mas somente para rota interna segura', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    expect(service).toContain('safeInternalActionPath');
+    expect(service).toContain("path.startsWith('//')");
+    expect(service).toContain("path.includes('\\\\')");
+    expect(service).toContain('else window.location.assign(actionPath)');
+  });
 });
