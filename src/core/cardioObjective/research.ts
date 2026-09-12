@@ -5,10 +5,10 @@ import type { ObjectiveAnswers, ProfileSnapshot } from './types.js';
  *
  * IMPORTANT:
  * - These references support principles (start gradually, individualize, keep most endurance work easy, monitor load).
- * - Exact minutes/fractions used by Invictus are product guardrails, not claims that a paper prescribed that exact number.
+ * - Exact minutes/fractions/ratio bands used by Invictus are product guardrails, not claims that a paper prescribed that exact number.
  * - This module is intentionally static/versioned: production decisions must not depend on live web content.
  */
-export const CARDIO_RESEARCH_VERSION = 'CARDIO_EVIDENCE_2026_09_V1' as const;
+export const CARDIO_RESEARCH_VERSION = 'CARDIO_EVIDENCE_2026_09_V2' as const;
 
 export const CARDIO_RESEARCH_SOURCES = {
   WHO_2020: {
@@ -60,6 +60,20 @@ export const CARDIO_RESEARCH_SOURCES = {
     url: 'https://pubmed.ncbi.nlm.nih.gov/34478518/',
     supports: 'Evidence linking injury onset to specific running distance, duration, frequency, intensity or recent changes is conflicting; caution is warranted when recommending universal progression parameters.',
   },
+  LOAD_PROGRESSION_2021: {
+    kind: 'sports_medicine_editorial',
+    year: 2021,
+    title: 'When progressing training loads, what are the considerations for healthy and injured athletes?',
+    url: 'https://bjsm.bmj.com/content/55/17/947',
+    supports: 'Training load should be interpreted against current sport-specific capacity and progressed in an individualized way rather than detached from what the athlete is currently tolerating.',
+  },
+  ACWR_2025: {
+    kind: 'systematic_review_meta_analysis',
+    year: 2025,
+    title: 'Acute to chronic workload ratio for predicting sports injury risk: a systematic review and meta-analysis',
+    url: 'https://pubmed.ncbi.nlm.nih.gov/41029871/',
+    supports: 'Workload ratios may describe recent-versus-prior load context, but heterogeneity, calculation differences and publication bias require caution; a ratio should not be treated as a universal injury-risk threshold.',
+  },
 } as const;
 
 export type CardioEvidenceId = keyof typeof CARDIO_RESEARCH_SOURCES;
@@ -77,10 +91,10 @@ const runningGoal = (goal: ObjectiveAnswers['goalType']) => ['start_running', 'r
 
 export function evidenceForProfile(profileClass: ResearchProfileClass): CardioEvidenceId[] {
   if (profileClass === 'sedentary' || profileClass === 'beginner' || profileClass === 'returning') {
-    return ['WHO_2020', 'CDC_START_SLOW', 'ACSM_FITT'];
+    return ['WHO_2020', 'CDC_START_SLOW', 'ACSM_FITT', 'LOAD_PROGRESSION_2021'];
   }
-  if (profileClass === 'active') return ['WHO_2020', 'ACSM_FITT', 'RUNNING_LOAD_2021'];
-  return ['ACSM_FITT', 'SEILER_2010', 'ENDURANCE_TID_2025', 'ELITE_TID_2023', 'RUNNING_LOAD_2021'];
+  if (profileClass === 'active') return ['WHO_2020', 'ACSM_FITT', 'LOAD_PROGRESSION_2021', 'RUNNING_LOAD_2021', 'ACWR_2025'];
+  return ['ACSM_FITT', 'SEILER_2010', 'ENDURANCE_TID_2025', 'ELITE_TID_2023', 'LOAD_PROGRESSION_2021', 'RUNNING_LOAD_2021', 'ACWR_2025'];
 }
 
 /**
@@ -93,7 +107,8 @@ export function buildResearchDecisionTrace(
   profile: ProfileSnapshot | undefined,
   profileClass: ResearchProfileClass,
 ): ResearchDecisionAnswer[] {
-  const recentSessions = profile?.recentCardioSessions;
+  const history = profile?.cardioHistory;
+  const recentSessions = history?.sessions28d ?? profile?.recentCardioSessions;
   const longestRun = profile?.recentLongestRunKm;
   const structuredRunner = answers.runningAbility === 'structured';
   const trainedBackground = ['regular', 'structured', 'competitive'].includes(answers.trainingBackground || '');
@@ -116,6 +131,26 @@ export function buildResearchDecisionTrace(
       evidenceIds: profileClass === 'sedentary' || profileClass === 'beginner' ? ['WHO_2020', 'CDC_START_SLOW'] : ['ACSM_FITT'],
     },
     {
+      id: 'observed_training_history',
+      question: 'O que a pessoa realmente fez nos últimos 7 e 28 dias?',
+      answer: history
+        ? `7d=${history.sessions7d} sessão(ões)/${history.minutes7d}min/${history.activeDays7d} dia(s); 28d=${history.sessions28d} sessão(ões)/${history.minutes28d}min/${history.activeDays28d} dia(s); média=${history.averageSessionMinutes28d ?? 'n/d'}min; maior=${history.longestSessionMinutes28d ?? 'n/d'}min`
+        : 'histórico canônico detalhado indisponível',
+      impact: history && history.sessions28d > 0
+        ? 'ancorar a missão em capacidade observada e evitar depender apenas da identidade declarada no questionário'
+        : 'usar autorrelato de forma conservadora até existir histórico suficiente',
+      evidenceIds: ['ACSM_FITT', 'LOAD_PROGRESSION_2021'],
+    },
+    {
+      id: 'recent_load_change',
+      question: 'A carga dos últimos 7 dias mudou muito em relação aos 7 dias anteriores?',
+      answer: history ? `tendência=${history.loadTrend}; razão descritiva=${history.loadRatio7d ?? 'insuficiente'}; 7d=${history.minutes7d}min; 7d anteriores=${history.previous7dMinutes}min` : 'dados insuficientes',
+      impact: history && ['rising', 'spiking'].includes(history.loadTrend)
+        ? 'não acrescentar automaticamente mais carga no início; usar a tendência somente como contexto, nunca como diagnóstico ou escore de risco'
+        : 'não há sinal contextual suficiente para limitar a missão por mudança recente de volume',
+      evidenceIds: ['LOAD_PROGRESSION_2021', 'ACWR_2025', 'RUNNING_LOAD_2021'],
+    },
+    {
       id: 'sport_transfer',
       question: 'A pessoa já pratica outro esporte com exigência cardiovascular relevante?',
       answer: `esporte=${answers.primarySport || 'não informado'}; rotina=${answers.trainingBackground || 'não informada'}`,
@@ -127,9 +162,9 @@ export function buildResearchDecisionTrace(
     {
       id: 'continuous_capacity',
       question: 'Qual capacidade contínua já foi declarada ou observada?',
-      answer: `caminhada=${answers.walkingMinutes}min; corrida=${answers.runningAbility}; sessão típica=${answers.typicalCardioMinutes ?? 'n/d'}min; maior corrida recente=${longestRun ?? 'n/d'}km`,
-      impact: trained ? 'usar uma fração significativa da capacidade sem ultrapassar o tempo real disponível' : 'não exceder a capacidade declarada e progredir gradualmente',
-      evidenceIds: ['ACSM_FITT', 'WHO_2020'],
+      answer: `caminhada=${answers.walkingMinutes}min; corrida=${answers.runningAbility}; sessão típica=${answers.typicalCardioMinutes ?? 'n/d'}min; média observada=${history?.averageSessionMinutes28d ?? 'n/d'}min; maior corrida recente=${longestRun ?? 'n/d'}km`,
+      impact: trained ? 'usar uma fração significativa da capacidade sem ultrapassar o tempo real disponível' : 'não exceder a capacidade declarada/observada e progredir gradualmente',
+      evidenceIds: ['ACSM_FITT', 'WHO_2020', 'LOAD_PROGRESSION_2021'],
     },
     {
       id: 'goal_specificity',
@@ -153,6 +188,13 @@ export function buildResearchDecisionTrace(
       evidenceIds: ['CDC_START_SLOW'],
     },
     {
+      id: 'recovery_information',
+      question: 'Há informação suficiente para dizer que a pessoa está recuperada para receber intensidade maior?',
+      answer: `histórico de atividade=${history ? 'sim' : 'não'}; recuperação fisiológica específica=não comprovada pelo onboarding`,
+      impact: 'não inferir recuperação fisiológica a partir de silêncio, intervalo entre treinos ou razão de carga; usar energia/dificuldade/sinais no check-in semanal antes de progredir',
+      evidenceIds: ['ACSM_FITT', 'LOAD_PROGRESSION_2021'],
+    },
+    {
       id: 'trained_intensity_distribution',
       question: 'Se a pessoa já é treinada, o desafio deve aumentar intensidade automaticamente?',
       answer: trained ? 'não automaticamente' : 'não aplicável nesta fase',
@@ -165,8 +207,8 @@ export function buildResearchDecisionTrace(
       id: 'progression_uncertainty',
       question: 'Existe uma porcentagem universal comprovada para aumentar carga com segurança?',
       answer: 'não',
-      impact: 'usar passos pequenos, resposta semanal e limites individualizados; não codificar a regra de 10% como lei científica universal',
-      evidenceIds: ['RUNNING_LOAD_2021'],
+      impact: 'usar passos pequenos, resposta semanal e limites individualizados; não codificar a regra de 10% ou uma faixa de ACWR como lei científica universal',
+      evidenceIds: ['RUNNING_LOAD_2021', 'ACWR_2025'],
     },
   ];
 }
