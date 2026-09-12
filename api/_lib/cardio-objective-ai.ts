@@ -66,11 +66,25 @@ export async function refineInitialObjectiveMission(
     confidenceScore: answers.confidenceScore,
     recentCardioSessions: profile.recentCardioSessions,
     recentLongestRunKm: profile.recentLongestRunKm,
+    cardioHistory: profile.cardioHistory ? {
+      sessions7d: profile.cardioHistory.sessions7d,
+      sessions28d: profile.cardioHistory.sessions28d,
+      activeDays7d: profile.cardioHistory.activeDays7d,
+      activeDays28d: profile.cardioHistory.activeDays28d,
+      minutes7d: profile.cardioHistory.minutes7d,
+      previous7dMinutes: profile.cardioHistory.previous7dMinutes,
+      minutes28d: profile.cardioHistory.minutes28d,
+      averageSessionMinutes28d: profile.cardioHistory.averageSessionMinutes28d,
+      longestSessionMinutes28d: profile.cardioHistory.longestSessionMinutes28d,
+      loadTrend: profile.cardioHistory.loadTrend,
+      loadRatio7d: profile.cardioHistory.loadRatio7d,
+      daysSinceLastCardio: profile.cardioHistory.daysSinceLastCardio,
+    } : null,
     profileClass: bounds.profileClass,
     deterministicDurationMinutes: deterministic.durationMinutes,
     allowedDurationMinutes: { min: bounds.minMinutes, max: bounds.maxMinutes },
   };
-  const prompt = `Você está refinando uma missão inicial de cardio do Invictus. O motor determinístico e a camada de evidência já definiram o perfil e os limites obrigatórios. Use o decisionTrace, o esporte praticado e a rotina de treino para personalizar, mas escolha apenas um durationMinutes inteiro dentro da faixa permitida e escreva uma rationale curta em português brasileiro. Não altere modalidade, intensidade, frequência, distância, regras de segurança ou fontes de evidência. Não confunda uma pessoa treinada em outro esporte com sedentária apenas porque ela não corre. Não reduza um corredor/atleta para uma missão trivial. Para sedentário, nunca use menos de 15 minutos. Para pessoa treinada, não introduza intensidade alta automaticamente: o motor ainda não comprovou recuperação, carga e fase de treino suficientes. Não diagnostique e não prometa resultado. Retorne apenas JSON {"durationMinutes":number,"rationale":"..."}. Contexto: ${JSON.stringify(context)}`;
+  const prompt = `Você está refinando uma missão inicial de cardio do Invictus. O motor determinístico e a camada de evidência já definiram o perfil e os limites obrigatórios. Use o decisionTrace, o histórico canônico de 7/28 dias, o esporte praticado e a rotina de treino para personalizar, mas escolha apenas um durationMinutes inteiro dentro da faixa permitida e escreva uma rationale curta em português brasileiro. Não altere modalidade, intensidade, frequência, distância, regras de segurança ou fontes de evidência. Dê mais peso ao que a pessoa realmente fez quando houver histórico suficiente, sem apagar o autorrelato de treinos externos. Não confunda uma pessoa treinada em outro esporte com sedentária apenas porque ela não corre. Não reduza um corredor/atleta para uma missão trivial. Para sedentário, nunca use menos de 15 minutos. Se a tendência de carga recente estiver rising/spiking, trate-a somente como contexto para não acrescentar carga automática; jamais chame isso de risco de lesão, overtraining ou falta de recuperação. Para pessoa treinada, não introduza intensidade alta automaticamente: o motor ainda não comprovou recuperação, carga e fase de treino suficientes. Não diagnostique e não prometa resultado. Retorne apenas JSON {"durationMinutes":number,"rationale":"..."}. Contexto: ${JSON.stringify(context)}`;
   const requestId = newAiRequestId();
   const startedAt = Date.now();
   try {
