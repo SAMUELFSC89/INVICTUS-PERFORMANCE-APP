@@ -20,6 +20,17 @@ function Crown({ rank, photoURL, empty = false }: { rank: number; photoURL?: str
   </span>;
 }
 
+function PodiumBase({ rank, cleanSeasonLayout = false }: { rank: number; cleanSeasonLayout?: boolean }) {
+  // A arte bitmap do Top 2 chegou visualmente danificada. Na composição limpa
+  // da temporada reconstruímos somente essa base em CSS, mantendo Top 1/Top 3
+  // e os assets originais intocados nas demais telas.
+  if (cleanSeasonLayout && rank === 2) {
+    return <span className="academy-podium-base academy-podium-base--rebuilt academy-podium-base--2" aria-hidden="true" />;
+  }
+
+  return <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[rank]} alt="" aria-hidden="true" />;
+}
+
 function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = false }: {
   entry: RankingEntry;
   currentUserId?: string;
@@ -38,7 +49,7 @@ function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = fal
     >
       <span className="academy-podium-visual">
         <Crown rank={entry.rank} photoURL={entry.photoURL} />
-        <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[entry.rank]} alt="" aria-hidden="true" />
+        <PodiumBase rank={entry.rank} cleanSeasonLayout />
       </span>
       <span className="academy-podium-meta">
         <strong>{entry.displayName || 'Atleta Invictus'}{isCurrent ? <em>VOCÊ</em> : null}</strong>
@@ -60,7 +71,7 @@ function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = fal
       <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></b>
       {Number(entry.streak) > 0 ? <span className="academy-podium-streak">{entry.streak} dias em sequência</span> : null}
     </span>
-    <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[entry.rank]} alt="" aria-hidden="true" />
+    <PodiumBase rank={entry.rank} />
   </button>;
 }
 
@@ -73,7 +84,7 @@ function EmptyPodiumSlot({ rank, cleanSeasonLayout = false }: { rank: number; cl
     return <div className={slotClass} aria-label={`${rank}º lugar ainda disponível`}>
       <span className="academy-podium-visual">
         <Crown rank={rank} empty />
-        <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[rank]} alt="" aria-hidden="true" />
+        <PodiumBase rank={rank} cleanSeasonLayout />
       </span>
     </div>;
   }
@@ -82,7 +93,7 @@ function EmptyPodiumSlot({ rank, cleanSeasonLayout = false }: { rank: number; cl
     <span className="academy-podium-panel">
       <Crown rank={rank} empty />
     </span>
-    <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[rank]} alt="" aria-hidden="true" />
+    <PodiumBase rank={rank} />
   </div>;
 }
 
