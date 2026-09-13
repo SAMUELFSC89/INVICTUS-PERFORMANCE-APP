@@ -43,6 +43,7 @@ const ChampionshipsHub = lazyNamed(() => import('./pages/championships/Champions
 const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');
 const CommunityRanking = lazyNamed(() => import('./pages/championships/CommunityRanking'), 'CommunityRanking');
 const ChampionshipPreview = lazyNamed(() => import('./pages/championships/ChampionshipPreview'), 'ChampionshipPreview');
+const ChampionshipCheckoutReturn = lazyNamed(() => import('./pages/championships/ChampionshipCheckoutReturn'), 'ChampionshipCheckoutReturn');
 const Musculation = lazyNamed(() => import('./pages/Musculation'), 'Musculation');
 const InvictusAI = lazyNamed(() => import('./pages/InvictusAI'), 'InvictusAI');
 const AdminStorePricing = lazyNamed(() => import('./pages/AdminStorePricing'), 'AdminStorePricing');
@@ -113,6 +114,9 @@ export default function App() {
                 <Route path="/championships/community/ranking" element={<CommunityRanking />} />
                 <Route path="/championships/preview/musculacao" element={<ChampionshipPreview modality="musculacao" />} />
                 <Route path="/championships/preview/cardio" element={<ChampionshipPreview modality="cardio" />} />
+                <Route path="/championships/checkout-return" element={<ChampionshipCheckoutReturn />} />
+                <Route path="/championships/invictus_strength_v1" element={<ChampionshipPreview modality="musculacao" />} />
+                <Route path="/championships/invictus_cardio_v1" element={<ChampionshipPreview modality="cardio" />} />
                 <Route path="/championships/my" element={<Navigate to="/championships/community" replace />} />
                 <Route path="/championships/my/:id" element={<Navigate to="/championships/community" replace />} />
                 <Route path="/championships/:id/rules" element={<Navigate to="/championships" replace />} />

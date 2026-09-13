@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>Invictus — Retorno do checkout</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#050505;color:#fff;font-family:Inter,system-ui,-apple-system,sans-serif;padding:24px}.card{width:min(440px,100%);padding:28px;border:1px solid #292929;border-radius:24px;background:#0d0d0e;text-align:center}.mark{width:54px;height:54px;margin:0 auto 18px;border:1px solid #b98a37;border-radius:16px;display:grid;place-items:center;color:#e2bd6b;font-weight:900}.eyebrow{font-size:10px;letter-spacing:.18em;color:#a1a1aa}.card h1{font-size:24px;margin:8px 0 10px}.card p{font-size:13px;line-height:1.55;color:#a1a1aa}.card button{width:100%;margin-top:18px;padding:14px;border:0;border-radius:14px;background:linear-gradient(135deg,#f1d47e,#b8842f);color:#080808;font-weight:900}.small{display:block;margin-top:14px;font-size:10px;color:#71717a}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="mark">I</div>
+    <span class="eyebrow">INVICTUS PERFORMANCE</span>
+    <h1 id="title">Voltando ao aplicativo</h1>
+    <p id="message">Aguarde enquanto retornamos ao Invictus. O pagamento só ativa a inscrição depois da confirmação financeira recebida pelo servidor.</p>
+    <button id="openApp" type="button">ABRIR INVICTUS</button>
+    <span class="small">A tela de retorno não confirma pagamento e não libera inscrição por conta própria.</span>
+  </main>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var allowedStatus = ['success','cancelled','expired'];
+      var status = allowedStatus.indexOf(params.get('status')) >= 0 ? params.get('status') : 'cancelled';
+      var rawId = params.get('championshipId') || '';
+      var championshipId = /^(invictus_strength_v1|invictus_cardio_v1)$/.test(rawId) ? rawId : '';
+      var title = document.getElementById('title');
+      var message = document.getElementById('message');
+      if (status === 'success') {
+        title.textContent = 'Checkout concluído';
+        message.textContent = 'Estamos voltando ao Invictus. A inscrição será liberada somente após o Asaas confirmar o pagamento ao servidor.';
+      } else if (status === 'expired') {
+        title.textContent = 'Checkout expirado';
+        message.textContent = 'Nenhuma inscrição foi confirmada por esta tela. Volte ao Invictus para gerar um novo checkout quando disponível.';
+      } else {
+        title.textContent = 'Checkout cancelado';
+        message.textContent = 'O checkout foi encerrado. Volte ao Invictus para tentar novamente quando desejar.';
+      }
+      var deepLink = 'invictus://championship-checkout?status=' + encodeURIComponent(status) + '&championshipId=' + encodeURIComponent(championshipId);
+      function openApp(){ window.location.href = deepLink; }
+      document.getElementById('openApp').addEventListener('click', openApp);
+      window.setTimeout(openApp, 350);
+    })();
+  </script>
+</body>
+</html>

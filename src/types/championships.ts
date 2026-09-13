@@ -23,6 +23,10 @@ export interface Championship {
   startAt: string;
   endAt: string;
   registrationPrice: number;
+  registrationOpensAt?: string;
+  registrationClosesAt?: string;
+  registrationOpen?: boolean;
+  registrationReadinessReason?: string;
   participantCount: number;
   grossRevenue: number;
   netEligibleRevenue: number;
@@ -63,6 +67,9 @@ export interface ChampionshipRegistration {
   regulationAcceptedAt: string;
   externalPaymentReference: string;
   asaasPaymentId?: string;
+  asaasCheckoutId?: string;
+  asaasCheckoutUrl?: string;
+  checkoutSurface?: 'ios_native' | 'web';
   paymentMethod?: 'PIX' | 'CREDIT_CARD';
   createdAt: string;
   paidAt?: string;
