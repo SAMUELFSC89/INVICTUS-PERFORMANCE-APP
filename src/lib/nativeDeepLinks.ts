@@ -1,4 +1,5 @@
-export type NativeDeepLinkRoute = '/activity/ongoing';
+export type ChampionshipCheckoutReturnStatus = 'success' | 'cancelled' | 'expired';
+export type NativeDeepLinkRoute = '/activity/ongoing' | `/championships/checkout-return?status=${ChampionshipCheckoutReturnStatus}&championshipId=${string}`;
 
 export interface NativeStravaCallback {
   outcome: 'connected' | 'error';
@@ -13,21 +14,24 @@ function safeInternalPath(value: string | null, fallback: string): string {
   return candidate;
 }
 
-/**
- * Resolve apenas deep links de navegação explicitamente pertencentes ao app.
- * OAuth (Strava/Firebase) continua sendo tratado pelo MobileBridge porque
- * precisa executar efeitos próprios antes/depois da navegação.
- */
+const PAID_CHAMPIONSHIP_IDS = new Set(['invictus_strength_v1', 'invictus_cardio_v1']);
+const CHECKOUT_STATUSES = new Set<ChampionshipCheckoutReturnStatus>(['success', 'cancelled', 'expired']);
+
+/** Resolve somente deep links internos explicitamente conhecidos. */
 export function resolveNativeDeepLinkRoute(rawUrl: string): NativeDeepLinkRoute | null {
   try {
     const url = new URL(rawUrl);
     if (url.protocol.toLowerCase() !== 'invictus:') return null;
 
-    // URL(string: "invictus://activity") no widget vira host "activity".
-    // Aceitamos somente esse destino conhecido; nenhum path/host arbitrário
-    // de um esquema externo pode virar navegação interna do React Router.
     if (url.hostname.toLowerCase() === 'activity' && (url.pathname === '' || url.pathname === '/')) {
       return '/activity/ongoing';
+    }
+
+    if (url.hostname.toLowerCase() === 'championship-checkout' && (url.pathname === '' || url.pathname === '/')) {
+      const status = url.searchParams.get('status') as ChampionshipCheckoutReturnStatus | null;
+      const championshipId = String(url.searchParams.get('championshipId') || '');
+      if (!status || !CHECKOUT_STATUSES.has(status) || !PAID_CHAMPIONSHIP_IDS.has(championshipId)) return null;
+      return `/championships/checkout-return?status=${status}&championshipId=${encodeURIComponent(championshipId)}`;
     }
   } catch {
     // Deep link malformado: ignora sem interromper a inicialização do app.
@@ -35,12 +39,6 @@ export function resolveNativeDeepLinkRoute(rawUrl: string): NativeDeepLinkRoute 
   return null;
 }
 
-/**
- * O callback nativo do Strava precisa carregar o destino original também no
- * cold start. Sem isso, o navegador devolve o controle ao app, mas uma WebView
- * recém-criada cai na Home e o evento de atualização pode disparar antes de a
- * tela de Dispositivos existir.
- */
 export function parseNativeStravaCallback(rawUrl: string): NativeStravaCallback | null {
   try {
     const url = new URL(rawUrl);
