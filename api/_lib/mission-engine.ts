@@ -126,6 +126,17 @@ function isUntrustedWearableActivity(data: Record<string, any>): boolean {
     && evidenceStatus !== 'trusted_server_source';
 }
 
+function requiresWearableTrustReconciliation(data: Record<string, any>): boolean {
+  if (!isUntrustedWearableActivity(data)) return false;
+  return data.economyEligible === true
+    || data.missionEligible === true
+    || Number(data.activityXpAwarded) > 0
+    || Number(data.points) > 0
+    || Number(data.pointsEarned) > 0
+    || Number(data.scoreAwarded) > 0
+    || data.activityRewardStatus === 'unverified_wearable_source';
+}
+
 /**
  * Mission progress and competitive scoring are separate axes, but an activity
  * that is known fraud (or is still waiting for a technical security result)
@@ -407,7 +418,7 @@ export class MissionEngine {
     const now = new Date();
     const allActivities = snap.docs.map(doc => doc.data());
     const untrustedWearableDates = allActivities
-      .filter(isUntrustedWearableActivity)
+      .filter(requiresWearableTrustReconciliation)
       .map(data => readDate(data.endTime ?? data.startTime ?? data.timestamp ?? data.createdAt))
       .filter((date): date is Date => Boolean(date && date <= now));
     const validated = allActivities.filter(missionActivityIsEligible).map(data => ({
