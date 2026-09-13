@@ -50,7 +50,7 @@ function formatElapsed(totalSeconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-function buildContent(session: ActivitySession, elapsedSeconds: number, distanceKm?: number) {
+function buildContent(_session: ActivitySession, elapsedSeconds: number, distanceKm?: number) {
   const title = 'Invictus · Cardio em andamento';
   const parts = [formatElapsed(elapsedSeconds)];
   if (typeof distanceKm === 'number' && distanceKm > 0) {
@@ -135,21 +135,25 @@ export const activityNotificationService = {
    * Retomada de cardio GPS => recria o serviço antes de voltar ao background.
    */
   async sync(session: ActivitySession, elapsedSeconds: number, distanceKm?: number): Promise<void> {
+    await this.update(session, elapsedSeconds, distanceKm, true);
+  },
+
+  /**
+   * `force=true` ignora o intervalo mínimo. A própria atualização também
+   * reconcilia o ciclo de vida: pausa encerra o FGS e retomada o recria se o
+   * estado JS tiver sido perdido após recriação do WebView.
+   */
+  async update(session: ActivitySession, elapsedSeconds: number, distanceKm?: number, force = false): Promise<void> {
     if (!isAndroid()) return;
     if (!shouldUseLocationForegroundService(session)) {
-      await this.stop();
+      if (isRunning) await this.stop();
       return;
     }
     if (!isRunning) {
       await this.start(session, elapsedSeconds, distanceKm);
       return;
     }
-    await this.update(session, elapsedSeconds, distanceKm, true);
-  },
 
-  /** `force=true` ignora o intervalo mínimo -- usar em mudanças de estado. */
-  async update(session: ActivitySession, elapsedSeconds: number, distanceKm?: number, force = false): Promise<void> {
-    if (!isAndroid() || !isRunning || !shouldUseLocationForegroundService(session)) return;
     const now = Date.now();
     if (!force && now - lastUpdateAt < MIN_UPDATE_INTERVAL_MS) return;
     lastUpdateAt = now;
