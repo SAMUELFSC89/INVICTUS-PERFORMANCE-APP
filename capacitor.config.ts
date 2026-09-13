@@ -1,3 +1,5 @@
+/// <reference types="@capacitor/push-notifications" />
+
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
