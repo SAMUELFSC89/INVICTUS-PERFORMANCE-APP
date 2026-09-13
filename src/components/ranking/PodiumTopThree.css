@@ -1,27 +1,48 @@
 /*
- * O Top 3 usa exatamente o mesmo asset bronze do Power Lift.
- * Mantemos também a mesma geometria de moldura/avatar usada lá para que a
- * base da coroa não pareça cortada no pódio da temporada.
+ * O Top 2 e o Top 3 usam exatamente os mesmos assets prata/bronze do
+ * Power Lift. CommunityRanking.css aplica tamanhos genéricos com !important,
+ * então estes seletores específicos também precisam de !important para que
+ * a geometria aprovada no Power Lift realmente prevaleça no pódio da temporada.
  */
+.academy-podium-athlete--2,
 .academy-podium-athlete--3,
+.academy-podium-athlete--2 .academy-podium-panel,
 .academy-podium-athlete--3 .academy-podium-panel,
+.academy-podium-athlete--2 .academy-podium-avatar,
 .academy-podium-athlete--3 .academy-podium-avatar {
   overflow: visible;
 }
 
+.academy-podium-athlete--2 .academy-podium-avatar,
 .academy-podium-athlete--3 .academy-podium-avatar {
-  width: 76px;
-  height: 76px;
+  width: 76px !important;
+  height: 76px !important;
 }
 
+.academy-podium-athlete--2 .academy-podium-photo,
 .academy-podium-athlete--3 .academy-podium-photo {
-  width: 62px;
-  height: 62px;
+  width: 62px !important;
+  height: 62px !important;
 }
 
+.academy-podium-athlete--2 .academy-podium-crown,
 .academy-podium-athlete--3 .academy-podium-crown {
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
   object-fit: contain;
+}
+
+@media (max-width: 430px) {
+  .academy-podium-athlete--2 .academy-podium-avatar,
+  .academy-podium-athlete--3 .academy-podium-avatar {
+    width: 68px !important;
+    height: 68px !important;
+  }
+
+  .academy-podium-athlete--2 .academy-podium-photo,
+  .academy-podium-athlete--3 .academy-podium-photo {
+    width: 55px !important;
+    height: 55px !important;
+  }
 }
