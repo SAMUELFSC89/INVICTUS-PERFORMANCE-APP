@@ -1,0 +1,295 @@
+/*
+ * Pódio da temporada — composição limpa:
+ * 2º à esquerda, 1º no centro, 3º à direita.
+ * A hierarquia vertical nasce da altura real de cada base (1 > 2 > 3), não
+ * de deslocar uma posição isoladamente. Nenhuma frase fica entre coroa e base.
+ *
+ * Só dois defeitos visuais são tratados aqui:
+ * - a base bitmap do Top 2 é substituída, nesta tela, por uma base CSS limpa;
+ * - a coroa bronze do Top 3 usa a geometria segura do Power Lift e não é
+ *   sobreposta pela base, evitando o corte na parte inferior.
+ */
+.community-ranking-top3 .academy-podium--clean-season {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.14fr) minmax(0, 1fr) !important;
+  align-items: end !important;
+  gap: 0 !important;
+  min-height: 238px;
+  margin-top: 8px !important;
+  padding: 26px 2px 4px !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.community-ranking-top3 .academy-podium-athlete--clean {
+  position: relative;
+  display: flex !important;
+  min-width: 0;
+  min-height: 0 !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  /* Reserva igual para os dados abaixo da base. Assim, slot vazio e atleta
+     preenchido mantêm exatamente a mesma altura de pódio. */
+  padding: 0 1px 42px !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #f5f3ef;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.community-ranking-top3 .academy-podium-visual {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+/* Slots vazios são apenas coroa + pódio. */
+.community-ranking-top3 .academy-podium-athlete--clean.is-empty .academy-podium-avatar--empty {
+  background: transparent !important;
+}
+
+/* Mantém Top 1 como já estava visualmente ajustado. */
+.community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--1 .academy-podium-base {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 164% !important;
+  max-width: none !important;
+  height: auto !important;
+  margin-top: -24px !important;
+  filter: drop-shadow(0 0 15px rgba(242, 181, 22, .30));
+  pointer-events: none;
+}
+
+/*
+ * Top 2: a arte WebP original permanece no repositório para compatibilidade,
+ * mas não é usada no pódio da temporada porque é justamente a base que ficou
+ * visualmente corrompida. Esta base é reconstruída em CSS na mesma proporção
+ * 240:130, preservando o nível intermediário entre Top 1 e Top 3.
+ */
+.community-ranking-top3 .academy-podium-base--rebuilt.academy-podium-base--2 {
+  position: relative;
+  z-index: 2;
+  display: grid !important;
+  width: 125% !important;
+  max-width: 146px !important;
+  aspect-ratio: 240 / 130;
+  height: auto !important;
+  margin-top: -7px !important;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(224, 229, 235, .68);
+  border-radius: 7px 7px 4px 4px;
+  clip-path: polygon(8% 0, 92% 0, 100% 13%, 95% 100%, 5% 100%, 0 13%);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.32) 0 3%, transparent 3% 100%),
+    linear-gradient(110deg, #444a52 0%, #d7dce1 27%, #858c95 49%, #e7eaed 68%, #3d4248 100%);
+  box-shadow:
+    inset 0 8px 14px rgba(255,255,255,.14),
+    inset 0 -18px 24px rgba(0,0,0,.48),
+    0 10px 18px rgba(0,0,0,.34);
+  pointer-events: none;
+}
+
+.community-ranking-top3 .academy-podium-base--rebuilt.academy-podium-base--2::before {
+  content: "";
+  position: absolute;
+  inset: 7px 9px auto;
+  height: 18%;
+  border-top: 1px solid rgba(255,255,255,.72);
+  border-radius: 50%;
+  opacity: .72;
+}
+
+.community-ranking-top3 .academy-podium-base--rebuilt.academy-podium-base--2::after {
+  content: "2";
+  position: relative;
+  z-index: 1;
+  color: #f4f5f6;
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 31px;
+  font-weight: 400;
+  line-height: 1;
+  text-shadow: 0 2px 8px rgba(0,0,0,.65);
+}
+
+/* Top 3: mesma geometria que funciona no Power Lift. */
+.community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-avatar {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  width: 76px !important;
+  height: 76px !important;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: visible !important;
+  margin-bottom: 5px;
+}
+
+.community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-photo {
+  width: 62px !important;
+  height: 62px !important;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-crown {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+  object-position: center;
+  pointer-events: none;
+}
+
+.community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-base {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 125% !important;
+  max-width: none !important;
+  height: auto !important;
+  /* Sem margem negativa: a base não encobre a borda inferior da coroa. */
+  margin-top: 0 !important;
+  pointer-events: none;
+}
+
+/* Nome/IGA ficam sempre abaixo da base e nunca entram entre coroa e pódio. */
+.community-ranking-top3 .academy-podium-meta {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  min-width: 0;
+  height: 38px;
+  align-content: start;
+  justify-items: center;
+  text-align: center;
+}
+
+.community-ranking-top3 .academy-podium-meta > strong {
+  display: block;
+  width: 94%;
+  overflow: hidden;
+  color: #f5f3ef;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-ranking-top3 .academy-podium-athlete--1 .academy-podium-meta > strong {
+  font-size: 12px;
+}
+
+.community-ranking-top3 .academy-podium-meta > strong em {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #171004;
+  background: #f2b516;
+  font-size: 7px;
+  font-style: normal;
+  vertical-align: middle;
+}
+
+.community-ranking-top3 .academy-podium-meta > b {
+  margin-top: 3px;
+  color: #f2b516;
+  font-size: 15px;
+}
+
+.community-ranking-top3 .academy-podium-meta > b small {
+  font-size: 7px;
+}
+
+.community-ranking-top3 .academy-podium-meta .academy-podium-streak {
+  display: none;
+}
+
+.community-ranking-top3 .academy-podium-athlete--clean.is-current .academy-podium-crown {
+  filter: drop-shadow(0 0 8px rgba(242, 181, 22, .42));
+}
+
+@media (max-width: 430px) {
+  .community-ranking-top3 .academy-podium--clean-season {
+    min-height: 208px;
+    padding: 22px 0 2px !important;
+  }
+
+  .community-ranking-top3 .academy-podium-athlete--clean {
+    padding-bottom: 38px !important;
+  }
+
+  .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--1 .academy-podium-base {
+    width: 158% !important;
+    margin-top: -20px !important;
+  }
+
+  .community-ranking-top3 .academy-podium-base--rebuilt.academy-podium-base--2 {
+    width: 125% !important;
+    max-width: 128px !important;
+    margin-top: -6px !important;
+  }
+
+  .community-ranking-top3 .academy-podium-base--rebuilt.academy-podium-base--2::after {
+    font-size: 27px;
+  }
+
+  .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-avatar {
+    width: 68px !important;
+    height: 68px !important;
+    margin-bottom: 4px;
+  }
+
+  .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-photo {
+    width: 55px !important;
+    height: 55px !important;
+  }
+
+  .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-base {
+    width: 125% !important;
+    margin-top: 0 !important;
+  }
+
+  .community-ranking-top3 .academy-podium-meta {
+    height: 34px;
+  }
+
+  .community-ranking-top3 .academy-podium-meta > strong {
+    font-size: 9px;
+  }
+
+  .community-ranking-top3 .academy-podium-athlete--1 .academy-podium-meta > strong {
+    font-size: 10px;
+  }
+
+  .community-ranking-top3 .academy-podium-meta > b {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 360px) {
+  .community-ranking-top3 .academy-podium--clean-season {
+    min-height: 196px;
+  }
+
+  .community-ranking-top3 .academy-podium-base--rebuilt.academy-podium-base--2 {
+    max-width: 116px !important;
+  }
+}

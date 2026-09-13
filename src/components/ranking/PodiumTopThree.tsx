@@ -13,67 +13,104 @@ const PODIUM_BASE_ASSETS: Record<number, string> = {
 };
 const fallbackAvatar = '/capacete.webp';
 
-const EMPTY_SLOT_COPY: Record<number, { title: string; subtitle: string }> = {
-  1: { title: 'AGUARDANDO LÍDER', subtitle: 'SEU NOME PODE ESTAR AQUI' },
-  2: { title: 'VAGA ABERTA', subtitle: 'TREINE E CONQUISTE ESTA POSIÇÃO' },
-  3: { title: 'VAGA ABERTA', subtitle: 'MOSTRE SUA EVOLUÇÃO E SUBA NO RANKING' },
-};
+function Crown({ rank, photoURL, empty = false }: { rank: number; photoURL?: string; empty?: boolean }) {
+  return <span className={`academy-podium-avatar${empty ? ' academy-podium-avatar--empty' : ''}`}>
+    {!empty ? <img className="academy-podium-photo" src={photoURL || fallbackAvatar} alt="" onError={(event) => { event.currentTarget.src = fallbackAvatar; }} /> : null}
+    <img className="academy-podium-crown" src={CROWN_ASSETS[rank]} alt="" aria-hidden="true" />
+  </span>;
+}
 
-function PodiumAthlete({ entry, currentUserId, onSelect }: {
+function PodiumBase({ rank, cleanSeasonLayout = false }: { rank: number; cleanSeasonLayout?: boolean }) {
+  // A arte bitmap do Top 2 chegou visualmente danificada. Na composição limpa
+  // da temporada reconstruímos somente essa base em CSS, mantendo Top 1/Top 3
+  // e os assets originais intocados nas demais telas.
+  if (cleanSeasonLayout && rank === 2) {
+    return <span className="academy-podium-base academy-podium-base--rebuilt academy-podium-base--2" aria-hidden="true" />;
+  }
+
+  return <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[rank]} alt="" aria-hidden="true" />;
+}
+
+function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = false }: {
   entry: RankingEntry;
   currentUserId?: string;
   onSelect?: (uid: string) => void;
+  cleanSeasonLayout?: boolean;
 }) {
   const isCurrent = entry.uid === currentUserId;
+  const athleteClass = `academy-podium-athlete academy-podium-athlete--${entry.rank}${isCurrent ? ' is-current' : ''}${cleanSeasonLayout ? ' academy-podium-athlete--clean' : ''}`;
+
+  if (cleanSeasonLayout) {
+    return <button
+      type="button"
+      className={athleteClass}
+      onClick={() => onSelect?.(entry.uid)}
+      aria-label={`${entry.rank}º lugar, ${entry.displayName}, ${entry.score} pontos IGA${isCurrent ? ', você' : ''}`}
+    >
+      <span className="academy-podium-visual">
+        <Crown rank={entry.rank} photoURL={entry.photoURL} />
+        <PodiumBase rank={entry.rank} cleanSeasonLayout />
+      </span>
+      <span className="academy-podium-meta">
+        <strong>{entry.displayName || 'Atleta Invictus'}{isCurrent ? <em>VOCÊ</em> : null}</strong>
+        <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></b>
+        {Number(entry.streak) > 0 ? <span className="academy-podium-streak">{entry.streak} dias em sequência</span> : null}
+      </span>
+    </button>;
+  }
+
   return <button
     type="button"
-    className={`academy-podium-athlete academy-podium-athlete--${entry.rank}${isCurrent ? ' is-current' : ''}`}
+    className={athleteClass}
     onClick={() => onSelect?.(entry.uid)}
     aria-label={`${entry.rank}º lugar, ${entry.displayName}, ${entry.score} pontos IGA${isCurrent ? ', você' : ''}`}
   >
     <span className="academy-podium-panel">
-      <span className="academy-podium-avatar">
-        <img className="academy-podium-photo" src={entry.photoURL || fallbackAvatar} alt="" onError={(event) => { event.currentTarget.src = fallbackAvatar; }} />
-        <img className="academy-podium-crown" src={CROWN_ASSETS[entry.rank]} alt="" aria-hidden="true" />
-      </span>
+      <Crown rank={entry.rank} photoURL={entry.photoURL} />
       <strong>{entry.displayName || 'Atleta Invictus'}{isCurrent ? <em>VOCÊ</em> : null}</strong>
       <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></b>
       {Number(entry.streak) > 0 ? <span className="academy-podium-streak">{entry.streak} dias em sequência</span> : null}
     </span>
-    <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[entry.rank]} alt="" aria-hidden="true" />
+    <PodiumBase rank={entry.rank} />
   </button>;
 }
 
-function EmptyPodiumSlot({ rank }: { rank: number }) {
-  const copy = EMPTY_SLOT_COPY[rank];
-  return <div
-    className={`academy-podium-athlete academy-podium-athlete--${rank} is-empty`}
-    aria-label={`${rank}º lugar ainda disponível`}
-  >
-    <span className="academy-podium-panel">
-      <span className="academy-podium-avatar">
-        <span className="academy-podium-photo academy-podium-photo--empty" aria-hidden="true" />
-        <img className="academy-podium-crown" src={CROWN_ASSETS[rank]} alt="" aria-hidden="true" />
+function EmptyPodiumSlot({ rank, cleanSeasonLayout = false }: { rank: number; cleanSeasonLayout?: boolean }) {
+  const slotClass = `academy-podium-athlete academy-podium-athlete--${rank} is-empty${cleanSeasonLayout ? ' academy-podium-athlete--clean' : ''}`;
+
+  // O pódio vazio da temporada é propositalmente visual: coroa + base, sem
+  // frases motivacionais, placeholders ou copy entre as duas artes.
+  if (cleanSeasonLayout) {
+    return <div className={slotClass} aria-label={`${rank}º lugar ainda disponível`}>
+      <span className="academy-podium-visual">
+        <Crown rank={rank} empty />
+        <PodiumBase rank={rank} cleanSeasonLayout />
       </span>
-      <strong>{copy.title}</strong>
-      <span className="academy-podium-empty-copy">{copy.subtitle}</span>
+    </div>;
+  }
+
+  return <div className={slotClass} aria-label={`${rank}º lugar ainda disponível`}>
+    <span className="academy-podium-panel">
+      <Crown rank={rank} empty />
     </span>
-    <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[rank]} alt="" aria-hidden="true" />
+    <PodiumBase rank={rank} />
   </div>;
 }
 
-export function PodiumTopThree({ entries, currentUserId, onSelect, showEmptySlots = false }: {
+export function PodiumTopThree({ entries, currentUserId, onSelect, showEmptySlots = false, cleanSeasonLayout = false }: {
   entries: RankingEntry[];
   currentUserId?: string;
   onSelect?: (uid: string) => void;
   showEmptySlots?: boolean;
+  cleanSeasonLayout?: boolean;
 }) {
+  // Ordem visual clássica de pódio: 2º à esquerda, 1º no centro, 3º à direita.
   const slots = [2, 1, 3].map((rank) => ({ rank, entry: entries.find((entry) => entry.rank === rank) }));
   if (!showEmptySlots && !slots.some((slot) => Boolean(slot.entry))) return null;
 
-  return <section className="academy-podium" aria-label="Pódio da academia">
+  return <section className={`academy-podium${cleanSeasonLayout ? ' academy-podium--clean-season' : ''}`} aria-label="Pódio da academia">
     {slots.map(({ rank, entry }) => entry
-      ? <PodiumAthlete key={entry.uid} entry={entry} currentUserId={currentUserId} onSelect={onSelect} />
-      : showEmptySlots ? <EmptyPodiumSlot key={`empty-${rank}`} rank={rank} /> : null)}
+      ? <PodiumAthlete key={entry.uid} entry={entry} currentUserId={currentUserId} onSelect={onSelect} cleanSeasonLayout={cleanSeasonLayout} />
+      : showEmptySlots ? <EmptyPodiumSlot key={`empty-${rank}`} rank={rank} cleanSeasonLayout={cleanSeasonLayout} /> : null)}
   </section>;
 }

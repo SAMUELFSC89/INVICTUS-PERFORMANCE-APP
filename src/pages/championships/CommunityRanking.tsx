@@ -14,6 +14,7 @@ import {
 import '../../components/ranking/AcademyRanking.css';
 import './CommunityRanking.css';
 import './ChampionshipsNew.css';
+import './CommunityRankingPodium.css';
 
 const fallbackAvatar = '/capacete.webp';
 
@@ -90,7 +91,7 @@ export function CommunityRanking() {
     {loading ? <section className="academy-ranking-state academy-ranking-loading"><RefreshCw /><p>ATUALIZANDO CLASSIFICAÇÃO…</p></section> : error ? <section className="academy-ranking-state"><RefreshCw /><h2>NÃO FOI POSSÍVEL CARREGAR</h2><p>{error}</p><button type="button" onClick={() => void load()}>TENTAR NOVAMENTE <RefreshCw /></button></section> : <>
       <section className="community-ranking-top3">
         <header className="community-ranking-season-head"><div><small>TEMPORADA</small><h2>PÓDIO DA TEMPORADA</h2><p>OS MAIS DEDICADOS DO ANO</p></div><span><Trophy /><b>DISCIPLINA<br/>GERA RESULTADOS</b></span></header>
-        <PodiumTopThree entries={topThree} currentUserId={user.uid} onSelect={openProfile} showEmptySlots />
+        <PodiumTopThree entries={topThree} currentUserId={user.uid} onSelect={openProfile} showEmptySlots cleanSeasonLayout />
       </section>
 
       <section className="community-ranking-summary" aria-label="Destaques do ranking da temporada">

@@ -46,16 +46,34 @@ describe('rodada campeonatos e ranking', () => {
     expect(ranking).not.toContain("label: 'MÊS'");
   });
 
-  it('mantém o pódio visível mesmo antes de haver atletas', () => {
+  it('mantém o pódio visível vazio sem frases motivacionais entre coroa e base', () => {
     const ranking = read('src/pages/championships/CommunityRanking.tsx');
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
-    expect(ranking).toContain('showEmptySlots');
-    expect(ranking).not.toContain('O PÓDIO AINDA ESTÁ ABERTO');
+    expect(ranking).toContain('showEmptySlots cleanSeasonLayout');
     expect(podium).toContain('showEmptySlots = false');
-    expect(podium).toContain('AGUARDANDO LÍDER');
-    expect(podium).toContain('SEU NOME PODE ESTAR AQUI');
-    expect(podium).toContain('TREINE E CONQUISTE ESTA POSIÇÃO');
-    expect(podium).toContain('MOSTRE SUA EVOLUÇÃO E SUBA NO RANKING');
+    expect(podium).toContain('cleanSeasonLayout = false');
+    expect(podium).not.toContain('AGUARDANDO LÍDER');
+    expect(podium).not.toContain('SEU NOME PODE ESTAR AQUI');
+    expect(podium).not.toContain('TREINE E CONQUISTE ESTA POSIÇÃO');
+    expect(podium).not.toContain('MOSTRE SUA EVOLUÇÃO E SUBA NO RANKING');
+    expect(podium).toContain('coroa + base, sem');
+  });
+
+  it('mantém as três posições coerentes e corrige só a base Top 2 e a coroa Top 3', () => {
+    const podium = read('src/components/ranking/PodiumTopThree.tsx');
+    const css = read('src/pages/championships/CommunityRankingPodium.css');
+    expect(podium).toContain('const slots = [2, 1, 3]');
+    expect(podium).toContain('academy-podium-base--rebuilt academy-podium-base--2');
+    expect(css).toContain('align-items: end !important');
+    expect(css).toContain('transform: none !important');
+    expect(css).toContain('aspect-ratio: 240 / 130');
+    expect(css).toContain('content: "2"');
+    expect(css).toContain('.academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-avatar');
+    expect(css).toContain('width: 76px !important');
+    expect(css).toContain('height: 76px !important');
+    expect(css).toContain('width: 62px !important');
+    expect(css).toContain('height: 62px !important');
+    expect(css).toContain('margin-top: 0 !important');
   });
 
   it('mostra quarto lugar, posição do usuário e ranking completo de forma compacta', () => {
@@ -83,7 +101,7 @@ describe('rodada campeonatos e ranking', () => {
     expect(profile).toContain('navigate(returnTo)');
   });
 
-  it('preserva exatamente as coroas e as três bases de pódio aprovadas', () => {
+  it('preserva as coroas e mantém os assets das três bases disponíveis', () => {
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
     expect(podium).toContain('/ranking-frame-gold-reference.png');
     expect(podium).toContain('/ranking-frame-silver-reference.png');
