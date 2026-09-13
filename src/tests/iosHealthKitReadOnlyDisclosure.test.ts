@@ -11,7 +11,7 @@ describe('Gate 1 — HealthKit read-only disclosure', () => {
   });
 
   test('provider de métricas não solicita autorização de escrita no HealthKit', () => {
-    const provider = read('src/services/healthVitalsProvider.ts');
+    const provider = read('src/services/wearables/HealthVitalsProvider.ts');
     expect(provider).toContain('requestAuthorization');
     expect(provider).not.toMatch(/write\s*:/);
   });
