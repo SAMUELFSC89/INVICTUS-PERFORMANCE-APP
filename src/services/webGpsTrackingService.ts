@@ -66,6 +66,14 @@ function computeSignal(accuracy: number): WebGpsSnapshot['signal'] {
   return accuracy < 20 ? 'STRONG' : accuracy < 50 ? 'WEAK' : 'SEARCHING';
 }
 
+function latestCheckpointTimestampMs(session: ActivitySession): number {
+  const startMs = Date.parse(session.startTime);
+  return (session.checkpoints || []).reduce((latest, checkpoint) => {
+    const timestampMs = Date.parse(checkpoint.timestamp);
+    return Number.isFinite(timestampMs) ? Math.max(latest, timestampMs) : latest;
+  }, Number.isFinite(startMs) ? startMs : 0);
+}
+
 function ingestNativeSnapshot(session: ActivitySession, native: NativeGpsSnapshot) {
   const currentSession = activityService.getCurrentSession();
   if (!currentSession || currentSession.id !== session.id) return;
@@ -79,12 +87,18 @@ function ingestNativeSnapshot(session: ActivitySession, native: NativeGpsSnapsho
     if (typeof speedKmH === 'number') activityService.recordGpsSpeedSample(speedKmH, accuracy);
     if (now - lastCheckpointTimeAt >= 2000) {
       lastCheckpointTimeAt = now;
-      activityService.addCheckpoint({
-        lat: point.lat,
-        lng: point.lng,
-        ...(typeof accuracy === 'number' ? { accuracy } : {}),
-        ...(typeof speedKmH === 'number' ? { speedKmH } : {}),
-      }, Date.parse(point.timestamp));
+      const timestampMs = Date.parse(point.timestamp);
+      // Um snapshot vindo do buffer/bridge após recriação pode ser anterior ao
+      // último checkpoint já persistido no JS. Nunca appendamos um ponto velho
+      // no fim da rota, pois isso cria salto artificial e infla distância/pace.
+      if (!Number.isFinite(timestampMs) || timestampMs > latestCheckpointTimestampMs(currentSession)) {
+        activityService.addCheckpoint({
+          lat: point.lat,
+          lng: point.lng,
+          ...(typeof accuracy === 'number' ? { accuracy } : {}),
+          ...(typeof speedKmH === 'number' ? { speedKmH } : {}),
+        }, Number.isFinite(timestampMs) ? timestampMs : undefined);
+      }
     }
   }
 
@@ -223,15 +237,32 @@ export const webGpsTrackingService = {
       applyNative(nativeBackgroundLocationService.getSnapshot());
       void nativeBackgroundLocationService.readBuffered()
         .then((points) => {
-          for (const point of points) {
-            const current = activityService.getCurrentSession();
+          // O buffer nativo sobrevive a background/restart, enquanto muitos
+          // checkpoints já estão no localStorage/Firestore. Reaplicar o buffer
+          // inteiro anexava pontos antigos DEPOIS dos novos e podia inflar
+          // distância/pace. Só a cauda cronologicamente nova é importada.
+          let current = activityService.getCurrentSession();
+          if (!current || current.id !== session.id || current.isPaused) return;
+          let latestKnownMs = latestCheckpointTimestampMs(current);
+          const ordered = points
+            .map((point) => ({ point, timestampMs: Date.parse(point.timestamp) }))
+            .filter(({ timestampMs }) => Number.isFinite(timestampMs))
+            .sort((left, right) => left.timestampMs - right.timestampMs);
+
+          for (const { point, timestampMs } of ordered) {
+            current = activityService.getCurrentSession();
             if (!current || current.id !== session.id || current.isPaused) break;
+            if (timestampMs <= latestKnownMs || timestampMs > Date.now() + 60_000) continue;
             activityService.addCheckpoint({
               lat: point.lat,
               lng: point.lng,
               ...(typeof point.accuracy === 'number' ? { accuracy: point.accuracy } : {}),
               ...(typeof point.speedKmH === 'number' ? { speedKmH: point.speedKmH < MIN_LIVE_SPEED_KMH ? 0 : point.speedKmH } : {}),
-            }, Date.parse(point.timestamp));
+            }, timestampMs);
+            if (typeof point.speedKmH === 'number' && Number.isFinite(point.speedKmH)) {
+              activityService.recordGpsSpeedSample(point.speedKmH < MIN_LIVE_SPEED_KMH ? 0 : point.speedKmH, point.accuracy);
+            }
+            latestKnownMs = timestampMs;
           }
           const updated = activityService.getCurrentSession();
           if (updated) setSnapshot({ liveDistanceKm: activityService.calculateSessionDistance(updated) });

@@ -26,6 +26,7 @@ type NativeAuthorization = { status?: string };
 
 interface NativeActivityLocationPlugin {
   startLocationTracking(): Promise<void>;
+  resumeLocationTracking(): Promise<void>;
   getTrackedLocations(): Promise<{ locations?: NativeTrackedLocation[] }>;
   stopLocationTracking(): Promise<{ locations?: NativeTrackedLocation[] }>;
   addListener(eventName: 'locationUpdate', listenerFunc: (location: NativeTrackedLocation) => void): Promise<PluginListenerHandle>;
@@ -168,6 +169,14 @@ async function ensureListeners(): Promise<void> {
   return listenerSetup;
 }
 
+function prepareTrackingSnapshot(sessionId?: string) {
+  clearStallTimer();
+  previousPoint = null;
+  snapshot = { ...INITIAL_SNAPSHOT, sessionId: sessionId || null };
+  notify();
+  stallTimer = setTimeout(() => setSnapshot({ stalled: true }), 20000);
+}
+
 export const nativeBackgroundLocationService = {
   isSupported(): boolean {
     return supported();
@@ -192,12 +201,21 @@ export const nativeBackgroundLocationService = {
   async start(sessionId?: string): Promise<void> {
     if (!supported()) return;
     await ensureListeners();
-    clearStallTimer();
-    previousPoint = null;
-    snapshot = { ...INITIAL_SNAPSHOT, sessionId: sessionId || null };
-    notify();
-    stallTimer = setTimeout(() => setSnapshot({ stalled: true }), 20000);
+    prepareTrackingSnapshot(sessionId);
     await NativeActivityLocation.startLocationTracking();
+  },
+
+  /**
+   * Reanexa a coleta nativa depois que o WebView/processo JS foi recriado,
+   * preservando o buffer persistido pelo plugin. `start()` continua sendo o
+   * caminho de uma sessão nova e limpa o buffer; `resume()` nunca deve apagar
+   * os pontos coletados antes do restart do app.
+   */
+  async resume(sessionId?: string): Promise<void> {
+    if (!supported()) return;
+    await ensureListeners();
+    prepareTrackingSnapshot(sessionId);
+    await NativeActivityLocation.resumeLocationTracking();
   },
 
   async collectAndStop(): Promise<NativeTrackedLocation[]> {

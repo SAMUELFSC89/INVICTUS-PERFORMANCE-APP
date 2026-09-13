@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowRight, MapPin, RefreshCw, Square, Timer, Zap } from
 import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
 import { activityLiveActivityService } from '../services/activityLiveActivityService';
+import { restoreAndResumeActiveSession } from '../services/sessionContinuityService';
 
 export function FloatingSessionIndicator() {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ export function FloatingSessionIndicator() {
     setRestoring(true);
     setRestoreError(null);
     try {
-      const session = await activityService.restoreActiveSession();
+      const session = await restoreAndResumeActiveSession();
       applySession(session);
     } catch (error) {
       console.warn('[FloatingSessionIndicator] Não foi possível restaurar a atividade:', error);
@@ -61,19 +62,23 @@ export function FloatingSessionIndicator() {
     };
 
     checkSessions();
-    if (!activityService.getCurrentSession()) {
-      setRestoring(true);
-      void activityService.restoreActiveSession().then((session) => {
-        if (!cancelled) applySession(session);
-      }).catch((error) => {
-        if (!cancelled) {
-          console.warn('[FloatingSessionIndicator] Não foi possível restaurar a atividade:', error);
-          setRestoreError('Não foi possível verificar sua atividade em andamento. Confira a conexão e tente novamente.');
-        }
-      }).finally(() => {
-        if (!cancelled) setRestoring(false);
-      });
-    }
+
+    // Mesmo quando existe localStorage, precisamos passar pela camada de
+    // continuidade uma vez após montar o app. Antes o código pulava o restore
+    // nessa situação: o card voltava, mas GPS/snapshot nativos podiam continuar
+    // desconectados depois de o WebView/processo ter sido recriado.
+    setRestoring(true);
+    void restoreAndResumeActiveSession().then((session) => {
+      if (!cancelled) applySession(session);
+    }).catch((error) => {
+      if (!cancelled) {
+        console.warn('[FloatingSessionIndicator] Não foi possível restaurar a atividade:', error);
+        setRestoreError('Não foi possível verificar sua atividade em andamento. Confira a conexão e tente novamente.');
+      }
+    }).finally(() => {
+      if (!cancelled) setRestoring(false);
+    });
+
     const interval = setInterval(checkSessions, 1000);
     return () => {
       cancelled = true;
