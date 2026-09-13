@@ -1,4 +1,5 @@
 import type { RankingEntry } from '../../types';
+import './PodiumTopThree.css';
 
 const CROWN_ASSETS: Record<number, string> = {
   1: '/ranking-frame-gold-reference.png',
