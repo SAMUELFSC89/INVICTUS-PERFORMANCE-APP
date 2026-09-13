@@ -4,25 +4,27 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import type { ActivitySession } from '../types';
 
 // #328: notificação persistente com controle da atividade (pausar/retomar/
-// finalizar) mesmo com o app em segundo plano ou tela bloqueada.
+// finalizar) para sessões que realmente dependem de localização contínua.
 //
-// Só existe implementação nativa no Android (@capawesome-team/capacitor-
-// android-foreground-service é Android-only -- ver README do plugin). No
-// iOS o equivalente é uma Live Activity (ActivityKit), que fica em um
-// serviço separado (activityLiveActivityService.ts) porque depende de um
-// target de Widget Extension no projeto Xcode.
+// No Android 14+ um foreground service do tipo `location` precisa corresponder
+// a um uso real de localização e só pode ser iniciado quando a permissão de
+// localização está válida. Portanto não usamos esse FGS como simples timer de
+// musculação/atividade indoor: ele existe para proteger a continuidade do GPS
+// em sessões com `requiresGpsDistance=true`.
 //
-// Este serviço nunca deve travar ou falhar o fluxo real da atividade: toda
-// chamada é best-effort (falhas apenas geram console.warn).
+// POST_NOTIFICATIONS é independente da capacidade de iniciar um foreground
+// service. Se o usuário negar notificações no Android 13+, o sistema ainda
+// permite iniciar o FGS (a visibilidade da notificação fica sob controle do
+// próprio Android). Por isso a continuidade do GPS nunca pode depender da
+// permissão de notificações.
+//
+// No iOS o equivalente é uma Live Activity (ActivityKit), mantida em
+// activityLiveActivityService.ts.
 
 const NOTIFICATION_ID = 4281;
 const CHANNEL_ID = 'invictus_activity';
 const BUTTON_PAUSE_RESUME = 1;
 const BUTTON_FINISH = 2;
-// Atualizar a notificação a cada segundo (junto com o cronômetro da tela)
-// sobrecarregaria o NotificationManager e o sistema pode começar a descartar
-// atualizações. 5s é frequente o suficiente para o usuário perceber a
-// notificação "viva" sem gerar throttling.
 const MIN_UPDATE_INTERVAL_MS = 5000;
 
 let channelReady = false;
@@ -32,6 +34,10 @@ let listenerHandle: PluginListenerHandle | null = null;
 
 function isAndroid(): boolean {
   return Capacitor.getPlatform() === 'android';
+}
+
+function shouldUseLocationForegroundService(session: ActivitySession): boolean {
+  return session.requiresGpsDistance === true && session.isPaused !== true;
 }
 
 function formatElapsed(totalSeconds: number): string {
@@ -45,12 +51,9 @@ function formatElapsed(totalSeconds: number): string {
 }
 
 function buildContent(session: ActivitySession, elapsedSeconds: number, distanceKm?: number) {
-  const isCardio = session.type === 'cardio';
-  const title = session.isPaused
-    ? 'Invictus · Atividade em pausa'
-    : isCardio ? 'Invictus · Cardio em andamento' : 'Invictus · Treino em andamento';
+  const title = 'Invictus · Cardio em andamento';
   const parts = [formatElapsed(elapsedSeconds)];
-  if (isCardio && typeof distanceKm === 'number' && distanceKm > 0) {
+  if (typeof distanceKm === 'number' && distanceKm > 0) {
     parts.push(`${distanceKm.toFixed(2)} km`);
   }
   return { title, body: parts.join(' · ') };
@@ -65,30 +68,19 @@ function buildButtons(session: ActivitySession) {
 
 async function ensureChannel(): Promise<void> {
   if (channelReady) return;
-  channelReady = true; // marca antes: não vale a pena tentar de novo toda hora se falhar
   try {
     await ForegroundService.createNotificationChannel({
       id: CHANNEL_ID,
       name: 'Atividade em andamento',
-      description: 'Controle da atividade (pausar, retomar, finalizar) direto da notificação.',
+      description: 'Controle da atividade cardio e continuidade do GPS em segundo plano.',
       importance: Importance.Low,
     });
+    channelReady = true;
   } catch (err) {
-    console.warn('[activityNotificationService] createNotificationChannel falhou:', err);
-  }
-}
-
-async function ensurePermission(): Promise<boolean> {
-  try {
-    const status = await ForegroundService.checkPermissions();
-    if (status.display === 'granted') return true;
-    const requested = await ForegroundService.requestPermissions();
-    return requested.display === 'granted';
-  } catch (err) {
-    // Em SDK < 33 o plugin nem exige essa permissão -- se o check falhar por
-    // qualquer motivo, seguimos tentando iniciar o serviço mesmo assim.
-    console.warn('[activityNotificationService] checagem de permissão falhou:', err);
-    return true;
+    // Não sela `channelReady` em falha transitória: uma próxima tentativa de
+    // start precisa poder recriar o canal depois que a ponte nativa voltar.
+    channelReady = false;
+    throw err;
   }
 }
 
@@ -115,11 +107,9 @@ export const activityNotificationService = {
   },
 
   async start(session: ActivitySession, elapsedSeconds: number, distanceKm?: number): Promise<void> {
-    if (!isAndroid()) return;
+    if (!isAndroid() || !shouldUseLocationForegroundService(session)) return;
     try {
       await ensureChannel();
-      const granted = await ensurePermission();
-      if (!granted) return; // notificação é um extra -- nunca bloqueia o início da atividade
       const { title, body } = buildContent(session, elapsedSeconds, distanceKm);
       await ForegroundService.startForegroundService({
         id: NOTIFICATION_ID,
@@ -134,13 +124,32 @@ export const activityNotificationService = {
       isRunning = true;
       lastUpdateAt = Date.now();
     } catch (err) {
+      isRunning = false;
       console.warn('[activityNotificationService] start falhou:', err);
     }
   },
 
-  /** `force=true` ignora o intervalo mínimo -- usar em mudanças de estado (pausar/retomar). */
+  /**
+   * Sincroniza o FGS com o estado da atividade.
+   * Pausa/atividade sem GPS => encerra o serviço location.
+   * Retomada de cardio GPS => recria o serviço antes de voltar ao background.
+   */
+  async sync(session: ActivitySession, elapsedSeconds: number, distanceKm?: number): Promise<void> {
+    if (!isAndroid()) return;
+    if (!shouldUseLocationForegroundService(session)) {
+      await this.stop();
+      return;
+    }
+    if (!isRunning) {
+      await this.start(session, elapsedSeconds, distanceKm);
+      return;
+    }
+    await this.update(session, elapsedSeconds, distanceKm, true);
+  },
+
+  /** `force=true` ignora o intervalo mínimo -- usar em mudanças de estado. */
   async update(session: ActivitySession, elapsedSeconds: number, distanceKm?: number, force = false): Promise<void> {
-    if (!isAndroid() || !isRunning) return;
+    if (!isAndroid() || !isRunning || !shouldUseLocationForegroundService(session)) return;
     const now = Date.now();
     if (!force && now - lastUpdateAt < MIN_UPDATE_INTERVAL_MS) return;
     lastUpdateAt = now;
@@ -162,8 +171,12 @@ export const activityNotificationService = {
   },
 
   async stop(): Promise<void> {
-    if (!isAndroid() || !isRunning) return;
+    if (!isAndroid()) return;
+    // `isRunning` vive no processo JS. Depois de recriação do WebView ele pode
+    // voltar a false mesmo com um serviço nativo antigo ainda ativo. Sempre
+    // tentamos parar no Android; a chamada nativa é tratada como idempotente.
     isRunning = false;
+    lastUpdateAt = 0;
     try {
       await ForegroundService.stopForegroundService();
     } catch (err) {
