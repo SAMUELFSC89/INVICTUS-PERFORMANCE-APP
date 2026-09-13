@@ -5,9 +5,15 @@ import { parseNativeStravaCallback, resolveNativeDeepLinkRoute } from '../lib/na
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8');
 
 describe('Gate 1 — integridade de deep links e Live Activity nativa', () => {
-  it('resolve apenas o deep link conhecido da atividade em andamento', () => {
+  it('resolve apenas deep links internos explicitamente permitidos', () => {
     expect(resolveNativeDeepLinkRoute('invictus://activity')).toBe('/activity/ongoing');
     expect(resolveNativeDeepLinkRoute('invictus://activity/')).toBe('/activity/ongoing');
+    expect(resolveNativeDeepLinkRoute('invictus://championship-checkout?status=success&championshipId=invictus_cardio_v1'))
+      .toBe('/championships/checkout-return?status=success&championshipId=invictus_cardio_v1');
+    expect(resolveNativeDeepLinkRoute('invictus://championship-checkout?status=expired&championshipId=invictus_strength_v1'))
+      .toBe('/championships/checkout-return?status=expired&championshipId=invictus_strength_v1');
+    expect(resolveNativeDeepLinkRoute('invictus://championship-checkout?status=paid&championshipId=invictus_cardio_v1')).toBeNull();
+    expect(resolveNativeDeepLinkRoute('invictus://championship-checkout?status=success&championshipId=evil')).toBeNull();
     expect(resolveNativeDeepLinkRoute('invictus://activity/anything')).toBeNull();
     expect(resolveNativeDeepLinkRoute('invictus://evil')).toBeNull();
     expect(resolveNativeDeepLinkRoute('https://www.invictusperformance.app.br/activity')).toBeNull();
