@@ -26,6 +26,8 @@
 		5DBA1CA4E785731A2185BD97 /* InvictusActivityLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98552E9CC7C6A0DCB3DC7E2 /* InvictusActivityLiveActivityWidget.swift */; };
 		A400ACFC38AABA34D67F01E2 /* InvictusActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4265369A0FD40E943B92A0AC /* InvictusActivityIntents.swift */; };
 		7C989D6620DA9C81171FD0E4 /* InvictusActivityWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8AD5D6700F84F4F4032CB337 /* InvictusActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA11BB22CC33DD44EE55FF03 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF01 /* PrivacyInfo.xcprivacy */; };
+		AA11BB22CC33DD44EE55FF04 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF02 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +77,8 @@
 		396BCF2FFEB646628FAD49DC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CD7FACC1218E5E7C448DD843 /* InvictusActivityWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = InvictusActivityWidget.entitlements; sourceTree = "<group>"; };
 		8AD5D6700F84F4F4032CB337 /* InvictusActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InvictusActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA11BB22CC33DD44EE55FF01 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55FF02 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,6 +134,7 @@
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
+				AA11BB22CC33DD44EE55FF01 /* PrivacyInfo.xcprivacy */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
@@ -144,6 +149,7 @@
 				4265369A0FD40E943B92A0AC /* InvictusActivityIntents.swift */,
 				396BCF2FFEB646628FAD49DC /* Info.plist */,
 				CD7FACC1218E5E7C448DD843 /* InvictusActivityWidget.entitlements */,
+				AA11BB22CC33DD44EE55FF02 /* PrivacyInfo.xcprivacy */,
 			);
 			path = InvictusActivityWidget;
 			sourceTree = "<group>";
@@ -243,6 +249,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				AA11BB22CC33DD44EE55FF03 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -250,6 +257,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA11BB22CC33DD44EE55FF04 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
