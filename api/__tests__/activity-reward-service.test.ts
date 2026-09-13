@@ -21,7 +21,15 @@ function createDb() {
     collection: (collection: string) => ({
       doc: (id: string) => {
         const target = ref(collection, id);
-        return { ...target, get: async () => snapshot(store.get(target.key)) };
+        return {
+          ...target,
+          get: async () => snapshot(store.get(target.key)),
+          set: async (value: Record<string, any>, options?: { merge?: boolean }) => {
+            store.set(target.key, options?.merge
+              ? { ...(store.get(target.key) || {}), ...value }
+              : { ...value });
+          },
+        };
       },
     }),
     runTransaction: async (callback: (transaction: any) => Promise<any>) => {
@@ -95,6 +103,37 @@ test('wearable declarado pelo cliente sem evidência persistida fica fora de XP,
   expect(mockDb.store.get('users/user-a')).toMatchObject({ xp: 100, totalXp: 100 });
   expect(mockDb.store.has('activity_reward_ledger/unattested-health')).toBe(false);
   expect(MissionEngine.syncUserProgressFromCompletedActivities).not.toHaveBeenCalled();
+});
+
+test('reconciliação legada de wearable não atestado saneia flags e XP projetados no próprio documento', async () => {
+  mockDb.store.set('workouts/legacy-unattested', {
+    userId: 'user-a',
+    source: 'health_connect',
+    economyEligible: true,
+    missionEligible: true,
+    activityXpAwarded: 120,
+    points: 120,
+    pointsEarned: 120,
+    scoreAwarded: 120,
+  });
+
+  await expect(settleCompletedActivityRewards({
+    userId: 'user-a', activityId: 'legacy-unattested', type: 'cardio',
+    durationMinutes: 60, source: 'health_connect', economyEligible: true,
+    activityXP: 120, economyVersion: 1,
+  })).resolves.toMatchObject({ economyEligible: false, activityXP: 0, credited: false });
+
+  expect(mockDb.store.get('workouts/legacy-unattested')).toMatchObject({
+    economyEligible: false,
+    missionEligible: false,
+    activityXpAwarded: 0,
+    points: 0,
+    pointsEarned: 0,
+    scoreAwarded: 0,
+    activityRewardStatus: 'unverified_wearable_source',
+  });
+  expect(mockDb.store.get('users/user-a')).toMatchObject({ xp: 100, totalXp: 100 });
+  expect(mockDb.store.has('activity_reward_ledger/legacy-unattested')).toBe(false);
 });
 
 test('sessão menor que um minuto não cria ledger nem missão', async () => {
