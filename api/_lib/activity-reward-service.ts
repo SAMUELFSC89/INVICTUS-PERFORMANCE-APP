@@ -16,6 +16,14 @@ export interface CompletedActivityRewardInput {
   durationMinutes: number;
   intensity?: string;
   source?: string;
+  /**
+   * Somente código server-side que validou criptograficamente/provedorialmente
+   * a origem pode marcar uma importação wearable como confiável. Apple Health
+   * e Health Connect chegam hoje por payload do cliente e, portanto, deixam
+   * este campo ausente/false até existir App Attest/Play Integrity (ou prova
+   * equivalente) ligada ao lote.
+   */
+  sourceVerified?: boolean;
   /** Valor congelado no documento da atividade. Nunca recalcule-o em retry. */
   activityXP?: number;
   economyEligible?: boolean;
@@ -40,9 +48,16 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
     type: input.type,
     durationMinutes: input.durationMinutes,
   });
-  const economyEligible = input.economyEligible === undefined
+  const wearableSource = input.source === 'apple_health' || input.source === 'health_connect';
+  const sourceTrustedForRewards = !wearableSource || input.sourceVerified === true;
+  // Gate de confiança: um usuário autenticado consegue fabricar um POST válido
+  // para /api/wearables. Sem atestação da origem, plausibilidade fisiológica e
+  // um toggle "conectado" não provam que a atividade veio do HealthKit/HC.
+  // Mantemos histórico/saúde, mas nenhuma origem wearable não atestada pode
+  // criar XP, progresso de missão ou Coins indiretamente por resgate.
+  const economyEligible = sourceTrustedForRewards && (input.economyEligible === undefined
     ? calculatedEligibility
-    : input.economyEligible === true && calculatedEligibility;
+    : input.economyEligible === true && calculatedEligibility);
   const suppliedVersion = input.economyVersion === undefined ? null : Number(input.economyVersion);
   const formulaVersion = suppliedVersion ?? ACTIVITY_ECONOMY_VERSION;
   const versionSupported = Number.isInteger(formulaVersion)
@@ -68,10 +83,8 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
   const settlement = await db.runTransaction(async (transaction) => {
     const ledgerRef = db.collection('activity_reward_ledger').doc(input.activityId);
     const userRef = db.collection('users').doc(input.userId);
-    const wearableSource = input.source === 'apple_health' || input.source === 'health_connect';
-    // A origem controla `occurredAt`, portanto esse valor nunca pode escolher
-    // o balde econômico. Todo o lote recebido hoje disputa a mesma quota do
-    // servidor, mesmo quando contém atividades retroativas de vários dias.
+    // Mesmo após existir atestação wearable, quota continua sendo defesa em
+    // profundidade econômica. Ela não substitui o gate criptográfico acima.
     const quotaDay = new Date().toISOString().slice(0, 10);
     const quotaRef = wearableSource
       ? db.collection('activity_reward_quotas').doc(createHash('sha256').update(`${input.userId}\u0000${quotaDay}`).digest('hex'))
@@ -108,8 +121,6 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
       const quota = quotaSnap?.exists ? quotaSnap.data() || {} : {};
       const activityCount = Math.max(0, Number(quota.activityCount) || 0);
       const xpTotal = Math.max(0, Number(quota.xpTotal) || 0);
-      // Guarda econômica, não análise antifraude: limita payloads de Health
-      // declarados pelo cliente sem impedir que o registro apareça no histórico.
       if (xpTotal >= 1000) {
         transaction.create(ledgerRef, {
           activityId: input.activityId,
@@ -122,8 +133,6 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
           createdAt: new Date().toISOString(),
         });
         transaction.set(db.collection('workouts').doc(input.activityId), {
-          // A quota limita apenas XP. A atividade casual continua sendo uma
-          // conclusão válida para desafios (os Coins vêm do resgate da missão).
           economyEligible: true,
           missionEligible: true,
           activityXpAwarded: 0,
@@ -153,8 +162,6 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
           updatedAt: new Date().toISOString(),
         }, { merge: true });
       }
-      // From here on the ledger and user use the actually available daily
-      // amount. This makes the 1000 XP ceiling independent of upload order.
       awardedXP = quotaActivityXP;
     }
 
@@ -188,8 +195,6 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
     );
   }
   return {
-    // Elegibilidade da atividade e quantidade de XP creditada são eixos
-    // diferentes. Atingir a quota não apaga o progresso de desafio.
     economyEligible: true,
     activityXP: settlement.activityXP,
     credited: settlement.credited,
