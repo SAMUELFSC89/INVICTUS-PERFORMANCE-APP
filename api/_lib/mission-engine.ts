@@ -126,6 +126,17 @@ function frozenMissionDefinition(mission: Mission): Record<string, unknown> {
  * eligible for casual missions when the underlying activity itself is valid.
  */
 function missionActivityIsEligible(data: Record<string, any>): boolean {
+  const source = String(data.source || '').toLowerCase();
+  const wearableSource = source === 'apple_health' || source === 'health_connect';
+  const evidenceStatus = String(data.competitionEvidenceStatus || '').toLowerCase();
+  const wearableTrusted = !wearableSource
+    || evidenceStatus === 'trusted_native_attestation'
+    || evidenceStatus === 'trusted_server_source';
+  // Defesa em profundidade para documentos legados: reconstruções globais de
+  // missão não podem confiar apenas em flags antigas economy/missionEligible.
+  // Wearable só entra na economia depois de prova server-side persistida.
+  if (!wearableTrusted) return false;
+
   const quality = String(data.dataQualityStatus || '').toLowerCase();
   if (data.missionEligible === false || data.economyEligible === false
     || ['duplicate', 'discarded', 'dedup_pending'].includes(quality)) return false;
