@@ -18,10 +18,9 @@ describe('Gate 1 — registro e apresentação de push no iOS', () => {
     expect(entitlements).toContain('<string>production</string>');
   });
 
-  it('usa opções modernas de apresentação em foreground', () => {
+  it('usa opção de apresentação suportada pelo plugin instalado', () => {
     const config = read('capacitor.config.ts');
-    expect(config).toContain('presentationOptions: ["badge", "sound", "banner", "list"]');
-    expect(config).not.toContain('presentationOptions: ["badge", "sound", "alert"]');
+    expect(config).toContain('presentationOptions: ["badge", "sound", "alert"]');
   });
 
   it('não mistura o token APNs do iOS com o token FCM do Android', () => {
