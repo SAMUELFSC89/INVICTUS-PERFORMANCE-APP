@@ -7,6 +7,8 @@ export const PRIVACY_POLICY_VERSION = '5.0.0';
 export const COMPETITION_RULES_VERSIONS = {
   community_friends_v1: 'community-friends-v2-hr',
   gym_ranking: 'gym-ranking-v2-hr',
+  invictus_strength_v1: 'invictus-strength-v1',
+  invictus_cardio_v1: 'invictus-cardio-v1',
 } as const;
 
 export type CompetitiveHrScope = keyof typeof COMPETITION_RULES_VERSIONS | string;
