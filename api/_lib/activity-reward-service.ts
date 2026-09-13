@@ -109,6 +109,7 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
         pointsEarned: 0,
         scoreAwarded: 0,
         activityRewardStatus: 'unverified_wearable_source',
+        userMessage: 'Atividade salva no histórico; esta integração ainda não possui atestação para gerar XP, desafios ou ranking.',
         updatedAt: new Date().toISOString(),
       }, { merge: true });
     }
