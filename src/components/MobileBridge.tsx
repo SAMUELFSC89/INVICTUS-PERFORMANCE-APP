@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -7,6 +7,7 @@ import { auth, getRedirectResult } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { WearableManager } from '../services/wearables/WearableManager';
 import { healthSummaryService } from '../services/healthSummaryService';
+import { parseNativeStravaCallback, resolveNativeDeepLinkRoute } from '../lib/nativeDeepLinks';
 
 // Saúde passiva precisa chegar com baixa latência enquanto o app está em uso.
 // O iOS não garante timers JavaScript com o app suspenso/encerrado; nesses
@@ -75,9 +76,68 @@ async function tentarSincronizacaoAutomatica() {
 export function MobileBridge() {
   const navigate = useNavigate();
   const location = useLocation();
+  const launchUrlHandledRef = useRef(false);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
+    let disposed = false;
+
+    const handleIncomingUrl = async (rawUrl: string) => {
+      if (disposed || !rawUrl) return;
+      console.log('[MobileBridge] Deep link recebido:', rawUrl);
+
+      try {
+        await Browser.close();
+      } catch {
+        // Browser não estava aberto ou já foi fechado.
+      }
+      if (disposed) return;
+
+      // #250 + auditoria Gate 1: o callback agora também carrega o returnPath.
+      // Isso é essencial no cold start: a WebView recém-criada não conserva a
+      // rota que iniciou o OAuth e o CustomEvent pode acontecer antes de a tela
+      // de Dispositivos montar seu listener.
+      const stravaCallback = parseNativeStravaCallback(rawUrl);
+      if (stravaCallback) {
+        if (location.pathname !== stravaCallback.returnPath) {
+          navigate(stravaCallback.returnPath, { replace: true });
+        }
+        window.dispatchEvent(new CustomEvent('invictus:strava-callback', {
+          detail: { outcome: stravaCallback.outcome }
+        }));
+        return;
+      }
+
+      // iOS 16.x: o botão "Abrir no app" da Live Activity usa
+      // invictus://activity. Antes o esquema apenas acordava o app; nenhuma
+      // rota era aberta. O mesmo resolvedor é usado no warm e no cold start.
+      const internalRoute = resolveNativeDeepLinkRoute(rawUrl);
+      if (internalRoute) {
+        navigate(internalRoute);
+        return;
+      }
+
+      // Check if this is an auth redirect. Mantemos os formatos legados já
+      // aceitos para não regredir Google/Firebase enquanto os deep links de
+      // produto acima são tratados de forma estrita primeiro.
+      if (
+        rawUrl.includes('access_token') ||
+        rawUrl.includes('code') ||
+        rawUrl.includes('state') ||
+        rawUrl.includes('auth') ||
+        rawUrl.includes('com.desafiosemdesculpa.app') ||
+        rawUrl.includes('invictus')
+      ) {
+        try {
+          const res = await getRedirectResult(auth);
+          if (res?.user) {
+            console.log('[MobileBridge] OAuth login completed via deep link:', res.user.uid);
+          }
+        } catch (err) {
+          console.error('[MobileBridge] Error processing redirect result:', err);
+        }
+      }
+    };
 
     // Handle back button
     const backListener = CapApp.addListener('backButton', ({ canGoBack }) => {
@@ -90,44 +150,24 @@ export function MobileBridge() {
       }
     });
 
-    // Handle deep link / OAuth return
-    const appUrlListener = CapApp.addListener('appUrlOpen', async (data) => {
-      console.log('[MobileBridge] Deep link appUrlOpen received:', data.url);
-
-      try {
-        await Browser.close();
-      } catch (e) {
-        // Browser was not open or already closed
-      }
-
-      // #250: retorno do OAuth do Strava (ver api/_handlers/strava.ts,
-      // buildStravaRedirectUrl) -- avisa quem estiver na tela de Dispositivos
-      // (ProfileSecondary) pra atualizar o status sem exigir refresh manual.
-      if (data.url.includes('strava-callback')) {
-        const outcome = data.url.includes('strava=error') ? 'error' : 'connected';
-        window.dispatchEvent(new CustomEvent('invictus:strava-callback', { detail: { outcome } }));
-        return;
-      }
-
-      // Check if this is an auth redirect
-      if (
-        data.url.includes('access_token') ||
-        data.url.includes('code') ||
-        data.url.includes('state') ||
-        data.url.includes('auth') ||
-        data.url.includes('com.desafiosemdesculpa.app') ||
-        data.url.includes('invictus')
-      ) {
-        try {
-          const res = await getRedirectResult(auth);
-          if (res?.user) {
-            console.log('[MobileBridge] OAuth login completed via deep link:', res.user.uid);
-          }
-        } catch (err) {
-          console.error('[MobileBridge] Error processing redirect result:', err);
-        }
-      }
+    // Warm start / app já aberto.
+    const appUrlListener = CapApp.addListener('appUrlOpen', (data) => {
+      void handleIncomingUrl(data.url);
     });
+
+    // Cold start. appUrlOpen sozinho não é contrato suficiente para recuperar
+    // a URL que lançou uma WebView nova; o plugin App expõe getLaunchUrl()
+    // exatamente para esse caso. O ref evita reprocessar a URL quando este
+    // efeito é reinstalado por mudança de rota.
+    if (!launchUrlHandledRef.current) {
+      launchUrlHandledRef.current = true;
+      void CapApp.getLaunchUrl()
+        .then((launch) => {
+          if (launch?.url) return handleIncomingUrl(launch.url);
+          return undefined;
+        })
+        .catch((err) => console.warn('[MobileBridge] Não foi possível ler a URL de lançamento:', err));
+    }
 
     // Handle external links
     const handleExternalLinks = (e: MouseEvent) => {
@@ -140,7 +180,7 @@ export function MobileBridge() {
 
         if (isExternal) {
           e.preventDefault();
-          Browser.open({ url: anchor.href });
+          void Browser.open({ url: anchor.href });
         }
       }
     };
@@ -148,11 +188,12 @@ export function MobileBridge() {
     document.addEventListener('click', handleExternalLinks);
 
     return () => {
+      disposed = true;
       backListener.then(l => l.remove());
       appUrlListener.then(l => l.remove());
       document.removeEventListener('click', handleExternalLinks);
     };
-  }, [navigate, location]);
+  }, [navigate, location.pathname]);
 
   // Efeito próprio: instala uma vez e reage a autenticação, retomada do app e
   // ao timer de primeiro plano. Não depende de rota para não duplicar timers.
