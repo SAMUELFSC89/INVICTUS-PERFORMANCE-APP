@@ -1,58 +1,34 @@
 import { timingSafeEqual } from 'crypto';
-import { verifyAuth } from '../_lib/common.js';
+import { verifyAuth, db } from '../_lib/common.js';
 import { listChampionships, getChampionship } from '../_lib/championship-catalog.js';
 import {
   registrarAceiteRegulamento,
+  confirmarInscricaoChampionshipPorCheckout,
   confirmarInscricaoChampionshipPorPagamento,
+  encerrarCheckoutChampionship,
   marcarInscricaoChampionshipComoReembolsada,
   getUserRegistrations,
 } from '../_lib/championship-inscription-service.js';
 import { recordCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
 import { getChampionshipProgress, getChampionshipLeaderboard, getUserChampionshipActivities } from '../_lib/championship-scoring-service.js';
-import { db } from '../_lib/common.js';
 import { criarPresenceCheck } from '../_lib/presence-check-service.js';
 
 /**
- * Handlers de Campeonatos -- reescritos em 2026-08 para rodar sobre
- * Firestore + Asaas de verdade.
- *
- * Ate aqui (ver AUDITORIA-CORE-INVICTUS.md e git blame deste arquivo):
- * - accept-regulation gravava o aceite num Map em memoria (perdido a cada
- *   cold start / cada instancia serverless tem o seu proprio Map).
- * - payment confiava em `userId` mandado no corpo da requisicao -- qualquer
- *   pessoa podia se inscrever em nome de outra so trocando o body.
- * - o "checkout" no app (ChampionshipCheckoutAsaas.tsx) nunca chamava esse
- *   endpoint de pagamento de verdade: mostrava um QR code decorativo fixo e
- *   tinha um botao "Simular Pagamento Aprovado" que so chamava o webhook
- *   diretamente -- ou seja, NENHUM dinheiro real trafegava, mas a tela
- *   parecia uma cobranca real de producao.
- * - submit-activity confiava no `riskScore` que o proprio cliente mandava.
- *
- * Todos os pontos acima foram corrigidos: userId sempre vem do token
- * verificado (verifyAuth), a cobranca e uma cobranca PIX real via
- * AsaasClient (mesmo cliente ja usado e comprovado pela inscricao de
- * temporada), e a pontuacao de campeonato e escrita so pelo servidor,
- * automaticamente, a partir de atividades ja homologadas pelo
- * SecurityPipeline + IGA (ver championship-scoring-service.ts).
+ * Campeonatos pagos usam um catálogo servidor-autoritativo, aceite versionado,
+ * presença verificada e Checkout Asaas hospedado. O navegador apenas conduz o
+ * pagamento; a inscrição só é ativada por evento financeiro autenticado.
  */
 
 function erroComoResposta(erro: any): { status: number; message: string } {
   const mensagem = erro?.message || 'Falha ao processar a solicitacao.';
-  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad|frequência cardíaca|aceite|regras competitivas/i.test(mensagem);
+  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad|frequência cardíaca|aceite|regras competitivas|checkout|calendário|premiação/i.test(mensagem);
   return { status: ehRegra ? 400 : 500, message: mensagem };
 }
 
-/** GET /api/championships -- catalogo publico (preco, janela, regulamento vigente). */
 export async function listChampionshipsHandler(_req: any, res: any) {
   return res.json({ championships: listChampionships() });
 }
 
-/**
- * Campos gravados com FieldValue.serverTimestamp() viram um Timestamp do
- * Admin SDK, que NAO serializa como string ISO num res.json() comum -- viraria
- * {_seconds,_nanoseconds} ou objeto vazio no JSON. Normaliza pra ISO string
- * antes de responder ao app.
- */
 function serializarRegistro(dados: any) {
   const paraIso = (v: any) => {
     if (!v) return undefined;
@@ -65,23 +41,21 @@ function serializarRegistro(dados: any) {
     criadaEm: paraIso(dados.criadaEm),
     pagaEm: paraIso(dados.pagaEm),
     reembolsadaEm: paraIso(dados.reembolsadaEm),
+    checkoutCriadoEm: paraIso(dados.checkoutCriadoEm),
+    checkoutFinalizadoEm: paraIso(dados.checkoutFinalizadoEm),
   };
 }
 
-/** GET /api/championships/my-registrations -- inscricoes do usuario autenticado. */
 export async function getMyRegistrationsHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
-
   const registrations = await getUserRegistrations(auth.uid);
   return res.json({ registrations: registrations.map(serializarRegistro) });
 }
 
-/** GET /api/championships/progress?championshipId=X -- progresso real do usuario autenticado. */
 export async function getChampionshipProgressHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
-
   const championshipId = String(req.query?.championshipId || '');
   const champ = getChampionship(championshipId);
   if (!champ) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
@@ -89,8 +63,7 @@ export async function getChampionshipProgressHandler(req: any, res: any) {
   const progresso = await getChampionshipProgress(championshipId, auth.uid);
   const agora = Date.now();
   const fimMs = new Date(champ.endAt).getTime();
-  const diasRestantes = Math.max(0, Math.ceil((fimMs - agora) / (1000 * 60 * 60 * 24)));
-
+  const diasRestantes = Number.isFinite(fimMs) ? Math.max(0, Math.ceil((fimMs - agora) / 86_400_000)) : 0;
   return res.json({
     championshipId,
     userId: auth.uid,
@@ -103,55 +76,38 @@ export async function getChampionshipProgressHandler(req: any, res: any) {
   });
 }
 
-/** GET /api/championships/leaderboard?championshipId=X -- ranking real (publico). */
 export async function getChampionshipLeaderboardHandler(req: any, res: any) {
   const championshipId = String(req.query?.championshipId || '');
-  if (!getChampionship(championshipId)) {
-    return res.status(404).json({ error: 'Campeonato nao encontrado.' });
-  }
+  if (!getChampionship(championshipId)) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const leaderboard = await getChampionshipLeaderboard(championshipId, 50);
   return res.json({ championshipId, leaderboard });
 }
 
-/** GET /api/championships/my-activities?championshipId=X -- atividades homologadas do usuario neste campeonato. */
 export async function getMyChampionshipActivitiesHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
-
   const championshipId = String(req.query?.championshipId || '');
-  if (!getChampionship(championshipId)) {
-    return res.status(404).json({ error: 'Campeonato nao encontrado.' });
-  }
-
+  if (!getChampionship(championshipId)) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const activities = await getUserChampionshipActivities(championshipId, auth.uid);
   return res.json({ championshipId, activities });
 }
 
-/**
- * POST /api/championships/accept-regulation
- * Body: { championshipId, regulationVersion, regulationHash }
- */
 export async function acceptChampionshipRegulationHandler(req: any, res: any) {
   try {
     const auth = await verifyAuth(req);
     if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
 
     const { championshipId, regulationVersion, regulationHash, locale, platform } = req.body || {};
-    if (!championshipId) {
-      return res.status(400).json({ error: 'championshipId e obrigatorio.' });
-    }
+    if (!championshipId) return res.status(400).json({ error: 'championshipId e obrigatorio.' });
 
     const championship = getChampionship(championshipId);
-    if (!championship) {
-      return res.status(404).json({ error: 'Campeonato nao encontrado.' });
-    }
+    if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
     if (regulationVersion !== championship.regulationVersion || regulationHash !== championship.regulationHash) {
       return res.status(400).json({ error: 'O regulamento foi atualizado. Reabra a inscricao, leia e aceite a versao vigente.' });
     }
 
     const clientIp = (req.headers?.['x-forwarded-for'] as string) || req.socket?.remoteAddress || '127.0.0.1';
     const userAgent = req.headers?.['user-agent'] || 'Invictus Client';
-
     const hrAcknowledgement = await recordCompetitiveHrAcknowledgement(
       auth.uid,
       championshipId,
@@ -170,7 +126,6 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
       hrAcknowledgementId: hrAcknowledgement.acknowledgementId,
       hrAcknowledgementVersion: hrAcknowledgement.hrAcknowledgementVersion,
     });
-
     return res.status(201).json({ success: true, ...resultado });
   } catch (erro: any) {
     const { status, message } = erroComoResposta(erro);
@@ -180,31 +135,33 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
 }
 
 /**
- * POST /api/championships/payment
- * Body: { championshipId, acceptanceId }
- * Emite a cobranca PIX real via Asaas e devolve o QR code (base64) + copia-e-cola.
- *
- * Antes de emitir a cobranca (dinheiro real em disputa), exige confirmacao de
- * presenca por selfie -- mesmo mecanismo usado no check-in de academia (ver
- * api/_lib/presence-check-service.ts). Em vez de chamar criarInscricaoChampionship
- * direto, cria um `pending_presence_checks` e devolve presenceCheckRequired; a
- * inscricao so e de fato criada em api/_handlers/validate-presence.ts, apos a
- * selfie ser aprovada (actionType 'championship_registration').
+ * Inicia a inscrição. Antes de criar o Checkout hospedado, confirma presença
+ * e identidade por selfie. `checkoutSurface` aceita iOS nativo agora e web
+ * para o site Android futuro; o app Android não expõe esse CTA.
  */
 export async function createChampionshipPaymentHandler(req: any, res: any) {
   try {
     const auth = await verifyAuth(req);
     if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
 
-    const { championshipId, acceptanceId } = req.body || {};
+    const { championshipId, acceptanceId, checkoutSurface } = req.body || {};
     if (!championshipId || !acceptanceId) {
       return res.status(400).json({ error: 'championshipId e acceptanceId sao obrigatorios.' });
+    }
+    if (!['ios_native', 'web'].includes(checkoutSurface)) {
+      return res.status(400).json({ error: 'Superficie de checkout nao autorizada.' });
+    }
+
+    const championship = getChampionship(championshipId);
+    if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
+    if (!championship.registrationOpen) {
+      return res.status(400).json({ error: championship.registrationReadinessReason || 'Inscricoes ainda nao disponiveis.' });
     }
 
     const { presenceCheckId, livenessPrompt } = await criarPresenceCheck({
       userId: auth.uid,
       actionType: 'championship_registration',
-      payload: { championshipId, acceptanceId },
+      payload: { championshipId, acceptanceId, checkoutSurface },
     });
 
     return res.json({
@@ -212,7 +169,7 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
       presenceCheckRequired: true,
       presenceCheckId,
       livenessPrompt,
-      userMessage: 'Confirme sua presenca por selfie para emitir a cobranca da inscricao.',
+      userMessage: 'Confirme sua presença por selfie. Depois da aprovação, o checkout seguro do Asaas será aberto.',
     });
   } catch (erro: any) {
     const { status, message } = erroComoResposta(erro);
@@ -221,51 +178,65 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
   }
 }
 
+function webhookTokenIsValid(req: any): boolean {
+  const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN?.trim();
+  const headerToken = req.headers?.['asaas-access-token'];
+  const receivedToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
+  if (!expectedToken || typeof receivedToken !== 'string' || receivedToken.length !== expectedToken.length) return false;
+  return timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken));
+}
+
 /**
- * POST /api/championships/webhook-asaas
- * Espelha api/_handlers/asaas-webhook.ts (mesma verificacao de token
- * asaas-access-token via timingSafeEqual), mas so entende eventos de
- * cobranca (PAYMENT_*) de inscricao em campeonato.
+ * Aceita eventos CHECKOUT_* atuais e mantém PAYMENT_* por compatibilidade.
+ * O callback do navegador nunca chega aqui como prova de pagamento.
  */
 export async function asaasChampionshipWebhookHandler(req: any, res: any) {
   try {
-    const expectedToken = process.env.ASAAS_WEBHOOK_TOKEN?.trim();
-    const headerToken = req.headers?.['asaas-access-token'];
-    const receivedToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
-
-    if (!expectedToken) {
+    if (!process.env.ASAAS_WEBHOOK_TOKEN?.trim()) {
       console.error('[Championship Webhook] ASAAS_WEBHOOK_TOKEN ausente; evento recusado por seguranca.');
       return res.status(503).json({ error: 'Webhook temporariamente indisponivel.' });
     }
-
-    const tokenMatches = typeof receivedToken === 'string'
-      && receivedToken.length === expectedToken.length
-      && timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken));
-
-    if (!tokenMatches) {
-      console.warn('[Championship Webhook] Requisicao rejeitada: token de acesso invalido ou ausente.');
+    if (!webhookTokenIsValid(req)) {
+      console.warn('[Championship Webhook] Requisicao rejeitada: token invalido ou ausente.');
       return res.status(401).json({ error: 'Nao autorizado.' });
     }
 
-    const event = req.body?.event as string;
+    const event = String(req.body?.event || '');
+    const checkout = req.body?.checkout;
     const payment = req.body?.payment;
-    if (!event || !payment?.id) {
-      return res.status(200).json({ received: true, ignored: true, reason: 'Payload sem evento de cobranca.' });
+    if (!event) return res.status(200).json({ received: true, ignored: true, reason: 'Evento ausente.' });
+
+    if (event.startsWith('CHECKOUT_')) {
+      if (!checkout?.id) return res.status(200).json({ received: true, ignored: true, reason: 'Checkout ausente.' });
+      console.log(`[Championship Webhook] ${event} checkout=${checkout.id}`);
+      if (event === 'CHECKOUT_PAID') {
+        const resultado = await confirmarInscricaoChampionshipPorCheckout(checkout.id);
+        return res.status(200).json({ received: true, inscricao: resultado });
+      }
+      if (event === 'CHECKOUT_CANCELED') {
+        const resultado = await encerrarCheckoutChampionship(checkout.id, 'cancelled');
+        return res.status(200).json({ received: true, inscricao: resultado });
+      }
+      if (event === 'CHECKOUT_EXPIRED') {
+        const resultado = await encerrarCheckoutChampionship(checkout.id, 'expired');
+        return res.status(200).json({ received: true, inscricao: resultado });
+      }
+      return res.status(200).json({ received: true, ignored: event });
     }
 
-    console.log(`[Championship Webhook] Evento: ${event} para pagamento ${payment.id} (status: ${payment.status})`);
-
+    if (!payment?.id) {
+      return res.status(200).json({ received: true, ignored: true, reason: 'Payload sem cobranca.' });
+    }
+    const checkoutSession = String(payment.checkoutSession || payment.checkout?.id || '');
     if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
-      const resultado = await confirmarInscricaoChampionshipPorPagamento(payment.id, payment.value);
+      const resultado = await confirmarInscricaoChampionshipPorPagamento(payment.id, payment.value, checkoutSession || undefined);
       return res.status(200).json({ received: true, inscricao: resultado });
     }
-
     if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_CHARGEBACK_REQUESTED') {
-      const resultado = await marcarInscricaoChampionshipComoReembolsada(payment.id);
+      const resultado = await marcarInscricaoChampionshipComoReembolsada(payment.id, checkoutSession || undefined);
       return res.status(200).json({ received: true, inscricao: resultado });
     }
-
-    return res.status(200).json({ received: true, ignorado: event });
+    return res.status(200).json({ received: true, ignored: event });
   } catch (erro: any) {
     console.error('[Championship Webhook] erro:', erro);
     return res.status(500).json({ error: 'Erro interno ao processar webhook do Asaas.' });
@@ -273,16 +244,8 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
 }
 
 /**
- * POST /api/championships/submit-activity
- * Body: { championshipId, activityId }
- *
- * Somente LEITURA hoje: a pontuacao de campeonato e escrita automaticamente
- * pelo servidor (championship-scoring-service.ts, chamado de dentro de
- * validate-activity-service.ts) assim que uma atividade e homologada. Este
- * endpoint so devolve o resultado ja computado para o app confirmar na UI --
- * nunca aceita `score`/`riskScore` vindo do cliente, porque isso seria
- * confiar no cliente para decidir a propria pontuacao de uma competicao com
- * premio em dinheiro real.
+ * Consulta somente o resultado já calculado pelo servidor. O cliente nunca
+ * envia score ou risco como autoridade competitiva.
  */
 export async function submitActivityToChampionshipHandler(req: any, res: any) {
   try {
@@ -305,10 +268,7 @@ export async function submitActivityToChampionshipHandler(req: any, res: any) {
     }
 
     const dados: any = doc.data();
-    if (dados.userId !== auth.uid) {
-      return res.status(403).json({ error: 'Esta atividade nao pertence a este usuario.' });
-    }
-
+    if (dados.userId !== auth.uid) return res.status(403).json({ error: 'Esta atividade nao pertence a este usuario.' });
     return res.json({
       success: true,
       computed: true,
