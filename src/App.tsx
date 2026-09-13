@@ -33,9 +33,7 @@ const AdminWorkouts = lazyNamed(() => import('./pages/AdminWorkouts'), 'AdminWor
 const AdminPayouts = lazyNamed(() => import('./pages/AdminPayouts'), 'AdminPayouts');
 const AdminDashboard = lazyNamed(() => import('./pages/AdminDashboard'), 'AdminDashboard');
 const AdminGymAudit = lazyNamed(() => import('./pages/AdminGymAudit'), 'AdminGymAudit');
-const AdminRankingSimulator = lazyNamed(() => import('./pages/AdminRankingSimulator'), 'AdminRankingSimulator');
 const AdminSecurityAudit = lazyNamed(() => import('./pages/AdminSecurityAudit'), 'AdminSecurityAudit');
-const AdminIGATesteOriginal = lazyNamed(() => import('./pages/AdminIGATesteOriginal'), 'AdminIGATesteOriginal');
 const AdminFlaggedActivities = lazyNamed(() => import('./pages/AdminFlaggedActivities'), 'AdminFlaggedActivities');
 const PowerLift = lazyNamed(() => import('./pages/PowerLift'), 'PowerLift');
 const Health = lazyNamed(() => import('./pages/Health'), 'Health');
@@ -46,11 +44,7 @@ const CommunityChampionship = lazyNamed(() => import('./pages/championships/Comm
 const CommunityRanking = lazyNamed(() => import('./pages/championships/CommunityRanking'), 'CommunityRanking');
 const ChampionshipPreview = lazyNamed(() => import('./pages/championships/ChampionshipPreview'), 'ChampionshipPreview');
 const Musculation = lazyNamed(() => import('./pages/Musculation'), 'Musculation');
-const InvictusStore = lazyNamed(() => import('./pages/InvictusStore'), 'InvictusStore');
 const InvictusAI = lazyNamed(() => import('./pages/InvictusAI'), 'InvictusAI');
-const StoreProductDetail = lazyNamed(() => import('./pages/StoreProductDetail'), 'StoreProductDetail');
-const StoreCheckout = lazyNamed(() => import('./pages/StoreCheckout'), 'StoreCheckout');
-const StoreOrders = lazyNamed(() => import('./pages/StoreOrders'), 'StoreOrders');
 const AdminStorePricing = lazyNamed(() => import('./pages/AdminStorePricing'), 'AdminStorePricing');
 const AdminStoreDrops = lazyNamed(() => import('./pages/AdminStoreDrops'), 'AdminStoreDrops');
 const AdminStoreOrders = lazyNamed(() => import('./pages/AdminStoreOrders'), 'AdminStoreOrders');
@@ -78,9 +72,6 @@ export default function App() {
           <AuthGuard>
             <Suspense fallback={<RouteLoading />}>
             <Routes>
-              {/* Continue URLs de verificação/reset do Firebase apontam para
-                  /login. Mantemos a rota dentro do guard para não cair em tela
-                  inexistente no PWA/nativo. */}
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="/onboarding/diet" element={<Navigate to="/" replace />} />
               <Route element={<Layout />}>
@@ -95,24 +86,22 @@ export default function App() {
                 <Route path="/challenges/cardio" element={<Challenges />} />
                 <Route path="/challenges/cardio/objective" element={<CardioObjective />} />
                 <Route path="/activity" element={<ActivityTypeChooser />} />
-                {/* Rotas canônicas para retomar uma sessão sem voltar à escolha
-                    de modalidade. A rota de saída apenas minimiza a sessão;
-                    cancelar continua sendo uma ação explícita dentro do fluxo. */}
                 <Route path="/activity/ongoing" element={<Challenges />} />
                 <Route path="/running" element={<Challenges />} />
                 <Route path="/activity/exit" element={<Navigate to="/" replace />} />
                 <Route path="/musculacao" element={<Musculation />} />
-                <Route path="/store" element={<InvictusStore />} />
+                {/* Loja física preservada no código/admin, mas fechada para usuários até o lançamento. */}
+                <Route path="/store" element={<Navigate to="/" replace />} />
+                <Route path="/store/product/:productId" element={<Navigate to="/" replace />} />
+                <Route path="/store/product/:productId/checkout" element={<Navigate to="/" replace />} />
+                <Route path="/store/orders" element={<Navigate to="/" replace />} />
                 <Route path="/ai" element={<ProFeatureGate feature="ai"><InvictusAI /></ProFeatureGate>} />
-                <Route path="/store/product/:productId" element={<StoreProductDetail />} />
-                <Route path="/store/product/:productId/checkout" element={<StoreCheckout />} />
-                <Route path="/store/orders" element={<StoreOrders />} />
                 <Route path="/profile/:userId" element={<PublicProfile />} />
                 <Route path="/profile/academy" element={<ProfileSecondary />} />
                 <Route path="/profile/academy/search" element={<AcademySearch />} />
                 <Route path="/profile/academy/confirm" element={<AcademyConfirm />} />
                 <Route path="/profile/wearables" element={<ProfileSecondary />} />
-                <Route path="/profile/wallet" element={<Navigate to="/store" replace />} />
+                <Route path="/profile/wallet" element={<Navigate to="/profile" replace />} />
                 <Route path="/profile/goals" element={<ProfileSecondary />} />
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
@@ -132,21 +121,7 @@ export default function App() {
                 <Route path="/championships/:id/confirmed" element={<Navigate to="/championships" replace />} />
                 <Route path="/championships/:id" element={<Navigate to="/championships" replace />} />
                 <Route path="/achievements" element={<Achievements />} />
-                <Route path="/wallet" element={<Navigate to="/store" replace />} />
-                {/* #252: "Sua Performance" era uma tela antiga, anterior a
-                    reescrita da aba Saude, que recalculava os mesmos dados
-                    (mesmo motor processUserPerformance) com sua propria
-                    leitura do Firestore. So tinha um unico ponto de entrada
-                    em todo o app (botao "Progresso" na Home) e o proprio
-                    usuario confirmou nao lembrar que ela existia -- resquicio
-                    de uma consolidacao que nunca foi terminada. Removida a
-                    pagina e os 4 componentes exclusivos dela
-                    (MetricMatrixModal/TimelineView/PerformanceAIModal/
-                    ModuleDetailModal); a rota continua existindo como
-                    redirecionamento (mesmo padrao ja usado em /wallet e
-                    /gym) para nao quebrar links antigos/favoritos.
-                    (Checkpoint activity-competition-v2 trouxe de volta a
-                    versao antiga desta pagina; reaplicado #252 aqui.) */}
+                <Route path="/wallet" element={<Navigate to="/profile" replace />} />
                 <Route path="/performance" element={<Navigate to="/health" replace />} />
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
@@ -158,25 +133,24 @@ export default function App() {
                 <Route path="/pagamento/pendente" element={<PaymentSuccess />} />
                 <Route path="/pagamento/falha" element={<PaymentSuccess />} />
                 <Route path="/my-diet" element={<Navigate to="/" replace />} />
-                {/* Deep links legados de saúde devem preservar o contexto da
-                    funcionalidade, em vez de jogar o usuário na Home. */}
                 <Route path="/saude" element={<Navigate to="/health" replace />} />
                 <Route path="/medical" element={<Navigate to="/health" replace />} />
                 <Route path="/clinical" element={<Navigate to="/health" replace />} />
+
                 <Route path="/admin/workouts" element={<AdminGuard><AdminWorkouts /></AdminGuard>} />
                 <Route path="/admin/payouts" element={<AdminGuard><AdminPayouts /></AdminGuard>} />
                 <Route path="/admin/gym-audit" element={<AdminGuard><AdminGymAudit /></AdminGuard>} />
-                <Route path="/admin/ranking-simulator" element={<AdminGuard><AdminRankingSimulator /></AdminGuard>} />
-                <Route path="/admin/iga-teste-original" element={<AdminGuard><AdminIGATesteOriginal /></AdminGuard>} />
                 <Route path="/admin/security" element={<AdminGuard><AdminSecurityAudit /></AdminGuard>} />
                 <Route path="/admin/flagged-activities" element={<AdminGuard><AdminFlaggedActivities /></AdminGuard>} />
                 <Route path="/admin/store/pricing" element={<AdminGuard><AdminStorePricing /></AdminGuard>} />
                 <Route path="/admin/store/drops" element={<AdminGuard><AdminStoreDrops /></AdminGuard>} />
                 <Route path="/admin/store/orders" element={<AdminGuard><AdminStoreOrders /></AdminGuard>} />
-                <Route path="/admin/wearables" element={<AdminGuard><ProfileSecondary /></AdminGuard>} />
+                <Route path="/admin/wearables" element={<Navigate to="/profile/wearables" replace />} />
+                {/* Ferramentas antigas de laboratório não fazem parte do backoffice de produção. */}
+                <Route path="/admin/ranking-simulator" element={<Navigate to="/admin" replace />} />
+                <Route path="/admin/iga-teste-original" element={<Navigate to="/admin" replace />} />
                 <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
-                {/* Qualquer rota desconhecida ou deep link antigo recupera para
-                    a Home, evitando tela vazia/órfã. */}
+
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>

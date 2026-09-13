@@ -9,22 +9,39 @@ import { AdminRepository } from '../_repositories/admin-repository.js';
 import { AdminService } from '../_services/admin/admin-service.js';
 import { resolveGymChampionshipReview } from '../_lib/championship-scoring-service.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
+import { fixGymFromGoogle, runAdminGymAudit } from '../_lib/admin-gym-audit.js';
 
 const adminRepository = new AdminRepository();
 const adminService = new AdminService(adminRepository);
 
+function isInactiveAccount(data: Record<string, any>): boolean {
+  const terminalStates = new Set(['deleted', 'blocked', 'banned', 'suspended', 'account_deleted', 'deletion_completed']);
+  const normalized = [data.status, data.accountStatus, data.lifecycleStatus]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  return Boolean(
+    data.isBlocked === true
+    || data.isBanned === true
+    || data.isSuspended === true
+    || data.isDeleted === true
+    || data.deleted === true
+    || data.accountDeleted === true
+    || data.disabled === true
+    || data.tombstone === true
+    || data.deletedAt
+    || data.accountDeletedAt
+    || normalized.some((state) => terminalStates.has(state))
+  );
+}
+
 export default async function handler(req: VercelRequest & { userId?: string; userEmail?: string }, res: VercelResponse) {
   try {
-    // 1. Middlewares
     if (corsMiddleware(req, res)) return;
     if (!methodMiddleware(req, res, ['GET', 'POST', 'PUT'])) return;
     if (!(await authMiddleware(req, res))) return;
 
-    // 2. Authorize Admin
     const userSnap = await db.collection('users').doc(req.userId!).get();
     const userData = userSnap.exists ? userSnap.data() : {};
-    // O papel persistido só concede autoridade enquanto a conta continua
-    // ativa. Assim, bloqueio/exclusão revogam acesso mesmo com token antigo.
     const isAdmin = hasActiveAdminAuthority(userData);
 
     if (!isAdmin) {
@@ -39,12 +56,76 @@ export default async function handler(req: VercelRequest & { userId?: string; us
       throw new AppError('Acesso negado. Esta rota é restrita a administradores.', 403);
     }
 
-    // 3. Dispatch Action
     const action = (req.query.action || req.body?.action || 'metrics') as string;
 
     switch (action) {
       case 'metrics':
         return res.status(200).json(await adminService.getMetrics());
+
+      case 'set-user-role': {
+        const targetUid = String(req.body?.targetUid || '').trim();
+        const role = String(req.body?.role || '').trim().toLowerCase();
+        if (!targetUid || targetUid.length > 128) throw new AppError('Usuário alvo inválido.', 400);
+        if (role !== 'admin' && role !== 'user') throw new AppError('Papel inválido.', 400);
+        if (targetUid === req.userId) throw new AppError('Você não pode alterar o próprio papel administrativo.', 400);
+
+        const targetRef = db.collection('users').doc(targetUid);
+        const targetSnap = await targetRef.get();
+        if (!targetSnap.exists) throw new AppError('Usuário não encontrado.', 404);
+        const targetData = targetSnap.data() || {};
+
+        if (role === 'admin') {
+          const tombstone = await db.collection('deleted_users').doc(targetUid).get();
+          if (tombstone.exists || isInactiveAccount(targetData)) {
+            throw new AppError('Uma conta bloqueada, suspensa ou excluída não pode receber acesso administrativo.', 409);
+          }
+        }
+
+        const previousRole = targetData.role === 'admin' ? 'admin' : 'user';
+        if (previousRole !== role) {
+          await targetRef.update({
+            role,
+            isAdmin: role === 'admin',
+            adminRoleUpdatedAt: new Date().toISOString(),
+            adminRoleUpdatedBy: req.userId,
+          });
+        }
+
+        await logEvent({
+          severity: 'HIGH_RISK',
+          category: 'system_logs',
+          message: `Papel administrativo alterado de '${previousRole}' para '${role}'.`,
+          userId: targetUid,
+          route: '/api/admin?action=set-user-role',
+          details: { targetUid, previousRole, role, changedBy: req.userId },
+        });
+
+        return res.status(200).json({ success: true, targetUid, role, previousRole });
+      }
+
+      case 'gyms-audit': {
+        const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+        return res.status(200).json(await runAdminGymAudit(limit));
+      }
+
+      case 'fix-gym-coordinates': {
+        const gymId = String(req.body?.gymId || '').trim();
+        if (!gymId) throw new AppError('gymId é obrigatório.', 400);
+        try {
+          const result = await fixGymFromGoogle(gymId, req.userId!);
+          await logEvent({
+            severity: 'INFO',
+            category: 'admin_reviews',
+            message: `Cadastro canônico da academia ${gymId} sincronizado com Google Places.`,
+            userId: req.userId!,
+            route: '/api/admin?action=fix-gym-coordinates',
+            details: { gymId, affectedUsers: result.affectedUsers },
+          });
+          return res.status(200).json(result);
+        } catch (error: any) {
+          throw new AppError(String(error?.message || 'Não foi possível corrigir a academia.'), 409);
+        }
+      }
 
       case 'get-reward-economy-config': {
         const [economy, championship] = await Promise.all([
@@ -209,23 +290,19 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         return res.status(200).json(result);
       }
 
-    case 'process-withdrawal-payment': {
-      const { withdrawalId } = req.body;
-      const result = await adminService.processWithdrawalPayment(req.userId!, withdrawalId);
-      return res.status(200).json(result);
-    }
+      case 'process-withdrawal-payment': {
+        const { withdrawalId } = req.body;
+        const result = await adminService.processWithdrawalPayment(req.userId!, withdrawalId);
+        return res.status(200).json(result);
+      }
 
-          case 'credit-test-balance': {
-const { userId, amount, description } = req.body;
-const result = await adminService.creditTestBalance(req.userId!, userId || req.userId!, Number(amount), description);
-return res.status(200).json(result);
-}
-case 'update-withdrawal-min-amount': {
-const { minWithdrawalAmount } = req.body;
-const result = await adminService.updateWithdrawalMinAmount(req.userId!, Number(minWithdrawalAmount));
-return res.status(200).json(result);
-}
-case 'upsert-mission':
+      case 'update-withdrawal-min-amount': {
+        const { minWithdrawalAmount } = req.body;
+        const result = await adminService.updateWithdrawalMinAmount(req.userId!, Number(minWithdrawalAmount));
+        return res.status(200).json(result);
+      }
+
+      case 'upsert-mission':
       case 'upsert-store-item': {
         const typeMap: Record<string, 'mission' | 'store_item'> = {
           'upsert-mission': 'mission',
@@ -234,9 +311,6 @@ case 'upsert-mission':
         const result = await adminService.upsertEntity(typeMap[action], req.body.id, req.body);
         return res.status(200).json(result);
       }
-
-      case 'production-audit':
-        return res.status(200).json(await adminService.getProductionAudit());
 
       case 'get-trace': {
         const traceId = (req.query.traceId || req.body?.traceId) as string;
