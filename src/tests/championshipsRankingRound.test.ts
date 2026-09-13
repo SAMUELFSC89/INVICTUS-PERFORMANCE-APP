@@ -59,21 +59,34 @@ describe('rodada campeonatos e ranking', () => {
     expect(podium).toContain('coroa + base, sem');
   });
 
-  it('mantém as três posições coerentes e corrige só a base Top 2 e a coroa Top 3', () => {
+  it('usa os assets originais e mantém as três posições coerentes como conjunto', () => {
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
     const css = read('src/pages/championships/CommunityRankingPodium.css');
+    const powerLift = read('src/pages/PowerLift.tsx');
+
     expect(podium).toContain('const slots = [2, 1, 3]');
-    expect(podium).toContain('academy-podium-base--rebuilt academy-podium-base--2');
-    expect(css).toContain('align-items: end !important');
-    expect(css).toContain('transform: none !important');
-    expect(css).toContain('aspect-ratio: 240 / 130');
-    expect(css).toContain('content: "2"');
+    expect(podium).toContain("2: '/assets/ranking/podium-top2.webp'");
+    expect(podium).not.toContain('academy-podium-base--rebuilt');
+    expect(css).not.toContain('aspect-ratio: 240 / 130');
+    expect(css).not.toContain('content: "2"');
+
+    expect(css).toContain('--podium-lift: 42px');
+    expect(css).toContain('--podium-lift: 18px');
+    expect(css).toContain('--podium-lift: 0px');
+    expect(css).toContain('transform: translateY(calc(-1 * var(--podium-lift))) !important');
+    expect(css).toContain('margin-top: 0 !important');
+
+    // A coroa bronze deve ser exatamente a mesma usada no Power Lift e deve
+    // manter folga positiva antes da base para o escudo inferior não ser cortado.
+    expect(podium).toContain("3: '/ranking-frame-bronze-reference.png'");
+    expect(powerLift).toContain("'bronze'}-reference.png");
     expect(css).toContain('.academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-avatar');
     expect(css).toContain('width: 76px !important');
     expect(css).toContain('height: 76px !important');
     expect(css).toContain('width: 62px !important');
     expect(css).toContain('height: 62px !important');
-    expect(css).toContain('margin-top: 0 !important');
+    expect(css).toContain('margin-bottom: 7px');
+    expect(css).toContain('z-index: 5');
   });
 
   it('mostra quarto lugar, posição do usuário e ranking completo de forma compacta', () => {
