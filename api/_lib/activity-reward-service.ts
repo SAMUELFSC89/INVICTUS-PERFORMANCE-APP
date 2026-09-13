@@ -9,6 +9,11 @@ import {
 import { MissionEngine } from './mission-engine.js';
 import { getLevelFromXP } from './xpConfig.js';
 
+const TRUSTED_WEARABLE_EVIDENCE = new Set([
+  'trusted_native_attestation',
+  'trusted_server_source',
+]);
+
 export interface CompletedActivityRewardInput {
   userId: string;
   activityId: string;
@@ -16,14 +21,6 @@ export interface CompletedActivityRewardInput {
   durationMinutes: number;
   intensity?: string;
   source?: string;
-  /**
-   * Somente código server-side que validou criptograficamente/provedorialmente
-   * a origem pode marcar uma importação wearable como confiável. Apple Health
-   * e Health Connect chegam hoje por payload do cliente e, portanto, deixam
-   * este campo ausente/false até existir App Attest/Play Integrity (ou prova
-   * equivalente) ligada ao lote.
-   */
-  sourceVerified?: boolean;
   /** Valor congelado no documento da atividade. Nunca recalcule-o em retry. */
   activityXP?: number;
   economyEligible?: boolean;
@@ -31,6 +28,21 @@ export interface CompletedActivityRewardInput {
   /** Lotes fazem uma única reconstrução de missões depois de todos os itens. */
   syncMissions?: boolean;
   occurredAt?: Date | string;
+}
+
+async function isStoredWearableSourceTrusted(input: CompletedActivityRewardInput): Promise<boolean> {
+  const wearableSource = input.source === 'apple_health' || input.source === 'health_connect';
+  if (!wearableSource) return true;
+
+  // A confiança nunca vem do payload/chamador deste serviço. Para wearable,
+  // somente um estado de evidência previamente persistido pelo backend pode
+  // abrir o gate econômico. Isso impede que `sourceVerified: true` (ou um campo
+  // equivalente inventado no POST) transforme dados fabricados em XP/Coins.
+  const snap = await db.collection('workouts').doc(input.activityId).get();
+  if (!snap.exists) return false;
+  const stored = snap.data() || {};
+  if (stored.userId !== input.userId || stored.source !== input.source) return false;
+  return TRUSTED_WEARABLE_EVIDENCE.has(String(stored.competitionEvidenceStatus || ''));
 }
 
 /**
@@ -49,12 +61,12 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
     durationMinutes: input.durationMinutes,
   });
   const wearableSource = input.source === 'apple_health' || input.source === 'health_connect';
-  const sourceTrustedForRewards = !wearableSource || input.sourceVerified === true;
+  const sourceTrustedForRewards = await isStoredWearableSourceTrusted(input);
   // Gate de confiança: um usuário autenticado consegue fabricar um POST válido
-  // para /api/wearables. Sem atestação da origem, plausibilidade fisiológica e
-  // um toggle "conectado" não provam que a atividade veio do HealthKit/HC.
-  // Mantemos histórico/saúde, mas nenhuma origem wearable não atestada pode
-  // criar XP, progresso de missão ou Coins indiretamente por resgate.
+  // para /api/wearables. Sem evidência de origem persistida pelo servidor,
+  // plausibilidade fisiológica e um toggle "conectado" não provam que a
+  // atividade veio do HealthKit/Health Connect. Mantemos histórico/saúde, mas
+  // não liberamos XP, progresso de missão ou Coins indiretamente por resgate.
   const economyEligible = sourceTrustedForRewards && (input.economyEligible === undefined
     ? calculatedEligibility
     : input.economyEligible === true && calculatedEligibility);
