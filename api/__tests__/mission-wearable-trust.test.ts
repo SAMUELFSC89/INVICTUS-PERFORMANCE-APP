@@ -94,10 +94,13 @@ function wearableActivity(evidenceStatus?: string): Stored {
   };
 }
 
+function progressEntry(missionId: string): [string, Stored] | undefined {
+  return [...mockDb.store.entries()]
+    .find(([key, value]) => key.startsWith('user_missions/') && value.missionId === missionId) as [string, Stored] | undefined;
+}
+
 function currentProgressFor(missionId: string): number {
-  const found = [...mockDb.store.entries()]
-    .find(([key, value]) => key.startsWith('user_missions/') && value.missionId === missionId);
-  return Number(found?.[1]?.currentProgress || 0);
+  return Number(progressEntry(missionId)?.[1]?.currentProgress || 0);
 }
 
 beforeEach(() => {
@@ -137,4 +140,60 @@ test('flag trusted enviada em campo errado não abre o gate de missão', async (
   await MissionEngine.syncUserProgressFromCompletedActivities('user-a');
 
   expect(currentProgressFor('miss_motor_ligado')).toBe(0);
+});
+
+test('revogação de confiança corrige progresso legado ainda não resgatado', async () => {
+  mockDb = createDb({
+    'workouts/trusted-a': wearableActivity('trusted_native_attestation'),
+    'workouts/trusted-b': wearableActivity('trusted_native_attestation'),
+  });
+
+  await MissionEngine.syncUserProgressFromCompletedActivities('user-a');
+  const before = progressEntry('miss_motor_ligado');
+  expect(before?.[1]).toMatchObject({ currentProgress: 2, completed: true, completionAccessGranted: true });
+
+  const revoked = mockDb.store.get('workouts/trusted-b');
+  delete revoked.competitionEvidenceStatus;
+  mockDb.store.set('workouts/trusted-b', revoked);
+
+  await MissionEngine.syncUserProgressFromCompletedActivities('user-a');
+  const after = progressEntry('miss_motor_ligado');
+  expect(after?.[1]).toMatchObject({
+    currentProgress: 1,
+    completed: false,
+    completionAccessGranted: false,
+    wearableTrustReconciliationVersion: 1,
+  });
+});
+
+test('claim já reservado não é revertido silenciosamente por reconciliação de confiança', async () => {
+  mockDb = createDb({
+    'workouts/trusted-a': wearableActivity('trusted_native_attestation'),
+    'workouts/trusted-b': wearableActivity('trusted_native_attestation'),
+  });
+
+  await MissionEngine.syncUserProgressFromCompletedActivities('user-a');
+  const progress = progressEntry('miss_motor_ligado');
+  expect(progress).toBeDefined();
+  const [progressKey, current] = progress!;
+  mockDb.store.set(progressKey, {
+    ...current,
+    currentProgress: 2,
+    completed: true,
+    completionAccessGranted: true,
+    claimState: 'pending',
+    claimed: false,
+  });
+
+  const revoked = mockDb.store.get('workouts/trusted-b');
+  delete revoked.competitionEvidenceStatus;
+  mockDb.store.set('workouts/trusted-b', revoked);
+
+  await MissionEngine.syncUserProgressFromCompletedActivities('user-a');
+  expect(mockDb.store.get(progressKey)).toMatchObject({
+    currentProgress: 2,
+    completed: true,
+    completionAccessGranted: true,
+    claimState: 'pending',
+  });
 });
