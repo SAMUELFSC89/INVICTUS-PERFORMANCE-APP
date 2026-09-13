@@ -6,14 +6,15 @@ export function getAsaasBaseUrl(): string {
   if (env === 'production') {
     return 'https://api.asaas.com/v3';
   }
-  // Default to sandbox for safety when not explicitly in production
-  return 'https://sandbox.asaas.com/api/v3';
+  // URL oficial atual do Sandbox. Default continua sandbox para impedir
+  // movimentação real quando o ambiente não foi explicitamente configurado.
+  return 'https://api-sandbox.asaas.com/v3';
 }
 
 function getAsaasApiKey(): string {
   const key = process.env.ASAAS_API_KEY;
   if (!key) {
-    throw new Error('ASAAS_API_KEY não configurada no ambiente. Configure a chave de API do Asaas para processar saques via PIX.');
+    throw new Error('ASAAS_API_KEY não configurada no ambiente.');
   }
   return key;
 }
@@ -22,16 +23,11 @@ export type AsaasPixKeyType = 'cpf' | 'email' | 'phone' | 'random';
 
 function mapPixKeyTypeToAsaas(type: AsaasPixKeyType): string {
   switch (type) {
-    case 'cpf':
-      return 'CPF';
-    case 'email':
-      return 'EMAIL';
-    case 'phone':
-      return 'PHONE';
-    case 'random':
-      return 'EVP';
-    default:
-      return 'EVP';
+    case 'cpf': return 'CPF';
+    case 'email': return 'EMAIL';
+    case 'phone': return 'PHONE';
+    case 'random': return 'EVP';
+    default: return 'EVP';
   }
 }
 
@@ -51,9 +47,7 @@ export interface AsaasCobrancaResult {
 }
 
 export interface AsaasQrCodePix {
-  /** Imagem do QR code em base64, sem o prefixo data:. */
   encodedImage: string;
-  /** Codigo copia-e-cola. */
   payload: string;
   expirationDate?: string;
 }
@@ -66,7 +60,14 @@ export interface AsaasPaymentMutationResult {
   raw: any;
 }
 
-/** Erro da API do Asaas, com a mensagem que eles devolvem. */
+export interface AsaasHostedCheckoutResult {
+  id: string;
+  link: string;
+  status: string;
+  externalReference: string;
+  raw: any;
+}
+
 function mensagemDeErroAsaas(data: any, status: number, acao: string): string {
   return (data && data.errors && data.errors[0] && data.errors[0].description)
     || data?.message
@@ -79,6 +80,7 @@ async function chamarAsaas(caminho: string, init: RequestInit, acao: string): Pr
     signal: init.signal || AbortSignal.timeout(30_000),
     headers: {
       'Content-Type': 'application/json',
+      'User-Agent': 'InvictusPerformance/1.0 (Node.js)',
       'access_token': getAsaasApiKey(),
       ...(init.headers || {}),
     },
@@ -90,13 +92,6 @@ async function chamarAsaas(caminho: string, init: RequestInit, acao: string): Pr
   return data;
 }
 
-/**
- * Cliente HTTP para a API de Transferências via Pix do Asaas.
- * Docs: https://docs.asaas.com/reference/criar-transferencia
- *
- * Usado para automatizar o envio real do PIX de saque ao atleta, disparado
- * pelo admin na tela /admin/payouts (WithdrawalEngine.processPayment).
- */
 export class AsaasClient {
   static async transferPix(params: {
     value: number;
@@ -105,18 +100,14 @@ export class AsaasClient {
     description?: string;
   }): Promise<AsaasTransferResult> {
     const { value, pixKey, pixKeyType, description } = params;
-
-    if (!value || value <= 0) {
-      throw new Error('Valor da transferência PIX deve ser maior que zero.');
-    }
-    if (!pixKey || !pixKey.trim()) {
-      throw new Error('Chave PIX de destino é obrigatória.');
-    }
+    if (!value || value <= 0) throw new Error('Valor da transferência PIX deve ser maior que zero.');
+    if (!pixKey || !pixKey.trim()) throw new Error('Chave PIX de destino é obrigatória.');
 
     const response = await fetch(getAsaasBaseUrl() + '/transfers', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'InvictusPerformance/1.0 (Node.js)',
         'access_token': getAsaasApiKey()
       },
       body: JSON.stringify({
@@ -126,16 +117,10 @@ export class AsaasClient {
         description: description || 'Saque Invictus Performance'
       })
     });
-
     const data: any = await response.json().catch(() => ({}));
-
     if (!response.ok) {
-      const message = (data && data.errors && data.errors[0] && data.errors[0].description)
-        || data.message
-        || ('Falha ao solicitar transferência PIX ao Asaas (HTTP ' + response.status + ').');
-      throw new Error(message);
+      throw new Error(mensagemDeErroAsaas(data, response.status, 'solicitar transferência PIX'));
     }
-
     return {
       id: data.id,
       status: data.status || 'PENDING',
@@ -144,19 +129,76 @@ export class AsaasClient {
     };
   }
 
-  // ------------------------------------------------------------------
-  // COBRANCA (entrada de dinheiro) -- usada para a inscricao na temporada.
-  //
-  // Este e o sentido oposto da transferencia acima. A inscricao em competicao
-  // NAO pode ser cobrada por compra dentro do app (IAP): a regra das lojas
-  // proibe IAP para entrada em disputa de dinheiro real e permite meio de
-  // pagamento proprio. Por isso ela passa por aqui.
-  // ------------------------------------------------------------------
-
   /**
-   * Cria (ou reaproveita) o cliente no Asaas. O Asaas exige um cliente para
-   * emitir cobranca, e identifica duplicidade pelo CPF.
+   * Checkout hospedado para inscrição avulsa em campeonato esportivo.
+   * A API key permanece exclusivamente no servidor. O cliente recebe apenas
+   * a URL pública do Checkout e a confirmação financeira vem por webhook.
    */
+  static async criarCheckoutHospedado(params: {
+    valor: number;
+    nomeItem: string;
+    descricao: string;
+    referenciaExterna: string;
+    nomeCliente: string;
+    cpf: string;
+    email?: string;
+    successUrl: string;
+    cancelUrl: string;
+    expiredUrl: string;
+    minutosExpiracao?: number;
+  }): Promise<AsaasHostedCheckoutResult> {
+    const cpfLimpo = String(params.cpf || '').replace(/\D/g, '');
+    if (!Number.isFinite(params.valor) || params.valor <= 0) throw new Error('Valor do checkout deve ser maior que zero.');
+    if (!params.referenciaExterna?.trim()) throw new Error('Referência externa do checkout é obrigatória.');
+    if (!params.nomeCliente?.trim() || !cpfLimpo) throw new Error('Nome e CPF são obrigatórios para o checkout.');
+    for (const url of [params.successUrl, params.cancelUrl, params.expiredUrl]) {
+      if (!/^https:\/\//i.test(url)) throw new Error('Callbacks do checkout devem usar HTTPS.');
+    }
+
+    const data = await chamarAsaas('/checkouts', {
+      method: 'POST',
+      body: JSON.stringify({
+        billingTypes: ['PIX', 'CREDIT_CARD'],
+        chargeTypes: ['DETACHED'],
+        minutesToExpire: Math.min(1440, Math.max(10, Math.floor(params.minutosExpiracao || 60))),
+        externalReference: params.referenciaExterna.trim().slice(0, 200),
+        callback: {
+          successUrl: params.successUrl,
+          cancelUrl: params.cancelUrl,
+          expiredUrl: params.expiredUrl,
+        },
+        items: [{
+          externalReference: params.referenciaExterna.trim().slice(0, 200),
+          name: params.nomeItem.trim().slice(0, 120),
+          description: params.descricao.trim().slice(0, 500),
+          quantity: 1,
+          value: Number(params.valor.toFixed(2)),
+        }],
+        customerData: {
+          name: params.nomeCliente.trim(),
+          cpfCnpj: cpfLimpo,
+          ...(params.email?.trim() ? { email: params.email.trim() } : {}),
+        },
+      }),
+    }, 'criar checkout hospedado');
+
+    if (typeof data?.id !== 'string' || !data.id.trim()) {
+      throw new Error('Asaas não devolveu o identificador do checkout.');
+    }
+    const checkoutEnv = (process.env.ASAAS_ENVIRONMENT || '').trim().toLowerCase();
+    const fallbackHost = checkoutEnv === 'production' ? 'https://asaas.com' : 'https://sandbox.asaas.com';
+    const link = typeof data.link === 'string' && /^https:\/\//i.test(data.link)
+      ? data.link
+      : `${fallbackHost}/checkoutSession/show?id=${encodeURIComponent(data.id)}`;
+    return {
+      id: data.id,
+      link,
+      status: data.status || 'ACTIVE',
+      externalReference: data.externalReference || params.referenciaExterna,
+      raw: data,
+    };
+  }
+
   static async criarOuObterCliente(params: {
     nome: string;
     cpf: string;
@@ -164,21 +206,15 @@ export class AsaasClient {
     referenciaExterna?: string;
   }): Promise<string> {
     const cpfLimpo = (params.cpf || '').replace(/\D/g, '');
-    if (!cpfLimpo) {
-      throw new Error('CPF e obrigatorio para emitir a cobranca da inscricao.');
-    }
-    if (!params.nome?.trim()) {
-      throw new Error('Nome e obrigatorio para emitir a cobranca da inscricao.');
-    }
+    if (!cpfLimpo) throw new Error('CPF e obrigatorio para emitir a cobranca da inscricao.');
+    if (!params.nome?.trim()) throw new Error('Nome e obrigatorio para emitir a cobranca da inscricao.');
 
     const existentes = await chamarAsaas(
       `/customers?cpfCnpj=${cpfLimpo}`,
       { method: 'GET' },
       'consultar cliente'
     );
-    if (existentes?.data?.[0]?.id) {
-      return existentes.data[0].id;
-    }
+    if (existentes?.data?.[0]?.id) return existentes.data[0].id;
 
     const criado = await chamarAsaas('/customers', {
       method: 'POST',
@@ -189,25 +225,19 @@ export class AsaasClient {
         externalReference: params.referenciaExterna,
       }),
     }, 'criar cliente');
-
-    if (!criado?.id) {
-      throw new Error('Asaas nao devolveu o identificador do cliente.');
-    }
+    if (!criado?.id) throw new Error('Asaas nao devolveu o identificador do cliente.');
     return criado.id;
   }
 
-  /** Emite uma cobranca PIX. */
+  /** Mantido para fluxos legados que ainda usam cobrança PIX direta. */
   static async criarCobrancaPix(params: {
     clienteId: string;
     valor: number;
     descricao: string;
     referenciaExterna: string;
-    vencimento: string; // AAAA-MM-DD
+    vencimento: string;
   }): Promise<AsaasCobrancaResult> {
-    if (!params.valor || params.valor <= 0) {
-      throw new Error('Valor da inscricao deve ser maior que zero.');
-    }
-
+    if (!params.valor || params.valor <= 0) throw new Error('Valor da inscricao deve ser maior que zero.');
     const data = await chamarAsaas('/payments', {
       method: 'POST',
       body: JSON.stringify({
@@ -219,11 +249,9 @@ export class AsaasClient {
         externalReference: params.referenciaExterna,
       }),
     }, 'criar cobranca');
-
     if (typeof data?.id !== 'string' || !data.id.trim()) {
       throw new Error('Asaas nao devolveu o identificador da cobranca. A intencao deve ser reconciliada antes de tentar novamente.');
     }
-
     return {
       id: data.id,
       status: data.status || 'PENDING',
@@ -233,10 +261,6 @@ export class AsaasClient {
     };
   }
 
-  /**
-   * Recupera a cobranca associada a uma intencao da aplicacao. Essa consulta
-   * deve preceder qualquer retry de criacao cujo resultado tenha sido incerto.
-   */
   static async buscarCobrancaPorReferenciaExterna(referenciaExterna: string): Promise<AsaasCobrancaResult | null> {
     const reference = referenciaExterna?.trim();
     if (!reference) return null;
@@ -259,7 +283,6 @@ export class AsaasClient {
     };
   }
 
-  /** Consulta pontual usada para reconciliar retries de cancelamento/estorno. */
   static async obterCobranca(cobrancaId: string): Promise<AsaasCobrancaResult> {
     if (!cobrancaId?.trim()) throw new Error('Identificador da cobranca e obrigatorio.');
     const data = await chamarAsaas(
@@ -276,7 +299,6 @@ export class AsaasClient {
     };
   }
 
-  /** Remove uma cobranca ainda nao paga. O retorno do DELETE confirma a remocao. */
   static async cancelarCobranca(cobrancaId: string): Promise<AsaasPaymentMutationResult> {
     if (!cobrancaId?.trim()) throw new Error('Identificador da cobranca e obrigatorio para cancelar.');
     const data = await chamarAsaas(
@@ -292,10 +314,6 @@ export class AsaasClient {
     };
   }
 
-  /**
-   * Solicita o estorno de uma cobranca paga. A resposta apenas confirma que a
-   * solicitacao foi aceita; a conclusao continua sendo determinada por webhook.
-   */
   static async estornarPagamento(cobrancaId: string, params: { valor?: number; descricao?: string } = {}): Promise<AsaasPaymentMutationResult> {
     if (!cobrancaId?.trim()) throw new Error('Identificador da cobranca e obrigatorio para estornar.');
     const body: Record<string, unknown> = {};
@@ -314,18 +332,13 @@ export class AsaasClient {
     };
   }
 
-  /** Busca o QR code e o copia-e-cola de uma cobranca PIX ja criada. */
   static async obterQrCodePix(cobrancaId: string): Promise<AsaasQrCodePix> {
     const data = await chamarAsaas(
       `/payments/${cobrancaId}/pixQrCode`,
       { method: 'GET' },
       'obter QR code PIX'
     );
-
-    if (!data?.payload) {
-      throw new Error('Asaas nao devolveu o codigo PIX da cobranca.');
-    }
-
+    if (!data?.payload) throw new Error('Asaas nao devolveu o codigo PIX da cobranca.');
     return {
       encodedImage: data.encodedImage,
       payload: data.payload,
