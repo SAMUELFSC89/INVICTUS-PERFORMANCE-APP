@@ -18,7 +18,12 @@ function createDb() {
   const ref = (collection: string, id: string) => ({ collection, id, key: `${collection}/${id}` });
   return {
     store,
-    collection: (collection: string) => ({ doc: (id: string) => ref(collection, id) }),
+    collection: (collection: string) => ({
+      doc: (id: string) => {
+        const target = ref(collection, id);
+        return { ...target, get: async () => snapshot(store.get(target.key)) };
+      },
+    }),
     runTransaction: async (callback: (transaction: any) => Promise<any>) => {
       const writes: Array<{ mode: 'set' | 'create'; target: any; value: Record<string, any>; merge?: boolean }> = [];
       const transaction = {
@@ -42,6 +47,15 @@ function createDb() {
   };
 }
 
+function trustWearable(activityId: string, extra: Record<string, any> = {}) {
+  mockDb.store.set(`workouts/${activityId}`, {
+    userId: 'user-a',
+    source: 'health_connect',
+    competitionEvidenceStatus: 'trusted_native_attestation',
+    ...extra,
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockDb = createDb();
@@ -49,9 +63,10 @@ beforeEach(() => {
 });
 
 test('ledger transacional credita XP de wearable atestado uma única vez e sempre reconcilia missões', async () => {
+  trustWearable('wearable-a');
   const input = {
     userId: 'user-a', activityId: 'wearable-a', type: 'cardio' as const,
-    durationMinutes: 20, source: 'health_connect', sourceVerified: true,
+    durationMinutes: 20, source: 'health_connect',
   };
   await expect(settleCompletedActivityRewards({ ...input, activityXP: 40, economyVersion: 1 }))
     .resolves.toMatchObject({ activityXP: 40, credited: true });
@@ -65,12 +80,15 @@ test('ledger transacional credita XP de wearable atestado uma única vez e sempr
   expect(MissionEngine.syncUserProgressFromCompletedActivities).toHaveBeenCalledTimes(2);
 });
 
-test('wearable declarado pelo cliente sem atestação fica fora de XP, missão e ledger', async () => {
-  await expect(settleCompletedActivityRewards({
+test('wearable declarado pelo cliente sem evidência persistida fica fora de XP, missão e ledger mesmo forjando flags de confiança', async () => {
+  const forgedInput: any = {
     userId: 'user-a', activityId: 'unattested-health', type: 'cardio',
     durationMinutes: 60, source: 'health_connect', economyEligible: true,
     activityXP: 120, economyVersion: 1,
-  })).resolves.toEqual({
+    sourceVerified: true,
+    competitionEvidenceStatus: 'trusted_native_attestation',
+  };
+  await expect(settleCompletedActivityRewards(forgedInput)).resolves.toEqual({
     economyEligible: false, activityXP: 0, credited: false, economyVersion: 1,
   });
 
@@ -89,17 +107,19 @@ test('sessão menor que um minuto não cria ledger nem missão', async () => {
 
 test('quota técnica de wearable atestado limita economia sem apagar o registro pessoal', async () => {
   for (let index = 0; index < 10; index += 1) {
+    trustWearable(`health-${index}`);
     await expect(settleCompletedActivityRewards({
       userId: 'user-a', activityId: `health-${index}`, type: 'cardio',
-      durationMinutes: 50, activityXP: 100, source: 'health_connect', sourceVerified: true,
+      durationMinutes: 50, activityXP: 100, source: 'health_connect',
       // Datas históricas diferentes continuam no mesmo teto do dia em que o
       // servidor recebeu o lote.
       occurredAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
     })).resolves.toMatchObject({ economyEligible: true, credited: true });
   }
+  trustWearable('health-over-quota');
   await expect(settleCompletedActivityRewards({
     userId: 'user-a', activityId: 'health-over-quota', type: 'cardio',
-    durationMinutes: 50, activityXP: 100, source: 'health_connect', sourceVerified: true,
+    durationMinutes: 50, activityXP: 100, source: 'health_connect',
     occurredAt: '2026-02-20T18:00:00.000Z',
   })).resolves.toMatchObject({ economyEligible: true, activityXP: 0, credited: false });
 
@@ -128,9 +148,10 @@ test('rejeita versão econômica desconhecida ou snapshot adulterado antes de cr
 test('teto diário de 1000 XP independe da ordem do lote wearable atestado', async () => {
   const settlePair = async (durations: number[]) => {
     for (const [index, durationMinutes] of durations.entries()) {
+      trustWearable(`ordered-${index}`);
       await settleCompletedActivityRewards({
         userId: 'user-a', activityId: `ordered-${index}`, type: 'cardio', durationMinutes,
-        source: 'health_connect', sourceVerified: true, occurredAt: '2026-09-06T10:00:00.000Z',
+        source: 'health_connect', occurredAt: '2026-09-06T10:00:00.000Z',
       });
     }
     return {
@@ -150,21 +171,22 @@ test('quota de XP de wearable atestado não escolhe qual modalidade pode progred
   const runOrder = async (types: Array<'cardio' | 'workout'>) => {
     const quotaKey = [...mockDb.store.keys()].find(key => key.startsWith('activity_reward_quotas/'));
     if (quotaKey) mockDb.store.delete(quotaKey);
+    trustWearable('quota-seed');
     await settleCompletedActivityRewards({
       userId: 'user-a', activityId: 'quota-seed', type: 'cardio', durationMinutes: 360,
-      activityXP: 720, source: 'health_connect', sourceVerified: true, economyVersion: 1,
+      activityXP: 720, source: 'health_connect', economyVersion: 1,
     });
     const createdQuotaKey = [...mockDb.store.keys()].find(key => key.startsWith('activity_reward_quotas/'))!;
     mockDb.store.set(createdQuotaKey, {
       userId: 'user-a', day: '2026-09-06', activityCount: 1, xpTotal: 990,
     });
     for (const [index, type] of types.entries()) {
-      mockDb.store.set(`workouts/mixed-${index}`, {
-        userId: 'user-a', type, economyEligible: true, missionEligible: true,
+      trustWearable(`mixed-${index}`, {
+        type, economyEligible: true, missionEligible: true,
       });
       await settleCompletedActivityRewards({
         userId: 'user-a', activityId: `mixed-${index}`, type, durationMinutes: 20,
-        source: 'health_connect', sourceVerified: true, economyVersion: 1,
+        source: 'health_connect', economyVersion: 1,
       });
     }
     return types.map((_, index) => mockDb.store.get(`workouts/mixed-${index}`))
