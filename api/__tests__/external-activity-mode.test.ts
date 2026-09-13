@@ -97,7 +97,12 @@ beforeEach(() => {
   mockDb = createDb();
   (encontrarAtividadeDuplicada as jest.Mock).mockResolvedValue(null);
   (resolveActivityCompetitionPolicy as jest.Mock).mockResolvedValue(personalPolicy);
-  (settleCompletedActivityRewards as jest.Mock).mockResolvedValue({ economyEligible: true, activityXP: 40, credited: true });
+  (settleCompletedActivityRewards as jest.Mock).mockImplementation(async (input: any) => {
+    const unverifiedWearable = input?.source === 'health_connect' || input?.source === 'apple_health';
+    return unverifiedWearable
+      ? { economyEligible: false, activityXP: 0, credited: false, economyVersion: 1 }
+      : { economyEligible: true, activityXP: 40, credited: true, economyVersion: 1 };
+  });
   (persistActivityCompetitionEntries as jest.Mock).mockResolvedValue(undefined);
   (recalculateAllUserScores as jest.Mock).mockResolvedValue({ weekly: { igaRanking: 50 } });
   (submitActivityToActiveChampionships as jest.Mock).mockResolvedValue(undefined);
@@ -128,7 +133,7 @@ test('Strava casual salva atividade concluída, dá XP/missão e não executa an
   });
 });
 
-test('wearable sem atestação preserva registro, XP e missão, mas nunca se autoaprova no placar', async () => {
+test('wearable sem atestação preserva histórico, mas não gera XP, missão ou placar', async () => {
   (resolveActivityCompetitionPolicy as jest.Mock).mockResolvedValue({
     ...personalPolicy,
     contexts: [{
@@ -152,10 +157,12 @@ test('wearable sem atestação preserva registro, XP e missão, mas nunca se aut
     competitionReviewStatus: 'ineligible', pendingReview: false,
     nonScoringReason: 'UNVERIFIED_WEARABLE_SOURCE',
     missionAccessTier: 'free', missionAccessVersion: 1,
-    missionEligible: true, activityXpAwarded: 40, competitionPoints: 0,
+    missionEligible: false, economyEligible: false, activityXpAwarded: 0, competitionPoints: 0,
   });
   expect(SecurityPipeline.runPipeline).not.toHaveBeenCalled();
-  expect(settleCompletedActivityRewards).toHaveBeenCalled();
+  expect(settleCompletedActivityRewards).toHaveBeenCalledWith(expect.objectContaining({
+    source: 'health_connect',
+  }));
   expect(persistActivityCompetitionEntries).toHaveBeenCalledWith(expect.objectContaining({
     reviewStatus: 'ineligible',
   }));
