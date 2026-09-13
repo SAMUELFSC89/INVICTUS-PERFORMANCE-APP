@@ -1,12 +1,12 @@
 import ActivityKit
+import AppIntents
 import Foundation
 
 // #328: tipo compartilhado entre o app principal e a Widget Extension
 // (InvictusActivityWidget) para a Live Activity da atividade em andamento
-// (cardio/treino). Precisa ser Codable/Hashable e compilar nos dois alvos
-// -- por isso não importa nada além de ActivityKit/Foundation (sem
-// Capacitor/UIKit), evitando puxar dependências pesadas para dentro do
-// processo da extension.
+// (cardio/treino). Este arquivo entra em AMBOS os targets. Além dos atributos,
+// mantém os LiveActivityIntent interativos no mesmo source compartilhado para
+// que o sistema encontre a mesma implementação no app host e no widget.
 //
 // O cronômetro é exibido no widget via `Text(timerInterval:)`/estilo
 // `.timer`, calculado puramente no lado nativo a partir de `startedAt` +
@@ -56,9 +56,9 @@ public struct InvictusActivityAttributes: ActivityAttributes {
 
 /// Nome do App Group compartilhado entre App e InvictusActivityWidget --
 /// usado tanto pelas entitlements quanto pela troca de mensagens
-/// intent -> app (ação pendente escrita em UserDefaults(suiteName:) e
-/// sinalizada via Darwin notification, já que um App Intent roda fora do
-/// processo do app principal).
+/// intent -> bridge JS. LiveActivityIntent pode executar no processo do app
+/// sem abrir sua UI; o UserDefaults do App Group funciona como handoff durável
+/// caso a bridge/listener JavaScript ainda não tenha sido criada.
 public enum InvictusActivityIPC {
     public static let appGroupId = "group.com.desafiosemdesculpa.app.activity"
     public static let pendingActionKey = "invictus.activity.pendingAction"
@@ -71,5 +71,43 @@ public enum InvictusActivityIPC {
     public enum Action: String {
         case togglePause = "toggle_pause"
         case finish = "finish"
+    }
+}
+
+private func postPendingActivityAction(_ action: InvictusActivityIPC.Action) {
+    guard let defaults = UserDefaults(suiteName: InvictusActivityIPC.appGroupId) else { return }
+    defaults.set(action.rawValue, forKey: InvictusActivityIPC.pendingActionKey)
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(InvictusActivityIPC.darwinNotificationName),
+        nil,
+        nil,
+        true
+    )
+}
+
+// Apple executa LiveActivityIntent no processo do app host. Manter estes tipos
+// neste source compartilhado (que já pertence aos targets App e Widget) evita
+// a configuração anterior em que os intents existiam somente no target da
+// extensão e garante descoberta consistente dos botões interativos.
+@available(iOS 17.0, *)
+struct ToggleActivityPauseIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Pausar ou retomar atividade"
+    static var description = IntentDescription("Pausa ou retoma a atividade em andamento no Invictus.")
+
+    func perform() async throws -> some IntentResult {
+        postPendingActivityAction(.togglePause)
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+struct FinishActivityIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Finalizar atividade"
+    static var description = IntentDescription("Finaliza e envia a atividade em andamento no Invictus para validação.")
+
+    func perform() async throws -> some IntentResult {
+        postPendingActivityAction(.finish)
+        return .result()
     }
 }

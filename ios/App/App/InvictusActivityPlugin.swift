@@ -9,13 +9,12 @@ import Foundation
 // equivalente iOS da notificação persistente do Android
 // (activityNotificationService.ts / capacitor-android-foreground-service).
 //
-// Os botões "Pausar/Retomar" e "Finalizar" da Live Activity rodam num App
-// Intent que executa FORA do processo do app (na extension), então não dá
-// pra chamar o JS diretamente dali. O caminho de volta é: intent grava a
-// ação pendente no UserDefaults do App Group compartilhado
-// (InvictusActivityIPC.appGroupId) e dispara uma Darwin notification; este
-// plugin escuta essa notification (registrado em load()) e repassa pro JS
-// via notifyListeners.
+// Os botões "Pausar/Retomar" e "Finalizar" usam LiveActivityIntent. O sistema
+// pode executar o intent no processo do app sem trazer a UI ao primeiro plano,
+// inclusive antes de a bridge JS/listener estar pronta. Por isso o intent grava
+// a ação no App Group e sinaliza via Darwin notification; este plugin drena
+// também qualquer ação que já estava pendente ao carregar e a retém até o JS
+// registrar o listener, evitando perder o comando em cold/headless start.
 @objc(InvictusActivityPlugin)
 public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate {
     public let identifier = "InvictusActivityPlugin"
@@ -45,12 +44,17 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
             { _, observer, _, _, _ in
                 guard let observer else { return }
                 let plugin = Unmanaged<InvictusActivityPlugin>.fromOpaque(observer).takeUnretainedValue()
-                plugin.handlePendingActionFromExtension()
+                plugin.handlePendingActionFromIntent()
             },
             InvictusActivityIPC.darwinNotificationName,
             nil,
             .deliverImmediately
         )
+
+        // Se o intent executou antes de o Capacitor criar este plugin, a Darwin
+        // notification já passou. A fonte durável é o App Group: leia agora e
+        // retenha o evento até o primeiro listener JS de `activityAction`.
+        handlePendingActionFromIntent()
     }
 
     private func authorizationLabel(_ status: CLAuthorizationStatus) -> String {
@@ -191,14 +195,17 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
         )
     }
 
-    private func handlePendingActionFromExtension() {
+    private func handlePendingActionFromIntent() {
         guard let defaults = UserDefaults(suiteName: InvictusActivityIPC.appGroupId),
               let raw = defaults.string(forKey: InvictusActivityIPC.pendingActionKey) else {
             return
         }
         defaults.removeObject(forKey: InvictusActivityIPC.pendingActionKey)
         DispatchQueue.main.async { [weak self] in
-            self?.notifyListeners("activityAction", data: ["action": raw])
+            // `load()` pode acontecer antes de Challenges registrar seu
+            // listener. O terceiro argumento faz o Capacitor guardar o evento
+            // e entregá-lo assim que o listener existir.
+            self?.notifyListeners("activityAction", data: ["action": raw], retainUntilConsumed: true)
         }
     }
 
