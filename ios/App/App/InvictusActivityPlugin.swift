@@ -26,6 +26,7 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startLocationTracking", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumeLocationTracking", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getTrackedLocations", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopLocationTracking", returnType: CAPPluginReturnPromise)
     ]
@@ -76,11 +77,13 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
         return manager
     }
 
-    @objc func startLocationTracking(_ call: CAPPluginCall) {
+    private func beginLocationTracking(_ call: CAPPluginCall, clearExisting: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { call.resolve(); return }
-            self.trackedLocations = []
-            self.persistTrackedLocations()
+            if clearExisting {
+                self.trackedLocations = []
+                self.persistTrackedLocations()
+            }
             let manager = self.configureLocationManager()
             let status = manager.authorizationStatus
 
@@ -103,6 +106,18 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
             self.notifyListeners("locationAuthorization", data: ["status": self.authorizationLabel(manager.authorizationStatus)])
             call.resolve()
         }
+    }
+
+    @objc func startLocationTracking(_ call: CAPPluginCall) {
+        // Sessão nova: o buffer anterior não pertence a este treino.
+        beginLocationTracking(call, clearExisting: true)
+    }
+
+    @objc func resumeLocationTracking(_ call: CAPPluginCall) {
+        // Recuperação após recriação do WebView/processo JS: o buffer persistido
+        // pertence à sessão em andamento e NÃO pode ser apagado antes do JS
+        // importá-lo e do encerramento enviar a prova completa ao backend.
+        beginLocationTracking(call, clearExisting: false)
     }
 
     @objc func getTrackedLocations(_ call: CAPPluginCall) {
