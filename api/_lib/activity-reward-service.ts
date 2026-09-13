@@ -30,19 +30,26 @@ export interface CompletedActivityRewardInput {
   occurredAt?: Date | string;
 }
 
-async function isStoredWearableSourceTrusted(input: CompletedActivityRewardInput): Promise<boolean> {
+async function storedWearableTrust(input: CompletedActivityRewardInput): Promise<{
+  trusted: boolean;
+  matchedStoredActivity: boolean;
+}> {
   const wearableSource = input.source === 'apple_health' || input.source === 'health_connect';
-  if (!wearableSource) return true;
+  if (!wearableSource) return { trusted: true, matchedStoredActivity: false };
 
   // A confiança nunca vem do payload/chamador deste serviço. Para wearable,
   // somente um estado de evidência previamente persistido pelo backend pode
   // abrir o gate econômico. Isso impede que `sourceVerified: true` (ou um campo
   // equivalente inventado no POST) transforme dados fabricados em XP/Coins.
   const snap = await db.collection('workouts').doc(input.activityId).get();
-  if (!snap.exists) return false;
+  if (!snap.exists) return { trusted: false, matchedStoredActivity: false };
   const stored = snap.data() || {};
-  if (stored.userId !== input.userId || stored.source !== input.source) return false;
-  return TRUSTED_WEARABLE_EVIDENCE.has(String(stored.competitionEvidenceStatus || ''));
+  const matchedStoredActivity = stored.userId === input.userId && stored.source === input.source;
+  if (!matchedStoredActivity) return { trusted: false, matchedStoredActivity: false };
+  return {
+    trusted: TRUSTED_WEARABLE_EVIDENCE.has(String(stored.competitionEvidenceStatus || '')),
+    matchedStoredActivity: true,
+  };
 }
 
 /**
@@ -61,13 +68,13 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
     durationMinutes: input.durationMinutes,
   });
   const wearableSource = input.source === 'apple_health' || input.source === 'health_connect';
-  const sourceTrustedForRewards = await isStoredWearableSourceTrusted(input);
+  const wearableTrust = await storedWearableTrust(input);
   // Gate de confiança: um usuário autenticado consegue fabricar um POST válido
   // para /api/wearables. Sem evidência de origem persistida pelo servidor,
   // plausibilidade fisiológica e um toggle "conectado" não provam que a
   // atividade veio do HealthKit/Health Connect. Mantemos histórico/saúde, mas
   // não liberamos XP, progresso de missão ou Coins indiretamente por resgate.
-  const economyEligible = sourceTrustedForRewards && (input.economyEligible === undefined
+  const economyEligible = wearableTrust.trusted && (input.economyEligible === undefined
     ? calculatedEligibility
     : input.economyEligible === true && calculatedEligibility);
   const suppliedVersion = input.economyVersion === undefined ? null : Number(input.economyVersion);
@@ -89,6 +96,22 @@ export async function settleCompletedActivityRewards(input: CompletedActivityRew
     : 0;
 
   if (!economyEligible) {
+    // Reconcile legado podia reidratar temporariamente flags/XP antes de chegar
+    // ao settlement. Se o documento realmente pertence a este usuário/origem,
+    // saneamos imediatamente a projeção para que retry ou crash posterior não
+    // deixem uma atividade wearable não atestada aparentando ser premiável.
+    if (wearableSource && wearableTrust.matchedStoredActivity && !wearableTrust.trusted) {
+      await db.collection('workouts').doc(input.activityId).set({
+        economyEligible: false,
+        missionEligible: false,
+        activityXpAwarded: 0,
+        points: 0,
+        pointsEarned: 0,
+        scoreAwarded: 0,
+        activityRewardStatus: 'unverified_wearable_source',
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
     return { economyEligible: false, activityXP: 0, credited: false, economyVersion: formulaVersion };
   }
 
