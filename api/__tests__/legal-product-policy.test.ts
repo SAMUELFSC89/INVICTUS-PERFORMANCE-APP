@@ -17,9 +17,9 @@ describe('políticas do ecossistema atual', () => {
     expect(LEGAL_PROMOTIONAL_RULES).toContain('Não têm valor monetário');
   });
 
-  it('mantém campeonato gratuito sem vínculo com academia e pagos em breve', () => {
+  it('mantém campeonato gratuito sem vínculo com academia e pagos condicionados a edição publicada', () => {
     expect(LEGAL_TERMS_OF_USE).toContain('sem vínculo, patrocínio ou associação presumida com academias');
-    expect(LEGAL_TERMS_OF_USE).toContain('permanecem EM BREVE');
+    expect(LEGAL_TERMS_OF_USE).toContain('Sem edição publicada com organizador, datas, preço, critérios, premiação e regulamento específico aprovados, não haverá inscrição ou cobrança.');
   });
 
   it('não expõe FAQ legado de ligas, desafios pagos ou saques', () => {
@@ -29,9 +29,14 @@ describe('políticas do ecossistema atual', () => {
     expect(categories).toContain('Invictus Coins e Loja');
   });
 
-  it('fecha o catálogo e a pontuação de campeonatos pagos até aprovação', () => {
-    expect(CHAMPIONSHIPS).toEqual([]);
-    expect(isRegistrationOpen({} as never)).toBe(false);
+  it('publica as duas ofertas, mas mantém inscrição e pontuação fechadas por padrão', () => {
+    expect(CHAMPIONSHIPS.map((championship) => championship.id).sort()).toEqual([
+      'invictus_cardio_v1',
+      'invictus_strength_v1',
+    ]);
+    expect(CHAMPIONSHIPS.every((championship) => championship.registrationPrice === 29.9)).toBe(true);
+    expect(CHAMPIONSHIPS.every((championship) => isRegistrationOpen(championship) === false)).toBe(true);
     expect(matchActiveChampionshipsForActivity({ activityType: 'workout', when: new Date() })).toEqual([]);
+    expect(matchActiveChampionshipsForActivity({ activityType: 'cardio', cardioType: 'running', when: new Date() })).toEqual([]);
   });
 });
