@@ -93,10 +93,12 @@ export function MobileBridge() {
       }
       if (disposed) return;
 
-      // #250 + auditoria Gate 1: o callback agora também carrega o returnPath.
-      // Isso é essencial no cold start: a WebView recém-criada não conserva a
-      // rota que iniciou o OAuth e o CustomEvent pode acontecer antes de a tela
-      // de Dispositivos montar seu listener.
+      // #250 + auditoria Gate 1: se o callback trouxer returnPath, restauramos
+      // o destino original; callbacks antigos sem esse parâmetro caem com
+      // segurança em /profile/wearables. Isso é essencial no cold start: a
+      // WebView recém-criada não conserva a rota que iniciou o OAuth e o
+      // CustomEvent pode acontecer antes de a tela de Dispositivos montar seu
+      // listener.
       const stravaCallback = parseNativeStravaCallback(rawUrl);
       if (stravaCallback) {
         if (location.pathname !== stravaCallback.returnPath) {
