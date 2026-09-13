@@ -79,7 +79,7 @@ export async function criarInscricaoChampionship(
   userId: string,
   championshipId: string,
   acceptanceId: string,
-  checkoutSurface: ChampionshipCheckoutSurface = 'ios_native',
+  checkoutSurface?: ChampionshipCheckoutSurface,
 ) {
   const champ = getChampionship(championshipId);
   if (!champ) throw new Error('Campeonato nao encontrado.');
@@ -87,7 +87,7 @@ export async function criarInscricaoChampionship(
     throw new Error(champ.registrationReadinessReason || 'As inscricoes para este campeonato nao estao abertas.');
   }
   if (!acceptanceId) throw new Error('E obrigatorio aceitar o regulamento antes de se inscrever.');
-  if (!['ios_native', 'web'].includes(checkoutSurface)) throw new Error('Superficie de checkout nao autorizada.');
+  if (checkoutSurface && !['ios_native', 'web'].includes(checkoutSurface)) throw new Error('Superficie de checkout nao autorizada.');
 
   const acceptanceSnap = await db.collection('championship_acceptances').doc(acceptanceId).get();
   if (!acceptanceSnap.exists) throw new Error('Aceite do regulamento nao encontrado. Aceite o regulamento antes de se inscrever.');
@@ -101,6 +101,12 @@ export async function criarInscricaoChampionship(
   if (!acceptance.hrAcknowledgementId || acceptance.hrAcknowledgementVersion !== COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION) {
     throw new Error('O aviso de frequência cardíaca foi atualizado. Aceite a versão vigente antes de se inscrever.');
   }
+
+  // validate-presence preserva payloads antigos e hoje chama esta função com
+  // três argumentos. Derivamos a superfície do aceite auditado para que o
+  // futuro fluxo web não seja rotulado como iOS quando atravessar essa ponte.
+  const resolvedCheckoutSurface: ChampionshipCheckoutSurface = checkoutSurface
+    || (acceptance.platform === 'web' ? 'web' : 'ios_native');
 
   const perfilSnap = await db.collection('users').doc(userId).get();
   if (!perfilSnap.exists) throw new Error('Usuario nao encontrado.');
@@ -151,7 +157,7 @@ export async function criarInscricaoChampionship(
     acceptanceId,
     asaasCheckoutId: checkout.id,
     asaasCheckoutUrl: checkout.link,
-    checkoutSurface,
+    checkoutSurface: resolvedCheckoutSurface,
     externalPaymentReference: registrationId,
     criadaEm: FieldValue.serverTimestamp(),
     checkoutCriadoEm: FieldValue.serverTimestamp(),
