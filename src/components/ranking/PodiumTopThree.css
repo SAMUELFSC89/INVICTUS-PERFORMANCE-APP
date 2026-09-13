@@ -1,0 +1,27 @@
+/*
+ * O Top 3 usa exatamente o mesmo asset bronze do Power Lift.
+ * Mantemos também a mesma geometria de moldura/avatar usada lá para que a
+ * base da coroa não pareça cortada no pódio da temporada.
+ */
+.academy-podium-athlete--3,
+.academy-podium-athlete--3 .academy-podium-panel,
+.academy-podium-athlete--3 .academy-podium-avatar {
+  overflow: visible;
+}
+
+.academy-podium-athlete--3 .academy-podium-avatar {
+  width: 76px;
+  height: 76px;
+}
+
+.academy-podium-athlete--3 .academy-podium-photo {
+  width: 62px;
+  height: 62px;
+}
+
+.academy-podium-athlete--3 .academy-podium-crown {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
