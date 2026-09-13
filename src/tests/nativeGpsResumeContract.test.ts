@@ -26,4 +26,11 @@ describe('Gate 1 — contrato nativo de retomada GPS', () => {
     expect(source).toContain('await NativeActivityLocation.startLocationTracking()');
     expect(source).toContain('await NativeActivityLocation.resumeLocationTracking()');
   });
+
+  test('buffer restaurado importa somente a cauda posterior ao checkpoint já persistido', () => {
+    const source = fs.readFileSync(path.join(root, 'src/services/webGpsTrackingService.ts'), 'utf8');
+    expect(source).toContain('latestCheckpointTimestampMs');
+    expect(source).toContain('if (timestampMs <= latestKnownMs || timestampMs > Date.now() + 60_000) continue');
+    expect(source).toContain('latestKnownMs = timestampMs');
+  });
 });
