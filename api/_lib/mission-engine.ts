@@ -118,6 +118,25 @@ function frozenMissionDefinition(mission: Mission): Record<string, unknown> {
   };
 }
 
+function isUntrustedWearableActivity(data: Record<string, any>): boolean {
+  const source = String(data.source || '').toLowerCase();
+  if (source !== 'apple_health' && source !== 'health_connect') return false;
+  const evidenceStatus = String(data.competitionEvidenceStatus || '').toLowerCase();
+  return evidenceStatus !== 'trusted_native_attestation'
+    && evidenceStatus !== 'trusted_server_source';
+}
+
+function requiresWearableTrustReconciliation(data: Record<string, any>): boolean {
+  if (!isUntrustedWearableActivity(data)) return false;
+  return data.economyEligible === true
+    || data.missionEligible === true
+    || Number(data.activityXpAwarded) > 0
+    || Number(data.points) > 0
+    || Number(data.pointsEarned) > 0
+    || Number(data.scoreAwarded) > 0
+    || data.activityRewardStatus === 'unverified_wearable_source';
+}
+
 /**
  * Mission progress and competitive scoring are separate axes, but an activity
  * that is known fraud (or is still waiting for a technical security result)
@@ -126,6 +145,11 @@ function frozenMissionDefinition(mission: Mission): Record<string, unknown> {
  * eligible for casual missions when the underlying activity itself is valid.
  */
 function missionActivityIsEligible(data: Record<string, any>): boolean {
+  // Defesa em profundidade para documentos legados: reconstruções globais de
+  // missão não podem confiar apenas em flags antigas economy/missionEligible.
+  // Wearable só entra na economia depois de prova server-side persistida.
+  if (isUntrustedWearableActivity(data)) return false;
+
   const quality = String(data.dataQualityStatus || '').toLowerCase();
   if (data.missionEligible === false || data.economyEligible === false
     || ['duplicate', 'discarded', 'dedup_pending'].includes(quality)) return false;
@@ -392,7 +416,12 @@ export class MissionEngine {
       return Number.isNaN(raw.getTime()) ? null : raw;
     };
     const now = new Date();
-    const validated = snap.docs.map(doc => doc.data()).filter(missionActivityIsEligible).map(data => ({
+    const allActivities = snap.docs.map(doc => doc.data());
+    const untrustedWearableDates = allActivities
+      .filter(requiresWearableTrustReconciliation)
+      .map(data => readDate(data.endTime ?? data.startTime ?? data.timestamp ?? data.createdAt))
+      .filter((date): date is Date => Boolean(date && date <= now));
+    const validated = allActivities.filter(missionActivityIsEligible).map(data => ({
       ...data,
       // O desafio pertence ao período em que a atividade ocorreu, não ao dia
       // em que um envio offline finalmente chegou ao servidor.
@@ -471,7 +500,7 @@ export class MissionEngine {
       return value;
     };
 
-    const reconciliationDates = [now, ...affectedAt.map(value => readDate(value))]
+    const reconciliationDates = [now, ...affectedAt.map(value => readDate(value)), ...untrustedWearableDates]
       .filter((value): value is Date => Boolean(value && value <= now));
     const targets = missions.flatMap(mission => {
       const periods = new Map<string, Date>();
@@ -506,27 +535,49 @@ export class MissionEngine {
             ? current.isFreeAccessSnapshot : mission.isFreeAccess,
         } : mission;
         const value = calculateProgress(effectiveMission, periodKey, referenceDate);
-        // Atividades de missão PRO já foram filtradas pelo snapshot de acesso
-        // salvo no primeiro write. O plano atual nunca concede progresso
-        // retroativo após um upgrade.
-        const completionAccessGranted = current.completionAccessGranted === true
-          || value >= effectiveMission.target;
+        const claimProtected = current.claimed === true
+          || current.claimState === 'pending'
+          || current.claimState === 'complete';
+        const periodHasUntrustedWearable = effectiveMission.type !== 'event_count'
+          && untrustedWearableDates.some(date => effectiveMission.category === 'special'
+            || this.periodKey(effectiveMission, date) === periodKey);
+        // O fluxo normal continua monotônico para resistir a scans concorrentes.
+        // A única exceção é uma reconciliação explícita de confiança wearable:
+        // enquanto não houve reserva/resgate, o valor autoritativo pode cair
+        // para remover progresso legado que jamais deveria ter entrado.
+        const authoritativeTrustRebuild = existing.exists
+          && periodHasUntrustedWearable
+          && !claimProtected;
+        const completionAccessGranted = authoritativeTrustRebuild
+          ? value >= effectiveMission.target
+          : current.completionAccessGranted === true || value >= effectiveMission.target;
         const currentProgress = Math.min(
           effectiveMission.target,
-          Math.max(0, Number(current.currentProgress) || 0, value),
+          authoritativeTrustRebuild
+            ? Math.max(0, value)
+            : Math.max(0, Number(current.currentProgress) || 0, value),
         );
+        const completed = authoritativeTrustRebuild
+          ? completionAccessGranted
+          : current.completed === true || completionAccessGranted;
         const progressPatch: Record<string, any> = {
           id: progressId,
           userId,
           missionId: mission.id,
           periodKey,
-          // O hot path é monotônico: um scan concorrente mais antigo nunca
-          // regride um progresso que outro pedido acabou de gravar.
           currentProgress,
           target: effectiveMission.target,
-          completed: current.completed === true || completionAccessGranted,
+          completed,
           completionAccessGranted,
-          ...(completionAccessGranted ? { completedAt: current.completedAt || new Date().toISOString() } : {}),
+          ...(authoritativeTrustRebuild ? {
+            wearableTrustReconciliationVersion: 1,
+            wearableTrustReconciledAt: new Date().toISOString(),
+            completedAt: completionAccessGranted
+              ? current.completedAt || new Date().toISOString()
+              : null,
+          } : completionAccessGranted ? {
+            completedAt: current.completedAt || new Date().toISOString(),
+          } : {}),
         };
         if (!existing.exists) {
           transaction.set(progressRef, {
@@ -541,7 +592,8 @@ export class MissionEngine {
           Object.entries(definitionSnapshot).filter(([key]) => current[key] === undefined),
         );
         const patch = { ...progressPatch, ...missingSnapshot };
-        if (current.completed === true && current.completionAccessGranted === true) {
+        if (!authoritativeTrustRebuild
+          && current.completed === true && current.completionAccessGranted === true) {
           patch.completed = true;
           patch.completionAccessGranted = true;
           patch.completedAt = current.completedAt || patch.completedAt || new Date().toISOString();

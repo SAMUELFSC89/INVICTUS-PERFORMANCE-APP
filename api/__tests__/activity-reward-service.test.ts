@@ -18,7 +18,20 @@ function createDb() {
   const ref = (collection: string, id: string) => ({ collection, id, key: `${collection}/${id}` });
   return {
     store,
-    collection: (collection: string) => ({ doc: (id: string) => ref(collection, id) }),
+    collection: (collection: string) => ({
+      doc: (id: string) => {
+        const target = ref(collection, id);
+        return {
+          ...target,
+          get: async () => snapshot(store.get(target.key)),
+          set: async (value: Record<string, any>, options?: { merge?: boolean }) => {
+            store.set(target.key, options?.merge
+              ? { ...(store.get(target.key) || {}), ...value }
+              : { ...value });
+          },
+        };
+      },
+    }),
     runTransaction: async (callback: (transaction: any) => Promise<any>) => {
       const writes: Array<{ mode: 'set' | 'create'; target: any; value: Record<string, any>; merge?: boolean }> = [];
       const transaction = {
@@ -42,13 +55,23 @@ function createDb() {
   };
 }
 
+function trustWearable(activityId: string, extra: Record<string, any> = {}) {
+  mockDb.store.set(`workouts/${activityId}`, {
+    userId: 'user-a',
+    source: 'health_connect',
+    competitionEvidenceStatus: 'trusted_native_attestation',
+    ...extra,
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockDb = createDb();
   (MissionEngine.syncUserProgressFromCompletedActivities as jest.Mock).mockResolvedValue(undefined);
 });
 
-test('ledger transacional credita XP de atividade importada uma única vez e sempre reconcilia missões', async () => {
+test('ledger transacional credita XP de wearable atestado uma única vez e sempre reconcilia missões', async () => {
+  trustWearable('wearable-a');
   const input = {
     userId: 'user-a', activityId: 'wearable-a', type: 'cardio' as const,
     durationMinutes: 20, source: 'health_connect',
@@ -65,6 +88,54 @@ test('ledger transacional credita XP de atividade importada uma única vez e sem
   expect(MissionEngine.syncUserProgressFromCompletedActivities).toHaveBeenCalledTimes(2);
 });
 
+test('wearable declarado pelo cliente sem evidência persistida fica fora de XP, missão e ledger mesmo forjando flags de confiança', async () => {
+  const forgedInput: any = {
+    userId: 'user-a', activityId: 'unattested-health', type: 'cardio',
+    durationMinutes: 60, source: 'health_connect', economyEligible: true,
+    activityXP: 120, economyVersion: 1,
+    sourceVerified: true,
+    competitionEvidenceStatus: 'trusted_native_attestation',
+  };
+  await expect(settleCompletedActivityRewards(forgedInput)).resolves.toEqual({
+    economyEligible: false, activityXP: 0, credited: false, economyVersion: 1,
+  });
+
+  expect(mockDb.store.get('users/user-a')).toMatchObject({ xp: 100, totalXp: 100 });
+  expect(mockDb.store.has('activity_reward_ledger/unattested-health')).toBe(false);
+  expect(MissionEngine.syncUserProgressFromCompletedActivities).not.toHaveBeenCalled();
+});
+
+test('reconciliação legada de wearable não atestado saneia flags e XP projetados no próprio documento', async () => {
+  mockDb.store.set('workouts/legacy-unattested', {
+    userId: 'user-a',
+    source: 'health_connect',
+    economyEligible: true,
+    missionEligible: true,
+    activityXpAwarded: 120,
+    points: 120,
+    pointsEarned: 120,
+    scoreAwarded: 120,
+  });
+
+  await expect(settleCompletedActivityRewards({
+    userId: 'user-a', activityId: 'legacy-unattested', type: 'cardio',
+    durationMinutes: 60, source: 'health_connect', economyEligible: true,
+    activityXP: 120, economyVersion: 1,
+  })).resolves.toMatchObject({ economyEligible: false, activityXP: 0, credited: false });
+
+  expect(mockDb.store.get('workouts/legacy-unattested')).toMatchObject({
+    economyEligible: false,
+    missionEligible: false,
+    activityXpAwarded: 0,
+    points: 0,
+    pointsEarned: 0,
+    scoreAwarded: 0,
+    activityRewardStatus: 'unverified_wearable_source',
+  });
+  expect(mockDb.store.get('users/user-a')).toMatchObject({ xp: 100, totalXp: 100 });
+  expect(mockDb.store.has('activity_reward_ledger/legacy-unattested')).toBe(false);
+});
+
 test('sessão menor que um minuto não cria ledger nem missão', async () => {
   await expect(settleCompletedActivityRewards({
     userId: 'user-a', activityId: 'too-short', type: 'cardio', durationMinutes: 0.5,
@@ -73,8 +144,9 @@ test('sessão menor que um minuto não cria ledger nem missão', async () => {
   expect(MissionEngine.syncUserProgressFromCompletedActivities).not.toHaveBeenCalled();
 });
 
-test('quota técnica de wearable limita economia sem apagar o registro pessoal', async () => {
+test('quota técnica de wearable atestado limita economia sem apagar o registro pessoal', async () => {
   for (let index = 0; index < 10; index += 1) {
+    trustWearable(`health-${index}`);
     await expect(settleCompletedActivityRewards({
       userId: 'user-a', activityId: `health-${index}`, type: 'cardio',
       durationMinutes: 50, activityXP: 100, source: 'health_connect',
@@ -83,6 +155,7 @@ test('quota técnica de wearable limita economia sem apagar o registro pessoal',
       occurredAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
     })).resolves.toMatchObject({ economyEligible: true, credited: true });
   }
+  trustWearable('health-over-quota');
   await expect(settleCompletedActivityRewards({
     userId: 'user-a', activityId: 'health-over-quota', type: 'cardio',
     durationMinutes: 50, activityXP: 100, source: 'health_connect',
@@ -111,9 +184,10 @@ test('rejeita versão econômica desconhecida ou snapshot adulterado antes de cr
   expect(mockDb.store.has('activity_reward_ledger/tampered-xp')).toBe(false);
 });
 
-test('teto diário de 1000 XP independe da ordem do lote wearable', async () => {
+test('teto diário de 1000 XP independe da ordem do lote wearable atestado', async () => {
   const settlePair = async (durations: number[]) => {
     for (const [index, durationMinutes] of durations.entries()) {
+      trustWearable(`ordered-${index}`);
       await settleCompletedActivityRewards({
         userId: 'user-a', activityId: `ordered-${index}`, type: 'cardio', durationMinutes,
         source: 'health_connect', occurredAt: '2026-09-06T10:00:00.000Z',
@@ -132,11 +206,11 @@ test('teto diário de 1000 XP independe da ordem do lote wearable', async () => 
   await expect(settlePair([240, 360])).resolves.toEqual({ userXP: 1100, ledgerXP: 1000 });
 });
 
-test('quota de XP não escolhe qual modalidade pode progredir desafios', async () => {
+test('quota de XP de wearable atestado não escolhe qual modalidade pode progredir desafios', async () => {
   const runOrder = async (types: Array<'cardio' | 'workout'>) => {
     const quotaKey = [...mockDb.store.keys()].find(key => key.startsWith('activity_reward_quotas/'));
     if (quotaKey) mockDb.store.delete(quotaKey);
-    // Descobre o ID diário sem depender da implementação do hash.
+    trustWearable('quota-seed');
     await settleCompletedActivityRewards({
       userId: 'user-a', activityId: 'quota-seed', type: 'cardio', durationMinutes: 360,
       activityXP: 720, source: 'health_connect', economyVersion: 1,
@@ -146,8 +220,8 @@ test('quota de XP não escolhe qual modalidade pode progredir desafios', async (
       userId: 'user-a', day: '2026-09-06', activityCount: 1, xpTotal: 990,
     });
     for (const [index, type] of types.entries()) {
-      mockDb.store.set(`workouts/mixed-${index}`, {
-        userId: 'user-a', type, economyEligible: true, missionEligible: true,
+      trustWearable(`mixed-${index}`, {
+        type, economyEligible: true, missionEligible: true,
       });
       await settleCompletedActivityRewards({
         userId: 'user-a', activityId: `mixed-${index}`, type, durationMinutes: 20,
