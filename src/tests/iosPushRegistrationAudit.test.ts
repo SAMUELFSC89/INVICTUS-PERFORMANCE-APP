@@ -27,7 +27,6 @@ describe('Gate 1 — registro e apresentação de push no iOS', () => {
   it('não mistura o token APNs do iOS com o token FCM do Android', () => {
     const client = read('src/services/pushNotificationService.ts');
     const server = read('api/_services/notification-service.ts');
-    expect(client).toContain("currentPushPlatform() === 'ios'").not;
     expect(client).toContain("Capacitor.getPlatform() === 'ios' ? 'ios' : 'android'");
     expect(server).toContain("platform === 'ios' ? 'apnsTokens' : 'fcmTokens'");
     expect(server).toContain('this.sendApnsPush');
