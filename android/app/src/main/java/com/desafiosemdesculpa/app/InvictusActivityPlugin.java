@@ -56,6 +56,18 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
 
     @PluginMethod
     public void startLocationTracking(PluginCall call) {
+        // Sessão nova: descarta o buffer de um treino anterior.
+        beginLocationTracking(call, true);
+    }
+
+    @PluginMethod
+    public void resumeLocationTracking(PluginCall call) {
+        // Recriação do WebView/processo JS: o SharedPreferences restaurado é
+        // parte da sessão em andamento e não pode ser apagado antes do envio.
+        beginLocationTracking(call, false);
+    }
+
+    private void beginLocationTracking(PluginCall call, boolean clearExisting) {
         if (!hasLocationPermission()) {
             notifyListeners("locationAuthorization", event("status", "denied"));
             notifyListeners("locationError", errorEvent("permission_denied", "Permissão de localização não concedida."));
@@ -65,7 +77,7 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
 
         mainHandler.post(() -> {
             try {
-                clearLocations();
+                if (clearExisting) clearLocations();
                 boolean providerStarted = false;
                 if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     locationManager.requestLocationUpdates(
