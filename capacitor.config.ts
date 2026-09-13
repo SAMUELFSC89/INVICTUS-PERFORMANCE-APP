@@ -46,10 +46,10 @@ const config: CapacitorConfig = {
       splashImmersive: true,
     },
     PushNotifications: {
-      // Capacitor 8 marca `alert` como legado no iOS; `banner` + `list`
-      // preservam a apresentação moderna em foreground e continuam mapeando
-      // para o comportamento de alerta no Android.
-      presentationOptions: ["badge", "sound", "banner", "list"],
+      // O @capacitor/push-notifications 8.0.3 instalado neste projeto expõe
+      // oficialmente `alert` no tipo PresentationOption. Mantemos a opção
+      // suportada pelo pacote real para garantir typecheck/build determinístico.
+      presentationOptions: ["badge", "sound", "alert"],
     },
   },
 };
