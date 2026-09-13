@@ -214,10 +214,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [ensureProfileViaServer, reconcileActivityStats]);
 
   const refreshUser = useCallback(async () => {
-    if (auth.currentUser) {
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      const uid = currentUser.uid;
       const generation = generationRef.current;
-      console.log(`[AUTH] [REFRESH_USER] [${auth.currentUser.uid}] [INFO] Recarregando perfil do usuário`);
-      return await loadUserProfile(auth.currentUser.uid, generation);
+      console.log(`[AUTH] [REFRESH_USER] [${uid}] [INFO] Recarregando perfil do usuário`);
+      const refreshed = await loadUserProfile(uid, generation);
+
+      // Um refresh explícito normalmente fecha uma ação importante (por
+      // exemplo, finalizar uma atividade). loadUserProfile() já dispara a
+      // reconciliação canônica e guarda a Promise em statsSyncRef; aguardar a
+      // MESMA Promise aqui transforma refreshUser() em uma barreira sem criar
+      // uma segunda chamada. Assim, quando o fluxo de cardio termina, a
+      // reconciliação de Buscar Objetivo também já teve chance de concluir.
+      const pendingStatsSync = statsSyncRef.current;
+      if (pendingStatsSync?.uid === uid) {
+        await pendingStatsSync.promise;
+      }
+      return refreshed;
     }
     return null;
   }, [loadUserProfile]);
