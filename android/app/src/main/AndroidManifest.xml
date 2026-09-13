@@ -28,12 +28,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- #328: notificação persistente com controle da atividade (pausar/retomar/
-         finalizar) mesmo com o app em segundo plano ou tela bloqueada, via
-         @capawesome-team/capacitor-android-foreground-service. -->
+    <!-- Foreground location somente durante cardio que exige GPS contínuo. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Localização precisa: busca de academia, geofence de musculação e
          roteamento de cardio ao ar livre, sempre enquanto o app está em uso. -->
@@ -182,8 +179,8 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
-        <!-- #328: receiver e service exigidos pelo capacitor-android-foreground-service
-             para os botões de ação (pausar/retomar/finalizar) na notificação. -->
+        <!-- Receiver e service exigidos pelo capacitor-android-foreground-service
+             para os botões e para continuidade do GPS em cardio externo. -->
         <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />
         <service
             android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"
