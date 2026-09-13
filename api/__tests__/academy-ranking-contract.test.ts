@@ -22,3 +22,19 @@ test('pódio preserva os três assets oficiais de coroa do Power Lift', () => {
   expect(podium).toContain("'/ranking-frame-silver-reference.png'");
   expect(podium).toContain("'/ranking-frame-bronze-reference.png'");
 });
+
+test('Top 3 do pódio usa a mesma geometria visual do bronze no Power Lift', () => {
+  const podium = read('src/components/ranking/PodiumTopThree.tsx');
+  const podiumCss = read('src/components/ranking/PodiumTopThree.css');
+  const powerLiftCss = read('src/pages/PowerLiftNew.css');
+
+  expect(podium).toContain("import './PodiumTopThree.css'");
+  expect(podiumCss).toContain('.academy-podium-athlete--3 .academy-podium-avatar');
+  expect(podiumCss).toContain('width: 76px');
+  expect(podiumCss).toContain('height: 76px');
+  expect(podiumCss).toContain('width: 62px');
+  expect(podiumCss).toContain('height: 62px');
+  expect(podiumCss).toContain('overflow: visible');
+  expect(powerLiftCss).toContain('.power-podium-avatar{position:relative;display:grid;width:76px;height:76px;place-items:center}');
+  expect(powerLiftCss).toContain('width:62px;height:62px');
+});
