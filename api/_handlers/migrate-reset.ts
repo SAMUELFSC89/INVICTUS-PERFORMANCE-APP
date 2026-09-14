@@ -1,10 +1,11 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { 
-  db, 
-  cors, 
-  verifyAuth, 
-  FieldValue 
+import {
+  db,
+  cors,
+  verifyAuth,
+  FieldValue
 } from '../_lib/common.js';
+import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -18,20 +19,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  // Safety check: verify admin role
   const userSnap = await db.collection('users').doc(auth.uid).get();
-  const userData = userSnap.data();
-  if (userData?.role !== 'admin') {
-    return res.status(403).json({ error: 'Só administradores podem realizar esta ação.' });
+  if (!userSnap.exists || !hasActiveAdminAuthority(userSnap.data())) {
+    return res.status(403).json({ error: 'Só administradores ativos podem realizar esta ação.' });
   }
 
   try {
     console.log('[Migration] Starting full progress reset...');
-    
+
     // 1. Reset Users Progress
     const usersSnap = await db.collection('users').get();
     const batch = db.batch();
-    
+
     usersSnap.forEach(doc => {
       batch.update(doc.ref, {
         score: 0,
@@ -49,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updatedAt: FieldValue.serverTimestamp()
       });
     });
-    
+
     await batch.commit();
     console.log(`[Migration] Reset ${usersSnap.size} users.`);
 
