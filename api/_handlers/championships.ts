@@ -6,12 +6,23 @@ import {
   confirmarInscricaoChampionshipPorCheckout,
   confirmarInscricaoChampionshipPorPagamento,
   encerrarCheckoutChampionship,
-  marcarInscricaoChampionshipComoReembolsada,
+  registrarEventoFinanceiroChampionship,
+  type ChampionshipPaymentRiskEvent,
   getUserRegistrations,
 } from '../_lib/championship-inscription-service.js';
 import { recordCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
 import { getChampionshipProgress, getChampionshipLeaderboard, getUserChampionshipActivities } from '../_lib/championship-scoring-service.js';
 import { criarPresenceCheck } from '../_lib/presence-check-service.js';
+
+const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
+  'PAYMENT_REFUNDED',
+  'PAYMENT_PARTIALLY_REFUNDED',
+  'PAYMENT_REFUND_IN_PROGRESS',
+  'PAYMENT_RECEIVED_IN_CASH_UNDONE',
+  'PAYMENT_CHARGEBACK_REQUESTED',
+  'PAYMENT_CHARGEBACK_DISPUTE',
+  'PAYMENT_AWAITING_CHARGEBACK_REVERSAL',
+]);
 
 /**
  * Campeonatos pagos usam um catálogo servidor-autoritativo, aceite versionado,
@@ -188,7 +199,7 @@ function webhookTokenIsValid(req: any): boolean {
 
 /**
  * Aceita eventos CHECKOUT_* atuais e mantém PAYMENT_* por compatibilidade.
- * O callback do navegador nunca chega aqui como prova de pagamento.
+ * Ambos seguem a mesma maquina de estados financeira do webhook central.
  */
 export async function asaasChampionshipWebhookHandler(req: any, res: any) {
   try {
@@ -204,6 +215,7 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
     const event = String(req.body?.event || '');
     const checkout = req.body?.checkout;
     const payment = req.body?.payment;
+    const providerEventAt = req.body?.dateCreated;
     if (!event) return res.status(200).json({ received: true, ignored: true, reason: 'Evento ausente.' });
 
     if (event.startsWith('CHECKOUT_')) {
@@ -228,12 +240,25 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
       return res.status(200).json({ received: true, ignored: true, reason: 'Payload sem cobranca.' });
     }
     const checkoutSession = String(payment.checkoutSession || payment.checkout?.id || '');
-    if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
-      const resultado = await confirmarInscricaoChampionshipPorPagamento(payment.id, payment.value, checkoutSession || undefined);
+    if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_REFUND_DENIED') {
+      const resultado = await confirmarInscricaoChampionshipPorPagamento(
+        payment.id,
+        payment.value,
+        checkoutSession || undefined,
+        payment.externalReference,
+        providerEventAt,
+      );
       return res.status(200).json({ received: true, inscricao: resultado });
     }
-    if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_CHARGEBACK_REQUESTED') {
-      const resultado = await marcarInscricaoChampionshipComoReembolsada(payment.id, checkoutSession || undefined);
+    if (CHAMPIONSHIP_PAYMENT_RISK_EVENTS.has(event as ChampionshipPaymentRiskEvent)) {
+      const resultado = await registrarEventoFinanceiroChampionship(
+        payment.id,
+        event as ChampionshipPaymentRiskEvent,
+        checkoutSession || undefined,
+        payment.externalReference,
+        payment.value,
+        providerEventAt,
+      );
       return res.status(200).json({ received: true, inscricao: resultado });
     }
     return res.status(200).json({ received: true, ignored: event });
