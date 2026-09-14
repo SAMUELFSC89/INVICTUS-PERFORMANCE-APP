@@ -389,6 +389,9 @@ export class WithdrawalEngine {
       if (data.providerTransferId) {
         throw new Error('Este saque já está vinculado a uma transferência no Asaas. Aguarde a conciliação.');
       }
+      if (data.providerExternalReference && data.providerExternalReference !== withdrawalId) {
+        throw new Error('Referência externa inconsistente. Saque bloqueado para conciliação.');
+      }
       if (data.status !== 'pending' && data.status !== 'under_review' && data.status !== 'approved') {
         throw new Error("Não é possível processar pagamento: saque está com status '" + data.status + "'.");
       }
@@ -418,16 +421,6 @@ export class WithdrawalEngine {
         externalReference: withdrawalId
       });
 
-      if (!Number.isFinite(Number(transfer.value)) || Math.abs(Number(transfer.value) - Number(withdrawal.amount)) >= 0.01) {
-        await docRef.set({
-          reconciliationRequired: true,
-          providerTransferId: transfer.id,
-          providerStatus: transfer.status,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-        throw new Error('Valor devolvido pelo Asaas diverge do saque interno. Transferência exige conciliação.');
-      }
-
       const updated: any = {
         status: 'processing',
         updatedAt: new Date().toISOString(),
@@ -439,7 +432,28 @@ export class WithdrawalEngine {
         reconciliationRequired: false
       };
 
-      await docRef.set(updated, { merge: true });
+      const binding = await db.runTransaction(async (tx: any): Promise<{ conflict: boolean }> => {
+        const freshSnap = await tx.get(docRef);
+        if (!freshSnap.exists) throw new Error('Solicitação de saque desapareceu durante o processamento.');
+        const fresh = freshSnap.data() as PIXWithdrawal & Record<string, any>;
+
+        if (fresh.providerTransferId && fresh.providerTransferId !== transfer.id) {
+          tx.set(docRef, {
+            reconciliationRequired: true,
+            reconciliationReason: 'PROVIDER_TRANSFER_ID_CONFLICT',
+            conflictingProviderTransferId: transfer.id,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          return { conflict: true };
+        }
+
+        tx.set(docRef, updated, { merge: true });
+        return { conflict: false };
+      });
+
+      if (binding.conflict) {
+        throw new Error('Conflito de identificador da transferência Asaas. Saque exige conciliação.');
+      }
 
       // Alguns ambientes do Asaas podem devolver a transferência já concluída.
       // Nesse caso aplicamos a mesma rotina idempotente do webhook.
@@ -509,34 +523,54 @@ export class WithdrawalEngine {
       || providerStatus === 'CANCELLED';
     const succeeded = event === 'TRANSFER_DONE' || providerStatus === 'DONE';
 
-    const result = await db.runTransaction(async (transaction: any): Promise<{ outcome: 'failed' | 'paid' | 'ignored'; withdrawal: PIXWithdrawal | null }> => {
+    type WebhookOutcome = 'failed' | 'paid' | 'ignored' | 'reconciliation';
+    const result = await db.runTransaction(async (transaction: any): Promise<{ outcome: WebhookOutcome; withdrawal: PIXWithdrawal | null }> => {
       const freshSnap = await transaction.get(docRef);
       if (!freshSnap.exists) return { outcome: 'ignored', withdrawal: null };
       const withdrawal = freshSnap.data() as PIXWithdrawal & Record<string, any>;
       const canonicalWithdrawalId = freshSnap.id;
+      const now = new Date().toISOString();
 
       if (normalizedReference && normalizedReference !== canonicalWithdrawalId) {
-        throw new Error('externalReference do Asaas não corresponde ao saque localizado.');
+        transaction.set(docRef, {
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_EXTERNAL_REFERENCE_MISMATCH',
+          conflictingExternalReference: normalizedReference,
+          updatedAt: now
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
       }
       if (withdrawal.providerExternalReference && withdrawal.providerExternalReference !== canonicalWithdrawalId) {
-        throw new Error('Referência externa persistida no saque está inconsistente.');
+        transaction.set(docRef, {
+          reconciliationRequired: true,
+          reconciliationReason: 'PERSISTED_EXTERNAL_REFERENCE_MISMATCH',
+          updatedAt: now
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
       }
       if (withdrawal.providerTransferId && withdrawal.providerTransferId !== canonicalTransferId) {
-        throw new Error('Saque já está vinculado a outra transferência Asaas.');
+        transaction.set(docRef, {
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_TRANSFER_ID_CONFLICT',
+          conflictingProviderTransferId: canonicalTransferId,
+          updatedAt: now
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
       }
 
       const internalAmount = Number(withdrawal.amount);
       const numericProviderValue = typeof providerValue === 'number' ? providerValue : Number.NaN;
       if ((failed || succeeded) && (!Number.isFinite(numericProviderValue) || !Number.isFinite(internalAmount) || Math.abs(numericProviderValue - internalAmount) >= 0.01)) {
         transaction.set(docRef, {
+          paymentProvider: 'asaas',
           providerTransferId: canonicalTransferId,
           providerExternalReference: normalizedReference || canonicalWithdrawalId,
           providerStatus: providerStatus || event,
           reconciliationRequired: true,
           reconciliationReason: 'PROVIDER_AMOUNT_MISMATCH_OR_MISSING',
-          updatedAt: new Date().toISOString()
+          updatedAt: now
         }, { merge: true });
-        throw new Error('Valor do webhook Asaas ausente ou divergente do saque interno.');
+        return { outcome: 'reconciliation', withdrawal };
       }
 
       const providerBinding = {
@@ -545,12 +579,26 @@ export class WithdrawalEngine {
         providerExternalReference: normalizedReference || canonicalWithdrawalId,
         providerStatus: providerStatus || event,
         reconciliationRequired: false,
-        updatedAt: new Date().toISOString()
+        updatedAt: now
       };
 
       if (!failed && !succeeded) {
         transaction.set(docRef, providerBinding, { merge: true });
         return { outcome: 'ignored', withdrawal };
+      }
+
+      // Um evento terminal que contradiz um settlement moderno já concluído
+      // nunca movimenta saldo automaticamente. Saques legados pagos antes do
+      // webhook final (sem processedAt) preservam a compatibilidade de estorno.
+      const legacyPaidRefund = failed && withdrawal.status === 'paid' && !withdrawal.processedAt;
+      if ((failed && withdrawal.status === 'paid' && !legacyPaidRefund)
+        || (succeeded && withdrawal.status === 'rejected')) {
+        transaction.set(docRef, {
+          ...providerBinding,
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_TERMINAL_STATE_CONFLICT'
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
       }
 
       const operation = failed ? 'refund' : 'pay';
@@ -567,7 +615,12 @@ export class WithdrawalEngine {
       }
 
       if (!walletSnap.exists) {
-        throw new Error('Carteira não encontrada para concluir o saque.');
+        transaction.set(docRef, {
+          ...providerBinding,
+          reconciliationRequired: true,
+          reconciliationReason: 'WALLET_NOT_FOUND'
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
       }
 
       const wallet = walletSnap.data() || {};
@@ -576,7 +629,6 @@ export class WithdrawalEngine {
       const ecosystem = Number(wallet.ecosystemBalance) || 0;
       const promotional = Number(wallet.promotionalBalance) || 0;
       const amount = internalAmount;
-      const legacyPaidRefund = failed && withdrawal.status === 'paid';
 
       if (legacyPaidRefund) {
         // Compatibilidade com saques antigos, que baixavam o hold antes da
@@ -584,7 +636,12 @@ export class WithdrawalEngine {
         redeemable += amount;
       } else {
         if (blocked < amount) {
-          throw new Error('Saldo bloqueado inconsistente ao concluir webhook de saque.');
+          transaction.set(docRef, {
+            ...providerBinding,
+            reconciliationRequired: true,
+            reconciliationReason: 'BLOCKED_BALANCE_INCONSISTENT'
+          }, { merge: true });
+          return { outcome: 'reconciliation', withdrawal };
         }
         blocked -= amount;
         if (failed) redeemable += amount;
@@ -625,7 +682,9 @@ export class WithdrawalEngine {
     const outcome = result?.outcome;
     const withdrawalForNotification = result?.withdrawal;
 
-    if (outcome === 'failed' && withdrawalForNotification) {
+    if (outcome === 'reconciliation') {
+      console.warn('[WithdrawalEngine] Evento Asaas retido para conciliação:', canonicalTransferId, normalizedReference || '(sem externalReference)');
+    } else if (outcome === 'failed' && withdrawalForNotification) {
       notificationService.notify({
         userId: withdrawalForNotification.userId,
         type: 'payment',
