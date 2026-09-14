@@ -1,11 +1,12 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
+import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
   // Diagnóstico operacional não deve existir publicamente em produção. Para
-  // habilitá-lo, além de ENABLE_ENV_CHECK=true, é necessário ser admin.
+  // habilitá-lo, além de ENABLE_ENV_CHECK=true, é necessário ser admin ativo.
   if (process.env.ENABLE_ENV_CHECK !== 'true') {
     return res.status(404).json({ error: 'Não encontrado.' });
   }
@@ -16,8 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const userSnap = await db.collection('users').doc(auth.uid).get();
-  const userData = userSnap.exists ? userSnap.data() : null;
-  if (userData?.role !== 'admin') {
+  if (!userSnap.exists || !hasActiveAdminAuthority(userSnap.data())) {
     return res.status(403).json({ error: 'Acesso administrativo necessário.' });
   }
 
