@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <!-- O FileProvider só precisa expor os dois diretórios temporários usados
+         pelos fluxos nativos de compartilhamento. Nunca exponha a raiz do
+         armazenamento externo nem todo o cache privado do aplicativo. -->
+    <cache-path name="share_cards" path="share_cards/" />
+    <cache-path name="instagram_share" path="instagram_share/" />
 </paths>
