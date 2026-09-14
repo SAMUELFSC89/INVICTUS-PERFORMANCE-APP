@@ -16,11 +16,14 @@ test('rota legada não contorna a participação e ranking dedicado usa rota do 
   expect(app).not.toContain("import('./pages/Rankings')");
 });
 
-test('pódio preserva os três assets oficiais de coroa do Power Lift', () => {
+test('pódio preserva os três assets oficiais atuais de coroa', () => {
   const podium = read('src/components/ranking/PodiumTopThree.tsx');
   expect(podium).toContain("'/ranking-frame-gold-reference.png'");
   expect(podium).toContain("'/ranking-frame-silver-reference.png'");
-  expect(podium).toContain("'/ranking-frame-bronze-reference.png'");
+  // Bronze foi substituído pelo asset completo, com transparência/margem
+  // validado por rankingAssetIntegrity.test.ts e championshipsRankingRound.test.ts.
+  expect(podium).toContain("'/assets/ranking/crown-bronze-complete-v1.png'");
+  expect(podium).not.toContain("'/ranking-frame-bronze-reference.png'");
 });
 
 test('Top 2 e Top 3 do pódio vencem os overrides e usam a geometria do Power Lift', () => {
