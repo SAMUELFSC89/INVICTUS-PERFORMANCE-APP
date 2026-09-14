@@ -5,8 +5,16 @@ import { getChampionship, isRegistrationOpen } from './championship-catalog.js';
 import { COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION } from '../../shared/competitiveHeartRatePolicy.js';
 import { isActiveAccountState } from './account-state.js';
 
-export type StatusInscricaoChampionship = 'pendente' | 'paga' | 'cancelada' | 'reembolsada';
+export type StatusInscricaoChampionship = 'pendente' | 'paga' | 'cancelada' | 'reembolsada' | 'contestada';
 export type ChampionshipCheckoutSurface = 'ios_native' | 'web';
+export type ChampionshipPaymentRiskEvent =
+  | 'PAYMENT_REFUNDED'
+  | 'PAYMENT_PARTIALLY_REFUNDED'
+  | 'PAYMENT_REFUND_IN_PROGRESS'
+  | 'PAYMENT_RECEIVED_IN_CASH_UNDONE'
+  | 'PAYMENT_CHARGEBACK_REQUESTED'
+  | 'PAYMENT_CHARGEBACK_DISPUTE'
+  | 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL';
 
 const CHECKOUT_CREATION_LEASE_MS = 90_000;
 
@@ -31,26 +39,35 @@ function checkoutLinkFromId(id: string): string {
   return `${host}/checkoutSession/show?id=${encodeURIComponent(id)}`;
 }
 
+function numericPaymentValue(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : null;
+}
+
+function paymentAmountMatches(expected: unknown, received: unknown): boolean {
+  const expectedValue = numericPaymentValue(expected);
+  const receivedValue = numericPaymentValue(received);
+  return expectedValue !== null && receivedValue !== null && Math.abs(expectedValue - receivedValue) < 0.01;
+}
+
+function normalizedReference(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizedProviderEventAt(value: unknown): string | null {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function isStaleProviderEvent(current: unknown, incoming: string): boolean {
+  const currentMs = Date.parse(String(current || ''));
+  const incomingMs = Date.parse(incoming);
+  return Number.isFinite(currentMs) && Number.isFinite(incomingMs) && incomingMs < currentMs;
+}
+
 async function getActiveProfile(userId: string) {
   const snap = await db.collection('users').doc(userId).get();
   return snap.exists && isActiveAccountState(snap.data()) ? snap : null;
-}
-
-async function markInactivePaymentForReconciliation(doc: any, sourceId: string) {
-  const data: any = doc.data();
-  await doc.ref.set({
-    paymentStatus: 'RECONCILIATION_REQUIRED',
-    paymentReconciliationReason: 'ACCOUNT_INACTIVE_AT_PAYMENT_CONFIRMATION',
-    paymentReconciliationSourceId: sourceId || null,
-    paymentReconciliationObservedAt: new Date().toISOString(),
-  }, { merge: true });
-  return {
-    encontrada: true,
-    contaInativa: true,
-    requerReconciliacao: true,
-    userId: data.userId,
-    championshipId: data.championshipId,
-  };
 }
 
 export async function registrarAceiteRegulamento(params: {
@@ -137,15 +154,15 @@ export async function criarInscricaoChampionship(
     const current: any = snap.exists ? snap.data() || {} : {};
     if (current.status === 'paga' && current.paymentStatus === 'PAID') throw new Error('Voce ja esta inscrito neste campeonato.');
     if (current.status === 'pendente' && current.asaasCheckoutId) return { existing: true, data: current };
+    if (current.paymentStatus === 'RECONCILIATION_REQUIRED') {
+      throw new Error('A cobranca anterior exige conciliacao antes de uma nova tentativa.');
+    }
     if (current.checkoutCreationStatus === 'UNCERTAIN') {
       throw new Error('O checkout anterior esta em conciliacao. Nao criaremos outra cobranca ate concluir a verificacao.');
     }
     if (current.checkoutCreationStatus === 'CREATING') {
       const leaseUntil = Number(current.checkoutCreationLeaseUntil || 0);
       if (leaseUntil > now) throw new Error('O checkout ja esta sendo criado. Aguarde a conclusao da solicitacao atual.');
-      // Se o processo morreu depois que o Asaas criou o checkout e antes de
-      // gravarmos seu ID, nao existe forma segura de saber localmente se houve
-      // criacao. Fail-closed: lease expirado NUNCA autoriza nova cobranca.
       throw new Error('A tentativa anterior de checkout ficou sem confirmacao e exige conciliacao antes de uma nova cobranca.');
     }
 
@@ -236,50 +253,170 @@ async function localizarPorCampo(field: 'asaasPaymentId' | 'asaasCheckoutId', id
   return query.empty ? null : query.docs[0];
 }
 
+async function localizarPorReferenciaExterna(value: unknown) {
+  const reference = normalizedReference(value);
+  if (!reference || reference.includes('/') || reference.length > 200) return null;
+  const snap = await db.collection('championship_registrations').doc(reference).get();
+  return snap.exists ? snap : null;
+}
+
 export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId: string) {
   const doc = await localizarPorCampo('asaasCheckoutId', asaasCheckoutId);
   if (!doc) {
     console.warn('[Championship] checkout pago sem inscricao correspondente:', asaasCheckoutId);
     return { encontrada: false };
   }
-  const data: any = doc.data();
-  if (!await getActiveProfile(String(data.userId || ''))) return markInactivePaymentForReconciliation(doc, asaasCheckoutId);
-  if (data.status === 'paga' && data.paymentStatus === 'PAID') {
-    return { encontrada: true, jaEstavaPaga: true, userId: data.userId, championshipId: data.championshipId };
-  }
-  await doc.ref.update({
-    status: 'paga' as StatusInscricaoChampionship,
-    paymentStatus: 'PAID',
-    valorPago: data.valor,
-    pagaEm: FieldValue.serverTimestamp(),
+
+  return db.runTransaction(async (transaction: any) => {
+    const registrationSnap = await transaction.get(doc.ref);
+    if (!registrationSnap.exists) return { encontrada: false };
+    const data: any = registrationSnap.data() || {};
+    if (String(data.asaasCheckoutId || '') !== asaasCheckoutId) {
+      throw new Error('Checkout Asaas nao corresponde mais a inscricao localizada.');
+    }
+
+    if (data.status === 'reembolsada' || data.status === 'contestada' || data.paymentStatus === 'RECONCILIATION_REQUIRED') {
+      return {
+        encontrada: true,
+        requerReconciliacao: true,
+        userId: data.userId,
+        championshipId: data.championshipId,
+      };
+    }
+
+    const userRef = db.collection('users').doc(String(data.userId || ''));
+    const userSnap = await transaction.get(userRef);
+    if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
+      transaction.set(doc.ref, {
+        paymentStatus: 'RECONCILIATION_REQUIRED',
+        paymentReconciliationReason: 'ACCOUNT_INACTIVE_AT_PAYMENT_CONFIRMATION',
+        paymentReconciliationSourceId: asaasCheckoutId,
+        paymentReconciliationObservedAt: new Date().toISOString(),
+      }, { merge: true });
+      return {
+        encontrada: true,
+        contaInativa: true,
+        requerReconciliacao: true,
+        userId: data.userId,
+        championshipId: data.championshipId,
+      };
+    }
+
+    const jaEstavaPaga = data.status === 'paga' && data.paymentStatus === 'PAID';
+    transaction.set(doc.ref, {
+      status: 'paga' as StatusInscricaoChampionship,
+      paymentStatus: 'PAID',
+      valorPago: numericPaymentValue(data.valor),
+      pagaEm: jaEstavaPaga ? (data.pagaEm || FieldValue.serverTimestamp()) : FieldValue.serverTimestamp(),
+      paymentLifecycleEvent: 'CHECKOUT_PAID',
+      paymentLifecycleObservedAt: data.paymentLifecycleObservedAt || new Date().toISOString(),
+    }, { merge: true });
+    return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId };
   });
-  return { encontrada: true, jaEstavaPaga: false, userId: data.userId, championshipId: data.championshipId };
 }
 
-export async function confirmarInscricaoChampionshipPorPagamento(asaasPaymentId: string, valorPago?: number, asaasCheckoutId?: string) {
+export async function confirmarInscricaoChampionshipPorPagamento(
+  asaasPaymentId: string,
+  valorPago?: number,
+  asaasCheckoutId?: string,
+  externalReference?: unknown,
+  providerEventAt?: unknown,
+) {
   const doc = await localizarPorCampo('asaasPaymentId', asaasPaymentId)
-    || (asaasCheckoutId ? await localizarPorCampo('asaasCheckoutId', asaasCheckoutId) : null);
+    || (asaasCheckoutId ? await localizarPorCampo('asaasCheckoutId', asaasCheckoutId) : null)
+    || await localizarPorReferenciaExterna(externalReference);
   if (!doc) return { encontrada: false };
-  const data: any = doc.data();
-  if (!await getActiveProfile(String(data.userId || ''))) return markInactivePaymentForReconciliation(doc, asaasPaymentId || asaasCheckoutId || '');
-  if (data.status === 'paga' && data.paymentStatus === 'PAID') {
-    return { encontrada: true, jaEstavaPaga: true, userId: data.userId, championshipId: data.championshipId };
-  }
-  await doc.ref.update({
-    status: 'paga' as StatusInscricaoChampionship,
-    paymentStatus: 'PAID',
-    ...(asaasPaymentId ? { asaasPaymentId } : {}),
-    valorPago: typeof valorPago === 'number' ? valorPago : data.valor,
-    pagaEm: FieldValue.serverTimestamp(),
+
+  const receivedReference = normalizedReference(externalReference);
+  const incomingEventAt = normalizedProviderEventAt(providerEventAt);
+  const observedAt = incomingEventAt || new Date().toISOString();
+
+  return db.runTransaction(async (transaction: any) => {
+    const registrationSnap = await transaction.get(doc.ref);
+    if (!registrationSnap.exists) return { encontrada: false };
+    const data: any = registrationSnap.data() || {};
+
+    if (incomingEventAt && isStaleProviderEvent(data.paymentLifecycleObservedAt, incomingEventAt)) {
+      return { encontrada: true, ignoradoComoAntigo: true, userId: data.userId, championshipId: data.championshipId };
+    }
+
+    const paymentBindingValid = !data.asaasPaymentId || String(data.asaasPaymentId) === asaasPaymentId;
+    const referenceValid = receivedReference === doc.id
+      || (!receivedReference && (
+        String(data.asaasPaymentId || '') === asaasPaymentId
+        || (asaasCheckoutId && String(data.asaasCheckoutId || '') === asaasCheckoutId)
+      ));
+    const amountValid = paymentAmountMatches(data.valor, valorPago);
+    const orderingValid = Boolean(incomingEventAt);
+
+    const userRef = db.collection('users').doc(String(data.userId || ''));
+    const userSnap = await transaction.get(userRef);
+
+    if (!paymentBindingValid || !referenceValid || !amountValid || !orderingValid) {
+      const reason = !paymentBindingValid
+        ? 'PAYMENT_ID_CONFLICT'
+        : !referenceValid
+          ? 'PAYMENT_EXTERNAL_REFERENCE_MISMATCH'
+          : !amountValid
+            ? 'PAYMENT_AMOUNT_MISMATCH_OR_MISSING'
+            : 'PAYMENT_EVENT_TIMESTAMP_MISSING';
+      transaction.set(doc.ref, {
+        status: 'contestada' as StatusInscricaoChampionship,
+        paymentStatus: 'RECONCILIATION_REQUIRED',
+        paymentReconciliationReason: reason,
+        paymentReconciliationSourceId: asaasPaymentId || asaasCheckoutId || null,
+        paymentReconciliationObservedAt: observedAt,
+        observedExternalReference: receivedReference,
+        valorPago: numericPaymentValue(valorPago),
+        paymentLifecycleObservedAt: observedAt,
+      }, { merge: true });
+      return { encontrada: true, requerReconciliacao: true, motivo: reason, userId: data.userId, championshipId: data.championshipId };
+    }
+
+    if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
+      transaction.set(doc.ref, {
+        paymentStatus: 'RECONCILIATION_REQUIRED',
+        paymentReconciliationReason: 'ACCOUNT_INACTIVE_AT_PAYMENT_CONFIRMATION',
+        paymentReconciliationSourceId: asaasPaymentId || asaasCheckoutId || null,
+        paymentReconciliationObservedAt: observedAt,
+        valorPago: numericPaymentValue(valorPago),
+        paymentLifecycleObservedAt: observedAt,
+      }, { merge: true });
+      return {
+        encontrada: true,
+        contaInativa: true,
+        requerReconciliacao: true,
+        userId: data.userId,
+        championshipId: data.championshipId,
+      };
+    }
+
+    const jaEstavaPaga = data.status === 'paga' && data.paymentStatus === 'PAID';
+    transaction.set(doc.ref, {
+      status: 'paga' as StatusInscricaoChampionship,
+      paymentStatus: 'PAID',
+      asaasPaymentId,
+      externalPaymentReference: doc.id,
+      valorPago: numericPaymentValue(valorPago),
+      pagaEm: jaEstavaPaga ? (data.pagaEm || FieldValue.serverTimestamp()) : FieldValue.serverTimestamp(),
+      paymentReconciliationReason: FieldValue.delete(),
+      paymentReconciliationSourceId: FieldValue.delete(),
+      paymentReconciliationObservedAt: FieldValue.delete(),
+      observedExternalReference: FieldValue.delete(),
+      paymentLifecycleEvent: 'PAYMENT_CONFIRMED_OR_RECEIVED',
+      paymentLifecycleObservedAt: incomingEventAt,
+    }, { merge: true });
+    return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId };
   });
-  return { encontrada: true, jaEstavaPaga: false, userId: data.userId, championshipId: data.championshipId };
 }
 
 export async function encerrarCheckoutChampionship(asaasCheckoutId: string, reason: 'cancelled' | 'expired') {
   const doc = await localizarPorCampo('asaasCheckoutId', asaasCheckoutId);
   if (!doc) return { encontrada: false };
   const data: any = doc.data();
-  if (data.status === 'paga') return { encontrada: true, preservadaComoPaga: true };
+  if (data.status === 'paga' || data.status === 'reembolsada' || data.status === 'contestada') {
+    return { encontrada: true, preservadaComoEstadoFinanceiro: true };
+  }
   await doc.ref.update({
     status: 'cancelada' as StatusInscricaoChampionship,
     paymentStatus: 'FAILED',
@@ -292,17 +429,84 @@ export async function encerrarCheckoutChampionship(asaasCheckoutId: string, reas
   return { encontrada: true, userId: data.userId, championshipId: data.championshipId };
 }
 
-export async function marcarInscricaoChampionshipComoReembolsada(asaasPaymentId: string, asaasCheckoutId?: string) {
+export async function registrarEventoFinanceiroChampionship(
+  asaasPaymentId: string,
+  event: ChampionshipPaymentRiskEvent,
+  asaasCheckoutId?: string,
+  externalReference?: unknown,
+  valorObservado?: unknown,
+  providerEventAt?: unknown,
+) {
   const doc = await localizarPorCampo('asaasPaymentId', asaasPaymentId)
-    || (asaasCheckoutId ? await localizarPorCampo('asaasCheckoutId', asaasCheckoutId) : null);
+    || (asaasCheckoutId ? await localizarPorCampo('asaasCheckoutId', asaasCheckoutId) : null)
+    || await localizarPorReferenciaExterna(externalReference);
   if (!doc) return { encontrada: false };
-  const data: any = doc.data();
-  await doc.ref.update({
-    status: 'reembolsada' as StatusInscricaoChampionship,
-    paymentStatus: 'REFUNDED',
-    reembolsadaEm: FieldValue.serverTimestamp(),
+
+  const receivedReference = normalizedReference(externalReference);
+  const incomingEventAt = normalizedProviderEventAt(providerEventAt);
+  const observedAt = incomingEventAt || new Date().toISOString();
+
+  return db.runTransaction(async (transaction: any) => {
+    const registrationSnap = await transaction.get(doc.ref);
+    if (!registrationSnap.exists) return { encontrada: false };
+    const data: any = registrationSnap.data() || {};
+
+    if (incomingEventAt && isStaleProviderEvent(data.paymentLifecycleObservedAt, incomingEventAt)) {
+      return { encontrada: true, ignoradoComoAntigo: true, userId: data.userId, championshipId: data.championshipId };
+    }
+
+    const canonicalBinding = receivedReference === doc.id
+      || String(data.asaasPaymentId || '') === asaasPaymentId
+      || Boolean(asaasCheckoutId && String(data.asaasCheckoutId || '') === asaasCheckoutId);
+    if (!canonicalBinding) {
+      transaction.set(doc.ref, {
+        status: 'contestada' as StatusInscricaoChampionship,
+        paymentStatus: 'RECONCILIATION_REQUIRED',
+        paymentReconciliationReason: 'PAYMENT_EXTERNAL_REFERENCE_MISMATCH',
+        paymentReconciliationObservedAt: observedAt,
+        observedExternalReference: receivedReference,
+        paymentLifecycleEvent: event,
+        paymentLifecycleObservedAt: observedAt,
+      }, { merge: true });
+      return { encontrada: true, requerReconciliacao: true, userId: data.userId, championshipId: data.championshipId };
+    }
+
+    const refunded = event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_RECEIVED_IN_CASH_UNDONE';
+    const missingTimestamp = !incomingEventAt;
+    const status: StatusInscricaoChampionship = refunded ? 'reembolsada' : 'contestada';
+    transaction.set(doc.ref, {
+      status,
+      paymentStatus: missingTimestamp ? 'RECONCILIATION_REQUIRED' : (refunded ? 'REFUNDED' : event),
+      externalPaymentReference: doc.id,
+      paymentLifecycleEvent: event,
+      paymentLifecycleObservedAt: observedAt,
+      valorEventoFinanceiro: numericPaymentValue(valorObservado),
+      ...(refunded ? { reembolsadaEm: FieldValue.serverTimestamp() } : { contestedAt: FieldValue.serverTimestamp() }),
+      ...((missingTimestamp || event === 'PAYMENT_PARTIALLY_REFUNDED' || event === 'PAYMENT_REFUND_IN_PROGRESS')
+        ? {
+            paymentReconciliationReason: missingTimestamp ? 'PAYMENT_EVENT_TIMESTAMP_MISSING' : event,
+            paymentReconciliationObservedAt: observedAt,
+          }
+        : {
+            paymentReconciliationReason: FieldValue.delete(),
+            paymentReconciliationObservedAt: FieldValue.delete(),
+          }),
+    }, { merge: true });
+
+    return { encontrada: true, userId: data.userId, championshipId: data.championshipId, status, event };
   });
-  return { encontrada: true, userId: data.userId, championshipId: data.championshipId };
+}
+
+/** Compatibilidade para chamadores legados; novos webhooks usam o evento completo. */
+export async function marcarInscricaoChampionshipComoReembolsada(asaasPaymentId: string, asaasCheckoutId?: string) {
+  return registrarEventoFinanceiroChampionship(
+    asaasPaymentId,
+    'PAYMENT_REFUNDED',
+    asaasCheckoutId,
+    undefined,
+    undefined,
+    undefined,
+  );
 }
 
 export async function getUserRegistration(userId: string, championshipId: string) {
