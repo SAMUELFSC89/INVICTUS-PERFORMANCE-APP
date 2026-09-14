@@ -49,6 +49,17 @@ function normalizedReference(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function normalizedProviderEventAt(value: unknown): string | null {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function isStaleProviderEvent(current: unknown, incoming: string): boolean {
+  const currentMs = Date.parse(String(current || ''));
+  const incomingMs = Date.parse(incoming);
+  return Number.isFinite(currentMs) && Number.isFinite(incomingMs) && incomingMs < currentMs;
+}
+
 async function activeProfile(userId: string) {
   const snap = await db.collection('users').doc(userId).get();
   return snap.exists && isActiveAccountState(snap.data()) ? snap : null;
@@ -77,8 +88,6 @@ async function seasonProfilePatch(seasonId: string): Promise<Record<string, unkn
     };
   }
 
-  // Pagamento muito atrasado de temporada antiga pode ser conciliado no
-  // documento financeiro, mas nunca deve sobrescrever a temporada atual do perfil.
   return null;
 }
 
@@ -187,13 +196,14 @@ export async function criarInscricao(userId: string) {
 
 /**
  * Confirma a inscricao a partir do webhook do Asaas. Valor, paymentId,
- * externalReference, lifecycle da conta, inscricao e seasonStatus sao validados
- * e gravados de forma fail-closed; uma conta suspensa nunca e reativada.
+ * externalReference, ordem do evento, lifecycle da conta, inscricao e
+ * seasonStatus sao validados e gravados de forma fail-closed.
  */
 export async function confirmarInscricaoPorPagamento(
   asaasPaymentId: string,
   valorPago?: number,
   externalReference?: unknown,
+  providerEventAt?: unknown,
 ) {
   const busca = await db.collection('season_inscriptions')
     .where('asaasPaymentId', '==', asaasPaymentId)
@@ -210,7 +220,8 @@ export async function confirmarInscricaoPorPagamento(
   const expectedReference = doc.id;
   const profilePatch = await seasonProfilePatch(String(doc.data()?.seasonId || ''));
   const receivedReference = normalizedReference(externalReference);
-  const observedAt = new Date().toISOString();
+  const incomingEventAt = normalizedProviderEventAt(providerEventAt);
+  const observedAt = incomingEventAt || new Date().toISOString();
 
   return db.runTransaction(async (transaction: any) => {
     const inscriptionSnap = await transaction.get(docRef);
@@ -222,11 +233,26 @@ export async function confirmarInscricaoPorPagamento(
 
     const userRef = db.collection('users').doc(String(dados.userId || ''));
     const userSnap = await transaction.get(userRef);
+
+    if (incomingEventAt && isStaleProviderEvent(dados.paymentLifecycleObservedAt, incomingEventAt)) {
+      return {
+        encontrada: true,
+        ignoradoComoAntigo: true,
+        userId: dados.userId,
+        seasonId: dados.seasonId,
+      };
+    }
+
     const referenceValid = receivedReference === expectedReference;
     const amountValid = paymentAmountMatches(dados.valor, valorPago);
+    const orderingValid = Boolean(incomingEventAt);
 
-    if (!referenceValid || !amountValid) {
-      const reason = !referenceValid ? 'PAYMENT_EXTERNAL_REFERENCE_MISMATCH' : 'PAYMENT_AMOUNT_MISMATCH_OR_MISSING';
+    if (!referenceValid || !amountValid || !orderingValid) {
+      const reason = !referenceValid
+        ? 'PAYMENT_EXTERNAL_REFERENCE_MISMATCH'
+        : !amountValid
+          ? 'PAYMENT_AMOUNT_MISMATCH_OR_MISSING'
+          : 'PAYMENT_EVENT_TIMESTAMP_MISSING';
       transaction.set(docRef, {
         status: 'contestada' as StatusInscricao,
         paymentStatus: 'RECONCILIATION_REQUIRED',
@@ -234,6 +260,7 @@ export async function confirmarInscricaoPorPagamento(
         reconciliationObservedAt: observedAt,
         observedExternalReference: receivedReference,
         valorPago: numericPaymentValue(valorPago),
+        paymentLifecycleObservedAt: observedAt,
       }, { merge: true });
       if (userSnap.exists) {
         const removal = profileRemovalPatch(userSnap.data() || {}, String(dados.seasonId || ''), observedAt);
@@ -254,6 +281,7 @@ export async function confirmarInscricaoPorPagamento(
         reconciliationReason: 'ACCOUNT_INACTIVE_AT_PAYMENT_CONFIRMATION',
         reconciliationObservedAt: observedAt,
         valorPago: numericPaymentValue(valorPago),
+        paymentLifecycleObservedAt: observedAt,
       }, { merge: true });
       return {
         encontrada: true,
@@ -275,7 +303,7 @@ export async function confirmarInscricaoPorPagamento(
       reconciliationObservedAt: FieldValue.delete(),
       observedExternalReference: FieldValue.delete(),
       paymentLifecycleEvent: 'PAYMENT_CONFIRMED_OR_RECEIVED',
-      paymentLifecycleObservedAt: observedAt,
+      paymentLifecycleObservedAt: incomingEventAt,
     }, { merge: true });
     if (profilePatch) transaction.set(userRef, profilePatch, { merge: true });
 
@@ -290,14 +318,15 @@ export async function confirmarInscricaoPorPagamento(
 
 /**
  * Suspende imediatamente a elegibilidade quando o dinheiro deixa de estar
- * economicamente confirmado. O documento deixa de ter status=paga, portanto
- * sai do numero de participantes e do pote ate uma confirmacao valida posterior.
+ * economicamente confirmado. Eventos atrasados nunca sobrescrevem um estado
+ * financeiro mais novo.
  */
 export async function registrarEventoFinanceiroInscricaoTemporada(
   asaasPaymentId: string,
   event: SeasonPaymentRiskEvent,
   externalReference?: unknown,
   valorObservado?: unknown,
+  providerEventAt?: unknown,
 ) {
   const busca = await db.collection('season_inscriptions')
     .where('asaasPaymentId', '==', asaasPaymentId)
@@ -309,7 +338,8 @@ export async function registrarEventoFinanceiroInscricaoTemporada(
   const docRef = doc.ref;
   const expectedReference = doc.id;
   const receivedReference = normalizedReference(externalReference);
-  const now = new Date().toISOString();
+  const incomingEventAt = normalizedProviderEventAt(providerEventAt);
+  const now = incomingEventAt || new Date().toISOString();
 
   return db.runTransaction(async (transaction: any) => {
     const inscriptionSnap = await transaction.get(docRef);
@@ -319,13 +349,18 @@ export async function registrarEventoFinanceiroInscricaoTemporada(
       throw new Error('Evento financeiro nao corresponde mais ao pagamento da inscricao.');
     }
 
+    if (incomingEventAt && isStaleProviderEvent(dados.paymentLifecycleObservedAt, incomingEventAt)) {
+      return { encontrada: true, ignoradoComoAntigo: true, userId: dados.userId, seasonId: dados.seasonId };
+    }
+
     const userRef = db.collection('users').doc(String(dados.userId || ''));
     const userSnap = await transaction.get(userRef);
-    if (receivedReference !== expectedReference) {
+    if (!incomingEventAt || receivedReference !== expectedReference) {
+      const reason = !incomingEventAt ? 'PAYMENT_EVENT_TIMESTAMP_MISSING' : 'PAYMENT_EXTERNAL_REFERENCE_MISMATCH';
       transaction.set(docRef, {
         status: 'contestada' as StatusInscricao,
         paymentStatus: 'RECONCILIATION_REQUIRED',
-        reconciliationReason: 'PAYMENT_EXTERNAL_REFERENCE_MISMATCH',
+        reconciliationReason: reason,
         reconciliationObservedAt: now,
         observedExternalReference: receivedReference,
         paymentLifecycleEvent: event,
@@ -345,19 +380,16 @@ export async function registrarEventoFinanceiroInscricaoTemporada(
       paymentStatus: refunded ? 'REFUNDED' : event,
       externalPaymentReference: expectedReference,
       paymentLifecycleEvent: event,
-      paymentLifecycleObservedAt: now,
+      paymentLifecycleObservedAt: incomingEventAt,
       valorEventoFinanceiro: numericPaymentValue(valorObservado),
       ...(refunded ? { reembolsadaEm: FieldValue.serverTimestamp() } : { contestedAt: FieldValue.serverTimestamp() }),
       ...(event === 'PAYMENT_PARTIALLY_REFUNDED' || event === 'PAYMENT_REFUND_IN_PROGRESS'
-        ? {
-            reconciliationReason: event,
-            reconciliationObservedAt: now,
-          }
-        : {}),
+        ? { reconciliationReason: event, reconciliationObservedAt: incomingEventAt }
+        : { reconciliationReason: FieldValue.delete(), reconciliationObservedAt: FieldValue.delete() }),
     }, { merge: true });
 
     if (userSnap.exists) {
-      const removal = profileRemovalPatch(userSnap.data() || {}, String(dados.seasonId || ''), now);
+      const removal = profileRemovalPatch(userSnap.data() || {}, String(dados.seasonId || ''), incomingEventAt);
       if (removal) transaction.set(userRef, removal, { merge: true });
     }
 
