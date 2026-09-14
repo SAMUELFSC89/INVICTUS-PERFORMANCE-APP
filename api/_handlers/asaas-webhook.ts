@@ -9,11 +9,12 @@ import {
 } from '../_lib/inscricao-service.js';
 import {
   confirmarInscricaoChampionshipPorPagamento,
-  marcarInscricaoChampionshipComoReembolsada,
+  registrarEventoFinanceiroChampionship,
+  type ChampionshipPaymentRiskEvent,
 } from '../_lib/championship-inscription-service.js';
 import { StoreEngine } from '../_lib/store-engine.js';
 
-const SEASON_PAYMENT_RISK_EVENTS = new Set<SeasonPaymentRiskEvent>([
+const PAYMENT_RISK_EVENTS = new Set<SeasonPaymentRiskEvent & ChampionshipPaymentRiskEvent>([
   'PAYMENT_REFUNDED',
   'PAYMENT_PARTIALLY_REFUNDED',
   'PAYMENT_REFUND_IN_PROGRESS',
@@ -24,10 +25,9 @@ const SEASON_PAYMENT_RISK_EVENTS = new Set<SeasonPaymentRiskEvent>([
 ]);
 
 /**
- * Webhook do Asaas: recebe eventos de cobrança e de transferência PIX e mantém
- * o estado financeiro canônico no Firestore. Confirmações de inscrições só
- * liberam elegibilidade após validar paymentId, valor, externalReference e
- * lifecycle da conta; estornos/chargebacks suspendem a elegibilidade.
+ * Webhook financeiro central do Asaas. Inscricoes so ganham elegibilidade apos
+ * validar paymentId, valor, externalReference, ordem do evento e lifecycle da
+ * conta. Reembolsos/chargebacks removem a elegibilidade de forma idempotente.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -40,8 +40,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const headerToken = req.headers['asaas-access-token'];
   const receivedToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
 
-  // Webhooks financeiros devem falhar fechados: sem segredo configurado, não
-  // existe origem confiável para confirmar pagamentos ou movimentar saques.
   if (!expectedToken) {
     console.error('[Asaas Webhook] ASAAS_WEBHOOK_TOKEN ausente; evento recusado por segurança.');
     return res.status(503).json({ error: 'Webhook temporariamente indisponível.' });
@@ -58,20 +56,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const event = req.body?.event as string;
-
     const payment = req.body?.payment;
+
     if (event && payment && payment.id) {
+      const providerEventAt = req.body?.dateCreated;
       const confirmado = event === 'PAYMENT_RECEIVED'
         || event === 'PAYMENT_CONFIRMED'
         || event === 'PAYMENT_REFUND_DENIED';
 
       console.log('[Asaas Webhook] Evento de cobrança: ' + event + ' para pagamento ' + payment.id + ' (status: ' + payment.status + ')');
 
-      // A loja física também usa o Asaas. O pedido é localizado primeiro para
-      // impedir que um pagamento de produto seja interpretado como inscrição.
       const resultadoLoja = await StoreEngine.handleStorePaymentWebhook(payment.id, event, payment.value, {
         eventId: req.body?.id,
-        eventAt: req.body?.dateCreated,
+        eventAt: providerEventAt,
         externalReference: payment.externalReference,
       });
       if (resultadoLoja.found) {
@@ -79,39 +76,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (confirmado) {
-        // Temporada usa o externalReference determinístico da própria inscrição.
-        // Só se ela não reconhecer o pagamento tentamos campeonato.
         const resultadoTemporada = await confirmarInscricaoPorPagamento(
           payment.id,
           payment.value,
           payment.externalReference,
+          providerEventAt,
         );
         if (resultadoTemporada.encontrada) {
           return res.status(200).json({ received: true, inscricao: resultadoTemporada });
         }
-        const resultadoChampionship = await confirmarInscricaoChampionshipPorPagamento(payment.id, payment.value);
+
+        const resultadoChampionship = await confirmarInscricaoChampionshipPorPagamento(
+          payment.id,
+          payment.value,
+          undefined,
+          payment.externalReference,
+          providerEventAt,
+        );
         return res.status(200).json({ received: true, inscricao: resultadoChampionship });
       }
 
-      if (SEASON_PAYMENT_RISK_EVENTS.has(event as SeasonPaymentRiskEvent)) {
+      if (PAYMENT_RISK_EVENTS.has(event as SeasonPaymentRiskEvent & ChampionshipPaymentRiskEvent)) {
         const resultadoTemporada = await registrarEventoFinanceiroInscricaoTemporada(
           payment.id,
           event as SeasonPaymentRiskEvent,
           payment.externalReference,
           payment.value,
+          providerEventAt,
         );
         if (resultadoTemporada.encontrada) {
           return res.status(200).json({ received: true, inscricao: resultadoTemporada });
         }
 
-        // Compatibilidade do campeonato enquanto o mesmo hardening financeiro
-        // é aplicado ao seu serviço abaixo: os eventos terminais já suportados
-        // continuam sendo tratados sem abrir uma segunda interpretação.
-        if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_CHARGEBACK_REQUESTED') {
-          const resultadoChampionship = await marcarInscricaoChampionshipComoReembolsada(payment.id);
-          if (resultadoChampionship.encontrada) {
-            return res.status(200).json({ received: true, inscricao: resultadoChampionship });
-          }
+        const resultadoChampionship = await registrarEventoFinanceiroChampionship(
+          payment.id,
+          event as ChampionshipPaymentRiskEvent,
+          undefined,
+          payment.externalReference,
+          payment.value,
+          providerEventAt,
+        );
+        if (resultadoChampionship.encontrada) {
+          return res.status(200).json({ received: true, inscricao: resultadoChampionship });
         }
       }
 
