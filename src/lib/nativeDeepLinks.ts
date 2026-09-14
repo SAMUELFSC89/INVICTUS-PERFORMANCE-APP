@@ -17,6 +17,22 @@ function safeInternalPath(value: string | null, fallback: string): string {
 const PAID_CHAMPIONSHIP_IDS = new Set(['invictus_strength_v1', 'invictus_cardio_v1']);
 const CHECKOUT_STATUSES = new Set<ChampionshipCheckoutReturnStatus>(['success', 'cancelled', 'expired']);
 
+/**
+ * Retorna somente a parte estrutural segura para diagnóstico. Query e fragment
+ * nunca entram em logs porque callbacks OAuth podem transportar `code`,
+ * `state`, `access_token` e identificadores de pagamento.
+ */
+export function describeNativeDeepLinkForLog(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname ? `//${url.hostname}` : '';
+    const path = url.pathname || '';
+    return `${url.protocol}${host}${path}`.slice(0, 200);
+  } catch {
+    return '[native-url-invalida]';
+  }
+}
+
 /** Resolve somente deep links internos explicitamente conhecidos. */
 export function resolveNativeDeepLinkRoute(rawUrl: string): NativeDeepLinkRoute | null {
   try {
