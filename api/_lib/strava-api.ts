@@ -1,4 +1,5 @@
 import { db, FieldValue } from './common.js';
+import { isActiveAccountState, isDeletedAccountState } from './account-state.js';
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
@@ -12,7 +13,7 @@ export interface StravaTokens {
 export class StravaApi {
   constructor(private userId: string) {}
 
-  async getConnection() {
+  private async getRawConnection() {
     try {
       const snap = await db.collection('strava_connections').doc(this.userId).get();
       return snap.exists ? snap.data() : null;
@@ -22,9 +23,49 @@ export class StravaApi {
     }
   }
 
+  async getConnection() {
+    try {
+      const [profileSnap, connection] = await Promise.all([
+        db.collection('users').doc(this.userId).get(),
+        this.getRawConnection(),
+      ]);
+      const profile = profileSnap.exists ? profileSnap.data() : null;
+
+      // Conta excluída não pode continuar sendo alimentada por webhook tardio.
+      // Fazemos cleanup local best-effort aqui como segunda barreira; o fluxo
+      // explícito de exclusão também chama deleteConnection/deauthorization.
+      if (!profileSnap.exists || isDeletedAccountState(profile)) {
+        if (connection) {
+          const batch = db.batch();
+          batch.delete(db.collection('strava_connections').doc(this.userId));
+          if (connection.athleteId) batch.delete(db.collection('strava_athletes').doc(String(connection.athleteId)));
+          batch.set(db.collection('wearable_configs').doc(this.userId), {
+            stravaConnected: false,
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+          await batch.commit().catch((error: any) => console.warn('[StravaApi] Cleanup de conta excluída falhou:', error?.message || error));
+        }
+        return null;
+      }
+
+      // Bloqueio/suspensão interrompe importação sem destruir o vínculo caso a
+      // restrição seja revertida administrativamente.
+      if (!isActiveAccountState(profile)) return null;
+      return connection;
+    } catch (err: any) {
+      console.warn('[StravaApi] Falha ao validar conexão do Strava:', err?.message || err);
+      return null;
+    }
+  }
+
   async saveConnection(data: any) {
     if (!data?.athlete?.id || typeof data.access_token !== 'string' || typeof data.refresh_token !== 'string' || !Number.isFinite(Number(data.expires_at))) {
       throw new Error('Resposta de autorização do Strava inválida.');
+    }
+
+    const profileSnap = await db.collection('users').doc(this.userId).get();
+    if (!profileSnap.exists || !isActiveAccountState(profileSnap.data())) {
+      throw new Error('Conta inativa não pode conectar o Strava.');
     }
 
     const connectionData = {
@@ -39,7 +80,7 @@ export class StravaApi {
     };
 
     await db.collection('strava_connections').doc(this.userId).set(connectionData);
-    
+
     // Reverse mapping for webhooks
     await db.collection('strava_athletes').doc(data.athlete.id.toString()).set({
       userId: this.userId,
@@ -62,23 +103,56 @@ export class StravaApi {
     return connectionData;
   }
 
-  async deleteConnection() {
-    const conn = await this.getConnection();
-    if (conn?.athleteId) {
-      await db.collection('strava_athletes').doc(conn.athleteId.toString()).delete();
-    }
-    await db.collection('strava_connections').doc(this.userId).delete();
-    await db.collection('users').doc(this.userId).update({
-      strava_connected: false,
-      strava_athlete_id: FieldValue.delete(),
-      updatedAt: FieldValue.serverTimestamp()
-    });
+  private async revokeProviderTokenBestEffort(connection: any) {
+    const token = typeof connection?.refreshToken === 'string' && connection.refreshToken
+      ? connection.refreshToken
+      : typeof connection?.accessToken === 'string' ? connection.accessToken : '';
+    if (!token || !STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET) return;
 
-    // Update wearable configs in Firestore
-    await db.collection('wearable_configs').doc(this.userId).set({
+    try {
+      const basic = Buffer.from(`${STRAVA_CLIENT_ID}:${STRAVA_CLIENT_SECRET}`).toString('base64');
+      const body = new URLSearchParams({ token });
+      if (token === connection.refreshToken) body.set('token_type_hint', 'refresh_token');
+      const response = await fetch('https://www.strava.com/oauth/revoke', {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${basic}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      });
+      if (!response.ok) {
+        console.warn(`[StravaApi] Revogação remota retornou HTTP ${response.status}; cleanup local continuará.`);
+      }
+    } catch (error: any) {
+      console.warn('[StravaApi] Revogação remota indisponível; cleanup local continuará:', error?.message || error);
+    }
+  }
+
+  async deleteConnection() {
+    const conn = await this.getRawConnection();
+    if (conn) await this.revokeProviderTokenBestEffort(conn);
+
+    const batch = db.batch();
+    if (conn?.athleteId) {
+      batch.delete(db.collection('strava_athletes').doc(conn.athleteId.toString()));
+    }
+    batch.delete(db.collection('strava_connections').doc(this.userId));
+    batch.set(db.collection('wearable_configs').doc(this.userId), {
       stravaConnected: false,
       updatedAt: new Date().toISOString()
-    }, { merge: true }).catch((err: any) => console.warn('[StravaApi] Failed to update wearable_configs in disconnect:', err));
+    }, { merge: true });
+    await batch.commit();
+
+    const profileRef = db.collection('users').doc(this.userId);
+    const profile = await profileRef.get();
+    if (profile.exists) {
+      await profileRef.update({
+        strava_connected: false,
+        strava_athlete_id: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    }
   }
 
   async getAccessToken(): Promise<string | null> {
@@ -111,7 +185,7 @@ export class StravaApi {
 
     if (!response.ok) {
       console.error(`[StravaApi] Token refresh failed with status ${response.status}.`);
-      
+
       // If token refresh fails due to invalid/revoked refresh token (HTTP 400 Bad Request, 401, or 403)
       if (response.status === 400 || response.status === 401 || response.status === 403) {
         console.warn(`[StravaApi] Refresh token invalid or revoked for user ${this.userId}. Cleaning up stale connection.`);
@@ -151,9 +225,9 @@ export class StravaApi {
     url.searchParams.append('per_page', '50');
 
     const response = await fetch(url.toString(), {
-        headers: {
-            Authorization: `Bearer ${token}`
-        }
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
     });
 
     if (!response.ok) {
@@ -170,9 +244,9 @@ export class StravaApi {
 
     const url = `https://www.strava.com/api/v3/activities/${activityId}`;
     const response = await fetch(url, {
-        headers: {
-            Authorization: `Bearer ${token}`
-        }
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
     });
 
     if (!response.ok) {
