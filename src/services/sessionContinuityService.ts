@@ -1,5 +1,6 @@
 import type { ActivitySession } from '../types';
 import { activityService } from './activityService';
+import { activityNotificationService } from './activityNotificationService';
 import { nativeBackgroundLocationService, type NativeTrackedLocation } from './nativeBackgroundLocationService';
 import { webGpsTrackingService } from './webGpsTrackingService';
 
@@ -9,6 +10,26 @@ async function readNativeBufferSafely(): Promise<NativeTrackedLocation[]> {
   } catch (error) {
     console.warn('[SessionContinuity] Não foi possível ler o buffer nativo antes da restauração:', error);
     return [];
+  }
+}
+
+function elapsedSecondsForSession(session: ActivitySession): number {
+  const startMs = Date.parse(session.startTime);
+  if (!Number.isFinite(startMs)) return 0;
+  const pausedMs = Math.max(0, Number(session.pausedMs) || 0);
+  const pauseStartedMs = session.isPaused && session.pauseStartedAt ? Date.parse(session.pauseStartedAt) : NaN;
+  const currentPauseMs = Number.isFinite(pauseStartedMs) ? Math.max(0, Date.now() - pauseStartedMs) : 0;
+  return Math.max(0, Math.floor((Date.now() - startMs - pausedMs - currentPauseMs) / 1000));
+}
+
+async function syncAndroidForegroundService(session: ActivitySession): Promise<void> {
+  try {
+    await activityNotificationService.sync(session, elapsedSecondsForSession(session));
+  } catch (error) {
+    // O FGS protege a continuidade no Android, mas uma falha transitória da
+    // ponte não pode esconder a sessão restaurada. A tela continua disponível
+    // e uma nova sincronização poderá ocorrer quando o fluxo ativo montar.
+    console.warn('[SessionContinuity] Não foi possível sincronizar o foreground service:', error);
   }
 }
 
@@ -57,10 +78,13 @@ function replayRecoveredTail(session: ActivitySession, buffered: NativeTrackedLo
  *
  * - sessão local encontrada: reconecta o snapshot visual e usa `resume()` no
  *   plugin nativo, preservando o buffer GPS persistido antes do restart;
+ * - no Android, religa também o foreground service de localização antes de a
+ *   sessão voltar ao background; negar notificações não pode interromper GPS;
  * - sessão só encontrada no servidor: captura o buffer nativo ANTES do restore
  *   antigo e reaplica somente a cauda perdida depois que a sessão volta;
- * - sessão pausada nunca religa GPS automaticamente;
- * - falha ao reler o buffer não impede a recuperação da sessão em si.
+ * - sessão pausada nunca religa GPS/FGS automaticamente;
+ * - falha ao reler o buffer ou sincronizar o FGS não impede a recuperação da
+ *   sessão em si.
  */
 export async function restoreAndResumeActiveSession(): Promise<ActivitySession | null> {
   const localBeforeRestore = activityService.getCurrentSession();
@@ -74,11 +98,16 @@ export async function restoreAndResumeActiveSession(): Promise<ActivitySession |
   }
 
   const current = activityService.getCurrentSession() || restored;
+
+  // `sync` também encerra qualquer FGS location órfão quando a sessão voltou
+  // pausada ou quando não é uma modalidade que precise de GPS contínuo.
+  await syncAndroidForegroundService(current);
+
   if (!current.requiresGpsDistance || current.isPaused) return current;
 
   if (localBeforeRestore) {
-    // A ponte visual começa primeiro; assim ela já está inscrita quando o
-    // plugin retoma a emissão de novos pontos. `resume()` não apaga o buffer.
+    // O FGS já foi sincronizado acima enquanto o app está visível. A ponte
+    // visual começa antes de `resume()` para não perder os primeiros fixes.
     webGpsTrackingService.start(current);
     try {
       await nativeBackgroundLocationService.resume(current.id);

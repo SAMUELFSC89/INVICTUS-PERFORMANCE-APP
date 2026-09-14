@@ -1,4 +1,5 @@
 import { activityService } from '../services/activityService';
+import { activityNotificationService } from '../services/activityNotificationService';
 import { nativeBackgroundLocationService } from '../services/nativeBackgroundLocationService';
 import { webGpsTrackingService } from '../services/webGpsTrackingService';
 import { restoreAndResumeActiveSession } from '../services/sessionContinuityService';
@@ -9,6 +10,12 @@ jest.mock('../services/activityService', () => ({
     restoreActiveSession: jest.fn(),
     addCheckpoint: jest.fn(),
     recordGpsSpeedSample: jest.fn(),
+  },
+}));
+
+jest.mock('../services/activityNotificationService', () => ({
+  activityNotificationService: {
+    sync: jest.fn(),
   },
 }));
 
@@ -26,6 +33,7 @@ jest.mock('../services/webGpsTrackingService', () => ({
 }));
 
 const mockedActivity = activityService as jest.Mocked<typeof activityService>;
+const mockedNotification = activityNotificationService as jest.Mocked<typeof activityNotificationService>;
 const mockedNative = nativeBackgroundLocationService as jest.Mocked<typeof nativeBackgroundLocationService>;
 const mockedWebGps = webGpsTrackingService as jest.Mocked<typeof webGpsTrackingService>;
 
@@ -55,12 +63,13 @@ function session(overrides: Record<string, any> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedNotification.sync.mockResolvedValue(undefined);
   mockedNative.readBuffered.mockResolvedValue([]);
   mockedNative.resume.mockResolvedValue(undefined);
 });
 
 describe('Gate 1 — continuidade após recriação do app/WebView', () => {
-  test('sessão local ativa religa a ponte visual e usa resume nativo sem criar/restaurar outra sessão', async () => {
+  test('sessão local ativa religa FGS, ponte visual e usa resume nativo sem criar/restaurar outra sessão', async () => {
     const active = session();
     mockedActivity.getCurrentSession.mockReturnValue(active);
 
@@ -68,17 +77,19 @@ describe('Gate 1 — continuidade após recriação do app/WebView', () => {
 
     expect(restored).toBe(active);
     expect(mockedActivity.restoreActiveSession).not.toHaveBeenCalled();
+    expect(mockedNotification.sync).toHaveBeenCalledWith(active, expect.any(Number));
     expect(mockedWebGps.start).toHaveBeenCalledWith(active);
     expect(mockedNative.resume).toHaveBeenCalledWith(active.id);
   });
 
-  test('sessão pausada é restaurada sem religar GPS automaticamente', async () => {
+  test('sessão pausada sincroniza o FGS para desligamento sem religar GPS automaticamente', async () => {
     const paused = session({ isPaused: true, pauseStartedAt: '2026-09-13T02:15:00.000Z' });
     mockedActivity.getCurrentSession.mockReturnValue(paused);
 
     const restored = await restoreAndResumeActiveSession();
 
     expect(restored).toBe(paused);
+    expect(mockedNotification.sync).toHaveBeenCalledWith(paused, expect.any(Number));
     expect(mockedNative.resume).not.toHaveBeenCalled();
     expect(mockedWebGps.start).not.toHaveBeenCalled();
   });
@@ -113,6 +124,7 @@ describe('Gate 1 — continuidade após recriação do app/WebView', () => {
       Date.parse('2026-09-13T02:12:00.000Z'),
     );
     expect(mockedActivity.recordGpsSpeedSample).toHaveBeenCalledTimes(2);
+    expect(mockedNotification.sync).toHaveBeenCalledWith(remote, expect.any(Number));
     // O restore remoto já controla o plugin; não devemos chamar resume uma
     // segunda vez e disputar o bridge nativo com activityService.
     expect(mockedNative.resume).not.toHaveBeenCalled();
@@ -122,6 +134,18 @@ describe('Gate 1 — continuidade após recriação do app/WebView', () => {
     const active = session();
     mockedActivity.getCurrentSession.mockReturnValue(active);
     mockedNative.readBuffered.mockRejectedValue(new Error('bridge indisponível'));
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(restoreAndResumeActiveSession()).resolves.toBe(active);
+    expect(mockedNotification.sync).toHaveBeenCalledWith(active, expect.any(Number));
+    expect(mockedNative.resume).toHaveBeenCalledWith(active.id);
+    expect(mockedWebGps.start).toHaveBeenCalledWith(active);
+  });
+
+  test('falha transitória do FGS não impede restaurar nem retomar GPS', async () => {
+    const active = session();
+    mockedActivity.getCurrentSession.mockReturnValue(active);
+    mockedNotification.sync.mockRejectedValue(new Error('foreground service indisponível'));
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     await expect(restoreAndResumeActiveSession()).resolves.toBe(active);
