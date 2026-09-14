@@ -3,6 +3,7 @@ import { AppError } from '../../_middleware/error.js';
 import { getOverallMetricsForDashboard, logEvent, memoryCache, getPipelineTrace } from '../../_lib/observability.js';
 import { ReviewActivityRequest, ReviewActivityResponse } from '../../_dto/admin-dto.js';
 import { WithdrawalEngine } from '../../_lib/withdrawal-engine.js';
+import { updateWithdrawalStatusSafely } from '../../_lib/withdrawal-admin-status.js';
 
 export class AdminService {
   constructor(private adminRepository: AdminRepository) {}
@@ -116,7 +117,7 @@ export class AdminService {
       throw new AppError('Status de saque inválido.', 400);
     }
 
-    const updated = await WithdrawalEngine.updateWithdrawalStatus(withdrawalId, status as any, reviewerId, reason);
+    const updated = await updateWithdrawalStatusSafely(withdrawalId, status as any, reviewerId, reason);
 
     await logEvent({
       severity: 'INFO',

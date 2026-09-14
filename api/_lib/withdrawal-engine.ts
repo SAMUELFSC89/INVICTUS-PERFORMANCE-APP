@@ -1,16 +1,24 @@
 import { db } from './common.js';
-import { WalletEngine } from './wallet-engine.js';
 import { PIXWithdrawal, WithdrawalStatus, WithdrawalConfig } from '../../src/types.js';
 import { AsaasClient } from './asaas-client.js';
 import { notificationService } from '../_services/notification-service.js';
 import { isProUser } from './entitlement.js';
+import { isActiveAccountState } from './account-state.js';
+import { updateWithdrawalStatusSafely } from './withdrawal-admin-status.js';
 
 export const DEFAULT_WITHDRAWAL_CONFIG: WithdrawalConfig = {
-  minWithdrawalAmount: 20, // R$ 20,00
-  maxDailyWithdrawalAmount: 1000, // R$ 1.000,00
+  minWithdrawalAmount: 20,
+  maxDailyWithdrawalAmount: 1000,
   enabled: true,
   updatedAt: new Date().toISOString()
 };
+
+function normalizeWithdrawalReference(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const reference = value.trim();
+  if (!reference.startsWith('pix_req_') || reference.length > 500 || reference.includes('/')) return null;
+  return reference;
+}
 
 export class WithdrawalEngine {
   static async getConfig(): Promise<WithdrawalConfig> {
@@ -75,6 +83,9 @@ export class WithdrawalEngine {
 
     try {
       const userDoc = await db.collection('users').doc(userId).get();
+      if (!userDoc.exists || !isActiveAccountState(userDoc.data())) {
+        return { score: 0, passed: false, flags: ['ACCOUNT_INACTIVE'], details: { amount } };
+      }
       const userData = userDoc.data() || {};
 
       const createdAt = userData.createdAt ? new Date(userData.createdAt).getTime() : Date.now();
@@ -113,7 +124,7 @@ export class WithdrawalEngine {
         score -= 15;
       }
 
-      const passed = score >= 50 && !userData.isBlocked && !userData.isBanned;
+      const passed = score >= 50 && isActiveAccountState(userData);
 
       return {
         score,
@@ -129,8 +140,6 @@ export class WithdrawalEngine {
       };
     } catch (err) {
       console.error('[WithdrawalEngine] Anti-fraud evaluation error:', err);
-      // Operações financeiras devem falhar fechadas quando não é possível
-      // avaliar o risco; nunca autorize saque no escuro.
       return { score: 0, passed: false, flags: ['EVALUATION_ERROR'], details: {} };
     }
   }
@@ -141,7 +150,6 @@ export class WithdrawalEngine {
     pixKey: string;
     pixKeyType: 'cpf' | 'email' | 'phone' | 'random';
     deviceId?: string;
-    /** Chave idempotente gerada pelo cliente para reenvios seguros. */
     requestId?: string;
   }): Promise<PIXWithdrawal> {
     if (!db) throw new Error('Database not initialized');
@@ -151,11 +159,9 @@ export class WithdrawalEngine {
     if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
       throw new Error('Valor do saque deve ser um número positivo.');
     }
-
     if (!pixKey || pixKey.trim().length === 0) {
       throw new Error('Chave PIX é obrigatória.');
     }
-
     if (!['cpf', 'email', 'phone', 'random'].includes(pixKeyType)) {
       throw new Error('Tipo de chave PIX inválido.');
     }
@@ -164,7 +170,6 @@ export class WithdrawalEngine {
     if (!config.enabled) {
       throw new Error('Solicitações de saque via PIX estão temporariamente desativadas pelo sistema.');
     }
-
     if (normalizedAmount < config.minWithdrawalAmount) {
       throw new Error('O saque mínimo é de R$ ' + config.minWithdrawalAmount.toFixed(2) + '.');
     }
@@ -180,8 +185,6 @@ export class WithdrawalEngine {
       .where('createdAt', '>=', dayStart.toISOString())
       .get();
     const dailyCommittedAmount = dailyWithdrawals.docs.reduce((total, doc) => {
-      // Uma solicitação criada já consome a cota do dia. Isso evita que alguém
-      // fragmente tentativas recusadas/canceladas para burlar o limite.
       return total + (Number(doc.data()?.amount) || 0);
     }, 0);
     if (dailyCommittedAmount + normalizedAmount > config.maxDailyWithdrawalAmount + 0.0001) {
@@ -191,8 +194,7 @@ export class WithdrawalEngine {
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) throw new Error('Usuário não encontrado.');
     const userData = userDoc.data() || {};
-
-    if (userData.isBlocked || userData.isBanned) {
+    if (!isActiveAccountState(userData)) {
       throw new Error('Esta conta está suspensa para operações financeiras.');
     }
 
@@ -231,13 +233,15 @@ export class WithdrawalEngine {
     };
 
     const result = await db.runTransaction(async (transaction: any) => {
+      const userRef = db.collection('users').doc(userId);
       const walletRef = db.collection('wallets').doc(userId);
       const holdTxRef = db.collection('iv_transactions').doc(`tx_hold_${withdrawalId}`);
-      const [existingWithdrawal, walletSnap, existingHold, dailyLimitSnap] = await Promise.all([
+      const [existingWithdrawal, walletSnap, existingHold, dailyLimitSnap, transactionUserSnap] = await Promise.all([
         transaction.get(withdrawalRef),
         transaction.get(walletRef),
         transaction.get(holdTxRef),
-        transaction.get(dailyLimitRef)
+        transaction.get(dailyLimitRef),
+        transaction.get(userRef)
       ]);
 
       if (existingWithdrawal.exists) {
@@ -245,9 +249,10 @@ export class WithdrawalEngine {
         if (existing.userId !== userId) throw new Error('Chave de idempotência já está em uso.');
         return existing;
       }
+      if (!transactionUserSnap.exists || !isActiveAccountState(transactionUserSnap.data())) {
+        throw new Error('Conta deixou de estar ativa antes da reserva financeira.');
+      }
       if (existingHold.exists) {
-        // Um hold sem solicitação é uma inconsistência operacional; não crie
-        // nem estorne automaticamente, pois isso poderia mover saldo duas vezes.
         throw new Error('Solicitação financeira em conciliação. Aguarde o suporte.');
       }
       if (!walletSnap.exists) throw new Error('Carteira não encontrada. Atualize seu saldo e tente novamente.');
@@ -323,65 +328,34 @@ export class WithdrawalEngine {
     reviewerId?: string,
     adminNote?: string
   ): Promise<PIXWithdrawal> {
-    if (!db) throw new Error('Database not initialized');
-    const docRef = db.collection('withdrawals').doc(withdrawalId);
-    const docSnap = await docRef.get();
-
-    if (!docSnap.exists) throw new Error('Solicitação de saque não encontrada.');
-    const withdrawal = docSnap.data() as PIXWithdrawal;
-
-    const previousStatus = withdrawal.status;
-    if (previousStatus === newStatus) return withdrawal;
-
-    if (newStatus === 'paid') {
-      throw new Error('O status pago é definido somente pela confirmação do Asaas. Use o processamento de pagamento.');
-    } else if (newStatus === 'cancelled' || newStatus === 'rejected') {
-      if (previousStatus === 'pending' || previousStatus === 'under_review' || previousStatus === 'approved') {
-        await WalletEngine.resolveWithdrawalHold(withdrawal.userId, withdrawal.amount, withdrawalId, 'refund');
-      }
-    }
-
-    const updated: any = {
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-      ...(adminNote ? { adminNote } : {}),
-      ...(reviewerId ? { reviewerId } : {})
-    };
-
-    await docRef.set(updated, { merge: true });
-    if (newStatus === 'rejected' || newStatus === 'cancelled') {
-      notificationService.notify({
-        userId: withdrawal.userId,
-        type: 'payment',
-        title: 'Saque não aprovado',
-        message: adminNote || ('Seu saque de R$ ' + withdrawal.amount.toFixed(2) + ' foi ' + (newStatus === 'rejected' ? 'rejeitado' : 'cancelado') + '. O valor foi devolvido ao seu saldo.'),
-        actionUrl: '/wallet',
-      }).catch((e) => console.error('[WithdrawalEngine] Falha ao notificar saque rejeitado:', e));
-    }
-
-    return { ...withdrawal, ...updated };
+    return updateWithdrawalStatusSafely(withdrawalId, newStatus, reviewerId, adminNote);
   }
 
   static async processPayment(withdrawalId: string, reviewerId: string): Promise<PIXWithdrawal> {
     if (!db) throw new Error('Database not initialized');
     const docRef = db.collection('withdrawals').doc(withdrawalId);
 
-    // 1. Trava atomica contra duplo clique / requisicoes concorrentes: le o
-    // saque e ja marca como 'processing' dentro de UMA transacao do Firestore.
-    // Se um segundo clique chegar enquanto o primeiro ainda esta em andamento,
-    // ele ve o status 'processing' e falha aqui mesmo, ANTES de chamar o
-    // Asaas de novo (o que antes gerava erro de transferencia duplicada
-    // direto na API do Asaas, com uma mensagem confusa pro admin).
     await db.runTransaction(async (tx: any) => {
       const snap = await tx.get(docRef);
       if (!snap.exists) throw new Error('Solicitação de saque não encontrada.');
-      const data = snap.data() as PIXWithdrawal;
+      const data = snap.data() as PIXWithdrawal & Record<string, any>;
 
+      if (!data.userId) throw new Error('Saque sem usuário associado.');
+      const userSnap = await tx.get(db.collection('users').doc(data.userId));
+      if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
+        throw new Error('Conta do titular não está ativa para operações financeiras. Rejeite o saque para liberar o saldo bloqueado.');
+      }
       if (data.status === 'processing') {
-        throw new Error('Este saque já está sendo processado agora (provável duplo clique). Aguarde alguns segundos, atualize a lista e confira o status antes de tentar de novo.');
+        throw new Error('Este saque já está sendo processado agora. Aguarde a conciliação antes de tentar novamente.');
       }
       if (data.status === 'paid') {
         throw new Error('Este saque já foi pago anteriormente. Nenhuma nova transferência foi enviada ao Asaas.');
+      }
+      if (data.providerTransferId) {
+        throw new Error('Este saque já está vinculado a uma transferência no Asaas. Aguarde a conciliação.');
+      }
+      if (data.providerExternalReference && data.providerExternalReference !== withdrawalId) {
+        throw new Error('Referência externa inconsistente. Saque bloqueado para conciliação.');
       }
       if (data.status !== 'pending' && data.status !== 'under_review' && data.status !== 'approved') {
         throw new Error("Não é possível processar pagamento: saque está com status '" + data.status + "'.");
@@ -389,54 +363,111 @@ export class WithdrawalEngine {
 
       tx.set(docRef, {
         status: 'processing',
+        paymentProvider: 'asaas',
+        providerExternalReference: withdrawalId,
         providerSubmissionStartedAt: new Date().toISOString(),
+        reconciliationRequired: false,
         updatedAt: new Date().toISOString()
       }, { merge: true });
     });
 
     const docSnap = await docRef.get();
-    const withdrawal = docSnap.data() as PIXWithdrawal;
+    const withdrawal = docSnap.data() as PIXWithdrawal & Record<string, any>;
 
     try {
-      // 2. Dispara a transferência PIX. O saldo permanece bloqueado até o
-      // webhook de conclusão; aceitar a criação não é o mesmo que PIX pago.
       const transfer = await AsaasClient.transferPix({
         value: withdrawal.amount,
         pixKey: withdrawal.pixKey,
         pixKeyType: withdrawal.pixKeyType,
-        description: 'Saque Invictus Performance - ' + withdrawal.userDisplayName
+        description: 'Saque Invictus Performance - ' + withdrawal.userDisplayName,
+        externalReference: withdrawalId
       });
+
       const updated: any = {
         status: 'processing',
         updatedAt: new Date().toISOString(),
         reviewerId,
         paymentProvider: 'asaas',
         providerTransferId: transfer.id,
-        providerStatus: transfer.status
+        providerExternalReference: withdrawalId,
+        providerStatus: transfer.status,
+        reconciliationRequired: false
       };
 
-      await docRef.set(updated, { merge: true });
+      const binding = await db.runTransaction(async (tx: any): Promise<{ conflict: boolean; terminal: boolean; reconciliation: boolean }> => {
+        const freshSnap = await tx.get(docRef);
+        if (!freshSnap.exists) throw new Error('Solicitação de saque desapareceu durante o processamento.');
+        const fresh = freshSnap.data() as PIXWithdrawal & Record<string, any>;
+        const now = new Date().toISOString();
 
-      // Alguns ambientes do Asaas podem devolver a transferência já concluída.
-      // Nesse caso aplicamos a mesma rotina idempotente do webhook.
+        if (fresh.providerTransferId && fresh.providerTransferId !== transfer.id) {
+          tx.set(docRef, {
+            reconciliationRequired: true,
+            reconciliationReason: 'PROVIDER_TRANSFER_ID_CONFLICT',
+            conflictingProviderTransferId: transfer.id,
+            updatedAt: now
+          }, { merge: true });
+          return { conflict: true, terminal: false, reconciliation: true };
+        }
+
+        if (fresh.status === 'paid' || fresh.status === 'rejected') {
+          return { conflict: false, terminal: true, reconciliation: false };
+        }
+
+        if (fresh.reconciliationRequired === true) {
+          return { conflict: false, terminal: false, reconciliation: true };
+        }
+
+        if (fresh.status !== 'processing') {
+          tx.set(docRef, {
+            reconciliationRequired: true,
+            reconciliationReason: 'PROVIDER_RESPONSE_AFTER_UNEXPECTED_STATE',
+            providerTransferId: fresh.providerTransferId || transfer.id,
+            providerStatus: transfer.status,
+            updatedAt: now
+          }, { merge: true });
+          return { conflict: false, terminal: false, reconciliation: true };
+        }
+
+        tx.set(docRef, updated, { merge: true });
+        return { conflict: false, terminal: false, reconciliation: false };
+      });
+
+      if (binding.conflict) {
+        throw new Error('Conflito de identificador da transferência Asaas. Saque exige conciliação.');
+      }
+      if (binding.reconciliation) {
+        throw new Error('Transferência Asaas exige conciliação antes de alterar o estado do saque.');
+      }
+      if (binding.terminal) {
+        const terminalSnap = await docRef.get();
+        return terminalSnap.data() as PIXWithdrawal;
+      }
+
       if (transfer.status === 'DONE') {
-        await this.handleAsaasTransferWebhook(transfer.id, 'TRANSFER_DONE', transfer.status);
+        await this.handleAsaasTransferWebhook(
+          transfer.id,
+          'TRANSFER_DONE',
+          transfer.status,
+          undefined,
+          withdrawalId,
+          transfer.value
+        );
         const settledSnap = await docRef.get();
         return settledSnap.data() as PIXWithdrawal;
       }
 
-      return { ...withdrawal, ...updated };
+      return { ...withdrawal, ...updated } as PIXWithdrawal;
     } catch (err: any) {
-      // Depois da chamada ao provedor não há como distinguir com segurança uma
-      // falha de rede de uma transferência aceita cuja resposta se perdeu.
-      // Portanto nunca reabrimos automaticamente o saque; ele exige
-      // conciliação com o Asaas para impedir PIX duplicado.
+      // Nunca force status=processing aqui: o webhook pode ter concluído o
+      // saque antes da resposta HTTP do POST /transfers retornar.
       await docRef.set({
-        status: 'processing',
+        paymentProvider: 'asaas',
+        providerExternalReference: withdrawalId,
         reconciliationRequired: true,
         updatedAt: new Date().toISOString()
       }, { merge: true }).catch((persistError) =>
-        console.error('[WithdrawalEngine] Falha crítica ao marcar conciliação manual:', persistError)
+        console.error('[WithdrawalEngine] Falha crítica ao marcar conciliação:', persistError)
       );
       throw err;
     }
@@ -446,34 +477,114 @@ export class WithdrawalEngine {
     transferId: string,
     event: string,
     providerStatus: string,
-    failureReason?: string
+    failureReason?: string,
+    externalReference?: unknown,
+    providerValue?: unknown
   ): Promise<void> {
     if (!db) throw new Error('Database not initialized');
-    const snap = await db.collection('withdrawals').where('providerTransferId', '==', transferId).limit(1).get();
+    if (!transferId?.trim()) throw new Error('Transferência Asaas sem identificador.');
 
-    if (snap.empty) {
-      console.warn('[WithdrawalEngine] Webhook do Asaas recebido para transferId desconhecido:', transferId);
+    const canonicalTransferId = transferId.trim();
+    const normalizedReference = normalizeWithdrawalReference(externalReference);
+    const byTransferId = await db.collection('withdrawals')
+      .where('providerTransferId', '==', canonicalTransferId)
+      .limit(1)
+      .get();
+
+    let docRef: any = byTransferId.empty ? null : byTransferId.docs[0].ref;
+    if (!docRef && normalizedReference) {
+      const byReference = await db.collection('withdrawals').doc(normalizedReference).get();
+      if (byReference.exists) docRef = byReference.ref;
+    }
+
+    if (!docRef) {
+      console.warn('[WithdrawalEngine] Webhook do Asaas sem saque correspondente:', canonicalTransferId, normalizedReference || '(sem externalReference)');
       return;
     }
 
-    const docRef = snap.docs[0].ref;
-    const failed = event === 'TRANSFER_FAILED' || providerStatus === 'FAILED' || providerStatus === 'CANCELLED';
+    const failed = event === 'TRANSFER_FAILED'
+      || event === 'TRANSFER_CANCELLED'
+      || providerStatus === 'FAILED'
+      || providerStatus === 'CANCELLED';
     const succeeded = event === 'TRANSFER_DONE' || providerStatus === 'DONE';
-    const result = await db.runTransaction(async (transaction: any): Promise<{ outcome: 'failed' | 'paid' | 'ignored'; withdrawal: PIXWithdrawal | null }> => {
+
+    type WebhookOutcome = 'failed' | 'paid' | 'ignored' | 'reconciliation';
+    const result = await db.runTransaction(async (transaction: any): Promise<{ outcome: WebhookOutcome; withdrawal: PIXWithdrawal | null }> => {
       const freshSnap = await transaction.get(docRef);
       if (!freshSnap.exists) return { outcome: 'ignored', withdrawal: null };
       const withdrawal = freshSnap.data() as PIXWithdrawal & Record<string, any>;
+      const canonicalWithdrawalId = freshSnap.id;
+      const now = new Date().toISOString();
+
+      if (normalizedReference && normalizedReference !== canonicalWithdrawalId) {
+        transaction.set(docRef, {
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_EXTERNAL_REFERENCE_MISMATCH',
+          conflictingExternalReference: normalizedReference,
+          updatedAt: now
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
+      }
+      if (withdrawal.providerExternalReference && withdrawal.providerExternalReference !== canonicalWithdrawalId) {
+        transaction.set(docRef, {
+          reconciliationRequired: true,
+          reconciliationReason: 'PERSISTED_EXTERNAL_REFERENCE_MISMATCH',
+          updatedAt: now
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
+      }
+      if (withdrawal.providerTransferId && withdrawal.providerTransferId !== canonicalTransferId) {
+        transaction.set(docRef, {
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_TRANSFER_ID_CONFLICT',
+          conflictingProviderTransferId: canonicalTransferId,
+          updatedAt: now
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
+      }
+
+      const internalAmount = Number(withdrawal.amount);
+      const numericProviderValue = typeof providerValue === 'number' ? providerValue : Number.NaN;
+      if ((failed || succeeded) && (!Number.isFinite(numericProviderValue) || !Number.isFinite(internalAmount) || Math.abs(numericProviderValue - internalAmount) >= 0.01)) {
+        transaction.set(docRef, {
+          paymentProvider: 'asaas',
+          providerTransferId: canonicalTransferId,
+          providerExternalReference: normalizedReference || canonicalWithdrawalId,
+          providerStatus: providerStatus || event,
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_AMOUNT_MISMATCH_OR_MISSING',
+          updatedAt: now
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
+      }
+
+      const providerBinding = {
+        paymentProvider: 'asaas',
+        providerTransferId: canonicalTransferId,
+        providerExternalReference: normalizedReference || canonicalWithdrawalId,
+        providerStatus: providerStatus || event,
+        reconciliationRequired: false,
+        updatedAt: now
+      };
 
       if (!failed && !succeeded) {
-        transaction.set(docRef, {
-          providerStatus: providerStatus || event,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
+        transaction.set(docRef, providerBinding, { merge: true });
         return { outcome: 'ignored', withdrawal };
       }
 
+      const legacyPaidRefund = failed && withdrawal.status === 'paid' && !withdrawal.processedAt;
+      if ((failed && withdrawal.status === 'paid' && !legacyPaidRefund)
+        || (succeeded && withdrawal.status === 'rejected')) {
+        transaction.set(docRef, {
+          ...providerBinding,
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_TERMINAL_STATE_CONFLICT'
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
+      }
+
       const operation = failed ? 'refund' : 'pay';
-      const settlementTxRef = db.collection('iv_transactions').doc(`tx_res_${operation}_${docRef.id}`);
+      const settlementTxRef = db.collection('iv_transactions').doc(`tx_res_${operation}_${canonicalWithdrawalId}`);
       const walletRef = db.collection('wallets').doc(withdrawal.userId);
       const [existingSettlement, walletSnap] = await Promise.all([
         transaction.get(settlementTxRef),
@@ -481,15 +592,17 @@ export class WithdrawalEngine {
       ]);
 
       if (existingSettlement.exists || withdrawal.status === (failed ? 'rejected' : 'paid')) {
-        transaction.set(docRef, {
-          providerStatus: providerStatus || (failed ? 'FAILED' : 'DONE'),
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
+        transaction.set(docRef, providerBinding, { merge: true });
         return { outcome: 'ignored', withdrawal };
       }
 
       if (!walletSnap.exists) {
-        throw new Error('Carteira não encontrada para concluir o saque.');
+        transaction.set(docRef, {
+          ...providerBinding,
+          reconciliationRequired: true,
+          reconciliationReason: 'WALLET_NOT_FOUND'
+        }, { merge: true });
+        return { outcome: 'reconciliation', withdrawal };
       }
 
       const wallet = walletSnap.data() || {};
@@ -497,16 +610,18 @@ export class WithdrawalEngine {
       let blocked = Number(wallet.blockedBalance) || 0;
       const ecosystem = Number(wallet.ecosystemBalance) || 0;
       const promotional = Number(wallet.promotionalBalance) || 0;
-      const amount = Number(withdrawal.amount) || 0;
-      const legacyPaidRefund = failed && withdrawal.status === 'paid';
+      const amount = internalAmount;
 
       if (legacyPaidRefund) {
-        // Compatibilidade com saques antigos, que baixavam o hold antes da
-        // confirmação do Asaas. Ainda assim o lançamento é determinístico.
         redeemable += amount;
       } else {
         if (blocked < amount) {
-          throw new Error('Saldo bloqueado inconsistente ao concluir webhook de saque.');
+          transaction.set(docRef, {
+            ...providerBinding,
+            reconciliationRequired: true,
+            reconciliationReason: 'BLOCKED_BALANCE_INCONSISTENT'
+          }, { merge: true });
+          return { outcome: 'reconciliation', withdrawal };
         }
         blocked -= amount;
         if (failed) redeemable += amount;
@@ -532,16 +647,14 @@ export class WithdrawalEngine {
         createdAt: new Date().toISOString()
       });
       transaction.set(docRef, failed ? {
+        ...providerBinding,
         status: 'rejected',
-        providerStatus: providerStatus || 'FAILED',
         adminNote: 'Transferência falhou no Asaas: ' + (failureReason || 'sem detalhes'),
         refundProcessedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
       } : {
+        ...providerBinding,
         status: 'paid',
-        providerStatus: providerStatus || 'DONE',
         processedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
       }, { merge: true });
       return { outcome: failed ? 'failed' : 'paid', withdrawal };
     });
@@ -549,7 +662,9 @@ export class WithdrawalEngine {
     const outcome = result?.outcome;
     const withdrawalForNotification = result?.withdrawal;
 
-    if (outcome === 'failed' && withdrawalForNotification) {
+    if (outcome === 'reconciliation') {
+      console.warn('[WithdrawalEngine] Evento Asaas retido para conciliação:', canonicalTransferId, normalizedReference || '(sem externalReference)');
+    } else if (outcome === 'failed' && withdrawalForNotification) {
       notificationService.notify({
         userId: withdrawalForNotification.userId,
         type: 'payment',
