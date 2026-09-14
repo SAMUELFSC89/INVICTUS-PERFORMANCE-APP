@@ -1,7 +1,7 @@
 import { IGAHeartRateSample, IntensityConfig } from './types.js';
 import { DEFAULT_INTENSITY_CONFIG } from './normalizers.js';
 
-export type IntensitySource = 'samples' | 'average' | 'estimated';
+export type IntensitySource = 'samples' | 'average' | 'missing';
 
 export interface IntensityEvaluation {
   factor: number;
@@ -120,10 +120,15 @@ export function evaluateIntensityFromSamples(
   };
 }
 
+/**
+ * Regra competitiva fail-closed do IGA 2.0:
+ * - série de FC medida tem prioridade;
+ * - FC média medida é aceita quando a série não está disponível;
+ * - sem qualquer FC medida, I = 0. Nunca estimamos FC por modalidade.
+ */
 export function evaluateSessionIntensity(params: {
   heartRateSamples?: IGAHeartRateSample[];
   avgHeartRate?: number;
-  fallbackHeartRate: number;
   maxHeartRate: number;
   config?: Partial<IntensityConfig>;
 }): IntensityEvaluation {
@@ -136,11 +141,19 @@ export function evaluateSessionIntensity(params: {
 
   const avg = Number(params.avgHeartRate);
   const hasMeasuredAverage = Number.isFinite(avg) && avg > 0;
-  const bpm = hasMeasuredAverage ? avg : params.fallbackHeartRate;
+  if (!hasMeasuredAverage) {
+    return {
+      factor: 0,
+      source: 'missing',
+      sampleCount: 0,
+      averageHeartRate: 0,
+    };
+  }
+
   return {
-    factor: heartRateToIntensityFactor(bpm, params.maxHeartRate, params.config),
-    source: hasMeasuredAverage ? 'average' : 'estimated',
+    factor: heartRateToIntensityFactor(avg, params.maxHeartRate, params.config),
+    source: 'average',
     sampleCount: 0,
-    averageHeartRate: bpm,
+    averageHeartRate: avg,
   };
 }
