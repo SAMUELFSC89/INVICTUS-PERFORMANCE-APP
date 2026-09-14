@@ -106,7 +106,7 @@ describe('Asaas withdrawal reconciliation hardening', () => {
     expect(engine).toContain("db.collection('withdrawals').doc(normalizedReference).get()");
     expect(engine).toContain('providerExternalReference: normalizedReference || canonicalWithdrawalId');
     expect(engine).toContain("reconciliationReason: 'PROVIDER_AMOUNT_MISMATCH_OR_MISSING'");
-    expect(engine).toContain('Saque já está vinculado a outra transferência Asaas.');
+    expect(engine).toContain("reconciliationReason: 'PROVIDER_TRANSFER_ID_CONFLICT'");
   });
 
   test('authorization callback recovers binding by reference and requires a numeric exact amount', () => {
