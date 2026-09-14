@@ -98,10 +98,16 @@ export class AsaasClient {
     pixKey: string;
     pixKeyType: AsaasPixKeyType;
     description?: string;
+    /** ID canônico do saque no Invictus. O Asaas devolve este campo em consultas/webhooks. */
+    externalReference?: string;
   }): Promise<AsaasTransferResult> {
-    const { value, pixKey, pixKeyType, description } = params;
+    const { value, pixKey, pixKeyType, description, externalReference } = params;
     if (!value || value <= 0) throw new Error('Valor da transferência PIX deve ser maior que zero.');
     if (!pixKey || !pixKey.trim()) throw new Error('Chave PIX de destino é obrigatória.');
+    const normalizedReference = externalReference?.trim();
+    if (normalizedReference && (!/^[A-Za-z0-9_-]{8,200}$/.test(normalizedReference))) {
+      throw new Error('Referência externa da transferência PIX é inválida.');
+    }
 
     const response = await fetch(getAsaasBaseUrl() + '/transfers', {
       method: 'POST',
@@ -114,12 +120,16 @@ export class AsaasClient {
         value,
         pixAddressKey: pixKey.trim(),
         pixAddressKeyType: mapPixKeyTypeToAsaas(pixKeyType),
-        description: description || 'Saque Invictus Performance'
+        description: description || 'Saque Invictus Performance',
+        ...(normalizedReference ? { externalReference: normalizedReference } : {})
       })
     });
     const data: any = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(mensagemDeErroAsaas(data, response.status, 'solicitar transferência PIX'));
+    }
+    if (typeof data?.id !== 'string' || !data.id.trim()) {
+      throw new Error('Asaas não devolveu o identificador da transferência PIX. A operação exige conciliação antes de nova tentativa.');
     }
     return {
       id: data.id,
