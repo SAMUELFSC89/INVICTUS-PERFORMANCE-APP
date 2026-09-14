@@ -101,11 +101,6 @@ function profileRemovalPatch(userData: Record<string, any>, seasonId: string, no
   };
 }
 
-/**
- * Espelha no perfil do usuario o estado da inscricao paga. A leitura da conta e
- * a escrita do seasonStatus acontecem na mesma transacao para que bloqueio,
- * suspensao ou exclusao concorrentes invalidem/reexecutem a operacao.
- */
 export async function sincronizarStatusDeTemporada(userId: string, seasonId: string) {
   const patch = await seasonProfilePatch(seasonId);
   if (!patch) return 'NOT_CURRENT';
@@ -122,7 +117,6 @@ export async function sincronizarStatusDeTemporada(userId: string, seasonId: str
   return patch.seasonStatus as string;
 }
 
-/** Cria a cobranca PIX da inscricao e devolve o QR code para o app exibir. */
 export async function criarInscricao(userId: string) {
   const config = await lerConfiguracaoInscricao();
   if (!config.abertas || config.valor === null) {
@@ -149,6 +143,9 @@ export async function criarInscricao(userId: string) {
     const dados: any = existente.data();
     if (dados.status === 'paga') {
       throw new Error('Voce ja esta inscrito nesta temporada.');
+    }
+    if (dados.status === 'reembolsada' || dados.status === 'contestada') {
+      throw new Error('Esta inscricao possui historico financeiro encerrado ou em disputa. Uma nova cobranca exige conciliacao antes de reutilizar o registro.');
     }
     if (dados.status === 'pendente' && dados.asaasPaymentId) {
       const qr = await AsaasClient.obterQrCodePix(dados.asaasPaymentId);
@@ -194,11 +191,6 @@ export async function criarInscricao(userId: string) {
   return { seasonId: janela.seasonId, valor: config.valor, jaExistia: false, qrCode: qr };
 }
 
-/**
- * Confirma a inscricao a partir do webhook do Asaas. Valor, paymentId,
- * externalReference, ordem do evento, lifecycle da conta, inscricao e
- * seasonStatus sao validados e gravados de forma fail-closed.
- */
 export async function confirmarInscricaoPorPagamento(
   asaasPaymentId: string,
   valorPago?: number,
@@ -316,11 +308,6 @@ export async function confirmarInscricaoPorPagamento(
   });
 }
 
-/**
- * Suspende imediatamente a elegibilidade quando o dinheiro deixa de estar
- * economicamente confirmado. Eventos atrasados nunca sobrescrevem um estado
- * financeiro mais novo.
- */
 export async function registrarEventoFinanceiroInscricaoTemporada(
   asaasPaymentId: string,
   event: SeasonPaymentRiskEvent,
