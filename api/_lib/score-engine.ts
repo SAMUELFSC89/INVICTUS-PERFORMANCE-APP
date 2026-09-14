@@ -9,7 +9,6 @@ export { BonusCalculator } from './score-engine/bonuses.js';
 export { MultiplierCalculator } from './score-engine/multipliers.js';
 export { PenaltyCalculator } from './score-engine/penalties.js';
 export { LimitCalculator } from './score-engine/limits.js';
-export { ScorePersistence } from './score-engine/persistence.js';
 export { QualityEngine } from './score-engine/quality-engine.js';
 export { CompetitiveEngine } from './score-engine/competitive-engine.js';
 export { ConfidenceEngine } from './score-engine/confidence-engine.js';
