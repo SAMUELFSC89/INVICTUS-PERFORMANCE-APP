@@ -59,7 +59,7 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>O Invictus utiliza o Apple Health para registrar e sincronizar dados das suas atividades físicas, permitindo acompanhar seus treinos, evolução e métricas de desempenho.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>O INVICTUS usa sua localização ao buscar academias, validar treinos presenciais e registrar rotas de cardio ao ar livre enquanto o app está em uso.</string>
+	<string>O INVICTUS usa sua localização para buscar academias, validar check-ins e registrar a rota de um cardio iniciado por você. Durante essa atividade, a coleta pode continuar em segundo plano ou com a tela bloqueada até você pausar ou finalizar o treino.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>O INVICTUS lê sensores de movimento durante uma atividade para registrar a telemetria do exercício.</string>
 	<key>NSSupportsLiveActivities</key>
