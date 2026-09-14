@@ -150,9 +150,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
     
     res.setHeader('Content-Type', 'image/png');
-    // Token revogado precisa deixar de servir rapidamente; o conteúdo visual
-    // permanece o mesmo, apenas a janela de cache cai para 60 segundos.
-    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    // O token é revogável: a resposta não pode sobreviver em CDN/browser após
+    // revogação e continuar expondo o conteúdo visual.
+    res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.send(buffer);
   } catch (error: any) {
