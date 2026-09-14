@@ -10,6 +10,10 @@
       "destination": "https://gen-lang-client-0890994677.firebaseapp.com/__/auth/:path*"
     },
     {
+      "source": "/api/activity-share",
+      "destination": "/api/activity-share-direct"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/app"
     },
