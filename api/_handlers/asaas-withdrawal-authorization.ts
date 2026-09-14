@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { timingSafeEqual } from 'crypto';
 import { cors, db } from '../_lib/common.js';
+import { isActiveAccountState } from '../_lib/account-state.js';
 
 function normalizeWithdrawalReference(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -86,6 +87,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const withdrawal: any = freshSnap.data() || {};
       const canonicalWithdrawalId = freshSnap.id;
+
+      if (!withdrawal.userId) {
+        return { approved: false, reason: 'Saque sem usuario associado.' };
+      }
+      const userSnap = await tx.get(db.collection('users').doc(withdrawal.userId));
+      if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
+        return { approved: false, reason: 'Conta do titular nao esta ativa para operacoes financeiras.' };
+      }
 
       if (externalReference && externalReference !== canonicalWithdrawalId) {
         return { approved: false, reason: 'Referencia externa da transferencia nao confere.' };
