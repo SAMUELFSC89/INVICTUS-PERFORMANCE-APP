@@ -23,6 +23,16 @@ describe('Contrato — dinheiro real permanece aposentado em desafios privados',
     expect(source).toContain('return;');
   });
 
+  test('resultado simbólico nunca inventa vencedor com score zero ou empate', () => {
+    const source = read('api/_handlers/private-challenges.ts');
+
+    expect(source).toContain('topScore <= 0 || topMembers.length !== 1');
+    expect(source).toContain("resultStatus: 'NO_DETERMINISTIC_WINNER'");
+    expect(source).toContain("resultReason: reason");
+    expect(source).toContain("resultStatus: 'WINNER_CONFIRMED'");
+    expect(source).toContain("resultReason: 'UNIQUE_POSITIVE_TOP_SCORE'");
+  });
+
   test('migração lê o ledger determinístico dentro da transação de estorno', () => {
     const source = read('api/_handlers/migrate-legacy-private-challenges.ts');
 
