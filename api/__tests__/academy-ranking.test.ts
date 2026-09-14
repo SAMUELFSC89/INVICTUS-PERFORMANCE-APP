@@ -31,6 +31,9 @@ function configureDatabase({ gymId, enrollmentGymId = gymId }: { gymId: string; 
     'user-a': { displayName: 'Mesmo Nome', gymId, gymName: 'Academia Segura', weeklyScore: 100 },
     'cross-gym': { displayName: 'Intruso', gymId: 'outra-academia', weeklyScore: 999 },
     'blocked-user': { displayName: 'Bloqueado', gymId, weeklyScore: 500, isBlocked: true },
+    'disabled-user': { displayName: 'Desabilitado', gymId, weeklyScore: 600, disabled: true },
+    'deleted-status-user': { displayName: 'Excluído', gymId, weeklyScore: 700, deletionStatus: 'deletion_completed' },
+    'lifecycle-user': { displayName: 'Suspenso', gymId, weeklyScore: 800, lifecycleStatus: 'suspended' },
   };
   const enrollmentDocs = Object.keys(profiles).map((id) => documentSnapshot(id, { enrolled: true, gymId, accepted: true, consentType: 'competitive_hr_measurement_acknowledgement', competitionId: 'gym_ranking', competitionRulesVersion: 'gym-ranking-v2-hr', hrAcknowledgementVersion: 'competitive-hr-v1' }));
 
@@ -43,6 +46,8 @@ function configureDatabase({ gymId, enrollmentGymId = gymId }: { gymId: string; 
     where: () => ({ limit: () => ({ get: async () => ({ docs: enrollmentDocs }) }) }),
   }));
   (db.getAll as jest.Mock).mockImplementation(async (...refs: Array<{ get: () => Promise<unknown> }>) => Promise.all(refs.map((ref) => ref.get())));
+
+  return { profiles };
 }
 
 beforeEach(() => {
@@ -50,7 +55,7 @@ beforeEach(() => {
   (verifyAuth as jest.Mock).mockResolvedValue({ uid: 'user-b' });
 });
 
-test('deriva a academia do perfil autenticado, exclui perfis externos/bloqueados e desempata de modo estável', async () => {
+test('deriva a academia do perfil autenticado, exclui perfis externos/inativos e desempata de modo estável', async () => {
   configureDatabase({ gymId: 'gym-secure-1' });
   const res = response();
 
@@ -62,6 +67,22 @@ test('deriva a academia do perfil autenticado, exclui perfis externos/bloqueados
   expect(res.body.topUsers.map((entry: any) => entry.uid)).toEqual(['user-a', 'user-b']);
   expect(res.body.currentUser).toMatchObject({ uid: 'user-b', rank: 2 });
   expect(res.body.participantCount).toBe(2);
+});
+
+test('não serve participante suspenso de uma leitura anterior', async () => {
+  const state = configureDatabase({ gymId: 'gym-fresh-1' });
+  const first = response();
+  await rankingHandler({ method: 'GET', query: { period: 'weekly' } } as any, first);
+  expect(first.statusCode).toBe(200);
+  expect(first.body.topUsers.map((entry: any) => entry.uid)).toEqual(['user-a', 'user-b']);
+
+  state.profiles['user-a'].disabled = true;
+  const second = response();
+  await rankingHandler({ method: 'GET', query: { period: 'weekly' } } as any, second);
+
+  expect(second.statusCode).toBe(200);
+  expect(second.body.topUsers.map((entry: any) => entry.uid)).toEqual(['user-b']);
+  expect(second.body.participantCount).toBe(1);
 });
 
 test('recusa adesão antiga que não corresponde mais à academia do perfil', async () => {
