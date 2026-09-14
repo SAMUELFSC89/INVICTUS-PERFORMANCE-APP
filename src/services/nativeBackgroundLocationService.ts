@@ -224,7 +224,12 @@ export const nativeBackgroundLocationService = {
   },
 
   async readBuffered(): Promise<NativeTrackedLocation[]> {
-    return (await this.readBufferedSnapshot()).locations;
+    const buffered = await this.readBufferedSnapshot();
+    const ownerSessionId = resolveSessionId();
+    // Leitura normal da UI é fail-closed: sem owner comprovado e idêntico à
+    // sessão local atual, coordenadas persistidas nunca entram no mapa/score.
+    if (!ownerSessionId || buffered.sessionId !== ownerSessionId) return [];
+    return buffered.locations;
   },
 
   async start(sessionId?: string): Promise<void> {
