@@ -338,13 +338,35 @@ async function processChallengeExpiration(challengeId: string) {
     return;
   }
 
-  const sortedMembers = [...members].sort((a, b) => (b.points || 0) - (a.points || 0));
+  const sortedMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
   if (sortedMembers.length === 0) {
     await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
     return;
   }
 
-  const winner = sortedMembers[0];
+  const topScore = Math.max(0, Number(sortedMembers[0].points) || 0);
+  const topMembers = sortedMembers.filter(member => Math.max(0, Number(member.points) || 0) === topScore);
+
+  // Não existe hoje writer vivo para `private_challenge_members.points`.
+  // Até uma regra oficial de pontuação/desempate ser implementada, nunca
+  // inventamos campeão por ordem de leitura do Firestore. Score zero ou
+  // empate no topo encerram o período sem vencedor simbólico.
+  if (topScore <= 0 || topMembers.length !== 1) {
+    const reason = topScore <= 0 ? 'NO_SCORING_DATA' : 'TOP_SCORE_TIE';
+    console.warn(`[Private Challenges] Challenge ${challengeId} completed without deterministic winner (${reason}).`);
+    await challengeRef.set({
+      status: 'completed',
+      winnerId: null,
+      winnerName: null,
+      winnerPhoto: null,
+      resultStatus: 'NO_DETERMINISTIC_WINNER',
+      resultReason: reason,
+      updatedAt: now.toISOString(),
+    }, { merge: true });
+    return;
+  }
+
+  const winner = topMembers[0];
   console.log(`[Private Challenges] Completing challenge ${challengeId}. Champion: ${winner.userId}.`);
 
   await db.runTransaction(async (transaction) => {
@@ -353,6 +375,8 @@ async function processChallengeExpiration(challengeId: string) {
       winnerId: winner.userId,
       winnerName: winner.userName || 'Atleta',
       winnerPhoto: winner.userPhoto || '',
+      resultStatus: 'WINNER_CONFIRMED',
+      resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
       updatedAt: now.toISOString()
     });
 
