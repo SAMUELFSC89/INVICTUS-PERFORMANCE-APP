@@ -38,6 +38,7 @@ import java.util.TimeZone;
 public class InvictusActivityPlugin extends Plugin implements LocationListener {
     private static final String PREFS_NAME = "invictus_activity";
     private static final String LOCATIONS_KEY = "background_locations";
+    private static final String SESSION_ID_KEY = "background_session_id";
     private static final int MAX_POINTS = 5000;
     private static final long MIN_TIME_MS = 2000L;
     private static final float MIN_DISTANCE_METERS = 3f;
@@ -46,6 +47,7 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final JSONArray trackedLocations = new JSONArray();
     private LocationManager locationManager;
+    private String trackedSessionId;
     private int pointsSincePersist = 0;
 
     @Override
@@ -62,12 +64,20 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
 
     @PluginMethod
     public void resumeLocationTracking(PluginCall call) {
-        // Recriação do WebView/processo JS: o SharedPreferences restaurado é
-        // parte da sessão em andamento e não pode ser apagado antes do envio.
+        // Recriação do WebView/processo JS: o SharedPreferences restaurado só
+        // pode sobreviver quando pertence exatamente à sessão retomada.
         beginLocationTracking(call, false);
     }
 
     private void beginLocationTracking(PluginCall call, boolean clearExisting) {
+        String requestedSessionId = call.getString("sessionId");
+        requestedSessionId = requestedSessionId == null ? "" : requestedSessionId.trim();
+        if (requestedSessionId.isEmpty()) {
+            call.reject("Sessão ativa ausente para rastreamento de localização.");
+            return;
+        }
+        final String sessionId = requestedSessionId;
+
         if (!hasLocationPermission()) {
             notifyListeners("locationAuthorization", event("status", "denied"));
             notifyListeners("locationError", errorEvent("permission_denied", "Permissão de localização não concedida."));
@@ -77,7 +87,13 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
 
         mainHandler.post(() -> {
             try {
-                if (clearExisting) clearLocations();
+                // Buffer persistido sem owner ou de outra sessão nunca pode ser
+                // reaproveitado. Isso fecha contaminação entre treinos/contas
+                // quando o WebView é recriado ou o usuário troca de identidade.
+                if (clearExisting || trackedSessionId == null || !sessionId.equals(trackedSessionId)) {
+                    resetBuffer(sessionId);
+                }
+
                 boolean providerStarted = false;
                 if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     locationManager.requestLocationUpdates(
@@ -120,14 +136,23 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
 
     @PluginMethod
     public void stopLocationTracking(PluginCall call) {
+        Boolean clear = call.getBoolean("clear");
+        boolean clearBuffer = Boolean.TRUE.equals(clear);
         mainHandler.post(() -> {
             try {
                 if (locationManager != null) locationManager.removeUpdates(this);
             } catch (SecurityException ignored) {
                 // A permissão pode ser removida durante uma atividade.
             }
-            persistLocations();
-            call.resolve(locationResult());
+
+            // Capture o lote antes da limpeza: collectAndStop() usa clear=false
+            // na pausa/finalização e precisa receber os pontos drenados. Já
+            // stop() em encerramento/logout manda clear=true e elimina também
+            // o owner persistido para impedir vazamento à próxima sessão.
+            JSObject result = locationResult();
+            if (clearBuffer) resetBuffer(null);
+            else persistLocations();
+            call.resolve(result);
         });
     }
 
@@ -221,24 +246,34 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
         } catch (JSONException error) {
             result.put("locations", new JSONArray());
         }
+        if (trackedSessionId != null && !trackedSessionId.isEmpty()) {
+            result.put("sessionId", trackedSessionId);
+        }
         return result;
     }
 
-    private synchronized void clearLocations() {
+    private synchronized void resetBuffer(String sessionId) {
         while (trackedLocations.length() > 0) trackedLocations.remove(0);
+        trackedSessionId = sessionId;
         persistLocations();
     }
 
     private synchronized void persistLocations() {
         pointsSincePersist = 0;
-        getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        SharedPreferences.Editor editor = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putString(LOCATIONS_KEY, trackedLocations.toString())
-            .apply();
+            .putString(LOCATIONS_KEY, trackedLocations.toString());
+        if (trackedSessionId == null || trackedSessionId.isEmpty()) {
+            editor.remove(SESSION_ID_KEY);
+        } else {
+            editor.putString(SESSION_ID_KEY, trackedSessionId);
+        }
+        editor.apply();
     }
 
     private synchronized void restoreLocations() {
         SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        trackedSessionId = prefs.getString(SESSION_ID_KEY, null);
         String saved = prefs.getString(LOCATIONS_KEY, "[]");
         try {
             JSONArray restored = new JSONArray(saved);
@@ -247,7 +282,7 @@ public class InvictusActivityPlugin extends Plugin implements LocationListener {
                 trackedLocations.put(restored.getJSONObject(index));
             }
         } catch (JSONException ignored) {
-            clearLocations();
+            resetBuffer(null);
         }
     }
 }

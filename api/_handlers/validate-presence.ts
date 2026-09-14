@@ -1,107 +1,189 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import {
-  db,
-  cors,
-  verifyAuth,
-  FieldValue
-} from '../_lib/common.js';
+import { db, cors, verifyAuth, FieldValue } from '../_lib/common.js';
 import { logEvent } from '../_lib/observability.js';
-import { GoogleGenAI } from "@google/genai";
-import { recalculateAllUserScores } from '../_lib/igaService.js';
-import { buscarHistoricoRecente } from '../_lib/user-activity-history.js';
-import { SCORE_CONFIG } from '../_lib/score-config.js';
-import { GPSValidator } from '../_lib/fraud-detection/gps-validator.js';
-import { SecurityPipeline } from '../_lib/security-pipeline.js';
-import { estimateCalories, formatPace } from '../_lib/activity-metrics.js';
-import { commitActivityAfterPresenceCheck } from '../_lib/activity-commit-service.js';
+import { GoogleGenAI } from '@google/genai';
 import { criarInscricaoChampionship } from '../_lib/championship-inscription-service.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 import { getAiPresenceModel } from '../_lib/ai-config.js';
 import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
-import { isProUser } from '../_lib/entitlement.js';
 
-// Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const ai = new GoogleGenAI(apiKey ? {
   apiKey,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
+  httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
 } : {
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
+  httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
 });
+
+const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
+const TRUSTED_REFERENCE_HOSTS = new Set([
+  'firebasestorage.googleapis.com',
+  'storage.googleapis.com',
+]);
+
+type BiometricConfidence = 'high' | 'medium' | 'low';
+interface BiometricResult {
+  livenessConfidence: BiometricConfidence;
+  identityConfidence: BiometricConfidence;
+  presenceConfidence: number;
+  livenessMatched: boolean;
+  identityMatched: boolean;
+  reason: string;
+}
+
+function isConfidence(value: unknown): value is BiometricConfidence {
+  return value === 'high' || value === 'medium' || value === 'low';
+}
+
+/**
+ * Gate financeiro: saída incompleta/atípica do modelo nunca recebe defaults
+ * permissivos. Se qualquer campo obrigatório estiver ausente ou com tipo
+ * inesperado, o resultado é inválido e seguirá para análise/pending.
+ */
+function parseBiometricResult(responseText: string): BiometricResult | null {
+  try {
+    const parsed = JSON.parse(responseText) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!isConfidence(parsed.livenessConfidence) || !isConfidence(parsed.identityConfidence)) return null;
+    if (typeof parsed.presenceConfidence !== 'number'
+      || !Number.isFinite(parsed.presenceConfidence)
+      || parsed.presenceConfidence < 0
+      || parsed.presenceConfidence > 100) return null;
+    if (typeof parsed.livenessMatched !== 'boolean' || typeof parsed.identityMatched !== 'boolean') return null;
+    if (typeof parsed.reason !== 'string' || !parsed.reason.trim()) return null;
+
+    return {
+      livenessConfidence: parsed.livenessConfidence,
+      identityConfidence: parsed.identityConfidence,
+      presenceConfidence: parsed.presenceConfidence,
+      livenessMatched: parsed.livenessMatched,
+      identityMatched: parsed.identityMatched,
+      reason: parsed.reason.trim().slice(0, 1000),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchTrustedReferencePhoto(photoURL: unknown): Promise<string | null> {
+  if (typeof photoURL !== 'string' || !photoURL.trim()) return null;
+  if (photoURL.startsWith('data:image')) return photoURL.split(',')[1] || null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(photoURL);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || !TRUSTED_REFERENCE_HOSTS.has(parsed.hostname)) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(parsed.toString(), {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.startsWith('image/')) return null;
+    const declaredLength = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_REFERENCE_IMAGE_BYTES) return null;
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > MAX_REFERENCE_IMAGE_BYTES) return null;
+    return bytes.toString('base64');
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function findReferencePhoto(userId: string, userData: Record<string, any>): Promise<{
+  base64: string | null;
+  source: string;
+}> {
+  const profileReference = await fetchTrustedReferencePhoto(userData.photoURL);
+  if (profileReference) {
+    return {
+      base64: profileReference,
+      source: typeof userData.photoURL === 'string' && userData.photoURL.startsWith('data:image')
+        ? 'profile_data_url'
+        : 'profile_storage_url',
+    };
+  }
+
+  try {
+    const recentWorkoutsDocs = await db.collection('workouts')
+      .where('userId', '==', userId)
+      .orderBy('timestamp', 'desc')
+      .limit(8)
+      .get();
+
+    for (const document of recentWorkoutsDocs.docs) {
+      const workout = document.data() || {};
+      const reference = await fetchTrustedReferencePhoto(workout.photoUrl);
+      if (reference) return { base64: reference, source: `workout_photo_${document.id}` };
+    }
+  } catch (error) {
+    console.warn('[Presence Verification] Não foi possível obter foto de referência de treino:', error);
+  }
+
+  return { base64: null, source: 'none' };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
   if (req.method !== 'POST') {
-    return res.status(405).json({
-      success: false,
-      userMessage: "Método não permitido."
-    });
+    return res.status(405).json({ success: false, userMessage: 'Método não permitido.' });
   }
 
   const auth = await verifyAuth(req);
   if (!auth) {
     return res.status(401).json({
       success: false,
-      userMessage: "Sessão expirada. Entre novamente para confirmar sua presença."
+      userMessage: 'Sessão expirada. Entre novamente para confirmar sua presença.',
     });
   }
 
-  const { presenceCheckId, photoBase64 } = req.body;
-
+  const presenceCheckId = typeof req.body?.presenceCheckId === 'string' ? req.body.presenceCheckId.trim() : '';
+  const photoBase64 = typeof req.body?.photoBase64 === 'string' ? req.body.photoBase64.trim() : '';
   if (!presenceCheckId || !photoBase64) {
     return res.status(400).json({
       success: false,
-      userMessage: "ID de verificação e foto selfie são obrigatórios."
+      userMessage: 'ID de verificação e foto selfie são obrigatórios.',
     });
   }
 
   let pendingCheckRef: any;
   try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        userMessage: "Banco de dados indisponível no momento."
-      });
-    }
-
-    // 1. Fetch the pending check record
     pendingCheckRef = db.collection('pending_presence_checks').doc(presenceCheckId);
     const pendingCheckSnap = await pendingCheckRef.get();
-
     if (!pendingCheckSnap.exists) {
       return res.status(404).json({
         success: false,
-        userMessage: "Solicitação de presença expirada ou não encontrada para esta atividade."
+        userMessage: 'Solicitação de presença expirada ou não encontrada.',
       });
     }
 
     const checkData = pendingCheckSnap.data() || {};
-
     if (checkData.status !== 'pending') {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
-        userMessage: "Esta verificação de presença já foi processada."
+        userMessage: 'Esta verificação de presença já foi processada ou está em processamento.',
       });
     }
-
-    // Ensure it belongs to the authenticated user
     if (checkData.userId !== auth.uid) {
       return res.status(403).json({
         success: false,
-        userMessage: "Acesso negado. Esta verificação pertence a outro usuário."
+        userMessage: 'Acesso negado. Esta verificação pertence a outro usuário.',
       });
     }
 
-    const actionType: string = checkData.actionType || 'workout_commit';
+    const actionType = String(checkData.actionType || '');
     if (!['championship_registration', 'withdrawal'].includes(actionType)) {
       await pendingCheckRef.update({
         status: 'unsupported_activity_flow',
@@ -109,287 +191,181 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       return res.status(409).json({
         success: false,
-        userMessage: 'Esta confirmação pertence a uma versão antiga do fluxo de atividades. Atualize o app; atividades novas são salvas antes da revisão competitiva.',
+        userMessage: 'Esta confirmação pertence a uma versão antiga do fluxo. Atualize o app e tente novamente.',
       });
     }
 
-    // Check expiry
-    const now = new Date();
-    if (new Date(checkData.expiredAt) < now) {
-      await pendingCheckRef.update({ status: 'expired' });
+    const expiresAt = new Date(checkData.expiredAt);
+    if (!Number.isFinite(expiresAt.getTime()) || expiresAt < new Date()) {
+      await pendingCheckRef.update({ status: 'expired', completedAt: new Date().toISOString() });
       return res.status(400).json({
         success: false,
-        userMessage: "Tempo limite de 15 minutos expirado. Realize uma nova atividade para registrar seus pontos."
+        userMessage: 'O tempo da confirmação expirou. Inicie o processo novamente.',
       });
     }
 
-    // Reivindicar atomicamente este registro ANTES de qualquer trabalho lento
-    // (a verificacao de vivacidade/identidade via IA abaixo pode levar varios
-    // segundos). Sem isso, duas requisicoes quase simultaneas para o mesmo
-    // presenceCheckId podiam passar pela checagem de status acima (uma leitura
-    // simples, nao atomica) e as duas seguirem para pontuar a mesma atividade
-    // duas vezes (XP duplicado). A transacao abaixo relê o status de forma
-    // atomica e so permite que o primeiro chamador reivindique o registro.
+    // Claim atômico: uma selfie só pode autorizar uma tentativa financeira.
     try {
       await db.runTransaction(async (transaction: any) => {
         const freshSnap = await transaction.get(pendingCheckRef);
         const freshData = freshSnap.data() || {};
-        if (!freshSnap.exists || freshData.status !== 'pending') {
+        if (!freshSnap.exists || freshData.status !== 'pending' || freshData.userId !== auth.uid) {
           throw new Error('ALREADY_CLAIMED');
         }
-        transaction.update(pendingCheckRef, { status: 'processing', claimedAt: FieldValue.serverTimestamp() });
+        transaction.update(pendingCheckRef, {
+          status: 'processing',
+          claimedAt: FieldValue.serverTimestamp(),
+        });
       });
-    } catch (claimErr: any) {
-      if (claimErr?.message === 'ALREADY_CLAIMED') {
+    } catch (claimError: any) {
+      if (claimError?.message === 'ALREADY_CLAIMED') {
         return res.status(409).json({
           success: false,
-          userMessage: "Esta verificacao de presenca ja esta sendo processada ou ja foi concluida."
+          userMessage: 'Esta verificação já está sendo processada ou foi concluída.',
         });
       }
-      throw claimErr;
+      throw claimError;
     }
 
     const userId = auth.uid;
-
-    // 2. Fetch reference photo for identity comparison (face matching)
-    let referencePhotoBase64: string | null = null;
-    let referenceSource = 'none';
-
     const userRef = db.collection('users').doc(userId);
     const userSnap = await userRef.get();
+    if (!userSnap.exists) throw new Error('Perfil do usuário não encontrado.');
     const userData = userSnap.data() || {};
 
-    if (userData.photoURL && userData.photoURL.startsWith('data:image')) {
-      referencePhotoBase64 = userData.photoURL.split(',')[1] || userData.photoURL;
-      referenceSource = 'profile_url';
-    } else if (userData.photoURL && userData.photoURL.startsWith('http')) {
-      // In case we can't download external url easily, we will prioritize firestore workout photos
-      referenceSource = 'profile_http_url';
-    }
-
-    // Fallback: look up last successful workout with a base64 selfie
-    if (!referencePhotoBase64) {
-      const recentWorkoutsDocs = await db.collection('workouts')
-        .where('userId', '==', userId)
-        .orderBy('timestamp', 'desc')
-        .limit(8)
-        .get();
-
-      for (const doc of recentWorkoutsDocs.docs) {
-        const wData = doc.data();
-        if (wData.photoUrl && wData.photoUrl.startsWith('data:image')) {
-          referencePhotoBase64 = wData.photoUrl.split(',')[1] || wData.photoUrl;
-          referenceSource = `workout_photo_${doc.id}`;
-          break;
-        }
-      }
-    }
-
-    // 3. Invoke server-side Gemini API with multimodal prompt
+    const reference = await findReferencePhoto(userId, userData);
     const cleanSelfieBase64 = photoBase64.startsWith('data:image') ? photoBase64.split(',')[1] : photoBase64;
+    if (!cleanSelfieBase64 || cleanSelfieBase64.length > 8_000_000) {
+      throw new Error('A selfie enviada é inválida ou excede o limite permitido.');
+    }
 
-    const parts: any[] = [
-      {
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: cleanSelfieBase64
-        }
-      }
-    ];
-
-    if (referencePhotoBase64) {
-      parts.push({
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: referencePhotoBase64
-        }
-      });
+    const parts: any[] = [{
+      inlineData: { mimeType: 'image/jpeg', data: cleanSelfieBase64 },
+    }];
+    if (reference.base64) {
+      parts.push({ inlineData: { mimeType: 'image/jpeg', data: reference.base64 } });
     }
 
     const systemInstruction =
-      "Você é um engenheiro sênior e de inteligência artificial de biometria antifraude focado em fisiculturismo e aplicativos fitness.\n" +
-      "Seu objetivo é analisar as imagens fornecidas para validar a presença física (prova de vida) e a correspondência de identidade do usuário logado.";
+      'Você é um sistema antifraude de biometria para um aplicativo fitness. ' +
+      'Analise prova de vida, replay/fraude e, quando houver imagem de referência, correspondência de identidade. ' +
+      'Nunca invente confiança quando evidência suficiente não existir.';
 
     const promptText =
-      `Instruções técnicas para análise de selfie biométrica:\n` +
-      `IMAGEM 1: A selfie tirada ao vivo pelo usuário para a confirmação de presença.\n` +
-      `${referencePhotoBase64 ? 'IMAGEM 2: A foto de referência anterior do usuário armazenada no banco de dados.\n' : 'Nenhuma imagem de referência armazenada anterior. Faça uma análise focada em prova de vida (liveness).\n'}\n` +
-      `TAREFAS:\n` +
-      `1. PROVA DE VIDA (Liveness): O usuário foi solicitado a fazer este gesto na selfie: "${checkData.livenessPrompt}". Ele realizou o gesto com sucesso na Imagem 1? Detecte movimentos faciais naturais, iluminação, profundidade e texturas para atestar que é um humano vivo jogando o gesto.\n` +
-      `2. DETECÇÃO DE REPLAY/FRAUDE: Identifique fraudes como: foto de outra tela, foto impressa em papel, filtros artificiais ou imagem estática de foto antiga.\n` +
-      `3. COMPARAÇÃO FACIAL (De Identidade): ${referencePhotoBase64 ? 'As duas fotos fornecidas pertencem à mesma pessoa? Analise olhos, nariz, boca, maçãs do rosto e estrutura óssea do rosto.' : 'Ausência de modelo prévio para comparação. Marcar o nível de identidade como baseline "high" para bootstrapper seguro.'}\n\n` +
-      `Retorne estritamente um objeto JSON com o seguinte formato:\n` +
-      `{\n` +
-      `  "livenessConfidence": "high" | "medium" | "low",\n` +
-      `  "identityConfidence": "high" | "medium" | "low",\n` +
-      `  "presenceConfidence": 0 a 100, // Score numérico final condensado de confiança física\n` +
-      `  "livenessMatched": true | false, // Se o gesto requerido foi concluído\n` +
-      `  "identityMatched": true | false, // Se as características faciais conferem com o perfil\n` +
-      `  "reason": "uma explicação curta em português, amigável e técnica, justificando seu diagnóstico"\n` +
-      `}`;
-
+      `IMAGEM 1: selfie atual do usuário.\n` +
+      `${reference.base64 ? 'IMAGEM 2: foto de referência anterior do mesmo perfil.\n' : 'IMAGEM 2 AUSENTE: identityMatched deve ser false e identityConfidence deve ser low.\n'}` +
+      `GESTO SOLICITADO: ${String(checkData.livenessPrompt || 'gesto não informado').slice(0, 200)}\n\n` +
+      'Retorne SOMENTE JSON válido, sem markdown, com todos os campos obrigatórios:\n' +
+      '{"livenessConfidence":"high|medium|low","identityConfidence":"high|medium|low",' +
+      '"presenceConfidence":0,"livenessMatched":false,"identityMatched":false,"reason":"..."}\n' +
+      'presenceConfidence deve ser número entre 0 e 100; os dois campos *Matched devem ser booleanos reais.';
     parts.push({ text: promptText });
 
-    let geminiResponse;
     const presenceModel = getAiPresenceModel();
     const presenceRequestId = newAiRequestId();
     const presenceStartedAt = Date.now();
+    let geminiResponse: any;
     try {
       geminiResponse = await ai.models.generateContent({
         model: presenceModel,
         contents: { parts },
         config: {
           systemInstruction,
-          responseMimeType: "application/json"
-        }
+          responseMimeType: 'application/json',
+        },
       });
-      // Só metadados numéricos -- nunca a selfie/foto de referência nem o texto
-      // de "reason" (dado de biometria do atleta), e a decisão antifraude
-      // abaixo continua exatamente igual, esta chamada só observa.
       logAiUsage({
         requestId: presenceRequestId,
-        userId: auth.uid,
+        userId,
         feature: 'PRESENCE_BIOMETRIC_CHECK',
         model: presenceModel,
         ...extractUsage(geminiResponse),
         durationMs: Date.now() - presenceStartedAt,
         success: true,
-        contextSize: promptText.length
+        contextSize: promptText.length,
       }).catch(() => {});
-    } catch (apiErr: any) {
+    } catch (apiError: any) {
       logAiUsage({
         requestId: presenceRequestId,
-        userId: auth.uid,
+        userId,
         feature: 'PRESENCE_BIOMETRIC_CHECK',
         model: presenceModel,
         durationMs: Date.now() - presenceStartedAt,
         success: false,
-        errorCode: apiErr?.message ? String(apiErr.message).slice(0, 200) : 'unknown_error'
+        errorCode: apiError?.message ? String(apiError.message).slice(0, 200) : 'unknown_error',
       }).catch(() => {});
-      console.error('[Verified Presence API] Gemini processing error:', apiErr);
-      throw new Error(`Servidor de análise biométrica temporariamente ocupado: ${apiErr.message}`);
+      console.error('[Verified Presence API] Gemini processing error:', apiError);
+      throw new Error('O serviço biométrico está temporariamente indisponível. Tente novamente.');
     }
 
-    const responseText = geminiResponse.text?.trim() || '{}';
-    let biometrics: any = {};
-    try {
-      biometrics = JSON.parse(responseText);
-    } catch (_) {
-      console.warn('[Verified Presence API] JSON parse error in response:', responseText);
-      biometrics = {
-        livenessConfidence: "medium",
-        identityConfidence: "medium",
-        presenceConfidence: 70,
-        livenessMatched: true,
-        identityMatched: true,
-        reason: "Validação mecânica em andamento devido a flutuação nas leituras primárias."
-      };
+    const responseText = String(geminiResponse?.text || '').trim();
+    const biometrics = parseBiometricResult(responseText);
+    const schemaValid = biometrics !== null;
+
+    const livenessConfidence: BiometricConfidence = biometrics?.livenessConfidence ?? 'low';
+    const identityConfidence: BiometricConfidence = biometrics?.identityConfidence ?? 'low';
+    const presenceConfidence = biometrics?.presenceConfidence ?? 0;
+    const livenessMatched = biometrics?.livenessMatched === true;
+    const identityMatched = reference.base64 ? biometrics?.identityMatched === true : false;
+    const aiReason = biometrics?.reason
+      || 'A resposta biométrica não apresentou evidência estruturada suficiente para aprovação automática.';
+
+    // Fail closed: aprovação só existe com schema íntegro, referência real,
+    // liveness positivo, identidade positiva e score suficiente.
+    let finalDecision: 'approved' | 'pending' | 'rejected' = 'pending';
+    let friendlyResultMessage = 'Não conseguimos confirmar sua identidade automaticamente. A solicitação não foi autorizada e precisa de nova validação.';
+
+    if (schemaValid && reference.base64) {
+      if (presenceConfidence < 40 || !livenessMatched) {
+        finalDecision = 'rejected';
+        friendlyResultMessage = 'Não foi possível confirmar sua presença. Faça uma nova tentativa seguindo o gesto solicitado.';
+      } else if (presenceConfidence >= 72 && identityMatched) {
+        finalDecision = 'approved';
+        friendlyResultMessage = 'Presença e identidade confirmadas com sucesso.';
+      }
+    } else if (!reference.base64) {
+      friendlyResultMessage = 'Precisamos de uma foto de perfil válida para comparar sua identidade antes desta operação. Atualize sua foto e tente novamente.';
     }
 
-    // Extract metrics parameters
-    const livenessConfidence = biometrics.livenessConfidence || 'medium';
-    const identityConfidence = biometrics.identityConfidence || 'medium';
-    const presenceConfidence = biometrics.presenceConfidence ?? 75;
-    const livenessMatched = biometrics.livenessMatched !== false;
-    const identityMatched = biometrics.identityMatched !== false;
-    const aiReason = biometrics.reason || "Confirmação biométrica revisada via telemetria.";
-
-    // Determine Final Decision based on criteria
-    let finalDecision: 'approved' | 'pending' | 'rejected' = 'approved';
-    let friendlyResultMessage = "Presença confirmada com sucesso.";
-
-    if (presenceConfidence < 40 || !livenessMatched) {
-      finalDecision = 'rejected';
-      friendlyResultMessage = "Não foi possível concluir a confirmação de presença desta atividade.";
-    } else if (presenceConfidence < 72 || !identityMatched) {
-      finalDecision = 'pending';
-      friendlyResultMessage = "Não conseguimos confirmar sua presença automaticamente. Sua atividade foi enviada para análise.";
-    }
-
-    // Save metrics on checking collection
     await pendingCheckRef.update({
       status: finalDecision,
       presenceConfidence,
       identityConfidence,
       livenessConfidence,
+      livenessMatched,
+      identityMatched,
+      biometricSchemaValid: schemaValid,
       finalDecision,
       completedAt: new Date().toISOString(),
       biometricReason: aiReason,
-      referenceSource
+      referenceSource: reference.source,
     });
 
     const workoutPayload = checkData.workoutPayload || {};
-    // 4. APPROVED PATH: cada actionType tem seu proprio commit -- ver
-    // api/_lib/presence-check-service.ts (criarPresenceCheck) para onde cada
-    // um e disparado.
-    let pointsAwarded = 0;
     let commitResult: any = undefined;
 
-    if (actionType === 'activity_under_review') {
-      // Gatilho: SecurityPipeline marcou a atividade UNDER_REVIEW (confianca
-      // baixa) em validate-activity-service.ts. So comita se a decisao nao
-      // foi rejeitada.
-      if (finalDecision === 'approved' || finalDecision === 'pending') {
-        const resultado = await commitActivityAfterPresenceCheck({
-          userId,
-          rawActivity: workoutPayload,
-          presenceOutcome: finalDecision,
-          presenceSelfieBase64: cleanSelfieBase64,
-        });
-        pointsAwarded = resultado.pointsAwarded;
-        commitResult = resultado;
-      }
-    } else if (actionType === 'championship_registration') {
-      // Dinheiro real em disputa: so emite a cobranca PIX se a presenca foi
-      // efetivamente APROVADA (nao 'pending') -- confianca media nao e
-      // suficiente pra autorizar uma inscricao paga.
-      if (finalDecision === 'approved') {
-        try {
-          const { championshipId, acceptanceId } = workoutPayload;
-          commitResult = await criarInscricaoChampionship(userId, championshipId, acceptanceId);
-        } catch (regErr: any) {
-          console.error('[Presence Verification] Falha ao criar inscricao de campeonato pos-selfie:', regErr);
-          return res.status(400).json({
-            success: false,
-            userMessage: regErr?.message || 'Presenca confirmada, mas nao foi possivel emitir a cobranca da inscricao. Tente novamente.'
-          });
-        }
-      }
-    } else if (actionType === 'withdrawal') {
-      // Dinheiro real saindo: mesmo criterio -- so 'approved' processa o saque.
-      if (finalDecision === 'approved') {
-        try {
-          commitResult = await WithdrawalEngine.requestWithdrawal({ userId, ...workoutPayload });
-        } catch (wErr: any) {
-          console.error('[Presence Verification] Falha ao solicitar saque pos-selfie:', wErr);
-          return res.status(400).json({
-            success: false,
-            userMessage: wErr?.message || 'Presenca confirmada, mas nao foi possivel registrar o saque. Tente novamente.'
-          });
-        }
-      }
-    } else {
-      // Legado (workout_commit): mantido por compatibilidade, caso algum
-      // caller antigo ainda use o payload original.
-      if (finalDecision === 'approved' || finalDecision === 'pending') {
-        const isRunning = checkData.workoutPayload?.km !== undefined || (checkData.type === 'running');
-        if (isRunning) {
-          await commitRunningSession(userId, workoutPayload, finalDecision);
-        } else {
-          pointsAwarded = await commitWorkoutSession(userId, workoutPayload, finalDecision, cleanSelfieBase64);
-        }
-      }
+    if (actionType === 'championship_registration' && finalDecision === 'approved') {
+      const championshipId = String(workoutPayload.championshipId || '').trim();
+      const acceptanceId = String(workoutPayload.acceptanceId || '').trim();
+      if (!championshipId || !acceptanceId) throw new Error('Dados da inscrição de campeonato inválidos.');
+      commitResult = await criarInscricaoChampionship(userId, championshipId, acceptanceId);
     }
 
-    // Save new profile reference if passing high-confidence
-    if (finalDecision === 'approved' && presenceConfidence >= 85 && (!userData.photoURL || !userData.photoURL.startsWith('data:image'))) {
+    if (actionType === 'withdrawal' && finalDecision === 'approved') {
+      // userId vem por último para nunca ser sobrescrito por payload persistido.
+      commitResult = await WithdrawalEngine.requestWithdrawal({ ...workoutPayload, userId });
+    }
+
+    // Uma selfie aprovada e forte pode se tornar baseline local para a próxima
+    // validação quando ainda não havia foto própria utilizável.
+    if (finalDecision === 'approved' && presenceConfidence >= 85 && reference.source === 'none') {
       try {
         await userRef.update({
           photoURL: `data:image/jpeg;base64,${cleanSelfieBase64}`,
-          updatedAt: FieldValue.serverTimestamp()
+          updatedAt: FieldValue.serverTimestamp(),
         });
-      } catch (err) {
-        console.warn('[Presence Verification] Failed to update profile photo reference:', err);
+      } catch (error) {
+        console.warn('[Presence Verification] Falha ao atualizar referência de perfil:', error);
       }
     }
 
@@ -402,14 +378,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         route: '/api/validate-presence',
         details: {
           presenceCheckId,
+          actionType,
           presenceConfidence,
           identityConfidence,
           livenessConfidence,
+          livenessMatched,
+          identityMatched,
+          biometricSchemaValid: schemaValid,
+          referenceSource: reference.source,
           finalDecision,
-          aiReason
-        }
+        },
       });
-    } catch (_) {}
+    } catch {}
 
     return res.json({
       success: true,
@@ -420,16 +400,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       livenessConfidence,
       userMessage: friendlyResultMessage,
       reason: aiReason,
-      pointsAwarded,
-      commitResult
+      commitResult,
     });
-
   } catch (error: any) {
     console.error('[Presence Checker Endpoint Error]:', error);
-    // Se reivindicamos este registro (status='processing') mas falhamos antes
-    // de gravar uma decisao final, devolvemos para 'pending' para permitir
-    // uma nova tentativa. Se a decisao final ja foi gravada, NAO mexemos no
-    // status (evita reabrir uma verificacao ja pontuada e causar XP duplicado).
+    // Se a tentativa falhar antes de uma decisão final, reabre apenas o claim
+    // em processing. Uma operação já aprovada/rejeitada nunca é reaberta.
     try {
       if (pendingCheckRef) {
         const recheckSnap = await pendingCheckRef.get();
@@ -437,527 +413,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await pendingCheckRef.update({ status: 'pending' });
         }
       }
-    } catch (_) {}
+    } catch {}
 
     return res.status(500).json({
       success: false,
-      userMessage: error.message || "Erro inesperado ao validar sua foto de presença."
+      userMessage: error?.message || 'Erro inesperado ao validar sua foto de presença.',
     });
-  }
-}
-
-// TRANSACTIONALLY COMMIT STANDARD PLAYLOADS FOR WORKOUTS
-async function commitWorkoutSession(userId: string, payload: any, finalDecision: 'approved' | 'pending', presenceSelfie: string): Promise<number> {
-  const { type, durationMins, distanceKm, photoBase64, checkpoints } = payload;
-  const nowLocalDate = new Date();
-  const todayISO = nowLocalDate.toISOString().split('T')[0];
-  // Capturado de dentro da transaction abaixo (transaction callbacks nao podem
-  // definir o retorno da funcao externa diretamente) para devolver ao caller
-  // (validate-presence.ts) quanto XP foi efetivamente concedido.
-  let pointsEarnedResult = 0;
-
-  const userRef = db.collection('users').doc(userId);
-  const workoutRef = db.collection('workouts').doc();
-  const stValue = FieldValue.serverTimestamp();
-
-  // Load stats
-  const getWeekNo = (date: Date) => {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  };
-  const weekId = `${nowLocalDate.getFullYear()}-W${getWeekNo(nowLocalDate)}`;
-  const weeklyStatsRef = userRef.collection('weeklyStats').doc(weekId);
-
-  // Enterprise Security Pipeline (ver auditoria antifraude 2026-08). Roda ANTES da
-  // transacao de pontuacao pois o pipeline faz suas proprias leituras/escritas no
-  // Firestore, que nao podem acontecer dentro de uma transaction alheia. Este e o
-  // PRIMEIRO cross-check antifraude de comportamento/dispositivo/sensor para
-  // treinos de academia -- antes so havia a checagem de presenca via selfie (IA).
-  let workoutSecurityBlocked = false;
-  let workoutSecurityReason: string | null = null;
-  try {
-    let secUserProfile: any = {};
-    try {
-      const secUserSnap = await userRef.get();
-      if (secUserSnap.exists) secUserProfile = secUserSnap.data() || {};
-    } catch (secFetchErr) {
-      console.warn('[commitWorkoutSession] Falha ao buscar perfil do usuario para o SecurityPipeline:', secFetchErr);
-    }
-
-    const securityResult = await SecurityPipeline.runPipeline(
-      {
-        activityType: (type || 'WORKOUT').toString().toUpperCase(),
-        type: (type || 'WORKOUT').toString().toUpperCase(),
-        durationMins: Number(durationMins) || 0,
-        distanceKm: Number(distanceKm) || 0,
-        checkpoints,
-        timestamp: nowLocalDate.toISOString(),
-        source: 'PRESENCE_VERIFIED',
-        avgHeartRate: payload.avgHeartRate,
-        steps: payload.steps,
-        sensorTelemetry: payload.sensorTelemetry,
-        isMockLocation: payload.isMockLocation,
-        isEmulator: payload.isEmulator,
-        isRooted: payload.isRooted,
-        isDeveloperMode: payload.isDeveloperMode
-      },
-      userId,
-      secUserProfile,
-      // #237: historico real -- ver api/_lib/user-activity-history.ts.
-      await buscarHistoricoRecente(userId)
-    );
-
-    if (!securityResult.shouldScore) {
-      workoutSecurityBlocked = true;
-      workoutSecurityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
-      console.warn(`[commitWorkoutSession] SecurityPipeline recusou pontuacao para userId=${userId}: ${workoutSecurityReason}`);
-    }
-  } catch (secErr) {
-    // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, o commit NAO e aprovado.
-    workoutSecurityBlocked = true;
-    workoutSecurityReason = 'SECURITY_PIPELINE_ERROR';
-    console.error('[commitWorkoutSession] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):', secErr);
-  }
-
-  await db.runTransaction(async (transaction: any) => {
-    const userSnap = await transaction.get(userRef);
-    if (!userSnap.exists) return;
-    const userData = userSnap.data() || {};
-
-    const weeklyStatsSnap = await transaction.get(weeklyStatsRef);
-    let weeklyStatsData = weeklyStatsSnap.exists ? weeklyStatsSnap.data() : {
-      weekId,
-      scoredDays: [],
-      totalScoredDays: 0,
-      totalPoints: 0
-    };
-
-    const scoredDays = weeklyStatsData.scoredDays || [];
-    const isDayAlreadyScored = scoredDays.includes(todayISO);
-
-    // Points logic
-    let pointsEarned = 0;
-    let computedStatus: 'valid' | 'pending_review' | 'invalid' | 'suspicious' = 'valid';
-
-    // O documento do usuario e lido dentro da transacao; ainda assim, campos
-    // legados isolados nao sao suficientes para conceder limites Performance.
-    const subTier = isProUser(userData) ? 'performance' : 'open';
-    const dailyCap = subTier === 'performance' ? 100 : 60;
-
-    if (finalDecision === 'pending') {
-      pointsEarned = 0;
-      computedStatus = 'pending_review';
-    } else if (workoutSecurityBlocked) {
-      pointsEarned = 0;
-      computedStatus = 'suspicious';
-    } else {
-      // Calculate points dynamically based on activity parameters (standard base points is 50/35 for performance, 30/20 for open)
-      const basePoints = type === 'workout'
-        ? (subTier === 'performance' ? 50 : 30)
-        : (subTier === 'performance' ? 35 : 20);
-      pointsEarned = basePoints;
-    }
-
-    // Rate limits on daily score capping
-    let todayPoints = 0;
-    const todayDocs = await db.collection('workouts')
-      .where('userId', '==', userId)
-      .where('timestamp', '>=', todayISO)
-      .get();
-
-    todayDocs.forEach((d: any) => {
-      const w = d.data();
-      if (w.status !== 'invalid') todayPoints += w.points || 0;
-    });
-
-    if (pointsEarned > 0 && todayPoints + pointsEarned > dailyCap) {
-      pointsEarned = Math.max(0, dailyCap - todayPoints);
-    }
-
-    let isScoringEligible = false;
-    let nonScoringReason = null;
-
-    if (pointsEarned > 0) {
-      if (isDayAlreadyScored) {
-        isScoringEligible = true;
-      } else if (scoredDays.length < 5) {
-        isScoringEligible = true;
-        scoredDays.push(todayISO);
-        weeklyStatsData.scoredDays = scoredDays;
-        weeklyStatsData.totalScoredDays = scoredDays.length;
-      } else {
-        isScoringEligible = false;
-        nonScoringReason = "WEEKLY_SCORING_LIMIT_REACHED";
-        pointsEarned = 0;
-      }
-    } else {
-      isScoringEligible = true;
-    }
-
-    // Committing updates
-    const updates: any = {
-      updatedAt: stValue
-    };
-
-    // #228: score/monthlyScore/weeklyScore/igaAudit NAO sao mais gravados aqui.
-    // Ate 2026-08 este bloco calculava um IGA proprio (a partir de uma lista
-    // incompleta reconstruida de userData.igaAudit.topSessions -- nem a mesma
-    // fonte de dados que api/_lib/igaService.ts usa) e incrementava score/
-    // monthlyScore diretamente, em paralelo ao IGA "oficial" que so alimentava
-    // weeklyScore. Essa era uma das 5 formulas independentes de pontuacao
-    // identificadas em AUDITORIA-CORE-INVICTUS.md (secao 1, item 4). A partir de
-    // agora, a FONTE UNICA (recalculateAllUserScores, chamada apos este
-    // transaction.commit ao final da funcao) recalcula as tres janelas de
-    // ranking direto do historico real em `workouts`. pointsEarned continua
-    // gravado no documento do treino (abaixo) como XP/gamificacao -- XP != IGA.
-    if (true) { // Active for all subscription tiers (Performance and Open)
-      if (finalDecision === 'approved') {
-        const lastCheckIn = userData.lastCheckIn ? new Date(userData.lastCheckIn) : null;
-        let newStreak = userData.streak || 0;
-        if (lastCheckIn) {
-          const lastCheckInDay = userData.lastCheckIn.split('T')[0];
-          if (todayISO !== lastCheckInDay) {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            if (lastCheckInDay === yesterday.toISOString().split('T')[0]) {
-              newStreak += 1;
-            } else {
-              newStreak = 1;
-            }
-          }
-        } else {
-          newStreak = 1;
-        }
-
-        updates.streak = newStreak;
-        updates.lastCheckIn = nowLocalDate.toISOString();
-        updates.totalWorkouts = (userData.totalWorkouts || 0) + 1;
-
-        if (!userData.lastCheckIn || todayISO !== userData.lastCheckIn.split('T')[0]) {
-          updates.totalActiveDays = (userData.totalActiveDays || 0) + 1;
-        }
-      }
-    }
-
-    if (pointsEarned > 0) {
-      weeklyStatsData.totalPoints = (weeklyStatsData.totalPoints || 0) + pointsEarned;
-      weeklyStatsData.updatedAt = stValue;
-      transaction.set(weeklyStatsRef, weeklyStatsData);
-    }
-
-    // #204: estimamos calorias/ritmo quando o cliente nao envia esses valores
-    // prontos (a maioria dos treinos de academia so envia duracao/distancia),
-    // e preservamos avgHeartRate/steps/checkpoints -- ate 2026-08 esses campos
-    // eram usados so na analise antifraude acima e nunca chegavam a ser
-    // gravados no documento que ActivityHistorySection.tsx le.
-    const estimatedCalories = estimateCalories({
-      type,
-      durationMins: durationMins || 45,
-      weightKg: userData.weight || userData.weightKg
-    });
-    const estimatedPace = formatPace(distanceKm, durationMins);
-
-    const workoutObj = {
-      id: workoutRef.id,
-      userId,
-      type,
-      // #240: origem gravada no documento, usada pela deduplicacao entre fontes.
-      source: 'invictus',
-      timestamp: nowLocalDate.toISOString(),
-      duration: durationMins || 45,
-      distance: distanceKm || 0,
-      trajectory: Array.isArray(checkpoints) ? checkpoints : undefined,
-      avgHeartRate: payload.avgHeartRate ?? undefined,
-      steps: payload.steps ?? undefined,
-      calories: estimatedCalories,
-      pace: estimatedPace ?? undefined,
-      status: computedStatus,
-      points: pointsEarned,
-      isScoringEligible,
-      ...(workoutSecurityBlocked ? { securityBlocked: true, securityBlockReason: workoutSecurityReason } : {}),
-      ...(isScoringEligible ? { scoringWeekId: weekId, scoringDate: todayISO } : { nonScoringReason }),
-      validation: {
-        status: computedStatus,
-        reason: 'Presença e identidade verificadas biometricamente.',
-        score: finalDecision === 'approved' ? 100 : 70,
-        details: {
-          presenceCheckRequested: true,
-          presenceCheckCompleted: true,
-          finalDecision,
-          livenessVerified: finalDecision === 'approved'
-        }
-      },
-      // Save selfie face as the activity photo!
-      photoUrl: presenceSelfie ? `data:image/jpeg;base64,${presenceSelfie}` : (photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : null),
-      createdAt: stValue
-    };
-
-    transaction.set(workoutRef, workoutObj);
-    transaction.update(userRef, updates);
-    pointsEarnedResult = pointsEarned;
-  });
-
-  // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA (IGA)
-  // agora que o workout ja esta commitado -- roda FORA da transaction acima de
-  // proposito (recalculateAllUserScores faz suas proprias leituras/escritas no
-  // Firestore, que nao podem acontecer dentro de uma transaction alheia).
-  try {
-    await recalculateAllUserScores(userId);
-  } catch (rankingErr) {
-    console.error(`[commitWorkoutSession] Falha ao recalcular pontuacao IGA para userId=${userId}, treino permanece salvo:`, rankingErr);
-  }
-
-  return pointsEarnedResult;
-}
-
-// TRANSACTIONALLY COMMIT RUNNING PAYLOADS
-async function commitRunningSession(userId: string, payload: any, finalDecision: 'approved' | 'pending') {
-  const { km, timeSeconds, pace, calories, elevationGain, steps, trajectory, date, session } = payload;
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const todayISO = nowIso.split('T')[0];
-
-  const userRef = db.collection('users').doc(userId);
-  const currentKm = parseFloat(km || 0);
-
-  // Initialize stats document for runs
-  const runningStatsRef = db.collection('running_stats').doc(userId);
-  const runningStatsSnap = await runningStatsRef.get();
-  let rStats = runningStatsSnap.exists ? runningStatsSnap.data() : {
-    userId,
-    best_run_km_month: 0,
-    best_run_km_week: 0,
-    last_run_date: nowIso,
-    is_paid_running: false
-  };
-
-  rStats.best_run_km_month = Math.max(rStats.best_run_km_month || 0, currentKm);
-  rStats.best_run_km_week = Math.max(rStats.best_run_km_week || 0, currentKm);
-  rStats.last_run_date = nowIso;
-  rStats.last_run_stats = {
-    km: currentKm,
-    timeSeconds: timeSeconds || 0,
-    pace: pace || "0'00\"/km",
-    calories: calories || 0,
-    elevationGain: elevationGain || 0,
-    steps: steps || 0,
-    trajectory: trajectory || [],
-    date: date || nowIso
-  };
-
-  const getWeekNumber = (date: Date) => {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  };
-  const weekId = `${now.getFullYear()}-W${getWeekNumber(now)}`;
-  const weeklyStatsRef = userRef.collection('weeklyStats').doc(weekId);
-
-  let sessionId = null;
-  if (session) {
-    const sessionRef = db.collection('run_sessions').doc();
-    sessionId = sessionRef.id;
-    await sessionRef.set({
-      ...session,
-      id: sessionId,
-      userId,
-      validationStatus: finalDecision === 'approved' ? 'VALID' : 'SUSPICIOUS',
-      createdAt: FieldValue.serverTimestamp()
-    });
-  }
-
-  await db.collection('running_stats').doc(userId).set(rStats, { merge: true });
-
-  // Enterprise Security Pipeline (ver auditoria antifraude 2026-08 / mesmo padrao
-  // usado em RunningService.addRun). Roda ANTES da transacao de pontuacao pois o
-  // pipeline faz suas proprias leituras/escritas no Firestore.
-  let runSecurityBlocked = false;
-  let runSecurityReason: string | null = null;
-  try {
-    let secUserProfile: any = {};
-    try {
-      const secUserSnap = await userRef.get();
-      if (secUserSnap.exists) secUserProfile = secUserSnap.data() || {};
-    } catch (secFetchErr) {
-      console.warn('[commitRunningSession] Falha ao buscar perfil do usuario para o SecurityPipeline:', secFetchErr);
-    }
-
-    const securityResult = await SecurityPipeline.runPipeline(
-      {
-        activityType: 'RUNNING',
-        type: 'RUNNING',
-        durationMins: (timeSeconds || 0) / 60,
-        distanceKm: currentKm,
-        checkpoints: trajectory,
-        timestamp: date || nowIso,
-        source: 'PRESENCE_VERIFIED',
-        avgHeartRate: payload.avgHeartRate,
-        steps,
-        sensorTelemetry: payload.sensorTelemetry,
-        isMockLocation: payload.isMockLocation,
-        isEmulator: payload.isEmulator,
-        isRooted: payload.isRooted,
-        isDeveloperMode: payload.isDeveloperMode
-      },
-      userId,
-      secUserProfile,
-      // #237: historico real -- ver api/_lib/user-activity-history.ts.
-      await buscarHistoricoRecente(userId)
-    );
-
-    if (!securityResult.shouldScore) {
-      runSecurityBlocked = true;
-      runSecurityReason = 'SECURITY_PIPELINE_' + securityResult.decision;
-      console.warn(`[commitRunningSession] SecurityPipeline recusou pontuacao para userId=${userId}: ${runSecurityReason}`);
-    }
-  } catch (secErr) {
-    // #203: Fail-closed -- se o motor de seguranca falhar tecnicamente, o commit NAO e aprovado.
-    runSecurityBlocked = true;
-    runSecurityReason = 'SECURITY_PIPELINE_ERROR';
-    console.error('[commitRunningSession] SecurityPipeline.runPipeline falhou, bloqueando por seguranca (fail-closed):', secErr);
-  }
-
-  await db.runTransaction(async (transaction: any) => {
-    const userSnap = await transaction.get(userRef);
-    if (!userSnap.exists) return;
-    const userData = userSnap.data() || {};
-
-    let xpAwarded = 0;
-    const avgSpeedMs = timeSeconds > 0 ? (currentKm * 1000) / timeSeconds : 0;
-    const isSpeedImplausible = avgSpeedMs > SCORE_CONFIG.SPEED_LIMIT_MS;
-    const gpsCheck = (trajectory && Array.isArray(trajectory) && trajectory.length >= 2)
-      ? GPSValidator.validateActivity(userId, trajectory, currentKm, timeSeconds || 0)
-      : null;
-    const isGpsFraud = !!(gpsCheck && !gpsCheck.isValid);
-    if (finalDecision === 'approved' && userData) {
-      if (isSpeedImplausible || isGpsFraud || runSecurityBlocked) {
-        console.warn(`[commitRunningSession] Atividade suspeita bloqueada para userId=${userId}. speedImplausible=${isSpeedImplausible} (${avgSpeedMs.toFixed(2)}m/s, limite ${SCORE_CONFIG.SPEED_LIMIT_MS}m/s) gpsFraud=${isGpsFraud}${gpsCheck ? ' flags=' + gpsCheck.flags.join(',') : ''} securityPipeline=${runSecurityBlocked ? runSecurityReason : 'ok'}. Pontuacao zerada.`);
-      } else {
-        xpAwarded = 20 + Math.floor(currentKm * 5);
-      }
-    }
-
-    const weeklyStatsSnap = await transaction.get(weeklyStatsRef);
-    let weeklyStatsData = weeklyStatsSnap.exists ? weeklyStatsSnap.data() : {
-      weekId,
-      scoredDays: [],
-      totalScoredDays: 0,
-      totalPoints: 0
-    };
-
-    const scoredDays = weeklyStatsData.scoredDays || [];
-    const isDayAlreadyScored = scoredDays.includes(todayISO);
-
-    let isScoringEligible = false;
-
-    if (xpAwarded > 0) {
-      if (isDayAlreadyScored) {
-        isScoringEligible = true;
-      } else if (scoredDays.length < 5) {
-        isScoringEligible = true;
-        scoredDays.push(todayISO);
-        weeklyStatsData.scoredDays = scoredDays;
-        weeklyStatsData.totalScoredDays = scoredDays.length;
-      } else {
-        isScoringEligible = false;
-        xpAwarded = 0;
-      }
-    } else {
-      isScoringEligible = true;
-    }
-
-    // Teto diario de pontuacao (mesma regra usada em commitWorkoutSession).
-    // Sem isso, corridas repetidas no mesmo dia (dentro do limite semanal de
-    // DIAS, mas sem limite de QUANTIDADE por dia) inflavam o score sem controle.
-    if (xpAwarded > 0) {
-      const subTier = isProUser(userData) ? 'performance' : 'open';
-      const dailyCap = subTier === 'performance' ? 100 : 60;
-      const todaySnap = await transaction.get(
-        db.collection('workouts').where('userId', '==', userId).where('timestamp', '>=', todayISO)
-      );
-      let todayPoints = 0;
-      todaySnap.forEach((d: any) => {
-        const w = d.data();
-        if (w.status !== 'invalid') todayPoints += w.points || 0;
-      });
-      if (todayPoints + xpAwarded > dailyCap) {
-        xpAwarded = Math.max(0, dailyCap - todayPoints);
-      }
-    }
-
-    const userUpdates: any = {
-      updatedAt: FieldValue.serverTimestamp()
-    };
-
-    if (userData) {
-      // #228: "score" (ranking de temporada) nao e mais incrementado aqui --
-      // era uma 6a fonte de pontuacao ad-hoc, nem sequer listada na auditoria
-      // original, que somava xpAwarded direto em users.score sem passar pelo
-      // IGA. Agora recalculateAllUserScores() (chamado apos este transaction
-      // commitar, no final da funcao) recalcula score/monthlyScore/weeklyScore
-      // pela FONTE UNICA a partir do historico real em `workouts`. xpAwarded
-      // continua sendo gravado no documento do treino como XP -- XP != IGA.
-      userUpdates.lastCheckIn = nowIso;
-
-      const lastCheckInDay = userData.lastCheckIn ? userData.lastCheckIn.split('T')[0] : '';
-      if (todayISO !== lastCheckInDay) {
-        userUpdates.totalActiveDays = (userData.totalActiveDays || 0) + 1;
-      }
-    }
-
-    if (xpAwarded > 0) {
-      weeklyStatsData.totalPoints = (weeklyStatsData.totalPoints || 0) + xpAwarded;
-      weeklyStatsData.updatedAt = FieldValue.serverTimestamp();
-      transaction.set(weeklyStatsRef, weeklyStatsData);
-    }
-
-    transaction.update(userRef, userUpdates);
-
-    // Save running session in 'workouts' to count for user feed
-    // #204: agora tambem gravamos pace/calorias/elevationGain/steps/avgHeartRate/
-    // trajectory -- ate 2026-08 esses valores ja chegavam prontos do cliente
-    // (destructured do payload acima) mas nunca eram escritos neste documento,
-    // entao o historico de corridas nunca mostrava nada alem de duracao/distancia.
-    const workoutDocRef = db.collection('workouts').doc();
-    await transaction.set(workoutDocRef, {
-      id: workoutDocRef.id,
-      userId,
-      type: 'cardio',
-      // #240: origem gravada no documento, usada pela deduplicacao entre fontes.
-      source: 'invictus',
-      timestamp: nowIso,
-      duration: Math.ceil((timeSeconds || 0) / 60),
-      distance: currentKm,
-      pace: pace || undefined,
-      calories: calories || undefined,
-      elevationGain: elevationGain || undefined,
-      steps: steps || undefined,
-      avgHeartRate: payload.avgHeartRate ?? undefined,
-      trajectory: Array.isArray(trajectory) ? trajectory : undefined,
-      status: (finalDecision === 'approved' && !runSecurityBlocked) ? 'valid' : (runSecurityBlocked ? 'suspicious' : 'pending_review'),
-      points: xpAwarded,
-      isScoringEligible,
-      ...(runSecurityBlocked ? { securityBlocked: true, securityBlockReason: runSecurityReason } : {}),
-      validation: {
-        status: finalDecision === 'approved' ? 'valid' : 'pending_review',
-        reason: 'Presença em corrida de rua verificada biometricamente.',
-        score: finalDecision === 'approved' ? 100 : 70
-      },
-      createdAt: FieldValue.serverTimestamp()
-    });
-
-  });
-
-  // Recalcula weeklyScore/monthlyScore/score (temporada) pela FONTE UNICA (IGA),
-  // fora da transaction acima pelo mesmo motivo de commitWorkoutSession.
-  try {
-    await recalculateAllUserScores(userId);
-  } catch (rankingErr) {
-    console.error(`[commitRunningSession] Falha ao recalcular pontuacao IGA para userId=${userId}, corrida permanece salva:`, rankingErr);
   }
 }

@@ -183,8 +183,11 @@ describe('entitlement canônico nos consumidores de score', () => {
     const season = readFileSync(resolve(process.cwd(), 'api/_lib/season-prize-engine.ts'), 'utf8');
 
     expect(scoreEngine).not.toMatch(/event\.payload\?\.(?:subscriptionTier|plan)/);
+    // validate-presence agora é exclusivamente um gate biométrico financeiro;
+    // não pontua atividade nem deriva entitlement. Isso remove por construção
+    // qualquer confiança em tier/plan enviado pelo cliente nesse endpoint.
     expect(presence).not.toContain('userData.subscriptionTier');
-    expect(presence.match(/isProUser\(userData\)/g)).toHaveLength(2);
+    expect(presence).not.toContain('isProUser(');
     expect(season).not.toContain('d.data().subscriptionTier');
     expect(season).toContain('.filter((d: any) => isProUser(d.data()))');
   });

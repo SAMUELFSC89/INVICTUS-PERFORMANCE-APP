@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
+import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 import { ScoreEngine } from '../_lib/score-engine/index.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -18,8 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ownDashboard = userId === auth.uid;
   if (!ownDashboard) {
     const adminSnap = await db.collection('users').doc(auth.uid).get();
-    const isAdmin = adminSnap.data()?.role === 'admin';
-    if (!isAdmin) {
+    if (!adminSnap.exists || !hasActiveAdminAuthority(adminSnap.data())) {
       return res.status(403).json({ error: 'Não é permitido consultar o desempenho de outro usuário.' });
     }
   }
