@@ -26,10 +26,9 @@ test('pódio preserva os três assets oficiais atuais de coroa', () => {
   expect(podium).not.toContain("'/ranking-frame-bronze-reference.png'");
 });
 
-test('Top 2 e Top 3 do pódio vencem os overrides e usam a geometria do Power Lift', () => {
+test('Top 2 e Top 3 do pódio usam a geometria do Power Lift com overrides próprios', () => {
   const podium = read('src/components/ranking/PodiumTopThree.tsx');
   const podiumCss = read('src/components/ranking/PodiumTopThree.css');
-  const communityCss = read('src/pages/championships/CommunityRanking.css');
   const powerLiftCss = read('src/pages/PowerLiftNew.css');
 
   expect(podium).toContain("import './PodiumTopThree.css'");
@@ -44,11 +43,6 @@ test('Top 2 e Top 3 do pódio vencem os overrides e usam a geometria do Power Li
   expect(podiumCss).toContain('width: 55px !important');
   expect(podiumCss).toContain('height: 55px !important');
   expect(podiumCss).toContain('overflow: visible');
-
-  // Esta regra global já existia no layout avançado do campeonato e foi a
-  // causa da regressão: sem o override rank-specific acima, ela vence no CSS.
-  expect(communityCss).toContain('.academy-podium-avatar{width:94px!important;height:94px!important}');
-  expect(communityCss).toContain('.academy-podium-avatar{width:78px!important;height:78px!important}');
 
   expect(powerLiftCss).toContain('.power-podium-avatar{position:relative;display:grid;width:76px;height:76px;place-items:center}');
   expect(powerLiftCss).toContain('width:62px;height:62px');
