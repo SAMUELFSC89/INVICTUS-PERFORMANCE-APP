@@ -21,14 +21,22 @@ export interface NativeGpsSnapshot {
   latestPoint: NativeTrackedLocation | null;
 }
 
+export interface NativeBufferedLocations {
+  sessionId: string | null;
+  locations: NativeTrackedLocation[];
+}
+
 type NativeLocationError = { code?: number | string; message?: string };
 type NativeAuthorization = { status?: string };
+type NativeSessionOptions = { sessionId: string };
+type NativeStopOptions = { clear?: boolean };
+type NativeLocationResult = { locations?: NativeTrackedLocation[]; sessionId?: string | null };
 
 interface NativeActivityLocationPlugin {
-  startLocationTracking(): Promise<void>;
-  resumeLocationTracking(): Promise<void>;
-  getTrackedLocations(): Promise<{ locations?: NativeTrackedLocation[] }>;
-  stopLocationTracking(): Promise<{ locations?: NativeTrackedLocation[] }>;
+  startLocationTracking(options: NativeSessionOptions): Promise<void>;
+  resumeLocationTracking(options: NativeSessionOptions): Promise<void>;
+  getTrackedLocations(): Promise<NativeLocationResult>;
+  stopLocationTracking(options?: NativeStopOptions): Promise<NativeLocationResult>;
   addListener(eventName: 'locationUpdate', listenerFunc: (location: NativeTrackedLocation) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'locationError', listenerFunc: (error: NativeLocationError) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'locationAuthorization', listenerFunc: (state: NativeAuthorization) => void): Promise<PluginListenerHandle>;
@@ -37,6 +45,7 @@ interface NativeActivityLocationPlugin {
 const NativeActivityLocation = registerPlugin<NativeActivityLocationPlugin>('InvictusActivity');
 const MIN_LIVE_SPEED_KMH = 1.0;
 const MAX_LIVE_SPEED_KMH = 300;
+const ACTIVE_SESSION_KEY = 'current_activity_session';
 
 const INITIAL_SNAPSHOT: NativeGpsSnapshot = {
   sessionId: null,
@@ -98,10 +107,6 @@ function normalizedPoint(raw: NativeTrackedLocation): NativeTrackedLocation | nu
 }
 
 function deriveSpeedIfNeeded(point: NativeTrackedLocation): number | null {
-  // Quando o Core Location informa explicitamente 0, respeitamos 0. O código
-  // antigo convertia velocidade inválida/ruído em deslocamento entre fixes e
-  // fazia o pace variar mesmo com o atleta parado. Só derivamos velocidade
-  // quando o sistema NÃO forneceu uma leitura utilizável.
   if (typeof point.speedKmH === 'number' && Number.isFinite(point.speedKmH)) {
     if (point.speedKmH > MAX_LIVE_SPEED_KMH) return null;
     return point.speedKmH < MIN_LIVE_SPEED_KMH ? 0 : point.speedKmH;
@@ -177,6 +182,27 @@ function prepareTrackingSnapshot(sessionId?: string) {
   stallTimer = setTimeout(() => setSnapshot({ stalled: true }), 20000);
 }
 
+function resolveSessionId(explicit?: string): string {
+  const direct = String(explicit || '').trim();
+  if (direct) return direct;
+  try {
+    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!raw) return '';
+    const parsed = JSON.parse(raw) as { id?: unknown };
+    return typeof parsed?.id === 'string' ? parsed.id.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function normalizeNativeResult(result: NativeLocationResult | null | undefined): NativeBufferedLocations {
+  const owner = typeof result?.sessionId === 'string' && result.sessionId.trim() ? result.sessionId.trim() : null;
+  return {
+    sessionId: owner,
+    locations: Array.isArray(result?.locations) ? result!.locations! : [],
+  };
+}
+
 export const nativeBackgroundLocationService = {
   isSupported(): boolean {
     return supported();
@@ -191,47 +217,56 @@ export const nativeBackgroundLocationService = {
     return () => { listeners.delete(listener); };
   },
 
-  async readBuffered(): Promise<NativeTrackedLocation[]> {
-    if (!supported()) return [];
+  async readBufferedSnapshot(): Promise<NativeBufferedLocations> {
+    if (!supported()) return { sessionId: null, locations: [] };
     await ensureListeners();
-    const result = await NativeActivityLocation.getTrackedLocations();
-    return Array.isArray(result.locations) ? result.locations : [];
+    return normalizeNativeResult(await NativeActivityLocation.getTrackedLocations());
+  },
+
+  async readBuffered(): Promise<NativeTrackedLocation[]> {
+    return (await this.readBufferedSnapshot()).locations;
   },
 
   async start(sessionId?: string): Promise<void> {
     if (!supported()) return;
+    const ownerSessionId = resolveSessionId(sessionId);
+    if (!ownerSessionId) throw new Error('Sessão ativa ausente para iniciar o GPS nativo.');
     await ensureListeners();
-    prepareTrackingSnapshot(sessionId);
-    await NativeActivityLocation.startLocationTracking();
+    prepareTrackingSnapshot(ownerSessionId);
+    await NativeActivityLocation.startLocationTracking({ sessionId: ownerSessionId });
   },
 
   /**
-   * Reanexa a coleta nativa depois que o WebView/processo JS foi recriado,
-   * preservando o buffer persistido pelo plugin. `start()` continua sendo o
-   * caminho de uma sessão nova e limpa o buffer; `resume()` nunca deve apagar
-   * os pontos coletados antes do restart do app.
+   * Reanexa a coleta nativa depois que o WebView/processo JS foi recriado.
+   * O plugin só preserva o buffer quando o sessionId salvo pertence exatamente
+   * à sessão retomada; qualquer buffer órfão/de outra conta é descartado.
    */
   async resume(sessionId?: string): Promise<void> {
     if (!supported()) return;
+    const ownerSessionId = resolveSessionId(sessionId);
+    if (!ownerSessionId) throw new Error('Sessão ativa ausente para retomar o GPS nativo.');
     await ensureListeners();
-    prepareTrackingSnapshot(sessionId);
-    await NativeActivityLocation.resumeLocationTracking();
+    prepareTrackingSnapshot(ownerSessionId);
+    await NativeActivityLocation.resumeLocationTracking({ sessionId: ownerSessionId });
   },
 
   async collectAndStop(): Promise<NativeTrackedLocation[]> {
     if (!supported()) return [];
     clearStallTimer();
-    const result = await NativeActivityLocation.stopLocationTracking();
+    const result = normalizeNativeResult(await NativeActivityLocation.stopLocationTracking({ clear: false }));
     previousPoint = null;
     snapshot = { ...INITIAL_SNAPSHOT };
     notify();
-    return Array.isArray(result.locations) ? result.locations : [];
+    return result.locations;
   },
 
   async stop(): Promise<void> {
     if (!supported()) return;
     clearStallTimer();
-    await NativeActivityLocation.stopLocationTracking();
+    // Encerramento/cancelamento/logout: além de parar o LocationManager,
+    // apague o buffer persistido para que coordenadas de uma conta nunca
+    // fiquem disponíveis para uma sessão futura no mesmo aparelho.
+    await NativeActivityLocation.stopLocationTracking({ clear: true });
     previousPoint = null;
     snapshot = { ...INITIAL_SNAPSHOT };
     notify();
