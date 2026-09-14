@@ -21,7 +21,7 @@ jest.mock('../services/activityNotificationService', () => ({
 
 jest.mock('../services/nativeBackgroundLocationService', () => ({
   nativeBackgroundLocationService: {
-    readBuffered: jest.fn(),
+    readBufferedSnapshot: jest.fn(),
     resume: jest.fn(),
   },
 }));
@@ -64,7 +64,7 @@ function session(overrides: Record<string, any> = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedNotification.sync.mockResolvedValue(undefined);
-  mockedNative.readBuffered.mockResolvedValue([]);
+  mockedNative.readBufferedSnapshot.mockResolvedValue({ sessionId: null, locations: [] });
   mockedNative.resume.mockResolvedValue(undefined);
 });
 
@@ -94,7 +94,7 @@ describe('Gate 1 — continuidade após recriação do app/WebView', () => {
     expect(mockedWebGps.start).not.toHaveBeenCalled();
   });
 
-  test('quando o estado local sumiu, captura o buffer antes do restore e reaplica somente a cauda posterior ao último checkpoint', async () => {
+  test('quando o estado local sumiu, captura o buffer da mesma sessão antes do restore e reaplica somente a cauda posterior ao último checkpoint', async () => {
     const remote = session();
     let calls = 0;
     mockedActivity.getCurrentSession.mockImplementation(() => {
@@ -102,15 +102,18 @@ describe('Gate 1 — continuidade após recriação do app/WebView', () => {
       return calls === 1 ? null : remote;
     });
     mockedActivity.restoreActiveSession.mockResolvedValue(remote);
-    mockedNative.readBuffered.mockResolvedValue([
-      { lat: -30.001, lng: -51.001, accuracy: 7, timestamp: '2026-09-13T02:09:00.000Z', speedKmH: 9 },
-      { lat: -30.002, lng: -51.002, accuracy: 6, timestamp: '2026-09-13T02:11:00.000Z', speedKmH: 10 },
-      { lat: -30.003, lng: -51.003, accuracy: 6, timestamp: '2026-09-13T02:12:00.000Z', speedKmH: 11 },
-    ]);
+    mockedNative.readBufferedSnapshot.mockResolvedValue({
+      sessionId: remote.id,
+      locations: [
+        { lat: -30.001, lng: -51.001, accuracy: 7, timestamp: '2026-09-13T02:09:00.000Z', speedKmH: 9 },
+        { lat: -30.002, lng: -51.002, accuracy: 6, timestamp: '2026-09-13T02:11:00.000Z', speedKmH: 10 },
+        { lat: -30.003, lng: -51.003, accuracy: 6, timestamp: '2026-09-13T02:12:00.000Z', speedKmH: 11 },
+      ],
+    });
 
     await restoreAndResumeActiveSession();
 
-    expect(mockedNative.readBuffered).toHaveBeenCalledTimes(1);
+    expect(mockedNative.readBufferedSnapshot).toHaveBeenCalledTimes(1);
     expect(mockedActivity.restoreActiveSession).toHaveBeenCalledTimes(1);
     expect(mockedActivity.addCheckpoint).toHaveBeenCalledTimes(2);
     expect(mockedActivity.addCheckpoint).toHaveBeenNthCalledWith(
@@ -125,15 +128,36 @@ describe('Gate 1 — continuidade após recriação do app/WebView', () => {
     );
     expect(mockedActivity.recordGpsSpeedSample).toHaveBeenCalledTimes(2);
     expect(mockedNotification.sync).toHaveBeenCalledWith(remote, expect.any(Number));
-    // O restore remoto já controla o plugin; não devemos chamar resume uma
-    // segunda vez e disputar o bridge nativo com activityService.
     expect(mockedNative.resume).not.toHaveBeenCalled();
+  });
+
+  test('buffer persistido de outra sessão nunca é reaplicado na sessão restaurada', async () => {
+    const remote = session();
+    let calls = 0;
+    mockedActivity.getCurrentSession.mockImplementation(() => {
+      calls += 1;
+      return calls === 1 ? null : remote;
+    });
+    mockedActivity.restoreActiveSession.mockResolvedValue(remote);
+    mockedNative.readBufferedSnapshot.mockResolvedValue({
+      sessionId: 'session-antiga',
+      locations: [
+        { lat: -30.004, lng: -51.004, accuracy: 5, timestamp: '2026-09-13T02:12:30.000Z', speedKmH: 12 },
+      ],
+    });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await restoreAndResumeActiveSession();
+
+    expect(mockedActivity.addCheckpoint).not.toHaveBeenCalled();
+    expect(mockedActivity.recordGpsSpeedSample).not.toHaveBeenCalled();
+    expect(mockedNotification.sync).toHaveBeenCalledWith(remote, expect.any(Number));
   });
 
   test('falha ao ler o buffer nativo não impede restaurar e retomar a sessão local', async () => {
     const active = session();
     mockedActivity.getCurrentSession.mockReturnValue(active);
-    mockedNative.readBuffered.mockRejectedValue(new Error('bridge indisponível'));
+    mockedNative.readBufferedSnapshot.mockRejectedValue(new Error('bridge indisponível'));
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     await expect(restoreAndResumeActiveSession()).resolves.toBe(active);
