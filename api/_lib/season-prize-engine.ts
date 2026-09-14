@@ -197,16 +197,17 @@ export async function computeSeasonRevenueByGym(seasonId: string): Promise<Map<s
     .limit(2000)
     .get();
 
-  const inscriptionData = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-  const activeIds = await activeUserIdSet(inscriptionData.map((item: any) => String(item.userId || '')));
+  // Receita já paga continua compondo o pote mesmo se o atleta ficar inativo
+  // depois. Inatividade remove o atleta da disputa; não apaga dinheiro já
+  // arrecadado. Reembolso, quando aplicável, deve ser tratado explicitamente.
   const byGym = new Map<string, number>();
-  for (const data of inscriptionData as any[]) {
-    if (!activeIds.has(String(data.userId || ''))) continue;
+  snap.docs.forEach((doc: any) => {
+    const data = doc.data() || {};
     const gymId = String(data.gymId || '');
     const value = typeof data.valorPago === 'number' ? data.valorPago : data.valor;
-    if (!gymId || typeof value !== 'number' || value <= 0) continue;
+    if (!gymId || typeof value !== 'number' || value <= 0) return;
     byGym.set(gymId, (byGym.get(gymId) || 0) + value);
-  }
+  });
   return byGym;
 }
 
@@ -324,11 +325,18 @@ export async function distributeSeasonPrizes(season: SeasonWindow): Promise<Seas
     allWinners.push(...winners);
   }
 
-  // Cada crédito possui ledger determinístico. Execuções concorrentes/retries
-  // podem repetir este loop sem duplicar saldo.
+  // Cada crédito recebe a identidade imutável do settlement original. Assim,
+  // retries/crons concorrentes continuam usando a mesma chave mesmo se o
+  // season_tracker já tiver avançado para o mês seguinte.
   for (const winner of allWinners) {
     console.log(`[Season Prize Engine] Creditando R$ ${winner.prizeAmount.toFixed(2)} para ${winner.userId} (academia ${winner.gymId}, rank #${winner.rank})`);
-    await RewardsEngine.rewardLeaguePrize(winner.userId, 'Liga Invictus', winner.rank, winner.prizeAmount);
+    await RewardsEngine.rewardLeaguePrize(
+      winner.userId,
+      'Liga Invictus',
+      winner.rank,
+      winner.prizeAmount,
+      { seasonId: season.seasonId, gymId: winner.gymId },
+    );
   }
 
   const sum = (field: keyof ResultadoAcademia) =>
