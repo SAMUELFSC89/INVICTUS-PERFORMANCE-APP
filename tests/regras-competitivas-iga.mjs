@@ -13,7 +13,7 @@ const perfil = { age: 30, weightKg: 80, maxHeartRate: 190 };
 const sessao = (min, tipo = 'workout', hr = 143, kcal = 0, valida = true, extras = {}) => ({
   type: tipo,
   durationMinutes: min,
-  avgHeartRate: hr,
+  ...(hr == null ? {} : { avgHeartRate: hr }),
   caloriesInformed: kcal,
   isValid: valida,
   ...extras,
@@ -91,6 +91,12 @@ const samples = Array.from({ length: 61 }, (_, i) => ({
 const comSerie = calculateWeeklyIGA([sessao(30, 'cardio', 190, 0, true, { heartRateSamples: samples })], perfil);
 conferir('Série de FC é usada quando disponível', comSerie.topSessions[0]?.intensitySource === 'samples', `fonte=${comSerie.topSessions[0]?.intensitySource}`);
 conferir('Picos isolados não transformam tudo em Z5', (comSerie.topSessions[0]?.intensityFactor || 0) > 1 && (comSerie.topSessions[0]?.intensityFactor || 0) < 1.15, `I=${comSerie.topSessions[0]?.intensityFactor}`);
+
+// 10. FC é obrigatória para o fator I. Sem relógio/dado válido não existe estimativa.
+const semFc = calculateWeeklyIGA([sessao(60, 'cardio', null)], perfil);
+conferir('Sem FC medida, I zera', semFc.In === 0, `I=${semFc.In}`);
+conferir('Sem FC medida, IGA final zera quando não há outra sessão com FC', semFc.igaRanking === 0, `IGA=${semFc.igaRanking}`);
+conferir('Ausência de FC fica auditável como missing', semFc.topSessions[0]?.intensitySource === 'missing', `fonte=${semFc.topSessions[0]?.intensitySource}`);
 
 console.log(`\n${falhas === 0 ? 'Todas as regras IGA 2.0 passaram.' : falhas + ' regra(s) falharam.'}`);
 process.exit(falhas === 0 ? 0 : 1);
