@@ -55,6 +55,9 @@ describe('RewardCoinEngine idempotency', () => {
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2026-09-06T12:00:00.000Z'));
     mockDb = createDb();
+    // O engine valida lifecycle dentro da mesma transação do saldo. Os testes
+    // de idempotência usam por padrão uma conta existente e elegível.
+    mockDb.store.set('users/user-a', { status: 'active' });
   });
 
   afterEach(() => {
@@ -129,5 +132,17 @@ describe('RewardCoinEngine idempotency', () => {
     expect(mockDb.store.get('reward_coin_wallets/user-a')).toMatchObject({ balance: 7, lifetimeEarned: 7 });
     expect(mockDb.store.get('reward_coin_monthly_counters/user-a_2026-09')).toMatchObject({ totalIssued: 7 });
     expect(mockDb.store.get('reward_coin_economy/global')).toMatchObject({ globalIssued: 7 });
+  });
+
+  test('falha fechado sem alterar saldo quando a conta fica inativa', async () => {
+    mockDb.store.set('users/user-a', { status: 'blocked' });
+    const input = {
+      userId: 'user-a', amount: 7, origin: 'mission' as const,
+      ledgerType: 'MISSION_REWARD' as const, description: 'Desafio', idempotencyKey: 'blocked-claim',
+    };
+
+    await expect(RewardCoinEngine.credit(input)).rejects.toThrow('Conta inativa não pode receber Invictus Coins.');
+    expect(mockDb.store.has('reward_coin_wallets/user-a')).toBe(false);
+    expect([...mockDb.store.keys()].some(key => key.startsWith('reward_coin_transactions/'))).toBe(false);
   });
 });
