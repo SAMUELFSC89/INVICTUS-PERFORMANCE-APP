@@ -11,7 +11,7 @@ function block(source: string, startMarker: string, endMarker: string): string {
 }
 
 describe('competition payment lifecycle hardening', () => {
-  test('season confirmation is transactional and validates amount, reference and account lifecycle', () => {
+  test('season confirmation is transactional and validates amount, reference, ordering and account lifecycle', () => {
     const source = read('api/_lib/inscricao-service.ts');
     const confirmation = block(source, 'export async function confirmarInscricaoPorPagamento', '/**\n * Suspende imediatamente');
 
@@ -21,6 +21,7 @@ describe('competition payment lifecycle hardening', () => {
     expect(confirmation).toContain('paymentAmountMatches(dados.valor, valorPago)');
     expect(confirmation).toContain('receivedReference === expectedReference');
     expect(confirmation).toContain('isActiveAccountState(userSnap.data())');
+    expect(confirmation).toContain('isStaleProviderEvent');
     expect(confirmation).toContain("paymentStatus: 'RECONCILIATION_REQUIRED'");
     expect(confirmation).toContain("status: 'contestada'");
     expect(confirmation).toContain("status: 'paga'");
@@ -40,6 +41,7 @@ describe('competition payment lifecycle hardening', () => {
     ]) expect(source).toContain(marker);
 
     expect(lifecycle).toContain("status: StatusInscricao = refunded ? 'reembolsada' : 'contestada'");
+    expect(lifecycle).toContain('isStaleProviderEvent');
     expect(lifecycle).toContain('profileRemovalPatch');
     expect(source).toContain("seasonStatus: 'NOT_ENROLLED'");
     expect(source).toContain('seasonInscritaId: FieldValue.delete()');
@@ -50,15 +52,48 @@ describe('competition payment lifecycle hardening', () => {
     expect(source).toContain("if (String(userData.seasonInscritaId || '') !== seasonId) return null");
   });
 
-  test('webhook routes canonical season reference and all refund/chargeback risk events', () => {
-    const webhook = read('api/_handlers/asaas-webhook.ts');
-    expect(webhook).toContain('payment.externalReference');
-    expect(webhook).toContain('registrarEventoFinanceiroInscricaoTemporada');
-    expect(webhook).toContain("event === 'PAYMENT_REFUND_DENIED'");
-    expect(webhook).toContain('SEASON_PAYMENT_RISK_EVENTS');
+  test('championship payment confirmation uses the same financial integrity invariants', () => {
+    const source = read('api/_lib/championship-inscription-service.ts');
+    const confirmation = block(source, 'export async function confirmarInscricaoChampionshipPorPagamento', 'export async function encerrarCheckoutChampionship');
+
+    expect(confirmation).toContain('db.runTransaction');
+    expect(confirmation).toContain('transaction.get(userRef)');
+    expect(confirmation).toContain('paymentAmountMatches(data.valor, valorPago)');
+    expect(confirmation).toContain('isStaleProviderEvent');
+    expect(confirmation).toContain('isActiveAccountState(userSnap.data())');
+    expect(confirmation).toContain("paymentStatus: 'RECONCILIATION_REQUIRED'");
+    expect(confirmation).toContain("status: 'contestada'");
+    expect(confirmation).toContain("status: 'paga'");
   });
 
-  test('paid season revenue is still sourced only from financially paid inscriptions', () => {
+  test('checkout-paid callback cannot reopen refunded or contested championship registration', () => {
+    const source = read('api/_lib/championship-inscription-service.ts');
+    const confirmation = block(source, 'export async function confirmarInscricaoChampionshipPorCheckout', 'export async function confirmarInscricaoChampionshipPorPagamento');
+    expect(confirmation).toContain("data.status === 'reembolsada'");
+    expect(confirmation).toContain("data.status === 'contestada'");
+    expect(confirmation).toContain('transaction.get(userRef)');
+  });
+
+  test('both Asaas webhook routes apply full refund/chargeback lifecycle and provider timestamps', () => {
+    const central = read('api/_handlers/asaas-webhook.ts');
+    const championship = read('api/_handlers/championships.ts');
+
+    for (const source of [central, championship]) {
+      expect(source).toContain('PAYMENT_PARTIALLY_REFUNDED');
+      expect(source).toContain('PAYMENT_REFUND_IN_PROGRESS');
+      expect(source).toContain('PAYMENT_CHARGEBACK_REQUESTED');
+      expect(source).toContain('PAYMENT_CHARGEBACK_DISPUTE');
+      expect(source).toContain('PAYMENT_AWAITING_CHARGEBACK_REVERSAL');
+      expect(source).toContain('dateCreated');
+    }
+    expect(central).toContain('registrarEventoFinanceiroInscricaoTemporada');
+    expect(central).toContain('registrarEventoFinanceiroChampionship');
+    expect(championship).toContain('registrarEventoFinanceiroChampionship');
+    expect(central).toContain("event === 'PAYMENT_REFUND_DENIED'");
+    expect(championship).toContain("event === 'PAYMENT_REFUND_DENIED'");
+  });
+
+  test('paid season revenue remains sourced only from financially paid inscriptions', () => {
     const engine = read('api/_lib/season-prize-engine.ts');
     const revenue = block(engine, 'export async function computeSeasonRevenueByGym', 'export async function getSeasonParticipants');
     expect(revenue).toContain("where('status', '==', 'paga')");
