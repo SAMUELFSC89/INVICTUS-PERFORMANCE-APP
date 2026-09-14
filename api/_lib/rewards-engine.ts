@@ -1,5 +1,7 @@
 import { WalletEngine } from './wallet-engine.js';
 import { IVCoinCategory } from '../../src/types.js';
+import { db } from './common.js';
+import { creditSeasonPrize } from './season-payout-credit.js';
 
 export class RewardsEngine {
   /**
@@ -56,16 +58,31 @@ export class RewardsEngine {
 
   /**
    * Reward for League/Championship prizes. Category: REDEEMABLE (sacável via PIX). Value in R$.
+   *
+   * Gate 1: season_tracker is deliberately resolved here because legacy callers do not
+   * carry seasonId. runDailySeasonCheck only advances this tracker after every prize was
+   * reconciled, so the deterministic transaction survives crashes/retries/concurrency.
    */
   static async rewardLeaguePrize(userId: string, leagueName: string, rank: number, prizeAmount: number): Promise<void> {
     if (prizeAmount <= 0) return;
-    await WalletEngine.creditCoins({
+
+    const tracker = await db.collection('system_config').doc('season_tracker').get();
+    const seasonId = tracker.exists ? String(tracker.data()?.seasonId || '').trim() : '';
+    if (!seasonId) {
+      throw new Error('Temporada autoritativa ausente; premio nao creditado para evitar duplicidade financeira.');
+    }
+
+    const result = await creditSeasonPrize({
+      seasonId,
       userId,
+      rank,
       amount: prizeAmount,
-      category: 'redeemable',
-      origin: 'league',
-      description: 'Premiação da ' + leagueName + ' - Posição #' + rank + ' (+R$ ' + prizeAmount.toFixed(2) + ')'
+      leagueName,
     });
+
+    if (result.ineligible) {
+      console.warn(`[RewardsEngine] Premio ${seasonId}/${userId}/#${rank} ignorado: conta inativa.`);
+    }
   }
 
   /**
