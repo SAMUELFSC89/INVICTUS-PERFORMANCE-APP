@@ -1,6 +1,17 @@
 import { Championship, type PrizeRank } from '../../src/types/championships.js';
 import { PAID_CHAMPIONSHIP_OFFERS } from '../../shared/paidChampionshipPolicy.js';
 
+/**
+ * Hard gate de capacidade, deliberadamente NÃO configurável por ambiente.
+ * A cobrança de uma edição paga só pode ser liberada depois que o código de
+ * homologação/settlement da premiação final existir e estiver coberto por CI.
+ *
+ * Quando esse motor for implementado, a mesma PR deve trocar este valor para
+ * true e adicionar os testes de settlement; até lá nenhuma combinação de envs
+ * consegue abrir inscrições pagas por acidente.
+ */
+export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false;
+
 function env(name: string): string {
   return String(process.env[name] || '').trim();
 }
@@ -107,6 +118,9 @@ export const CHAMPIONSHIPS: Championship[] = [
 function registrationReadiness(championship: Championship, now = new Date()): { open: boolean; reason: string } {
   if (env('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED').toLowerCase() !== 'true') {
     return { open: false, reason: 'A edição ainda não foi liberada para inscrições.' };
+  }
+  if (!PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED) {
+    return { open: false, reason: 'A homologação e entrega da premiação ainda não foram liberadas.' };
   }
   const registrationStart = Date.parse(championship.registrationOpensAt || '');
   const registrationEnd = Date.parse(championship.registrationClosesAt || '');
