@@ -28,9 +28,11 @@ describe('Contrato — temporada paga legada permanece aposentada', () => {
     expect(handler).not.toContain('getSeasonParticipantsByGym');
   });
 
-  test('dados históricos e motor permanecem disponíveis para conciliação administrativa', () => {
+  test('dados históricos e settlement permanecem disponíveis para conciliação administrativa', () => {
     const engine = read('api/_lib/season-prize-engine.ts');
+    const settlement = read('api/_lib/season-payout-credit.ts');
     expect(engine).toContain("db.collection('season_payouts')");
-    expect(engine).toContain('creditSeasonPrize');
+    expect(settlement).toContain('export async function creditSeasonPrize');
+    expect(settlement).toContain("status: 'INELIGIBLE'");
   });
 });
