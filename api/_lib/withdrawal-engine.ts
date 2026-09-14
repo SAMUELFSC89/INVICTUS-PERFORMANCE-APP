@@ -233,19 +233,24 @@ export class WithdrawalEngine {
     };
 
     const result = await db.runTransaction(async (transaction: any) => {
+      const userRef = db.collection('users').doc(userId);
       const walletRef = db.collection('wallets').doc(userId);
       const holdTxRef = db.collection('iv_transactions').doc(`tx_hold_${withdrawalId}`);
-      const [existingWithdrawal, walletSnap, existingHold, dailyLimitSnap] = await Promise.all([
+      const [existingWithdrawal, walletSnap, existingHold, dailyLimitSnap, transactionUserSnap] = await Promise.all([
         transaction.get(withdrawalRef),
         transaction.get(walletRef),
         transaction.get(holdTxRef),
-        transaction.get(dailyLimitRef)
+        transaction.get(dailyLimitRef),
+        transaction.get(userRef)
       ]);
 
       if (existingWithdrawal.exists) {
         const existing = existingWithdrawal.data() as PIXWithdrawal;
         if (existing.userId !== userId) throw new Error('Chave de idempotência já está em uso.');
         return existing;
+      }
+      if (!transactionUserSnap.exists || !isActiveAccountState(transactionUserSnap.data())) {
+        throw new Error('Conta deixou de estar ativa antes da reserva financeira.');
       }
       if (existingHold.exists) {
         throw new Error('Solicitação financeira em conciliação. Aguarde o suporte.');
