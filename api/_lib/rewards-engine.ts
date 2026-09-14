@@ -1,6 +1,5 @@
 import { WalletEngine } from './wallet-engine.js';
 import { IVCoinCategory } from '../../src/types.js';
-import { db } from './common.js';
 import { creditSeasonPrize } from './season-payout-credit.js';
 
 export class RewardsEngine {
@@ -58,23 +57,26 @@ export class RewardsEngine {
 
   /**
    * Reward for League/Championship prizes. Category: REDEEMABLE (sacável via PIX). Value in R$.
-   *
-   * Gate 1: season_tracker is deliberately resolved here because legacy callers do not
-   * carry seasonId. runDailySeasonCheck only advances this tracker after every prize was
-   * reconciled, so the deterministic transaction survives crashes/retries/concurrency.
+   * A identidade do settlement é recebida do motor que está fechando aquela
+   * temporada; nunca é redescoberta pelo season_tracker durante o crédito.
    */
-  static async rewardLeaguePrize(userId: string, leagueName: string, rank: number, prizeAmount: number): Promise<void> {
+  static async rewardLeaguePrize(
+    userId: string,
+    leagueName: string,
+    rank: number,
+    prizeAmount: number,
+    settlement: { seasonId: string; gymId?: string },
+  ): Promise<void> {
     if (prizeAmount <= 0) return;
-
-    const tracker = await db.collection('system_config').doc('season_tracker').get();
-    const seasonId = tracker.exists ? String(tracker.data()?.seasonId || '').trim() : '';
+    const seasonId = String(settlement?.seasonId || '').trim();
     if (!seasonId) {
-      throw new Error('Temporada autoritativa ausente; premio nao creditado para evitar duplicidade financeira.');
+      throw new Error('Identidade da temporada ausente; premio nao creditado para evitar duplicidade financeira.');
     }
 
     const result = await creditSeasonPrize({
       seasonId,
       userId,
+      gymId: settlement.gymId,
       rank,
       amount: prizeAmount,
       leagueName,
