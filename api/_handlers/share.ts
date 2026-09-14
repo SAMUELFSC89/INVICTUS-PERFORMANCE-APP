@@ -331,7 +331,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `;
 
     res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    // O token é revogável: não permitir que CDN/browser sirva uma cópia antiga
+    // depois que o atleta revogar o compartilhamento.
+    res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     return res.status(200).send(html);
   } catch (error) {
