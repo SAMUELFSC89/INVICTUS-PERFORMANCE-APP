@@ -88,6 +88,8 @@ export async function getChampionshipProgressHandler(req: any, res: any) {
 }
 
 export async function getChampionshipLeaderboardHandler(req: any, res: any) {
+  const auth = await verifyAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
   if (!getChampionship(championshipId)) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const leaderboard = await getChampionshipLeaderboard(championshipId, 50);
