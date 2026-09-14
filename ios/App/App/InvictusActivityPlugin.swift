@@ -196,16 +196,27 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
     }
 
     private func handlePendingActionFromIntent() {
-        guard let defaults = UserDefaults(suiteName: InvictusActivityIPC.appGroupId),
-              let raw = defaults.string(forKey: InvictusActivityIPC.pendingActionKey) else {
-            return
+        guard let defaults = UserDefaults(suiteName: InvictusActivityIPC.appGroupId) else { return }
+
+        var pending = defaults.stringArray(forKey: InvictusActivityIPC.pendingActionQueueKey) ?? []
+        // Migração fail-safe para uma ação gravada por build anterior. Ela entra
+        // na frente porque necessariamente ocorreu antes dos itens da fila v2.
+        if let legacy = defaults.string(forKey: InvictusActivityIPC.pendingActionKey) {
+            pending.insert(legacy, at: 0)
+            defaults.removeObject(forKey: InvictusActivityIPC.pendingActionKey)
         }
-        defaults.removeObject(forKey: InvictusActivityIPC.pendingActionKey)
-        DispatchQueue.main.async { [weak self] in
-            // `load()` pode acontecer antes de Challenges registrar seu
-            // listener. O terceiro argumento faz o Capacitor guardar o evento
-            // e entregá-lo assim que o listener existir.
-            self?.notifyListeners("activityAction", data: ["action": raw], retainUntilConsumed: true)
+        guard !pending.isEmpty else { return }
+
+        // Remova o lote durável só depois de copiá-lo localmente. Cada evento é
+        // retido pelo Capacitor se o listener JS ainda não existir, então todos
+        // os toques do usuário sobrevivem ao cold/headless start sem que um
+        // segundo toque sobrescreva o primeiro.
+        defaults.removeObject(forKey: InvictusActivityIPC.pendingActionQueueKey)
+        let validActions = pending.compactMap { InvictusActivityIPC.Action(rawValue: $0)?.rawValue }
+        for raw in validActions {
+            DispatchQueue.main.async { [weak self] in
+                self?.notifyListeners("activityAction", data: ["action": raw], retainUntilConsumed: true)
+            }
         }
     }
 
