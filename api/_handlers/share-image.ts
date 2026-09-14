@@ -65,11 +65,11 @@ async function trustedRemoteImageBuffer(value: unknown): Promise<Buffer | null> 
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const rawToken = req.query.id;
-  if (typeof rawToken !== 'string') return res.status(400).send('Invalid share');
+  const { id } = req.query;
+  if (typeof id !== 'string') return res.status(400).send('Invalid share');
 
   try {
-    const grant = await resolveActivityShareGrant(rawToken);
+    const grant = await resolveActivityShareGrant(id);
     if (!grant) return res.status(404).send('Share not found');
 
     const sourceDoc = await db.collection(grant.source).doc(grant.activityId).get();
@@ -82,59 +82,76 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!userDoc.exists || !isActiveAccountState(userDoc.data())) return res.status(404).send('Share unavailable');
     const user: any = userDoc.data() || { displayName: 'Atleta' };
 
+    // Create 1200x630 canvas
     const width = 1200;
     const height = 630;
     const image = new Jimp(width, height, '#0c0d10');
 
+    // 1. Process Background Image. O layout continua identico ao aprovado;
+    // somente a origem dos bytes foi endurecida contra SSRF e payload gigante.
     if (workout.photoUrl) {
       try {
         const bgBuffer = dataImageBuffer(workout.photoUrl) || await trustedRemoteImageBuffer(workout.photoUrl);
         if (bgBuffer) {
           const bgImage = await Jimp.read(bgBuffer);
+          // Resize and center background
           bgImage.cover(width, height);
-          bgImage.blur(2);
+          bgImage.blur(2); // Light blur for style
+          // Composite
           image.composite(bgImage, 0, 0);
         }
       } catch (err) {
-        console.warn('[ShareImage] Falha ao renderizar foto autorizada:', err);
+        console.warn('Failed to load workout photo for share image:', err);
       }
     }
 
+    // 2. Add Overlay Gradient (Bottom to Top)
+    // We'll simulate a gradient with a semi-transparent rect
     const overlay = new Jimp(width, height, '#000000');
     overlay.opacity(0.6);
     image.composite(overlay, 0, 0);
 
+    // 3. Load Fonts
     const fontTitle = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE);
     const fontLabel = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
     const fontXP = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
 
-    const displayName = typeof user.displayName === 'string' && user.displayName.trim() ? user.displayName.trim() : 'Atleta';
-    const handle = displayName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9_.-]/g, '').slice(0, 40) || 'atleta';
+    // 4. Draw Header
+    const displayName = typeof user.displayName === 'string' && user.displayName.trim() ? user.displayName : 'Atleta';
     image.print(fontTitle, 60, 60, 'INVICTUS');
-    image.print(fontLabel, 60, 130, `@${handle}`);
+    image.print(fontLabel, 60, 130, `@${displayName.toLowerCase().replace(/\s+/g, '')}`);
 
+    // 5. Draw Main Stats (XP)
     const activityState = resolveActivityState(workout);
     const points = Number.isFinite(Number(workout.activityXpAwarded ?? workout.points)) ? Number(workout.activityXpAwarded ?? workout.points) : 0;
     const xpText = points > 0 ? `+${points} XP` : activityState.isCompleted ? 'CONCLUIDA' : 'ATIVIDADE';
-    const xpBg = new Jimp(220, 60, '#00E676');
+    // Background for XP badge (using moove green #00E676)
+    const xpBg = new Jimp(200, 60, '#00E676');
     image.composite(xpBg, 60, height - 120);
     image.print(fontXP, 80, height - 110, xpText);
 
-    const typeLabel = (workout.type === 'workout' ? 'TREINO'
-      : workout.type === 'cardio' ? 'CARDIO'
-        : workout.type === 'diet' ? 'DIETA' : 'ATIVIDADE').toUpperCase();
-    image.print(fontLabel, 320, height - 110, typeLabel);
-
-    if (Number(workout.distance) > 0) {
-      image.print(fontLabel, 620, height - 110, `${Number(workout.distance).toFixed(2)} KM`);
-    } else if (Number.isFinite(Number(workout.duration))) {
-      image.print(fontLabel, 620, height - 110, `${Number(workout.duration)} MIN`);
+    // 6. Draw Activity Type & Details
+    const typeLabel = (workout.type === 'workout' ? 'TREINO 🔥' :
+                      workout.type === 'cardio' ? 'CARDIO 🏃' :
+                      workout.type === 'diet' ? 'DIETA 🥗' : 'ATIVIDADE').toUpperCase();
+    
+    image.print(fontLabel, 300, height - 110, typeLabel);
+    
+    if (workout.distance > 0) {
+      image.print(fontLabel, 600, height - 110, `${workout.distance.toFixed(2)} KM`);
+    } else {
+      image.print(fontLabel, 600, height - 110, `${workout.duration} MIN`);
     }
 
+    // 7. Watermark
     image.print(fontLabel, width - 300, height - 60, 'INVICTUS.APP');
-    const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
 
+    // 8. Output Image
+    const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
+    
     res.setHeader('Content-Type', 'image/png');
+    // Token revogado precisa deixar de servir rapidamente; o conteúdo visual
+    // permanece o mesmo, apenas a janela de cache cai para 60 segundos.
     res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.send(buffer);
