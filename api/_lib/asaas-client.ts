@@ -35,6 +35,7 @@ export interface AsaasTransferResult {
   id: string;
   status: string;
   value: number;
+  externalReference?: string;
   raw: any;
 }
 
@@ -102,15 +103,21 @@ export class AsaasClient {
     externalReference?: string;
   }): Promise<AsaasTransferResult> {
     const { value, pixKey, pixKeyType, description, externalReference } = params;
-    if (!value || value <= 0) throw new Error('Valor da transferência PIX deve ser maior que zero.');
+    if (!Number.isFinite(value) || value <= 0) throw new Error('Valor da transferência PIX deve ser maior que zero.');
     if (!pixKey || !pixKey.trim()) throw new Error('Chave PIX de destino é obrigatória.');
     const normalizedReference = externalReference?.trim();
-    if (normalizedReference && (!/^[A-Za-z0-9_-]{8,200}$/.test(normalizedReference))) {
+    if (normalizedReference && (
+      normalizedReference.length < 8
+      || normalizedReference.length > 500
+      || normalizedReference.includes('/')
+      || /[\u0000-\u001F\u007F]/.test(normalizedReference)
+    )) {
       throw new Error('Referência externa da transferência PIX é inválida.');
     }
 
     const response = await fetch(getAsaasBaseUrl() + '/transfers', {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000),
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'InvictusPerformance/1.0 (Node.js)',
@@ -131,10 +138,17 @@ export class AsaasClient {
     if (typeof data?.id !== 'string' || !data.id.trim()) {
       throw new Error('Asaas não devolveu o identificador da transferência PIX. A operação exige conciliação antes de nova tentativa.');
     }
+    if (typeof data.value !== 'number' || !Number.isFinite(data.value) || Math.abs(data.value - value) >= 0.01) {
+      throw new Error('Asaas devolveu valor ausente ou divergente para a transferência PIX. A operação exige conciliação.');
+    }
+    if (normalizedReference && typeof data.externalReference === 'string' && data.externalReference.trim() !== normalizedReference) {
+      throw new Error('Asaas devolveu referência externa divergente para a transferência PIX. A operação exige conciliação.');
+    }
     return {
-      id: data.id,
+      id: data.id.trim(),
       status: data.status || 'PENDING',
-      value: typeof data.value === 'number' ? data.value : value,
+      value: data.value,
+      externalReference: typeof data.externalReference === 'string' ? data.externalReference : normalizedReference,
       raw: data
     };
   }
