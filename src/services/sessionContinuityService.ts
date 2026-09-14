@@ -1,14 +1,18 @@
 import type { ActivitySession } from '../types';
 import { activityService } from './activityService';
-import { nativeBackgroundLocationService, type NativeTrackedLocation } from './nativeBackgroundLocationService';
+import {
+  nativeBackgroundLocationService,
+  type NativeBufferedLocations,
+  type NativeTrackedLocation,
+} from './nativeBackgroundLocationService';
 import { webGpsTrackingService } from './webGpsTrackingService';
 
-async function readNativeBufferSafely(): Promise<NativeTrackedLocation[]> {
+async function readNativeBufferSafely(): Promise<NativeBufferedLocations> {
   try {
-    return await nativeBackgroundLocationService.readBuffered();
+    return await nativeBackgroundLocationService.readBufferedSnapshot();
   } catch (error) {
     console.warn('[SessionContinuity] Não foi possível ler o buffer nativo antes da restauração:', error);
-    return [];
+    return { sessionId: null, locations: [] };
   }
 }
 
@@ -18,6 +22,7 @@ async function readNativeBufferSafely(): Promise<NativeTrackedLocation[]> {
  * persistido pelo native antes do webGpsTrackingService conseguir lê-lo.
  * Capturamos esse buffer antes e, nesse caso excepcional, reintroduzimos apenas
  * a cauda posterior ao último checkpoint conhecido para não reordenar a rota.
+ * O chamador só chega aqui quando o próprio plugin comprovou o mesmo sessionId.
  */
 function replayRecoveredTail(session: ActivitySession, buffered: NativeTrackedLocation[]) {
   if (!session.requiresGpsDistance || session.isPaused || buffered.length === 0) return;
@@ -56,9 +61,11 @@ function replayRecoveredTail(session: ActivitySession, buffered: NativeTrackedLo
  * Gate 1 — continuidade de sessão.
  *
  * - sessão local encontrada: reconecta o snapshot visual e usa `resume()` no
- *   plugin nativo, preservando o buffer GPS persistido antes do restart;
- * - sessão só encontrada no servidor: captura o buffer nativo ANTES do restore
- *   antigo e reaplica somente a cauda perdida depois que a sessão volta;
+ *   plugin nativo, preservando o buffer GPS somente quando o owner nativo é a
+ *   mesma sessão;
+ * - sessão só encontrada no servidor: captura owner+buffer nativos ANTES do
+ *   restore e reaplica a cauda apenas se o sessionId persistido for idêntico;
+ * - buffer antigo, órfão ou de outra conta falha fechado e é ignorado;
  * - sessão pausada nunca religa GPS automaticamente;
  * - falha ao reler o buffer não impede a recuperação da sessão em si.
  */
@@ -70,15 +77,20 @@ export async function restoreAndResumeActiveSession(): Promise<ActivitySession |
   if (!restored) return null;
 
   if (!localBeforeRestore) {
-    replayRecoveredTail(restored, bufferedBeforeRestore);
+    if (bufferedBeforeRestore.sessionId === restored.id) {
+      replayRecoveredTail(restored, bufferedBeforeRestore.locations);
+    } else if (bufferedBeforeRestore.locations.length > 0) {
+      console.warn('[SessionContinuity] Buffer GPS persistido pertence a outra sessão; pontos antigos foram ignorados.');
+    }
   }
 
   const current = activityService.getCurrentSession() || restored;
   if (!current.requiresGpsDistance || current.isPaused) return current;
 
   if (localBeforeRestore) {
-    // A ponte visual começa primeiro; assim ela já está inscrita quando o
-    // plugin retoma a emissão de novos pontos. `resume()` não apaga o buffer.
+    // A ponte visual começa primeiro; readBuffered() já falha fechado se o
+    // owner salvo não for current.id. Em seguida resume() preserva somente o
+    // buffer com o mesmo sessionId e limpa qualquer estado estrangeiro.
     webGpsTrackingService.start(current);
     try {
       await nativeBackgroundLocationService.resume(current.id);
