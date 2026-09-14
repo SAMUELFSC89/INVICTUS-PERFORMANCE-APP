@@ -1,4 +1,5 @@
 import { db, cors, verifyAuth } from '../_lib/common.js';
+import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 import { sanitizeWorkoutHealthRecord } from '../_lib/workout-health-record.js';
 import { chunkHeartRateSamples, heartRateSeriesHash } from '../_lib/heart-rate-audit-server.js';
 
@@ -90,8 +91,7 @@ export default async function handler(req: any, res: any) {
   if (!auth) return res.status(401).json({ error: 'Autenticação necessária.' });
 
   const userSnap = await db.collection('users').doc(auth.uid).get();
-  const role = userSnap.exists ? userSnap.data()?.role : undefined;
-  if (role !== 'admin') {
+  if (!userSnap.exists || !hasActiveAdminAuthority(userSnap.data())) {
     return res.status(403).json({ error: 'Acesso administrativo necessário.' });
   }
 
