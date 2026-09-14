@@ -80,4 +80,17 @@ describe('Gate 1 — integridade de deep links e Live Activity nativa', () => {
     expect(plugin).toContain('retainUntilConsumed: true');
     expect(plugin).toContain('InvictusActivityIPC.pendingActionKey');
   });
+
+  it('não usa o cache JS como fonte de verdade depois de recriar o WebView', () => {
+    const service = read('src/services/activityLiveActivityService.ts');
+    const updateStart = service.indexOf('async update(');
+    const stopStart = service.indexOf('async stop()', updateStart);
+    const updateBlock = service.slice(updateStart, stopStart);
+    const stopBlock = service.slice(stopStart);
+
+    expect(updateBlock).not.toContain('!isRunning');
+    expect(updateBlock).toContain('await InvictusActivity.update({');
+    expect(stopBlock).not.toContain('!isRunning');
+    expect(stopBlock).toContain('await InvictusActivity.end()');
+  });
 });
