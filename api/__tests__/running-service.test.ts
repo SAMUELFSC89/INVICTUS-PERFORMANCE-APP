@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { RunningService } from '../_services/running/running-service.js';
 import { RunningRepository } from '../_repositories/running-repository.js';
 
@@ -6,20 +8,12 @@ describe('RunningService', () => {
   let mockRunningRepo: jest.Mocked<RunningRepository>;
 
   beforeEach(() => {
-    jest.spyOn(Math, 'random').mockReturnValue(0.99);
     mockRunningRepo = {
       getUserStats: jest.fn().mockResolvedValue(null),
-      getRanking: jest.fn().mockResolvedValue([
-        { userId: 'u1', displayName: 'Atleta 1', km: 12.5 }
-      ]),
       getRunHistory: jest.fn().mockResolvedValue([])
     } as any;
 
     runningService = new RunningService(mockRunningRepo);
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
   });
 
   test('getUserStats should return default stats if user has no records', async () => {
@@ -28,20 +22,25 @@ describe('RunningService', () => {
     expect(stats.best_run_km_month).toBe(0);
   });
 
-  // #96: os dois testes de addRun() foram removidos junto com o metodo --
-  // era a 5a formula de pontuacao paralela, sem chamador vivo no app. Ver
-  // running-service.ts e running-repository.ts.
-
-  test('getRanking should return cached or fetched ranking list', async () => {
-    const res = await runningService.getRanking('month', 'official');
-    expect(res.ranking).toBeDefined();
-    expect(res.ranking.length).toBe(1);
-    expect(res.ranking[0].displayName).toBe('Atleta 1');
-  });
-
   test('getHistory should return user history list', async () => {
     const res = await runningService.getHistory('user123');
     expect(res.history).toBeDefined();
     expect(mockRunningRepo.getRunHistory).toHaveBeenCalledWith('user123', 10);
+  });
+});
+
+describe('Contrato — ranking de corrida legado permanece desativado', () => {
+  test('handler responde 410 e nenhuma camada conserva a fórmula paralela', () => {
+    const handler = readFileSync(resolve(process.cwd(), 'api/_handlers/running.ts'), 'utf8');
+    const service = readFileSync(resolve(process.cwd(), 'api/_services/running/running-service.ts'), 'utf8');
+    const repository = readFileSync(resolve(process.cwd(), 'api/_repositories/running-repository.ts'), 'utf8');
+
+    expect(handler).toContain("case 'ranking'");
+    expect(handler).toContain("new AppError('Ranking de corrida legado desativado. Use o ranking IGA da academia.', 410)");
+    expect(service).not.toContain('getRanking(');
+    expect(service).not.toContain('totalPool');
+    expect(service).not.toContain('19.90');
+    expect(repository).not.toContain('getRanking(');
+    expect(repository).not.toContain("where('is_paid_running'");
   });
 });
