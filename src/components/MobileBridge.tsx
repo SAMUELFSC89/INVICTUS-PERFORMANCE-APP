@@ -7,7 +7,7 @@ import { auth, getRedirectResult } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { WearableManager } from '../services/wearables/WearableManager';
 import { healthSummaryService } from '../services/healthSummaryService';
-import { parseNativeStravaCallback, resolveNativeDeepLinkRoute } from '../lib/nativeDeepLinks';
+import { describeNativeDeepLinkForLog, parseNativeStravaCallback, resolveNativeDeepLinkRoute } from '../lib/nativeDeepLinks';
 
 // Saúde passiva precisa chegar com baixa latência enquanto o app está em uso.
 // O iOS não garante timers JavaScript com o app suspenso/encerrado; nesses
@@ -84,7 +84,10 @@ export function MobileBridge() {
 
     const handleIncomingUrl = async (rawUrl: string) => {
       if (disposed || !rawUrl) return;
-      console.log('[MobileBridge] Deep link recebido:', rawUrl);
+      // Nunca grave a URL bruta: callbacks OAuth/Strava podem carregar code,
+      // state ou access_token na query/fragment. O diagnóstico recebe somente
+      // scheme/host/path, sem segredos transitórios.
+      console.log('[MobileBridge] Deep link recebido:', describeNativeDeepLinkForLog(rawUrl));
 
       try {
         await Browser.close();
