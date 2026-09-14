@@ -5,6 +5,7 @@ import { getFirestore, Firestore, FieldValue, FieldPath } from 'firebase-admin/f
 import { getAuth } from 'firebase-admin/auth';
 import fs from 'fs';
 import path from 'path';
+import { isActiveAccountState } from './account-state.js';
 
 // Helper to fix project ID (ensure gen-lang-client- prefix for numeric IDs)
 function fixProjectId(id?: string): string | undefined {
@@ -248,9 +249,9 @@ export async function testConnection() {
 // Run test connection asynchronously only if requested or in heavy debug
 // testConnection().catch(() => {});
 
-// 6. Validar token do usuário corretamente.
-// Gate 1: checkRevoked=true faz logout administrativo/exclusão valer imediatamente
-// nos endpoints protegidos, em vez de aceitar o ID token antigo até a expiração.
+// 6. Validar token e lifecycle do usuário.
+// Conta nova ainda pode não ter users/{uid}; nesse caso só é aceita quando não
+// existe tombstone de exclusão. Perfis existentes precisam estar ativos.
 export async function verifyAuth(req: VercelRequest): Promise<{ uid: string; email?: string } | null> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -261,12 +262,29 @@ export async function verifyAuth(req: VercelRequest): Promise<{ uid: string; ema
   try {
     const authInstance = getAuth(app);
     const decodedToken = await authInstance.verifyIdToken(token, true);
-    console.log(`[AUTH] [VERIFY_TOKEN] [${decodedToken.uid}] [SUCCESS] Token de autenticação verificado`);
+    const profileSnap = await db.collection('users').doc(decodedToken.uid).get();
+
+    if (profileSnap.exists) {
+      if (!isActiveAccountState(profileSnap.data())) {
+        console.warn(`[AUTH] [VERIFY_TOKEN] [${decodedToken.uid}] [REJECTED] Conta inativa.`);
+        return null;
+      }
+    } else {
+      // Usuário recém-autenticado pode ainda estar no onboarding. Tombstone
+      // impede que uma conta realmente excluída seja recriada como "nova".
+      const tombstone = await db.collection('deleted_users').doc(decodedToken.uid).get();
+      if (tombstone.exists) {
+        console.warn(`[AUTH] [VERIFY_TOKEN] [${decodedToken.uid}] [REJECTED] Conta excluída.`);
+        return null;
+      }
+    }
+
+    console.log(`[AUTH] [VERIFY_TOKEN] [${decodedToken.uid}] [SUCCESS] Token e lifecycle verificados`);
     return { uid: decodedToken.uid, email: decodedToken.email };
   } catch (error: any) {
     // Nunca decodifique o payload como fallback: JWT sem verificação de
     // assinatura permite que qualquer pessoa forje uid, email e permissões.
-    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [REJECTED] Token inválido ou revogado (${error?.message || 'erro de verificação'}).`);
+    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [REJECTED] Token inválido, revogado ou lifecycle indisponível (${error?.message || 'erro de verificação'}).`);
     return null;
   }
 }
