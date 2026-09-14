@@ -4,6 +4,7 @@ import { PIXWithdrawal, WithdrawalStatus, WithdrawalConfig } from '../../src/typ
 import { AsaasClient } from './asaas-client.js';
 import { notificationService } from '../_services/notification-service.js';
 import { isProUser } from './entitlement.js';
+import { isActiveAccountState } from './account-state.js';
 
 export const DEFAULT_WITHDRAWAL_CONFIG: WithdrawalConfig = {
   minWithdrawalAmount: 20, // R$ 20,00
@@ -82,6 +83,9 @@ export class WithdrawalEngine {
 
     try {
       const userDoc = await db.collection('users').doc(userId).get();
+      if (!userDoc.exists || !isActiveAccountState(userDoc.data())) {
+        return { score: 0, passed: false, flags: ['ACCOUNT_INACTIVE'], details: { amount } };
+      }
       const userData = userDoc.data() || {};
 
       const createdAt = userData.createdAt ? new Date(userData.createdAt).getTime() : Date.now();
@@ -120,7 +124,7 @@ export class WithdrawalEngine {
         score -= 15;
       }
 
-      const passed = score >= 50 && !userData.isBlocked && !userData.isBanned;
+      const passed = score >= 50 && isActiveAccountState(userData);
 
       return {
         score,
@@ -199,7 +203,7 @@ export class WithdrawalEngine {
     if (!userDoc.exists) throw new Error('Usuário não encontrado.');
     const userData = userDoc.data() || {};
 
-    if (userData.isBlocked || userData.isBanned) {
+    if (!isActiveAccountState(userData)) {
       throw new Error('Esta conta está suspensa para operações financeiras.');
     }
 
@@ -374,11 +378,17 @@ export class WithdrawalEngine {
     const docRef = db.collection('withdrawals').doc(withdrawalId);
 
     // 1. Trava atomica contra duplo clique / requisicoes concorrentes: le o
-    // saque e ja marca como 'processing' dentro de UMA transacao do Firestore.
+    // saque, revalida o titular e ja marca como 'processing' na mesma transacao.
     await db.runTransaction(async (tx: any) => {
       const snap = await tx.get(docRef);
       if (!snap.exists) throw new Error('Solicitação de saque não encontrada.');
       const data = snap.data() as PIXWithdrawal & Record<string, any>;
+
+      if (!data.userId) throw new Error('Saque sem usuário associado.');
+      const userSnap = await tx.get(db.collection('users').doc(data.userId));
+      if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
+        throw new Error('Conta do titular não está ativa para operações financeiras. Rejeite o saque para liberar o saldo bloqueado.');
+      }
 
       if (data.status === 'processing') {
         throw new Error('Este saque já está sendo processado agora. Aguarde a conciliação antes de tentar novamente.');
