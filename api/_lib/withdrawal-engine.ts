@@ -12,6 +12,13 @@ export const DEFAULT_WITHDRAWAL_CONFIG: WithdrawalConfig = {
   updatedAt: new Date().toISOString()
 };
 
+function normalizeWithdrawalReference(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const reference = value.trim();
+  if (!reference.startsWith('pix_req_') || reference.length > 500 || reference.includes('/')) return null;
+  return reference;
+}
+
 export class WithdrawalEngine {
   static async getConfig(): Promise<WithdrawalConfig> {
     try {
@@ -368,20 +375,19 @@ export class WithdrawalEngine {
 
     // 1. Trava atomica contra duplo clique / requisicoes concorrentes: le o
     // saque e ja marca como 'processing' dentro de UMA transacao do Firestore.
-    // Se um segundo clique chegar enquanto o primeiro ainda esta em andamento,
-    // ele ve o status 'processing' e falha aqui mesmo, ANTES de chamar o
-    // Asaas de novo (o que antes gerava erro de transferencia duplicada
-    // direto na API do Asaas, com uma mensagem confusa pro admin).
     await db.runTransaction(async (tx: any) => {
       const snap = await tx.get(docRef);
       if (!snap.exists) throw new Error('Solicitação de saque não encontrada.');
-      const data = snap.data() as PIXWithdrawal;
+      const data = snap.data() as PIXWithdrawal & Record<string, any>;
 
       if (data.status === 'processing') {
-        throw new Error('Este saque já está sendo processado agora (provável duplo clique). Aguarde alguns segundos, atualize a lista e confira o status antes de tentar de novo.');
+        throw new Error('Este saque já está sendo processado agora. Aguarde a conciliação antes de tentar novamente.');
       }
       if (data.status === 'paid') {
         throw new Error('Este saque já foi pago anteriormente. Nenhuma nova transferência foi enviada ao Asaas.');
+      }
+      if (data.providerTransferId) {
+        throw new Error('Este saque já está vinculado a uma transferência no Asaas. Aguarde a conciliação.');
       }
       if (data.status !== 'pending' && data.status !== 'under_review' && data.status !== 'approved') {
         throw new Error("Não é possível processar pagamento: saque está com status '" + data.status + "'.");
@@ -389,30 +395,48 @@ export class WithdrawalEngine {
 
       tx.set(docRef, {
         status: 'processing',
+        paymentProvider: 'asaas',
+        providerExternalReference: withdrawalId,
         providerSubmissionStartedAt: new Date().toISOString(),
+        reconciliationRequired: false,
         updatedAt: new Date().toISOString()
       }, { merge: true });
     });
 
     const docSnap = await docRef.get();
-    const withdrawal = docSnap.data() as PIXWithdrawal;
+    const withdrawal = docSnap.data() as PIXWithdrawal & Record<string, any>;
 
     try {
-      // 2. Dispara a transferência PIX. O saldo permanece bloqueado até o
-      // webhook de conclusão; aceitar a criação não é o mesmo que PIX pago.
+      // 2. O withdrawalId viaja no externalReference. Assim, mesmo se o Asaas
+      // aceitar a transferencia e a resposta HTTP se perder, authorization/
+      // webhook conseguem reencontrar o saque canonico sem emitir um segundo PIX.
       const transfer = await AsaasClient.transferPix({
         value: withdrawal.amount,
         pixKey: withdrawal.pixKey,
         pixKeyType: withdrawal.pixKeyType,
-        description: 'Saque Invictus Performance - ' + withdrawal.userDisplayName
+        description: 'Saque Invictus Performance - ' + withdrawal.userDisplayName,
+        externalReference: withdrawalId
       });
+
+      if (!Number.isFinite(Number(transfer.value)) || Math.abs(Number(transfer.value) - Number(withdrawal.amount)) >= 0.01) {
+        await docRef.set({
+          reconciliationRequired: true,
+          providerTransferId: transfer.id,
+          providerStatus: transfer.status,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        throw new Error('Valor devolvido pelo Asaas diverge do saque interno. Transferência exige conciliação.');
+      }
+
       const updated: any = {
         status: 'processing',
         updatedAt: new Date().toISOString(),
         reviewerId,
         paymentProvider: 'asaas',
         providerTransferId: transfer.id,
-        providerStatus: transfer.status
+        providerExternalReference: withdrawalId,
+        providerStatus: transfer.status,
+        reconciliationRequired: false
       };
 
       await docRef.set(updated, { merge: true });
@@ -420,23 +444,31 @@ export class WithdrawalEngine {
       // Alguns ambientes do Asaas podem devolver a transferência já concluída.
       // Nesse caso aplicamos a mesma rotina idempotente do webhook.
       if (transfer.status === 'DONE') {
-        await this.handleAsaasTransferWebhook(transfer.id, 'TRANSFER_DONE', transfer.status);
+        await this.handleAsaasTransferWebhook(
+          transfer.id,
+          'TRANSFER_DONE',
+          transfer.status,
+          undefined,
+          withdrawalId,
+          transfer.value
+        );
         const settledSnap = await docRef.get();
         return settledSnap.data() as PIXWithdrawal;
       }
 
-      return { ...withdrawal, ...updated };
+      return { ...withdrawal, ...updated } as PIXWithdrawal;
     } catch (err: any) {
       // Depois da chamada ao provedor não há como distinguir com segurança uma
       // falha de rede de uma transferência aceita cuja resposta se perdeu.
-      // Portanto nunca reabrimos automaticamente o saque; ele exige
-      // conciliação com o Asaas para impedir PIX duplicado.
+      // externalReference permite que authorization/webhook recupere o vínculo.
       await docRef.set({
         status: 'processing',
+        paymentProvider: 'asaas',
+        providerExternalReference: withdrawalId,
         reconciliationRequired: true,
         updatedAt: new Date().toISOString()
       }, { merge: true }).catch((persistError) =>
-        console.error('[WithdrawalEngine] Falha crítica ao marcar conciliação manual:', persistError)
+        console.error('[WithdrawalEngine] Falha crítica ao marcar conciliação:', persistError)
       );
       throw err;
     }
@@ -446,34 +478,83 @@ export class WithdrawalEngine {
     transferId: string,
     event: string,
     providerStatus: string,
-    failureReason?: string
+    failureReason?: string,
+    externalReference?: unknown,
+    providerValue?: unknown
   ): Promise<void> {
     if (!db) throw new Error('Database not initialized');
-    const snap = await db.collection('withdrawals').where('providerTransferId', '==', transferId).limit(1).get();
+    if (!transferId?.trim()) throw new Error('Transferência Asaas sem identificador.');
 
-    if (snap.empty) {
-      console.warn('[WithdrawalEngine] Webhook do Asaas recebido para transferId desconhecido:', transferId);
+    const canonicalTransferId = transferId.trim();
+    const normalizedReference = normalizeWithdrawalReference(externalReference);
+    const byTransferId = await db.collection('withdrawals')
+      .where('providerTransferId', '==', canonicalTransferId)
+      .limit(1)
+      .get();
+
+    let docRef: any = byTransferId.empty ? null : byTransferId.docs[0].ref;
+    if (!docRef && normalizedReference) {
+      const byReference = await db.collection('withdrawals').doc(normalizedReference).get();
+      if (byReference.exists) docRef = byReference.ref;
+    }
+
+    if (!docRef) {
+      console.warn('[WithdrawalEngine] Webhook do Asaas sem saque correspondente:', canonicalTransferId, normalizedReference || '(sem externalReference)');
       return;
     }
 
-    const docRef = snap.docs[0].ref;
-    const failed = event === 'TRANSFER_FAILED' || providerStatus === 'FAILED' || providerStatus === 'CANCELLED';
+    const failed = event === 'TRANSFER_FAILED'
+      || event === 'TRANSFER_CANCELLED'
+      || providerStatus === 'FAILED'
+      || providerStatus === 'CANCELLED';
     const succeeded = event === 'TRANSFER_DONE' || providerStatus === 'DONE';
+
     const result = await db.runTransaction(async (transaction: any): Promise<{ outcome: 'failed' | 'paid' | 'ignored'; withdrawal: PIXWithdrawal | null }> => {
       const freshSnap = await transaction.get(docRef);
       if (!freshSnap.exists) return { outcome: 'ignored', withdrawal: null };
       const withdrawal = freshSnap.data() as PIXWithdrawal & Record<string, any>;
+      const canonicalWithdrawalId = freshSnap.id;
 
-      if (!failed && !succeeded) {
+      if (normalizedReference && normalizedReference !== canonicalWithdrawalId) {
+        throw new Error('externalReference do Asaas não corresponde ao saque localizado.');
+      }
+      if (withdrawal.providerExternalReference && withdrawal.providerExternalReference !== canonicalWithdrawalId) {
+        throw new Error('Referência externa persistida no saque está inconsistente.');
+      }
+      if (withdrawal.providerTransferId && withdrawal.providerTransferId !== canonicalTransferId) {
+        throw new Error('Saque já está vinculado a outra transferência Asaas.');
+      }
+
+      const internalAmount = Number(withdrawal.amount);
+      const numericProviderValue = typeof providerValue === 'number' ? providerValue : Number.NaN;
+      if ((failed || succeeded) && (!Number.isFinite(numericProviderValue) || !Number.isFinite(internalAmount) || Math.abs(numericProviderValue - internalAmount) >= 0.01)) {
         transaction.set(docRef, {
+          providerTransferId: canonicalTransferId,
+          providerExternalReference: normalizedReference || canonicalWithdrawalId,
           providerStatus: providerStatus || event,
+          reconciliationRequired: true,
+          reconciliationReason: 'PROVIDER_AMOUNT_MISMATCH_OR_MISSING',
           updatedAt: new Date().toISOString()
         }, { merge: true });
+        throw new Error('Valor do webhook Asaas ausente ou divergente do saque interno.');
+      }
+
+      const providerBinding = {
+        paymentProvider: 'asaas',
+        providerTransferId: canonicalTransferId,
+        providerExternalReference: normalizedReference || canonicalWithdrawalId,
+        providerStatus: providerStatus || event,
+        reconciliationRequired: false,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!failed && !succeeded) {
+        transaction.set(docRef, providerBinding, { merge: true });
         return { outcome: 'ignored', withdrawal };
       }
 
       const operation = failed ? 'refund' : 'pay';
-      const settlementTxRef = db.collection('iv_transactions').doc(`tx_res_${operation}_${docRef.id}`);
+      const settlementTxRef = db.collection('iv_transactions').doc(`tx_res_${operation}_${canonicalWithdrawalId}`);
       const walletRef = db.collection('wallets').doc(withdrawal.userId);
       const [existingSettlement, walletSnap] = await Promise.all([
         transaction.get(settlementTxRef),
@@ -481,10 +562,7 @@ export class WithdrawalEngine {
       ]);
 
       if (existingSettlement.exists || withdrawal.status === (failed ? 'rejected' : 'paid')) {
-        transaction.set(docRef, {
-          providerStatus: providerStatus || (failed ? 'FAILED' : 'DONE'),
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
+        transaction.set(docRef, providerBinding, { merge: true });
         return { outcome: 'ignored', withdrawal };
       }
 
@@ -497,7 +575,7 @@ export class WithdrawalEngine {
       let blocked = Number(wallet.blockedBalance) || 0;
       const ecosystem = Number(wallet.ecosystemBalance) || 0;
       const promotional = Number(wallet.promotionalBalance) || 0;
-      const amount = Number(withdrawal.amount) || 0;
+      const amount = internalAmount;
       const legacyPaidRefund = failed && withdrawal.status === 'paid';
 
       if (legacyPaidRefund) {
@@ -532,16 +610,14 @@ export class WithdrawalEngine {
         createdAt: new Date().toISOString()
       });
       transaction.set(docRef, failed ? {
+        ...providerBinding,
         status: 'rejected',
-        providerStatus: providerStatus || 'FAILED',
         adminNote: 'Transferência falhou no Asaas: ' + (failureReason || 'sem detalhes'),
         refundProcessedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
       } : {
+        ...providerBinding,
         status: 'paid',
-        providerStatus: providerStatus || 'DONE',
         processedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
       }, { merge: true });
       return { outcome: failed ? 'failed' : 'paid', withdrawal };
     });
