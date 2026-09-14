@@ -45,8 +45,6 @@ const InvictusActivity = registerPlugin<InvictusActivityPlugin>('InvictusActivit
 // Igual ao throttle da notificação Android -- evita chamar a bridge nativa
 // a cada tick de 1s do cronômetro.
 const MIN_UPDATE_INTERVAL_MS = 5000;
-
-let isRunning = false;
 let lastUpdateAt = 0;
 let listenerHandle: PluginListenerHandle | null = null;
 
@@ -90,7 +88,6 @@ export const activityLiveActivityService = {
         title: buildTitle(session),
         distanceKm: distanceKm ?? 0,
       });
-      isRunning = true;
       lastUpdateAt = Date.now();
       // Chamada inicial explícita: garante que o estado de pausa/cronômetro
       // já nasce correto mesmo se start() usar valores default.
@@ -101,16 +98,14 @@ export const activityLiveActivityService = {
   },
 
   async update(session: ActivitySession, elapsedSeconds: number, distanceKm?: number, force = false): Promise<void> {
-    if (!isIOS() || !isRunning) return;
+    if (!isIOS()) return;
     const now = Date.now();
     if (!force && now - lastUpdateAt < MIN_UPDATE_INTERVAL_MS) return;
     lastUpdateAt = now;
     try {
-      // O widget calcula o cronômetro sozinho a partir de referenceStartMs
-      // (contando "agora - referenceStart") enquanto não está pausado --
-      // por isso deslocamos o "início de referência" para o instante que,
-      // subtraído de agora, resulta no elapsedSeconds já calculado (com
-      // pausa) no lado JS. Pausado, manda o valor congelado direto.
+      // Depois de um cold start não existe estado JS confiável dizendo se a
+      // Live Activity nativa ainda está viva. O plugin atualiza todas as
+      // Activities Invictus existentes; se não houver nenhuma, é um no-op.
       const referenceStartMs = now - elapsedSeconds * 1000;
       await InvictusActivity.update({
         isPaused: Boolean(session.isPaused),
@@ -125,9 +120,11 @@ export const activityLiveActivityService = {
   },
 
   async stop(): Promise<void> {
-    if (!isIOS() || !isRunning) return;
-    isRunning = false;
+    if (!isIOS()) return;
     try {
+      // Também é best-effort após restart. Mesmo que esta instância JS nunca
+      // tenha chamado start(), o plugin nativo consegue encerrar Activities
+      // sobreviventes do processo anterior.
       await InvictusActivity.end();
     } catch (err) {
       console.warn('[activityLiveActivityService] stop falhou:', err);

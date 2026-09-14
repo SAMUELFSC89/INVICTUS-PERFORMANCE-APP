@@ -61,7 +61,11 @@ public struct InvictusActivityAttributes: ActivityAttributes {
 /// caso a bridge/listener JavaScript ainda não tenha sido criada.
 public enum InvictusActivityIPC {
     public static let appGroupId = "group.com.desafiosemdesculpa.app.activity"
+    // A chave singular existiu nas primeiras versões da Live Activity. Ela é
+    // mantida apenas para migração; novos intents sempre entram na fila.
     public static let pendingActionKey = "invictus.activity.pendingAction"
+    public static let pendingActionQueueKey = "invictus.activity.pendingActions.v2"
+    public static let maxPendingActionCount = 16
     public static let darwinNotificationName = "com.desafiosemdesculpa.app.activityAction" as CFString
 
     /// Ações que um App Intent dos botões da Live Activity pode disparar.
@@ -76,7 +80,22 @@ public enum InvictusActivityIPC {
 
 private func postPendingActivityAction(_ action: InvictusActivityIPC.Action) {
     guard let defaults = UserDefaults(suiteName: InvictusActivityIPC.appGroupId) else { return }
-    defaults.set(action.rawValue, forKey: InvictusActivityIPC.pendingActionKey)
+
+    // A implementação antiga mantinha uma única string. Dois toques enquanto
+    // WebView/bridge ainda não existiam faziam o segundo sobrescrever o
+    // primeiro (inclusive um "Finalizar"). Agora preservamos ordem numa fila
+    // pequena e migramos qualquer ação legada ainda pendente.
+    var pending = defaults.stringArray(forKey: InvictusActivityIPC.pendingActionQueueKey) ?? []
+    if let legacy = defaults.string(forKey: InvictusActivityIPC.pendingActionKey) {
+        pending.append(legacy)
+        defaults.removeObject(forKey: InvictusActivityIPC.pendingActionKey)
+    }
+    pending.append(action.rawValue)
+    if pending.count > InvictusActivityIPC.maxPendingActionCount {
+        pending.removeFirst(pending.count - InvictusActivityIPC.maxPendingActionCount)
+    }
+    defaults.set(pending, forKey: InvictusActivityIPC.pendingActionQueueKey)
+
     CFNotificationCenterPostNotification(
         CFNotificationCenterGetDarwinNotifyCenter(),
         CFNotificationName(InvictusActivityIPC.darwinNotificationName),
