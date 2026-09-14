@@ -11,6 +11,7 @@ export interface IGASession {
   id?: string;
   type: 'workout' | 'cardio' | 'running' | 'recovery' | string;
   durationMinutes: number;
+  /** FC média medida da sessão. Ausência de FC não pode ser substituída por estimativa. */
   avgHeartRate?: number;
   maxHeartRate?: number;
   /** Série de FC validada da sessão. Quando presente, é a fonte preferida para I. */
@@ -32,7 +33,7 @@ export interface IGAUserProfile {
 }
 
 export interface FrequencyConfig {
-  /** Máximo de sessões usadas no cálculo. 6 representa a faixa "6+". */
+  /** Máximo de sessões usadas no cálculo. */
   maxSessions: number;
   /** Mantido por compatibilidade com configurações antigas; IGA 2.0 usa scoreBySessions. */
   targetFrequency: number;
@@ -52,12 +53,9 @@ export interface TimeConfig {
 }
 
 export interface IntensityConfig {
-  /** Campos antigos preservados para compatibilidade/fallback de sessões sem série de FC. */
+  /** Referência legada usada apenas por normalização explícita de FC relativa. */
   targetRelativeHR: number;
   minRelativeHR: number;
-  defaultWorkoutRelativeHR: number;
-  defaultCardioRelativeHR: number;
-  defaultOtherRelativeHR: number;
   /** Fronteiras Z1/Z2/Z3/Z4/Z5 como fração da FC máxima. */
   zoneBoundaries: [number, number, number, number];
   /** Scores das zonas. Z3=100; Z4 é o maior bônus; Z5 não supera Z4. */
@@ -96,9 +94,9 @@ export interface IGASessionAudit {
   relativeHR: number;
   /** Fator de tempo da sessão (ex.: 1.00 aos 60 min; 1.04 aos 90 min). */
   timeFactor?: number;
-  /** Fator de intensidade da sessão. Z3=1.00; Z4 pode chegar a 1.15. */
+  /** Fator de intensidade da sessão. Sem FC medida, deve ser 0. */
   intensityFactor?: number;
-  intensitySource?: 'samples' | 'average' | 'estimated';
+  intensitySource?: 'samples' | 'average' | 'missing';
   heartRateSampleCount?: number;
   expectedCalories: number;
   informedCalories: number;
@@ -119,7 +117,7 @@ export interface IGACalculationResult {
   Fn: number;
   /** Fator T médio por sessão: 1.00 = 60 min; 1.04 = 90 min. */
   Tn: number;
-  /** Fator I médio ponderado: 1.00 = Z3; Z4 satura em até 1.15. */
+  /** Fator I médio ponderado: 1.00 = Z3; Z4 satura em até 1.15. Sem FC medida, I da sessão = 0. */
   In: number;
   /** ∛((Fn×100) × (Tn×100) × (In×100)). */
   igaBase: number;

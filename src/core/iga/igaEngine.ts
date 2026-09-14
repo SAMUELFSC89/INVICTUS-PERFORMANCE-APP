@@ -1,7 +1,7 @@
 /**
  * IGA 2.0 (Índice Global de Atividade) - Core Calculation Engine
  *
- * Fórmula oficial:
+ * Fórmula oficial final:
  * IGA = ∛(F × T × I)
  *
  * Na implementação os fatores são armazenados como relativos (1.00 = 100),
@@ -10,7 +10,8 @@
  * Regras centrais:
  * - F: consistência semanal com curva 15/30/55/80/100 e máximo útil de 5 sessões.
  * - T: qualidade de duração POR SESSÃO; retorno fortemente decrescente após 60 min.
- * - I: qualidade da FC por zonas, com suavização e transição contínua de ±5 bpm.
+ * - I: qualidade da FC medida por zonas, com suavização e transição contínua de ±5 bpm.
+ * - sem FC medida disponível, o fator de intensidade da sessão é 0.
  * - Z4 é a maior recompensa e satura; Z5 não supera Z4.
  * - calorias NÃO entram nem reduzem a pontuação.
  * - não existe teto artificial de 100 para o IGA.
@@ -61,7 +62,9 @@ export interface IGAEngineOptions {
  * Hierarquia de FC máxima do IGA 2.0:
  * 1) FCmáx medida/cadastrada confiável;
  * 2) FCmáx histórica validada;
- * 3) estimativa por idade como fallback.
+ * 3) estimativa por idade somente como referência de FCmáx para definir zonas.
+ *
+ * Importante: isso NÃO estima a FC da sessão. Sem FC medida na sessão, I = 0.
  */
 export function estimateMaxHeartRate(profile: IGAUserProfile): number {
   if (profile.maxHeartRate && profile.maxHeartRate > 100) {
@@ -72,17 +75,6 @@ export function estimateMaxHeartRate(profile: IGAUserProfile): number {
   }
   const age = Math.max(12, Number(profile.age) || 30);
   return Math.round(220 - age);
-}
-
-function fallbackHeartRateForSession(type: string, fcMax: number, cfg: IntensityConfig): number {
-  const typeLower = (type || '').toLowerCase();
-  if (typeLower.includes('workout') || typeLower.includes('muscul') || typeLower.includes('forca')) {
-    return Math.round(fcMax * cfg.defaultWorkoutRelativeHR);
-  }
-  if (typeLower.includes('cardio') || typeLower.includes('corrid') || typeLower.includes('run') || typeLower.includes('bike')) {
-    return Math.round(fcMax * cfg.defaultCardioRelativeHR);
-  }
-  return Math.round(fcMax * cfg.defaultOtherRelativeHR);
 }
 
 /**
@@ -127,7 +119,6 @@ export function calculateWeeklyIGA(
     const intensity = evaluateSessionIntensity({
       heartRateSamples: sess.heartRateSamples,
       avgHeartRate: sess.avgHeartRate,
-      fallbackHeartRate: fallbackHeartRateForSession(sess.type, fcMax, intensityCfg),
       maxHeartRate: fcMax,
       config: intensityCfg,
     });
@@ -181,7 +172,7 @@ export function calculateWeeklyIGA(
     : 0;
 
   // 4. I = média da qualidade cardiovascular por sessão, sem peso extra pela
-  // duração. Assim tempo e intensidade permanecem fatores independentes.
+  // duração. Sessões sem FC medida entram com intensidade 0; nunca há FC estimada.
   const In = eligibleSessions.length > 0
     ? eligibleSessions.reduce((acc, s) => acc + (s.intensityFactor || 0), 0) / eligibleSessions.length
     : 0;

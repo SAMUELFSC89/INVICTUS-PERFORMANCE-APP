@@ -33,12 +33,8 @@ export const DEFAULT_TIME_CONFIG: TimeConfig = {
 };
 
 export const DEFAULT_INTENSITY_CONFIG: IntensityConfig = {
-  // Legado/fallback sem série de FC.
   targetRelativeHR: 0.85,
   minRelativeHR: 0.50,
-  defaultWorkoutRelativeHR: 0.70,
-  defaultCardioRelativeHR: 0.75,
-  defaultOtherRelativeHR: 0.65,
   // Fronteiras: Z1/Z2 em 60%, Z2/Z3 em 70%, Z3/Z4 em 80%, Z4/Z5 em 90%.
   zoneBoundaries: [0.60, 0.70, 0.80, 0.90],
   // Z4 é o maior bônus. Z5 continua alta, mas não recompensa FC extrema acima de Z4.
@@ -105,10 +101,8 @@ export function normalizeTime(
 }
 
 /**
- * Compatibilidade com chamadas antigas que calculavam intensidade a partir de
- * uma única FC média. O motor IGA 2.0 prefere a função por zonas/série de FC,
- * mas este fallback continua contínuo e sem teto artificial em 100 por regra
- * antiga. A implementação oficial de zonas fica em intensity.ts.
+ * Compatibilidade com chamadas antigas que calculam intensidade a partir de
+ * uma FC relativa já medida. Esta função não inventa FC quando o dado está ausente.
  */
 export function normalizeIntensity(
   avgRelativeHR: number,
