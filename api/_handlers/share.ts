@@ -1,6 +1,9 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../_lib/common.js';
 import { resolveActivityState } from '../../src/lib/workoutData.js';
+import { resolveActivityShareGrant } from '../_lib/share-access.js';
+import { isActiveAccountState } from '../_lib/account-state.js';
+import { trustedShareImageUrl } from '../_lib/share-image-policy.js';
 
 // SEC-03 (auditoria 6167c8f): displayName/city/photoUrl sao dados do proprio
 // usuario (editaveis no perfil) e antes eram interpolados sem escape direto
@@ -19,82 +22,76 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-// photoUrl vai dentro de `url('...')` em CSS -- aspas/parenteses sem escape
-// permitem fechar o url() e injetar CSS/expressoes arbitrarias. Alem de
-// escapar, so aceitamos http(s) explicito; qualquer outro esquema (ex.:
-// `javascript:`, `data:text/html`) é descartado silenciosamente.
+// O card publico continua usando o mesmo visual aprovado, mas a imagem agora
+// so pode vir de uma origem confiavel que tambem e aceita pelo proxy seguro de
+// /api/share-image. Isso preserva o layout sem reabrir SSRF/CSS injection.
 function safeImageUrl(value: unknown): string {
-  const raw = String(value ?? '').trim();
-  if (!raw) return '';
-  try {
-    const parsed = new URL(raw);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
-    return escapeHtml(raw);
-  } catch {
-    return '';
-  }
+  const trusted = trustedShareImageUrl(value);
+  return trusted ? escapeHtml(trusted.toString()) : '';
+}
+
+function runSessionAsWorkout(sessionData: any) {
+  return {
+    userId: sessionData.userId,
+    type: 'cardio',
+    timestamp: sessionData.createdAt?.toDate?.()?.toISOString() || sessionData.startTime,
+    duration: sessionData.startTime && sessionData.endTime
+      ? Math.floor((new Date(sessionData.endTime).getTime() - new Date(sessionData.startTime).getTime()) / 60000)
+      : undefined,
+    distance: Number.isFinite(Number(sessionData.totalDistance)) ? Number(sessionData.totalDistance) / 1000 : undefined,
+    points: Number.isFinite(Number(sessionData.pointsEarned)) ? Number(sessionData.pointsEarned) : 0,
+    status: sessionData.validationStatus,
+    recordStatus: sessionData.recordStatus || (sessionData.endTime ? 'completed' : undefined),
+    activityMode: sessionData.activityMode,
+    competitionReviewStatus: sessionData.competitionReviewStatus,
+    photoUrl: sessionData.photoProof || null,
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Captura o ID tanto de query param quanto de rota customizada se o server passar
-  const id = req.query.id || (req as any).params?.id;
+  // O valor publico agora e um grant aleatorio e revogavel criado somente
+  // quando o proprio atleta pede para compartilhar. IDs internos nunca mais
+  // funcionam como autorizacao publica.
+  const token = req.query.id || (req as any).params?.id;
 
-  if (!id) {
-    return res.status(400).send('<h1>ID não fornecido</h1>');
-  }
-
-  // SEC-03: `id` vem direto da query string (nenhuma autenticacao envolvida)
-  // e antes ia sem validacao para shareUrl/imageUrl, que por sua vez eram
-  // interpolados sem escape em atributos HTML (og:url, twitter:url, etc.) --
-  // um id malicioso conseguiria fechar o atributo e injetar marcacao so
-  // pedindo /api/share?id=... com o payload. Mesmo padrao ja usado em
-  // firestore.rules (isValidId): alfanumerico + _/- , ate 128 chars.
-  if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
-    return res.status(400).send('<h1>ID inválido</h1>');
+  if (typeof token !== 'string') {
+    return res.status(400).send('<h1>Compartilhamento inválido</h1>');
   }
 
   try {
-    let workoutDoc = await db.collection('workouts').doc(id as string).get();
-    let workout = workoutDoc.data();
+    const grant = await resolveActivityShareGrant(token);
+    if (!grant) {
+      return res.status(404).send('<h1>Compartilhamento não encontrado ou revogado</h1>');
+    }
+
+    const activityDoc = await db.collection(grant.source).doc(grant.activityId).get();
+    if (!activityDoc.exists) {
+      return res.status(404).send('<h1>Atividade não encontrada</h1>');
+    }
+
+    const sourceData: any = activityDoc.data() || {};
+    if (sourceData.userId !== grant.userId) {
+      return res.status(404).send('<h1>Atividade não encontrada</h1>');
+    }
+
+    const workout: any = grant.source === 'run_sessions'
+      ? runSessionAsWorkout(sourceData)
+      : sourceData;
+
     let rawAppUrl = process.env.APP_URL || process.env.VITE_APP_URL || `https://${req.headers.host}`;
     if (rawAppUrl.includes('sem-desculpa.vercel.app')) {
       rawAppUrl = rawAppUrl.replace('sem-desculpa.vercel.app', 'www.invictusperformance.app.br');
     }
     const appUrl = rawAppUrl.replace(/\/$/, '');
-    const shareUrl = `${appUrl}/share/${id}`;
-    const imageUrl = `${appUrl}/api/share-image?id=${id}`;
+    const shareUrl = `${appUrl}/share/${encodeURIComponent(token)}`;
+    const imageUrl = `${appUrl}/api/share-image?id=${encodeURIComponent(token)}`;
 
-    // Se não encontrar em workouts, tenta em run_sessions (específico para corridas rasteadas)
-    if (!workout) {
-      const sessionDoc = await db.collection('run_sessions').doc(id as string).get();
-      if (sessionDoc.exists) {
-        const sessionData = sessionDoc.data();
-        if (sessionData) {
-          workout = {
-            userId: sessionData.userId,
-            type: 'cardio',
-            timestamp: sessionData.createdAt?.toDate?.()?.toISOString() || sessionData.startTime,
-            duration: sessionData.startTime && sessionData.endTime
-              ? Math.floor((new Date(sessionData.endTime).getTime() - new Date(sessionData.startTime).getTime()) / 60000)
-              : undefined,
-            distance: Number.isFinite(Number(sessionData.totalDistance)) ? Number(sessionData.totalDistance) / 1000 : undefined,
-            points: Number.isFinite(Number(sessionData.pointsEarned)) ? Number(sessionData.pointsEarned) : 0,
-            status: sessionData.validationStatus,
-            recordStatus: sessionData.recordStatus || (sessionData.endTime ? 'completed' : undefined),
-            activityMode: sessionData.activityMode,
-            competitionReviewStatus: sessionData.competitionReviewStatus,
-            photoUrl: sessionData.photoProof || null
-          };
-        }
-      }
+    const userDoc = await db.collection('users').doc(grant.userId).get();
+    if (!userDoc.exists || !isActiveAccountState(userDoc.data())) {
+      return res.status(404).send('<h1>Compartilhamento indisponível</h1>');
     }
-
-    if (!workout) {
-      return res.status(404).send('<h1>Atividade não encontrada</h1>');
-    }
-    
-    const userDoc = await db.collection('users').doc(workout.userId).get();
     const user = userDoc.data() || { displayName: 'Atleta' };
+
     // SEC-03: nome/cidade sao editaveis pelo proprio usuario -- nunca confiar
     // neles como HTML pronto. rawDisplayName so serve para derivar o "@handle"
     // (que tambem passa por escapeHtml antes de entrar no corpo da pagina).
@@ -334,7 +331,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `;
 
     res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache 1h
+    // O token é revogável: não permitir que CDN/browser sirva uma cópia antiga
+    // depois que o atleta revogar o compartilhamento.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     return res.status(200).send(html);
   } catch (error) {
     console.error('Share API Error:', error);

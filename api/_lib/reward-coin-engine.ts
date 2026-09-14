@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { db } from './common.js';
 import { IVCoinLedgerType, IVCoinTransactionOrigin, RewardCoinTransaction, RewardCoinWallet } from '../../src/types.js';
+import { isActiveAccountState } from './account-state.js';
 
 const MISSION_CAP_LEDGERS: IVCoinLedgerType[] = [
   'MISSION_REWARD',
@@ -66,6 +67,7 @@ export class RewardCoinEngine {
     const transactionId = coinTransactionId(params.userId, params.idempotencyKey);
     const legacyTransactionId = legacyCoinTransactionId(params.userId, params.idempotencyKey);
     const walletRef = db.collection('reward_coin_wallets').doc(params.userId);
+    const userRef = db.collection('users').doc(params.userId);
     const transactionRef = db.collection('reward_coin_transactions').doc(transactionId);
     const legacyTransactionRef = db.collection('reward_coin_transactions').doc(legacyTransactionId);
     const policyRef = db.collection('reward_coin_economy').doc('global');
@@ -73,7 +75,8 @@ export class RewardCoinEngine {
     const monthlyCounterRef = db.collection('reward_coin_monthly_counters').doc(`${params.userId}_${monthKey}`);
     const ledgerType = params.ledgerType || defaultLedger(params.origin);
     const settlement = await db.runTransaction(async transaction => {
-      const [walletSnap, existingTransaction, legacyTransaction, policySnap, monthlyCounterSnap] = await Promise.all([
+      const [userSnap, walletSnap, existingTransaction, legacyTransaction, policySnap, monthlyCounterSnap] = await Promise.all([
+        transaction.get(userRef),
         transaction.get(walletRef),
         transaction.get(transactionRef),
         transaction.get(legacyTransactionRef),
@@ -98,18 +101,21 @@ export class RewardCoinEngine {
       }
       const legacyValue = legacyTransaction.exists ? legacyTransaction.data() || {} : null;
       if (legacyValue?.idempotencyAlias === true) {
-        // IDs legados truncavam a chave e podem colidir. Alias de outro hash
-        // não suprime o crédito novo; apenas deixa de criar outro alias.
         if (legacyValue.canonicalTransactionId === transactionId) {
           throw new Error('Alias legado de Coins sem transação canônica válida.');
         }
       }
-      // Compatibilidade com créditos feitos antes do ID em SHA-256. O legado
-      // só é idempotente quando todo o contrato coincide; uma colisão causada
-      // pelo antigo truncamento não pode suprimir o novo pagamento.
       if (legacyValue && matchesRequest(legacyValue)) {
         return { duplicated: true, storedTransactionId: legacyTransactionId };
       }
+
+      // Gate 1 lifecycle: um ledger novo nunca pode ser criado para conta
+      // bloqueada, banida, suspensa ou excluída. A leitura ocorre dentro da
+      // mesma transação que o saldo para impedir TOCTOU no settlement.
+      if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
+        throw new Error('Conta inativa não pode receber Invictus Coins.');
+      }
+
       const current = walletSnap.exists ? walletSnap.data() || {} : EMPTY_WALLET(params.userId);
       const policy = policySnap.data() || {};
       const monthlyCounter = monthlyCounterSnap.data() || {};
@@ -144,10 +150,6 @@ export class RewardCoinEngine {
         updatedAt: createdAt,
       }, { merge: true });
       transaction.set(transactionRef, coinTransaction);
-      // Alias sem `userId`: instâncias da versão anterior encontram o ID
-      // legado e não creditam de novo durante um rollout misto, enquanto as
-      // consultas de extrato (filtradas por userId) exibem só o lançamento
-      // canônico SHA-256. Não sobrescrevemos uma colisão legada preexistente.
       if (!legacyTransaction.exists) {
         transaction.set(legacyTransactionRef, {
           id: legacyTransactionId,

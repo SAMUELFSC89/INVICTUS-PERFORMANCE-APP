@@ -189,6 +189,7 @@ describe('entitlement canônico nos consumidores de score', () => {
     expect(presence).not.toContain('userData.subscriptionTier');
     expect(presence).not.toContain('isProUser(');
     expect(season).not.toContain('d.data().subscriptionTier');
-    expect(season).toContain('.filter((d: any) => isProUser(d.data()))');
+    expect(season).toContain('isProUser(doc.data())');
+    expect(season).toContain('isActiveAccountState(doc.data())');
   });
 });

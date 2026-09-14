@@ -3,12 +3,10 @@ import { matchActiveChampionshipsForActivity } from './championship-catalog.js';
 import { getUserRegistration } from './championship-inscription-service.js';
 import { RewardCoinEngine } from './reward-coin-engine.js';
 import type { ActivityCompetitionContext } from './activity-competition-policy.js';
-import {
-  hasTrustedCompetitionEvidence,
-  readCompetitionEvidenceMetrics,
-} from './competition-evidence.js';
+import { hasTrustedCompetitionEvidence, readCompetitionEvidenceMetrics } from './competition-evidence.js';
 import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
+import { isActiveAccountState } from './account-state.js';
 
 const COMMUNITY_EVENT_ID = 'community_friends_v1';
 
@@ -16,63 +14,23 @@ function communityCycleKey(when = new Date()): string {
   return when.toISOString().slice(0, 7);
 }
 
-async function submitActivityToCommunityGymChampionship(input: ChampionshipActivityInput): Promise<void> {
-  if (!db || !input.activityId || !['workout', 'cardio'].includes(input.activityType)) return;
-  const frozenContext = input.contexts?.find((context) => context.type === 'community_championship' && context.id === COMMUNITY_EVENT_ID);
-  if (input.contexts && !frozenContext) return;
-  const [enrollmentSnap, userSnap] = await Promise.all([
-    input.contexts ? Promise.resolve(null) : db.collection('community_championship_enrollments').doc(`${COMMUNITY_EVENT_ID}_${input.userId}`).get(),
-    db.collection('users').doc(input.userId).get(),
-  ]);
-  const enrollment = enrollmentSnap?.data();
-  if (!input.contexts && (enrollment?.status !== 'active'
-    || !isCurrentCompetitiveHrAcknowledgement(enrollment, COMMUNITY_EVENT_ID, COMPETITION_RULES_VERSIONS.community_friends_v1))) return;
-  const user = userSnap.data() || {};
-  const gymId = String(frozenContext?.gymId || user.gymId || user.academyId || 'community_global');
-  const gymName = String(user.gymName || input.userGymName || 'Comunidade Invictus');
-  const cycleKey = frozenContext?.cycleKey || communityCycleKey(input.when);
-  const scoreId = `${cycleKey}_${input.activityId}`;
-  const ref = db.collection('gym_championship_scores').doc(scoreId);
-  const existing = await ref.get();
-  const existingData = existing.exists ? existing.data() || {} : {};
-  await ref.set({
-    id: scoreId, eventId: COMMUNITY_EVENT_ID, cycleKey, gymId, gymName,
-    userId: input.userId, userName: input.userName || user.name || user.displayName || 'Atleta Invictus',
-    activityId: input.activityId, activityType: input.activityType,
-    score: Math.max(0, Number(input.score) || 0), validationStatus: 'VALIDATED',
-    auditStatus: 'APPROVED', riskScore: Number.isFinite(Number(input.riskScore)) ? Number(input.riskScore) : null,
-    securityDecision: input.securityDecision || 'APPROVED', securityReportId: input.securityReportId || null,
-    metrics: { durationMinutes: input.durationMinutes, distanceKm: input.distanceKm || 0 },
-    createdAt: existingData.createdAt || input.when.toISOString(),
-    updatedAt: new Date().toISOString(),
-  }, { merge: true });
+async function activeUserIds(userIds: string[]): Promise<Set<string>> {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (!unique.length) return new Set();
+  const refs = unique.map((id) => db.collection('users').doc(id));
+  const snapshots = await db.getAll(...refs);
+  return new Set(
+    snapshots
+      .filter((snap: any) => snap.exists && isActiveAccountState(snap.data()))
+      .map((snap: any) => snap.id),
+  );
 }
 
-/**
- * Pontuacao e leaderboard de campeonato.
- *
- * Ate 2026-08 isso era 100% decorativo: getUserProgress() e getLeaderboard()
- * em championshipService.ts devolviam numeros fixos hardcoded (ex: "182º
- * lugar, 7650 pontos", "Lucas Titan Silva, 14850 pontos") sem nenhuma
- * atividade real por tras. Agora cada atividade homologada (SecurityPipeline
- * + IGA ja aprovaram, ver validate-activity-service.ts) que cair dentro da
- * janela e do tipo de um campeonato em que o usuario tem inscricao PAGA vira
- * um documento em `championship_scores`, e progresso/leaderboard sao somas
- * reais sobre essa colecao.
- *
- * O "score" por atividade reaproveita o scoreAwarded (XP) ja calculado pelo
- * ValidateActivityService -- de proposito NAO inventamos uma 6ª formula de
- * pontuacao: o app ja tinha 5 formulas independentes de ranking coexistindo
- * (ver AUDITORIA-CORE-INVICTUS.md) e o IGA foi criado exatamente para acabar
- * com isso. O placar do campeonato e a soma do esforco real ja auditado.
- *
- * Consultas usam filtro de igualdade UNICO (championshipId) e filtram o
- * resto (userId, validationStatus) em memoria -- mesmo padrao ja usado em
- * api/_lib/igaService.ts (fetchAllSessionsSince) para nao depender de indice
- * composto do Firestore, que precisaria ser criado manualmente no console e
- * quebraria a producao silenciosamente (failed-precondition) se alguem
- * esquecesse.
- */
+async function isActiveCompetitiveUser(userId: string): Promise<boolean> {
+  if (!userId) return false;
+  const snap = await db.collection('users').doc(userId).get();
+  return snap.exists && isActiveAccountState(snap.data());
+}
 
 export interface ChampionshipActivityInput {
   userId: string;
@@ -88,21 +46,59 @@ export interface ChampionshipActivityInput {
   riskScore?: number;
   securityDecision?: string | null;
   securityReportId?: string | null;
-  /** Allowlist congelada no início. Ausente apenas em writers legados. */
   contexts?: ActivityCompetitionContext[];
 }
 
-/**
- * Submissao automatica pos-validacao. Roda depois do recalculo do IGA em
- * validate-activity-service.ts; e um no-op (sem nenhuma leitura extra
- * relevante) para qualquer usuario sem inscricao paga em nenhum campeonato
- * ativo -- ou seja, hoje, para todo mundo, ate a primeira inscricao real
- * acontecer. Escritas usam IDs determinísticos e propagam falhas: o chamador
- * pode repetir a conciliação sem duplicar a pontuação.
- */
+async function submitActivityToCommunityGymChampionship(input: ChampionshipActivityInput): Promise<void> {
+  if (!db || !input.activityId || !['workout', 'cardio'].includes(input.activityType)) return;
+  const frozenContext = input.contexts?.find((context) => context.type === 'community_championship' && context.id === COMMUNITY_EVENT_ID);
+  if (input.contexts && !frozenContext) return;
+
+  const [enrollmentSnap, userSnap] = await Promise.all([
+    input.contexts ? Promise.resolve(null) : db.collection('community_championship_enrollments').doc(`${COMMUNITY_EVENT_ID}_${input.userId}`).get(),
+    db.collection('users').doc(input.userId).get(),
+  ]);
+  if (!userSnap.exists || !isActiveAccountState(userSnap.data())) return;
+
+  const enrollment = enrollmentSnap?.data();
+  if (!input.contexts && (enrollment?.status !== 'active'
+    || !isCurrentCompetitiveHrAcknowledgement(enrollment, COMMUNITY_EVENT_ID, COMPETITION_RULES_VERSIONS.community_friends_v1))) return;
+
+  const user = userSnap.data() || {};
+  const gymId = String(frozenContext?.gymId || user.gymId || user.academyId || 'community_global');
+  const gymName = String(user.gymName || input.userGymName || 'Comunidade Invictus');
+  const cycleKey = frozenContext?.cycleKey || communityCycleKey(input.when);
+  const scoreId = `${cycleKey}_${input.activityId}`;
+  const ref = db.collection('gym_championship_scores').doc(scoreId);
+  const existing = await ref.get();
+  const existingData = existing.exists ? existing.data() || {} : {};
+  await ref.set({
+    id: scoreId,
+    eventId: COMMUNITY_EVENT_ID,
+    cycleKey,
+    gymId,
+    gymName,
+    userId: input.userId,
+    userName: input.userName || user.name || user.displayName || 'Atleta Invictus',
+    activityId: input.activityId,
+    activityType: input.activityType,
+    score: Math.max(0, Number(input.score) || 0),
+    validationStatus: 'VALIDATED',
+    auditStatus: 'APPROVED',
+    riskScore: Number.isFinite(Number(input.riskScore)) ? Number(input.riskScore) : null,
+    securityDecision: input.securityDecision || 'APPROVED',
+    securityReportId: input.securityReportId || null,
+    metrics: { durationMinutes: input.durationMinutes, distanceKm: input.distanceKm || 0 },
+    createdAt: existingData.createdAt || input.when.toISOString(),
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
 export async function submitActivityToActiveChampionships(input: ChampionshipActivityInput): Promise<void> {
+  if (!await isActiveCompetitiveUser(input.userId)) return;
   await submitActivityToCommunityGymChampionship(input);
-  const candidatos = input.contexts
+
+  const candidates = input.contexts
     ? input.contexts
         .filter((context) => context.type === 'paid_championship')
         .map((context) => ({
@@ -121,24 +117,21 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
         minDurationMinutes: championship.antiFraudProfile?.minDurationMinutes,
         maxDurationMinutes: championship.antiFraudProfile?.maxDurationMinutes,
       }));
-  if (candidatos.length === 0) return;
+  if (!candidates.length) return;
 
-  for (const champ of candidatos) {
+  for (const champ of candidates) {
     if (!input.contexts) {
       const registration = await getUserRegistration(input.userId, champ.id);
-      const ativo = !!registration && registration.status === 'paga' && registration.paymentStatus === 'PAID';
-      if (!ativo) continue;
+      if (!registration || registration.status !== 'paga' || registration.paymentStatus !== 'PAID') continue;
     }
 
-    const dentroDaDuracao =
-      (champ.minDurationMinutes == null || input.durationMinutes >= champ.minDurationMinutes) &&
-      (champ.maxDurationMinutes == null || input.durationMinutes <= champ.maxDurationMinutes);
-
+    const withinDuration =
+      (champ.minDurationMinutes == null || input.durationMinutes >= champ.minDurationMinutes)
+      && (champ.maxDurationMinutes == null || input.durationMinutes <= champ.maxDurationMinutes);
     const scoreId = `${input.activityId}_${champ.id}`;
     const scoreRef = db.collection('championship_scores').doc(scoreId);
-    const jaExiste = await scoreRef.get();
-    const existingData = jaExiste.exists ? jaExiste.data() || {} : {};
-
+    const previous = await scoreRef.get();
+    const existingData = previous.exists ? previous.data() || {} : {};
     await scoreRef.set({
       id: scoreId,
       championshipId: champ.id,
@@ -150,31 +143,23 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
       userGymName: input.userGymName || null,
       activityId: input.activityId,
       activityType: input.activityType,
-      score: dentroDaDuracao ? input.score : 0,
-      validationStatus: dentroDaDuracao ? 'VALIDATED' : 'REJECTED',
-      validationMotives: dentroDaDuracao ? [] : ['DURATION_OUTSIDE_CHAMPIONSHIP_PROFILE'],
+      score: withinDuration ? input.score : 0,
+      validationStatus: withinDuration ? 'VALIDATED' : 'REJECTED',
+      validationMotives: withinDuration ? [] : ['DURATION_OUTSIDE_CHAMPIONSHIP_PROFILE'],
       championshipValidation: {
-        eligible: dentroDaDuracao,
+        eligible: withinDuration,
         riskScore: Number.isFinite(Number(input.riskScore)) ? Number(input.riskScore) : null,
         securityDecision: input.securityDecision || 'APPROVED',
         securityReportId: input.securityReportId || null,
         evaluatedAt: new Date().toISOString(),
       },
-      metrics: {
-        durationMinutes: input.durationMinutes,
-        distanceKm: input.distanceKm || 0,
-      },
+      metrics: { durationMinutes: input.durationMinutes, distanceKm: input.distanceKm || 0 },
       createdAt: existingData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }, { merge: true });
   }
 }
 
-/**
- * Reprojeta placares após uma decisão administrativa. O workout continua
- * sendo a fonte do registro pessoal; estes documentos representam apenas o
- * resultado competitivo e podem ser zerados sem apagar a atividade.
- */
 export async function syncReviewedActivityCompetitionScores(activityId: string): Promise<void> {
   if (!db || !activityId) return;
   const workoutSnap = await db.collection('workouts').doc(activityId).get();
@@ -182,10 +167,15 @@ export async function syncReviewedActivityCompetitionScores(activityId: string):
   const workout: any = workoutSnap.data() || {};
   const contexts = Array.isArray(workout.competitionContexts) ? workout.competitionContexts as ActivityCompetitionContext[] : [];
   if (!contexts.length) return;
+
   const promotedMetrics = readCompetitionEvidenceMetrics(workout);
   const malformedTrustedEvidence = hasTrustedCompetitionEvidence(workout) && !promotedMetrics;
-  const approved = workout.competitionReviewStatus === 'approved'
-    && workout.isScoringEligible === true && !malformedTrustedEvidence;
+  const userIsActive = await isActiveCompetitiveUser(String(workout.userId || ''));
+  const approved = userIsActive
+    && workout.competitionReviewStatus === 'approved'
+    && workout.isScoringEligible === true
+    && !malformedTrustedEvidence;
+
   if (approved) {
     const userSnap = await db.collection('users').doc(workout.userId).get();
     const user: any = userSnap.data() || {};
@@ -195,12 +185,9 @@ export async function syncReviewedActivityCompetitionScores(activityId: string):
       userGymName: user.gymName,
       activityId,
       activityType: promotedMetrics?.activityType || workout.type,
-      isIndoorCardio: promotedMetrics
-        ? promotedMetrics.isIndoorCardio === true : workout.isIndoorCardio,
-      durationMinutes: Number(promotedMetrics?.durationMinutes
-        ?? workout.duration ?? workout.durationMinutes) || 0,
-      distanceKm: Number(promotedMetrics?.distanceKm
-        ?? workout.distance ?? workout.distanceKm) || 0,
+      isIndoorCardio: promotedMetrics ? promotedMetrics.isIndoorCardio === true : workout.isIndoorCardio,
+      durationMinutes: Number(promotedMetrics?.durationMinutes ?? workout.duration ?? workout.durationMinutes) || 0,
+      distanceKm: Number(promotedMetrics?.distanceKm ?? workout.distance ?? workout.distanceKm) || 0,
       score: Math.max(0, Number(workout.competitionPoints) || 0),
       when: new Date(promotedMetrics?.startTime || workout.startTime || workout.createdAt || Date.now()),
       riskScore: workout.securityRiskScore,
@@ -216,13 +203,18 @@ export async function syncReviewedActivityCompetitionScores(activityId: string):
     if (context.type === 'community_championship') {
       const cycle = context.cycleKey || communityCycleKey(new Date(workout.startTime || workout.createdAt || Date.now()));
       batch.set(db.collection('gym_championship_scores').doc(`${cycle}_${activityId}`), {
-        validationStatus: 'REJECTED', auditStatus: 'REJECTED', score: 0,
+        validationStatus: 'REJECTED',
+        auditStatus: 'REJECTED',
+        score: 0,
         invalidatedAt: new Date().toISOString(),
+        ...(!userIsActive ? { invalidationReason: 'ACCOUNT_INACTIVE' } : {}),
       }, { merge: true });
     } else if (context.type === 'paid_championship') {
       batch.set(db.collection('championship_scores').doc(`${activityId}_${context.id}`), {
-        validationStatus: 'REJECTED', score: 0,
+        validationStatus: 'REJECTED',
+        score: 0,
         invalidatedAt: new Date().toISOString(),
+        ...(!userIsActive ? { invalidationReason: 'ACCOUNT_INACTIVE' } : {}),
       }, { merge: true });
     }
   }
@@ -255,12 +247,10 @@ export async function getCommunityGymChampionshipStatus(
   const gymId = String(user.gymId || user.academyId || 'community_global');
   const cycleKey = communityCycleKey(now);
   const cutoff = communityRankingPeriodStart(period, now);
-  const snap = await db.collection('gym_championship_scores')
-    .where('eventId', '==', COMMUNITY_EVENT_ID)
-    .limit(5000)
-    .get();
+  const snap = await db.collection('gym_championship_scores').where('eventId', '==', COMMUNITY_EVENT_ID).limit(5000).get();
+
   const totals = new Map<string, { userId: string; userName: string; score: number; validActivities: number }>();
-  snap.forEach(doc => {
+  snap.forEach((doc) => {
     const data: any = doc.data();
     if (data.gymId !== gymId || data.validationStatus !== 'VALIDATED') return;
     if (cutoff) {
@@ -272,21 +262,28 @@ export async function getCommunityGymChampionshipStatus(
     item.validActivities += 1;
     totals.set(data.userId, item);
   });
+
+  const eligibleIds = await activeUserIds([...totals.keys()]);
   const ranked = [...totals.values()]
+    .filter((item) => eligibleIds.has(item.userId))
     .sort((a, b) => b.score - a.score || a.userName.localeCompare(b.userName, 'pt-BR', { sensitivity: 'base' }) || a.userId.localeCompare(b.userId))
     .map((item, index) => ({ ...item, rank: index + 1 }));
+
   const visible = ranked.slice(0, 100);
   const profileRefs = visible.map((item) => db.collection('users').doc(item.userId));
   const profileSnaps = profileRefs.length ? await db.getAll(...profileRefs) : [];
-  const profileByUid = new Map(profileSnaps.map((snap) => [snap.id, snap.data() || {}]));
+  const profileByUid = new Map(profileSnaps.map((snap: any) => [snap.id, snap.data() || {}]));
   const leaderboard = visible.map((item) => ({
     ...item,
-    photoURL: String(profileByUid.get(item.userId)?.photoURL || (item.userId === userId ? user.photoURL || '' : '')),
+    photoURL: String((profileByUid.get(item.userId) as any)?.photoURL || (item.userId === userId ? user.photoURL || '' : '')),
   }));
-  const rankIndex = ranked.findIndex(item => item.userId === userId);
+  const rankIndex = ranked.findIndex((item) => item.userId === userId);
   const resultSnap = await db.collection('gym_championship_results').doc(`${cycleKey}_${gymId}_${userId}`).get();
   return {
-    cycleKey, period, gymId, gymName: String(user.gymName || 'Comunidade Invictus'),
+    cycleKey,
+    period,
+    gymId,
+    gymName: String(user.gymName || 'Comunidade Invictus'),
     rank: rankIndex >= 0 ? rankIndex + 1 : null,
     score: rankIndex >= 0 ? ranked[rankIndex].score : 0,
     validActivities: rankIndex >= 0 ? ranked[rankIndex].validActivities : 0,
@@ -302,27 +299,40 @@ export async function getCommunityGymChampionshipStatus(
 }
 
 export async function resolveGymChampionshipReview(params: {
-  resultId: string; decision: 'APPROVED' | 'REJECTED'; reviewerId: string; reason: string;
+  resultId: string;
+  decision: 'APPROVED' | 'REJECTED';
+  reviewerId: string;
+  reason: string;
 }) {
   const ref = db.collection('gym_championship_results').doc(params.resultId);
   const snap = await ref.get();
   if (!snap.exists) throw new Error('Resultado de campeonato não encontrado.');
   const result: any = snap.data();
   if (result.status !== 'REVIEW') throw new Error('Somente resultados em revisão podem receber decisão manual.');
-  if (params.decision === 'APPROVED') {
+
+  const active = await isActiveCompetitiveUser(String(result.userId || ''));
+  const effectiveDecision = params.decision === 'APPROVED' && !active ? 'REJECTED' : params.decision;
+  const reason = !active && params.decision === 'APPROVED'
+    ? `${params.reason ? `${params.reason} | ` : ''}Conta inativa no momento do settlement.`
+    : params.reason;
+
+  if (effectiveDecision === 'APPROVED') {
     await RewardCoinEngine.credit({
-      userId: result.userId, amount: Math.max(0, Number(result.prizeCoins) || 0), origin: 'championship', ledgerType: 'GYM_CHAMPIONSHIP_PODIUM',
+      userId: result.userId,
+      amount: Math.max(0, Number(result.prizeCoins) || 0),
+      origin: 'championship',
+      ledgerType: 'GYM_CHAMPIONSHIP_PODIUM',
       description: `${result.rank}º lugar no Campeonato da Academia ${result.cycleKey}`,
       idempotencyKey: `gym-championship:${result.cycleKey}:${result.gymId}:${result.userId}:podium:${result.rank}`,
     });
   }
   await ref.set({
-    status: params.decision,
-    manualReview: { reviewerId: params.reviewerId, reason: params.reason, decidedAt: new Date().toISOString() },
-    ...(params.decision === 'APPROVED' ? { paidAt: new Date().toISOString() } : { rejectedAt: new Date().toISOString() }),
+    status: effectiveDecision,
+    manualReview: { reviewerId: params.reviewerId, reason, decidedAt: new Date().toISOString() },
+    ...(effectiveDecision === 'APPROVED' ? { paidAt: new Date().toISOString() } : { rejectedAt: new Date().toISOString() }),
     updatedAt: new Date().toISOString(),
   }, { merge: true });
-  return { resultId: params.resultId, status: params.decision };
+  return { resultId: params.resultId, status: effectiveDecision };
 }
 
 export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): Promise<{ gyms: number; payouts: number; reviews: number }> {
@@ -336,9 +346,8 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
     const data: any = doc.data();
     return data.cycleKey === cycleKey && ['processing', 'pending_review'].includes(String(data.reviewStatus || ''));
   });
-  if (pendingEntries.length > 0) {
-    throw new Error(`O ciclo ${cycleKey} ainda possui ${pendingEntries.length} atividade(s) competitiva(s) em análise.`);
-  }
+  if (pendingEntries.length > 0) throw new Error(`O ciclo ${cycleKey} ainda possui ${pendingEntries.length} atividade(s) competitiva(s) em análise.`);
+
   const config = configSnap.data() || {};
   const prizes = {
     1: Math.max(0, Number(config.top1Prize) || 2500),
@@ -346,8 +355,9 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
     3: Math.max(0, Number(config.top3Prize) || 1000),
     participation: Math.max(0, Number(config.participationPrize) || 50),
   } as Record<number | 'participation', number>;
+
   const grouped = new Map<string, Map<string, { userId: string; userName: string; score: number; risks: number[]; validActivities: number }>>();
-  scoresSnap.forEach(doc => {
+  scoresSnap.forEach((doc) => {
     const data: any = doc.data();
     if (data.validationStatus !== 'VALIDATED') return;
     const gym = grouped.get(data.gymId) || new Map();
@@ -358,17 +368,31 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
     gym.set(data.userId, athlete);
     grouped.set(data.gymId, gym);
   });
+
+  const everyUserId = [...grouped.values()].flatMap((gym) => [...gym.keys()]);
+  const eligibleIds = await activeUserIds(everyUserId);
   let payouts = 0;
   let reviews = 0;
+  let eligibleGyms = 0;
+
   for (const [gymId, athletesMap] of grouped) {
-    const athletes = [...athletesMap.values()].sort((a, b) => b.score - a.score || a.userId.localeCompare(b.userId));
+    const athletes = [...athletesMap.values()]
+      .filter((athlete) => eligibleIds.has(athlete.userId))
+      .sort((a, b) => b.score - a.score || a.userId.localeCompare(b.userId));
+    if (!athletes.length) continue;
+    eligibleGyms += 1;
+
     for (const athlete of athletes) {
       await RewardCoinEngine.credit({
-        userId: athlete.userId, amount: prizes.participation, origin: 'championship', ledgerType: 'GYM_CHAMPIONSHIP_PARTICIPATION',
+        userId: athlete.userId,
+        amount: prizes.participation,
+        origin: 'championship',
+        ledgerType: 'GYM_CHAMPIONSHIP_PARTICIPATION',
         description: `Conclusão válida do Campeonato da Academia ${cycleKey}`,
         idempotencyKey: `gym-championship:${cycleKey}:${gymId}:${athlete.userId}:participation`,
       });
     }
+
     for (let index = 0; index < Math.min(3, athletes.length); index += 1) {
       const athlete = athletes[index];
       const rank = index + 1;
@@ -376,14 +400,27 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
       const status = maxRisk >= 70 ? 'REVIEW' : 'APPROVED';
       const resultRef = db.collection('gym_championship_results').doc(`${cycleKey}_${gymId}_${athlete.userId}`);
       await resultRef.set({
-        cycleKey, gymId, userId: athlete.userId, userName: athlete.userName, rank, score: athlete.score,
-        status, provisionalAt: new Date().toISOString(),
+        cycleKey,
+        gymId,
+        userId: athlete.userId,
+        userName: athlete.userName,
+        rank,
+        score: athlete.score,
+        status,
+        provisionalAt: new Date().toISOString(),
         enhancedAudit: { status, maxRiskScore: maxRisk, activitiesAudited: athlete.validActivities, evaluatedAt: new Date().toISOString() },
-        prizeCoins: prizes[rank], updatedAt: new Date().toISOString(),
+        prizeCoins: prizes[rank],
+        updatedAt: new Date().toISOString(),
       }, { merge: true });
-      if (status === 'REVIEW') { reviews += 1; continue; }
+      if (status === 'REVIEW') {
+        reviews += 1;
+        continue;
+      }
       await RewardCoinEngine.credit({
-        userId: athlete.userId, amount: prizes[rank], origin: 'championship', ledgerType: 'GYM_CHAMPIONSHIP_PODIUM',
+        userId: athlete.userId,
+        amount: prizes[rank],
+        origin: 'championship',
+        ledgerType: 'GYM_CHAMPIONSHIP_PODIUM',
         description: `${rank}º lugar no Campeonato da Academia ${cycleKey}`,
         idempotencyKey: `gym-championship:${cycleKey}:${gymId}:${athlete.userId}:podium:${rank}`,
       });
@@ -391,14 +428,14 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
       payouts += 1;
     }
   }
-  return { gyms: grouped.size, payouts, reviews };
+  return { gyms: eligibleGyms, payouts, reviews };
 }
 
 export async function getChampionshipProgress(championshipId: string, userId: string) {
-  const snap = await db.collection('championship_scores')
-    .where('championshipId', '==', championshipId)
-    .get();
-
+  if (!await isActiveCompetitiveUser(userId)) {
+    return { totalScore: 0, totalTimeMinutes: 0, validSessionsCount: 0, currentRank: 0, totalParticipants: 0 };
+  }
+  const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
   let totalScore = 0;
   let totalTimeMinutes = 0;
   let validSessionsCount = 0;
@@ -409,17 +446,13 @@ export async function getChampionshipProgress(championshipId: string, userId: st
     totalTimeMinutes += d.metrics?.durationMinutes || 0;
     validSessionsCount += 1;
   });
-
-  // Rank: posicao do usuario entre todos os participantes, ordenado por
-  // pontuacao total (mesma soma acima, aplicada a cada usuario).
   const leaderboard = await getChampionshipLeaderboard(championshipId, Number.MAX_SAFE_INTEGER);
-  const posicao = leaderboard.findIndex((e) => e.userId === userId);
-
+  const position = leaderboard.findIndex((entry) => entry.userId === userId);
   return {
     totalScore,
     totalTimeMinutes,
     validSessionsCount,
-    currentRank: posicao >= 0 ? posicao + 1 : leaderboard.length + 1,
+    currentRank: position >= 0 ? position + 1 : leaderboard.length + 1,
     totalParticipants: leaderboard.length,
   };
 }
@@ -434,17 +467,14 @@ export interface ChampionshipActivityEntry {
   createdAt: string;
 }
 
-/** Atividades homologadas do proprio usuario neste campeonato, mais recentes primeiro. */
 export async function getUserChampionshipActivities(championshipId: string, userId: string, limit = 20): Promise<ChampionshipActivityEntry[]> {
-  const snap = await db.collection('championship_scores')
-    .where('championshipId', '==', championshipId)
-    .get();
-
-  const entradas: ChampionshipActivityEntry[] = [];
+  if (!await isActiveCompetitiveUser(userId)) return [];
+  const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
+  const entries: ChampionshipActivityEntry[] = [];
   snap.forEach((doc) => {
     const d: any = doc.data();
     if (d.userId !== userId) return;
-    entradas.push({
+    entries.push({
       activityId: d.activityId,
       activityType: d.activityType,
       score: d.score || 0,
@@ -454,8 +484,7 @@ export async function getUserChampionshipActivities(championshipId: string, user
       createdAt: d.createdAt,
     });
   });
-
-  return entradas
+  return entries
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, limit);
 }
@@ -469,21 +498,25 @@ export interface ChampionshipLeaderboardEntry {
 }
 
 export async function getChampionshipLeaderboard(championshipId: string, limit = 50): Promise<ChampionshipLeaderboardEntry[]> {
-  const snap = await db.collection('championship_scores')
-    .where('championshipId', '==', championshipId)
-    .get();
-
-  const porUsuario = new Map<string, { userId: string; name: string; gym: string; score: number }>();
+  const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
+  const byUser = new Map<string, { userId: string; name: string; gym: string; score: number }>();
   snap.forEach((doc) => {
     const d: any = doc.data();
     if (d.validationStatus !== 'VALIDATED') return;
-    const atual = porUsuario.get(d.userId) || { userId: d.userId, name: d.userName || 'Atleta Invictus', gym: d.userGymName || '-', score: 0 };
-    atual.score += d.score || 0;
-    porUsuario.set(d.userId, atual);
+    const current = byUser.get(d.userId) || {
+      userId: d.userId,
+      name: d.userName || 'Atleta Invictus',
+      gym: d.userGymName || '-',
+      score: 0,
+    };
+    current.score += d.score || 0;
+    byUser.set(d.userId, current);
   });
 
-  return Array.from(porUsuario.values())
-    .sort((a, b) => b.score - a.score)
+  const eligibleIds = await activeUserIds([...byUser.keys()]);
+  return [...byUser.values()]
+    .filter((entry) => eligibleIds.has(entry.userId))
+    .sort((a, b) => b.score - a.score || a.userId.localeCompare(b.userId))
     .slice(0, limit)
     .map((entry, index) => ({ rank: index + 1, ...entry }));
 }
