@@ -142,8 +142,8 @@ try {
       app = getApp();
     }
 
-    const firestoreDbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)' 
-      ? config.firestoreDatabaseId 
+    const firestoreDbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
+      ? config.firestoreDatabaseId
       : undefined;
 
     dbInstance = getFirestore(app, firestoreDbId);
@@ -210,48 +210,47 @@ export function isDbAvailable(): boolean {
 
 // 9. Simple connection test with runtime fallback
 export async function testConnection() {
-    if (!dbInstance || !app) {
-      console.warn('[Firebase Admin] Cannot run connection test - SDK is not initialized.');
-      return;
-    }
-    const targetPid = (app.options as any).projectId || 'auto-detected';
-    const firestoreDbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)' 
-      ? config.firestoreDatabaseId 
-      : undefined;
-    const targetDb = firestoreDbId || '(default)';
-    console.log(`[Firebase Admin] Connectivity check: Project=${targetPid}, DB=${targetDb}`);
-    
-    try {
-      // Test read
-      await dbInstance.collection("_connection_test_").doc("ping").get();
-      console.log(`[Firebase Admin] Connectivity check successful.`);
-    } catch (e: any) {
-      console.warn(`[Firebase Admin] Connectivity check failed: ${e.message}`);
-      
-      // If it's a permission error, we try to explain why (likely Service Account mismatch)
-      if (e.message.includes("PERMISSION_DENIED")) {
-        console.warn(`[Firebase Admin] This usually means the Service Account running this code doesn't have the "Cloud Datastore User" or "Firebase Firestore Admin" role on project "${targetPid}".`);
-      }
+  if (!dbInstance || !app) {
+    console.warn('[Firebase Admin] Cannot run connection test - SDK is not initialized.');
+    return;
+  }
+  const targetPid = (app.options as any).projectId || 'auto-detected';
+  const firestoreDbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
+    ? config.firestoreDatabaseId
+    : undefined;
+  const targetDb = firestoreDbId || '(default)';
+  console.log(`[Firebase Admin] Connectivity check: Project=${targetPid}, DB=${targetDb}`);
 
-      if (firestoreDbId) {
-        console.warn(`[Firebase Admin] Trying fallback to (default) database...`);
-        try {
-          const fallbackDb = getFirestore(app);
-          await fallbackDb.collection("_connection_test_").doc("ping").get();
-          console.log(`[Firebase Admin] Fallback successful! Updating current db instance.`);
-          dbInstance = fallbackDb;
-        } catch (fallbackErr: any) {
-          console.error(`[Firebase Admin] Fallback also failed: ${fallbackErr.message}`);
-        }
+  try {
+    await dbInstance.collection('_connection_test_').doc('ping').get();
+    console.log('[Firebase Admin] Connectivity check successful.');
+  } catch (e: any) {
+    console.warn(`[Firebase Admin] Connectivity check failed: ${e.message}`);
+
+    if (e.message.includes('PERMISSION_DENIED')) {
+      console.warn(`[Firebase Admin] This usually means the Service Account running this code doesn't have the "Cloud Datastore User" or "Firebase Firestore Admin" role on project "${targetPid}".`);
+    }
+
+    if (firestoreDbId) {
+      console.warn('[Firebase Admin] Trying fallback to (default) database...');
+      try {
+        const fallbackDb = getFirestore(app);
+        await fallbackDb.collection('_connection_test_').doc('ping').get();
+        console.log('[Firebase Admin] Fallback successful! Updating current db instance.');
+        dbInstance = fallbackDb;
+      } catch (fallbackErr: any) {
+        console.error(`[Firebase Admin] Fallback also failed: ${fallbackErr.message}`);
       }
     }
+  }
 }
 
 // Run test connection asynchronously only if requested or in heavy debug
 // testConnection().catch(() => {});
 
-
-// 6. Validar token do usuário corretamente
+// 6. Validar token do usuário corretamente.
+// Gate 1: checkRevoked=true faz logout administrativo/exclusão valer imediatamente
+// nos endpoints protegidos, em vez de aceitar o ID token antigo até a expiração.
 export async function verifyAuth(req: VercelRequest): Promise<{ uid: string; email?: string } | null> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -261,13 +260,13 @@ export async function verifyAuth(req: VercelRequest): Promise<{ uid: string; ema
   const token = authHeader.split('Bearer ')[1];
   try {
     const authInstance = getAuth(app);
-    const decodedToken = await authInstance.verifyIdToken(token);
+    const decodedToken = await authInstance.verifyIdToken(token, true);
     console.log(`[AUTH] [VERIFY_TOKEN] [${decodedToken.uid}] [SUCCESS] Token de autenticação verificado`);
     return { uid: decodedToken.uid, email: decodedToken.email };
   } catch (error: any) {
     // Nunca decodifique o payload como fallback: JWT sem verificação de
     // assinatura permite que qualquer pessoa forje uid, email e permissões.
-    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [REJECTED] Token inválido (${error?.message || 'erro de verificação'}).`);
+    console.warn(`[AUTH] [VERIFY_TOKEN] [ANONYMOUS] [REJECTED] Token inválido ou revogado (${error?.message || 'erro de verificação'}).`);
     return null;
   }
 }
@@ -281,13 +280,9 @@ export function auth() {
 }
 
 const DEFAULT_CORS_ORIGINS = [
-  // Domínio Vercel usado pela implantação pública atual. Sem esta origem, o
-  // navegador rejeita as chamadas autenticadas de IA, planos e check-in com
-  // 403 antes que elas cheguem ao handler correspondente.
   'https://sem-desculpa.vercel.app',
   'https://invictusperformance.app.br',
   'https://www.invictusperformance.app.br',
-  // WebViews oficiais: Capacitor no iOS e localhost/https no Android.
   'capacitor://localhost',
   'http://localhost',
   'https://localhost',
@@ -309,8 +304,6 @@ function getCorsOrigins(): Set<string> {
 }
 
 export function isCorsOriginAllowed(origin?: string): boolean {
-  // Requisições servidor-a-servidor (webhooks, cron e app nativo fora de um
-  // browser) não carregam Origin. A autenticação própria continua obrigatória.
   if (!origin) return true;
   return getCorsOrigins().has(origin);
 }
