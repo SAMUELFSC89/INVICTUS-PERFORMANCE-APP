@@ -271,24 +271,24 @@ export async function getSeasonParticipantsByGym(seasonId: string): Promise<Map<
   return byGym;
 }
 
-export async function distributeSeasonPrizes(season: SeasonWindow): Promise<SeasonPayoutResult> {
-  const payoutRef = db.collection('season_payouts').doc(season.seasonId);
-  const existing = await payoutRef.get();
-  if (existing.exists && existing.data()?.distributedAt) {
-    const data: any = existing.data();
-    return {
-      seasonId: season.seasonId,
-      alreadyDistributed: true,
-      participantsCount: Number(data.participantsCount) || 0,
-      grossRevenue: Number(data.grossRevenue) || 0,
-      prizePool: Number(data.prizePool) || 0,
-      futureReserve: Number(data.futureReserve) || 0,
-      winnerCount: Number(data.winnerCount) || 0,
-      winners: data.winners || [],
-      academias: data.academias || [],
-    };
+function payoutResultFromStored(seasonId: string, data: any, alreadyDistributed: boolean): SeasonPayoutResult {
+  if (data?.seasonId !== seasonId || !Array.isArray(data?.winners) || !Array.isArray(data?.academias)) {
+    throw new Error('Plano de premiacao da temporada invalido ou inconsistente.');
   }
+  return {
+    seasonId,
+    alreadyDistributed,
+    participantsCount: Number(data.participantsCount) || 0,
+    grossRevenue: Number(data.grossRevenue) || 0,
+    prizePool: Number(data.prizePool) || 0,
+    futureReserve: Number(data.futureReserve) || 0,
+    winnerCount: Number(data.winnerCount) || 0,
+    winners: data.winners as SeasonWinner[],
+    academias: data.academias as ResultadoAcademia[],
+  };
+}
 
+async function buildSeasonPayoutPlan(season: SeasonWindow): Promise<SeasonPayoutResult> {
   const [revenueByGym, participantsByGym, config] = await Promise.all([
     computeSeasonRevenueByGym(season.seasonId),
     getSeasonParticipantsByGym(season.seasonId),
@@ -325,23 +325,9 @@ export async function distributeSeasonPrizes(season: SeasonWindow): Promise<Seas
     allWinners.push(...winners);
   }
 
-  // Cada crédito recebe a identidade imutável do settlement original. Assim,
-  // retries/crons concorrentes continuam usando a mesma chave mesmo se o
-  // season_tracker já tiver avançado para o mês seguinte.
-  for (const winner of allWinners) {
-    console.log(`[Season Prize Engine] Creditando R$ ${winner.prizeAmount.toFixed(2)} para ${winner.userId} (academia ${winner.gymId}, rank #${winner.rank})`);
-    await RewardsEngine.rewardLeaguePrize(
-      winner.userId,
-      'Liga Invictus',
-      winner.rank,
-      winner.prizeAmount,
-      { seasonId: season.seasonId, gymId: winner.gymId },
-    );
-  }
-
   const sum = (field: keyof ResultadoAcademia) =>
     Math.round(academias.reduce((total, item) => total + Number(item[field] || 0), 0) * 100) / 100;
-  const result: SeasonPayoutResult = {
+  return {
     seasonId: season.seasonId,
     alreadyDistributed: false,
     participantsCount: academias.reduce((total, item) => total + item.participantsCount, 0),
@@ -352,21 +338,89 @@ export async function distributeSeasonPrizes(season: SeasonWindow): Promise<Seas
     winners: allWinners,
     academias,
   };
+}
 
-  await payoutRef.set({
-    seasonId: season.seasonId,
-    startDate: season.startDate.toISOString(),
-    endDate: season.endDate.toISOString(),
-    participantsCount: result.participantsCount,
-    grossRevenue: result.grossRevenue,
-    prizePool: result.prizePool,
-    futureReserve: result.futureReserve,
-    winnerCount: result.winnerCount,
-    winners: allWinners,
-    academias,
-    distributedAt: FieldValue.serverTimestamp(),
+export async function distributeSeasonPrizes(season: SeasonWindow): Promise<SeasonPayoutResult> {
+  const payoutRef = db.collection('season_payouts').doc(season.seasonId);
+  const firstSnapshot = await payoutRef.get();
+  if (firstSnapshot.exists) {
+    const stored: any = firstSnapshot.data() || {};
+    if (stored.distributedAt || stored.status === 'DISTRIBUTED') {
+      return payoutResultFromStored(season.seasonId, stored, true);
+    }
+    if (stored.status !== 'PROCESSING') {
+      throw new Error('Premiacao existente em estado desconhecido; distribuicao interrompida.');
+    }
+  }
+
+  // O plano completo é calculado apenas quando ainda não existe um plano
+  // congelado. O commit transacional abaixo resolve a corrida entre dois crons:
+  // somente o primeiro plano vence; os demais reutilizam exatamente o armazenado.
+  const candidatePlan = firstSnapshot.exists
+    ? null
+    : await buildSeasonPayoutPlan(season);
+
+  const frozenPlan = await db.runTransaction(async (transaction: any) => {
+    const snapshot = await transaction.get(payoutRef);
+    if (snapshot.exists) {
+      const stored: any = snapshot.data() || {};
+      if (stored.distributedAt || stored.status === 'DISTRIBUTED') {
+        return { result: payoutResultFromStored(season.seasonId, stored, true), distributed: true };
+      }
+      if (stored.status !== 'PROCESSING') {
+        throw new Error('Premiacao existente em estado desconhecido; distribuicao interrompida.');
+      }
+      return { result: payoutResultFromStored(season.seasonId, stored, false), distributed: false };
+    }
+
+    if (!candidatePlan) throw new Error('Plano de premiacao ausente durante o congelamento.');
+    transaction.set(payoutRef, {
+      seasonId: season.seasonId,
+      startDate: season.startDate.toISOString(),
+      endDate: season.endDate.toISOString(),
+      participantsCount: candidatePlan.participantsCount,
+      grossRevenue: candidatePlan.grossRevenue,
+      prizePool: candidatePlan.prizePool,
+      futureReserve: candidatePlan.futureReserve,
+      winnerCount: candidatePlan.winnerCount,
+      winners: candidatePlan.winners,
+      academias: candidatePlan.academias,
+      status: 'PROCESSING',
+      plannedAt: FieldValue.serverTimestamp(),
+    });
+    return { result: candidatePlan, distributed: false };
   });
-  return result;
+
+  if (frozenPlan.distributed) return frozenPlan.result;
+
+  // O loop usa exclusivamente o plano congelado. Crash/retry, mudança posterior
+  // de score ou um segundo cron não conseguem trocar vencedores ou valores.
+  for (const winner of frozenPlan.result.winners) {
+    console.log(`[Season Prize Engine] Creditando R$ ${winner.prizeAmount.toFixed(2)} para ${winner.userId} (academia ${winner.gymId}, rank #${winner.rank})`);
+    await RewardsEngine.rewardLeaguePrize(
+      winner.userId,
+      'Liga Invictus',
+      winner.rank,
+      winner.prizeAmount,
+      { seasonId: season.seasonId, gymId: winner.gymId },
+    );
+  }
+
+  await db.runTransaction(async (transaction: any) => {
+    const snapshot = await transaction.get(payoutRef);
+    if (!snapshot.exists) throw new Error('Plano de premiacao desapareceu durante o settlement.');
+    const stored: any = snapshot.data() || {};
+    if (stored.distributedAt || stored.status === 'DISTRIBUTED') return;
+    if (stored.status !== 'PROCESSING' || stored.seasonId !== season.seasonId) {
+      throw new Error('Plano de premiacao mudou durante o settlement.');
+    }
+    transaction.set(payoutRef, {
+      status: 'DISTRIBUTED',
+      distributedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  return frozenPlan.result;
 }
 
 export async function runDailySeasonCheck(): Promise<{ skipped: boolean; reason?: string; result?: SeasonPayoutResult; nextSeason?: SeasonWindow }> {
