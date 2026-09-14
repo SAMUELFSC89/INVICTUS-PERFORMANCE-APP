@@ -60,6 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (event && payment && payment.id) {
       const providerEventAt = req.body?.dateCreated;
+      const checkoutSession = String(payment.checkoutSession || payment.checkout?.id || '');
       const confirmado = event === 'PAYMENT_RECEIVED'
         || event === 'PAYMENT_CONFIRMED'
         || event === 'PAYMENT_REFUND_DENIED';
@@ -89,7 +90,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const resultadoChampionship = await confirmarInscricaoChampionshipPorPagamento(
           payment.id,
           payment.value,
-          undefined,
+          checkoutSession || undefined,
           payment.externalReference,
           providerEventAt,
         );
@@ -111,7 +112,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const resultadoChampionship = await registrarEventoFinanceiroChampionship(
           payment.id,
           event as ChampionshipPaymentRiskEvent,
-          undefined,
+          checkoutSession || undefined,
           payment.externalReference,
           payment.value,
           providerEventAt,
