@@ -40,6 +40,14 @@ public final class InvictusGoogleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebA
                 return
             }
 
+            // ASWebAuthenticationSession representa uma transação única. Um
+            // segundo toque enquanto a primeira janela ainda está aberta não
+            // pode substituir `authSession` e deixar a primeira Promise órfã.
+            guard self.authSession == nil else {
+                call.reject("Já existe um login com Google em andamento.")
+                return
+            }
+
             guard
                 let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String,
                 !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -90,12 +98,22 @@ public final class InvictusGoogleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebA
                 }
 
                 guard let callbackURL,
+                      callbackURL.scheme?.lowercased() == reversedClientID.lowercased(),
+                      callbackURL.host == nil,
+                      callbackURL.path == "/oauthredirect",
                       let callback = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false) else {
-                    call.reject("O Google não retornou uma resposta válida.")
+                    call.reject("O Google retornou um callback inválido.")
                     return
                 }
 
-                let values = Dictionary(uniqueKeysWithValues: (callback.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+                // Dictionary(uniqueKeysWithValues:) causa fatalError quando a
+                // URL contém a mesma chave duas vezes. Além do crash, aceitar
+                // parâmetros duplicados em state/code é ambíguo. Parseamos de
+                // forma fail-closed e rejeitamos qualquer duplicidade.
+                guard let values = Self.uniqueQueryValues(callback.queryItems ?? []) else {
+                    call.reject("O Google retornou parâmetros de autenticação duplicados.")
+                    return
+                }
                 if let oauthError = values["error"], !oauthError.isEmpty {
                     call.reject("O Google recusou o login: \(oauthError)")
                     return
@@ -209,6 +227,15 @@ public final class InvictusGoogleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebA
             return window
         }
         return ASPresentationAnchor()
+    }
+
+    private static func uniqueQueryValues(_ items: [URLQueryItem]) -> [String: String]? {
+        var values: [String: String] = [:]
+        for item in items {
+            if values[item.name] != nil { return nil }
+            values[item.name] = item.value ?? ""
+        }
+        return values
     }
 
     private static func randomURLSafeString(byteCount: Int = 32) -> String {
