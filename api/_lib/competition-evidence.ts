@@ -11,6 +11,11 @@ export type CompetitionEvidenceMetrics = {
   calories: number | null;
 };
 
+function hasExplicitTrustedStatus(activity: Record<string, any>): boolean {
+  return activity.competitionEvidenceStatus === 'trusted_server_source'
+    || activity.competitionEvidenceStatus === 'trusted_native_attestation';
+}
+
 function isDirectTrustedStrava(activity: Record<string, any>): boolean {
   const source = String(activity.source || '').trim().toLowerCase();
   const sourceActivityId = String(activity.sourceActivityId || '').trim();
@@ -39,16 +44,13 @@ function usesTrustedEvidenceContract(activity: Record<string, any>): boolean {
  * promoção usados por Apple Health/Health Connect.
  */
 export function hasTrustedCompetitionEvidence(activity: Record<string, any>): boolean {
-  return activity.competitionEvidenceStatus === 'trusted_server_source'
-    || activity.competitionEvidenceStatus === 'trusted_native_attestation'
+  return hasExplicitTrustedStatus(activity)
     || isDirectTrustedStrava(activity)
     || usesTrustedEvidenceContract(activity);
 }
 
 function normalizedEvidenceValue(activity: Record<string, any>): Record<string, any> | null {
-  if (isDirectTrustedStrava(activity)
-    && activity.competitionEvidenceStatus !== 'trusted_server_source'
-    && activity.competitionEvidenceStatus !== 'trusted_native_attestation') {
+  if (isDirectTrustedStrava(activity) && !hasExplicitTrustedStatus(activity)) {
     return {
       activityType: activity.type,
       cardioType: activity.cardioType ?? null,
@@ -62,6 +64,10 @@ function normalizedEvidenceValue(activity: Record<string, any>): Record<string, 
       calories: activity.calories ?? activity.caloriesBurned ?? null,
     };
   }
+
+  // Nunca aproveite um snapshot residual de uma origem marcada como não
+  // confiável. O status explícito faz parte da proveniência do próprio dado.
+  if (!hasExplicitTrustedStatus(activity)) return null;
 
   const value = activity.competitionEvidenceMetrics;
   return value && typeof value === 'object' ? value : null;
