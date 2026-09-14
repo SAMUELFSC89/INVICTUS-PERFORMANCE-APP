@@ -35,10 +35,20 @@ describe('account-state', () => {
     { status: 'deleted' },
     { accountStatus: 'account_deleted' },
     { lifecycleStatus: 'deletion_completed' },
+    { deletionStatus: 'completed' },
+    { deletionStatus: 'deleted' },
+    { deletionStatus: 'deletion_completed' },
+    { deletionStatus: 'DELETION_COMPLETED' },
   ])('detects deleted profile %#', (profile) => {
     expect(isDeletedAccountState(profile)).toBe(true);
     expect(isInactiveAccountState(profile)).toBe(true);
     expect(isActiveAccountState(profile)).toBe(false);
+  });
+
+  test('does not treat a non-terminal deletion workflow as already deleted', () => {
+    const profile = { status: 'active', deletionStatus: 'requested' };
+    expect(isDeletedAccountState(profile)).toBe(false);
+    expect(isActiveAccountState(profile)).toBe(true);
   });
 
   test('fails closed for missing profile data', () => {

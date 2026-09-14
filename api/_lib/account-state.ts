@@ -7,6 +7,12 @@ const DELETED_STATES = new Set([
   'deletion_completed',
 ]);
 
+const COMPLETED_DELETION_STATUSES = new Set([
+  'completed',
+  'deleted',
+  'deletion_completed',
+]);
+
 const INACTIVE_STATES = new Set([
   ...DELETED_STATES,
   'blocked',
@@ -23,6 +29,12 @@ function normalizedStates(data: Record<string, unknown>): string[] {
     .map((value) => value.trim().toLowerCase());
 }
 
+function normalizedDeletionStatus(data: Record<string, unknown>): string {
+  return typeof data.deletionStatus === 'string'
+    ? data.deletionStatus.trim().toLowerCase()
+    : '';
+}
+
 export function isDeletedAccountState(userData: unknown): boolean {
   if (!userData || typeof userData !== 'object') return true;
   const data = userData as Record<string, unknown>;
@@ -33,6 +45,7 @@ export function isDeletedAccountState(userData: unknown): boolean {
     || data.tombstone === true
     || data.deletedAt
     || data.accountDeletedAt
+    || COMPLETED_DELETION_STATUSES.has(normalizedDeletionStatus(data))
     || normalizedStates(data).some((state) => DELETED_STATES.has(state))
   );
 }

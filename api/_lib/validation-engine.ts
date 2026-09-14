@@ -1,5 +1,6 @@
 import { SECURITY_CONFIG } from './security-config.js';
 import { resolveModality, resolverPerfilValidacao, PerfilValidacaoId } from './modality-config.js';
+import { isActiveAccountState } from './account-state.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -143,11 +144,15 @@ export class ValidationEngine {
     // validas sem exigir wearable conectado -- por isso isso NAO entra em
     // missingData nem bloqueia 'valid' (ver auditoria antifraude 2026-08).
 
-    // 10. Usuário Elegível
-    const isBanned = userData?.status === 'BANNED' || userData?.isBanned || userData?.isSuspended || userData?.isBlocked;
-    const userEligible = !isBanned;
-    if (isBanned) {
-      warnings.push('Usuário suspenso ou inapto para validação de atividades.');
+    // 10. Usuário Elegível. Quando esta função é usada isoladamente sem perfil,
+    // preservamos a compatibilidade estrutural; porém, se o chamador tentou
+    // fornecer um perfil e ele veio vazio/ausente, a validação competitiva
+    // falha fechada. Perfis presentes usam a fonte canônica de lifecycle.
+    const userProfileWasProvided = userData !== undefined;
+    const hasUserProfile = !!userData && typeof userData === 'object' && Object.keys(userData).length > 0;
+    const userEligible = !userProfileWasProvided || (hasUserProfile && isActiveAccountState(userData));
+    if (!userEligible) {
+      warnings.push('Usuário com conta ausente ou inativa não pode validar atividade competitiva.');
     }
 
     // Decisão final de validação estrutural

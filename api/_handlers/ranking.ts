@@ -1,12 +1,9 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
+import { isActiveAccountState } from '../_lib/account-state.js';
 import { isCurrentCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
 import { reconcileWeeklyRankingAchievements } from '../_lib/user-ranking-achievements.js';
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
-
-type CachedRanking = { topUsers: any[]; gymName: string; timestamp: number };
-const serverRankingCache = new Map<string, CachedRanking>();
-const CACHE_TTL = 3 * 60 * 1000;
 
 async function reconcileCanonicalRankingAchievement(userId: string, period: string, currentUser: any) {
   // Somente o ranking semanal opt-in é fonte de conquista. Monthly/all são
@@ -18,6 +15,11 @@ async function reconcileCanonicalRankingAchievement(userId: string, period: stri
     // novamente na próxima leitura semanal.
     console.warn('[Ranking API] Falha ao reconciliar conquista semanal:', error);
   });
+}
+
+function finiteScore(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -41,6 +43,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const ownProfile = ownProfileSnapshot.data() || {};
+    if (!isActiveAccountState(ownProfile)) {
+      return res.status(403).json({ error: 'Conta inativa não pode acessar o ranking.', topUsers: [], enrolled: false });
+    }
+
     const profileGymId = String(ownProfile.gymId || '').trim();
     if (!profileGymId) {
       return res.status(422).json({ topUsers: [], enrolled: false, error: 'Defina sua academia no perfil para acessar o ranking.' });
@@ -65,23 +71,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const responseLimit = Math.min(100, Math.max(20, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50));
     const gymName = String(ownProfile.gymName || ownProfile.gym || '').trim();
 
-    const cacheKey = `${gymId}_${period}_${scoreField}`;
-    const now = Date.now();
-    const cached = serverRankingCache.get(cacheKey);
-    if (cached && now - cached.timestamp < CACHE_TTL && cached.topUsers.some((entry) => entry.uid === auth.uid)) {
-      const currentUser = cached.topUsers.find((entry) => entry.uid === auth.uid) || null;
-      await reconcileCanonicalRankingAchievement(auth.uid, period, currentUser);
-      return res.status(200).json({
-        topUsers: cached.topUsers.slice(0, responseLimit),
-        currentUser,
-        participantCount: cached.topUsers.length,
-        enrolled: true,
-        gymId,
-        gymName: cached.gymName || gymName,
-        cached: true
-      });
-    }
-
+    // Não cacheamos nome/foto/score/adesão do ranking no processo serverless.
+    // Opt-out, suspensão, exclusão ou troca de academia precisam refletir na
+    // próxima leitura; uma janela de cache aqui serviria identidades inativas.
     const enrollments = await db.collection('gym_ranking_enrollments')
       .where('gymId', '==', gymId)
       .limit(500)
@@ -97,11 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!snapshot.exists) return false;
         const data = snapshot.data() || {};
         return String(data.gymId || '').trim() === gymId
-          && data.isBlocked !== true
-          && data.isBanned !== true
-          && data.isSuspended !== true
-          && data.isDeleted !== true
-          && data.deleted !== true;
+          && isActiveAccountState(data);
       })
       .map((snapshot) => {
         const data = snapshot.data() || {};
@@ -109,8 +97,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           uid: snapshot.id,
           displayName: data.displayName || 'Atleta',
           photoURL: data.photoURL || '',
-          score: Number(data[scoreField] || 0),
-          streak: Number(data.streak || 0),
+          score: finiteScore(data[scoreField]),
+          streak: finiteScore(data.streak),
           gymId
         };
       })
@@ -122,7 +110,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
       .map((entry, index) => ({ ...entry, rank: index + 1 }));
 
-    serverRankingCache.set(cacheKey, { topUsers, gymName, timestamp: now });
     const currentUser = topUsers.find((entry) => entry.uid === auth.uid) || null;
     await reconcileCanonicalRankingAchievement(auth.uid, period, currentUser);
     return res.status(200).json({
