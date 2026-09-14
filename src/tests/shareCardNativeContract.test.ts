@@ -22,6 +22,15 @@ describe('contrato nativo do card de compartilhamento', () => {
     expect(iosPlugin).toContain('completion(self.imageData(from: call))');
   });
 
+  it('isola arquivos temporários do share no iOS e não aceita caminho no nome vindo do JavaScript', () => {
+    const iosPlugin = read('ios/App/App/InvictusShareCardPlugin.swift');
+    expect(iosPlugin).toContain('invictus-share-\\(UUID().uuidString)');
+    expect(iosPlugin).toContain('private func safeFileName(_ value: String)');
+    expect(iosPlugin).toContain('of: "[^a-zA-Z0-9._-]"');
+    expect(iosPlugin).toContain('removeItem(at: shareDirectory)');
+    expect(iosPlugin).not.toContain('temporaryDirectory.appendingPathComponent(safeName)');
+  });
+
   it('remove velocidade e divisórias antigas, mas mantém os ícones do layout aprovado', () => {
     const card = read('src/components/RunShareCard.tsx');
     expect(card).not.toContain('VELOCIDADE');
