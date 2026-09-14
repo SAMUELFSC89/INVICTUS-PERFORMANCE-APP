@@ -64,66 +64,75 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(1)
       .get();
 
-    let withdrawalDoc: any = byProviderId.empty ? null : byProviderId.docs[0];
-    if (!withdrawalDoc && externalReference) {
+    let withdrawalRef: any = byProviderId.empty ? null : byProviderId.docs[0].ref;
+    if (!withdrawalRef && externalReference) {
       const byReference = await db.collection('withdrawals').doc(externalReference).get();
-      if (byReference.exists) withdrawalDoc = byReference;
+      if (byReference.exists) withdrawalRef = byReference.ref;
     }
 
-    if (!withdrawalDoc) {
+    if (!withdrawalRef) {
       console.error('[Asaas Authorization] Nenhum saque interno encontrado para transferId/reference:', transferId, externalReference || '(ausente)');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Transferencia nao corresponde a um saque registrado no sistema.' });
     }
 
-    const withdrawal: any = withdrawalDoc.data() || {};
-    const canonicalWithdrawalId = withdrawalDoc.id;
+    // A validação e o vínculo do providerTransferId acontecem na mesma
+    // transação. Assim, duas transferências concorrentes com o mesmo
+    // externalReference não conseguem ambas ser aprovadas para o mesmo saque.
+    const decision = await db.runTransaction(async (tx: any): Promise<{ approved: boolean; withdrawalId?: string; reason?: string }> => {
+      const freshSnap = await tx.get(withdrawalRef);
+      if (!freshSnap.exists) {
+        return { approved: false, reason: 'Transferencia nao corresponde a um saque registrado no sistema.' };
+      }
 
-    if (externalReference && externalReference !== canonicalWithdrawalId) {
-      console.error('[Asaas Authorization] externalReference divergente:', externalReference, 'esperado:', canonicalWithdrawalId);
-      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Referencia externa da transferencia nao confere.' });
+      const withdrawal: any = freshSnap.data() || {};
+      const canonicalWithdrawalId = freshSnap.id;
+
+      if (externalReference && externalReference !== canonicalWithdrawalId) {
+        return { approved: false, reason: 'Referencia externa da transferencia nao confere.' };
+      }
+
+      if (withdrawal.providerTransferId && withdrawal.providerTransferId !== transferId) {
+        return { approved: false, reason: 'Saque ja esta vinculado a outra transferencia.' };
+      }
+
+      // O dinheiro continua bloqueado enquanto o Asaas processa a transferência.
+      // "paid" só é gravado após o webhook final TRANSFER_DONE.
+      if (withdrawal.status !== 'processing') {
+        return { approved: false, reason: 'Saque nao esta no status esperado para pagamento.' };
+      }
+
+      if (withdrawal.antiFraudPassed !== true) {
+        return { approved: false, reason: 'Saque nao passou nas checagens antifraude internas.' };
+      }
+
+      // Financeiro fail-closed: valor ausente, string, NaN ou divergente deve
+      // sempre ser recusado. O comportamento anterior aceitava payload sem valor.
+      const transferValue = transfer.value;
+      const amountMatches = typeof transferValue === 'number'
+        && Number.isFinite(transferValue)
+        && Number.isFinite(Number(withdrawal.amount))
+        && Math.abs(transferValue - Number(withdrawal.amount)) < 0.01;
+      if (!amountMatches) {
+        return { approved: false, reason: 'Valor da transferencia nao confere com o saque registrado.' };
+      }
+
+      tx.set(withdrawalRef, {
+        paymentProvider: 'asaas',
+        providerTransferId: transferId,
+        providerExternalReference: externalReference || canonicalWithdrawalId,
+        providerAuthorizationBoundAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      return { approved: true, withdrawalId: canonicalWithdrawalId };
+    });
+
+    if (!decision.approved) {
+      console.error('[Asaas Authorization] Transferencia recusada:', transferId, decision.reason);
+      return res.status(200).json({ status: 'REFUSED', refuseReason: decision.reason || 'Transferencia recusada pelo sistema.' });
     }
 
-    if (withdrawal.providerTransferId && withdrawal.providerTransferId !== transferId) {
-      console.error('[Asaas Authorization] Saque ja vinculado a outro transferId:', withdrawal.providerTransferId, 'recebido:', transferId);
-      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Saque ja esta vinculado a outra transferencia.' });
-    }
-
-    // O dinheiro continua bloqueado enquanto o Asaas processa a transferência.
-    // "paid" só é gravado após o webhook final TRANSFER_DONE.
-    if (withdrawal.status !== 'processing') {
-      console.error('[Asaas Authorization] Saque', canonicalWithdrawalId, 'nao esta com status "processing" (atual:', withdrawal.status, ').');
-      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Saque nao esta no status esperado para pagamento.' });
-    }
-
-    if (withdrawal.antiFraudPassed !== true) {
-      console.error('[Asaas Authorization] Saque', canonicalWithdrawalId, 'nao passou nas checagens antifraude internas.');
-      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Saque nao passou nas checagens antifraude internas.' });
-    }
-
-    // Financeiro fail-closed: valor ausente, string, NaN ou divergente deve
-    // sempre ser recusado. O comportamento anterior aceitava payload sem valor.
-    const transferValue = transfer.value;
-    const amountMatches = typeof transferValue === 'number'
-      && Number.isFinite(transferValue)
-      && Number.isFinite(Number(withdrawal.amount))
-      && Math.abs(transferValue - Number(withdrawal.amount)) < 0.01;
-    if (!amountMatches) {
-      console.error('[Asaas Authorization] Valor da transferencia (', transferValue, ') nao confere com o saque registrado (', withdrawal.amount, ').');
-      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Valor da transferencia nao confere com o saque registrado.' });
-    }
-
-    // Se a chamada POST /transfers foi aceita pelo Asaas antes de a resposta
-    // chegar ao Invictus, o mecanismo de autorizacao ainda consegue recuperar
-    // o vinculo pelo externalReference e persistir o transferId canonico.
-    await withdrawalDoc.ref.set({
-      paymentProvider: 'asaas',
-      providerTransferId: transferId,
-      providerExternalReference: externalReference || canonicalWithdrawalId,
-      providerAuthorizationBoundAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
-
-    console.log('[Asaas Authorization] Saque', canonicalWithdrawalId, 'aprovado automaticamente para transferId:', transferId);
+    console.log('[Asaas Authorization] Saque', decision.withdrawalId, 'aprovado automaticamente para transferId:', transferId);
     return res.status(200).json({ status: 'APPROVED' });
   } catch (error: any) {
     console.error('[Asaas Authorization Error]', error);
