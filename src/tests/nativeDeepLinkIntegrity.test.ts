@@ -64,9 +64,19 @@ describe('Gate 1 — integridade de deep links e Live Activity nativa', () => {
     expect((sourcesSection.match(/InvictusActivityAttributes\.swift in Sources/g) || []).length).toBe(2);
   });
 
-  it('não perde ação do Live Activity antes de o listener JS existir', () => {
+  it('preserva todos os toques da Live Activity antes de o listener JS existir', () => {
+    const shared = read('ios/App/App/InvictusActivityAttributes.swift');
     const plugin = read('ios/App/App/InvictusActivityPlugin.swift');
+
+    expect(shared).toContain('pendingActionQueueKey');
+    expect(shared).toContain('defaults.stringArray(forKey: InvictusActivityIPC.pendingActionQueueKey) ?? []');
+    expect(shared).toContain('pending.append(action.rawValue)');
+    expect(shared).toContain('maxPendingActionCount');
+    expect(shared).not.toContain('defaults.set(action.rawValue, forKey: InvictusActivityIPC.pendingActionKey)');
+
     expect(plugin).toContain('handlePendingActionFromIntent()');
+    expect(plugin).toContain('defaults.stringArray(forKey: InvictusActivityIPC.pendingActionQueueKey) ?? []');
+    expect(plugin).toContain('for raw in validActions');
     expect(plugin).toContain('retainUntilConsumed: true');
     expect(plugin).toContain('InvictusActivityIPC.pendingActionKey');
   });
