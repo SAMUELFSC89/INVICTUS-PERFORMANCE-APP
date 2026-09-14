@@ -12,12 +12,14 @@ function functionBlock(source: string, name: string, nextMarker: string): string
 }
 
 describe('Gate 1 lifecycle and privacy hardening', () => {
-  test('all normal Firebase auth checks reject revoked ID tokens', () => {
+  test('shared authentication rejects revoked tokens and inactive existing accounts', () => {
     const source = read('api/_lib/common.ts');
     expect(source).toContain('verifyIdToken(token, true)');
+    expect(source).toContain('isActiveAccountState(profileSnap.data())');
+    expect(source).toContain("collection('deleted_users').doc(decodedToken.uid)");
   });
 
-  test('strict auth additionally requires an active application account', () => {
+  test('strict auth additionally requires an existing active application account', () => {
     const source = read('api/_lib/strict-auth.ts');
     expect(source).toContain('verifyIdToken(token, true)');
     expect(source).toContain('isActiveAccountState');
@@ -32,13 +34,25 @@ describe('Gate 1 lifecycle and privacy hardening', () => {
     expect(rewards).toContain("settlement: { seasonId: string; gymId?: string }");
     expect(engine).toContain('{ seasonId: season.seasonId, gymId: winner.gymId }');
     expect(ledger).toContain(".update(`${input.seasonId}|${input.userId}|${input.gymId || ''}|${input.rank}`)");
+    expect(ledger).toContain("collection('season_prize_settlements')");
+    expect(ledger).toContain("status: 'INELIGIBLE'");
     expect(ledger).toContain('transaction.create(txRef');
+  });
+
+  test('season payout freezes its complete winner plan before issuing any credit', () => {
+    const engine = read('api/_lib/season-prize-engine.ts');
+    const planWrite = engine.indexOf("status: 'PROCESSING'");
+    const creditLoop = engine.indexOf('for (const winner of frozenPlan.result.winners)');
+    expect(planWrite).toBeGreaterThan(0);
+    expect(creditLoop).toBeGreaterThan(planWrite);
+    expect(engine).toContain('payoutResultFromStored');
+    expect(engine).toContain("status: 'DISTRIBUTED'");
   });
 
   test('inactive athlete is removed from competition without erasing already-paid pool revenue', () => {
     const engine = read('api/_lib/season-prize-engine.ts');
     const revenueBlock = functionBlock(engine, 'export async function computeSeasonRevenueByGym', 'export async function getSeasonParticipants');
-    const participantBlock = functionBlock(engine, 'export async function getSeasonParticipantsByGym', 'export async function distributeSeasonPrizes');
+    const participantBlock = functionBlock(engine, 'export async function getSeasonParticipantsByGym', 'function payoutResultFromStored');
 
     expect(revenueBlock).toContain("where('status', '==', 'paga')");
     expect(revenueBlock).not.toContain('activeUserIdSet');
@@ -63,13 +77,15 @@ describe('Gate 1 lifecycle and privacy hardening', () => {
     expect(source).toContain('exige conciliacao antes de uma nova cobranca');
   });
 
-  test('public activity sharing is grant-based, not raw activity-id based', () => {
+  test('public activity sharing is grant-based and revocable, not raw activity-id based', () => {
     const access = read('api/_lib/share-access.ts');
     const createHandler = read('api/_handlers/activity-share.ts');
     const publicHandler = read('api/_handlers/share.ts');
     expect(access).toContain("collection('activity_share_grants')");
     expect(access).toContain('randomBytes(24)');
+    expect(access).toContain('revokeActivityShareGrant');
     expect(createHandler).toContain('createActivityShareGrant');
+    expect(createHandler).toContain('revokeActivityShareGrant');
     expect(createHandler).toContain('verifyStrictAuth');
     expect(publicHandler).toContain('resolveActivityShareGrant');
     expect(publicHandler).not.toContain("collection('workouts').doc(id");
