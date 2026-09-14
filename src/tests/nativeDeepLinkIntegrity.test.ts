@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseNativeStravaCallback, resolveNativeDeepLinkRoute } from '../lib/nativeDeepLinks';
+import { describeNativeDeepLinkForLog, parseNativeStravaCallback, resolveNativeDeepLinkRoute } from '../lib/nativeDeepLinks';
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8');
 
@@ -34,6 +34,22 @@ describe('Gate 1 — integridade de deep links e Live Activity nativa', () => {
       returnPath: '/profile/wearables',
     });
     expect(parseNativeStravaCallback('https://evil.test/strava-callback')).toBeNull();
+  });
+
+  it('nunca coloca query/fragment OAuth ou de pagamento no texto de diagnóstico', () => {
+    const described = describeNativeDeepLinkForLog(
+      'invictus://strava-callback/oauthredirect?code=secret-code&state=secret-state&access_token=secret-token#fragment-secret',
+    );
+    expect(described).toBe('invictus://strava-callback/oauthredirect');
+    expect(described).not.toContain('secret-code');
+    expect(described).not.toContain('secret-state');
+    expect(described).not.toContain('secret-token');
+    expect(described).not.toContain('fragment-secret');
+    expect(describeNativeDeepLinkForLog('not a url')).toBe('[native-url-invalida]');
+
+    const bridge = read('src/components/MobileBridge.tsx');
+    expect(bridge).toContain('describeNativeDeepLinkForLog(rawUrl)');
+    expect(bridge).not.toContain("console.log('[MobileBridge] Deep link recebido:', rawUrl)");
   });
 
   it('processa warm start e cold start no MobileBridge', () => {
