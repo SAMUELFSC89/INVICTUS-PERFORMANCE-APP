@@ -112,7 +112,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       transfer.id,
       event,
       transfer.status,
-      transfer.failReason
+      transfer.failReason,
+      transfer.externalReference,
+      transfer.value
     );
 
     return res.status(200).json({ received: true });
