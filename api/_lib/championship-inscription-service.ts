@@ -153,6 +153,9 @@ export async function criarInscricaoChampionship(
     const snap = await transaction.get(ref);
     const current: any = snap.exists ? snap.data() || {} : {};
     if (current.status === 'paga' && current.paymentStatus === 'PAID') throw new Error('Voce ja esta inscrito neste campeonato.');
+    if (current.status === 'reembolsada' || current.status === 'contestada') {
+      throw new Error('Esta inscricao possui historico financeiro encerrado ou em disputa. Uma nova cobranca exige conciliacao antes de reutilizar o registro.');
+    }
     if (current.status === 'pendente' && current.asaasCheckoutId) return { existing: true, data: current };
     if (current.paymentStatus === 'RECONCILIATION_REQUIRED') {
       throw new Error('A cobranca anterior exige conciliacao antes de uma nova tentativa.');
@@ -340,7 +343,9 @@ export async function confirmarInscricaoChampionshipPorPagamento(
       return { encontrada: true, ignoradoComoAntigo: true, userId: data.userId, championshipId: data.championshipId };
     }
 
-    const paymentBindingValid = !data.asaasPaymentId || String(data.asaasPaymentId) === asaasPaymentId;
+    const paymentBindingValid = data.asaasPaymentId
+      ? String(data.asaasPaymentId) === asaasPaymentId
+      : Boolean(asaasCheckoutId && String(data.asaasCheckoutId || '') === asaasCheckoutId);
     const referenceValid = receivedReference === doc.id
       || (!receivedReference && (
         String(data.asaasPaymentId || '') === asaasPaymentId
@@ -354,7 +359,7 @@ export async function confirmarInscricaoChampionshipPorPagamento(
 
     if (!paymentBindingValid || !referenceValid || !amountValid || !orderingValid) {
       const reason = !paymentBindingValid
-        ? 'PAYMENT_ID_CONFLICT'
+        ? 'PAYMENT_ID_OR_CHECKOUT_BINDING_MISSING'
         : !referenceValid
           ? 'PAYMENT_EXTERNAL_REFERENCE_MISMATCH'
           : !amountValid
@@ -497,7 +502,6 @@ export async function registrarEventoFinanceiroChampionship(
   });
 }
 
-/** Compatibilidade para chamadores legados; novos webhooks usam o evento completo. */
 export async function marcarInscricaoChampionshipComoReembolsada(asaasPaymentId: string, asaasCheckoutId?: string) {
   return registrarEventoFinanceiroChampionship(
     asaasPaymentId,
