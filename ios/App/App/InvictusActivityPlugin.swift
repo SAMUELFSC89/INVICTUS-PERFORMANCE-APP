@@ -32,11 +32,16 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
 
     private var locationManager: CLLocationManager?
     private var trackedLocations: [[String: Any]] = []
+    private var trackedSessionId: String?
     private let trackedLocationsKey = "invictus.background.locations"
+    private let trackedSessionIdKey = "invictus.background.sessionId"
 
     override public func load() {
-        if let saved = UserDefaults(suiteName: InvictusActivityIPC.appGroupId)?.array(forKey: trackedLocationsKey) as? [[String: Any]] {
-            trackedLocations = saved
+        if let defaults = UserDefaults(suiteName: InvictusActivityIPC.appGroupId) {
+            if let saved = defaults.array(forKey: trackedLocationsKey) as? [[String: Any]] {
+                trackedLocations = saved
+            }
+            trackedSessionId = defaults.string(forKey: trackedSessionIdKey)
         }
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
@@ -82,12 +87,23 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
     }
 
     private func beginLocationTracking(_ call: CAPPluginCall, clearExisting: Bool) {
+        guard let sessionId = call.getString("sessionId")?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionId.isEmpty else {
+            call.reject("Sessão ativa ausente para rastreamento de localização.")
+            return
+        }
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { call.resolve(); return }
-            if clearExisting {
+
+            // O buffer persistido pertence a uma sessão específica. Uma sessão
+            // nova sempre começa limpa; uma retomada só preserva os pontos se o
+            // proprietário salvo for exatamente o mesmo sessionId.
+            if clearExisting || self.trackedSessionId != sessionId {
                 self.trackedLocations = []
+                self.trackedSessionId = sessionId
                 self.persistTrackedLocations()
             }
+
             let manager = self.configureLocationManager()
             let status = manager.authorizationStatus
 
@@ -118,20 +134,30 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
     }
 
     @objc func resumeLocationTracking(_ call: CAPPluginCall) {
-        // Recuperação após recriação do WebView/processo JS: o buffer persistido
-        // pertence à sessão em andamento e NÃO pode ser apagado antes do JS
-        // importá-lo e do encerramento enviar a prova completa ao backend.
+        // Recuperação após recriação do WebView/processo JS: preserva o buffer
+        // somente quando ele comprova pertencer à mesma sessão.
         beginLocationTracking(call, clearExisting: false)
     }
 
     @objc func getTrackedLocations(_ call: CAPPluginCall) {
-        call.resolve(["locations": trackedLocations])
+        call.resolve(locationResult())
     }
 
     @objc func stopLocationTracking(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
-            self?.locationManager?.stopUpdatingLocation()
-            call.resolve(["locations": self?.trackedLocations ?? []])
+            guard let self else { call.resolve(["locations": []]); return }
+            self.locationManager?.stopUpdatingLocation()
+
+            // collectAndStop (pausa/finalização) precisa receber o lote ainda
+            // intacto. stop() de encerramento/logout manda clear=true para que
+            // coordenadas privadas não sobrevivam para outra conta/sessão.
+            let result = self.locationResult()
+            if call.getBool("clear") == true {
+                self.trackedLocations = []
+                self.trackedSessionId = nil
+            }
+            self.persistTrackedLocations()
+            call.resolve(result)
         }
     }
 
@@ -182,8 +208,20 @@ public class InvictusActivityPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationMana
         ])
     }
 
+    private func locationResult() -> [String: Any] {
+        var result: [String: Any] = ["locations": trackedLocations]
+        if let trackedSessionId { result["sessionId"] = trackedSessionId }
+        return result
+    }
+
     private func persistTrackedLocations() {
-        UserDefaults(suiteName: InvictusActivityIPC.appGroupId)?.set(trackedLocations, forKey: trackedLocationsKey)
+        guard let defaults = UserDefaults(suiteName: InvictusActivityIPC.appGroupId) else { return }
+        defaults.set(trackedLocations, forKey: trackedLocationsKey)
+        if let trackedSessionId {
+            defaults.set(trackedSessionId, forKey: trackedSessionIdKey)
+        } else {
+            defaults.removeObject(forKey: trackedSessionIdKey)
+        }
     }
 
     deinit {
