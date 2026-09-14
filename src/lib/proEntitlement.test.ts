@@ -14,6 +14,16 @@ describe('hasActiveProEntitlement', () => {
     ...overrides,
   });
 
+  it('libera acesso PRO para conta administrativa ativa sem exigir assinatura', () => {
+    expect(hasActiveProEntitlement({ role: 'admin' }, now)).toBe(true);
+  });
+
+  it('não libera acesso administrativo para conta bloqueada ou excluída', () => {
+    expect(hasActiveProEntitlement({ role: 'admin', isBlocked: true }, now)).toBe(false);
+    expect(hasActiveProEntitlement({ role: 'admin', accountStatus: 'deleted' }, now)).toBe(false);
+    expect(hasActiveProEntitlement({ role: 'admin', deletionStatus: 'completed' }, now)).toBe(false);
+  });
+
   it('aceita temporariamente o entitlement legado performance', () => {
     expect(hasActiveProEntitlement({
       proEntitlement: canonical({ entitlementId: 'performance' }),
