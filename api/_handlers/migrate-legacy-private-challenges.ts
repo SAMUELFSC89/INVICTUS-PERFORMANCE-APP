@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth, FieldValue } from '../_lib/common.js';
+import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 
 /**
  * #325 (tarefa #125): migração única para o fim do modelo de dinheiro real
@@ -30,9 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
   const userSnap = await db.collection('users').doc(auth.uid).get();
-  const userData = userSnap.data();
-  if (userData?.role !== 'admin') {
-    return res.status(403).json({ error: 'Só administradores podem realizar esta ação.' });
+  if (!userSnap.exists || !hasActiveAdminAuthority(userSnap.data())) {
+    return res.status(403).json({ error: 'Só administradores ativos podem realizar esta ação.' });
   }
 
   // dryRun=true por padrão -- só grava de verdade com ?dryRun=false.
@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const challengeDoc of legacySnap.docs) {
       const challenge = challengeDoc.data();
       const entryFee = Number(challenge.entryFee) || 0;
-      if (entryFee <= 0) continue; // já é um desafio do modelo novo (sem dinheiro), não mexe
+      if (entryFee <= 0) continue;
 
       const membersSnap = await db.collection('private_challenge_members')
         .where('challengeId', '==', challengeDoc.id)
@@ -62,8 +62,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const userId = member.userId;
         if (!userId) continue;
 
-        // ID determinístico -- reexecutar a migração nunca duplica o estorno
-        // do mesmo membro do mesmo desafio.
         const refundTxId = `legacy_refund_${challengeDoc.id}_${userId}`;
         const refundTxRef = db.collection('walletTransactions').doc(refundTxId);
         const existing = await refundTxRef.get();
