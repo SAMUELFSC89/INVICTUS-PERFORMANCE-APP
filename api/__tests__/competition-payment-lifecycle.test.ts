@@ -13,7 +13,7 @@ function block(source: string, startMarker: string, endMarker: string): string {
 describe('competition payment lifecycle hardening', () => {
   test('season confirmation is transactional and validates amount, reference, ordering and account lifecycle', () => {
     const source = read('api/_lib/inscricao-service.ts');
-    const confirmation = block(source, 'export async function confirmarInscricaoPorPagamento', '/**\n * Suspende imediatamente');
+    const confirmation = block(source, 'export async function confirmarInscricaoPorPagamento', 'export async function registrarEventoFinanceiroInscricaoTemporada');
 
     expect(confirmation).toContain('db.runTransaction');
     expect(confirmation).toContain('transaction.get(docRef)');
@@ -52,6 +52,13 @@ describe('competition payment lifecycle hardening', () => {
     expect(source).toContain("if (String(userData.seasonInscritaId || '') !== seasonId) return null");
   });
 
+  test('season registration cannot silently reuse a refunded or contested financial record', () => {
+    const source = read('api/_lib/inscricao-service.ts');
+    const creation = block(source, 'export async function criarInscricao', 'export async function confirmarInscricaoPorPagamento');
+    expect(creation).toContain("dados.status === 'reembolsada' || dados.status === 'contestada'");
+    expect(creation).toContain('Uma nova cobranca exige conciliacao antes de reutilizar o registro');
+  });
+
   test('championship payment confirmation uses the same financial integrity invariants', () => {
     const source = read('api/_lib/championship-inscription-service.ts');
     const confirmation = block(source, 'export async function confirmarInscricaoChampionshipPorPagamento', 'export async function encerrarCheckoutChampionship');
@@ -72,6 +79,13 @@ describe('competition payment lifecycle hardening', () => {
     expect(confirmation).toContain("data.status === 'reembolsada'");
     expect(confirmation).toContain("data.status === 'contestada'");
     expect(confirmation).toContain('transaction.get(userRef)');
+  });
+
+  test('championship checkout cannot silently reuse a refunded or contested financial record', () => {
+    const source = read('api/_lib/championship-inscription-service.ts');
+    const creation = block(source, 'export async function criarInscricaoChampionship', 'async function localizarPorCampo');
+    expect(creation).toContain("current.status === 'reembolsada' || current.status === 'contestada'");
+    expect(creation).toContain('Uma nova cobranca exige conciliacao antes de reutilizar o registro');
   });
 
   test('both Asaas webhook routes apply full refund/chargeback lifecycle and provider timestamps', () => {
