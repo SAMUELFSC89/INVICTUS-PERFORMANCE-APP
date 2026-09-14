@@ -20,6 +20,16 @@ function canonicalEntitlement(overrides: Record<string, unknown> = {}) {
 }
 
 describe('política canônica de entitlement PRO', () => {
+  test('conta administrativa ativa recebe acesso PRO sem assinatura', () => {
+    expect(isProUser({ role: 'admin' }, NOW)).toBe(true);
+  });
+
+  test('conta administrativa restrita continua sem acesso PRO', () => {
+    expect(isProUser({ role: 'admin', isBlocked: true }, NOW)).toBe(false);
+    expect(isProUser({ role: 'admin', accountStatus: 'deleted' }, NOW)).toBe(false);
+    expect(isProUser({ role: 'admin', deletionStatus: 'completed' }, NOW)).toBe(false);
+  });
+
   test('concede acesso somente para entitlement ativo com expiração futura', () => {
     expect(isProUser({ proEntitlement: canonicalEntitlement() }, NOW)).toBe(true);
   });

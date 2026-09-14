@@ -1,3 +1,5 @@
+import { hasActiveAdminAuthority } from './admin-authority.js';
+
 export type ProEntitlementStatus =
   | 'active'
   | 'grace_period'
@@ -82,11 +84,11 @@ export function entitlementDateToMillis(value: unknown): number | null {
 /**
  * Política canônica de acesso PRO.
  *
- * Campos legados (`isPro`, `premium`, `isSubscribed`, `subscriptionTier` etc.)
- * nunca concedem acesso. Eles podiam ser escritos pelo cliente em versões
- * antigas das Rules e, portanto, não são uma fonte confiável para migração.
- * Somente a projeção canônica completa, gravada pelo backend após validar a
- * RevenueCat, pode abrir o gate pago.
+ * Contas administrativas ativas recebem acesso funcional completo para teste e
+ * operação, sem exigir uma compra RevenueCat. Para usuários comuns, campos
+ * legados (`isPro`, `premium`, `isSubscribed`, `subscriptionTier` etc.) nunca
+ * concedem acesso. Somente a projeção canônica completa, gravada pelo backend
+ * após validar a RevenueCat, pode abrir o gate pago.
  */
 export function isProUser(userData: any, at: Date | number = Date.now()): boolean {
   if (!userData || typeof userData !== 'object') return false;
@@ -94,6 +96,8 @@ export function isProUser(userData: any, at: Date | number = Date.now()): boolea
   if (userData.isBlocked === true || userData.isBanned === true || userData.isSuspended === true
     || accountStatus === 'deleted' || accountStatus === 'blocked' || accountStatus === 'banned'
     || accountStatus === 'suspended') return false;
+
+  if (hasActiveAdminAuthority(userData)) return true;
 
   const entitlement = userData.proEntitlement as CanonicalProEntitlement | undefined;
   if (!isCanonicalProEntitlement(entitlement)) return false;
