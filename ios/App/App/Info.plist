@@ -57,7 +57,7 @@
 	<key>NSHealthShareUsageDescription</key>
 	<string>O Invictus lê, com sua autorização, atividades e métricas de condicionamento, recuperação, sono, coração, respiração, composição corporal, movimento, energia, hidratação e atenção plena para criar seu histórico e relatórios pessoais em linguagem simples. Não acessa medicamentos nem prontuários clínicos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>O INVICTUS usa sua localização ao buscar academias, validar treinos presenciais e registrar rotas de cardio ao ar livre enquanto o app está em uso.</string>
+	<string>O INVICTUS usa sua localização para buscar academias, validar check-ins e registrar a rota de um cardio iniciado por você. Durante essa atividade, a coleta pode continuar em segundo plano ou com a tela bloqueada até você pausar ou finalizar o treino.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>O INVICTUS lê sensores de movimento durante uma atividade para registrar a telemetria do exercício.</string>
 	<key>NSSupportsLiveActivities</key>
