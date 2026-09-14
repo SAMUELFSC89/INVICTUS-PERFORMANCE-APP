@@ -1,7 +1,7 @@
 /*
  * Pódio da temporada — composição aprovada.
- * Usa exclusivamente os assets originais das três bases e as mesmas coroas
- * usadas no Power Lift. A tela só controla escala, espaçamento e hierarquia:
+ * Usa exclusivamente os assets aprovados das três bases e coroas. A tela
+ * controla escala, espaçamento e hierarquia:
  * 1º mais alto, 2º intermediário, 3º mais baixo.
  */
 .community-ranking-top3 .academy-podium--clean-season {
@@ -65,7 +65,7 @@
   background: transparent !important;
 }
 
-/* Coroas: assets originais, sem recorte e sempre acima da base. */
+/* Coroas: assets aprovados, sem recorte e sempre acima da base. */
 .community-ranking-top3 .academy-podium-athlete--clean .academy-podium-avatar {
   position: relative;
   z-index: 5;
@@ -105,6 +105,12 @@
   height: 62px !important;
 }
 
+.community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-photo {
+  width: 35px !important;
+  height: 35px !important;
+  transform: translateY(7px);
+}
+
 .community-ranking-top3 .academy-podium-athlete--clean .academy-podium-crown {
   position: absolute;
   z-index: 4;
@@ -118,10 +124,9 @@
 }
 
 /*
- * Bases: nenhuma é desenhada em CSS. Top 2 usa o asset original enviado pelo
- * usuário; Top 1 e Top 3 continuam usando os assets originais já existentes.
- * Margem positiva entre coroa e base impede o escudo inferior da coroa bronze
- * de ser encoberto — é o mesmo bronze-reference.png usado no Power Lift.
+ * Bases: nenhuma é desenhada em CSS. Top 1 usa a versão ampliada com halo,
+ * Top 2 usa o asset restaurado e Top 3 mantém a base aprovada já existente.
+ * A margem positiva impede o escudo inferior da coroa bronze de ser encoberto.
  */
 .community-ranking-top3 .academy-podium-athlete--clean .academy-podium-base {
   position: relative;
@@ -136,6 +141,7 @@
 
 .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--1 .academy-podium-base {
   width: 148% !important;
+  mix-blend-mode: screen;
   filter: drop-shadow(0 0 15px rgba(242, 181, 22, .30));
 }
 
@@ -247,6 +253,12 @@
   .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-photo {
     width: 55px !important;
     height: 55px !important;
+  }
+
+  .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-photo {
+    width: 31px !important;
+    height: 31px !important;
+    transform: translateY(6px);
   }
 
   .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--1 .academy-podium-base {

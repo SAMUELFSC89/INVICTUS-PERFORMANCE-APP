@@ -53,19 +53,22 @@ describe('rodada campeonatos e ranking', () => {
     expect(podium).toContain('showEmptySlots = false');
     expect(podium).toContain('cleanSeasonLayout = false');
     expect(podium).not.toContain('AGUARDANDO LÍDER');
+    expect(podium).not.toContain('VAGA ABERTA');
     expect(podium).not.toContain('SEU NOME PODE ESTAR AQUI');
     expect(podium).not.toContain('TREINE E CONQUISTE ESTA POSIÇÃO');
     expect(podium).not.toContain('MOSTRE SUA EVOLUÇÃO E SUBA NO RANKING');
     expect(podium).toContain('coroa + base, sem');
   });
 
-  it('usa os assets originais e mantém as três posições coerentes como conjunto', () => {
+  it('usa os assets aprovados e mantém as três posições coerentes como conjunto', () => {
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
     const css = read('src/pages/championships/CommunityRankingPodium.css');
-    const powerLift = read('src/pages/PowerLift.tsx');
 
     expect(podium).toContain('const slots = [2, 1, 3]');
+    expect(podium).toContain("1: '/assets/ranking/podium-top1-glow-v2.png'");
     expect(podium).toContain("2: '/assets/ranking/podium-top2.webp'");
+    expect(podium).toContain("3: '/assets/ranking/crown-bronze-complete-v1.png'");
+    expect(podium).not.toContain('/ranking-frame-bronze-reference.png');
     expect(podium).not.toContain('academy-podium-base--rebuilt');
     expect(css).not.toContain('aspect-ratio: 240 / 130');
     expect(css).not.toContain('content: "2"');
@@ -76,10 +79,8 @@ describe('rodada campeonatos e ranking', () => {
     expect(css).toContain('transform: translateY(calc(-1 * var(--podium-lift))) !important');
     expect(css).toContain('margin-top: 0 !important');
 
-    // A coroa bronze deve ser exatamente a mesma usada no Power Lift e deve
-    // manter folga positiva antes da base para o escudo inferior não ser cortado.
-    expect(podium).toContain("3: '/ranking-frame-bronze-reference.png'");
-    expect(powerLift).toContain("'bronze'}-reference.png");
+    // A coroa bronze completa mantém folga positiva antes da base para o
+    // escudo inferior não ser cortado.
     expect(css).toContain('.academy-podium-athlete--clean.academy-podium-athlete--3 .academy-podium-avatar');
     expect(css).toContain('width: 76px !important');
     expect(css).toContain('height: 76px !important');
@@ -114,12 +115,13 @@ describe('rodada campeonatos e ranking', () => {
     expect(profile).toContain('navigate(returnTo)');
   });
 
-  it('preserva as coroas e mantém os assets das três bases disponíveis', () => {
+  it('preserva as coroas aprovadas, com bronze completo, e as três bases de pódio', () => {
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
     expect(podium).toContain('/ranking-frame-gold-reference.png');
     expect(podium).toContain('/ranking-frame-silver-reference.png');
-    expect(podium).toContain('/ranking-frame-bronze-reference.png');
-    expect(podium).toContain('/assets/ranking/podium-top1.webp');
+    expect(podium).toContain('/assets/ranking/crown-bronze-complete-v1.png');
+    expect(podium).not.toContain('/ranking-frame-bronze-reference.png');
+    expect(podium).toContain('/assets/ranking/podium-top1-glow-v2.png');
     expect(podium).toContain('/assets/ranking/podium-top2.webp');
     expect(podium).toContain('/assets/ranking/podium-top3.webp');
   });

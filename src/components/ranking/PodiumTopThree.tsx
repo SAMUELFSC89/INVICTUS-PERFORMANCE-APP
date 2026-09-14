@@ -4,10 +4,10 @@ import './PodiumTopThree.css';
 const CROWN_ASSETS: Record<number, string> = {
   1: '/ranking-frame-gold-reference.png',
   2: '/ranking-frame-silver-reference.png',
-  3: '/ranking-frame-bronze-reference.png',
+  3: '/assets/ranking/crown-bronze-complete-v1.png',
 };
 const PODIUM_BASE_ASSETS: Record<number, string> = {
-  1: '/assets/ranking/podium-top1.webp',
+  1: '/assets/ranking/podium-top1-glow-v2.png',
   2: '/assets/ranking/podium-top2.webp',
   3: '/assets/ranking/podium-top3.webp',
 };
@@ -21,7 +21,7 @@ function Crown({ rank, photoURL, empty = false }: { rank: number; photoURL?: str
 }
 
 function PodiumBase({ rank }: { rank: number }) {
-  return <img className="academy-podium-base" src={PODIUM_BASE_ASSETS[rank]} alt="" aria-hidden="true" />;
+  return <img className="academy-podium-base" src={`${PODIUM_BASE_ASSETS[rank]}?v=20260913`} alt="" aria-hidden="true" />;
 }
 
 function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = false }: {
