@@ -2,6 +2,13 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { timingSafeEqual } from 'crypto';
 import { cors, db } from '../_lib/common.js';
 
+function normalizeWithdrawalReference(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const reference = value.trim();
+  if (!reference.startsWith('pix_req_') || reference.length > 500 || reference.includes('/')) return null;
+  return reference;
+}
+
 /**
  * Webhook de AUTORIZACAO de saques do Asaas (Mecanismo de seguranca para
  * validacao de saques via Webhook). Diferente de /payments/asaas-webhook
@@ -45,42 +52,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { type, transfer } = req.body || {};
 
-    if (type !== 'TRANSFER' || !transfer || !transfer.id) {
+    if (type !== 'TRANSFER' || !transfer || typeof transfer.id !== 'string' || !transfer.id.trim()) {
       console.log('[Asaas Authorization] Tipo de operacao nao suportado ou payload incompleto:', type);
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Tipo de operacao nao reconhecido pelo sistema.' });
     }
 
-    const snapshot = await db.collection('withdrawals')
-      .where('providerTransferId', '==', transfer.id)
+    const transferId = transfer.id.trim();
+    const externalReference = normalizeWithdrawalReference(transfer.externalReference);
+    const byProviderId = await db.collection('withdrawals')
+      .where('providerTransferId', '==', transferId)
       .limit(1)
       .get();
 
-    if (snapshot.empty) {
-      console.error('[Asaas Authorization] Nenhum saque interno encontrado para transferId:', transfer.id);
+    let withdrawalDoc: any = byProviderId.empty ? null : byProviderId.docs[0];
+    if (!withdrawalDoc && externalReference) {
+      const byReference = await db.collection('withdrawals').doc(externalReference).get();
+      if (byReference.exists) withdrawalDoc = byReference;
+    }
+
+    if (!withdrawalDoc) {
+      console.error('[Asaas Authorization] Nenhum saque interno encontrado para transferId/reference:', transferId, externalReference || '(ausente)');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Transferencia nao corresponde a um saque registrado no sistema.' });
     }
 
-    const withdrawal: any = snapshot.docs[0].data();
+    const withdrawal: any = withdrawalDoc.data() || {};
+    const canonicalWithdrawalId = withdrawalDoc.id;
+
+    if (externalReference && externalReference !== canonicalWithdrawalId) {
+      console.error('[Asaas Authorization] externalReference divergente:', externalReference, 'esperado:', canonicalWithdrawalId);
+      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Referencia externa da transferencia nao confere.' });
+    }
+
+    if (withdrawal.providerTransferId && withdrawal.providerTransferId !== transferId) {
+      console.error('[Asaas Authorization] Saque ja vinculado a outro transferId:', withdrawal.providerTransferId, 'recebido:', transferId);
+      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Saque ja esta vinculado a outra transferencia.' });
+    }
 
     // O dinheiro continua bloqueado enquanto o Asaas processa a transferência.
     // "paid" só é gravado após o webhook final TRANSFER_DONE.
     if (withdrawal.status !== 'processing') {
-      console.error('[Asaas Authorization] Saque', withdrawal.id, 'nao esta com status "processing" (atual:', withdrawal.status, ').');
+      console.error('[Asaas Authorization] Saque', canonicalWithdrawalId, 'nao esta com status "processing" (atual:', withdrawal.status, ').');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Saque nao esta no status esperado para pagamento.' });
     }
 
     if (withdrawal.antiFraudPassed !== true) {
-      console.error('[Asaas Authorization] Saque', withdrawal.id, 'nao passou nas checagens antifraude internas.');
+      console.error('[Asaas Authorization] Saque', canonicalWithdrawalId, 'nao passou nas checagens antifraude internas.');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Saque nao passou nas checagens antifraude internas.' });
     }
 
-    const amountMatches = typeof transfer.value !== 'number' || Math.abs(transfer.value - withdrawal.amount) < 0.01;
+    // Financeiro fail-closed: valor ausente, string, NaN ou divergente deve
+    // sempre ser recusado. O comportamento anterior aceitava payload sem valor.
+    const transferValue = transfer.value;
+    const amountMatches = typeof transferValue === 'number'
+      && Number.isFinite(transferValue)
+      && Number.isFinite(Number(withdrawal.amount))
+      && Math.abs(transferValue - Number(withdrawal.amount)) < 0.01;
     if (!amountMatches) {
-      console.error('[Asaas Authorization] Valor da transferencia (', transfer.value, ') nao confere com o saque registrado (', withdrawal.amount, ').');
+      console.error('[Asaas Authorization] Valor da transferencia (', transferValue, ') nao confere com o saque registrado (', withdrawal.amount, ').');
       return res.status(200).json({ status: 'REFUSED', refuseReason: 'Valor da transferencia nao confere com o saque registrado.' });
     }
 
-    console.log('[Asaas Authorization] Saque', withdrawal.id, 'aprovado automaticamente para transferId:', transfer.id);
+    // Se a chamada POST /transfers foi aceita pelo Asaas antes de a resposta
+    // chegar ao Invictus, o mecanismo de autorizacao ainda consegue recuperar
+    // o vinculo pelo externalReference e persistir o transferId canonico.
+    await withdrawalDoc.ref.set({
+      paymentProvider: 'asaas',
+      providerTransferId: transferId,
+      providerExternalReference: externalReference || canonicalWithdrawalId,
+      providerAuthorizationBoundAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    console.log('[Asaas Authorization] Saque', canonicalWithdrawalId, 'aprovado automaticamente para transferId:', transferId);
     return res.status(200).json({ status: 'APPROVED' });
   } catch (error: any) {
     console.error('[Asaas Authorization Error]', error);
