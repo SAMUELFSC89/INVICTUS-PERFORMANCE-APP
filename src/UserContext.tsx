@@ -31,13 +31,22 @@ type ActivityStatsPatch = Pick<UserProfile, 'totalWorkouts' | 'totalActiveDays' 
   lastCheckIn: string | null;
 };
 
-function stopPrivateActivitySurfaces() {
+function stopPrivateActivitySurfaces(preserveNativeBuffer = false) {
   localStorage.removeItem('kmfatal_active_run');
   localStorage.removeItem('kmfatal_start_time');
   localStorage.removeItem('kmfatal_total_distance');
   localStorage.removeItem('kmfatal_run_points');
   webGpsTrackingService.stop();
-  void nativeBackgroundLocationService.stop().catch(() => {});
+  // Durante o primeiro auth restore de uma conta válida, o localStorage pode
+  // ter sido perdido enquanto o buffer nativo ainda contém a cauda da sessão
+  // remota correta. Pare a coleta sem apagar esse lote até
+  // sessionContinuityService comparar o sessionId. Logout/conta estrangeira
+  // continuam usando stop(), que limpa owner + coordenadas persistidos.
+  if (preserveNativeBuffer) {
+    void nativeBackgroundLocationService.collectAndStop().catch(() => {});
+  } else {
+    void nativeBackgroundLocationService.stop().catch(() => {});
+  }
   activityNotificationService.stop();
   activityLiveActivityService.stop();
 }
@@ -46,7 +55,10 @@ function clearForeignOrGuestSession(nextUid: string | null) {
   try {
     const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
     if (!raw) {
-      stopPrivateActivitySurfaces();
+      // Conta autenticada + sessão local ausente ainda pode ser um cold restore
+      // legítimo. O owner nativo por sessionId decidirá depois se a cauda pode
+      // ser reaplicada. Guest não possui esse direito: limpa imediatamente.
+      stopPrivateActivitySurfaces(Boolean(nextUid));
       return;
     }
 
@@ -60,12 +72,18 @@ function clearForeignOrGuestSession(nextUid: string | null) {
     // com segurança quando o mesmo atleta entrar novamente.
     if (!nextUid || !ownerUid || ownerUid !== nextUid) {
       localStorage.removeItem(ACTIVE_SESSION_KEY);
-      stopPrivateActivitySurfaces();
+      // Owner explicitamente divergente é prova de estado estrangeiro e pode
+      // ser destruído. Owner ausente/corrompido com usuário autenticado fica
+      // apenas temporariamente preservado para a checagem por sessionId.
+      const preserveNativeBuffer = Boolean(nextUid && !ownerUid);
+      stopPrivateActivitySurfaces(preserveNativeBuffer);
     }
   } catch {
-    // Estado corrompido/desconhecido nunca é promovido para a nova conta.
+    // Estado corrompido/desconhecido nunca é promovido para a nova conta. Com
+    // identidade válida, porém, o buffer nativo ainda pode provar o sessionId
+    // correto durante a recuperação remota; guest limpa tudo.
     localStorage.removeItem(ACTIVE_SESSION_KEY);
-    stopPrivateActivitySurfaces();
+    stopPrivateActivitySurfaces(Boolean(nextUid));
   }
 }
 
