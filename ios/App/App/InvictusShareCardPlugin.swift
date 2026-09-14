@@ -28,12 +28,16 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             let requestedName = call.getString("fileName") ?? "invictus-atividade.png"
-            let safeName = requestedName.lowercased().hasSuffix(".png") ? requestedName : requestedName + ".png"
-            let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
+            let safeName = self.safeFileName(requestedName)
+            let shareDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("invictus-share-\(UUID().uuidString)", isDirectory: true)
+            let fileURL = shareDirectory.appendingPathComponent(safeName, isDirectory: false)
 
             do {
+                try FileManager.default.createDirectory(at: shareDirectory, withIntermediateDirectories: true)
                 try data.write(to: fileURL, options: .atomic)
             } catch {
+                try? FileManager.default.removeItem(at: shareDirectory)
                 call.reject("Não foi possível preparar a imagem para compartilhar.", nil, error)
                 return
             }
@@ -45,12 +49,12 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                     popover.sourceRect = self.bridge?.viewController?.view.bounds ?? .zero
                 }
                 controller.completionWithItemsHandler = { _, _, _, _ in
-                    try? FileManager.default.removeItem(at: fileURL)
+                    try? FileManager.default.removeItem(at: shareDirectory)
                     call.resolve()
                 }
 
                 guard let presenter = self.bridge?.viewController else {
-                    try? FileManager.default.removeItem(at: fileURL)
+                    try? FileManager.default.removeItem(at: shareDirectory)
                     call.reject("Tela de compartilhamento indisponível.")
                     return
                 }
@@ -70,7 +74,7 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                 PHPhotoLibrary.shared().performChanges({
                     let request = PHAssetCreationRequest.forAsset()
                     let options = PHAssetResourceCreationOptions()
-                    options.originalFilename = call.getString("fileName") ?? "invictus-atividade.png"
+                    options.originalFilename = self.safeFileName(call.getString("fileName") ?? "invictus-atividade.png")
                     request.addResource(with: .photo, data: data, options: options)
                 }) { success, error in
                     if success { call.resolve() }
@@ -154,5 +158,15 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
     private func imageData(from call: CAPPluginCall) -> Data? {
         guard let base64 = call.getString("base64") else { return nil }
         return Data(base64Encoded: base64)
+    }
+
+    private func safeFileName(_ value: String) -> String {
+        let sanitized = value.replacingOccurrences(
+            of: "[^a-zA-Z0-9._-]",
+            with: "-",
+            options: .regularExpression
+        )
+        let nonEmpty = sanitized.isEmpty ? "invictus-atividade" : sanitized
+        return nonEmpty.lowercased().hasSuffix(".png") ? nonEmpty : nonEmpty + ".png"
     }
 }
