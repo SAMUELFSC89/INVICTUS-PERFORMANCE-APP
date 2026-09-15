@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './common.js';
-import { CHAMPIONSHIPS, getChampionship } from './championship-catalog.js';
+import { CHAMPIONSHIPS } from './championship-catalog.js';
 import { finalizePaidChampionship, type PaidChampionshipRankingEntry } from './paid-championship-settlement.js';
 import { creditChampionshipPrize } from './championship-prize-credit.js';
-import type { PrizeRank } from '../../src/types/championships.js';
+import {
+  getLockedChampionshipSnapshot,
+  markPaidChampionshipEditionFinalized,
+  paidChampionshipSettlementDocumentId,
+} from './paid-championship-edition.js';
+import type { Championship, PrizeRank } from '../../src/types/championships.js';
 
 const EXECUTION_LEASE_MS = 5 * 60 * 1000;
 const TERMINAL_ACTIVITY_REVIEW = new Set(['approved', 'rejected', 'ineligible']);
@@ -38,29 +43,34 @@ function registrationNeedsFinancialReview(registration: Record<string, any>): bo
     || FINANCIAL_REVIEW_EVENTS.has(lifecycleEvent);
 }
 
-async function assertResumePreconditions(championshipId: string): Promise<void> {
+async function assertResumePreconditions(championship: Championship): Promise<void> {
+  const editionId = String(championship.editionId || '');
+  if (!editionId) throw new Error('EDITION_ID_MISSING');
   const [registrationSnap, entriesSnap] = await Promise.all([
-    db.collection('championship_registrations').where('championshipId', '==', championshipId).get(),
+    db.collection('championship_registrations').where('championshipId', '==', championship.id).get(),
     db.collection('activity_competition_entries').where('contextType', '==', 'paid_championship').get(),
   ]);
-  const registrations = registrationSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+  const registrations = registrationSnap.docs
+    .map((doc: any) => ({ id: doc.id, ...doc.data() }))
+    .filter((registration: any) => String(registration.editionId || '') === editionId);
   const financialReview = registrations.filter(registrationNeedsFinancialReview);
   if (financialReview.length) throw new Error(`FINANCIAL_REVIEW_PENDING:${financialReview.length}`);
 
   const unresolved = entriesSnap.docs
     .map((doc: any) => doc.data() || {})
-    .filter((entry: any) => entry.contextId === championshipId)
+    .filter((entry: any) => entry.contextId === championship.id && String(entry.editionId || '') === editionId)
     .filter((entry: any) => !TERMINAL_ACTIVITY_REVIEW.has(String(entry.reviewStatus || '')));
   if (unresolved.length) throw new Error(`ACTIVITY_REVIEW_PENDING:${unresolved.length}`);
 }
 
-async function claimLease(settlementRef: any, expectedConfigDigest: string): Promise<{ token: string; snapshot: Record<string, any> }> {
+async function claimLease(settlementRef: any, expectedConfigDigest: string, expectedEditionId: string): Promise<{ token: string; snapshot: Record<string, any> }> {
   const token = randomUUID();
   const now = Date.now();
   return db.runTransaction(async (transaction: any) => {
     const snap = await transaction.get(settlementRef);
     if (!snap.exists) throw new Error('Snapshot de homologação não encontrado.');
     const data = snap.data() || {};
+    if (String(data.editionId || '') !== expectedEditionId) throw new Error('SETTLEMENT_EDITION_MISMATCH');
     if (data.status === 'FINALIZED') {
       if (data.configDigest !== expectedConfigDigest) {
         throw new Error('FINALIZED_CONFIG_MISMATCH');
@@ -83,18 +93,24 @@ async function claimLease(settlementRef: any, expectedConfigDigest: string): Pro
   });
 }
 
-async function resumeLockedPaidChampionship(championshipId: string): Promise<Record<string, any>> {
-  const championship = getChampionship(championshipId);
-  if (!championship) throw new Error('Campeonato oficial não encontrado na retomada.');
+async function resumeLockedPaidChampionship(championship: Championship): Promise<Record<string, any>> {
+  const championshipId = championship.id;
+  const editionId = String(championship.editionId || '');
   const currentConfigDigest = String(championship.publishedConfigDigest || '');
+  if (!editionId) throw new Error('Edição oficial sem editionId na retomada.');
   if (!currentConfigDigest) throw new Error('Configuração publicada sem digest na retomada.');
 
-  await assertResumePreconditions(championshipId);
-  const settlementRef = db.collection('championship_settlements').doc(championshipId);
-  const lease = await claimLease(settlementRef, currentConfigDigest);
-  if (lease.snapshot.status === 'FINALIZED') return lease.snapshot;
+  await assertResumePreconditions(championship);
+  const settlementRef = db.collection('championship_settlements').doc(paidChampionshipSettlementDocumentId(editionId));
+  const lease = await claimLease(settlementRef, currentConfigDigest, editionId);
+  if (lease.snapshot.status === 'FINALIZED') {
+    const finalizedAt = String(lease.snapshot.finalizedAt || new Date().toISOString());
+    await markPaidChampionshipEditionFinalized(championship, finalizedAt);
+    return lease.snapshot;
+  }
 
   const snapshot = lease.snapshot;
+  if (String(snapshot.championshipId || '') !== championshipId) throw new Error('SETTLEMENT_CHAMPIONSHIP_MISMATCH');
   const ranking = (Array.isArray(snapshot.ranking) ? snapshot.ranking : []) as PaidChampionshipRankingEntry[];
   const prizes = (Array.isArray(snapshot.prizeDistribution) ? snapshot.prizeDistribution : []) as PrizeRank[];
   if (!ranking.length && Number(snapshot.totalRankedParticipants || 0) > 0) throw new Error('Snapshot congelado perdeu o ranking.');
@@ -110,6 +126,7 @@ async function resumeLockedPaidChampionship(championshipId: string): Promise<Rec
       const candidate = ranking[candidateIndex++];
       const payout = await creditChampionshipPrize({
         championshipId,
+        editionId,
         championshipTitle: String(snapshot.championshipTitle || championship.title),
         regulationVersion: String(snapshot.regulationVersion || championship.regulationVersion),
         regulationHash: String(snapshot.regulationHash || championship.regulationHash),
@@ -138,9 +155,10 @@ async function resumeLockedPaidChampionship(championshipId: string): Promise<Rec
   if (assignments.length > 0) {
     const resultsBatch = db.batch();
     for (const winner of assignments) {
-      const resultRef = db.collection('championship_results').doc(`${championshipId}_${winner.userId}`);
+      const resultRef = db.collection('championship_results').doc(`${editionId}_${winner.userId}`);
       resultsBatch.set(resultRef, {
         championshipId,
+        editionId,
         championshipTitle: snapshot.championshipTitle || championship.title,
         edition: snapshot.edition || championship.edition,
         userId: winner.userId,
@@ -166,6 +184,9 @@ async function resumeLockedPaidChampionship(championshipId: string): Promise<Rec
     if (!current.exists) throw new Error('Settlement desapareceu antes da conclusão da retomada.');
     const data = current.data() || {};
     if (data.status === 'FINALIZED') return;
+    if (String(data.editionId || '') !== editionId || String(data.championshipId || '') !== championshipId) {
+      throw new Error('Identidade do settlement mudou durante a retomada.');
+    }
     if (data.executionLeaseToken !== lease.token) throw new Error('Lease do settlement foi perdido durante a retomada.');
     transaction.set(settlementRef, {
       status: 'FINALIZED',
@@ -179,8 +200,9 @@ async function resumeLockedPaidChampionship(championshipId: string): Promise<Rec
     }, { merge: true });
   });
 
+  await markPaidChampionshipEditionFinalized(championship, finalizedAt);
   const finalSnap = await settlementRef.get();
-  return finalSnap.data() || { championshipId, status: 'FINALIZED', winnerAssignments: assignments, totalPaid };
+  return finalSnap.data() || { championshipId, editionId, status: 'FINALIZED', winnerAssignments: assignments, totalPaid };
 }
 
 export async function runPaidChampionshipSettlementSweep(now = new Date()): Promise<{
@@ -193,23 +215,43 @@ export async function runPaidChampionshipSettlementSweep(now = new Date()): Prom
   const skipped: string[] = [];
 
   for (const configured of CHAMPIONSHIPS) {
-    const settlementAt = millis(configured.settlementAt);
-    if (settlementAt === null || now.getTime() < settlementAt) {
-      skipped.push(configured.id);
-      continue;
-    }
-
     try {
-      const settlementRef = db.collection('championship_settlements').doc(configured.id);
+      const locked = await getLockedChampionshipSnapshot(configured.id);
+      if (!locked?.editionId) {
+        skipped.push(configured.id);
+        continue;
+      }
+      if (locked.editionId !== configured.editionId) {
+        const previousSettlement = await db.collection('championship_settlements')
+          .doc(paidChampionshipSettlementDocumentId(locked.editionId))
+          .get();
+        if (!previousSettlement.exists || previousSettlement.data()?.status !== 'FINALIZED') {
+          throw new Error('ACTIVE_EDITION_CONFIG_MISMATCH');
+        }
+        // A edição anterior já terminou, mas a nova ainda não foi ativada pelo
+        // primeiro checkout. Não existe nada financeiro a homologar agora.
+        skipped.push(configured.id);
+        continue;
+      }
+
+      const settlementAt = millis(locked.settlementAt);
+      if (settlementAt === null || now.getTime() < settlementAt) {
+        skipped.push(configured.id);
+        continue;
+      }
+
+      const settlementRef = db.collection('championship_settlements')
+        .doc(paidChampionshipSettlementDocumentId(locked.editionId));
       const existing = await settlementRef.get();
       let result: Record<string, any>;
       if (existing.exists && existing.data()?.status === 'LOCKED') {
-        result = await resumeLockedPaidChampionship(configured.id);
+        result = await resumeLockedPaidChampionship(locked);
       } else if (existing.exists && existing.data()?.status === 'FINALIZED') {
         const stored = existing.data() || {};
-        if (stored.configDigest !== configured.publishedConfigDigest) {
+        if (stored.configDigest !== locked.publishedConfigDigest || stored.editionId !== locked.editionId) {
           throw new Error('FINALIZED_CONFIG_MISMATCH');
         }
+        await markPaidChampionshipEditionFinalized(locked, String(stored.finalizedAt || new Date().toISOString()));
         result = stored;
       } else {
         result = await finalizePaidChampionship(configured.id, now);
