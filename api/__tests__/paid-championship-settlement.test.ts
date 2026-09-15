@@ -53,14 +53,14 @@ describe('paid championship final settlement', () => {
     expect(ranking[0]).toMatchObject({ userId: 'ok', score: 10, validActivities: 1 });
   });
 
-  test('capacidade só é considerada implementada com calendário, editionId, digest e settlement fail-closed', () => {
+  test('motor de settlement existe, mas a capacidade comercial permanece hard-closed nesta PR', () => {
     const catalog = read('api/_lib/championship-catalog.ts');
     const settlement = read('api/_lib/paid-championship-settlement.ts');
     const credit = read('api/_lib/championship-prize-credit.ts');
     const edition = read('api/_lib/paid-championship-edition.ts');
     const policy = read('shared/paidChampionshipPolicy.ts');
 
-    expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true');
+    expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false');
     expect(catalog).toContain('CHAMPIONSHIP_STRENGTH_SETTLEMENT_AT');
     expect(catalog).toContain('publishedConfigDigest');
     expect(catalog).toContain('editionId');
@@ -85,7 +85,7 @@ describe('paid championship final settlement', () => {
     expect(policy).toContain('quem atingiu a pontuação final primeiro');
   });
 
-  test('cron protegido tenta settlement diariamente e retoma somente a edição travada', () => {
+  test('cron pago tenta settlement diariamente, mas o comunitário continua mensal', () => {
     const vercel = read('vercel.json');
     const handler = read('api/_handlers/gym-championship-payout-cron.ts');
     const orchestrator = read('api/_lib/paid-championship-settlement-orchestrator.ts');
@@ -94,6 +94,9 @@ describe('paid championship final settlement', () => {
     expect(handler).toContain('timingSafeEqual');
     expect(handler).toContain('CRON_SECRET');
     expect(handler).toContain('runPaidChampionshipSettlementSweep');
+    expect(handler).toContain('now.getUTCDate() === 1');
+    expect(handler).toContain("status: 'SKIPPED_NOT_MONTHLY_WINDOW'");
+    expect(handler).toContain('Boolean(requestedCycle)');
     expect(handler).not.toContain("reason.startsWith('PAID_REGULATION_MISMATCH:')");
     expect(handler).not.toContain("reason.startsWith('COMPETITION_DATA_MISMATCH:')");
     expect(orchestrator).toContain("existing.data()?.status === 'LOCKED'");
