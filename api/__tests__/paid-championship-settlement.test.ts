@@ -34,6 +34,9 @@ describe('paid championship final settlement', () => {
 
     const ranking = buildPaidChampionshipFinalRanking({ scores, approvedActivityIds: approved, eligibleUserIds: eligible });
     expect(ranking.map((item) => item.userId)).toEqual(['d', 'c', 'b', 'a']);
+    expect(ranking.find((item) => item.userId === 'a')?.finalScoreReachedAt).toBe('2026-10-01T10:00:00.000Z');
+    expect(ranking.find((item) => item.userId === 'b')?.finalScoreReachedAt).toBe('2026-10-01T09:00:00.000Z');
+    expect(ranking.find((item) => item.userId === 'c')?.finalScoreReachedAt).toBe('2026-10-01T08:00:00.000Z');
   });
 
   test('atividade sem aprovação competitiva e usuário inelegível não entram', () => {
@@ -65,6 +68,7 @@ describe('paid championship final settlement', () => {
     expect(settlement).toContain('COMPETITION_DATA_MISMATCH');
     expect(settlement).toContain('UNRESOLVED_PRIZE_TIE');
     expect(settlement).toContain("status: 'LOCKED'");
+    expect(settlement).not.toContain('finalizeDuePaidChampionships');
     expect(credit).toContain("category: 'redeemable'");
     expect(credit).toContain("origin: 'championship'");
     expect(credit).toContain("registration.status === 'paga'");
@@ -83,8 +87,12 @@ describe('paid championship final settlement', () => {
     expect(handler).toContain('timingSafeEqual');
     expect(handler).toContain('CRON_SECRET');
     expect(handler).toContain('runPaidChampionshipSettlementSweep');
+    expect(handler).not.toContain("reason.startsWith('PAID_REGULATION_MISMATCH:')");
+    expect(handler).not.toContain("reason.startsWith('COMPETITION_DATA_MISMATCH:')");
     expect(orchestrator).toContain("existing.data()?.status === 'LOCKED'");
     expect(orchestrator).toContain('resumeLockedPaidChampionship');
     expect(orchestrator).toContain('executionLeaseToken');
+    expect(orchestrator).toContain('FINALIZED_CONFIG_MISMATCH');
+    expect(orchestrator).toContain('stored.configDigest !== configured.publishedConfigDigest');
   });
 });
