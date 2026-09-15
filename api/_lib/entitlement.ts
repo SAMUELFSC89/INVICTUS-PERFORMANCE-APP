@@ -1,4 +1,5 @@
 import { hasActiveAdminAuthority } from './admin-authority.js';
+import { isActiveAccountState } from './account-state.js';
 
 export type ProEntitlementStatus =
   | 'active'
@@ -89,13 +90,14 @@ export function entitlementDateToMillis(value: unknown): number | null {
  * legados (`isPro`, `premium`, `isSubscribed`, `subscriptionTier` etc.) nunca
  * concedem acesso. Somente a projeção canônica completa, gravada pelo backend
  * após validar a RevenueCat, pode abrir o gate pago.
+ *
+ * Lifecycle é validado pela mesma autoridade usada em autenticação/ranking.
+ * Entitlement nunca pode reativar uma conta bloqueada, suspensa, desabilitada,
+ * tombstonada ou com exclusão concluída por qualquer representação canônica.
  */
 export function isProUser(userData: any, at: Date | number = Date.now()): boolean {
   if (!userData || typeof userData !== 'object') return false;
-  const accountStatus = normalizedString(userData.accountStatus || userData.status);
-  if (userData.isBlocked === true || userData.isBanned === true || userData.isSuspended === true
-    || accountStatus === 'deleted' || accountStatus === 'blocked' || accountStatus === 'banned'
-    || accountStatus === 'suspended') return false;
+  if (!isActiveAccountState(userData)) return false;
 
   if (hasActiveAdminAuthority(userData)) return true;
 
