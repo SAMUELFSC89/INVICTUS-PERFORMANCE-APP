@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import path from 'node:path';
+import path from 'path';
 import {
   APPLE_CHAMPIONSHIP_DISCLAIMER,
   CHAMPIONSHIP_ORGANIZER,
@@ -52,6 +52,15 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(returnPage).toContain('não confirma pagamento');
     expect(returnScreen).toContain('getRegistration(championshipId)');
     expect(returnScreen).not.toContain('paymentStatus:');
+  });
+
+  it('preserva a superfície de checkout através da confirmação biométrica', () => {
+    const handler = read('api/_handlers/championships.ts');
+    const presence = read('api/_handlers/validate-presence.ts');
+    expect(handler).toContain('payload: { championshipId, acceptanceId, checkoutSurface }');
+    expect(presence).toContain("!['ios_native', 'web'].includes(checkoutSurface)");
+    expect(presence).toContain("checkoutSurface as 'ios_native' | 'web'");
+    expect(presence).toContain('criarInscricaoChampionship(');
   });
 
   it('expõe CTA de pagamento somente no iOS nativo e deixa Android preparado para o site', () => {
