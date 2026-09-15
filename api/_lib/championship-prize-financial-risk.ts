@@ -13,6 +13,7 @@ const RISK_PAYMENT_STATUSES = new Set([
 
 export interface ChampionshipPrizeFinancialRisk {
   championshipId: string;
+  editionId: string;
   registrationStatus: string;
   paymentStatus: string;
   paymentLifecycleEvent: string;
@@ -37,7 +38,8 @@ async function readTarget(target: any, transaction?: any): Promise<any> {
 
 /**
  * Cruza o estado financeiro atual da inscrição com um award realmente
- * creditado. Uma inscrição reembolsada sem prêmio não bloqueia outros saldos.
+ * creditado da MESMA edição. Uma inscrição reembolsada sem prêmio não bloqueia
+ * outros saldos, e uma disputa de edição nova não herda prêmio da edição velha.
  *
  * Quando `transaction` é fornecida, todas as leituras participam da mesma
  * transação Firestore do chamador. Isso permite que a autorização Asaas seja
@@ -56,14 +58,19 @@ export async function getChampionshipPrizeFinancialRisk(
 
   for (const registration of riskyRegistrations) {
     const championshipId = String(registration.championshipId || '');
-    if (!championshipId) continue;
-    const awardRef = db.collection('championship_prize_awards').doc(championshipPrizeAwardId(championshipId, userId));
+    const editionId = String(registration.editionId || '');
+    if (!championshipId || !editionId) continue;
+    const awardRef = db.collection('championship_prize_awards').doc(championshipPrizeAwardId(editionId, userId));
     const awardSnap = await readTarget(awardRef, transaction);
     if (!awardSnap.exists) continue;
     const award = awardSnap.data() || {};
-    if (award.status !== 'CREDITED' || String(award.userId || '') !== userId || String(award.championshipId || '') !== championshipId) continue;
+    if (award.status !== 'CREDITED'
+      || String(award.userId || '') !== userId
+      || String(award.championshipId || '') !== championshipId
+      || String(award.editionId || '') !== editionId) continue;
     return {
       championshipId,
+      editionId,
       registrationStatus: String(registration.status || ''),
       paymentStatus: String(registration.paymentStatus || ''),
       paymentLifecycleEvent: String(registration.paymentLifecycleEvent || ''),
@@ -80,6 +87,6 @@ export async function assertNoChampionshipPrizeFinancialRisk(userId: string, tra
   const risk = await getChampionshipPrizeFinancialRisk(userId, transaction);
   if (!risk) return;
   throw new Error(
-    `Saque bloqueado: prêmio do campeonato ${risk.championshipId} está em conciliação financeira após reembolso/chargeback.`,
+    `Saque bloqueado: prêmio da edição ${risk.editionId} (${risk.championshipId}) está em conciliação financeira após reembolso/chargeback.`,
   );
 }
