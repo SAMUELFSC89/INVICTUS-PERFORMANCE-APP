@@ -1,4 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { billingAccountStatusPatch } from '../_lib/billing-lifecycle';
+
+const source = fs.readFileSync(path.join(process.cwd(), 'api/_lib/payments-service.ts'), 'utf8');
 
 describe('billing lifecycle ownership', () => {
   test('active profiles may receive the subscription display status', () => {
@@ -21,5 +25,13 @@ describe('billing lifecycle ownership', () => {
   ])('billing cannot overwrite inactive account status %#', (profile) => {
     expect(billingAccountStatusPatch(profile, 'PRO_ATIVO')).toEqual({});
     expect(billingAccountStatusPatch(profile, 'OPEN_ATIVO')).toEqual({});
+  });
+
+  test('grant, Open activation and revoke all use the lifecycle-preserving projection', () => {
+    expect(source).toContain("import { billingAccountStatusPatch } from './billing-lifecycle.js'");
+    expect((source.match(/billingAccountStatusPatch\(userData, 'PRO_ATIVO'\)/g) || [])).toHaveLength(1);
+    expect((source.match(/billingAccountStatusPatch\(userData, 'OPEN_ATIVO'\)/g) || [])).toHaveLength(2);
+    expect(source).not.toContain("isSubscribed: true,\n        status: 'PRO_ATIVO'");
+    expect(source).not.toContain("isSubscribed: false,\n        status: 'OPEN_ATIVO'");
   });
 });
