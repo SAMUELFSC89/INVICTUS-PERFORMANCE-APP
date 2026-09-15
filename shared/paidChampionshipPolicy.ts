@@ -81,7 +81,7 @@ export function getPaidChampionshipRuleSections(offer: PaidChampionshipOfferPoli
     {
       id: 'scoring',
       title: '5. PONTUAÇÃO, CLASSIFICAÇÃO E DESEMPATE',
-      body: 'A pontuação competitiva usa os dados e regras oficiais publicados para a edição e somente resultados homologados pelo servidor. O app não aceita score, risco ou classificação enviados pelo próprio usuário como autoridade. Os critérios de desempate, limites e exigências específicas da edição serão exibidos antes da abertura das inscrições e ficarão congelados na versão de regulamento aceita pelo participante.',
+      body: 'A pontuação competitiva usa somente resultados homologados pelo servidor; o app não aceita score, risco ou classificação enviados pelo próprio usuário como autoridade. Em igualdade de pontuação total, o desempate segue, nesta ordem: maior número de atividades válidas; maior total de minutos válidos; e, persistindo igualdade, quem atingiu a pontuação final primeiro, conforme timestamps do servidor. Se ainda existir empate técnico em posição premiada, a homologação fica bloqueada para revisão em vez de escolher um vencedor arbitrariamente.',
     },
     {
       id: 'integrity',
@@ -96,12 +96,12 @@ export function getPaidChampionshipRuleSections(offer: PaidChampionshipOfferPoli
     {
       id: 'prize',
       title: '8. PREMIAÇÃO E RESULTADO FINAL',
-      body: 'A premiação, quantidade de posições premiadas, valores, critérios de desempate, datas de homologação e forma de entrega serão publicados na edição antes da abertura das inscrições. Nenhuma edição paga pode abrir sem esses dados. O resultado final pode aguardar revisão de atividades sinalizadas e auditoria prevista no regulamento.',
+      body: 'A premiação, quantidade de posições premiadas, valores e data de homologação são publicados na edição antes da abertura das inscrições e passam a integrar o regulamento efetivo daquela edição. O resultado só é homologado depois do encerramento e não é pago enquanto houver atividade em revisão, inconsistência competitiva ou pagamento em disputa/conciliação. A premiação em dinheiro é creditada em reais na carteira sacável do atleta elegível, com lançamento financeiro auditável e idempotente.',
     },
     {
       id: 'refunds',
       title: '9. CANCELAMENTO, REEMBOLSO E CHARGEBACK',
-      body: 'Cancelamentos e reembolsos seguem a legislação aplicável, o regulamento específico da edição e o estágio da competição. Reembolso ou chargeback confirmado pode cancelar a inscrição e retirar a elegibilidade competitiva daquela edição. O registro financeiro e de auditoria é preservado pelo prazo necessário ao cumprimento de obrigações legais e à prevenção de fraude.',
+      body: 'Cancelamentos e reembolsos seguem a legislação aplicável, o regulamento específico da edição e o estágio da competição. Reembolso ou chargeback confirmado pode cancelar a inscrição e retirar a elegibilidade competitiva daquela edição. Inscrição em disputa ou conciliação bloqueia a homologação financeira até a resolução. O registro financeiro e de auditoria é preservado pelo prazo necessário ao cumprimento de obrigações legais e à prevenção de fraude.',
     },
     {
       id: 'privacy',
