@@ -4,6 +4,7 @@ import { getOverallMetricsForDashboard, logEvent, memoryCache, getPipelineTrace 
 import { ReviewActivityRequest, ReviewActivityResponse } from '../../_dto/admin-dto.js';
 import { WithdrawalEngine } from '../../_lib/withdrawal-engine.js';
 import { updateWithdrawalStatusSafely } from '../../_lib/withdrawal-admin-status.js';
+import { readCompetitionEvidenceMetrics } from '../../_lib/competition-evidence.js';
 
 export class AdminService {
   constructor(private adminRepository: AdminRepository) {}
@@ -47,15 +48,29 @@ export class AdminService {
     if (!workout) {
       throw new AppError('Atividade física não encontrada.', 404);
     }
-    if (Number(workout.schemaVersion) >= 2 && workout.activityMode !== 'competitive') {
+    const isVersionedActivity = Number(workout.schemaVersion) >= 2;
+    if (isVersionedActivity && workout.activityMode !== 'competitive') {
       throw new AppError('Atividades pessoais não possuem análise competitiva para revisar.', 409);
     }
-    const expectedCompetitionStatus = status === 'valid' ? 'approved' : 'rejected';
-    const isProjectionRetry = Number(workout.schemaVersion) >= 2
+
+    // Uma revisão humana pode decidir se a execução é válida, mas não cria
+    // proveniência de sensor. Para atividades v2, a competição só pode voltar
+    // a pontuar se o snapshot confiável já existir (ou se a fonte server-side
+    // for normalizada pelo reader, como Strava OAuth direto).
+    const trustedCompetitionMetrics = isVersionedActivity
+      ? readCompetitionEvidenceMetrics(workout)
+      : null;
+    const competitionEligibleAfterReview = status === 'valid'
+      && (!isVersionedActivity || Boolean(trustedCompetitionMetrics));
+    const expectedCompetitionStatus = status === 'valid'
+      ? competitionEligibleAfterReview ? 'approved' : 'ineligible'
+      : 'rejected';
+
+    const isProjectionRetry = isVersionedActivity
       && workout.competitionProjectionStatus === 'pending'
       && workout.adminReviewDecision === status
       && workout.competitionReviewStatus === expectedCompetitionStatus;
-    if (Number(workout.schemaVersion) >= 2
+    if (isVersionedActivity
       && !isProjectionRetry
       && (workout.pendingReview !== true || workout.competitionReviewStatus !== 'pending_review')) {
       throw new AppError('Esta decisão competitiva já foi concluída e não está mais na fila de revisão.', 409);
@@ -64,10 +79,13 @@ export class AdminService {
     const athleteId = workout.userId;
     const previousPoints = Number(workout.competitionPoints ?? workout.points) || 0;
     const type = workout.type || 'workout';
-    const adjustedPoints = status === 'valid'
+    const adjustedPoints = competitionEligibleAfterReview
       ? Number(workout.activityXpAwarded ?? workout.scoreAwarded) || (type === 'recovery' ? 100 : 80)
       : 0;
-    const finalResolution = resolution || 'Revisado manualmente pelo administrador.';
+    const evidenceNote = status === 'valid' && isVersionedActivity && !trustedCompetitionMetrics
+      ? ' Atividade validada manualmente, porém inelegível para competição por ausência de evidência competitiva confiável.'
+      : '';
+    const finalResolution = `${resolution || 'Revisado manualmente pelo administrador.'}${evidenceNote}`.trim();
 
     await this.adminRepository.reviewWorkoutTransaction(
       activityId,
@@ -85,7 +103,15 @@ export class AdminService {
       message: `Atividade #${activityId} revisada manualmente para status '${status}' por Admin (${reviewerId})`,
       userId: athleteId,
       route: '/api/admin',
-      details: { activityId, originalStatus: workout.status, status, adjustedPoints, previousPoints }
+      details: {
+        activityId,
+        originalStatus: workout.status,
+        status,
+        adjustedPoints,
+        previousPoints,
+        competitionEligibleAfterReview,
+        expectedCompetitionStatus,
+      }
     });
 
     return {
@@ -94,7 +120,9 @@ export class AdminService {
       status,
       adjustedPoints,
       message: status === 'valid'
-        ? `Atividade aprovada com ${adjustedPoints} pontos competitivos.`
+        ? competitionEligibleAfterReview
+          ? `Atividade aprovada com ${adjustedPoints} pontos competitivos.`
+          : 'Atividade validada manualmente, mas mantida fora da pontuação competitiva por ausência de evidência confiável.'
         : 'Atividade rejeitada e mantida fora da pontuação competitiva.'
     };
   }
