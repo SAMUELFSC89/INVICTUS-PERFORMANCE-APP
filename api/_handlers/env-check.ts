@@ -68,8 +68,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const asaas = getSafeAsaasReadiness();
   return res.json({
-    ok: firestoreAvailable && asaas.paidChampionshipFinancialIntegrationReady,
+    ok: firestoreAvailable,
     firestoreAvailable,
+    paidChampionshipReady: firestoreAvailable && asaas.paidChampionshipFinancialIntegrationReady,
     integrations: { asaas },
     timestamp: new Date().toISOString()
   });
