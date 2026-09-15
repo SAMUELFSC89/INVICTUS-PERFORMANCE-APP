@@ -2,12 +2,14 @@ const mockVerifyAuth = jest.fn();
 const mockGetChampionshipProgress = jest.fn();
 const mockSettlementGet = jest.fn();
 
+const CURRENT_EDITION_ID = 'invictus_cardio_v1_ed_current';
+
 jest.mock('../_lib/common', () => ({
   verifyAuth: (...args: any[]) => mockVerifyAuth(...args),
   db: {
     collection: (name: string) => {
       if (name !== 'championship_settlements') throw new Error(`unexpected collection ${name}`);
-      return { doc: () => ({ get: () => mockSettlementGet() }) };
+      return { doc: (id: string) => ({ id, get: () => mockSettlementGet(id) }) };
     },
   },
 }));
@@ -16,6 +18,7 @@ jest.mock('../_lib/championship-catalog', () => ({
   listChampionships: jest.fn(() => []),
   getChampionship: jest.fn(() => ({
     id: 'invictus_cardio_v1',
+    editionId: CURRENT_EDITION_ID,
     title: 'Campeonato Invictus de Cardio',
     edition: 'Edição 1',
     endAt: '2026-10-01T03:00:00.000Z',
@@ -59,6 +62,8 @@ function responseCapture() {
 }
 
 const settlement = {
+  championshipId: 'invictus_cardio_v1',
+  editionId: CURRENT_EDITION_ID,
   status: 'FINALIZED',
   finalizedAt: '2026-10-03T04:00:00.000Z',
   ranking: [
@@ -87,8 +92,10 @@ describe('athlete-facing paid championship final result', () => {
     await getChampionshipProgressHandler({ query: { championshipId: 'invictus_cardio_v1' } } as any, res as any);
 
     expect(state.statusCode).toBe(200);
+    expect(state.body.editionId).toBe(CURRENT_EDITION_ID);
     expect(state.body.settlementStatus).toBe('FINALIZED');
     expect(state.body.finalResult).toBeNull();
+    expect(mockSettlementGet).toHaveBeenCalledWith(CURRENT_EDITION_ID);
   });
 
   test('replacement winner receives the promoted rank and following athlete shifts consistently', async () => {
@@ -96,6 +103,8 @@ describe('athlete-facing paid championship final result', () => {
     const winnerResponse = responseCapture();
     await getChampionshipProgressHandler({ query: { championshipId: 'invictus_cardio_v1' } } as any, winnerResponse.res as any);
     expect(winnerResponse.state.body.finalResult).toMatchObject({
+      championshipId: 'invictus_cardio_v1',
+      editionId: CURRENT_EDITION_ID,
       finalRank: 1,
       totalParticipants: 3,
       prizeWon: 500,
@@ -109,5 +118,19 @@ describe('athlete-facing paid championship final result', () => {
       totalParticipants: 3,
       prizeWon: 0,
     });
+  });
+
+  test('finalized settlement from another edition is ignored', async () => {
+    mockVerifyAuth.mockResolvedValue({ uid: 'winner-b' });
+    mockSettlementGet.mockResolvedValue({
+      exists: true,
+      data: () => ({ ...settlement, editionId: 'invictus_cardio_v1_ed_old' }),
+    });
+    const { res, state } = responseCapture();
+    await getChampionshipProgressHandler({ query: { championshipId: 'invictus_cardio_v1' } } as any, res as any);
+
+    expect(state.statusCode).toBe(200);
+    expect(state.body.settlementStatus).not.toBe('FINALIZED');
+    expect(state.body.finalResult).toBeNull();
   });
 });
