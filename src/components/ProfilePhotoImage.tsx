@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { getDownloadURL, ref } from 'firebase/storage';
 import { storage } from '../firebase';
 
@@ -30,6 +30,7 @@ interface ProfilePhotoImageProps {
   source: string;
   alt?: string;
   className?: string;
+  fallback?: ReactNode;
 }
 
 /**
@@ -41,7 +42,7 @@ interface ProfilePhotoImageProps {
  *
  * Isso evita que um avatar legado/stale deixe um <img> quebrado no perfil.
  */
-export function ProfilePhotoImage({ source, alt = '', className }: ProfilePhotoImageProps) {
+export function ProfilePhotoImage({ source, alt = '', className, fallback = null }: ProfilePhotoImageProps) {
   const normalizedSource = useMemo(() => source.trim(), [source]);
   const initial = isDirectBrowserUrl(normalizedSource) ? normalizedSource : '';
   const [resolvedSrc, setResolvedSrc] = useState(initial);
@@ -93,6 +94,6 @@ export function ProfilePhotoImage({ source, alt = '', className }: ProfilePhotoI
     }
   };
 
-  if (!resolvedSrc || failed) return null;
+  if (!resolvedSrc || failed) return <>{fallback}</>;
   return <img src={resolvedSrc} alt={alt} className={className} onError={() => void recover()} referrerPolicy="no-referrer" />;
 }
