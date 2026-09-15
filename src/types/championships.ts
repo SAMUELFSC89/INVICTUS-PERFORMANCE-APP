@@ -22,6 +22,14 @@ export interface Championship {
   durationDays: number;
   startAt: string;
   endAt: string;
+  /** Data/hora publicada a partir da qual o resultado pode ser homologado. */
+  settlementAt?: string;
+  /**
+   * Hash do calendário + premiação + modalidade publicados para a edição.
+   * Também compõe o regulationHash efetivo, invalidando aceite antigo se uma
+   * dessas regras materiais for alterada antes da abertura.
+   */
+  publishedConfigDigest?: string;
   registrationPrice: number;
   registrationOpensAt?: string;
   registrationClosesAt?: string;
