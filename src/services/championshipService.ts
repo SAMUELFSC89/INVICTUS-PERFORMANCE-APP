@@ -194,7 +194,8 @@ class ChampionshipService {
 
   async getLeaderboard(championshipId: string): Promise<Array<{ rank: number; name: string; gym: string; score: number; isUser?: boolean }>> {
     try {
-      const resp = await fetch(`${API_CONFIG.baseUrl}/api/championships/leaderboard?championshipId=${encodeURIComponent(championshipId)}`);
+      const headers = await authHeaders();
+      const resp = await fetch(`${API_CONFIG.baseUrl}/api/championships/leaderboard?championshipId=${encodeURIComponent(championshipId)}`, { headers });
       if (!resp.ok) return [];
       const data = await resp.json();
       const uid = auth.currentUser?.uid;
