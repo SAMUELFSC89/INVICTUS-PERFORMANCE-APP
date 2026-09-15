@@ -19,6 +19,19 @@ function getAsaasApiKey(): string {
   return key;
 }
 
+function requireProductionWithdrawalAuthorization(): void {
+  let hostname = '';
+  try {
+    hostname = new URL(getAsaasBaseUrl()).hostname.toLowerCase();
+  } catch {
+    throw new Error('ASAAS_API_BASE_URL inválida.');
+  }
+  if (hostname !== 'api.asaas.com') return;
+  if (!process.env.ASAAS_AUTHORIZATION_TOKEN?.trim()) {
+    throw new Error('ASAAS_AUTHORIZATION_TOKEN é obrigatória para transferências PIX em produção.');
+  }
+}
+
 export type AsaasPixKeyType = 'cpf' | 'email' | 'phone' | 'random';
 
 function mapPixKeyTypeToAsaas(type: AsaasPixKeyType): string {
@@ -102,6 +115,7 @@ export class AsaasClient {
     /** ID canônico do saque no Invictus. O Asaas devolve este campo em consultas/webhooks. */
     externalReference?: string;
   }): Promise<AsaasTransferResult> {
+    requireProductionWithdrawalAuthorization();
     const { value, pixKey, pixKeyType, description, externalReference } = params;
     if (!Number.isFinite(value) || value <= 0) throw new Error('Valor da transferência PIX deve ser maior que zero.');
     if (!pixKey || !pixKey.trim()) throw new Error('Chave PIX de destino é obrigatória.');
