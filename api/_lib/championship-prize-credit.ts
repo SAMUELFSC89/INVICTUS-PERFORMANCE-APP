@@ -68,7 +68,6 @@ function awardDocument(input: ChampionshipPrizeCreditInput, transactionId: strin
     regulationHash: input.regulationHash,
     transactionId,
     status: 'CREDITED',
-    financialRiskStatus: 'CLEAR',
     creditedAt: now,
     updatedAt: now,
   };
@@ -89,6 +88,8 @@ function awardDocument(input: ChampionshipPrizeCreditInput, transactionId: strin
  * Um `championship_prize_awards/{championshipId}_{userId}` também é mantido
  * na mesma transação para que o motor de saque consiga cruzar, sem heurística,
  * uma disputa financeira posterior com um prêmio que foi realmente creditado.
+ * O estado de risco não é duplicado no award: ele é sempre derivado ao vivo
+ * da inscrição financeira canônica para não ficar obsoleto após webhooks.
  */
 export async function creditChampionshipPrize(
   input: ChampionshipPrizeCreditInput,
