@@ -38,6 +38,14 @@ interface WinnerAssignment {
   transactionId: string;
 }
 
+interface IneligibleFinalist {
+  userId: string;
+  userName: string;
+  frozenRank: number;
+  attemptedPrizeRank: number;
+  reason: string;
+}
+
 function millis(value: unknown): number | null {
   if (!value) return null;
   if (typeof (value as any)?.toMillis === 'function') return (value as any).toMillis();
@@ -360,12 +368,14 @@ export async function finalizePaidChampionship(
   }
 
   const assignments: WinnerAssignment[] = [];
+  const ineligibleFinalists: IneligibleFinalist[] = [];
   const unawardedRanks: Array<{ rank: number; amount: number; reason: string }> = [];
   let candidateIndex = 0;
 
   for (const prize of frozenPrizes) {
     let assigned = false;
     while (candidateIndex < frozenRanking.length) {
+      const frozenIndex = candidateIndex;
       const candidate = frozenRanking[candidateIndex++];
       const payout = await creditChampionshipPrize({
         championshipId,
@@ -377,7 +387,16 @@ export async function finalizePaidChampionship(
         rank: prize.rank,
         amount: prize.amount,
       });
-      if (payout.ineligible) continue;
+      if (payout.ineligible) {
+        ineligibleFinalists.push({
+          userId: candidate.userId,
+          userName: candidate.userName,
+          frozenRank: frozenIndex + 1,
+          attemptedPrizeRank: prize.rank,
+          reason: String(payout.reason || 'PAYOUT_INELIGIBLE'),
+        });
+        continue;
+      }
       assignments.push({
         rank: prize.rank,
         userId: candidate.userId,
@@ -408,7 +427,7 @@ export async function finalizePaidChampionship(
         userId: winner.userId,
         userName: winner.userName,
         finalRank: winner.rank,
-        totalParticipants: frozenRanking.length,
+        totalParticipants: frozenRanking.length - ineligibleFinalists.length,
         finalScore: winner.score,
         prizeWon: winner.amount,
         payoutTransactionId: winner.transactionId,
@@ -434,6 +453,7 @@ export async function finalizePaidChampionship(
     transaction.set(settlementRef, {
       status: 'FINALIZED',
       winnerAssignments: assignments,
+      ineligibleFinalists,
       unawardedRanks,
       totalPaid,
       finalizedAt,
@@ -445,5 +465,5 @@ export async function finalizePaidChampionship(
 
   await markPaidChampionshipEditionFinalized(championship, finalizedAt);
   const finalSnap = await settlementRef.get();
-  return finalSnap.data() || { championshipId, editionId, status: 'FINALIZED', winnerAssignments: assignments, totalPaid };
+  return finalSnap.data() || { championshipId, editionId, status: 'FINALIZED', winnerAssignments: assignments, ineligibleFinalists, totalPaid };
 }
