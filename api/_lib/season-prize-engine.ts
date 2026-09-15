@@ -21,6 +21,7 @@ export interface SeasonWinner {
   gymId: string;
   rank: number;
   prizeAmount: number;
+  /** Compatibilidade do payload histórico: o valor vem do score canônico da temporada. */
   monthlyScore: number;
 }
 
@@ -211,16 +212,23 @@ export async function computeSeasonRevenueByGym(seasonId: string): Promise<Map<s
   return byGym;
 }
 
+/**
+ * O nome `monthlyScore` no retorno é mantido por compatibilidade com consumidores
+ * antigos, mas a fonte competitiva correta é `users.score`: o IGA da temporada
+ * apontada pelo season_tracker. Na virada do mês, monthlyScore já pode representar
+ * o mês novo antes do cron de payout rodar; score ainda representa a temporada
+ * encerrada até o tracker avançar.
+ */
 export async function getSeasonParticipants(): Promise<Array<{ id: string; monthlyScore: number }>> {
   const snap = await db.collection('users')
-    .where('monthlyScore', '>', 0)
-    .orderBy('monthlyScore', 'desc')
+    .where('score', '>', 0)
+    .orderBy('score', 'desc')
     .limit(2000)
     .get();
 
   return snap.docs
     .filter((doc: any) => isProUser(doc.data()) && isActiveAccountState(doc.data()))
-    .map((doc: any) => ({ id: doc.id, monthlyScore: Number(doc.data().monthlyScore) || 0 }));
+    .map((doc: any) => ({ id: doc.id, monthlyScore: Number(doc.data().score) || 0 }));
 }
 
 async function lerAcademiasCongeladas(seasonId: string): Promise<Map<string, string>> {
@@ -246,8 +254,8 @@ async function lerAcademiasCongeladas(seasonId: string): Promise<Map<string, str
 
 export async function getSeasonParticipantsByGym(seasonId: string): Promise<Map<string, Array<{ id: string; monthlyScore: number }>>> {
   const snap = await db.collection('users')
-    .where('monthlyScore', '>', 0)
-    .orderBy('monthlyScore', 'desc')
+    .where('score', '>', 0)
+    .orderBy('score', 'desc')
     .limit(2000)
     .get();
 
@@ -264,7 +272,7 @@ export async function getSeasonParticipantsByGym(seasonId: string): Promise<Map<
     const gymId = frozenGym.get(doc.id);
     if (!gymId) return;
     const list = byGym.get(gymId) || [];
-    list.push({ id: doc.id, monthlyScore: Number(data.monthlyScore) || 0 });
+    list.push({ id: doc.id, monthlyScore: Number(data.score) || 0 });
     byGym.set(gymId, list);
   });
   byGym.forEach((list) => list.sort((a, b) => b.monthlyScore - a.monthlyScore || a.id.localeCompare(b.id)));
