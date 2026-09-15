@@ -12,13 +12,17 @@ describe('contrato nativo do card de compartilhamento', () => {
     expect(read('ios/App/App.xcodeproj/project.pbxproj')).toContain('InvictusShareCardPlugin.swift in Sources');
   });
 
-  it('usa snapshot nativo da WKWebView no iOS antes do PNG rasterizado pelo frontend', () => {
+  it('usa snapshot nativo limpo da WKWebView em 1080x1920 e JPEG 94%', () => {
     const iosPlugin = read('ios/App/App/InvictusShareCardPlugin.swift');
     expect(iosPlugin).toContain('import WebKit');
     expect(iosPlugin).toContain("document.querySelector('.share-card-art')");
     expect(iosPlugin).toContain('WKSnapshotConfiguration()');
     expect(iosPlugin).toContain('webView.takeSnapshot');
     expect(iosPlugin).toContain('configuration.snapshotWidth = NSNumber(value: 1080)');
+    expect(iosPlugin).toContain('CGSize(width: 1080, height: 1920)');
+    expect(iosPlugin).toContain('jpegData(compressionQuality: 0.94)');
+    expect(iosPlugin).toContain("'.share-screen-toolbar, .share-context-controls, .share-card-notices, .share-customizer-backdrop'");
+    expect(iosPlugin).toContain('restoreEditorChrome');
     expect(iosPlugin).toContain('completion(self.imageData(from: call))');
   });
 
@@ -29,6 +33,13 @@ describe('contrato nativo do card de compartilhamento', () => {
     expect(iosPlugin).toContain('of: "[^a-zA-Z0-9._-]"');
     expect(iosPlugin).toContain('removeItem(at: shareDirectory)');
     expect(iosPlugin).not.toContain('temporaryDirectory.appendingPathComponent(safeName)');
+  });
+
+  it('Android compartilha a URI com MIME correto e ClipData', () => {
+    const androidPlugin = read('android/app/src/main/java/com/desafiosemdesculpa/app/InvictusShareCardPlugin.java');
+    expect(androidPlugin).toContain('intent.setType(mimeType)');
+    expect(androidPlugin).toContain('intent.setClipData(ClipData.newRawUri');
+    expect(androidPlugin).toContain('Intent.FLAG_GRANT_READ_URI_PERMISSION');
   });
 
   it('remove velocidade e divisórias antigas, mas mantém os ícones do layout aprovado', () => {
