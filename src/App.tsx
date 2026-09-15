@@ -38,6 +38,7 @@ const AdminFlaggedActivities = lazyNamed(() => import('./pages/AdminFlaggedActiv
 const PowerLift = lazyNamed(() => import('./pages/PowerLift'), 'PowerLift');
 const Health = lazyNamed(() => import('./pages/Health'), 'Health');
 const HealthReport = lazyNamed(() => import('./pages/HealthReport'), 'HealthReport');
+const SleepCheckin = lazyNamed(() => import('./pages/SleepCheckin'), 'SleepCheckin');
 const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifications');
 const ChampionshipsHub = lazyNamed(() => import('./pages/championships/ChampionshipsHub'), 'ChampionshipsHub');
 const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');
@@ -131,6 +132,7 @@ export default function App() {
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
                 <Route path="/health" element={<ProFeatureGate feature="health"><Health /></ProFeatureGate>} />
+                <Route path="/health/sleep-checkin" element={<ProFeatureGate feature="health"><SleepCheckin /></ProFeatureGate>} />
                 <Route path="/health/report" element={<ProFeatureGate feature="health"><HealthReport /></ProFeatureGate>} />
                 <Route path="/health/report/full" element={<Navigate to="/health/report" replace />} />
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
