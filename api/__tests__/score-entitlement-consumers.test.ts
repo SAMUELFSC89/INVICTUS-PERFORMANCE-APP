@@ -155,19 +155,22 @@ describe('entitlement canônico nos consumidores de score', () => {
     );
   });
 
-  test('getSeasonParticipants exclui tier legado, expirado e inclui somente Pro canônico', async () => {
+  test('getSeasonParticipants usa score da temporada, não monthlyScore já virado para o mês novo', async () => {
     mockDb = dbForUsers(undefined, [
       document('canonical-active', {
-        monthlyScore: 90,
+        score: 90,
+        monthlyScore: 5,
         proEntitlement: canonicalPro(),
       }),
       document('legacy-forged', {
-        monthlyScore: 80,
+        score: 80,
+        monthlyScore: 999,
         subscriptionTier: 'performance',
         isSubscribed: true,
       }),
       document('canonical-expired', {
-        monthlyScore: 70,
+        score: 70,
+        monthlyScore: 998,
         proEntitlement: canonicalPro({ expiresAt: '2026-09-01T00:00:00.000Z' }),
       }),
     ]);
@@ -177,7 +180,7 @@ describe('entitlement canônico nos consumidores de score', () => {
     ]);
   });
 
-  test('contrato dos consumidores não volta a confiar no plano enviado ou no tier legado', () => {
+  test('contrato dos consumidores não volta a confiar no plano enviado, tier legado ou monthlyScore para payout', () => {
     const scoreEngine = readFileSync(resolve(process.cwd(), 'api/_lib/score-engine/index.ts'), 'utf8');
     const presence = readFileSync(resolve(process.cwd(), 'api/_handlers/validate-presence.ts'), 'utf8');
     const season = readFileSync(resolve(process.cwd(), 'api/_lib/season-prize-engine.ts'), 'utf8');
@@ -191,5 +194,8 @@ describe('entitlement canônico nos consumidores de score', () => {
     expect(season).not.toContain('d.data().subscriptionTier');
     expect(season).toContain('isProUser(doc.data())');
     expect(season).toContain('isActiveAccountState(doc.data())');
+    expect(season).toContain(".where('score', '>', 0)");
+    expect(season).toContain(".orderBy('score', 'desc')");
+    expect(season).not.toContain(".where('monthlyScore', '>', 0)");
   });
 });
