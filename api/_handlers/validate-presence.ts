@@ -35,11 +35,6 @@ function isConfidence(value: unknown): value is BiometricConfidence {
   return value === 'high' || value === 'medium' || value === 'low';
 }
 
-/**
- * Gate financeiro: saída incompleta/atípica do modelo nunca recebe defaults
- * permissivos. Se qualquer campo obrigatório estiver ausente ou com tipo
- * inesperado, o resultado é inválido e seguirá para análise/pending.
- */
 function parseBiometricResult(responseText: string): BiometricResult | null {
   try {
     const parsed = JSON.parse(responseText) as Record<string, unknown>;
@@ -204,7 +199,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Claim atômico: uma selfie só pode autorizar uma tentativa financeira.
     try {
       await db.runTransaction(async (transaction: any) => {
         const freshSnap = await transaction.get(pendingCheckRef);
@@ -310,8 +304,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const aiReason = biometrics?.reason
       || 'A resposta biométrica não apresentou evidência estruturada suficiente para aprovação automática.';
 
-    // Fail closed: aprovação só existe com schema íntegro, referência real,
-    // liveness positivo, identidade positiva e score suficiente.
     let finalDecision: 'approved' | 'pending' | 'rejected' = 'pending';
     let friendlyResultMessage = 'Não conseguimos confirmar sua identidade automaticamente. A solicitação não foi autorizada e precisa de nova validação.';
 
@@ -347,17 +339,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (actionType === 'championship_registration' && finalDecision === 'approved') {
       const championshipId = String(workoutPayload.championshipId || '').trim();
       const acceptanceId = String(workoutPayload.acceptanceId || '').trim();
-      if (!championshipId || !acceptanceId) throw new Error('Dados da inscrição de campeonato inválidos.');
-      commitResult = await criarInscricaoChampionship(userId, championshipId, acceptanceId);
+      const checkoutSurface = String(workoutPayload.checkoutSurface || '').trim();
+      if (!championshipId || !acceptanceId || !['ios_native', 'web'].includes(checkoutSurface)) {
+        throw new Error('Dados da inscrição de campeonato inválidos ou incompletos.');
+      }
+      commitResult = await criarInscricaoChampionship(
+        userId,
+        championshipId,
+        acceptanceId,
+        checkoutSurface as 'ios_native' | 'web',
+      );
     }
 
     if (actionType === 'withdrawal' && finalDecision === 'approved') {
-      // userId vem por último para nunca ser sobrescrito por payload persistido.
       commitResult = await WithdrawalEngine.requestWithdrawal({ ...workoutPayload, userId });
     }
 
-    // Uma selfie aprovada e forte pode se tornar baseline local para a próxima
-    // validação quando ainda não havia foto própria utilizável.
     if (finalDecision === 'approved' && presenceConfidence >= 85 && reference.source === 'none') {
       try {
         await userRef.update({
@@ -404,8 +401,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: any) {
     console.error('[Presence Checker Endpoint Error]:', error);
-    // Se a tentativa falhar antes de uma decisão final, reabre apenas o claim
-    // em processing. Uma operação já aprovada/rejeitada nunca é reaberta.
     try {
       if (pendingCheckRef) {
         const recheckSnap = await pendingCheckRef.get();
