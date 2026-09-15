@@ -117,12 +117,14 @@ async function resumeLockedPaidChampionship(championship: Championship): Promise
   if (!prizes.length) throw new Error('Snapshot congelado perdeu a premiação.');
 
   const assignments: Array<Record<string, any>> = [];
+  const ineligibleFinalists: Array<Record<string, any>> = [];
   const unawardedRanks: Array<Record<string, any>> = [];
   let candidateIndex = 0;
 
   for (const prize of prizes) {
     let assigned = false;
     while (candidateIndex < ranking.length) {
+      const frozenIndex = candidateIndex;
       const candidate = ranking[candidateIndex++];
       const payout = await creditChampionshipPrize({
         championshipId,
@@ -134,7 +136,16 @@ async function resumeLockedPaidChampionship(championship: Championship): Promise
         rank: Number(prize.rank),
         amount: money(prize.amount),
       });
-      if (payout.ineligible) continue;
+      if (payout.ineligible) {
+        ineligibleFinalists.push({
+          userId: candidate.userId,
+          userName: candidate.userName,
+          frozenRank: frozenIndex + 1,
+          attemptedPrizeRank: Number(prize.rank),
+          reason: String(payout.reason || 'PAYOUT_INELIGIBLE'),
+        });
+        continue;
+      }
       assignments.push({
         rank: Number(prize.rank),
         userId: candidate.userId,
@@ -164,7 +175,7 @@ async function resumeLockedPaidChampionship(championship: Championship): Promise
         userId: winner.userId,
         userName: winner.userName,
         finalRank: winner.rank,
-        totalParticipants: ranking.length,
+        totalParticipants: Math.max(0, ranking.length - ineligibleFinalists.length),
         finalScore: winner.score,
         prizeWon: winner.amount,
         payoutTransactionId: winner.transactionId,
@@ -191,6 +202,7 @@ async function resumeLockedPaidChampionship(championship: Championship): Promise
     transaction.set(settlementRef, {
       status: 'FINALIZED',
       winnerAssignments: assignments,
+      ineligibleFinalists,
       unawardedRanks,
       totalPaid,
       finalizedAt,
@@ -202,7 +214,7 @@ async function resumeLockedPaidChampionship(championship: Championship): Promise
 
   await markPaidChampionshipEditionFinalized(championship, finalizedAt);
   const finalSnap = await settlementRef.get();
-  return finalSnap.data() || { championshipId, editionId, status: 'FINALIZED', winnerAssignments: assignments, totalPaid };
+  return finalSnap.data() || { championshipId, editionId, status: 'FINALIZED', winnerAssignments: assignments, ineligibleFinalists, totalPaid };
 }
 
 export async function runPaidChampionshipSettlementSweep(now = new Date()): Promise<{
@@ -228,8 +240,6 @@ export async function runPaidChampionshipSettlementSweep(now = new Date()): Prom
         if (!previousSettlement.exists || previousSettlement.data()?.status !== 'FINALIZED') {
           throw new Error('ACTIVE_EDITION_CONFIG_MISMATCH');
         }
-        // A edição anterior já terminou, mas a nova ainda não foi ativada pelo
-        // primeiro checkout. Não existe nada financeiro a homologar agora.
         skipped.push(configured.id);
         continue;
       }
