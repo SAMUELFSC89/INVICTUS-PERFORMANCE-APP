@@ -31,6 +31,16 @@ export interface ObjectiveMissionRefinement {
   model: string | null;
 }
 
+async function hasProAiAccess(userId: string): Promise<boolean> {
+  try {
+    const userSnap = await db.collection('users').doc(userId).get();
+    return userSnap.exists && isProUser(userSnap.data());
+  } catch {
+    // Fail closed: falha de entitlement nunca pode virar chamada paga de IA.
+    return false;
+  }
+}
+
 function fallbackChallengePresentation(
   prescription: Prescription,
   profile?: ProfileSnapshot,
@@ -120,6 +130,10 @@ export async function refineInitialObjectiveMission(
     source: 'deterministic',
     model: null,
   };
+
+  // FREE mantém todo o motor determinístico e a jornada completa. Somente a
+  // camada Gemini de personalização é PRO, evitando custo de IA fora do plano.
+  if (!await hasProAiAccess(userId)) return fallback;
   const apiKey = getAiApiKey();
   if (!apiKey) return fallback;
 
@@ -170,6 +184,7 @@ export async function describeObjectiveChallenge(
   review: Review,
 ): Promise<ChallengePresentation> {
   const fallback = fallbackChallengePresentation(journey.behavior, baseline.profile, review);
+  if (!await hasProAiAccess(userId)) return fallback;
   const apiKey = getAiApiKey();
   if (!apiKey || journey.status !== 'active') return fallback;
   const model = getAiHabitModel();
@@ -199,14 +214,7 @@ export async function describeObjectiveChallenge(
  */
 export async function explainObjectiveDecision(userId: string, journey: Journey, review: Review): Promise<ObjectiveExplanation> {
   const fallback = { text: review.reason, source: 'deterministic' as const, model: null };
-
-  try {
-    const userSnap = await db.collection('users').doc(userId).get();
-    if (!userSnap.exists || !isProUser(userSnap.data())) return fallback;
-  } catch {
-    // Fail closed: se não for possível comprovar PRO, não fazemos chamada paga.
-    return fallback;
-  }
+  if (!await hasProAiAccess(userId)) return fallback;
 
   const apiKey = getAiApiKey();
   if (!apiKey) return fallback;
