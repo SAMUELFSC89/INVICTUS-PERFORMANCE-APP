@@ -11,12 +11,16 @@ type Feature = 'health' | 'ai';
  * recurso bloqueado cai na tela canônica de assinatura já existente no Perfil.
  * O caminho original é preservado em `returnTo` para permitir retorno após a
  * ativação do entitlement.
+ *
+ * Administradores ativos já recebem acesso PRO dentro de
+ * `hasActiveProEntitlement`. Não repita aqui um `role === 'admin'` isolado:
+ * isso ignoraria bloqueio, suspensão ou exclusão do perfil.
  */
 export function ProFeatureGate({ feature: _feature, children }: { feature: Feature; children: ReactNode }) {
   const { user } = useUser();
   const location = useLocation();
 
-  if (hasActiveProEntitlement(user) || user?.role === 'admin') return <>{children}</>;
+  if (hasActiveProEntitlement(user)) return <>{children}</>;
 
   const returnTo = `${location.pathname}${location.search}${location.hash}`;
   return <Navigate
