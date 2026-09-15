@@ -2,6 +2,7 @@ export type ChampionshipType = 'arena_musculacao' | 'run_elite_corrida';
 export type ChampionshipStatus = 'upcoming' | 'active' | 'in_review' | 'finished';
 export type RegistrationStatus = 'PENDING_PAYMENT' | 'ACTIVE' | 'CANCELLED' | 'REFUNDED' | 'REJECTED';
 export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+export type ChampionshipSettlementStatus = 'NOT_DUE' | 'PENDING_REVIEW' | 'LOCKED' | 'FINALIZED';
 
 export interface PrizeRank {
   rank: number;
@@ -109,18 +110,6 @@ export interface ChampionshipScoreEntry {
   createdAt: string;
 }
 
-export interface UserChampionshipProgress {
-  championshipId: string;
-  userId: string;
-  currentRank: number;
-  totalScore: number;
-  validSessionsCount: number;
-  totalTimeMinutes: number;
-  progressPercentage: number;
-  daysRemaining: number;
-  lastUpdated: string;
-}
-
 export interface ChampionshipResult {
   championshipId: string;
   championshipTitle: string;
@@ -131,4 +120,19 @@ export interface ChampionshipResult {
   status: 'finalized';
   homologatedAt: string;
   certificateUrl?: string;
+}
+
+export interface UserChampionshipProgress {
+  championshipId: string;
+  userId: string;
+  currentRank: number;
+  totalScore: number;
+  validSessionsCount: number;
+  totalTimeMinutes: number;
+  progressPercentage: number;
+  daysRemaining: number;
+  settlementStatus: ChampionshipSettlementStatus;
+  settlementAt?: string;
+  finalResult?: ChampionshipResult | null;
+  lastUpdated: string;
 }
