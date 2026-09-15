@@ -12,7 +12,10 @@ import {
 } from '../_lib/championship-inscription-service.js';
 import { recordCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
 import { getChampionshipProgress, getChampionshipLeaderboard, getUserChampionshipActivities } from '../_lib/championship-scoring-service.js';
-import { paidChampionshipSettlementDocumentId } from '../_lib/paid-championship-edition.js';
+import {
+  getPaidChampionshipEditionGate,
+  paidChampionshipSettlementDocumentId,
+} from '../_lib/paid-championship-edition.js';
 import { criarPresenceCheck } from '../_lib/presence-check-service.js';
 
 const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
@@ -27,12 +30,31 @@ const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
 
 function erroComoResposta(erro: any): { status: number; message: string } {
   const mensagem = erro?.message || 'Falha ao processar a solicitacao.';
-  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad|frequência cardíaca|aceite|regras competitivas|checkout|calendário|premiação|edição/i.test(mensagem);
+  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad|frequência cardíaca|aceite|regras competitivas|checkout|calendário|premiação|edição|configuração/i.test(mensagem);
   return { status: ehRegra ? 400 : 500, message: mensagem };
 }
 
 export async function listChampionshipsHandler(_req: any, res: any) {
-  return res.json({ championships: listChampionships() });
+  const championships = await Promise.all(listChampionships().map(async (championship) => {
+    if (!championship.registrationOpen) return championship;
+    try {
+      const editionGate = await getPaidChampionshipEditionGate(championship);
+      if (editionGate.ok) return championship;
+      return {
+        ...championship,
+        registrationOpen: false,
+        registrationReadinessReason: editionGate.reason || 'A edição ativa precisa de conciliação antes de novas inscrições.',
+      };
+    } catch (error) {
+      console.error('[Championships] falha ao validar lock da edição no catálogo:', error);
+      return {
+        ...championship,
+        registrationOpen: false,
+        registrationReadinessReason: 'Não foi possível validar a edição ativa com segurança. Novas inscrições estão temporariamente bloqueadas.',
+      };
+    }
+  }));
+  return res.json({ championships });
 }
 
 function serializarRegistro(dados: any) {
@@ -177,6 +199,10 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
 
     const championship = getChampionship(championshipId);
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
+    const editionGate = await getPaidChampionshipEditionGate(championship);
+    if (!editionGate.ok) {
+      return res.status(409).json({ error: editionGate.reason || 'A edição ativa exige conciliação antes de novos aceites.' });
+    }
     if (regulationVersion !== championship.regulationVersion || regulationHash !== championship.regulationHash) {
       return res.status(400).json({ error: 'O regulamento foi atualizado. Reabra a inscricao, leia e aceite a versao vigente.' });
     }
@@ -226,6 +252,10 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
     if (!championship.registrationOpen) {
       return res.status(400).json({ error: championship.registrationReadinessReason || 'Inscricoes ainda nao disponiveis.' });
+    }
+    const editionGate = await getPaidChampionshipEditionGate(championship);
+    if (!editionGate.ok) {
+      return res.status(409).json({ error: editionGate.reason || 'A edição ativa exige conciliação antes de novas inscrições.' });
     }
 
     const { presenceCheckId, livenessPrompt } = await criarPresenceCheck({
