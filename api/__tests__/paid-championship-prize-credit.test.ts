@@ -5,6 +5,7 @@ jest.mock('../_lib/common', () => ({
 }));
 
 import {
+  championshipPrizeAwardId,
   championshipPrizeSettlementId,
   championshipPrizeTransactionId,
   creditChampionshipPrize,
@@ -96,6 +97,15 @@ describe('paid championship cash prize settlement', () => {
       balanceBefore: 25,
       balanceAfter: 525,
     });
+    expect(mockDb.store.get(`championship_prize_awards/${championshipPrizeAwardId(request.championshipId, request.userId)}`)).toMatchObject({
+      championshipId: request.championshipId,
+      userId: request.userId,
+      rank: 1,
+      amount: 500,
+      status: 'CREDITED',
+      financialRiskStatus: 'CLEAR',
+      transactionId: championshipPrizeTransactionId(request),
+    });
   });
 
   test('refund ou perda de elegibilidade cria marker definitivo sem pagar', async () => {
@@ -107,6 +117,7 @@ describe('paid championship cash prize settlement', () => {
     const first = await creditChampionshipPrize(request);
     expect(first).toMatchObject({ credited: false, alreadyCredited: false, ineligible: true });
     expect(mockDb.store.has('wallets/user-a')).toBe(false);
+    expect(mockDb.store.has(`championship_prize_awards/${championshipPrizeAwardId(request.championshipId, request.userId)}`)).toBe(false);
 
     // Mesmo que o perfil/registro seja alterado depois, o retry antigo não
     // transforma uma inelegibilidade já homologada em novo pagamento.
@@ -129,7 +140,7 @@ describe('paid championship cash prize settlement', () => {
   test('mudança posterior de valor colide no mesmo rank em vez de pagar novamente', async () => {
     const first = input({ amount: 500 });
     await creditChampionshipPrize(first);
-    await expect(creditChampionshipPrize(input({ amount: 600 }))).rejects.toThrow('Conflito no settlement de prêmio');
+    await expect(creditChampionshipPrize(input({ amount: 600 }))).rejects.toThrow(/Conflito no (award|settlement) de prêmio/);
     expect(mockDb.store.get('wallets/user-a')).toMatchObject({ redeemableBalance: 525 });
   });
 });
