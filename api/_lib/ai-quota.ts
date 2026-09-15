@@ -7,7 +7,8 @@ export type AiQuotaFeature =
   | 'tts'
   | 'memory_extraction'
   | 'workout_generation'
-  | 'cardio_personalization';
+  | 'cardio_personalization'
+  | 'powerlift_audit';
 
 type BucketPolicy = { windowMs: number; maxRequests: number };
 type FeaturePolicy = { burst: BucketPolicy; daily: BucketPolicy };
@@ -23,6 +24,7 @@ const DEFAULT_POLICIES: Record<AiQuotaFeature, FeaturePolicy> = {
   memory_extraction: { burst: { windowMs: 30 * MINUTE, maxRequests: 30 }, daily: { windowMs: DAY, maxRequests: 120 } },
   workout_generation: { burst: { windowMs: HOUR, maxRequests: 8 }, daily: { windowMs: DAY, maxRequests: 24 } },
   cardio_personalization: { burst: { windowMs: HOUR, maxRequests: 20 }, daily: { windowMs: DAY, maxRequests: 60 } },
+  powerlift_audit: { burst: { windowMs: HOUR, maxRequests: 6 }, daily: { windowMs: DAY, maxRequests: 20 } },
 };
 
 function boundedEnvInt(name: string, fallback: number, max = 10_000): number {
