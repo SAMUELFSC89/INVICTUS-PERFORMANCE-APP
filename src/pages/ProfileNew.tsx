@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Bell, Brain, Camera, CheckCircle2, Clock, Coins, Crown, Dumbbell, Flame, HeartPulse, HelpCircle, ImagePlus, Landmark, Medal, Plus, Settings, ShieldCheck, Trash2, Trophy, UserRound, Watch, X } from 'lucide-react';
 import { InvictusLogo } from '../components/InvictusLogo';
+import { ProfilePhotoImage, getProfilePhotoCandidate } from '../components/ProfilePhotoImage';
 import { ACHIEVEMENTS } from '../achievements';
 import { useUser } from '../UserContext';
 import { missionService } from '../services/missionService';
@@ -56,10 +57,11 @@ export function ProfileNew() {
   const paid = hasActiveProEntitlement(user);
   const joined = (user as any)?.createdAt || (user as any)?.joinedAt || (user as any)?.activatedAt;
   const memberDate = joined && !Number.isNaN(Date.parse(String(joined))) ? new Date(joined).toLocaleDateString('pt-BR') : '—';
+  const profilePhoto = getProfilePhotoCandidate(user);
 
   const recent = useMemo(() => activities.slice(0, 4), [activities]);
   const choosePhoto = () => { setPhotoMenuOpen(false); inputRef.current?.click(); };
-  const openPhotoMenu = () => user?.photoURL ? setPhotoMenuOpen(true) : choosePhoto();
+  const openPhotoMenu = () => profilePhoto ? setPhotoMenuOpen(true) : choosePhoto();
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -83,7 +85,7 @@ export function ProfileNew() {
     }
   };
   const removePhoto = async () => {
-    if (!user?.photoURL || uploading || !window.confirm('Remover sua foto de perfil?')) return;
+    if (!profilePhoto || uploading || !window.confirm('Remover sua foto de perfil?')) return;
     setPhotoMenuOpen(false); setUploading(true); setError(null); setNotice(null);
     try {
       await userService.removeProfilePhoto();
@@ -100,9 +102,9 @@ export function ProfileNew() {
   const openRecentActivity = (item: Workout) => navigate(`/challenges?view=history&activity=${encodeURIComponent(item.id)}&source=workout`);
 
   return createPortal(<main className="np-screen"><div className="np-page"><input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={upload} />
-    <header className="np-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="np-head-avatar" onClick={openPhotoMenu} disabled={uploading} aria-label={user?.photoURL ? 'Opções da foto do perfil' : 'Adicionar foto do perfil'}>{user?.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
+    <header className="np-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="np-head-avatar" onClick={openPhotoMenu} disabled={uploading} aria-label={profilePhoto ? 'Opções da foto do perfil' : 'Adicionar foto do perfil'}>{profilePhoto ? <ProfilePhotoImage source={profilePhoto} alt="" fallback={<UserRound />} /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
     <section className="np-title"><h1>MEU <span>PERFIL</span></h1><p>Sua jornada. Sua evolução.</p></section>
-    <section className="np-identity"><button className="np-photo" onClick={openPhotoMenu} disabled={uploading} aria-label={user?.photoURL ? 'Opções da foto do perfil' : 'Adicionar foto do perfil'}>{user?.photoURL ? <img src={user.photoURL} alt={`Foto de ${user.displayName || 'atleta'}`} /> : <UserRound />}<i><Camera /></i></button><div className="np-name"><h2>{(user?.displayName || user?.name || 'ATLETA INVICTUS').toUpperCase()} {paid ? <em>PRO</em> : null}</h2><p>Invictus desde {memberDate}</p><span><ShieldCheck /> {user?.gymName || 'Nenhuma academia vinculada'}</span></div><aside><InvictusLogo size={36} /><small>NÍVEL</small><b>{levelProgress.currentLevel}</b><span>INVICTUS</span></aside><div className="np-xp"><span>{(user?.xp || 0).toLocaleString('pt-BR')} / {levelProgress.xpCeiling.toLocaleString('pt-BR')} XP</span><i><b style={{ width: `${levelProgress.percentage}%` }} /></i><small>Próximo nível: {Math.max(0, levelProgress.xpCeiling - (user?.xp || 0)).toLocaleString('pt-BR')} XP</small></div></section>
+    <section className="np-identity"><button className="np-photo" onClick={openPhotoMenu} disabled={uploading} aria-label={profilePhoto ? 'Opções da foto do perfil' : 'Adicionar foto do perfil'}>{profilePhoto ? <ProfilePhotoImage source={profilePhoto} alt={`Foto de ${user?.displayName || 'atleta'}`} fallback={<UserRound />} /> : <UserRound />}<i><Camera /></i></button><div className="np-name"><h2>{(user?.displayName || user?.name || 'ATLETA INVICTUS').toUpperCase()} {paid ? <em>PRO</em> : null}</h2><p>Invictus desde {memberDate}</p><span><ShieldCheck /> {user?.gymName || 'Nenhuma academia vinculada'}</span></div><aside><InvictusLogo size={36} /><small>NÍVEL</small><b>{levelProgress.currentLevel}</b><span>INVICTUS</span></aside><div className="np-xp"><span>{(user?.xp || 0).toLocaleString('pt-BR')} / {levelProgress.xpCeiling.toLocaleString('pt-BR')} XP</span><i><b style={{ width: `${levelProgress.percentage}%` }} /></i><small>Próximo nível: {Math.max(0, levelProgress.xpCeiling - (user?.xp || 0)).toLocaleString('pt-BR')} XP</small></div></section>
     {uploading ? <p className="np-notice" role="status">Enviando foto…</p> : null}
     {error ? <p className="np-error" role="alert">{error}</p> : null}
     {notice ? <p className="np-notice" role="status">{notice}</p> : null}
