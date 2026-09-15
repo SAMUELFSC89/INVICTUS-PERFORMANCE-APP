@@ -19,6 +19,7 @@ export interface ChampionshipPrizeCreditResult {
   alreadyCredited: boolean;
   ineligible: boolean;
   transactionId: string;
+  reason?: string | null;
 }
 
 function settlementDigest(input: ChampionshipPrizeCreditInput): string {
@@ -136,6 +137,7 @@ export async function creditChampionshipPrize(
         alreadyCredited: status === 'CREDITED',
         ineligible: status === 'INELIGIBLE',
         transactionId,
+        reason: status === 'INELIGIBLE' ? String(stored.reason || 'PAYOUT_INELIGIBLE') : null,
       };
     }
 
@@ -155,7 +157,7 @@ export async function creditChampionshipPrize(
         settledAt: now,
       });
       if (!existingAward.exists) transaction.create(awardRef, awardDocument(normalizedInput, transactionId, now));
-      return { credited: false, alreadyCredited: true, ineligible: false, transactionId };
+      return { credited: false, alreadyCredited: true, ineligible: false, transactionId, reason: null };
     }
 
     const userData = userSnap.exists ? userSnap.data() || {} : {};
@@ -170,15 +172,16 @@ export async function creditChampionshipPrize(
       && registration.regulationHash === input.regulationHash;
 
     if (!activeAccount || !activeRegistration) {
+      const reason = !activeAccount ? 'ACCOUNT_INACTIVE_AT_SETTLEMENT' : 'REGISTRATION_NOT_FINANCIALLY_ELIGIBLE';
       transaction.create(settlementRef, {
         id: settlementId,
         ...normalizedInput,
         status: 'INELIGIBLE',
-        reason: !activeAccount ? 'ACCOUNT_INACTIVE_AT_SETTLEMENT' : 'REGISTRATION_NOT_FINANCIALLY_ELIGIBLE',
+        reason,
         transactionId: null,
         settledAt: now,
       });
-      return { credited: false, alreadyCredited: false, ineligible: true, transactionId };
+      return { credited: false, alreadyCredited: false, ineligible: true, transactionId, reason };
     }
 
     const wallet = walletSnap.exists ? walletSnap.data() || {} : {};
@@ -230,6 +233,6 @@ export async function creditChampionshipPrize(
     });
     transaction.create(awardRef, awardDocument(normalizedInput, transactionId, now));
 
-    return { credited: true, alreadyCredited: false, ineligible: false, transactionId };
+    return { credited: true, alreadyCredited: false, ineligible: false, transactionId, reason: null };
   });
 }
