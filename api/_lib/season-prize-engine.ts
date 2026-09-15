@@ -1,14 +1,22 @@
-import { startOfMonth, addMonths } from 'date-fns';
 import { db, FieldValue } from './common.js';
 import { RewardsEngine } from './rewards-engine.js';
 import { lerConfiguracaoInscricao } from './season-settings.js';
 import { isProUser } from './entitlement.js';
 import { isActiveAccountState } from './account-state.js';
 import {
+  resolveCompetitionTimeZone,
+  zonedMonthWindowForId,
+  zonedStartOfMonth,
+  zonedStartOfNextMonth,
+  zonedYearMonth,
+} from '../../src/core/time/competitionTime.js';
+import {
   SEASON_MIN_PARTICIPANTS_PER_GYM,
   SEASON_TOP5_THRESHOLD_PER_GYM,
   TOP_10_PERCENTAGES,
 } from './season-constants.js';
+
+const COMPETITION_TIME_ZONE = resolveCompetitionTimeZone(process.env.COMPETITION_TIME_ZONE);
 
 export interface SeasonWindow {
   seasonId: string;
@@ -46,37 +54,57 @@ export interface SeasonPayoutResult {
   academias: ResultadoAcademia[];
 }
 
-function seasonIdFor(startDate: Date): string {
-  return `season_${startDate.toISOString().slice(0, 7)}`;
+function seasonIdFor(reference: Date): string {
+  return `season_${zonedYearMonth(reference, COMPETITION_TIME_ZONE)}`;
 }
 
 function seasonWindowForMonth(reference: Date): SeasonWindow {
-  const startDate = startOfMonth(reference);
-  const endDate = startOfMonth(addMonths(startDate, 1));
-  return { seasonId: seasonIdFor(startDate), startDate, endDate };
+  const startDate = zonedStartOfMonth(reference, COMPETITION_TIME_ZONE);
+  const endDate = zonedStartOfNextMonth(reference, COMPETITION_TIME_ZONE);
+  return { seasonId: seasonIdFor(reference), startDate, endDate };
 }
 
-function isAlignedToFirstOfMonth(d: Date): boolean {
-  return d.getDate() === 1 && d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
+function canonicalWindowForSeasonId(seasonId: string): SeasonWindow | null {
+  const window = zonedMonthWindowForId(seasonId, COMPETITION_TIME_ZONE);
+  return window ? { seasonId, ...window } : null;
 }
 
 export function calcularProximaJanela(atual: SeasonWindow): SeasonWindow {
-  const referencia = isAlignedToFirstOfMonth(atual.endDate)
-    ? atual.endDate
-    : startOfMonth(addMonths(atual.endDate, 1));
-  return seasonWindowForMonth(referencia);
+  // Prefere o seasonId porque trackers antigos podem ter start/end gravados
+  // em 00:00 UTC. O ID mensal é estável e permite reconstruir a janela correta
+  // em meia-noite local sem correr o risco de pular um mês.
+  const canonicalCurrent = canonicalWindowForSeasonId(atual.seasonId);
+  const reference = canonicalCurrent?.endDate || atual.endDate;
+  return seasonWindowForMonth(reference);
 }
 
 export async function getOrInitCurrentSeasonWindow(): Promise<SeasonWindow> {
   const ref = db.collection('system_config').doc('season_tracker');
   const snap = await ref.get();
   if (snap.exists) {
-    const data: any = snap.data();
-    return {
-      seasonId: data.seasonId,
+    const data: any = snap.data() || {};
+    const stored: SeasonWindow = {
+      seasonId: String(data.seasonId || ''),
       startDate: new Date(data.startDate),
       endDate: new Date(data.endDate),
     };
+    const canonical = canonicalWindowForSeasonId(stored.seasonId);
+    if (!canonical) return stored;
+
+    const needsMigration = stored.startDate.getTime() !== canonical.startDate.getTime()
+      || stored.endDate.getTime() !== canonical.endDate.getTime()
+      || data.timeZone !== COMPETITION_TIME_ZONE;
+    if (needsMigration) {
+      await ref.set({
+        seasonId: canonical.seasonId,
+        startDate: canonical.startDate.toISOString(),
+        endDate: canonical.endDate.toISOString(),
+        timeZone: COMPETITION_TIME_ZONE,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      console.log(`[Temporada] Tracker ${canonical.seasonId} normalizado para ${COMPETITION_TIME_ZONE}.`);
+    }
+    return canonical;
   }
 
   const window = seasonWindowForMonth(new Date());
@@ -84,6 +112,7 @@ export async function getOrInitCurrentSeasonWindow(): Promise<SeasonWindow> {
     seasonId: window.seasonId,
     startDate: window.startDate.toISOString(),
     endDate: window.endDate.toISOString(),
+    timeZone: COMPETITION_TIME_ZONE,
     updatedAt: FieldValue.serverTimestamp(),
   });
   return window;
@@ -151,6 +180,7 @@ async function advanceToNextSeasonWindow(previous: SeasonWindow): Promise<Season
     seasonId: next.seasonId,
     startDate: next.startDate.toISOString(),
     endDate: next.endDate.toISOString(),
+    timeZone: COMPETITION_TIME_ZONE,
     updatedAt: FieldValue.serverTimestamp(),
   });
   await promoverInscritosDaNovaTemporada(next.seasonId);
