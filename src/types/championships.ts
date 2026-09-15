@@ -12,7 +12,13 @@ export interface PrizeRank {
 }
 
 export interface Championship {
+  /** ID estável da modalidade/produto (ex.: invictus_cardio_v1). */
   id: string;
+  /**
+   * ID imutável da edição publicada. Muda automaticamente quando calendário,
+   * prêmio, modalidade ou outra configuração material muda.
+   */
+  editionId: string;
   type: ChampionshipType;
   title: string;
   edition: string;
@@ -64,6 +70,7 @@ export interface Championship {
 export interface ChampionshipRegistration {
   id: string;
   championshipId: string;
+  editionId: string;
   championshipTitle?: string;
   userId: string;
   userName?: string;
@@ -87,6 +94,7 @@ export interface ChampionshipRegistration {
 export interface ChampionshipScoreEntry {
   id: string;
   championshipId: string;
+  editionId: string;
   userId: string;
   userName: string;
   userPhoto?: string;
@@ -112,6 +120,7 @@ export interface ChampionshipScoreEntry {
 
 export interface ChampionshipResult {
   championshipId: string;
+  editionId: string;
   championshipTitle: string;
   edition: string;
   finalRank: number;
@@ -124,6 +133,7 @@ export interface ChampionshipResult {
 
 export interface UserChampionshipProgress {
   championshipId: string;
+  editionId: string;
   userId: string;
   currentRank: number;
   totalScore: number;
