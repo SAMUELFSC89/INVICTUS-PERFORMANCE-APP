@@ -9,18 +9,13 @@ import { RunningService } from '../_services/running/running-service.js';
 const runningRepository = new RunningRepository();
 const runningService = new RunningService(runningRepository);
 
-// #96: a acao 'add' (e a rota irma /activities/running, que so existia pra
-// forcar essa mesma acao) foram removidas -- eram uma 5a formula de
-// pontuacao paralela (RunningService.addRun: XP proprio via
-// processRunTransaction, check-in de presenca proprio, e a colecao
-// `running_stats` como estado paralelo), ja substituida pelo IGA como fonte
-// unica (ver AUDITORIA-CORE-INVICTUS.md e Fase 2 da auditoria 2026-08).
-// Confirmado sem nenhum chamador vivo: o unico componente que usava
-// runningService.addRun() (RunTracker.tsx) nunca era importado/renderizado
-// em lugar nenhum do app, e /activities/running nunca era chamada pelo
-// frontend. As leituras (me/ranking/history) continuam servindo dados
-// historicos legados da colecao `running_stats`/`run_sessions` -- por isso
-// ficam.
+// O antigo ranking global de corrida foi desativado. Ele lia `running_stats`,
+// usava best_run_km_* e uma regra financeira histórica independente do IGA,
+// além de não respeitar o opt-in do ranking da academia. A fonte competitiva
+// canônica agora é exclusivamente /api/ranking + igaService.
+//
+// Mantemos somente `me` e `history` enquanto os dados históricos de corrida
+// ainda forem necessários para compatibilidade/compartilhamento.
 export default async function handler(req: VercelRequest & { userId?: string }, res: VercelResponse) {
   try {
     // 1. Middlewares
@@ -29,7 +24,7 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
 
     const action = ((req.query.action as string) || req.body?.action || 'me').toLowerCase();
 
-    // Sensitive actions require authentication
+    // Dados históricos individuais sempre exigem autenticação.
     const sensitiveActions = ['me', 'history'];
     if (sensitiveActions.includes(action)) {
       if (!(await authMiddleware(req, res))) return;
@@ -51,10 +46,7 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
       }
 
       case 'ranking': {
-        const period = (req.query.period as 'month' | 'week') || 'month';
-        const mode = (req.query.mode as 'official' | 'demo') || 'official';
-        const ranking = await runningService.getRanking(period, mode, currentUserId);
-        return res.status(200).json(ranking);
+        throw new AppError('Ranking de corrida legado desativado. Use o ranking IGA da academia.', 410);
       }
 
       case 'history': {
