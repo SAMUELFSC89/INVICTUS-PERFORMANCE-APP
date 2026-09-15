@@ -13,11 +13,16 @@ describe('competitive denunciation abuse resistance', () => {
     expect(source).toContain("actionTaken: 'queued_for_review'");
   });
 
-  test('reporter and suspect must share the same active gym ranking', () => {
+  test('reporter and suspect must share the same active acknowledged gym ranking', () => {
     expect(source).toContain("collection('gym_ranking_enrollments').doc(authUser.uid)");
     expect(source).toContain("collection('gym_ranking_enrollments').doc(suspectUserId)");
     expect(source).toContain('reporterEnrollment.enrolled === true');
     expect(source).toContain('suspectEnrollment.enrolled === true');
+    expect(source).toContain('isCurrentCompetitiveHrAcknowledgement');
+    expect(source).toContain("'gym_ranking'");
+    expect(source).toContain('COMPETITION_RULES_VERSIONS.gym_ranking');
+    expect(source).toContain('reporterAcknowledged');
+    expect(source).toContain('suspectAcknowledged');
     expect(source).toContain('reporterGymId === suspectGymId');
     expect(source).toContain('suspectRankingGymId === reporterGymId');
   });
