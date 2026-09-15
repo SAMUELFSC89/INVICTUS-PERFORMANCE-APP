@@ -269,6 +269,7 @@ export async function getCommunityGymChampionshipStatus(
   const user = userSnap.data() || {};
   const config = configSnap.data() || {};
   const gymId = String(user.gymId || user.academyId || 'community_global');
+  const gymName = String(user.gymName || 'Comunidade Invictus');
   const cycleKey = communityCycleKey(now);
   const cutoff = communityRankingPeriodStart(period, now);
   const snap = await db.collection('gym_championship_scores').where('eventId', '==', COMMUNITY_EVENT_ID).limit(5000).get();
@@ -307,7 +308,7 @@ export async function getCommunityGymChampionshipStatus(
     cycleKey,
     period,
     gymId,
-    gymName: String(user.gymName || 'Comunidade Invictus'),
+    gymName,
     rank: rankIndex >= 0 ? rankIndex + 1 : null,
     score: rankIndex >= 0 ? ranked[rankIndex].score : 0,
     validActivities: rankIndex >= 0 ? ranked[rankIndex].validActivities : 0,
@@ -467,8 +468,8 @@ export async function getChampionshipProgress(championshipId: string, userId: st
   snap.forEach((doc) => {
     const d: any = doc.data();
     if (!scoreBelongsToEdition(d, championship) || d.userId !== userId || d.validationStatus !== 'VALIDATED') return;
-    totalScore += d.score || 0;
-    totalTimeMinutes += d.metrics?.durationMinutes || 0;
+    totalScore += Math.max(0, Number(d.score) || 0);
+    totalTimeMinutes += Math.max(0, Number(d.metrics?.durationMinutes) || 0);
     validSessionsCount += 1;
   });
   const leaderboard = await getChampionshipLeaderboard(championshipId, Number.MAX_SAFE_INTEGER);
@@ -521,30 +522,88 @@ export interface ChampionshipLeaderboardEntry {
   name: string;
   gym: string;
   score: number;
+  validActivities: number;
+  totalTimeMinutes: number;
+  finalScoreReachedAt: string;
+}
+
+function championshipScoreMillis(value: unknown): number | null {
+  if (!value) return null;
+  if (typeof (value as any)?.toMillis === 'function') return (value as any).toMillis();
+  if (typeof (value as any)?._seconds === 'number') return (value as any)._seconds * 1000;
+  if (typeof (value as any)?.seconds === 'number') return (value as any).seconds * 1000;
+  const parsed = value instanceof Date ? value.getTime() : Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function buildProvisionalChampionshipLeaderboard(
+  scores: Array<Record<string, any>>,
+  eligibleUserIds: Set<string>,
+  limit = 50,
+): ChampionshipLeaderboardEntry[] {
+  const byUser = new Map<string, Omit<ChampionshipLeaderboardEntry, 'rank'>>();
+  for (const score of scores) {
+    const userId = String(score.userId || '');
+    if (!userId || !eligibleUserIds.has(userId) || score.validationStatus !== 'VALIDATED') continue;
+    const current = byUser.get(userId) || {
+      userId,
+      name: String(score.userName || 'Atleta Invictus'),
+      gym: String(score.userGymName || '-'),
+      score: 0,
+      validActivities: 0,
+      totalTimeMinutes: 0,
+      finalScoreReachedAt: '',
+    };
+    const contribution = Math.max(0, Number(score.score) || 0);
+    const hadPositiveScore = current.score > 0;
+    current.score += contribution;
+    current.validActivities += 1;
+    current.totalTimeMinutes += Math.max(0, Number(score.metrics?.durationMinutes) || 0);
+
+    const createdAtMs = championshipScoreMillis(score.createdAt);
+    const previousMs = championshipScoreMillis(current.finalScoreReachedAt);
+    if (createdAtMs !== null) {
+      if (contribution > 0) {
+        if (!hadPositiveScore || previousMs === null || createdAtMs > previousMs) {
+          current.finalScoreReachedAt = new Date(createdAtMs).toISOString();
+        }
+      } else if (!hadPositiveScore && current.score === 0 && (previousMs === null || createdAtMs < previousMs)) {
+        current.finalScoreReachedAt = new Date(createdAtMs).toISOString();
+      }
+    }
+    byUser.set(userId, current);
+  }
+
+  return [...byUser.values()]
+    .map((entry) => ({
+      ...entry,
+      score: Number(entry.score.toFixed(6)),
+      totalTimeMinutes: Number(entry.totalTimeMinutes.toFixed(3)),
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.validActivities !== a.validActivities) return b.validActivities - a.validActivities;
+      if (b.totalTimeMinutes !== a.totalTimeMinutes) return b.totalTimeMinutes - a.totalTimeMinutes;
+      const aFinal = championshipScoreMillis(a.finalScoreReachedAt) ?? Number.MAX_SAFE_INTEGER;
+      const bFinal = championshipScoreMillis(b.finalScoreReachedAt) ?? Number.MAX_SAFE_INTEGER;
+      if (aFinal !== bFinal) return aFinal - bFinal;
+      return a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }) || a.userId.localeCompare(b.userId);
+    })
+    .slice(0, limit)
+    .map((entry, index) => ({ rank: index + 1, ...entry }));
 }
 
 export async function getChampionshipLeaderboard(championshipId: string, limit = 50): Promise<ChampionshipLeaderboardEntry[]> {
   const championship = getChampionship(championshipId);
   if (!championship) return [];
   const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
-  const byUser = new Map<string, { userId: string; name: string; gym: string; score: number }>();
+  const scores: Array<Record<string, any>> = [];
   snap.forEach((doc) => {
-    const d: any = doc.data();
-    if (!scoreBelongsToEdition(d, championship) || d.validationStatus !== 'VALIDATED') return;
-    const current = byUser.get(d.userId) || {
-      userId: d.userId,
-      name: d.userName || 'Atleta Invictus',
-      gym: d.userGymName || '-',
-      score: 0,
-    };
-    current.score += d.score || 0;
-    byUser.set(d.userId, current);
+    const data: any = doc.data();
+    if (!scoreBelongsToEdition(data, championship) || data.validationStatus !== 'VALIDATED') return;
+    scores.push(data);
   });
 
-  const eligibleIds = await activeUserIds([...byUser.keys()]);
-  return [...byUser.values()]
-    .filter((entry) => eligibleIds.has(entry.userId))
-    .sort((a, b) => b.score - a.score || a.userId.localeCompare(b.userId))
-    .slice(0, limit)
-    .map((entry, index) => ({ rank: index + 1, ...entry }));
+  const eligibleIds = await activeUserIds(scores.map((score) => String(score.userId || '')).filter(Boolean));
+  return buildProvisionalChampionshipLeaderboard(scores, eligibleIds, limit);
 }
