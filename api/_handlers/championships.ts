@@ -64,6 +64,33 @@ export async function getMyRegistrationsHandler(req: any, res: any) {
   return res.json({ registrations: registrations.map(serializarRegistro) });
 }
 
+function toIso(value: any): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value;
+  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
+}
+
+function athleteFinalResult(champ: any, settlement: Record<string, any>, userId: string) {
+  if (String(settlement.status || '') !== 'FINALIZED') return null;
+  const ranking = Array.isArray(settlement.ranking) ? settlement.ranking : [];
+  const index = ranking.findIndex((entry: any) => String(entry?.userId || '') === userId);
+  if (index < 0) return null;
+  const assignment = (Array.isArray(settlement.winnerAssignments) ? settlement.winnerAssignments : [])
+    .find((entry: any) => String(entry?.userId || '') === userId);
+  return {
+    championshipId: champ.id,
+    championshipTitle: champ.title,
+    edition: champ.edition,
+    finalRank: Number(assignment?.rank) || index + 1,
+    totalParticipants: ranking.length,
+    prizeWon: Math.max(0, Number(assignment?.amount) || 0),
+    status: 'finalized' as const,
+    homologatedAt: toIso(settlement.finalizedAt) || new Date().toISOString(),
+  };
+}
+
 export async function getChampionshipProgressHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
@@ -71,10 +98,25 @@ export async function getChampionshipProgressHandler(req: any, res: any) {
   const champ = getChampionship(championshipId);
   if (!champ) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
 
-  const progresso = await getChampionshipProgress(championshipId, auth.uid);
+  const [progresso, settlementSnap] = await Promise.all([
+    getChampionshipProgress(championshipId, auth.uid),
+    db.collection('championship_settlements').doc(championshipId).get(),
+  ]);
   const agora = Date.now();
   const fimMs = new Date(champ.endAt).getTime();
+  const homologacaoMs = new Date(champ.settlementAt || '').getTime();
   const diasRestantes = Number.isFinite(fimMs) ? Math.max(0, Math.ceil((fimMs - agora) / 86_400_000)) : 0;
+  const settlement = settlementSnap.exists ? settlementSnap.data() || {} : {};
+  const persistedStatus = String(settlement.status || '');
+  const settlementStatus = persistedStatus === 'FINALIZED'
+    ? 'FINALIZED'
+    : persistedStatus === 'LOCKED'
+      ? 'LOCKED'
+      : Number.isFinite(homologacaoMs) && agora >= homologacaoMs
+        ? 'PENDING_REVIEW'
+        : 'NOT_DUE';
+  const finalResult = athleteFinalResult(champ, settlement, auth.uid);
+
   return res.json({
     championshipId,
     userId: auth.uid,
@@ -83,6 +125,9 @@ export async function getChampionshipProgressHandler(req: any, res: any) {
       ? Math.min(100, Math.round((progresso.totalTimeMinutes / (champ.durationDays * 30)) * 100))
       : 0,
     daysRemaining: diasRestantes,
+    settlementStatus,
+    settlementAt: champ.settlementAt,
+    finalResult,
     lastUpdated: new Date().toISOString(),
   });
 }
