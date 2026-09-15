@@ -43,7 +43,10 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
   const now = new Date();
   const nowISO = now.toISOString();
 
-  // Load all non-completed/non-cancelled challenges to check for expiration
+  // Load all non-completed/non-cancelled challenges to check for expiration.
+  // IMPORTANT: a rota normal nunca liquida dinheiro legado. Desafios antigos
+  // com entryFee ficam reservados para a migração administrativa dedicada,
+  // que é auditável, protegida e idempotente.
   const activeAndFormingSnap = await challengesRef
     .where('status', 'in', ['forming', 'active'])
     .get();
@@ -51,7 +54,6 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
   for (const challengeDoc of activeAndFormingSnap.docs) {
     const challenge = challengeDoc.data();
     if (challenge.endDate && challenge.endDate < nowISO) {
-      // Challenge has expired! Process it
       await processChallengeExpiration(challengeDoc.id);
     }
   }
@@ -298,12 +300,13 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
 /**
  * Handles expiration and completion/cancellation of a challenge.
  *
- * Desafios criados a partir da migração da tarefa #125 nunca têm entryFee,
- * então sempre caem no ramo "sem dinheiro" abaixo. O ramo legado é mantido
- * apenas como rede de segurança para qualquer documento antigo que ainda não
- * tenha passado pela migração de estorno (não apagamos nem alteramos essa
- * lógica financeira até a migração confirmar que não há mais consumidores —
- * regra #5 do usuário).
+ * Desafios privados atuais nunca envolvem dinheiro. Qualquer documento legado
+ * com entryFee > 0 é deliberadamente ignorado aqui e só pode ser encerrado pela
+ * migração administrativa `migrate-legacy-private-challenges`, que existe para
+ * devolver o valor original aos participantes com trilha de auditoria.
+ *
+ * Isso é intencional: abrir/listar desafios é uma ação comum do usuário e nunca
+ * pode funcionar como gatilho de settlement financeiro legado.
  */
 async function processChallengeExpiration(challengeId: string) {
   const challengeRef = db.collection('private_challenges').doc(challengeId);
@@ -316,6 +319,11 @@ async function processChallengeExpiration(challengeId: string) {
   const now = new Date();
   const isLegacyMoneyChallenge = typeof challenge.entryFee === 'number' && challenge.entryFee > 0;
 
+  if (isLegacyMoneyChallenge) {
+    console.warn(`[Private Challenges][LEGACY] Challenge ${challengeId} requires admin refund migration; user-facing expiration will not move money.`);
+    return;
+  }
+
   const membersSnap = await db.collection('private_challenge_members')
     .where('challengeId', '==', challengeId)
     .get();
@@ -323,114 +331,42 @@ async function processChallengeExpiration(challengeId: string) {
   const members = membersSnap.docs.map(mDoc => mDoc.data());
   const isMinParticipantsMet = members.length >= 2;
 
-  if (isLegacyMoneyChallenge) {
-    // ---- RAMO LEGADO: preserva o comportamento financeiro original ----
-    // (FieldValue precisa ser importado localmente aqui pois o restante do
-    // arquivo não usa mais operações monetárias)
-    const { FieldValue } = await import('../_lib/common.js');
-    const entryFee = challenge.entryFee || 0;
-    const netPrizePool = challenge.netPrizePool || 0;
-
-    if (!isMinParticipantsMet) {
-      console.log(`[Private Challenges][LEGACY] Cancelling challenge ${challengeId} (below 2 participants).`);
-      await db.runTransaction(async (transaction) => {
-        const userSnapsMap = new Map<string, any>();
-        for (const member of members) {
-          const uRef = db.collection('users').doc(member.userId);
-          const uSnap = await transaction.get(uRef);
-          if (uSnap.exists) userSnapsMap.set(member.userId, uSnap.data());
-        }
-
-        transaction.update(challengeRef, { status: 'cancelled', updatedAt: now.toISOString() });
-
-        for (const member of members) {
-          const uData = userSnapsMap.get(member.userId);
-          if (!uData) continue;
-          const uRef = db.collection('users').doc(member.userId);
-          const oldBalance = uData.walletBalance !== undefined ? Number(uData.walletBalance) : 0;
-          transaction.update(uRef, { walletBalance: FieldValue.increment(entryFee) });
-          if (entryFee > 0) {
-            const txRef = db.collection('walletTransactions').doc();
-            transaction.set(txRef, {
-              id: txRef.id,
-              userId: member.userId,
-              type: 'challenge_refund',
-              amount: entryFee,
-              previousBalance: oldBalance,
-              newBalance: oldBalance + entryFee,
-              createdAt: now.toISOString(),
-              status: 'approved',
-              description: `Estorno (Cancelamento): ${challenge.title}`
-            });
-          }
-        }
-      });
-    } else {
-      const sortedMembers = [...members].sort((a, b) => (b.points || 0) - (a.points || 0));
-      if (sortedMembers.length === 0) {
-        await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
-        return;
-      }
-      const winner = sortedMembers[0];
-      console.log(`[Private Challenges][LEGACY] Completing challenge ${challengeId}. Distributing R$ ${netPrizePool} to TOP 1.`);
-      await db.runTransaction(async (transaction) => {
-        const winnerUserRef = db.collection('users').doc(winner.userId);
-        const winnerUserSnap = await transaction.get(winnerUserRef);
-
-        transaction.update(challengeRef, {
-          status: 'completed',
-          winnerId: winner.userId,
-          winnerName: winner.userName || 'Atleta',
-          winnerPhoto: winner.userPhoto || '',
-          updatedAt: now.toISOString()
-        });
-
-        if (winnerUserSnap.exists) {
-          const wData = winnerUserSnap.data()!;
-          const oldBalance = wData.walletBalance !== undefined ? Number(wData.walletBalance) : 0;
-          transaction.update(winnerUserRef, { walletBalance: FieldValue.increment(netPrizePool) });
-          const txRef = db.collection('walletTransactions').doc();
-          transaction.set(txRef, {
-            id: txRef.id,
-            userId: winner.userId,
-            type: 'challenge_prize',
-            amount: netPrizePool,
-            previousBalance: oldBalance,
-            newBalance: oldBalance + netPrizePool,
-            createdAt: now.toISOString(),
-            status: 'approved',
-            description: `Premiação 1º Lugar: ${challenge.title}`
-          });
-        }
-
-        const feedRef = db.collection('elite_feed').doc();
-        transaction.set(feedRef, {
-          userId: winner.userId,
-          userName: winner.userName || 'Atleta',
-          userPhoto: winner.userPhoto || '',
-          text: `venceu o desafio privado "${challenge.title}" e faturou R$ ${netPrizePool.toFixed(2)}!! 🏆💥`,
-          type: 'join',
-          timestamp: now.toISOString()
-        });
-      });
-    }
-    return;
-  }
-
-  // ---- RAMO NOVO: sem dinheiro, só reconhecimento ----
+  // ---- RAMO ATUAL: sem dinheiro, só reconhecimento ----
   if (!isMinParticipantsMet) {
     console.log(`[Private Challenges] Cancelling challenge ${challengeId} (below 2 participants, no money involved).`);
     await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
     return;
   }
 
-  const sortedMembers = [...members].sort((a, b) => (b.points || 0) - (a.points || 0));
+  const sortedMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
   if (sortedMembers.length === 0) {
     await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
     return;
   }
 
-  const winner = sortedMembers[0];
+  const topScore = Math.max(0, Number(sortedMembers[0].points) || 0);
+  const topMembers = sortedMembers.filter(member => Math.max(0, Number(member.points) || 0) === topScore);
+
+  // Não existe hoje writer vivo para `private_challenge_members.points`.
+  // Até uma regra oficial de pontuação/desempate ser implementada, nunca
+  // inventamos campeão por ordem de leitura do Firestore. Score zero ou
+  // empate no topo encerram o período sem vencedor simbólico.
+  if (topScore <= 0 || topMembers.length !== 1) {
+    const reason = topScore <= 0 ? 'NO_SCORING_DATA' : 'TOP_SCORE_TIE';
+    console.warn(`[Private Challenges] Challenge ${challengeId} completed without deterministic winner (${reason}).`);
+    await challengeRef.set({
+      status: 'completed',
+      winnerId: null,
+      winnerName: null,
+      winnerPhoto: null,
+      resultStatus: 'NO_DETERMINISTIC_WINNER',
+      resultReason: reason,
+      updatedAt: now.toISOString(),
+    }, { merge: true });
+    return;
+  }
+
+  const winner = topMembers[0];
   console.log(`[Private Challenges] Completing challenge ${challengeId}. Champion: ${winner.userId}.`);
 
   await db.runTransaction(async (transaction) => {
@@ -439,6 +375,8 @@ async function processChallengeExpiration(challengeId: string) {
       winnerId: winner.userId,
       winnerName: winner.userName || 'Atleta',
       winnerPhoto: winner.userPhoto || '',
+      resultStatus: 'WINNER_CONFIRMED',
+      resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
       updatedAt: now.toISOString()
     });
 

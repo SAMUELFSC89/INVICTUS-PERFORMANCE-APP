@@ -16,9 +16,11 @@ import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
  *
  * Mesmas proteções do migrate-reset.ts: rota desligada por padrão (só liga
  * via env var), admin-only, e por cima disso -- dryRun=true por padrão, só
- * executa de verdade com ?dryRun=false explícito. Idempotente: usa um ID
- * determinístico por (challengeId, userId) pro documento de estorno, então
- * rodar de novo não duplica reembolso.
+ * executa de verdade com ?dryRun=false explícito.
+ *
+ * Idempotência financeira: o documento determinístico de estorno é lido
+ * DENTRO da mesma transação que incrementa o saldo. Duas execuções concorrentes
+ * nunca podem creditar duas vezes o mesmo (challengeId, userId).
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -56,60 +58,108 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .get();
 
       const memberRefunds: any[] = [];
+      let needsManualReconciliation = false;
 
       for (const memberDoc of membersSnap.docs) {
         const member = memberDoc.data();
         const userId = member.userId;
-        if (!userId) continue;
-
-        const refundTxId = `legacy_refund_${challengeDoc.id}_${userId}`;
-        const refundTxRef = db.collection('walletTransactions').doc(refundTxId);
-        const existing = await refundTxRef.get();
-        if (existing.exists) {
-          memberRefunds.push({ userId, amount: entryFee, status: 'already_refunded' });
+        if (!userId) {
+          needsManualReconciliation = true;
+          memberRefunds.push({ userId: null, amount: entryFee, status: 'invalid_member' });
           continue;
         }
 
-        memberRefunds.push({ userId, amount: entryFee, status: dryRun ? 'would_refund' : 'refunded' });
+        const refundTxId = `legacy_refund_${challengeDoc.id}_${userId}`;
+        const refundTxRef = db.collection('walletTransactions').doc(refundTxId);
 
-        if (!dryRun) {
-          const userRef = db.collection('users').doc(userId);
-          await db.runTransaction(async (transaction) => {
-            const uSnap = await transaction.get(userRef);
-            if (!uSnap.exists) return;
-            const uData = uSnap.data() || {};
-            const oldBalance = uData.walletBalance !== undefined ? Number(uData.walletBalance) : 0;
-
-            transaction.update(userRef, { walletBalance: FieldValue.increment(entryFee) });
-            transaction.set(refundTxRef, {
-              id: refundTxId,
-              userId,
-              type: 'challenge_refund',
-              amount: entryFee,
-              previousBalance: oldBalance,
-              newBalance: oldBalance + entryFee,
-              createdAt: new Date().toISOString(),
-              status: 'approved',
-              description: `Estorno (fim do modelo com dinheiro em Desafios Privados): ${challenge.title}`
-            });
-          });
+        if (dryRun) {
+          const existing = await refundTxRef.get();
+          if (existing.exists) {
+            memberRefunds.push({ userId, amount: entryFee, status: 'already_refunded' });
+            continue;
+          }
+          const userExists = (await db.collection('users').doc(userId).get()).exists;
+          if (!userExists) {
+            needsManualReconciliation = true;
+            memberRefunds.push({ userId, amount: entryFee, status: 'user_missing' });
+            continue;
+          }
+          memberRefunds.push({ userId, amount: entryFee, status: 'would_refund' });
+          totalRefunded += entryFee;
+          continue;
         }
 
-        totalRefunded += entryFee;
+        const userRef = db.collection('users').doc(userId);
+        const settlement = await db.runTransaction(async (transaction) => {
+          const [existingRefund, uSnap] = await Promise.all([
+            transaction.get(refundTxRef),
+            transaction.get(userRef),
+          ]);
+
+          if (existingRefund.exists) {
+            const stored = existingRefund.data() || {};
+            const matches = stored.userId === userId
+              && stored.type === 'challenge_refund'
+              && Number(stored.amount) === entryFee;
+            if (!matches) {
+              throw new Error(`Conflito no estorno legado ${refundTxId}; migração interrompida.`);
+            }
+            return { status: 'already_refunded' as const, credited: false };
+          }
+
+          if (!uSnap.exists) {
+            return { status: 'user_missing' as const, credited: false };
+          }
+
+          const uData = uSnap.data() || {};
+          const parsedBalance = Number(uData.walletBalance);
+          const oldBalance = Number.isFinite(parsedBalance) ? parsedBalance : 0;
+          const createdAt = new Date().toISOString();
+
+          transaction.update(userRef, { walletBalance: FieldValue.increment(entryFee) });
+          transaction.set(refundTxRef, {
+            id: refundTxId,
+            challengeId: challengeDoc.id,
+            userId,
+            type: 'challenge_refund',
+            amount: entryFee,
+            previousBalance: oldBalance,
+            newBalance: oldBalance + entryFee,
+            createdAt,
+            status: 'approved',
+            description: `Estorno (fim do modelo com dinheiro em Desafios Privados): ${challenge.title}`
+          });
+
+          return { status: 'refunded' as const, credited: true };
+        });
+
+        memberRefunds.push({ userId, amount: entryFee, status: settlement.status });
+        if (settlement.credited) totalRefunded += entryFee;
+        if (settlement.status === 'user_missing') needsManualReconciliation = true;
       }
 
       if (!dryRun) {
-        await challengeDoc.ref.update({
-          status: 'cancelled',
-          updatedAt: new Date().toISOString(),
-          legacyMigrationNote: 'Cancelado e estornado automaticamente: Desafios Privados deixou de usar dinheiro real (#325).'
-        });
+        if (needsManualReconciliation) {
+          await challengeDoc.ref.set({
+            updatedAt: new Date().toISOString(),
+            legacyMigrationStatus: 'NEEDS_MANUAL_RECONCILIATION',
+            legacyMigrationNote: 'Migração pausada: há participante sem conta localizável ou vínculo inválido. Nenhum estorno já conciliado será duplicado em nova execução.'
+          }, { merge: true });
+        } else {
+          await challengeDoc.ref.update({
+            status: 'cancelled',
+            updatedAt: new Date().toISOString(),
+            legacyMigrationStatus: 'REFUNDED_AND_CANCELLED',
+            legacyMigrationNote: 'Cancelado e estornado automaticamente: Desafios Privados deixou de usar dinheiro real (#325).'
+          });
+        }
       }
 
       affected.push({
         challengeId: challengeDoc.id,
         title: challenge.title,
         entryFee,
+        requiresManualReconciliation: needsManualReconciliation,
         members: memberRefunds
       });
     }
