@@ -30,8 +30,6 @@ function parsePrizeDistribution(name: string): PrizeRank[] {
       .filter((item) => Number.isInteger(item.rank) && item.rank > 0 && Number.isFinite(item.amount) && item.amount > 0)
       .sort((a, b) => a.rank - b.rank);
 
-    // Uma distribuição ambígua nunca abre inscrição: posições precisam ser
-    // únicas e contínuas (1, 2, 3...).
     if (new Set(valid.map((item) => item.rank)).size !== valid.length) return [];
     if (valid.some((item, index) => item.rank !== index + 1)) return [];
 
@@ -69,6 +67,12 @@ function digestPublishedConfig(value: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+export function championshipEditionId(championshipId: string, publishedConfigDigest: string): string {
+  const safeChampionshipId = String(championshipId || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  const digest = String(publishedConfigDigest || '').replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+  return `${safeChampionshipId}_${digest.slice(0, 24)}`;
+}
+
 function buildChampionship(
   id: keyof typeof PAID_CHAMPIONSHIP_OFFERS,
   envPrefix: 'CHAMPIONSHIP_STRENGTH' | 'CHAMPIONSHIP_CARDIO',
@@ -96,9 +100,6 @@ function buildChampionship(
     ...(offer.modality === 'cardio' ? { allowedCardioTypes } : {}),
   };
 
-  // O digest é parte do regulationHash efetivo. Alterar prêmio, calendário,
-  // modalidade ou perfil antifraude produz automaticamente uma nova versão
-  // material do regulamento e invalida aceites antigos.
   const publishedConfigDigest = digestPublishedConfig({
     id: offer.id,
     edition,
@@ -111,9 +112,11 @@ function buildChampionship(
     prizes,
     antiFraudProfile,
   });
+  const editionId = championshipEditionId(offer.id, publishedConfigDigest);
 
   return {
     id: offer.id,
+    editionId,
     type: offer.modality === 'cardio' ? 'run_elite_corrida' : 'arena_musculacao',
     title: offer.title,
     edition,
@@ -167,7 +170,7 @@ function registrationReadiness(championship: Championship, now = new Date()): { 
   if (!championship.prizeDistribution.length || championship.prizePool <= 0) {
     return { open: false, reason: 'A premiação oficial ainda não foi publicada ou possui posições inválidas.' };
   }
-  if (!championship.publishedConfigDigest || championship.regulationHash.length < 20) {
+  if (!championship.publishedConfigDigest || !championship.editionId || championship.regulationHash.length < 20) {
     return { open: false, reason: 'A configuração publicada da edição ainda não foi congelada.' };
   }
   if (championship.type === 'run_elite_corrida' && !(championship.antiFraudProfile.allowedCardioTypes || []).length) {
@@ -207,10 +210,6 @@ export function isRegistrationOpen(championship: Championship, now: Date = new D
   return registrationReadiness(championship, now).open;
 }
 
-/**
- * O matcher permanece fail-closed: a edição de cardio só aceita modalidades
- * explicitamente publicadas e nenhuma competição pontua fora da janela real.
- */
 export function matchActiveChampionshipsForActivity(params: {
   activityType: string;
   cardioType?: string;
