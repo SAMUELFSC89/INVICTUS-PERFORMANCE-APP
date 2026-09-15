@@ -33,12 +33,13 @@ describe('AI memory and training guardrails', () => {
     expect(training).toContain('answers: sanitizeTrainingAnswers(raw?.answers)');
   });
 
-  test('athlete biometrics used by workout generation originate from server user data', () => {
+  test('athlete biometrics used by workout generation originate from server user data and have one production caller', () => {
     const training = read('api/_handlers/training-plans.ts');
     expect(training).toContain('athleteProfile: athleteProfileFromUser(userData)');
     expect(training).toContain('const clientAnswers = sanitizeTrainingAnswers(req.body.answers)');
     expect(training).toContain('const enrichedAnswers = {');
     expect(training).toContain('generatePlan(enrichedAnswers, auth.uid, trainingMemory)');
+    expect((training.match(/generatePlan\(/g) || []).length).toBe(2); // definição + único caller do handler
   });
 
   test('workout Gemini is optional and deterministic Training Engine remains authoritative', () => {
