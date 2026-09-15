@@ -22,7 +22,7 @@ import { InvictusLogo } from '../../components/InvictusLogo';
 import { VerifiedPresenceModal } from '../../components/VerifiedPresenceModal';
 import { championshipService, getRegulationSections } from '../../services/championshipService';
 import { buildCompetitiveHrAcknowledgement, COMPETITIVE_HR_FULL_TEXT } from '../../lib/competitiveHeartRateAcknowledgement';
-import type { Championship, ChampionshipRegistration } from '../../types/championships';
+import type { Championship, ChampionshipRegistration, UserChampionshipProgress } from '../../types/championships';
 import {
   ANDROID_EXTERNAL_ENROLLMENT_NOTICE,
   APPLE_CHAMPIONSHIP_DISCLAIMER,
@@ -60,6 +60,7 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   const ModalityIcon = isStrength ? Dumbbell : Footprints;
   const [championship, setChampionship] = useState<Championship | null>(null);
   const [registration, setRegistration] = useState<ChampionshipRegistration | null>(null);
+  const [progress, setProgress] = useState<UserChampionshipProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -81,6 +82,11 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
       ]);
       setChampionship(catalogItem || null);
       setRegistration(currentRegistration || null);
+      if (currentRegistration?.status === 'ACTIVE' && currentRegistration.paymentStatus === 'PAID') {
+        setProgress(await championshipService.getUserProgress(championshipId));
+      } else {
+        setProgress(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -138,6 +144,8 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   const paid = registration?.status === 'ACTIVE' && registration.paymentStatus === 'PAID';
   const pending = registration?.status === 'PENDING_PAYMENT';
   const price = championship?.registrationPrice ?? PAID_CHAMPIONSHIP_ENTRY_PRICE_BRL;
+  const finalized = progress?.settlementStatus === 'FINALIZED';
+  const finalResult = progress?.finalResult || null;
 
   return createPortal(
     <main className="ch-new-screen paid-championship-screen">
@@ -156,7 +164,9 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
           <div className="paid-championship-tags"><span>18+</span><span>PIX OU CARTÃO</span><span>COBRANÇA ÚNICA</span><span>SEM SORTEIO</span></div>
         </section>
 
-        {paid && <section className="paid-status is-paid"><BadgeCheck /><div><b>INSCRIÇÃO CONFIRMADA</b><p>Seu pagamento foi confirmado pelo servidor e esta edição está vinculada à sua conta.</p></div></section>}
+        {paid && !finalized && <section className="paid-status is-paid"><BadgeCheck /><div><b>INSCRIÇÃO CONFIRMADA</b><p>Seu pagamento foi confirmado pelo servidor e esta edição está vinculada à sua conta. Homologação prevista para {dateLabel(championship?.settlementAt)}.</p></div></section>}
+        {paid && finalized && finalResult && <section className="paid-status is-paid"><Trophy /><div><b>RESULTADO HOMOLOGADO</b><p>{finalResult.finalRank}º lugar de {finalResult.totalParticipants} participante{finalResult.totalParticipants === 1 ? '' : 's'}{finalResult.prizeWon ? ` · ${brl(finalResult.prizeWon)} creditados na carteira sacável.` : ' · sem premiação em dinheiro nesta colocação.'}</p></div></section>}
+        {paid && finalized && !finalResult && <section className="paid-status is-paid"><ShieldCheck /><div><b>EDIÇÃO HOMOLOGADA</b><p>O resultado final foi fechado pelo servidor. Sua conta não entrou no ranking final elegível desta edição.</p></div></section>}
         {!paid && pending && <section className="paid-status is-pending"><RefreshCw /><div><b>PAGAMENTO EM PROCESSAMENTO</b><p>O checkout já foi criado. A inscrição só será ativada após a confirmação financeira do Asaas.</p></div></section>}
 
         <h2 className="ch-new-title">COMO FUNCIONA</h2>
@@ -171,6 +181,7 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
         <section className="paid-edition-card">
           <div><CalendarClock /><span><small>INSCRIÇÕES</small><b>{dateLabel(championship?.registrationOpensAt)} — {dateLabel(championship?.registrationClosesAt)}</b></span></div>
           <div><Trophy /><span><small>COMPETIÇÃO</small><b>{dateLabel(championship?.startAt)} — {dateLabel(championship?.endAt)}</b></span></div>
+          <div><ShieldCheck /><span><small>HOMOLOGAÇÃO DO RESULTADO</small><b>{dateLabel(championship?.settlementAt)}</b></span></div>
           <div><Medal /><span><small>PREMIAÇÃO PUBLICADA</small><b>{championship?.prizePool ? brl(championship.prizePool) : 'A definir antes da abertura'}</b></span></div>
           {!!championship?.prizeDistribution?.length && <div className="paid-prize-list">{championship.prizeDistribution.map((prize) => <span key={prize.rank}>{prize.rank}º — {brl(prize.amount)}</span>)}</div>}
         </section>
