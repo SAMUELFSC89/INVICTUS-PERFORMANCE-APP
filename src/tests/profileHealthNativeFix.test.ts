@@ -4,19 +4,35 @@ import path from 'node:path';
 const read = (file: string) => fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
 
 describe('profile photo flow', () => {
-  test('new profile exposes change and remove actions and compresses before upload', () => {
+  test('new profile exposes change/remove actions and never blocks UI on the heavy refresh', () => {
     const profile = read('src/pages/ProfileNew.tsx');
     expect(profile).toContain('await compressImage(file, 800, 0.82)');
+    expect(profile).toContain('const uploadedPhotoURL = await userService.updateProfilePhoto(compressed)');
+    expect(profile).toContain('setProfilePhotoOverride(uploadedPhotoURL)');
+    expect(profile).toContain('refreshProfileInBackground()');
+    expect(profile).not.toContain('await refreshUser();');
+    expect(profile).toContain('accept="image/*"');
     expect(profile).toContain('await userService.removeProfilePhoto()');
     expect(profile).toContain('Trocar foto');
     expect(profile).toContain('Remover foto');
+  });
+
+  test('image preparation and every remote upload stage have finite timeouts', () => {
+    const utils = read('src/lib/utils.ts');
+    const service = read('src/services/userService.ts');
+    expect(utils).toContain('PROCESSING_TIMEOUT_MS = 15_000');
+    expect(utils).toContain("new Error('IMAGE_PROCESSING_TIMEOUT')");
+    expect(utils).toContain('URL.revokeObjectURL(objectUrl)');
+    expect(service).toContain("new Error('UPLOAD_TIMEOUT')");
+    expect(service).toContain("withTimeout(getDownloadURL(uploadTask.snapshot.ref), 15_000, 'DOWNLOAD_URL_TIMEOUT')");
+    expect(service).toContain("15_000, 'PROFILE_WRITE_TIMEOUT'");
   });
 
   test('storage objects are versioned and owned old avatars are deleted', () => {
     const service = read('src/services/userService.ts');
     expect(service).toContain('avatar-${Date.now()}.jpg');
     expect(service).toContain('await deleteObject(avatarRef)');
-    expect(service).toContain("await updateDoc(userRef, { photoURL: '' })");
+    expect(service).toContain("await updateDoc(userRef, {\n        photoURL: '',");
   });
 });
 
