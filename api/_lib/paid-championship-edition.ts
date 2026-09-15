@@ -13,6 +13,57 @@ function snapshotForStorage(championship: Championship): Championship {
   return JSON.parse(JSON.stringify(championship)) as Championship;
 }
 
+export interface PaidChampionshipEditionGate {
+  ok: boolean;
+  reason?: string;
+  activeEditionId?: string;
+}
+
+/**
+ * Leitura prévia usada pelo catálogo/aceite para não levar o atleta até a
+ * biometria quando a configuração em ambiente já divergiu da edição ativa.
+ * O lock transacional em `lockPaidChampionshipEdition` continua sendo a
+ * autoridade contra corrida entre esta leitura e a criação do checkout.
+ */
+export async function getPaidChampionshipEditionGate(
+  championship: Championship,
+): Promise<PaidChampionshipEditionGate> {
+  if (!championship.id || !championship.editionId || !championship.publishedConfigDigest) {
+    return { ok: false, reason: 'A edição paga ainda não possui identidade/configuração publicada.' };
+  }
+
+  const lockSnap = await db.collection('championship_edition_locks').doc(championship.id).get();
+  if (!lockSnap.exists) return { ok: true };
+  const lock = lockSnap.data() || {};
+  const activeEditionId = String(lock.activeEditionId || '');
+  if (!activeEditionId) return { ok: true };
+
+  if (activeEditionId === championship.editionId) {
+    const digest = String(lock.configDigest || '');
+    if (digest && digest !== championship.publishedConfigDigest) {
+      return {
+        ok: false,
+        activeEditionId,
+        reason: 'A configuração publicada divergiu do lock desta edição. A operação exige conciliação antes de novas inscrições.',
+      };
+    }
+    return { ok: true, activeEditionId };
+  }
+
+  const previousSettlement = await db.collection('championship_settlements')
+    .doc(paidChampionshipSettlementDocumentId(activeEditionId))
+    .get();
+  if (previousSettlement.exists && previousSettlement.data()?.status === 'FINALIZED') {
+    return { ok: true, activeEditionId };
+  }
+
+  return {
+    ok: false,
+    activeEditionId,
+    reason: 'A configuração desta modalidade mudou antes da homologação da edição anterior. Restaure a configuração anterior ou conclua a conciliação antes de abrir nova edição.',
+  };
+}
+
 /**
  * Publica/amarra a configuração material da edição antes da primeira cobrança.
  *
