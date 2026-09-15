@@ -13,6 +13,7 @@ import { db } from '../_lib/common.js';
 import { resolveClientSampledFramesStatus } from '../_lib/powerlift-audit.js';
 import { getAiApiKey, getAiVisionModel } from '../_lib/ai-config.js';
 import { extractUsage, logAiUsage, newAiRequestId } from '../_lib/ai-usage-logger.js';
+import { consumeAiQuota } from '../_lib/ai-quota.js';
 
 // Instanciar repositórios e serviços (Injeção de Dependência)
 const activityRepository = new ActivityRepository();
@@ -32,6 +33,7 @@ const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const POWER_EXERCISES = new Set(['supino', 'agachamento', 'terra']);
 const MAX_POWER_FRAMES = 8;
 const MAX_POWER_FRAME_BASE64_LENGTH = 1_500_000;
+const MAX_IMAGE_VALIDATION_BASE64_LENGTH = 8_000_000;
 
 type PowerDecision = 'approved' | 'manual_review' | 'rejected';
 
@@ -155,6 +157,14 @@ export default async function handler(req: VercelRequest & { userId?: string }, 
         return res.status(200).json(await manual('Não foi possível concluir a auditoria automática do vídeo.'));
       }
 
+      const powerQuota = await consumeAiQuota(req.userId!, 'powerlift_audit');
+      if (!powerQuota.allowed) {
+        const reason = powerQuota.reason === 'quota_exceeded'
+          ? 'O limite de auditorias automáticas foi atingido; o vídeo seguirá para revisão manual.'
+          : 'A auditoria automática está temporariamente indisponível; o vídeo seguirá para revisão manual.';
+        return res.status(200).json(await manual(reason));
+      }
+
       try {
         const imageParts = frames.map((frame) => ({
           inlineData: {
@@ -190,6 +200,7 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
           model: powerLiftModel,
           contents: [promptText, ...imageParts],
           config: {
+            maxOutputTokens: 600,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
@@ -289,8 +300,20 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
         confidence: 0
       };
 
+      if (base64.length > MAX_IMAGE_VALIDATION_BASE64_LENGTH) {
+        return res.status(413).json({ ...revisaoManual, reason: 'IMAGE_TOO_LARGE' });
+      }
+
       if (!ai || !base64) {
         return res.status(200).json(revisaoManual);
+      }
+
+      const photoQuota = await consumeAiQuota(req.userId!, 'activity_photo_validation');
+      if (!photoQuota.allowed) {
+        return res.status(200).json({
+          ...revisaoManual,
+          reason: photoQuota.reason === 'quota_exceeded' ? 'AI_RATE_LIMITED' : 'AI_VALIDATION_UNAVAILABLE'
+        });
       }
 
       const promptImagem = imageType === 'workout'
@@ -312,6 +335,7 @@ Retorne somente JSON com status (VALIDADO, AUDITORIA_MANUAL ou REPROVADO), isVal
             ]
           },
           config: {
+            maxOutputTokens: 400,
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
