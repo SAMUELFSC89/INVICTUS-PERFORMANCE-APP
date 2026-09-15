@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { db } from './common.js';
-import { CHAMPIONSHIPS, getChampionship } from './championship-catalog.js';
+import { getChampionship } from './championship-catalog.js';
 import { isActiveAccountState } from './account-state.js';
 import { creditChampionshipPrize } from './championship-prize-credit.js';
 import type { Championship, PrizeRank } from '../../src/types/championships.js';
@@ -89,13 +89,27 @@ export function buildPaidChampionshipFinalRanking(params: {
       totalTimeMinutes: 0,
       finalScoreReachedAt: '',
     };
-    current.score += Math.max(0, Number(score.score) || 0);
+    const contribution = Math.max(0, Number(score.score) || 0);
+    const hadPositiveScore = current.score > 0;
+    current.score += contribution;
     current.validActivities += 1;
     current.totalTimeMinutes += Math.max(0, Number(score.metrics?.durationMinutes) || 0);
+
     const createdAtMs = millis(score.createdAt);
     const previousMs = millis(current.finalScoreReachedAt);
-    if (createdAtMs !== null && (previousMs === null || createdAtMs > previousMs)) {
-      current.finalScoreReachedAt = new Date(createdAtMs).toISOString();
+    if (createdAtMs !== null) {
+      if (contribution > 0) {
+        // O instante em que a pontuação final foi atingida acompanha somente
+        // atividades que efetivamente acrescentaram pontos. Uma sessão válida
+        // posterior de 0 ponto não pode piorar o desempate do atleta.
+        if (!hadPositiveScore || previousMs === null || createdAtMs > previousMs) {
+          current.finalScoreReachedAt = new Date(createdAtMs).toISOString();
+        }
+      } else if (!hadPositiveScore && current.score === 0 && (previousMs === null || createdAtMs < previousMs)) {
+        // Todos os resultados ainda são zero: guarda o primeiro registro válido
+        // apenas para manter o desempate determinístico até surgir pontuação.
+        current.finalScoreReachedAt = new Date(createdAtMs).toISOString();
+      }
     }
     aggregate.set(userId, current);
   }
@@ -356,28 +370,30 @@ export async function finalizePaidChampionship(
 
   const finalizedAt = new Date().toISOString();
   const totalPaid = normalizedMoney(assignments.reduce((sum, item) => sum + item.amount, 0));
-  const resultsBatch = db.batch();
-  for (const winner of assignments) {
-    const resultRef = db.collection('championship_results').doc(`${championshipId}_${winner.userId}`);
-    resultsBatch.set(resultRef, {
-      championshipId,
-      championshipTitle: championship.title,
-      edition: championship.edition,
-      userId: winner.userId,
-      userName: winner.userName,
-      finalRank: winner.rank,
-      totalParticipants: frozenRanking.length,
-      finalScore: winner.score,
-      prizeWon: winner.amount,
-      payoutTransactionId: winner.transactionId,
-      status: 'finalized',
-      regulationVersion: championship.regulationVersion,
-      regulationHash: championship.regulationHash,
-      configDigest: currentConfigDigest(championship),
-      homologatedAt: finalizedAt,
-    }, { merge: true });
+  if (assignments.length > 0) {
+    const resultsBatch = db.batch();
+    for (const winner of assignments) {
+      const resultRef = db.collection('championship_results').doc(`${championshipId}_${winner.userId}`);
+      resultsBatch.set(resultRef, {
+        championshipId,
+        championshipTitle: championship.title,
+        edition: championship.edition,
+        userId: winner.userId,
+        userName: winner.userName,
+        finalRank: winner.rank,
+        totalParticipants: frozenRanking.length,
+        finalScore: winner.score,
+        prizeWon: winner.amount,
+        payoutTransactionId: winner.transactionId,
+        status: 'finalized',
+        regulationVersion: championship.regulationVersion,
+        regulationHash: championship.regulationHash,
+        configDigest: currentConfigDigest(championship),
+        homologatedAt: finalizedAt,
+      }, { merge: true });
+    }
+    await resultsBatch.commit();
   }
-  await resultsBatch.commit();
 
   await db.runTransaction(async (transaction: any) => {
     const current = await transaction.get(settlementRef);
@@ -399,31 +415,4 @@ export async function finalizePaidChampionship(
 
   const finalSnap = await settlementRef.get();
   return finalSnap.data() || { championshipId, status: 'FINALIZED', winnerAssignments: assignments, totalPaid };
-}
-
-export async function finalizeDuePaidChampionships(now = new Date()): Promise<{
-  finalized: Array<Record<string, any>>;
-  blocked: Array<{ championshipId: string; reason: string }>;
-  skipped: string[];
-}> {
-  const finalized: Array<Record<string, any>> = [];
-  const blocked: Array<{ championshipId: string; reason: string }> = [];
-  const skipped: string[] = [];
-
-  for (const configured of CHAMPIONSHIPS) {
-    const settlementAtMs = millis(configured.settlementAt);
-    if (settlementAtMs === null || now.getTime() < settlementAtMs) {
-      skipped.push(configured.id);
-      continue;
-    }
-    try {
-      const result = await finalizePaidChampionship(configured.id, now);
-      if (result.status === 'FINALIZED') finalized.push(result);
-      else skipped.push(configured.id);
-    } catch (error) {
-      blocked.push({ championshipId: configured.id, reason: error instanceof Error ? error.message : 'UNKNOWN_SETTLEMENT_ERROR' });
-    }
-  }
-
-  return { finalized, blocked, skipped };
 }
