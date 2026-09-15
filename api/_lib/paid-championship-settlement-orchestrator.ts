@@ -61,7 +61,12 @@ async function claimLease(settlementRef: any, expectedConfigDigest: string): Pro
     const snap = await transaction.get(settlementRef);
     if (!snap.exists) throw new Error('Snapshot de homologação não encontrado.');
     const data = snap.data() || {};
-    if (data.status === 'FINALIZED') return { token: '', snapshot: data };
+    if (data.status === 'FINALIZED') {
+      if (data.configDigest !== expectedConfigDigest) {
+        throw new Error('FINALIZED_CONFIG_MISMATCH');
+      }
+      return { token: '', snapshot: data };
+    }
     if (data.status !== 'LOCKED') throw new Error('Homologação está em estado incompatível com retomada.');
     if (data.configDigest !== expectedConfigDigest) {
       throw new Error('A configuração publicada divergiu do snapshot congelado.');
@@ -130,28 +135,30 @@ async function resumeLockedPaidChampionship(championshipId: string): Promise<Rec
   }
 
   const finalizedAt = new Date().toISOString();
-  const resultsBatch = db.batch();
-  for (const winner of assignments) {
-    const resultRef = db.collection('championship_results').doc(`${championshipId}_${winner.userId}`);
-    resultsBatch.set(resultRef, {
-      championshipId,
-      championshipTitle: snapshot.championshipTitle || championship.title,
-      edition: snapshot.edition || championship.edition,
-      userId: winner.userId,
-      userName: winner.userName,
-      finalRank: winner.rank,
-      totalParticipants: ranking.length,
-      finalScore: winner.score,
-      prizeWon: winner.amount,
-      payoutTransactionId: winner.transactionId,
-      status: 'finalized',
-      regulationVersion: snapshot.regulationVersion,
-      regulationHash: snapshot.regulationHash,
-      configDigest: snapshot.configDigest,
-      homologatedAt: finalizedAt,
-    }, { merge: true });
+  if (assignments.length > 0) {
+    const resultsBatch = db.batch();
+    for (const winner of assignments) {
+      const resultRef = db.collection('championship_results').doc(`${championshipId}_${winner.userId}`);
+      resultsBatch.set(resultRef, {
+        championshipId,
+        championshipTitle: snapshot.championshipTitle || championship.title,
+        edition: snapshot.edition || championship.edition,
+        userId: winner.userId,
+        userName: winner.userName,
+        finalRank: winner.rank,
+        totalParticipants: ranking.length,
+        finalScore: winner.score,
+        prizeWon: winner.amount,
+        payoutTransactionId: winner.transactionId,
+        status: 'finalized',
+        regulationVersion: snapshot.regulationVersion,
+        regulationHash: snapshot.regulationHash,
+        configDigest: snapshot.configDigest,
+        homologatedAt: finalizedAt,
+      }, { merge: true });
+    }
+    await resultsBatch.commit();
   }
-  await resultsBatch.commit();
 
   const totalPaid = money(assignments.reduce((sum, item) => sum + Number(item.amount || 0), 0));
   await db.runTransaction(async (transaction: any) => {
@@ -199,7 +206,11 @@ export async function runPaidChampionshipSettlementSweep(now = new Date()): Prom
       if (existing.exists && existing.data()?.status === 'LOCKED') {
         result = await resumeLockedPaidChampionship(configured.id);
       } else if (existing.exists && existing.data()?.status === 'FINALIZED') {
-        result = existing.data() || { championshipId: configured.id, status: 'FINALIZED' };
+        const stored = existing.data() || {};
+        if (stored.configDigest !== configured.publishedConfigDigest) {
+          throw new Error('FINALIZED_CONFIG_MISMATCH');
+        }
+        result = stored;
       } else {
         result = await finalizePaidChampionship(configured.id, now);
       }
