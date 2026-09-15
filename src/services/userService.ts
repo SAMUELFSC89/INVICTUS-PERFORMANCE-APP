@@ -1,8 +1,13 @@
 import { auth, db, storage, handleFirestoreError, OperationType } from '../firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { deleteField, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { deleteObject, ref, uploadBytesResumable, getDownloadURL, type StorageReference } from 'firebase/storage';
 import { UserProfile } from '../types';
 import { API_CONFIG } from '../config';
+
+function storedAvatarValue(data: Record<string, any> | undefined): unknown {
+  if (!data) return null;
+  return data.photoURL || data.photoUrl || data.photo_url || null;
+}
 
 function ownedAvatarReference(photoURL: unknown, userId: string): StorageReference | null {
   if (typeof photoURL !== 'string' || !photoURL) return null;
@@ -45,7 +50,8 @@ export const userService = {
     let photoURL = '';
 
     try {
-      const previousPhotoURL = (await getDoc(userRef)).data()?.photoURL;
+      const previousData = (await getDoc(userRef)).data() as Record<string, any> | undefined;
+      const previousPhotoURL = storedAvatarValue(previousData);
       // A versioned path prevents WKWebView/browser caches from displaying an
       // overwritten avatar through the previous download URL.
       const storageRef = ref(storage, `profiles/${user.uid}/avatar-${Date.now()}.jpg`);
@@ -73,8 +79,14 @@ export const userService = {
           }
         });
       });
-      
-      await updateDoc(userRef, { photoURL });
+
+      // photoURL é o campo canônico. Removemos aliases antigos para não deixar
+      // uma URL obsoleta reaparecer em telas que ainda façam fallback legado.
+      await updateDoc(userRef, {
+        photoURL,
+        photoUrl: deleteField(),
+        photo_url: deleteField(),
+      });
       deleteOwnedAvatar(previousPhotoURL, user.uid).catch((cleanupError) => {
         console.warn('Previous profile photo cleanup failed:', cleanupError);
       });
@@ -105,9 +117,14 @@ export const userService = {
     console.log('Removing profile photo for user:', user.uid);
     const userRef = doc(db, 'users', user.uid);
     try {
-      const previousPhotoURL = (await getDoc(userRef)).data()?.photoURL;
+      const previousData = (await getDoc(userRef)).data() as Record<string, any> | undefined;
+      const previousPhotoURL = storedAvatarValue(previousData);
       await deleteOwnedAvatar(previousPhotoURL, user.uid);
-      await updateDoc(userRef, { photoURL: '' });
+      await updateDoc(userRef, {
+        photoURL: '',
+        photoUrl: deleteField(),
+        photo_url: deleteField(),
+      });
       return true;
     } catch (error: any) {
       console.error('Error removing profile photo:', error);
@@ -121,7 +138,7 @@ export const userService = {
 
     const userRef = doc(db, 'users', user.uid);
     const updateData: any = { ...data };
-    
+
     // Remove fields that shouldn't be updated directly via this method if any
     delete updateData.uid;
     delete updateData.email;
@@ -176,7 +193,7 @@ export const userService = {
     console.warn(`[UserService] A conquista ${achievementId} só pode ser concedida pelo servidor.`);
     return false;
   },
-  
+
   async likeProfile(targetUserId: string): Promise<{ count: number; alreadyRecognized: boolean }> {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado.');
