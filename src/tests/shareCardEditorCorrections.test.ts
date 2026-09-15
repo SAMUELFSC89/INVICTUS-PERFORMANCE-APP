@@ -38,11 +38,21 @@ describe('correções do editor de compartilhamento', () => {
     expect(enhancerCss).toContain('background: transparent !important');
   });
 
-  it('exporta PNG em alta definição e mantém o caminho nativo sem JPEG', () => {
-    expect(enhancer).toContain('const SOCIAL_EXPORT_WIDTH = 2160');
-    expect(enhancer).toContain('const SOCIAL_EXPORT_HEIGHT = 3840');
-    expect(enhancer).toContain('toPng(card');
-    expect(enhancer).toContain("setFeedback('Imagem salva em alta definição PNG.')");
+  it('exporta exatamente no formato de Stories sem PNG gigante', () => {
+    expect(enhancer).toContain("import { toJpeg } from 'html-to-image'");
+    expect(enhancer).toContain('const SOCIAL_EXPORT_WIDTH = 1080');
+    expect(enhancer).toContain('const SOCIAL_EXPORT_HEIGHT = 1920');
+    expect(enhancer).toContain('const SOCIAL_EXPORT_QUALITY = 0.94');
+    expect(enhancer).toContain('const dataUrl = await toJpeg(card');
+    expect(enhancer).toContain('quality: SOCIAL_EXPORT_QUALITY');
+    expect(enhancer).toContain('.jpg`');
+    expect(enhancer).not.toContain('const SOCIAL_EXPORT_WIDTH = 2160');
+    expect(enhancer).not.toContain('const SOCIAL_EXPORT_HEIGHT = 3840');
+  });
+
+  it('esconde estados internos de seleção durante a exportação', () => {
+    expect(enhancerCss).toContain('.share-card-round-v3.is-exporting .share-card-info-block.is-selected::after');
+    expect(read('src/components/RunShareCard.css')).toContain('.share-card-art.is-exporting .share-card-trash-zone');
   });
 
   it('projeta os marcadores pela mesma geometria do mapa e considera o crop do object-fit cover', () => {

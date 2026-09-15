@@ -27,7 +27,7 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            let requestedName = call.getString("fileName") ?? "invictus-atividade.png"
+            let requestedName = call.getString("fileName") ?? "invictus-atividade.jpg"
             let safeName = self.safeFileName(requestedName)
             let shareDirectory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("invictus-share-\(UUID().uuidString)", isDirectory: true)
@@ -74,7 +74,7 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                 PHPhotoLibrary.shared().performChanges({
                     let request = PHAssetCreationRequest.forAsset()
                     let options = PHAssetResourceCreationOptions()
-                    options.originalFilename = self.safeFileName(call.getString("fileName") ?? "invictus-atividade.png")
+                    options.originalFilename = self.safeFileName(call.getString("fileName") ?? "invictus-atividade.jpg")
                     request.addResource(with: .photo, data: data, options: options)
                 }) { success, error in
                     if success { call.resolve() }
@@ -112,18 +112,33 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let script = """
+        let prepareScript = """
         (() => {
           const card = document.querySelector('.share-card-art');
           if (!card) return null;
           const rect = card.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
+
+          document.querySelectorAll(
+            '.share-screen-toolbar, .share-context-controls, .share-card-notices, .share-customizer-backdrop'
+          ).forEach((element) => {
+            if (element.getAttribute('data-invictus-share-hidden') === 'true') return;
+            element.setAttribute('data-invictus-share-hidden', 'true');
+            element.setAttribute('data-invictus-share-prev-visibility', element.style.visibility || '');
+            element.style.visibility = 'hidden';
+          });
+
+          if (!card.classList.contains('is-exporting')) {
+            card.classList.add('is-exporting');
+            card.setAttribute('data-invictus-native-added-exporting', 'true');
+          }
+
           return JSON.stringify({ x: rect.left, y: rect.top, width: rect.width, height: rect.height });
         })();
         """
 
         DispatchQueue.main.async {
-            webView.evaluateJavaScript(script) { result, _ in
+            webView.evaluateJavaScript(prepareScript) { result, _ in
                 guard
                     let json = result as? String,
                     let jsonData = json.data(using: .utf8),
@@ -131,28 +146,79 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                     rect.width > 0,
                     rect.height > 0
                 else {
+                    self.restoreEditorChrome(in: webView)
                     completion(nil)
                     return
                 }
 
-                let configuration = WKSnapshotConfiguration()
-                configuration.rect = CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
-                configuration.afterScreenUpdates = true
+                // Dá ao WebKit dois frames para aplicar visibility/is-exporting
+                // antes da captura nativa. Assim nenhum controle do editor entra
+                // no arquivo compartilhado.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                    let configuration = WKSnapshotConfiguration()
+                    configuration.rect = CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
+                    configuration.afterScreenUpdates = true
+                    configuration.snapshotWidth = NSNumber(value: 1080)
 
-                // O snapshot é renderizado pelo próprio WebKit, como o preview/screenshot
-                // nativo. Isso evita rasterizar o DOM via SVG foreignObject (html-to-image),
-                // que era a fonte da perda de nitidez no iOS.
-                configuration.snapshotWidth = NSNumber(value: 1080)
-
-                webView.takeSnapshot(with: configuration) { image, _ in
-                    guard let image, let png = image.pngData() else {
-                        completion(nil)
-                        return
+                    webView.takeSnapshot(with: configuration) { image, _ in
+                        self.restoreEditorChrome(in: webView)
+                        guard let image, let jpeg = self.storyJpegData(from: image) else {
+                            completion(nil)
+                            return
+                        }
+                        completion(jpeg)
                     }
-                    completion(png)
                 }
             }
         }
+    }
+
+    private func restoreEditorChrome(in webView: WKWebView) {
+        let restoreScript = """
+        (() => {
+          document.querySelectorAll('[data-invictus-share-hidden="true"]').forEach((element) => {
+            const previous = element.getAttribute('data-invictus-share-prev-visibility') || '';
+            element.style.visibility = previous;
+            element.removeAttribute('data-invictus-share-hidden');
+            element.removeAttribute('data-invictus-share-prev-visibility');
+          });
+
+          const card = document.querySelector('.share-card-art');
+          if (card?.getAttribute('data-invictus-native-added-exporting') === 'true') {
+            card.classList.remove('is-exporting');
+            card.removeAttribute('data-invictus-native-added-exporting');
+          }
+        })();
+        """
+        DispatchQueue.main.async {
+            webView.evaluateJavaScript(restoreScript, completionHandler: nil)
+        }
+    }
+
+    private func storyJpegData(from image: UIImage) -> Data? {
+        let targetSize = CGSize(width: 1080, height: 1920)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let rendered = renderer.image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: targetSize))
+
+            let source = image.size
+            guard source.width > 0, source.height > 0 else { return }
+            let scale = max(targetSize.width / source.width, targetSize.height / source.height)
+            let drawSize = CGSize(width: source.width * scale, height: source.height * scale)
+            let drawRect = CGRect(
+                x: (targetSize.width - drawSize.width) / 2,
+                y: (targetSize.height - drawSize.height) / 2,
+                width: drawSize.width,
+                height: drawSize.height
+            )
+            image.draw(in: drawRect)
+        }
+        return rendered.jpegData(compressionQuality: 0.94)
     }
 
     private func imageData(from call: CAPPluginCall) -> Data? {
@@ -167,6 +233,11 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
             options: .regularExpression
         )
         let nonEmpty = sanitized.isEmpty ? "invictus-atividade" : sanitized
-        return nonEmpty.lowercased().hasSuffix(".png") ? nonEmpty : nonEmpty + ".png"
+        let lower = nonEmpty.lowercased()
+        if lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") { return nonEmpty }
+        if lower.hasSuffix(".png") {
+            return String(nonEmpty.dropLast(4)) + ".jpg"
+        }
+        return nonEmpty + ".jpg"
     }
 }

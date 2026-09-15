@@ -1,6 +1,7 @@
 package com.desafiosemdesculpa.app;
 
 import android.Manifest;
+import android.content.ClipData;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -33,7 +34,8 @@ public class InvictusShareCardPlugin extends Plugin {
     public void share(PluginCall call) {
         try {
             byte[] image = decodeImage(call);
-            String fileName = safeFileName(call.getString("fileName", "invictus-atividade.png"));
+            String mimeType = safeMimeType(call.getString("mimeType", "image/jpeg"));
+            String fileName = safeFileName(call.getString("fileName", "invictus-atividade.jpg"), mimeType);
             File directory = new File(getContext().getCacheDir(), "share_cards");
             if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("Não foi possível criar a pasta temporária.");
             File file = new File(directory, fileName);
@@ -41,10 +43,14 @@ public class InvictusShareCardPlugin extends Plugin {
 
             Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
             Intent intent = new Intent(Intent.ACTION_SEND);
-            intent.setType("image/png");
+            intent.setType(mimeType);
             intent.putExtra(Intent.EXTRA_STREAM, uri);
+            intent.setClipData(ClipData.newRawUri("Invictus Performance", uri));
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            getActivity().startActivity(Intent.createChooser(intent, "Compartilhar atividade"));
+
+            Intent chooser = Intent.createChooser(intent, "Compartilhar atividade");
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            getActivity().startActivity(chooser);
             call.resolve();
         } catch (Exception error) {
             call.reject("Não foi possível compartilhar a imagem.", error);
@@ -72,11 +78,12 @@ public class InvictusShareCardPlugin extends Plugin {
     private void saveToGallery(PluginCall call) {
         try {
             byte[] image = decodeImage(call);
-            String fileName = safeFileName(call.getString("fileName", "invictus-atividade.png"));
+            String mimeType = safeMimeType(call.getString("mimeType", "image/jpeg"));
+            String fileName = safeFileName(call.getString("fileName", "invictus-atividade.jpg"), mimeType);
             ContentResolver resolver = getContext().getContentResolver();
             ContentValues values = new ContentValues();
             values.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);
-            values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+            values.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
 
             Uri collection;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -110,8 +117,17 @@ public class InvictusShareCardPlugin extends Plugin {
         return Base64.decode(base64, Base64.DEFAULT);
     }
 
-    private String safeFileName(String value) {
+    private String safeMimeType(String value) {
+        return "image/png".equalsIgnoreCase(value) ? "image/png" : "image/jpeg";
+    }
+
+    private String safeFileName(String value, String mimeType) {
         String sanitized = value.replaceAll("[^a-zA-Z0-9._-]", "-");
-        return sanitized.endsWith(".png") ? sanitized : sanitized + ".png";
+        String extension = "image/png".equals(mimeType) ? ".png" : ".jpg";
+        if (sanitized.toLowerCase().endsWith(".png") || sanitized.toLowerCase().endsWith(".jpg") || sanitized.toLowerCase().endsWith(".jpeg")) {
+            sanitized = sanitized.substring(0, sanitized.lastIndexOf('.'));
+        }
+        if (sanitized.isEmpty()) sanitized = "invictus-atividade";
+        return sanitized + extension;
     }
 }
