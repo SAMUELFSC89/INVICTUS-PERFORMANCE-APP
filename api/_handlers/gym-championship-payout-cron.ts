@@ -31,15 +31,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   previousMonth.setUTCDate(1);
   previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1);
   const defaultCycle = previousMonth.toISOString().slice(0, 7);
-  const cycleKey = String(req.query?.cycleKey || req.body?.cycleKey || defaultCycle);
+  const requestedCycle = req.query?.cycleKey || req.body?.cycleKey;
+  const cycleKey = String(requestedCycle || defaultCycle);
 
-  let community: Record<string, any> | null = null;
+  // O cron agora roda diariamente por causa dos Campeonatos Oficiais pagos,
+  // mas o campeonato comunitário continua mensal. Uma chamada manual com
+  // cycleKey explícito ainda pode forçar a reconciliação de um ciclo específico.
+  const shouldRunCommunity = Boolean(requestedCycle) || now.getUTCDate() === 1;
+  let community: Record<string, any> | null = shouldRunCommunity
+    ? null
+    : { status: 'SKIPPED_NOT_MONTHLY_WINDOW', cycleKey };
   let communityError: string | null = null;
-  try {
-    community = await finalizeCommunityGymChampionshipCycle(cycleKey);
-  } catch (error) {
-    communityError = error instanceof Error ? error.message : 'UNKNOWN_COMMUNITY_SETTLEMENT_ERROR';
-    console.warn('[GYM_CHAMPIONSHIP_PAYOUT][COMMUNITY_BLOCKED]', { cycleKey, reason: communityError });
+
+  if (shouldRunCommunity) {
+    try {
+      community = await finalizeCommunityGymChampionshipCycle(cycleKey);
+    } catch (error) {
+      communityError = error instanceof Error ? error.message : 'UNKNOWN_COMMUNITY_SETTLEMENT_ERROR';
+      console.warn('[GYM_CHAMPIONSHIP_PAYOUT][COMMUNITY_BLOCKED]', { cycleKey, reason: communityError });
+    }
   }
 
   let paid;
