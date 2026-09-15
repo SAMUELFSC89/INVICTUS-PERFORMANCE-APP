@@ -12,7 +12,7 @@ export interface IGAWindowWeek {
 }
 
 function mondayOf(date: Date): Date {
-  const d = new Date(date);
+  const d = new Date(date.getTime());
   const dayOfWeek = d.getDay(); // 0 = domingo
   const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   d.setDate(d.getDate() + diffToMonday);
@@ -21,11 +21,11 @@ function mondayOf(date: Date): Date {
 }
 
 function maxDate(left: Date, right: Date): Date {
-  return left > right ? new Date(left) : new Date(right);
+  return left > right ? new Date(left.getTime()) : new Date(right.getTime());
 }
 
 function minDate(left: Date, right: Date): Date {
-  return left < right ? new Date(left) : new Date(right);
+  return left < right ? new Date(left.getTime()) : new Date(right.getTime());
 }
 
 function sessionsInRange(allSessions: DatedIGASession[], start: Date, end: Date): IGASession[] {
@@ -56,8 +56,10 @@ export function computeWindowAverageIGA(
   profile: IGAUserProfile,
   options: { activeFrom?: Date; now?: Date } = {},
 ): { average: number; weeks: IGAWindowWeek[] } {
-  const now = options.now ? new Date(options.now) : new Date();
-  const activeFrom = options.activeFrom ? new Date(options.activeFrom) : new Date(rangeStart);
+  const now = options.now ? new Date(options.now.getTime()) : new Date();
+  const activeFrom = options.activeFrom
+    ? new Date(options.activeFrom.getTime())
+    : new Date(rangeStart.getTime());
   const effectiveStart = maxDate(rangeStart, activeFrom);
   const effectiveEnd = minDate(rangeEnd, now);
 
@@ -71,7 +73,7 @@ export function computeWindowAverageIGA(
   let cursor = mondayOf(effectiveStart);
 
   while (cursor < effectiveEnd) {
-    const calendarWeekEnd = new Date(cursor);
+    const calendarWeekEnd = new Date(cursor.getTime());
     calendarWeekEnd.setDate(calendarWeekEnd.getDate() + 7);
 
     const sliceStart = maxDate(cursor, effectiveStart);
