@@ -39,30 +39,35 @@ function createDb() {
   };
 }
 
+const EDITION_A = 'invictus_cardio_v1_ed_a';
+const EDITION_B = 'invictus_cardio_v1_ed_b';
+
 describe('championship prize financial risk', () => {
   beforeEach(() => {
     mockDb = createDb();
   });
 
   test('reembolso sem prêmio creditado não bloqueia outros saldos do usuário', async () => {
-    mockDb.store.set('championship_registrations/user-a_invictus_cardio_v1', {
-      userId: 'user-a', championshipId: 'invictus_cardio_v1', status: 'reembolsada', paymentStatus: 'REFUNDED',
+    mockDb.store.set(`championship_registrations/user-a_${EDITION_A}`, {
+      userId: 'user-a', championshipId: 'invictus_cardio_v1', editionId: EDITION_A,
+      status: 'reembolsada', paymentStatus: 'REFUNDED',
     });
     await expect(getChampionshipPrizeFinancialRisk('user-a')).resolves.toBeNull();
   });
 
-  test('chargeback depois de prêmio creditado cria risco financeiro de saque', async () => {
-    mockDb.store.set('championship_registrations/user-a_invictus_cardio_v1', {
-      userId: 'user-a', championshipId: 'invictus_cardio_v1', status: 'contestada',
+  test('chargeback depois de prêmio creditado cria risco financeiro de saque da mesma edição', async () => {
+    mockDb.store.set(`championship_registrations/user-a_${EDITION_A}`, {
+      userId: 'user-a', championshipId: 'invictus_cardio_v1', editionId: EDITION_A, status: 'contestada',
       paymentStatus: 'PAYMENT_CHARGEBACK_DISPUTE', paymentLifecycleEvent: 'PAYMENT_CHARGEBACK_DISPUTE',
     });
-    mockDb.store.set('championship_prize_awards/invictus_cardio_v1_user-a', {
-      championshipId: 'invictus_cardio_v1', userId: 'user-a', status: 'CREDITED', amount: 500, rank: 1,
+    mockDb.store.set(`championship_prize_awards/${EDITION_A}_user-a`, {
+      championshipId: 'invictus_cardio_v1', editionId: EDITION_A, userId: 'user-a', status: 'CREDITED', amount: 500, rank: 1,
       transactionId: 'tx_championship_prize_abc',
     });
 
     await expect(getChampionshipPrizeFinancialRisk('user-a')).resolves.toMatchObject({
       championshipId: 'invictus_cardio_v1',
+      editionId: EDITION_A,
       paymentStatus: 'PAYMENT_CHARGEBACK_DISPUTE',
       awardAmount: 500,
       rank: 1,
@@ -70,12 +75,25 @@ describe('championship prize financial risk', () => {
     });
   });
 
-  test('award creditado com inscrição ainda paga não bloqueia saque', async () => {
-    mockDb.store.set('championship_registrations/user-a_invictus_cardio_v1', {
-      userId: 'user-a', championshipId: 'invictus_cardio_v1', status: 'paga', paymentStatus: 'PAID',
+  test('award de edição anterior não é herdado por disputa financeira de edição nova', async () => {
+    mockDb.store.set(`championship_registrations/user-a_${EDITION_B}`, {
+      userId: 'user-a', championshipId: 'invictus_cardio_v1', editionId: EDITION_B, status: 'contestada',
+      paymentStatus: 'PAYMENT_CHARGEBACK_DISPUTE', paymentLifecycleEvent: 'PAYMENT_CHARGEBACK_DISPUTE',
     });
-    mockDb.store.set('championship_prize_awards/invictus_cardio_v1_user-a', {
-      championshipId: 'invictus_cardio_v1', userId: 'user-a', status: 'CREDITED', amount: 500, rank: 1,
+    mockDb.store.set(`championship_prize_awards/${EDITION_A}_user-a`, {
+      championshipId: 'invictus_cardio_v1', editionId: EDITION_A, userId: 'user-a', status: 'CREDITED', amount: 500, rank: 1,
+      transactionId: 'tx_old_edition',
+    });
+
+    await expect(getChampionshipPrizeFinancialRisk('user-a')).resolves.toBeNull();
+  });
+
+  test('award creditado com inscrição ainda paga não bloqueia saque', async () => {
+    mockDb.store.set(`championship_registrations/user-a_${EDITION_A}`, {
+      userId: 'user-a', championshipId: 'invictus_cardio_v1', editionId: EDITION_A, status: 'paga', paymentStatus: 'PAID',
+    });
+    mockDb.store.set(`championship_prize_awards/${EDITION_A}_user-a`, {
+      championshipId: 'invictus_cardio_v1', editionId: EDITION_A, userId: 'user-a', status: 'CREDITED', amount: 500, rank: 1,
       transactionId: 'tx_championship_prize_abc',
     });
     await expect(getChampionshipPrizeFinancialRisk('user-a')).resolves.toBeNull();
