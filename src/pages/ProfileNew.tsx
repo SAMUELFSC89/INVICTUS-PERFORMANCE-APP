@@ -26,6 +26,9 @@ export function ProfileNew() {
   const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // undefined = use the profile from UserContext; string/null = optimistic
+  // avatar while the heavier profile/statistics refresh finishes in background.
+  const [profilePhotoOverride, setProfilePhotoOverride] = useState<string | null | undefined>(undefined);
 
   useEffect(() => { workoutService.getUserWorkouts(500).then(setActivities).catch(reason => setError(reason.message)); }, [user?.uid]);
   useEffect(() => {
@@ -57,11 +60,17 @@ export function ProfileNew() {
   const paid = hasActiveProEntitlement(user);
   const joined = (user as any)?.createdAt || (user as any)?.joinedAt || (user as any)?.activatedAt;
   const memberDate = joined && !Number.isNaN(Date.parse(String(joined))) ? new Date(joined).toLocaleDateString('pt-BR') : '—';
-  const profilePhoto = getProfilePhotoCandidate(user);
+  const canonicalProfilePhoto = getProfilePhotoCandidate(user);
+  const profilePhoto = profilePhotoOverride !== undefined ? profilePhotoOverride : canonicalProfilePhoto;
 
   const recent = useMemo(() => activities.slice(0, 4), [activities]);
   const choosePhoto = () => { setPhotoMenuOpen(false); inputRef.current?.click(); };
   const openPhotoMenu = () => profilePhoto ? setPhotoMenuOpen(true) : choosePhoto();
+  const refreshProfileInBackground = () => {
+    void refreshUser()
+      .then(() => setProfilePhotoOverride(undefined))
+      .catch(reason => console.warn('[ProfileNew] Background profile refresh failed:', reason));
+  };
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -72,12 +81,16 @@ export function ProfileNew() {
       try {
         compressed = await compressImage(file, 800, 0.82);
       } catch (compressionError) {
+        // WKWebView can occasionally stall/abort canvas conversion. Known web
+        // formats below are safe to upload directly when already below 5 MB.
         if (!supportedSource || file.size > 5 * 1024 * 1024) throw compressionError;
+        console.warn('[ProfileNew] Image compression unavailable; uploading original image:', compressionError);
         compressed = file;
       }
-      await userService.updateProfilePhoto(compressed);
-      await refreshUser();
+      const uploadedPhotoURL = await userService.updateProfilePhoto(compressed);
+      setProfilePhotoOverride(uploadedPhotoURL);
       setNotice('Foto de perfil atualizada.');
+      refreshProfileInBackground();
     } catch (reason: any) {
       setError(reason?.message || 'Não foi possível atualizar sua foto.');
     } finally {
@@ -89,8 +102,9 @@ export function ProfileNew() {
     setPhotoMenuOpen(false); setUploading(true); setError(null); setNotice(null);
     try {
       await userService.removeProfilePhoto();
-      await refreshUser();
+      setProfilePhotoOverride(null);
       setNotice('Foto de perfil removida.');
+      refreshProfileInBackground();
     } catch (reason: any) {
       setError(reason?.message || 'Não foi possível remover sua foto.');
     } finally {
@@ -101,7 +115,7 @@ export function ProfileNew() {
   const activityDetail = (item: Workout) => item.type === 'cardio' ? (item.cardioTypeLabel || item.cardioType || 'Atividade concluída') : (item.muscleGroup || 'Treino concluído');
   const openRecentActivity = (item: Workout) => navigate(`/challenges?view=history&activity=${encodeURIComponent(item.id)}&source=workout`);
 
-  return createPortal(<main className="np-screen"><div className="np-page"><input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={upload} />
+  return createPortal(<main className="np-screen"><div className="np-page"><input ref={inputRef} type="file" accept="image/*" hidden onChange={upload} />
     <header className="np-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="np-head-avatar" onClick={openPhotoMenu} disabled={uploading} aria-label={profilePhoto ? 'Opções da foto do perfil' : 'Adicionar foto do perfil'}>{profilePhoto ? <ProfilePhotoImage source={profilePhoto} alt="" fallback={<UserRound />} /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
     <section className="np-title"><h1>MEU <span>PERFIL</span></h1><p>Sua jornada. Sua evolução.</p></section>
     <section className="np-identity"><button className="np-photo" onClick={openPhotoMenu} disabled={uploading} aria-label={profilePhoto ? 'Opções da foto do perfil' : 'Adicionar foto do perfil'}>{profilePhoto ? <ProfilePhotoImage source={profilePhoto} alt={`Foto de ${user?.displayName || 'atleta'}`} fallback={<UserRound />} /> : <UserRound />}<i><Camera /></i></button><div className="np-name"><h2>{(user?.displayName || user?.name || 'ATLETA INVICTUS').toUpperCase()} {paid ? <em>PRO</em> : null}</h2><p>Invictus desde {memberDate}</p><span><ShieldCheck /> {user?.gymName || 'Nenhuma academia vinculada'}</span></div><aside><InvictusLogo size={36} /><small>NÍVEL</small><b>{levelProgress.currentLevel}</b><span>INVICTUS</span></aside><div className="np-xp"><span>{(user?.xp || 0).toLocaleString('pt-BR')} / {levelProgress.xpCeiling.toLocaleString('pt-BR')} XP</span><i><b style={{ width: `${levelProgress.percentage}%` }} /></i><small>Próximo nível: {Math.max(0, levelProgress.xpCeiling - (user?.xp || 0)).toLocaleString('pt-BR')} XP</small></div></section>
