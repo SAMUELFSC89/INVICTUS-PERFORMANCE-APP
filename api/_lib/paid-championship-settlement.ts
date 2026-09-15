@@ -3,6 +3,10 @@ import { db } from './common.js';
 import { getChampionship } from './championship-catalog.js';
 import { isActiveAccountState } from './account-state.js';
 import { creditChampionshipPrize } from './championship-prize-credit.js';
+import {
+  markPaidChampionshipEditionFinalized,
+  paidChampionshipSettlementDocumentId,
+} from './paid-championship-edition.js';
 import type { Championship, PrizeRank } from '../../src/types/championships.js';
 
 const EXECUTION_LEASE_MS = 5 * 60 * 1000;
@@ -99,15 +103,10 @@ export function buildPaidChampionshipFinalRanking(params: {
     const previousMs = millis(current.finalScoreReachedAt);
     if (createdAtMs !== null) {
       if (contribution > 0) {
-        // O instante em que a pontuação final foi atingida acompanha somente
-        // atividades que efetivamente acrescentaram pontos. Uma sessão válida
-        // posterior de 0 ponto não pode piorar o desempate do atleta.
         if (!hadPositiveScore || previousMs === null || createdAtMs > previousMs) {
           current.finalScoreReachedAt = new Date(createdAtMs).toISOString();
         }
       } else if (!hadPositiveScore && current.score === 0 && (previousMs === null || createdAtMs < previousMs)) {
-        // Todos os resultados ainda são zero: guarda o primeiro registro válido
-        // apenas para manter o desempate determinístico até surgir pontuação.
         current.finalScoreReachedAt = new Date(createdAtMs).toISOString();
       }
     }
@@ -152,6 +151,12 @@ function currentConfigDigest(championship: Championship): string {
   const publishedDigest = String(championship.publishedConfigDigest || '').trim();
   if (!publishedDigest) throw new Error('A edição não possui digest de configuração publicado.');
   return publishedDigest;
+}
+
+function currentEditionId(championship: Championship): string {
+  const editionId = String(championship.editionId || '').trim();
+  if (!editionId) throw new Error('A edição não possui identidade imutável publicada.');
+  return editionId;
 }
 
 async function activeUsers(userIds: string[]): Promise<Set<string>> {
@@ -206,7 +211,9 @@ async function lockSettlementSnapshot(params: {
   prizes: PrizeRank[];
   totalPaidRegistrations: number;
 }): Promise<Record<string, any>> {
-  const settlementRef = db.collection('championship_settlements').doc(params.championship.id);
+  const editionId = currentEditionId(params.championship);
+  const settlementRef = db.collection('championship_settlements')
+    .doc(paidChampionshipSettlementDocumentId(editionId));
   const configDigest = currentConfigDigest(params.championship);
   const rankingDigest = stableDigest(params.ranking);
   const now = new Date().toISOString();
@@ -214,6 +221,9 @@ async function lockSettlementSnapshot(params: {
     const current = await transaction.get(settlementRef);
     if (current.exists) {
       const data = current.data() || {};
+      if (data.editionId !== editionId || data.championshipId !== params.championship.id) {
+        throw new Error('Identidade do snapshot de homologação divergiu.');
+      }
       if (data.configDigest !== configDigest) {
         throw new Error('A configuração publicada mudou depois do início da homologação.');
       }
@@ -227,6 +237,7 @@ async function lockSettlementSnapshot(params: {
 
     const snapshot = {
       championshipId: params.championship.id,
+      editionId,
       championshipTitle: params.championship.title,
       edition: params.championship.edition,
       status: 'LOCKED',
@@ -257,23 +268,26 @@ export async function finalizePaidChampionship(
 ): Promise<Record<string, any>> {
   const championship = getChampionship(championshipId);
   if (!championship) throw new Error('Campeonato oficial não encontrado.');
+  const editionId = currentEditionId(championship);
   const endAtMs = millis(championship.endAt);
   const settlementAtMs = millis(championship.settlementAt);
   if (endAtMs === null || settlementAtMs === null || settlementAtMs <= endAtMs) {
     throw new Error('Calendário de homologação inválido.');
   }
   if (now.getTime() < settlementAtMs) {
-    return { championshipId, status: 'NOT_DUE', settlementAt: championship.settlementAt };
+    return { championshipId, editionId, status: 'NOT_DUE', settlementAt: championship.settlementAt };
   }
 
   const prizes = validatePrizeDistribution(championship.prizeDistribution || []);
   const [registrationSnap, scoresSnap, entriesSnap] = await Promise.all([
     db.collection('championship_registrations').where('championshipId', '==', championshipId).get(),
-    db.collection('championship_scores').where('championshipId', '==', championshipId).get(),
+    db.collection('championship_scores').where('editionId', '==', editionId).get(),
     db.collection('activity_competition_entries').where('contextType', '==', 'paid_championship').get(),
   ]);
 
-  const registrations = registrationSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+  const registrations = registrationSnap.docs
+    .map((doc: any) => ({ id: doc.id, ...doc.data() }))
+    .filter((registration: any) => String(registration.editionId || '') === editionId);
   const financialReview = registrations.filter(registrationNeedsFinancialReview);
   if (financialReview.length) {
     throw new Error(`FINANCIAL_REVIEW_PENDING:${financialReview.length}`);
@@ -290,7 +304,7 @@ export async function finalizePaidChampionship(
 
   const championshipEntries = entriesSnap.docs
     .map((doc: any) => ({ id: doc.id, ...doc.data() }))
-    .filter((entry: any) => entry.contextId === championshipId);
+    .filter((entry: any) => entry.contextId === championshipId && String(entry.editionId || '') === editionId);
   const unresolvedEntries = championshipEntries.filter((entry: any) => !TERMINAL_ACTIVITY_REVIEW.has(String(entry.reviewStatus || '')));
   if (unresolvedEntries.length) {
     throw new Error(`ACTIVITY_REVIEW_PENDING:${unresolvedEntries.length}`);
@@ -298,7 +312,9 @@ export async function finalizePaidChampionship(
 
   const approvedEntries = championshipEntries.filter((entry: any) => entry.reviewStatus === 'approved');
   const approvedActivityIds = new Set(approvedEntries.map((entry: any) => String(entry.activityId || '')).filter(Boolean));
-  const scores = scoresSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+  const scores = scoresSnap.docs
+    .map((doc: any) => ({ id: doc.id, ...doc.data() }))
+    .filter((score: any) => String(score.editionId || '') === editionId && String(score.championshipId || '') === championshipId);
   const validScoreActivityIds = new Set(
     scores.filter((score: any) => score.validationStatus === 'VALIDATED').map((score: any) => String(score.activityId || '')).filter(Boolean)
   );
@@ -321,9 +337,14 @@ export async function finalizePaidChampionship(
     prizes,
     totalPaidRegistrations: paidRegistrations.length,
   });
-  if (snapshot.status === 'FINALIZED') return snapshot;
+  if (snapshot.status === 'FINALIZED') {
+    const finalizedAt = String(snapshot.finalizedAt || new Date().toISOString());
+    await markPaidChampionshipEditionFinalized(championship, finalizedAt);
+    return snapshot;
+  }
 
-  const settlementRef = db.collection('championship_settlements').doc(championshipId);
+  const settlementRef = db.collection('championship_settlements')
+    .doc(paidChampionshipSettlementDocumentId(editionId));
   const rankingDigest = String(snapshot.rankingDigest || stableDigest(ranking));
   const frozenRanking = (Array.isArray(snapshot.ranking) ? snapshot.ranking : ranking) as PaidChampionshipRankingEntry[];
   const frozenPrizes = (Array.isArray(snapshot.prizeDistribution) ? snapshot.prizeDistribution : prizes) as PrizeRank[];
@@ -332,7 +353,11 @@ export async function finalizePaidChampionship(
     expectedConfigDigest: currentConfigDigest(championship),
     expectedRankingDigest: rankingDigest,
   });
-  if (lease.snapshot.status === 'FINALIZED') return lease.snapshot;
+  if (lease.snapshot.status === 'FINALIZED') {
+    const finalizedAt = String(lease.snapshot.finalizedAt || new Date().toISOString());
+    await markPaidChampionshipEditionFinalized(championship, finalizedAt);
+    return lease.snapshot;
+  }
 
   const assignments: WinnerAssignment[] = [];
   const unawardedRanks: Array<{ rank: number; amount: number; reason: string }> = [];
@@ -344,6 +369,7 @@ export async function finalizePaidChampionship(
       const candidate = frozenRanking[candidateIndex++];
       const payout = await creditChampionshipPrize({
         championshipId,
+        editionId,
         championshipTitle: championship.title,
         regulationVersion: championship.regulationVersion,
         regulationHash: championship.regulationHash,
@@ -373,9 +399,10 @@ export async function finalizePaidChampionship(
   if (assignments.length > 0) {
     const resultsBatch = db.batch();
     for (const winner of assignments) {
-      const resultRef = db.collection('championship_results').doc(`${championshipId}_${winner.userId}`);
+      const resultRef = db.collection('championship_results').doc(`${editionId}_${winner.userId}`);
       resultsBatch.set(resultRef, {
         championshipId,
+        editionId,
         championshipTitle: championship.title,
         edition: championship.edition,
         userId: winner.userId,
@@ -400,6 +427,9 @@ export async function finalizePaidChampionship(
     if (!current.exists) throw new Error('Settlement desapareceu antes da finalização.');
     const data = current.data() || {};
     if (data.status === 'FINALIZED') return;
+    if (data.editionId !== editionId || data.championshipId !== championshipId) {
+      throw new Error('Identidade do settlement mudou durante a execução.');
+    }
     if (data.executionLeaseToken !== lease.token) throw new Error('Lease do settlement foi perdido durante a execução.');
     transaction.set(settlementRef, {
       status: 'FINALIZED',
@@ -413,6 +443,7 @@ export async function finalizePaidChampionship(
     }, { merge: true });
   });
 
+  await markPaidChampionshipEditionFinalized(championship, finalizedAt);
   const finalSnap = await settlementRef.get();
-  return finalSnap.data() || { championshipId, status: 'FINALIZED', winnerAssignments: assignments, totalPaid };
+  return finalSnap.data() || { championshipId, editionId, status: 'FINALIZED', winnerAssignments: assignments, totalPaid };
 }
