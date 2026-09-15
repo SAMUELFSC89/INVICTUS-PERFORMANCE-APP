@@ -4,15 +4,22 @@ import { resolve } from 'node:path';
 const catalog = readFileSync(resolve(process.cwd(), 'api/_lib/championship-catalog.ts'), 'utf8');
 const settlement = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championship-settlement.ts'), 'utf8');
 const prizeCredit = readFileSync(resolve(process.cwd(), 'api/_lib/championship-prize-credit.ts'), 'utf8');
+const edition = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championship-edition.ts'), 'utf8');
 
 describe('Contrato — campeonato pago só abre com settlement final e edição publicada', () => {
-  test('capacidade de settlement só fica habilitada junto do motor monetário auditável', () => {
+  test('capacidade de settlement só fica habilitada junto do motor monetário auditável e editionId', () => {
     expect(catalog).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true;');
+    expect(catalog).toContain('championshipEditionId');
+    expect(catalog).toContain('editionId,');
     expect(settlement).toContain('export async function finalizePaidChampionship');
     expect(settlement).toContain("status: 'LOCKED'");
+    expect(settlement).toContain('paidChampionshipSettlementDocumentId(editionId)');
     expect(prizeCredit).toContain('export async function creditChampionshipPrize');
+    expect(prizeCredit).toContain('input.editionId');
     expect(prizeCredit).toContain("category: 'redeemable'");
     expect(prizeCredit).toContain("origin: 'championship'");
+    expect(edition).toContain('lockPaidChampionshipEdition');
+    expect(edition).toContain('championship_edition_locks');
   });
 
   test('a liberação comercial continua separada e fail-closed por configuração', () => {
@@ -27,6 +34,7 @@ describe('Contrato — campeonato pago só abre com settlement final e edição 
     expect(block).toContain('settlementAt <= competitionEnd');
     expect(block).toContain('championship.prizeDistribution.length');
     expect(block).toContain('championship.publishedConfigDigest');
+    expect(block).toContain('championship.editionId');
   });
 
   test('o regulamento publica premiação, homologação, desempate e bloqueios financeiros', () => {
