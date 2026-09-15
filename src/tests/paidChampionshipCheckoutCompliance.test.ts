@@ -74,6 +74,24 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(catalog).toContain('registrationClosesAt');
     expect(catalog).toContain('settlementAt');
     expect(catalog).toContain('publishedConfigDigest');
+    expect(catalog).toContain('editionId');
+  });
+
+  it('isola inscrição da edição atual no frontend em vez de reutilizar histórico da modalidade', () => {
+    const service = read('src/services/championshipService.ts');
+    expect(service).toContain('registration.editionId === championship.editionId');
+    expect(service).toContain("case 'contestada': return 'REJECTED'");
+    expect(service).toContain('dados.externalPaymentReference');
+  });
+
+  it('documenta todas as variáveis necessárias para settlement e saques em produção', () => {
+    const envExample = read('.env.example');
+    expect(envExample).toContain('ASAAS_AUTHORIZATION_TOKEN=');
+    expect(envExample).toContain('CRON_SECRET=');
+    expect(envExample).toContain('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED=false');
+    expect(envExample).toContain('CHAMPIONSHIP_STRENGTH_SETTLEMENT_AT=');
+    expect(envExample).toContain('CHAMPIONSHIP_CARDIO_SETTLEMENT_AT=');
+    expect(envExample).toContain('CHAMPIONSHIP_CARDIO_ALLOWED_TYPES=');
   });
 
   it('mantém a chave do Asaas exclusivamente no backend', () => {
