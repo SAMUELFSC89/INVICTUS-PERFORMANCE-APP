@@ -136,6 +136,8 @@ workflows:
           plutil -lint ios/App/App/App.entitlements
           plutil -lint ios/App/InvictusActivityWidget/Info.plist
           plutil -lint ios/App/InvictusActivityWidget/InvictusActivityWidget.entitlements
+          test -n "$(plutil -extract NSHealthShareUsageDescription raw ios/App/App/Info.plist)"
+          test -n "$(plutil -extract NSHealthUpdateUsageDescription raw ios/App/App/Info.plist)"
           grep -q "CODE_SIGN_ENTITLEMENTS = App/App.entitlements" ios/App/App.xcodeproj/project.pbxproj
           grep -q 'customClass="InvictusBridgeViewController"' ios/App/App/Base.lproj/Main.storyboard
           grep -q "InvictusBridgeViewController.swift in Sources" ios/App/App.xcodeproj/project.pbxproj
