@@ -6,9 +6,9 @@ const settlement = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championsh
 const prizeCredit = readFileSync(resolve(process.cwd(), 'api/_lib/championship-prize-credit.ts'), 'utf8');
 const edition = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championship-edition.ts'), 'utf8');
 
-describe('Contrato — campeonato pago só abre com settlement final e edição publicada', () => {
-  test('capacidade de settlement só fica habilitada junto do motor monetário auditável e editionId', () => {
-    expect(catalog).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true;');
+describe('Contrato — motor de settlement existe, mas abertura comercial permanece hard-closed', () => {
+  test('motor monetário e editionId existem sem habilitar a capacidade comercial nesta PR', () => {
+    expect(catalog).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false;');
     expect(catalog).toContain('championshipEditionId');
     expect(catalog).toContain('editionId,');
     expect(settlement).toContain('export async function finalizePaidChampionship');
@@ -22,7 +22,7 @@ describe('Contrato — campeonato pago só abre com settlement final e edição 
     expect(edition).toContain('championship_edition_locks');
   });
 
-  test('a liberação comercial continua separada e fail-closed por configuração', () => {
+  test('a liberação comercial exige env e hard gate, ambos antes do calendário', () => {
     const start = catalog.indexOf('function registrationReadiness');
     const end = catalog.indexOf('export function listChampionships', start);
     const block = catalog.slice(start, end);
@@ -31,6 +31,7 @@ describe('Contrato — campeonato pago só abre com settlement final e edição 
     expect(block).toContain("env('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED').toLowerCase() !== 'true'");
     expect(block).toContain('if (!PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED)');
     expect(block.indexOf('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED')).toBeLessThan(block.indexOf('registrationStart'));
+    expect(block.indexOf('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED')).toBeLessThan(block.indexOf('registrationStart'));
     expect(block).toContain('settlementAt <= competitionEnd');
     expect(block).toContain('championship.prizeDistribution.length');
     expect(block).toContain('championship.publishedConfigDigest');
