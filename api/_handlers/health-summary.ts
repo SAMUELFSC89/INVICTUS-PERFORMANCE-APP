@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
-import { lerSerieTemporalMetricaComLimite, HealthMetricType, HealthSample, deduplicateHealthSamples } from '../_lib/health-data-layer.js';
+import { lerSerieTemporalMetricaComLimite, HealthMetricType, HealthSample, deduplicateHealthSamples, persistirAmostraSaude } from '../_lib/health-data-layer.js';
 import { aggregateDailyHealthSamples, healthSampleLocalDate } from '../_lib/health-source-priority.js';
 import { buildConsolidatedDailyActiveCalories } from '../_lib/daily-active-energy.js';
 
@@ -31,6 +31,22 @@ export interface HealthSummaryResult {
   };
 }
 
+type ManualSleepCheckin = {
+  localDate: string;
+  timeZone: string;
+  bedtime: string;
+  wakeTime: string;
+  sleepLatencyMinutes: number;
+  awakenings: number;
+  quality: number;
+  restedness: number;
+  sleepDurationMinutes: number;
+  sleepStart: string;
+  sleepEnd: string;
+  source: 'invictus_manual';
+  updatedAt: string;
+};
+
 function point(sample: HealthSample): SummaryPoint {
   return {
     value: sample.value, unit: sample.unit, timestamp: sample.timestamp,
@@ -42,6 +58,92 @@ function point(sample: HealthSample): SummaryPoint {
     derivedFrom: sample.derivedFrom, sourceConfidence: sample.sourceConfidence,
     normalizationVersion: sample.normalizationVersion, normalizationCorrection: sample.normalizationCorrection, revision: sample.revision
   };
+}
+
+function normalizeTimeZone(value: unknown): string {
+  const requested = typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'UTC';
+  try { return new Intl.DateTimeFormat('en-US', { timeZone: requested }).resolvedOptions().timeZone; }
+  catch { return 'UTC'; }
+}
+
+function validLocalDate(value: unknown): string | null {
+  const date = typeof value === 'string' ? value.trim() : '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
+
+function boundedInt(value: unknown, min: number, max: number): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && Number.isInteger(number) && number >= min && number <= max ? number : null;
+}
+
+function safeClock(value: unknown): string | null {
+  const clock = typeof value === 'string' ? value.trim() : '';
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(clock) ? clock : null;
+}
+
+async function readManualSleepCheckin(userId: string, localDate: string): Promise<ManualSleepCheckin | null> {
+  const snap = await db.collection('users').doc(userId).collection('sleep_checkins').doc(localDate).get();
+  return snap.exists ? snap.data() as ManualSleepCheckin : null;
+}
+
+async function saveManualSleepCheckin(userId: string, raw: any): Promise<ManualSleepCheckin> {
+  const localDate = validLocalDate(raw?.localDate);
+  const bedtime = safeClock(raw?.bedtime);
+  const wakeTime = safeClock(raw?.wakeTime);
+  const latency = boundedInt(raw?.sleepLatencyMinutes, 0, 180);
+  const awakenings = boundedInt(raw?.awakenings, 0, 20);
+  const quality = boundedInt(raw?.quality, 1, 5);
+  const restedness = boundedInt(raw?.restedness, 1, 5);
+  const timeZone = normalizeTimeZone(raw?.timeZone);
+  const sleepStartRaw = typeof raw?.sleepStart === 'string' ? new Date(raw.sleepStart) : null;
+  const sleepEndRaw = typeof raw?.sleepEnd === 'string' ? new Date(raw.sleepEnd) : null;
+
+  if (!localDate || !bedtime || !wakeTime || latency === null || awakenings === null || quality === null || restedness === null
+      || !sleepStartRaw || !sleepEndRaw || !Number.isFinite(sleepStartRaw.getTime()) || !Number.isFinite(sleepEndRaw.getTime())) {
+    throw new Error('SLEEP_CHECKIN_INVALID');
+  }
+
+  const elapsedMinutes = Math.round((sleepEndRaw.getTime() - sleepStartRaw.getTime()) / 60_000);
+  const sleepDurationMinutes = elapsedMinutes - latency;
+  // Auto-relato plausível: janela de cama entre 2h e 16h; sono estimado entre
+  // 2h e 14h. Valores fora disso são mais provavelmente erro de horário/data.
+  if (elapsedMinutes < 120 || elapsedMinutes > 960 || sleepDurationMinutes < 120 || sleepDurationMinutes > 840) {
+    throw new Error('SLEEP_CHECKIN_DURATION_INVALID');
+  }
+
+  const sleepStart = new Date(sleepStartRaw.getTime() + latency * 60_000).toISOString();
+  const sleepEnd = sleepEndRaw.toISOString();
+  const now = new Date().toISOString();
+
+  // O questionário é AUTO-RELATO. Ele entra na Saúde como invictus_manual /
+  // manual_entry e nunca como sensor_verified. O agregador diário já prioriza
+  // Apple Health e Health Connect sobre invictus_manual quando ambos existem.
+  await persistirAmostraSaude({
+    userId,
+    metricType: 'sleep_duration_min',
+    value: sleepDurationMinutes,
+    unit: 'min',
+    timestamp: sleepEnd,
+    startDate: sleepStart,
+    endDate: sleepEnd,
+    sampleId: `manual_sleep:${localDate}`,
+    source: 'invictus_manual',
+    quality: 'manual_entry',
+    aggregation: 'sleep_session',
+    localDate,
+    timeZone,
+    normalizationVersion: 1,
+  });
+
+  const checkin: ManualSleepCheckin = {
+    localDate, timeZone, bedtime, wakeTime,
+    sleepLatencyMinutes: latency,
+    awakenings, quality, restedness,
+    sleepDurationMinutes, sleepStart, sleepEnd,
+    source: 'invictus_manual', updatedAt: now,
+  };
+  await db.collection('users').doc(userId).collection('sleep_checkins').doc(localDate).set(checkin, { merge: true });
+  return checkin;
 }
 
 /**
@@ -183,6 +285,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Autenticação necessária.' });
+
+  const action = typeof req.query?.action === 'string'
+    ? req.query.action
+    : typeof req.body?.action === 'string' ? req.body.action : '';
+
+  if (action === 'sleep-checkin') {
+    if (req.method === 'GET') {
+      const localDate = validLocalDate(req.query?.date);
+      if (!localDate) return res.status(400).json({ error: 'Data inválida.' });
+      return res.status(200).json({ checkin: await readManualSleepCheckin(auth.uid, localDate) });
+    }
+    if (req.method === 'POST') {
+      try {
+        const checkin = await saveManualSleepCheckin(auth.uid, req.body || {});
+        return res.status(200).json({ checkin });
+      } catch (error: any) {
+        const code = String(error?.message || '');
+        if (code === 'SLEEP_CHECKIN_INVALID' || code === 'SLEEP_CHECKIN_DURATION_INVALID') {
+          return res.status(422).json({
+            error: code === 'SLEEP_CHECKIN_DURATION_INVALID'
+              ? 'Confira os horários informados. O período de sono ficou fora de uma faixa plausível.'
+              : 'Preencha todas as perguntas sobre o sono.',
+            code,
+          });
+        }
+        console.error('[HealthSummary] Falha ao salvar auto-relato de sono:', error);
+        return res.status(503).json({ error: 'Não foi possível salvar seu sono agora. Tente novamente.', code: 'SLEEP_CHECKIN_UNAVAILABLE' });
+      }
+    }
+    return res.status(405).json({ error: 'Método não permitido.' });
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Método não permitido.' });
   const timeZone = typeof req.query?.timeZone === 'string' ? req.query.timeZone : 'UTC';
   return res.status(200).json(await buildHealthSummary(auth.uid, Number(req.query?.days), timeZone));
