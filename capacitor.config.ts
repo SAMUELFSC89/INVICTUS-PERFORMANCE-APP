@@ -46,10 +46,11 @@ const config: CapacitorConfig = {
       splashImmersive: true,
     },
     PushNotifications: {
-      // O @capacitor/push-notifications 8.0.3 instalado neste projeto expõe
-      // oficialmente `alert` no tipo PresentationOption. Mantemos a opção
-      // suportada pelo pacote real para garantir typecheck/build determinístico.
-      presentationOptions: ["badge", "sound", "alert"],
+      // Capacitor 8 mantém `alert` para Android e recomenda `banner`/`list`
+      // para iOS. Com as cinco opções, o push recebido com o app aberto também
+      // aparece visualmente na barra/central de notificações em vez de existir
+      // apenas no callback JavaScript.
+      presentationOptions: ["badge", "sound", "alert", "banner", "list"],
     },
   },
 };
