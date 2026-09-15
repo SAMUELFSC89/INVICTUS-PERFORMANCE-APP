@@ -99,8 +99,21 @@ describe('championship prize financial risk', () => {
     await expect(getChampionshipPrizeFinancialRisk('user-a')).resolves.toBeNull();
   });
 
-  test('autorização Asaas consulta o risco dentro da transação antes de aprovar transferência', () => {
+  test('saque consulta risco na reserva, antes do POST Asaas e no callback de autorização', () => {
+    const engine = fs.readFileSync(path.join(process.cwd(), 'api/_lib/withdrawal-engine.ts'), 'utf8');
     const handler = fs.readFileSync(path.join(process.cwd(), 'api/_handlers/asaas-withdrawal-authorization.ts'), 'utf8');
+
+    const requestStart = engine.indexOf('static async requestWithdrawal');
+    const processStart = engine.indexOf('static async processPayment');
+    const webhookStart = engine.indexOf('static async handleAsaasTransferWebhook');
+    const requestBlock = engine.slice(requestStart, processStart);
+    const processBlock = engine.slice(processStart, webhookStart);
+
+    expect(requestBlock).toContain('assertNoChampionshipPrizeFinancialRisk(userId, transaction)');
+    expect(processBlock).toContain('assertNoChampionshipPrizeFinancialRisk(data.userId, tx)');
+    expect(processBlock.indexOf('assertNoChampionshipPrizeFinancialRisk(data.userId, tx)'))
+      .toBeLessThan(processBlock.indexOf('AsaasClient.transferPix'));
+
     expect(handler).toContain('getChampionshipPrizeFinancialRisk(withdrawal.userId, tx)');
     expect(handler).toContain("status: 'REFUSED'");
     expect(handler).toContain('Premiacao de campeonato esta em conciliacao financeira');
