@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from './common.js';
 import { getAiApiKey, getAiHabitModel } from './ai-config.js';
 import { extractUsage, logAiUsage, newAiRequestId } from './ai-usage-logger.js';
+import { consumeAiQuota } from './ai-quota.js';
 import { isProUser } from './entitlement.js';
 import { buildCardioBaseline, validateMissionCoherence } from '../../src/core/cardioObjective/engine.js';
 import { CARDIO_RESEARCH_VERSION, buildResearchDecisionTrace } from '../../src/core/cardioObjective/research.js';
@@ -29,6 +30,20 @@ export interface ObjectiveMissionRefinement {
   presentation: ChallengePresentation;
   source: 'gemini' | 'deterministic';
   model: string | null;
+}
+
+async function hasProAiAccess(userId: string): Promise<boolean> {
+  try {
+    const userSnap = await db.collection('users').doc(userId).get();
+    return userSnap.exists && isProUser(userSnap.data());
+  } catch {
+    return false;
+  }
+}
+
+async function canUseCardioAi(userId: string): Promise<boolean> {
+  if (!await hasProAiAccess(userId)) return false;
+  return (await consumeAiQuota(userId, 'cardio_personalization')).allowed;
 }
 
 function fallbackChallengePresentation(
@@ -99,12 +114,6 @@ function challengeContext(
   };
 }
 
-/**
- * Híbrido com autoridade determinística: o motor decide o que fazer e a IA
- * funciona como camada de linguagem/personalização. Ela pode escolher duração
- * somente quando o motor explicitamente permite; nunca altera modalidade,
- * métrica, frequência, distância, segurança ou limites finais.
- */
 export async function refineInitialObjectiveMission(
   userId: string,
   answers: ObjectiveAnswers,
@@ -120,6 +129,7 @@ export async function refineInitialObjectiveMission(
     source: 'deterministic',
     model: null,
   };
+  if (!await canUseCardioAi(userId)) return fallback;
   const apiKey = getAiApiKey();
   if (!apiKey) return fallback;
 
@@ -159,10 +169,6 @@ export async function refineInitialObjectiveMission(
   }
 }
 
-/**
- * After a weekly deterministic decision, Gemini translates the new prescription
- * into user-facing challenge language. It cannot modify any prescription field.
- */
 export async function describeObjectiveChallenge(
   userId: string,
   journey: Journey,
@@ -170,8 +176,9 @@ export async function describeObjectiveChallenge(
   review: Review,
 ): Promise<ChallengePresentation> {
   const fallback = fallbackChallengePresentation(journey.behavior, baseline.profile, review);
+  if (journey.status !== 'active' || !await canUseCardioAi(userId)) return fallback;
   const apiKey = getAiApiKey();
-  if (!apiKey || journey.status !== 'active') return fallback;
+  if (!apiKey) return fallback;
   const model = getAiHabitModel();
   const context = challengeContext(baseline.answers, baseline.profile, journey.behavior, { journey, review });
   const prompt = `Você é a camada de linguagem do próximo desafio do Invictus. O motor determinístico JÁ tomou a decisão semanal; você não pode alterar nenhum campo da prescrição. Traduza a decisão para um desafio pessoal, específico e humano. Use a resposta da semana, o objetivo, a barreira e a assinatura histórica de frequência, consistência, modalidade, duração e distância. Não exponha classificações internas, cálculos, razões de carga, fontes ou nomes de motores. Não faça diagnóstico, não prometa resultado e não invente fatos. name, message e cue não podem conter algarismos, pois o app mostra os números diretamente da prescrição. A mensagem deve explicar por que ESTE desafio faz sentido agora sem soar como texto genérico de motivação. Retorne somente JSON {"name":"...","message":"...","cue":"..."}. Contexto: ${JSON.stringify(context)}`;
@@ -192,21 +199,9 @@ export async function describeObjectiveChallenge(
   }
 }
 
-/**
- * O motor determinístico sempre toma a decisão semanal. Para FREE, a explicação
- * é determinística e não gera custo de IA. Apenas um entitlement PRO canônico
- * permite que o Gemini reescreva essa decisão de forma mais natural.
- */
 export async function explainObjectiveDecision(userId: string, journey: Journey, review: Review): Promise<ObjectiveExplanation> {
   const fallback = { text: review.reason, source: 'deterministic' as const, model: null };
-
-  try {
-    const userSnap = await db.collection('users').doc(userId).get();
-    if (!userSnap.exists || !isProUser(userSnap.data())) return fallback;
-  } catch {
-    // Fail closed: se não for possível comprovar PRO, não fazemos chamada paga.
-    return fallback;
-  }
+  if (!await canUseCardioAi(userId)) return fallback;
 
   const apiKey = getAiApiKey();
   if (!apiKey) return fallback;
