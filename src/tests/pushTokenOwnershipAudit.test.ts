@@ -34,13 +34,43 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
     expect(context).toContain('reconcilePushNotificationsForAuthChange(firebaseUser?.uid || null)');
   });
 
-  it('mantém a preferência de notificações separada por conta', () => {
+  it('distingue conta nova de opt-out explícito', () => {
     const service = read('src/services/pushNotificationService.ts');
-    expect(service).toContain('notifications-enabled:${uid}');
-    expect(service).toContain('pushNotificationsEnabledForUser');
+    expect(service).toContain("export type PushNotificationPreferenceState = 'enabled' | 'disabled' | 'unset'");
+    expect(service).toContain('getPushNotificationPreferenceState');
+    expect(service).toContain("return 'unset'");
     expect(service).toContain('setPushNotificationPreference(expectedUid, true)');
     expect(service).toContain('setPushNotificationPreference(currentUser.uid, false)');
-    expect(service).toContain('const enabledForAccount = pushNotificationsEnabledForUser(nextUid)');
+  });
+
+  it('solicita registro no primeiro uso nativo, mas respeita quem já desativou', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    const start = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
+    const end = service.indexOf('/**\n * Desativa', start);
+    const reconciliation = service.slice(start, end);
+    expect(reconciliation).toContain("preference === 'unset'");
+    expect(reconciliation).toContain('await initPushNotifications()');
+    expect(reconciliation).toContain("preference === 'disabled'");
+    expect(reconciliation).toContain("'remove-device-token'");
+  });
+
+  it('persiste opt-out somente quando o SO nega a permissão', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    const initStart = service.indexOf('export async function initPushNotifications');
+    const reconcileStart = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
+    const init = service.slice(initStart, reconcileStart);
+    expect(init).toContain('PushNotifications.requestPermissions()');
+    expect(init).toContain('setPushNotificationPreference(expectedUid, false)');
+    expect(init.indexOf('setPushNotificationPreference(expectedUid, false)')).toBeGreaterThan(init.indexOf("req.receive !== 'granted'"));
+  });
+
+  it('cria canal Android visível e mantém presentation options para foreground', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    const config = read('capacitor.config.ts');
+    expect(service).toContain("GENERAL_NOTIFICATION_CHANNEL_ID = 'invictus_general'");
+    expect(service).toContain('PushNotifications.createChannel');
+    expect(service).toContain('importance: 4');
+    expect(config).toContain('"alert", "banner", "list"');
   });
 
   it('transfere o token antigo antes de invalidá-lo na troca de conta', () => {
@@ -50,15 +80,6 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
     const reconciliation = service.slice(start, end);
     expect(reconciliation.indexOf('await saveDeviceToken(existingToken, nextUid)')).toBeGreaterThan(-1);
     expect(reconciliation.indexOf('await saveDeviceToken(existingToken, nextUid)')).toBeLessThan(reconciliation.lastIndexOf('await unregisterLocalPush()'));
-  });
-
-  it('não solicita permissão de push automaticamente só por trocar de conta', () => {
-    const service = read('src/services/pushNotificationService.ts');
-    const start = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
-    const end = service.indexOf('/**\n * Desativa', start);
-    const reconciliation = service.slice(start, end);
-    expect(reconciliation).toContain('PushNotifications.checkPermissions()');
-    expect(reconciliation).not.toContain('PushNotifications.requestPermissions()');
   });
 
   it('abre toque em push mesmo sem callback, mas somente para rota interna segura', () => {
