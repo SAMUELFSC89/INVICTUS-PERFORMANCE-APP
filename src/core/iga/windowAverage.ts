@@ -1,5 +1,6 @@
 import { calculateWeeklyIGA } from './igaEngine.js';
 import { IGASession, IGAUserProfile } from './types.js';
+import { zonedAddCalendarDays, zonedStartOfWeek } from '../time/competitionTime.js';
 
 export interface DatedIGASession extends IGASession {
   createdAt: Date;
@@ -9,15 +10,6 @@ export interface IGAWindowWeek {
   weekStart: string;
   igaRanking: number;
   frequency: number;
-}
-
-function mondayOf(date: Date): Date {
-  const d = new Date(date.getTime());
-  const dayOfWeek = d.getDay(); // 0 = domingo
-  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  d.setDate(d.getDate() + diffToMonday);
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function maxDate(left: Date, right: Date): Date {
@@ -43,20 +35,21 @@ function sessionsInRange(allSessions: DatedIGASession[], start: Date, end: Date)
  * - nunca conta sessão anterior à adesão vigente (activeFrom);
  * - semanas anteriores à adesão não entram no denominador;
  * - a semana corrente é recortada em `now`, evitando atividade futura entrar
- *   antecipadamente em mensal/temporada.
+ *   antecipadamente em mensal/temporada;
+ * - a virada de semana usa um timezone IANA explícito, nunca o timezone do host.
  *
- * O rótulo `weekStart` continua sendo a segunda-feira civil da semana para
- * manter o formato de auditoria existente; o conteúdo daquela semana, porém,
- * é recortado aos limites reais acima.
+ * O rótulo `weekStart` é o instante UTC correspondente à segunda-feira 00:00
+ * no timezone competitivo. Isso mantém auditoria inequívoca em qualquer runtime.
  */
 export function computeWindowAverageIGA(
   allSessions: DatedIGASession[],
   rangeStart: Date,
   rangeEnd: Date,
   profile: IGAUserProfile,
-  options: { activeFrom?: Date; now?: Date } = {},
+  options: { activeFrom?: Date; now?: Date; timeZone?: string } = {},
 ): { average: number; weeks: IGAWindowWeek[] } {
   const now = options.now ? new Date(options.now.getTime()) : new Date();
+  const timeZone = options.timeZone || 'UTC';
   const activeFrom = options.activeFrom
     ? new Date(options.activeFrom.getTime())
     : new Date(rangeStart.getTime());
@@ -70,12 +63,10 @@ export function computeWindowAverageIGA(
   }
 
   const weeks: IGAWindowWeek[] = [];
-  let cursor = mondayOf(effectiveStart);
+  let cursor = zonedStartOfWeek(effectiveStart, timeZone);
 
   while (cursor < effectiveEnd) {
-    const calendarWeekEnd = new Date(cursor.getTime());
-    calendarWeekEnd.setDate(calendarWeekEnd.getDate() + 7);
-
+    const calendarWeekEnd = zonedAddCalendarDays(cursor, 7, timeZone);
     const sliceStart = maxDate(cursor, effectiveStart);
     const sliceEnd = minDate(calendarWeekEnd, effectiveEnd);
     const result = calculateWeeklyIGA(
