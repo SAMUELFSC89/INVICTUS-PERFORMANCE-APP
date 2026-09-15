@@ -1,6 +1,7 @@
 import { db, FieldValue } from './common.js';
 import { getOrInitCurrentSeasonWindow, calcularProximaJanela } from './season-prize-engine.js';
 import { entitlementDateToMillis, isProUser, type ProEntitlementStatus } from './entitlement.js';
+import { billingAccountStatusPatch } from './billing-lifecycle.js';
 
 export interface CalculatedSeason {
   seasonId: string;
@@ -614,7 +615,7 @@ export async function grantProAccessAfterApprovedPayment(
       transaction.set(userRef, {
         proEntitlement: entitlementProjection,
         isSubscribed: true,
-        status: 'PRO_ATIVO',
+        ...billingAccountStatusPatch(userData, 'PRO_ATIVO'),
         subscriptionTier: 'performance',
         currentPlan: 'performance',
         subscriptionStatus: 'active_premium',
@@ -728,7 +729,7 @@ export async function activateOpenPlan(orderId: string, paymentId: string, event
           providerObservedAt: nowIso,
         },
         isSubscribed: false,
-        status: 'OPEN_ATIVO',
+        ...billingAccountStatusPatch(userData, 'OPEN_ATIVO'),
         subscriptionTier: 'open',
         currentPlan: 'open',
         subscriptionStatus: 'active_basic',
@@ -922,7 +923,7 @@ export async function revokeProAccess(
       // O usuário continua podendo usar o Plano Open; estes campos não podem
       // continuar sinalizando Performance após expiração/reembolso.
       isSubscribed: false,
-      status: 'OPEN_ATIVO',
+      ...billingAccountStatusPatch(userData, 'OPEN_ATIVO'),
       subscriptionTier: 'open',
       currentPlan: 'open',
       subscriptionStatus: 'active_basic',
