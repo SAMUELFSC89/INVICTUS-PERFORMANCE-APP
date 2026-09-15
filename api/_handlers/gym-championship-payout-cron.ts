@@ -4,11 +4,14 @@ import { cors } from '../_lib/common.js';
 import { finalizeCommunityGymChampionshipCycle } from '../_lib/championship-scoring-service.js';
 import { runPaidChampionshipSettlementSweep } from '../_lib/paid-championship-settlement-orchestrator.js';
 
+/**
+ * Somente condições transitórias/operacionais conhecidas retornam 200 para o
+ * cron tentar novamente depois. Divergência de regulamento ou de dados
+ * competitivos é anomalia de integridade e precisa subir como 500/alerta.
+ */
 function isExpectedPaidBlock(reason: string): boolean {
   return reason.startsWith('FINANCIAL_REVIEW_PENDING:')
     || reason.startsWith('ACTIVITY_REVIEW_PENDING:')
-    || reason.startsWith('PAID_REGULATION_MISMATCH:')
-    || reason.startsWith('COMPETITION_DATA_MISMATCH:')
     || reason === 'UNRESOLVED_PRIZE_TIE'
     || reason === 'Settlement já está em execução por outro worker.';
 }
