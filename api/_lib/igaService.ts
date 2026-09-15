@@ -1,5 +1,6 @@
 import { db } from './common.js';
 import { calculateWeeklyIGA, IGASession, IGAUserProfile, IGACalculationResult } from '../../src/core/iga/index.js';
+import { computeWindowAverageIGA } from '../../src/core/iga/windowAverage.js';
 import { getOrInitCurrentSeasonWindow } from './season-prize-engine.js';
 import {
   hasTrustedCompetitionEvidence,
@@ -163,43 +164,6 @@ function computeWeekIGA(
   return calculateWeeklyIGA(sessions, profile);
 }
 
-/**
- * Calcula a MEDIA do IGA semanal para cada semana (Monday-Sunday) que comeca
- * dentro de [rangeStart, rangeEnd) e ja comecou (nao inclui semanas futuras).
- * Semanas sem nenhum treino elegivel entram na media com igaRanking = 0 --
- * isso e intencional: e o que faz a media refletir CONSISTENCIA ao longo do
- * periodo, nao so o pico de uma semana boa.
- */
-function computeWindowAverageIGA(
-  allSessions: DatedSession[],
-  rangeStart: Date,
-  rangeEnd: Date,
-  profile: IGAUserProfile
-): { average: number; weeks: Array<{ weekStart: string; igaRanking: number; frequency: number }> } {
-  const now = new Date();
-  const effectiveEnd = rangeEnd < now ? rangeEnd : now;
-
-  const weeks: Array<{ weekStart: string; igaRanking: number; frequency: number }> = [];
-  let cursor = mondayOf(rangeStart);
-
-  while (cursor < effectiveEnd) {
-    const result = computeWeekIGA(allSessions, cursor, profile);
-    weeks.push({
-      weekStart: cursor.toISOString(),
-      igaRanking: result.igaRanking,
-      frequency: result.frequency
-    });
-    cursor = new Date(cursor);
-    cursor.setDate(cursor.getDate() + 7);
-  }
-
-  const average = weeks.length > 0
-    ? Math.round(weeks.reduce((sum, w) => sum + w.igaRanking, 0) / weeks.length)
-    : 0;
-
-  return { average, weeks };
-}
-
 export interface RecalculatedScores {
   weekly: IGACalculationResult;
   monthly: { average: number; weeks: Array<{ weekStart: string; igaRanking: number; frequency: number }> };
@@ -277,10 +241,25 @@ export async function recalculateAllUserScores(
   // carrega o contexto/época de adesão necessários e por isso não pode ser
   // usado como atalho para entrar no ranking.
   const weekly = computeWeekIGA(allSessions, currentWeekStart, profile);
-  const monthly = computeWindowAverageIGA(allSessions, monthStart, monthEnd, profile);
+  const monthly = computeWindowAverageIGA(
+    allSessions,
+    monthStart,
+    monthEnd,
+    profile,
+    { activeFrom: enrollment?.enrolledAt, now },
+  );
 
   const season: RecalculatedScores['season'] = seasonWindow
-    ? { ...computeWindowAverageIGA(allSessions, seasonWindow.startDate, seasonWindow.endDate, profile), seasonId: seasonWindow.seasonId }
+    ? {
+        ...computeWindowAverageIGA(
+          allSessions,
+          seasonWindow.startDate,
+          seasonWindow.endDate,
+          profile,
+          { activeFrom: enrollment?.enrolledAt, now },
+        ),
+        seasonId: seasonWindow.seasonId,
+      }
     : { average: 0, weeks: [], seasonId: 'unknown' };
 
   try {
