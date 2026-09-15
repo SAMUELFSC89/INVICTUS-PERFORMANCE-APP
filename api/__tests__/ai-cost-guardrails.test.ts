@@ -7,6 +7,7 @@ describe('AI cost guardrails', () => {
   const performance = fs.readFileSync(path.join(process.cwd(), 'api/_handlers/performance-ai.ts'), 'utf8');
   const memory = fs.readFileSync(path.join(process.cwd(), 'api/_services/ai/memory-service.ts'), 'utf8');
   const training = fs.readFileSync(path.join(process.cwd(), 'api/_handlers/training-plans.ts'), 'utf8');
+  const validateActivity = fs.readFileSync(path.join(process.cwd(), 'api/_handlers/validate-activity.ts'), 'utf8');
 
   test('quota is distributed, per-user, bounded in storage and fail-closed', () => {
     expect(quota).toContain("db.collection('ai_quota_counters')");
@@ -23,7 +24,6 @@ describe('AI cost guardrails', () => {
     expect(cardio).toContain("import { consumeAiQuota } from './ai-quota.js'");
     expect(cardio).toContain('async function hasProAiAccess');
     expect(cardio).toContain("consumeAiQuota(userId, 'cardio_personalization')");
-
     const guardedCalls = cardio.match(/if \([^\n]*!await canUseCardioAi\(userId\)[^\n]*\) return fallback;/g) || [];
     expect(guardedCalls.length).toBeGreaterThanOrEqual(3);
   });
@@ -69,5 +69,19 @@ describe('AI cost guardrails', () => {
     expect(training).toContain("generationMode: 'training_engine' as const");
     expect(training).toContain('maxOutputTokens: 4000');
     expect(training).toContain('answers: sanitizeTrainingAnswers(raw?.answers)');
+  });
+
+  test('Power Lift automation has its own quota and safely falls back to manual review', () => {
+    expect(quota).toContain("| 'powerlift_audit'");
+    expect(validateActivity).toContain("consumeAiQuota(req.userId!, 'powerlift_audit')");
+    expect(validateActivity).toContain('MAX_POWER_TOTAL_BASE64_LENGTH');
+    expect(validateActivity).toContain('maxOutputTokens: MAX_POWER_OUTPUT_TOKENS');
+    expect(validateActivity).toContain('a tentativa seguirá para revisão manual');
+  });
+
+  test('unused standalone image validation can no longer spend Gemini', () => {
+    expect(validateActivity).toContain("if (type === 'image_validation')");
+    expect(validateActivity).toContain("code: 'LEGACY_IMAGE_VALIDATION_RETIRED'");
+    expect(validateActivity).not.toContain("feature: 'ACTIVITY_PHOTO_VALIDATION'");
   });
 });
