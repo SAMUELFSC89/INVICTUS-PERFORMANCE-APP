@@ -118,9 +118,11 @@ async function fetchAllSessionsSince(
         type: promotedMetrics?.activityType || data.type || 'workout',
         durationMinutes: Number(promotedMetrics?.durationMinutes)
           || Number(data.duration) || Number(data.durationMinutes) || 30,
-        avgHeartRate: promotedMetrics
-          ? Number(promotedMetrics.avgHeartRate) || 0
-          : Number(data.avgHeartRate) || Number(data.avgHr) || 0,
+        // Intensidade competitiva nunca aceita FC bruta de um documento legado
+        // sem snapshot/proveniência confiável. Esses registros ainda podem
+        // preservar F/T quando já homologados, mas I fica 0 até existir uma
+        // evidência competitiva confiável promovida pelo servidor.
+        avgHeartRate: promotedMetrics ? Number(promotedMetrics.avgHeartRate) || 0 : 0,
         caloriesInformed: promotedMetrics
           ? Number(promotedMetrics.calories) || 0
           : Number(data.calories) || Number(data.caloriesBurned) || 0,
