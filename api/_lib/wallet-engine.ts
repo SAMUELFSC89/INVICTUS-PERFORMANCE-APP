@@ -156,7 +156,7 @@ export class WalletEngine {
       userId,
       amount,
       category: usedCategory,
-      type: 'credit',
+      type: 'debit',
       origin,
       destination,
       description,
@@ -211,7 +211,6 @@ export class WalletEngine {
       }
 
       transactionData.category = usedCategory;
-      transactionData.type = 'debit';
       const total = redeemable + ecosystem + promotional;
 
       t.set(walletRef, {
