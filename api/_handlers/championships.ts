@@ -77,14 +77,36 @@ function athleteFinalResult(champ: any, settlement: Record<string, any>, userId:
   const ranking = Array.isArray(settlement.ranking) ? settlement.ranking : [];
   const index = ranking.findIndex((entry: any) => String(entry?.userId || '') === userId);
   if (index < 0) return null;
-  const assignment = (Array.isArray(settlement.winnerAssignments) ? settlement.winnerAssignments : [])
-    .find((entry: any) => String(entry?.userId || '') === userId);
+
+  const assignments = Array.isArray(settlement.winnerAssignments) ? settlement.winnerAssignments : [];
+  const assignment = assignments.find((entry: any) => String(entry?.userId || '') === userId);
+  const assignedUserIds = new Set(assignments.map((entry: any) => String(entry?.userId || '')).filter(Boolean));
+  const assignedFrozenIndexes = assignments
+    .map((entry: any) => ranking.findIndex((candidate: any) => String(candidate?.userId || '') === String(entry?.userId || '')))
+    .filter((candidateIndex: number) => candidateIndex >= 0);
+  const lastAssignedFrozenIndex = assignedFrozenIndexes.length ? Math.max(...assignedFrozenIndexes) : -1;
+
+  // Quando um candidato dentro das posições que precisaram ser percorridas
+  // para distribuir os prêmios não aparece em winnerAssignments, ele foi
+  // pulado pelo payout por inelegibilidade financeira/conta. Esse atleta não
+  // recebe uma colocação homologada e as posições seguintes recuam uma casa.
+  const skippedIndexes = new Set<number>();
+  for (let candidateIndex = 0; candidateIndex <= lastAssignedFrozenIndex; candidateIndex += 1) {
+    const candidateUserId = String(ranking[candidateIndex]?.userId || '');
+    if (candidateUserId && !assignedUserIds.has(candidateUserId)) skippedIndexes.add(candidateIndex);
+  }
+  if (skippedIndexes.has(index)) return null;
+
+  const skippedBefore = [...skippedIndexes].filter((candidateIndex) => candidateIndex < index).length;
+  const adjustedRank = Math.max(1, index + 1 - skippedBefore);
+  const adjustedParticipants = Math.max(0, ranking.length - skippedIndexes.size);
+
   return {
     championshipId: champ.id,
     championshipTitle: champ.title,
     edition: champ.edition,
-    finalRank: Number(assignment?.rank) || index + 1,
-    totalParticipants: ranking.length,
+    finalRank: Number(assignment?.rank) || adjustedRank,
+    totalParticipants: adjustedParticipants,
     prizeWon: Math.max(0, Number(assignment?.amount) || 0),
     status: 'finalized' as const,
     homologatedAt: toIso(settlement.finalizedAt) || new Date().toISOString(),
