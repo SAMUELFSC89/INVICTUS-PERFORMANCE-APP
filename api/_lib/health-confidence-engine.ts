@@ -118,7 +118,7 @@ export function assessHealthConfidence(input: ConfidenceInput, registry = DEFAUL
     .map(({ entry, ref }) => ({ id: ref!.id, title: ref!.title, url: ref!.publisherUrl || ref!.pubmedUrl, scope: entry.evidenceScope }));
   const limitations = [...new Set([...(METRIC_LIMITATIONS[input.metricType] || []), ...evidence.flatMap((entry) => entry.limitations)])];
   if (input.provenance.status === 'UNKNOWN_DEVICE' || input.provenance.status === 'LEGACY_UNKNOWN_SOURCE') limitations.push('O dispositivo que gerou esta leitura não foi identificado tecnicamente.');
-  if (input.provenance.status === 'USER_DECLARED_DEVICE') limitations.push('O dispositivo foi informado pelo usuário e não confirmado pelos metadados técnicos desta leitura.');
+  if (input.provenance.status === 'USER_DECLARED_DEVICE') limitations.push('O dispositivo foi informado pelo aplicativo ou pelo usuário e não foi confirmado por atestação confiável do servidor.');
   const confidenceLevel = levelFor(score, config.thresholds);
   const deviceText = input.provenance.deviceModel || input.provenance.deviceName || input.provenance.deviceManufacturer;
   const confidenceReason = `${deviceText ? `Origem atribuída a ${deviceText}` : 'Origem de hardware não identificada'}; nível-base da métrica, contexto ${context}, completude e evidência disponível foram combinados pela versão ${config.version}.`;
@@ -129,9 +129,20 @@ export function assessHealthConfidence(input: ConfidenceInput, registry = DEFAUL
   };
 }
 
+/**
+ * Classifica proveniência derivada de metadados recebidos do cliente.
+ *
+ * Manufacturer/model/productType são úteis para contexto e seleção de evidência,
+ * mas não são uma atestação: um cliente adulterado também consegue enviá-los.
+ * `VERIFIED_DEVICE` fica reservado para caminhos futuros/atuais que já tenham
+ * estabelecido confiança no servidor e construam HealthProvenance explicitamente
+ * com esse status, sem passar por este helper.
+ */
 export function deriveProvenanceStatus(provenance: Omit<HealthProvenance, 'status'>, legacy = false): ProvenanceStatus {
   if (legacy) return 'LEGACY_UNKNOWN_SOURCE';
-  if (provenance.deviceManufacturer || provenance.deviceModel || provenance.deviceName || provenance.deviceType || provenance.localIdentifier || provenance.sourceProductType) return 'VERIFIED_DEVICE';
+  if (provenance.deviceManufacturer || provenance.deviceModel || provenance.deviceName || provenance.deviceType || provenance.localIdentifier || provenance.sourceProductType) {
+    return 'USER_DECLARED_DEVICE';
+  }
   return 'UNKNOWN_DEVICE';
 }
 
