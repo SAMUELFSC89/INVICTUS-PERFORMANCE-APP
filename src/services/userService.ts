@@ -30,6 +30,22 @@ async function deleteOwnedAvatar(photoURL: unknown, userId: string) {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, code: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(code)), timeoutMs);
+    promise.then(
+      value => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      error => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
 export const userService = {
   async updateProfilePhoto(photoBlob: Blob) {
     const user = auth.currentUser;
@@ -48,10 +64,18 @@ export const userService = {
     console.log('Updating profile photo for user:', user.uid, 'Size:', photoBlob.size);
     const userRef = doc(db, 'users', user.uid);
     let photoURL = '';
+    let previousPhotoURL: unknown = null;
 
     try {
-      const previousData = (await getDoc(userRef)).data() as Record<string, any> | undefined;
-      const previousPhotoURL = storedAvatarValue(previousData);
+      // A foto anterior é necessária apenas para limpeza. Nunca deixe essa
+      // leitura bloquear o upload no WKWebView/iOS.
+      try {
+        const previousSnap = await withTimeout(getDoc(userRef), 8_000, 'PREVIOUS_PHOTO_READ_TIMEOUT');
+        previousPhotoURL = storedAvatarValue(previousSnap.data() as Record<string, any> | undefined);
+      } catch (previousReadError) {
+        console.warn('Previous profile photo could not be read before upload:', previousReadError);
+      }
+
       // A versioned path prevents WKWebView/browser caches from displaying an
       // overwritten avatar through the previous download URL.
       const storageRef = ref(storage, `profiles/${user.uid}/avatar-${Date.now()}.jpg`);
@@ -60,41 +84,46 @@ export const userService = {
         cacheControl: 'public,max-age=31536000,immutable'
       });
 
-      photoURL = await new Promise<string>((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          if (error) reject(error);
+          else resolve();
+        };
         const timeout = setTimeout(() => {
           uploadTask.cancel();
-          reject(new Error('TIMEOUT'));
-        }, 120000); // Mobile uploads can legitimately take longer on 4G.
+          finish(new Error('UPLOAD_TIMEOUT'));
+        }, 60_000);
 
-        uploadTask.on('state_changed', null, (err) => {
-          clearTimeout(timeout);
-          reject(err);
-        }, async () => {
-          clearTimeout(timeout);
-          try {
-            const url = await getDownloadURL(uploadTask.snapshot.ref);
-            resolve(url);
-          } catch (urlErr) {
-            reject(urlErr);
-          }
-        });
+        uploadTask.on(
+          'state_changed',
+          undefined,
+          error => finish(error),
+          () => finish()
+        );
       });
+
+      photoURL = await withTimeout(getDownloadURL(uploadTask.snapshot.ref), 15_000, 'DOWNLOAD_URL_TIMEOUT');
 
       // photoURL é o campo canônico. Removemos aliases antigos para não deixar
       // uma URL obsoleta reaparecer em telas que ainda façam fallback legado.
-      await updateDoc(userRef, {
+      await withTimeout(updateDoc(userRef, {
         photoURL,
         photoUrl: deleteField(),
         photo_url: deleteField(),
-      });
+      }), 15_000, 'PROFILE_WRITE_TIMEOUT');
+
       deleteOwnedAvatar(previousPhotoURL, user.uid).catch((cleanupError) => {
         console.warn('Previous profile photo cleanup failed:', cleanupError);
       });
       return photoURL;
     } catch (error: any) {
       console.error('Error updating profile photo:', error);
-      if (error.message === 'TIMEOUT') {
-        throw new Error('Tempo limite excedido ao enviar a foto. Verifique sua conexão com a internet.');
+      if (['UPLOAD_TIMEOUT', 'DOWNLOAD_URL_TIMEOUT', 'PROFILE_WRITE_TIMEOUT'].includes(String(error?.message || ''))) {
+        throw new Error('O envio da foto não concluiu a tempo. Tente novamente; se estiver no iPhone, mantenha o app aberto durante o envio.');
       }
       if (error.code === 'storage/unauthorized') {
         throw new Error('Erro de permissão no Storage ao atualizar foto de perfil.');
