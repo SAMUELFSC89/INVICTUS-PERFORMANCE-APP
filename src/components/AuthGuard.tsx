@@ -209,7 +209,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // O Plano Open mantém o acesso básico; o Pro exige tier, status e validade
   // canônicos. Flags legadas isoladas nunca liberam o paywall.
   const hasBasicAccess = user?.subscriptionStatus === 'active_basic' || user?.subscriptionTier === 'open';
-  const isPaid = hasBasicAccess || hasActiveProEntitlement(user) || user?.role === 'admin';
+  const isPaid = hasBasicAccess || hasActiveProEntitlement(user);
   const capacitorPlatform = Capacitor.getPlatform();
   const nativeStorePlatform: 'android' | 'ios' | null = capacitorPlatform === 'android' || capacitorPlatform === 'ios'
     ? capacitorPlatform
