@@ -58,10 +58,10 @@ function normalizeMapButtons() {
   // Mantemos os dois estados React existentes (satellite/outdoors), mas o
   // request real é reescrito para streets/outdoors. Isso evita uma alteração
   // grande no componente e remove satélite da experiência do usuário.
-  buttons[0].textContent = 'Ruas';
-  buttons[0].dataset.invictusMapStyle = 'streets';
-  buttons[1].textContent = 'Navegação';
-  buttons[1].dataset.invictusMapStyle = 'navigation';
+  if (buttons[0].textContent !== 'Ruas') buttons[0].textContent = 'Ruas';
+  if (buttons[0].dataset.invictusMapStyle !== 'streets') buttons[0].dataset.invictusMapStyle = 'streets';
+  if (buttons[1].textContent !== 'Navegação') buttons[1].textContent = 'Navegação';
+  if (buttons[1].dataset.invictusMapStyle !== 'navigation') buttons[1].dataset.invictusMapStyle = 'navigation';
 }
 
 function installNavigationMapVisual() {
@@ -87,9 +87,10 @@ function routePixel(data: Uint8ClampedArray, width: number, x: number, y: number
   const b = data[index + 2];
   const a = data[index + 3];
 
-  // A rota do backend é #ffad12. A margem abaixo inclui antialiasing e
-  // recompressão do mapa sem confundir vias amarelas comuns do mapa.
-  return a > 180 && r > 205 && g > 105 && g < 205 && b < 85 && r - g > 45;
+  // A rota do backend é #ffad12 (255,173,18). Mantemos uma tolerância curta
+  // para antialiasing/recompressão, evitando confundir a rota com vias amarelas
+  // ou outros elementos do próprio mapa.
+  return a > 190 && r > 225 && g >= 135 && g <= 200 && b < 65 && r - g >= 55;
 }
 
 function nearestRoutePixel(
@@ -169,7 +170,7 @@ async function snapLayerMarkers(layer: HTMLElement): Promise<void> {
         x: (left - offsetX) / coverScale,
         y: (top - offsetY) / coverScale,
       };
-      const radius = Math.max(18, Math.round(72 / coverScale));
+      const radius = Math.max(22, Math.round(90 / coverScale));
       const exact = nearestRoutePixel(pixels, naturalWidth, naturalHeight, approximate, radius);
       if (!exact) return;
 
@@ -206,7 +207,12 @@ const observer = new MutationObserver(() => {
   normalizeMapButtons();
   scheduleSnap();
 });
-observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'class', 'style'] });
+observer.observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ['src', 'class'],
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
