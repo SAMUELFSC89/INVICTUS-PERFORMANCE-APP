@@ -1,10 +1,11 @@
-import { toPng } from 'html-to-image';
+import { toJpeg } from 'html-to-image';
 import { shareCardExportService } from '../services/shareCardExportService';
 import './shareCardRoundEnhancer.css';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const SOCIAL_EXPORT_WIDTH = 2160;
-const SOCIAL_EXPORT_HEIGHT = 3840;
+const SOCIAL_EXPORT_WIDTH = 1080;
+const SOCIAL_EXPORT_HEIGHT = 1920;
+const SOCIAL_EXPORT_QUALITY = 0.94;
 const MAPBOX_MAX_AUTO_FIT_ZOOM = 16.5;
 
 type GeoPoint = { lat: number; lng: number };
@@ -226,7 +227,7 @@ async function highQualityExport(mode: 'share' | 'download') {
   if (!card) return;
   exportInProgress = true;
   card.classList.add('is-exporting');
-  setFeedback('Gerando imagem em alta definição…');
+  setFeedback('Gerando imagem em alta qualidade…');
 
   try {
     await document.fonts?.ready;
@@ -239,26 +240,26 @@ async function highQualityExport(mode: 'share' | 'download') {
     const rect = card.getBoundingClientRect();
     if (!rect.width || !rect.height) throw new Error('Card sem dimensão para exportação.');
 
-    // Render em 2K vertical. O arquivo continua PNG sem recompressão no plugin
-    // nativo; redes sociais podem reduzir depois, mas recebem uma fonte muito
-    // mais definida do que o antigo raster 1080x1920.
+    // 1080x1920 é a resolução nativa de Stories. JPEG 94% mantém texto/mapa
+    // muito definidos sem gerar PNGs de 20–40 MB quando há fotografia.
     const widthRatio = SOCIAL_EXPORT_WIDTH / rect.width;
     const heightRatio = SOCIAL_EXPORT_HEIGHT / rect.height;
     const pixelRatio = Math.max(1, Math.min(6, widthRatio, heightRatio));
-    const dataUrl = await toPng(card, {
+    const dataUrl = await toJpeg(card, {
       pixelRatio,
+      quality: SOCIAL_EXPORT_QUALITY,
       cacheBust: true,
       backgroundColor: '#050608',
       skipAutoScale: true,
     });
-    const fileName = `invictus-atividade-${Date.now()}.png`;
+    const fileName = `invictus-atividade-${Date.now()}.jpg`;
 
     if (mode === 'share') {
       const result = await shareCardExportService.share(dataUrl, fileName);
       setFeedback(result === 'shared' ? 'Imagem pronta para compartilhar.' : 'Compartilhamento indisponível; imagem salva.');
     } else {
       await shareCardExportService.save(dataUrl, fileName);
-      setFeedback('Imagem salva em alta definição PNG.');
+      setFeedback('Imagem salva em alta qualidade.');
     }
   } catch (error) {
     console.error('[shareCardRoundEnhancer] Falha na exportação social:', error);
