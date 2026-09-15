@@ -33,6 +33,10 @@ export function championshipPrizeSettlementId(input: ChampionshipPrizeCreditInpu
   return `championship_prize_${settlementDigest(input)}`;
 }
 
+export function championshipPrizeAwardId(championshipId: string, userId: string): string {
+  return `${championshipId}_${userId}`;
+}
+
 function sameMoney(a: unknown, b: unknown): boolean {
   return Math.abs((Number(a) || 0) - (Number(b) || 0)) < 0.005;
 }
@@ -46,6 +50,30 @@ function matchesSettlement(data: Record<string, any>, input: ChampionshipPrizeCr
     && data.regulationHash === input.regulationHash;
 }
 
+function matchesAward(data: Record<string, any>, input: ChampionshipPrizeCreditInput, transactionId: string): boolean {
+  return matchesSettlement(data, input)
+    && data.transactionId === transactionId
+    && data.status === 'CREDITED';
+}
+
+function awardDocument(input: ChampionshipPrizeCreditInput, transactionId: string, now: string) {
+  return {
+    id: championshipPrizeAwardId(input.championshipId, input.userId),
+    championshipId: input.championshipId,
+    championshipTitle: input.championshipTitle,
+    userId: input.userId,
+    rank: input.rank,
+    amount: input.amount,
+    regulationVersion: input.regulationVersion,
+    regulationHash: input.regulationHash,
+    transactionId,
+    status: 'CREDITED',
+    financialRiskStatus: 'CLEAR',
+    creditedAt: now,
+    updatedAt: now,
+  };
+}
+
 /**
  * Credita premiação oficial em reais na carteira sacável.
  *
@@ -57,6 +85,10 @@ function matchesSettlement(data: Record<string, any>, input: ChampionshipPrizeCr
  * - conta precisa continuar ativa;
  * - inscrição precisa continuar paga e sem refund/chargeback/conciliação;
  * - regulamento aceito precisa continuar sendo exatamente o congelado.
+ *
+ * Um `championship_prize_awards/{championshipId}_{userId}` também é mantido
+ * na mesma transação para que o motor de saque consiga cruzar, sem heurística,
+ * uma disputa financeira posterior com um prêmio que foi realmente creditado.
  */
 export async function creditChampionshipPrize(
   input: ChampionshipPrizeCreditInput,
@@ -75,19 +107,25 @@ export async function creditChampionshipPrize(
   const settlementId = championshipPrizeSettlementId(normalizedInput);
   const transactionRef = db.collection('iv_transactions').doc(transactionId);
   const settlementRef = db.collection('championship_prize_settlements').doc(settlementId);
+  const awardRef = db.collection('championship_prize_awards').doc(championshipPrizeAwardId(input.championshipId, input.userId));
   const walletRef = db.collection('wallets').doc(input.userId);
   const userRef = db.collection('users').doc(input.userId);
   const registrationRef = db.collection('championship_registrations').doc(`${input.userId}_${input.championshipId}`);
   const now = new Date().toISOString();
 
   return db.runTransaction(async (transaction: any) => {
-    const [existingSettlement, existingTransaction, walletSnap, userSnap, registrationSnap] = await Promise.all([
+    const [existingSettlement, existingTransaction, existingAward, walletSnap, userSnap, registrationSnap] = await Promise.all([
       transaction.get(settlementRef),
       transaction.get(transactionRef),
+      transaction.get(awardRef),
       transaction.get(walletRef),
       transaction.get(userRef),
       transaction.get(registrationRef),
     ]);
+
+    if (existingAward.exists && !matchesAward(existingAward.data() || {}, normalizedInput, transactionId)) {
+      throw new Error('Conflito no award de prêmio do campeonato. Operação interrompida.');
+    }
 
     if (existingSettlement.exists) {
       const stored = existingSettlement.data() || {};
@@ -97,6 +135,9 @@ export async function creditChampionshipPrize(
       const status = String(stored.status || '');
       if (status !== 'CREDITED' && status !== 'INELIGIBLE') {
         throw new Error('Settlement de prêmio em estado inválido. Operação interrompida.');
+      }
+      if (status === 'CREDITED' && !existingAward.exists) {
+        transaction.create(awardRef, awardDocument(normalizedInput, transactionId, now));
       }
       return {
         credited: false,
@@ -123,6 +164,7 @@ export async function creditChampionshipPrize(
         transactionId,
         settledAt: now,
       });
+      if (!existingAward.exists) transaction.create(awardRef, awardDocument(normalizedInput, transactionId, now));
       return { credited: false, alreadyCredited: true, ineligible: false, transactionId };
     }
 
@@ -195,6 +237,7 @@ export async function creditChampionshipPrize(
       balanceAfter: redeemableBalance,
       settledAt: now,
     });
+    transaction.create(awardRef, awardDocument(normalizedInput, transactionId, now));
 
     return { credited: true, alreadyCredited: false, ineligible: false, transactionId };
   });
