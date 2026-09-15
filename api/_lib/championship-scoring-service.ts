@@ -1,5 +1,5 @@
 import { db } from './common.js';
-import { matchActiveChampionshipsForActivity } from './championship-catalog.js';
+import { getChampionship, matchActiveChampionshipsForActivity } from './championship-catalog.js';
 import { getUserRegistration } from './championship-inscription-service.js';
 import { RewardCoinEngine } from './reward-coin-engine.js';
 import type { ActivityCompetitionContext } from './activity-competition-policy.js';
@@ -30,6 +30,22 @@ async function isActiveCompetitiveUser(userId: string): Promise<boolean> {
   if (!userId) return false;
   const snap = await db.collection('users').doc(userId).get();
   return snap.exists && isActiveAccountState(snap.data());
+}
+
+function scoreBelongsToEdition(data: any, championship: any): boolean {
+  if (!championship) return false;
+  if (String(data?.editionId || '') === championship.editionId) return true;
+  // Compatibilidade pré-lançamento: score antigo sem editionId só é lido se o
+  // regulamento congelado coincidir exatamente com a edição atual.
+  return !data?.editionId
+    && data?.championshipId === championship.id
+    && data?.regulationHash === championship.regulationHash;
+}
+
+function paidContextEditionId(context: ActivityCompetitionContext): string | null {
+  if (context.editionId) return context.editionId;
+  const current = getChampionship(context.id);
+  return current && context.regulationHash === current.regulationHash ? current.editionId : null;
 }
 
 export interface ChampionshipActivityInput {
@@ -103,6 +119,7 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
         .filter((context) => context.type === 'paid_championship')
         .map((context) => ({
           id: context.id,
+          editionId: paidContextEditionId(context),
           context,
           minDurationMinutes: context.minDurationMinutes,
           maxDurationMinutes: context.maxDurationMinutes,
@@ -113,6 +130,7 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
         when: input.when,
       }).map((championship) => ({
         id: championship.id,
+        editionId: championship.editionId,
         context: undefined,
         minDurationMinutes: championship.antiFraudProfile?.minDurationMinutes,
         maxDurationMinutes: championship.antiFraudProfile?.maxDurationMinutes,
@@ -120,6 +138,7 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
   if (!candidates.length) return;
 
   for (const champ of candidates) {
+    if (!champ.editionId) continue;
     if (!input.contexts) {
       const registration = await getUserRegistration(input.userId, champ.id);
       if (!registration || registration.status !== 'paga' || registration.paymentStatus !== 'PAID') continue;
@@ -128,13 +147,14 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
     const withinDuration =
       (champ.minDurationMinutes == null || input.durationMinutes >= champ.minDurationMinutes)
       && (champ.maxDurationMinutes == null || input.durationMinutes <= champ.maxDurationMinutes);
-    const scoreId = `${input.activityId}_${champ.id}`;
+    const scoreId = `${input.activityId}_${champ.editionId}`;
     const scoreRef = db.collection('championship_scores').doc(scoreId);
     const previous = await scoreRef.get();
     const existingData = previous.exists ? previous.data() || {} : {};
     await scoreRef.set({
       id: scoreId,
       championshipId: champ.id,
+      editionId: champ.editionId,
       policyEpochId: champ.context?.epochId || null,
       regulationVersion: champ.context?.regulationVersion || null,
       regulationHash: champ.context?.regulationHash || null,
@@ -210,7 +230,11 @@ export async function syncReviewedActivityCompetitionScores(activityId: string):
         ...(!userIsActive ? { invalidationReason: 'ACCOUNT_INACTIVE' } : {}),
       }, { merge: true });
     } else if (context.type === 'paid_championship') {
-      batch.set(db.collection('championship_scores').doc(`${activityId}_${context.id}`), {
+      const editionId = paidContextEditionId(context);
+      if (!editionId) continue;
+      batch.set(db.collection('championship_scores').doc(`${activityId}_${editionId}`), {
+        championshipId: context.id,
+        editionId,
         validationStatus: 'REJECTED',
         score: 0,
         invalidatedAt: new Date().toISOString(),
@@ -432,7 +456,8 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
 }
 
 export async function getChampionshipProgress(championshipId: string, userId: string) {
-  if (!await isActiveCompetitiveUser(userId)) {
+  const championship = getChampionship(championshipId);
+  if (!championship || !await isActiveCompetitiveUser(userId)) {
     return { totalScore: 0, totalTimeMinutes: 0, validSessionsCount: 0, currentRank: 0, totalParticipants: 0 };
   }
   const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
@@ -441,7 +466,7 @@ export async function getChampionshipProgress(championshipId: string, userId: st
   let validSessionsCount = 0;
   snap.forEach((doc) => {
     const d: any = doc.data();
-    if (d.userId !== userId || d.validationStatus !== 'VALIDATED') return;
+    if (!scoreBelongsToEdition(d, championship) || d.userId !== userId || d.validationStatus !== 'VALIDATED') return;
     totalScore += d.score || 0;
     totalTimeMinutes += d.metrics?.durationMinutes || 0;
     validSessionsCount += 1;
@@ -468,12 +493,13 @@ export interface ChampionshipActivityEntry {
 }
 
 export async function getUserChampionshipActivities(championshipId: string, userId: string, limit = 20): Promise<ChampionshipActivityEntry[]> {
-  if (!await isActiveCompetitiveUser(userId)) return [];
+  const championship = getChampionship(championshipId);
+  if (!championship || !await isActiveCompetitiveUser(userId)) return [];
   const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
   const entries: ChampionshipActivityEntry[] = [];
   snap.forEach((doc) => {
     const d: any = doc.data();
-    if (d.userId !== userId) return;
+    if (!scoreBelongsToEdition(d, championship) || d.userId !== userId) return;
     entries.push({
       activityId: d.activityId,
       activityType: d.activityType,
@@ -498,11 +524,13 @@ export interface ChampionshipLeaderboardEntry {
 }
 
 export async function getChampionshipLeaderboard(championshipId: string, limit = 50): Promise<ChampionshipLeaderboardEntry[]> {
+  const championship = getChampionship(championshipId);
+  if (!championship) return [];
   const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
   const byUser = new Map<string, { userId: string; name: string; gym: string; score: number }>();
   snap.forEach((doc) => {
     const d: any = doc.data();
-    if (d.validationStatus !== 'VALIDATED') return;
+    if (!scoreBelongsToEdition(d, championship) || d.validationStatus !== 'VALIDATED') return;
     const current = byUser.get(d.userId) || {
       userId: d.userId,
       name: d.userName || 'Atleta Invictus',
