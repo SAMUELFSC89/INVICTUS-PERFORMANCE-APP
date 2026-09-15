@@ -26,10 +26,20 @@ export interface LogPayload {
 // Memory Cache with standard TTL (60s) to limit expensive Firestore operations
 export const memoryCache = new NodeCache({ stdTTL: 60, checkperiod: 120 });
 
+function createObservabilityId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function shouldPersistObservability(): boolean {
+  return process.env.NODE_ENV !== 'test' && Boolean(db);
+}
+
 // Log Event seamlessly into Firestore with safety guarantees
 export async function logEvent(payload: LogPayload): Promise<string> {
   const now = new Date();
-  const logId = db.collection(payload.category).doc().id;
+  // IDs are generated locally so test mode and degraded observability never need
+  // to touch Firestore merely to create a document reference.
+  const logId = createObservabilityId('log');
   
   // Rule 12 Compliance: Santitize PII/sensitive info
   const sanitizedDetails = payload.details ? sanitizeDetails(payload.details) : {};
@@ -46,8 +56,9 @@ export async function logEvent(payload: LogPayload): Promise<string> {
   };
 
   try {
-    // Fire-and-forget write to Firestore (with error catch, skipped in test mode)
-    if (process.env.NODE_ENV !== 'test' && db) {
+    // Fire-and-forget write to Firestore. In test mode there is zero Firestore
+    // interaction, which keeps telemetry from coupling domain tests to the DB.
+    if (shouldPersistObservability()) {
       db.collection(payload.category).doc(logId).set(logEntry).catch(err => {
         console.error(`[Observability] Firestore failed to save log ${logId} in ${payload.category}:`, err);
       });
@@ -58,17 +69,18 @@ export async function logEvent(payload: LogPayload): Promise<string> {
     if (payload.severity === 'CRITICAL' || payload.severity === 'HIGH_RISK') {
       console.error(consoleMsg);
       // Trigger instant alerts threshold checks
-      triggerAlert(payload.category, payload.severity, payload.message, payload.userId, sanitizedDetails);
+      void triggerAlert(payload.category, payload.severity, payload.message, payload.userId, sanitizedDetails);
     } else if (payload.severity === 'WARNING') {
       console.warn(consoleMsg);
     } else {
       console.log(consoleMsg);
     }
 
-    // Increment metrics automatically
-    incrementMetric(payload.category === 'fraud_audit_logs' ? 'total_frauds_detected' : `${payload.category}_count`, 1);
+    // Increment metrics automatically. These are deliberately non-blocking:
+    // telemetry failure must never fail the business operation that emitted it.
+    void incrementMetric(payload.category === 'fraud_audit_logs' ? 'total_frauds_detected' : `${payload.category}_count`, 1);
     if (payload.severity === 'CRITICAL') {
-      incrementMetric('critical_failures_count', 1);
+      void incrementMetric('critical_failures_count', 1);
     }
   } catch (error) {
     console.error('[Observability Error] Failure inside logEvent wrapper:', error);
@@ -108,7 +120,6 @@ function sanitizeDetails(details: Record<string, any>): Record<string, any> {
 // Real-Time System Metrics Tracker (Aggregated dynamically inside Firestore db to control costs)
 export async function incrementMetric(metricName: string, incrementValue: number = 1): Promise<void> {
   const todayStr = new Date().toISOString().substring(0, 10); // YYYY-MM-DD
-  const metricDocRef = db.collection('system_metrics').doc(todayStr);
 
   try {
     // Local memory increment to avoid hammering Firestore writes/reads
@@ -116,8 +127,11 @@ export async function incrementMetric(metricName: string, incrementValue: number
     const cachedVal = (memoryCache.get<number>(cacheKey) || 0) + incrementValue;
     memoryCache.set(cacheKey, cachedVal, 1800); // cache for 30 mins
 
-    // Batch or debounced firestore increments
-    if (process.env.NODE_ENV !== 'test' && db) {
+    // Create the Firestore reference only when persistence is actually enabled.
+    // This is important for Jest: a test must not initialize/touch Firestore just
+    // because domain code emitted an operational metric.
+    if (shouldPersistObservability()) {
+      const metricDocRef = db.collection('system_metrics').doc(todayStr);
       metricDocRef.set({
         date: todayStr,
         metrics: {
@@ -163,13 +177,13 @@ function checkAlertThresholds(metricName: string, currentVal: number) {
     activeAlertsSpamFilter.add(thresholdKey);
     setTimeout(() => activeAlertsSpamFilter.delete(thresholdKey), 600000); // 10-minute cooldown
     
-    triggerAlert('system_logs', severity, message, 'multiple_users', { currentVal, metricName });
+    void triggerAlert('system_logs', severity, message, 'multiple_users', { currentVal, metricName });
   }
 }
 
 // Register high priority operational system alerts
 export async function triggerAlert(category: string, severity: SeverityLevel, message: string, userId?: string, details?: any) {
-  const alertId = db.collection('system_alerts').doc().id;
+  const alertId = createObservabilityId('alert');
   const alertObj = {
     id: alertId,
     timestamp: new Date().toISOString(),
@@ -182,7 +196,7 @@ export async function triggerAlert(category: string, severity: SeverityLevel, me
   };
 
   try {
-    if (process.env.NODE_ENV !== 'test' && db) {
+    if (shouldPersistObservability()) {
       await db.collection('system_alerts').doc(alertId).set(alertObj);
     }
     console.log(`[ALERT TRIGGERED] [${severity}] ${message}`);
@@ -551,5 +565,4 @@ export async function getOverallMetricsForDashboard(): Promise<any> {
 
   return result;
 }
-
 
