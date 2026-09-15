@@ -142,7 +142,17 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   };
 
   const paid = registration?.status === 'ACTIVE' && registration.paymentStatus === 'PAID';
-  const pending = registration?.status === 'PENDING_PAYMENT';
+  const reconciliation = registration?.status === 'REJECTED'
+    || registration?.paymentStatus === 'RECONCILIATION_REQUIRED'
+    || registration?.paymentStatus === 'PAYMENT_PARTIALLY_REFUNDED'
+    || registration?.paymentStatus === 'PAYMENT_REFUND_IN_PROGRESS'
+    || registration?.paymentStatus === 'PAYMENT_CHARGEBACK_REQUESTED'
+    || registration?.paymentStatus === 'PAYMENT_CHARGEBACK_DISPUTE'
+    || registration?.paymentStatus === 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL';
+  const refunded = registration?.status === 'REFUNDED' || registration?.paymentStatus === 'REFUNDED';
+  const enrollmentBlocked = reconciliation || refunded;
+  const pending = registration?.status === 'PENDING_PAYMENT' && !reconciliation;
+  const canStartEnrollment = !paid && !enrollmentBlocked;
   const price = championship?.registrationPrice ?? PAID_CHAMPIONSHIP_ENTRY_PRICE_BRL;
   const finalized = progress?.settlementStatus === 'FINALIZED';
   const finalResult = progress?.finalResult || null;
@@ -168,6 +178,8 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
         {paid && finalized && finalResult && <section className="paid-status is-paid"><Trophy /><div><b>RESULTADO HOMOLOGADO</b><p>{finalResult.finalRank}º lugar de {finalResult.totalParticipants} participante{finalResult.totalParticipants === 1 ? '' : 's'}{finalResult.prizeWon ? ` · ${brl(finalResult.prizeWon)} creditados na carteira sacável.` : ' · sem premiação em dinheiro nesta colocação.'}</p></div></section>}
         {paid && finalized && !finalResult && <section className="paid-status is-paid"><ShieldCheck /><div><b>EDIÇÃO HOMOLOGADA</b><p>O resultado final foi fechado pelo servidor. Sua conta não entrou no ranking final elegível desta edição.</p></div></section>}
         {!paid && pending && <section className="paid-status is-pending"><RefreshCw /><div><b>PAGAMENTO EM PROCESSAMENTO</b><p>O checkout já foi criado. A inscrição só será ativada após a confirmação financeira do Asaas.</p></div></section>}
+        {!paid && reconciliation && <section className="paid-status is-pending"><LockKeyhole /><div><b>CONCILIAÇÃO FINANCEIRA</b><p>Esta inscrição possui uma pendência financeira em análise. Um novo checkout fica bloqueado nesta edição até a conciliação ser resolvida.</p></div></section>}
+        {!paid && refunded && <section className="paid-status is-pending"><RefreshCw /><div><b>REEMBOLSO REGISTRADO</b><p>O pagamento desta edição foi reembolsado. Este mesmo registro não pode ser reutilizado para uma nova cobrança.</p></div></section>}
 
         <h2 className="ch-new-title">COMO FUNCIONA</h2>
         <section className="paid-championship-grid">
@@ -197,17 +209,17 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
 
         <section className="paid-apple-disclaimer"><LockKeyhole /><div><b>APPLE / APP STORE</b><p>{APPLE_CHAMPIONSHIP_DISCLAIMER}</p></div></section>
 
-        {!paid && <section className="paid-acceptance">
+        {canStartEnrollment && <section className="paid-acceptance">
           <label><input type="checkbox" checked={rulesAccepted} onChange={(event) => setRulesAccepted(event.target.checked)} /><span><b>ACEITO O REGULAMENTO OFICIAL</b>Li as regras desta edição, incluindo elegibilidade, desempenho, antifraude, premiação, revisão, cancelamento e privacidade.</span></label>
           <label><input type="checkbox" checked={hrAccepted} onChange={(event) => setHrAccepted(event.target.checked)} /><span><b>CIÊNCIA SOBRE FREQUÊNCIA CARDÍACA</b>{COMPETITIVE_HR_FULL_TEXT}</span></label>
         </section>}
 
-        {isNativeAndroid && !paid && <section className="paid-platform-notice"><ExternalLink /><div><b>INSCRIÇÃO NO ANDROID</b><p>{ANDROID_EXTERNAL_ENROLLMENT_NOTICE}</p></div></section>}
-        {!Capacitor.isNativePlatform() && !paid && <section className="paid-platform-notice"><ExternalLink /><div><b>INSCRIÇÃO PELO SITE</b><p>O fluxo web usará a mesma conta e o mesmo backend. O botão de pagamento será habilitado quando o site oficial estiver pronto.</p></div></section>}
+        {isNativeAndroid && canStartEnrollment && <section className="paid-platform-notice"><ExternalLink /><div><b>INSCRIÇÃO NO ANDROID</b><p>{ANDROID_EXTERNAL_ENROLLMENT_NOTICE}</p></div></section>}
+        {!Capacitor.isNativePlatform() && canStartEnrollment && <section className="paid-platform-notice"><ExternalLink /><div><b>INSCRIÇÃO PELO SITE</b><p>O fluxo web usará a mesma conta e o mesmo backend. O botão de pagamento será habilitado quando o site oficial estiver pronto.</p></div></section>}
 
         {error && <p className="paid-error" role="alert">{error}</p>}
 
-        {isNativeIOS && !paid && <button
+        {isNativeIOS && canStartEnrollment && <button
           className="paid-enroll-button"
           disabled={loading || busy || !championship?.registrationOpen}
           onClick={() => void startEnrollment()}
@@ -216,7 +228,7 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
           {!busy && championship?.registrationOpen && <ExternalLink />}
         </button>}
 
-        {!paid && championship && !championship.registrationOpen && <p className="paid-readiness"><ShieldCheck /> {championship.registrationReadinessReason || 'A edição será aberta quando calendário e premiação estiverem publicados.'}</p>}
+        {canStartEnrollment && championship && !championship.registrationOpen && <p className="paid-readiness"><ShieldCheck /> {championship.registrationReadinessReason || 'A edição será aberta quando calendário e premiação estiverem publicados.'}</p>}
 
         <button className="ch-preview-back" onClick={() => navigate('/championships')}><ArrowLeft /> VOLTAR AOS CAMPEONATOS</button>
       </div>
