@@ -44,15 +44,18 @@ function mapStatus(statusServidor: string): RegistrationStatus {
     case 'paga': return 'ACTIVE';
     case 'cancelada': return 'CANCELLED';
     case 'reembolsada': return 'REFUNDED';
+    case 'contestada': return 'REJECTED';
     case 'pendente':
     default: return 'PENDING_PAYMENT';
   }
 }
 
 function mapRegistration(dados: any): ChampionshipRegistration {
+  const editionId = String(dados.editionId || '');
   return {
-    id: `${dados.userId}_${dados.championshipId}`,
+    id: String(dados.externalPaymentReference || `${dados.userId}_${editionId || dados.championshipId}`),
     championshipId: dados.championshipId,
+    editionId,
     championshipTitle: dados.championshipTitle,
     userId: dados.userId,
     status: mapStatus(dados.status),
@@ -113,13 +116,24 @@ class ChampionshipService {
   }
 
   async isUserRegistered(championshipId: string): Promise<boolean> {
-    const regs = await this.getUserRegistrations();
-    return regs.some((r) => r.championshipId === championshipId && r.status === 'ACTIVE');
+    const [regs, championship] = await Promise.all([
+      this.getUserRegistrations(),
+      this.getChampionshipById(championshipId),
+    ]);
+    if (!championship?.editionId) return false;
+    return regs.some((registration) => registration.championshipId === championshipId
+      && registration.editionId === championship.editionId
+      && registration.status === 'ACTIVE');
   }
 
   async getRegistration(championshipId: string): Promise<ChampionshipRegistration | undefined> {
-    const regs = await this.getUserRegistrations();
-    return regs.find((r) => r.championshipId === championshipId);
+    const [regs, championship] = await Promise.all([
+      this.getUserRegistrations(),
+      this.getChampionshipById(championshipId),
+    ]);
+    if (!championship?.editionId) return undefined;
+    return regs.find((registration) => registration.championshipId === championshipId
+      && registration.editionId === championship.editionId);
   }
 
   async acceptRegulation(
