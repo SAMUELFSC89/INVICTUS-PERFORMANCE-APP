@@ -64,13 +64,16 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(page).not.toContain("checkoutSurface: 'android_native'");
   });
 
-  it('mantém a abertura fail-closed até calendário, premiação e modalidade de cardio serem publicados', () => {
+  it('mantém a abertura fail-closed até calendário, homologação, premiação e modalidade de cardio serem publicados', () => {
     const catalog = read('api/_lib/championship-catalog.ts');
-    expect(catalog).toContain("PAID_CHAMPIONSHIP_REGISTRATION_ENABLED");
-    expect(catalog).toContain("A premiação oficial ainda não foi publicada.");
-    expect(catalog).toContain("As modalidades de cardio elegíveis ainda não foram publicadas.");
+    expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true');
+    expect(catalog).toContain('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED');
+    expect(catalog).toContain('A premiação oficial ainda não foi publicada ou possui posições inválidas.');
+    expect(catalog).toContain('As modalidades de cardio elegíveis ainda não foram publicadas.');
     expect(catalog).toContain('registrationOpensAt');
     expect(catalog).toContain('registrationClosesAt');
+    expect(catalog).toContain('settlementAt');
+    expect(catalog).toContain('publishedConfigDigest');
   });
 
   it('mantém a chave do Asaas exclusivamente no backend', () => {
