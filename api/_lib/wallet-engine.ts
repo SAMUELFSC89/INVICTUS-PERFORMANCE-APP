@@ -4,38 +4,42 @@ import { UserWallet, IVCoinTransaction, IVCoinCategory, IVCoinTransactionOrigin 
 export class WalletEngine {
   /**
    * Fetches user wallet balance or creates a clean initial wallet if missing.
+   *
+   * A criação precisa acontecer dentro de transação: um `set()` baseado em uma
+   * leitura antiga de "wallet inexistente" poderia sobrescrever um prêmio ou
+   * outro crédito que fosse commitado entre a leitura e a criação.
    */
   static async getWallet(userId: string): Promise<UserWallet> {
     if (!db) throw new Error('Database not initialized');
     const walletRef = db.collection('wallets').doc(userId);
-    const walletSnap = await walletRef.get();
+    const initialSnap = await walletRef.get();
 
-    if (!walletSnap.exists) {
-      // Check legacy user profile walletBalance for smooth migration
-      const userSnap = await db.collection('users').doc(userId).get();
-      let initialRedeemable = 0;
-      if (userSnap.exists) {
-        const userData = userSnap.data() || {};
-        // Migrate legacy walletBalance (already in R$) directly into the redeemable balance
-        if (userData.walletBalance && userData.walletBalance > 0) {
-          initialRedeemable = Number(userData.walletBalance);
-        }
-      }
+    if (!initialSnap.exists) {
+      const userRef = db.collection('users').doc(userId);
+      await db.runTransaction(async (transaction: any) => {
+        const [walletSnap, userSnap] = await Promise.all([
+          transaction.get(walletRef),
+          transaction.get(userRef),
+        ]);
+        if (walletSnap.exists) return;
 
-      const newWallet: UserWallet = {
-        userId,
-        totalBalance: initialRedeemable,
-        redeemableBalance: initialRedeemable,
-        ecosystemBalance: 0,
-        promotionalBalance: 0,
-        blockedBalance: 0,
-        updatedAt: new Date().toISOString()
-      };
-
-      await walletRef.set(newWallet);
-      return newWallet;
+        const userData = userSnap.exists ? userSnap.data() || {} : {};
+        const initialRedeemable = Math.max(0, Number(userData.walletBalance) || 0);
+        const createdAt = new Date().toISOString();
+        transaction.create(walletRef, {
+          userId,
+          totalBalance: initialRedeemable,
+          redeemableBalance: initialRedeemable,
+          ecosystemBalance: 0,
+          promotionalBalance: 0,
+          blockedBalance: 0,
+          updatedAt: createdAt,
+        });
+      });
     }
 
+    const walletSnap = await walletRef.get();
+    if (!walletSnap.exists) throw new Error('Carteira não encontrada após inicialização.');
     const data = walletSnap.data() || {};
     const redeemableBalance = Number(data.redeemableBalance) || 0;
     const ecosystemBalance = Number(data.ecosystemBalance) || 0;
@@ -152,7 +156,7 @@ export class WalletEngine {
       userId,
       amount,
       category: usedCategory,
-      type: 'debit',
+      type: 'credit',
       origin,
       destination,
       description,
@@ -207,6 +211,7 @@ export class WalletEngine {
       }
 
       transactionData.category = usedCategory;
+      transactionData.type = 'debit';
       const total = redeemable + ecosystem + promotional;
 
       t.set(walletRef, {
