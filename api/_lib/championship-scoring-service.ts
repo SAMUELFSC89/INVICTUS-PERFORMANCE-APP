@@ -7,6 +7,7 @@ import { hasTrustedCompetitionEvidence, readCompetitionEvidenceMetrics } from '.
 import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 import { isActiveAccountState } from './account-state.js';
+import { paidChampionshipSettlementDocumentId } from './paid-championship-edition.js';
 
 const COMMUNITY_EVENT_ID = 'community_friends_v1';
 
@@ -593,9 +594,52 @@ export function buildProvisionalChampionshipLeaderboard(
     .map((entry, index) => ({ rank: index + 1, ...entry }));
 }
 
+function frozenFinalLeaderboard(
+  championshipId: string,
+  editionId: string,
+  settlement: Record<string, any>,
+  limit: number,
+): ChampionshipLeaderboardEntry[] | null {
+  if (String(settlement.status || '') !== 'FINALIZED') return null;
+  if (String(settlement.championshipId || '') !== championshipId || String(settlement.editionId || '') !== editionId) {
+    throw new Error('FINALIZED_RANKING_IDENTITY_MISMATCH');
+  }
+  if (!Array.isArray(settlement.ranking)) throw new Error('FINALIZED_RANKING_UNAVAILABLE');
+
+  const ineligibleUserIds = new Set(
+    (Array.isArray(settlement.ineligibleFinalists) ? settlement.ineligibleFinalists : [])
+      .map((entry: any) => String(entry?.userId || ''))
+      .filter(Boolean),
+  );
+  return settlement.ranking
+    .filter((entry: any) => !ineligibleUserIds.has(String(entry?.userId || '')))
+    .slice(0, limit)
+    .map((entry: any, index: number) => ({
+      rank: index + 1,
+      userId: String(entry?.userId || ''),
+      name: String(entry?.userName || 'Atleta Invictus'),
+      gym: String(entry?.userGymName || '-'),
+      score: Math.max(0, Number(entry?.score) || 0),
+      validActivities: Math.max(0, Math.floor(Number(entry?.validActivities) || 0)),
+      totalTimeMinutes: Math.max(0, Number(entry?.totalTimeMinutes) || 0),
+      finalScoreReachedAt: String(entry?.finalScoreReachedAt || ''),
+    }));
+}
+
 export async function getChampionshipLeaderboard(championshipId: string, limit = 50): Promise<ChampionshipLeaderboardEntry[]> {
   const championship = getChampionship(championshipId);
   if (!championship) return [];
+  const editionId = String(championship.editionId || '');
+  if (editionId) {
+    const settlementSnap = await db.collection('championship_settlements')
+      .doc(paidChampionshipSettlementDocumentId(editionId))
+      .get();
+    if (settlementSnap.exists) {
+      const frozen = frozenFinalLeaderboard(championshipId, editionId, settlementSnap.data() || {}, limit);
+      if (frozen) return frozen;
+    }
+  }
+
   const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
   const scores: Array<Record<string, any>> = [];
   snap.forEach((doc) => {
