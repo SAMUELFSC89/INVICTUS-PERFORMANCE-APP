@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth } from '../_lib/common.js';
 import { isActiveAccountState } from '../_lib/account-state.js';
+import { isCurrentCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
 import { logEvent } from '../_lib/observability.js';
+import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 
 const REPORT_RATE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const REPORT_RATE_MAX = 5;
@@ -101,9 +103,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const suspectGymId = profileGymId(suspect);
     const reporterRankingGymId = String(reporterEnrollment.gymId || '').trim();
     const suspectRankingGymId = String(suspectEnrollment.gymId || '').trim();
+    const reporterAcknowledged = isCurrentCompetitiveHrAcknowledgement(
+      reporterEnrollment,
+      'gym_ranking',
+      COMPETITION_RULES_VERSIONS.gym_ranking,
+    );
+    const suspectAcknowledged = isCurrentCompetitiveHrAcknowledgement(
+      suspectEnrollment,
+      'gym_ranking',
+      COMPETITION_RULES_VERSIONS.gym_ranking,
+    );
 
     const sameActiveRanking = reporterEnrollment.enrolled === true
       && suspectEnrollment.enrolled === true
+      && reporterAcknowledged
+      && suspectAcknowledged
       && reporterGymId
       && reporterGymId === suspectGymId
       && reporterRankingGymId === reporterGymId
