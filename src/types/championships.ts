@@ -1,7 +1,17 @@
 export type ChampionshipType = 'arena_musculacao' | 'run_elite_corrida';
 export type ChampionshipStatus = 'upcoming' | 'active' | 'in_review' | 'finished';
 export type RegistrationStatus = 'PENDING_PAYMENT' | 'ACTIVE' | 'CANCELLED' | 'REFUNDED' | 'REJECTED';
-export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+export type PaymentStatus =
+  | 'PENDING'
+  | 'PAID'
+  | 'FAILED'
+  | 'REFUNDED'
+  | 'RECONCILIATION_REQUIRED'
+  | 'PAYMENT_PARTIALLY_REFUNDED'
+  | 'PAYMENT_REFUND_IN_PROGRESS'
+  | 'PAYMENT_CHARGEBACK_REQUESTED'
+  | 'PAYMENT_CHARGEBACK_DISPUTE'
+  | 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL';
 export type ChampionshipSettlementStatus = 'NOT_DUE' | 'PENDING_REVIEW' | 'LOCKED' | 'FINALIZED';
 
 export interface PrizeRank {
