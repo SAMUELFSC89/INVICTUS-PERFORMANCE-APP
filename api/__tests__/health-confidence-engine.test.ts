@@ -26,7 +26,7 @@ describe('Invictus Health Confidence Engine', () => {
     expect(result.evidenceReferences.some((item) => item.id === 'apple-watch-living-review-2026')).toBe(false);
   });
 
-  test('Health Connect Samsung identificado mantém proveniência técnica', () => {
+  test('Health Connect Samsung explicitamente atestado mantém proveniência técnica', () => {
     const provenance = { integration: 'HEALTH_CONNECT' as const, dataOrigin: 'com.samsung.android.health', deviceManufacturer: 'Samsung', deviceModel: 'Galaxy Watch6', deviceType: 'watch', status: 'VERIFIED_DEVICE' as const };
     const result = assessHealthConfidence({ metricType: 'heart_rate', provenance, measurementContext: 'exercise' });
     expect(result.provenanceStatus).toBe('VERIFIED_DEVICE');
@@ -45,15 +45,19 @@ describe('Invictus Health Confidence Engine', () => {
     const provenance = { integration: 'HEALTH_CONNECT' as const, deviceManufacturer: 'Samsung', deviceModel: 'Galaxy Watch7', status: 'USER_DECLARED_DEVICE' as const };
     const result = assessHealthConfidence({ metricType: 'heart_rate', provenance });
     expect(result.provenanceStatus).toBe('USER_DECLARED_DEVICE');
-    expect(result.limitations.join(' ')).toContain('informado pelo usuário');
+    expect(result.limitations.join(' ')).toContain('não foi confirmado');
   });
 
-  test('automático vence conflito manual para novos registros', () => {
-    expect(deriveProvenanceStatus({ integration: 'HEALTH_CONNECT', deviceManufacturer: 'Samsung', deviceModel: 'Galaxy Watch6' })).toBe('VERIFIED_DEVICE');
+  test('metadata de dispositivo recebida do cliente nunca vira atestação automaticamente', () => {
+    expect(deriveProvenanceStatus({ integration: 'HEALTH_CONNECT', deviceManufacturer: 'Samsung', deviceModel: 'Galaxy Watch6' })).toBe('USER_DECLARED_DEVICE');
   });
 
-  test('productType técnico do HealthKit identifica a origem sem inventar modelo', () => {
-    expect(deriveProvenanceStatus({ integration: 'APPLE_HEALTH', sourceProductType: 'Watch6,18' })).toBe('VERIFIED_DEVICE');
+  test('productType técnico reportado pelo cliente identifica contexto sem virar VERIFIED_DEVICE', () => {
+    expect(deriveProvenanceStatus({ integration: 'APPLE_HEALTH', sourceProductType: 'Watch6,18' })).toBe('USER_DECLARED_DEVICE');
+  });
+
+  test('ausência de metadata de hardware continua UNKNOWN_DEVICE', () => {
+    expect(deriveProvenanceStatus({ integration: 'APPLE_HEALTH', dataOrigin: 'com.apple.health' })).toBe('UNKNOWN_DEVICE');
   });
 
   test('troca de relógio é avaliada por amostra e não por perfil global', () => {
