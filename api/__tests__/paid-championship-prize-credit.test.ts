@@ -48,8 +48,12 @@ function createDb() {
   };
 }
 
+const EDITION_A = 'invictus_cardio_v1_ed_a';
+const EDITION_B = 'invictus_cardio_v1_ed_b';
+
 const input = (extra: Partial<ChampionshipPrizeCreditInput> = {}): ChampionshipPrizeCreditInput => ({
   championshipId: 'invictus_cardio_v1',
+  editionId: EDITION_A,
   championshipTitle: 'Campeonato Invictus de Cardio',
   regulationVersion: 'invictus-cardio-v1',
   regulationHash: 'rules-digest-123',
@@ -59,18 +63,23 @@ const input = (extra: Partial<ChampionshipPrizeCreditInput> = {}): ChampionshipP
   ...extra,
 });
 
+function seedPaidRegistration(editionId: string, regulationHash = 'rules-digest-123') {
+  mockDb.store.set(`championship_registrations/user-a_${editionId}`, {
+    userId: 'user-a',
+    championshipId: 'invictus_cardio_v1',
+    editionId,
+    status: 'paga',
+    paymentStatus: 'PAID',
+    regulationVersion: 'invictus-cardio-v1',
+    regulationHash,
+  });
+}
+
 describe('paid championship cash prize settlement', () => {
   beforeEach(() => {
     mockDb = createDb();
     mockDb.store.set('users/user-a', { status: 'active', walletBalance: 25 });
-    mockDb.store.set('championship_registrations/user-a_invictus_cardio_v1', {
-      userId: 'user-a',
-      championshipId: 'invictus_cardio_v1',
-      status: 'paga',
-      paymentStatus: 'PAID',
-      regulationVersion: 'invictus-cardio-v1',
-      regulationHash: 'rules-digest-123',
-    });
+    seedPaidRegistration(EDITION_A);
   });
 
   test('credita reais sacáveis uma única vez e preserva saldo legado ao criar a wallet', async () => {
@@ -91,43 +100,39 @@ describe('paid championship cash prize settlement', () => {
       category: 'redeemable',
       origin: 'championship',
       type: 'credit',
+      editionId: EDITION_A,
     });
     expect(mockDb.store.get(`championship_prize_settlements/${championshipPrizeSettlementId(request)}`)).toMatchObject({
       status: 'CREDITED',
+      editionId: EDITION_A,
       balanceBefore: 25,
       balanceAfter: 525,
     });
-    const award = mockDb.store.get(`championship_prize_awards/${championshipPrizeAwardId(request.championshipId, request.userId)}`);
+    const award = mockDb.store.get(`championship_prize_awards/${championshipPrizeAwardId(request.editionId, request.userId)}`);
     expect(award).toMatchObject({
       championshipId: request.championshipId,
+      editionId: request.editionId,
       userId: request.userId,
       rank: 1,
       amount: 500,
       status: 'CREDITED',
       transactionId: championshipPrizeTransactionId(request),
     });
-    // Risco financeiro é sempre derivado da inscrição canônica vigente; não
-    // duplicamos um campo CLEAR/PENDING que poderia ficar obsoleto no award.
     expect(award).not.toHaveProperty('financialRiskStatus');
   });
 
   test('refund ou perda de elegibilidade cria marker definitivo sem pagar', async () => {
-    mockDb.store.set('championship_registrations/user-a_invictus_cardio_v1', {
-      ...mockDb.store.get('championship_registrations/user-a_invictus_cardio_v1'),
+    mockDb.store.set(`championship_registrations/user-a_${EDITION_A}`, {
+      ...mockDb.store.get(`championship_registrations/user-a_${EDITION_A}`),
       status: 'reembolsada', paymentStatus: 'REFUNDED',
     });
     const request = input();
     const first = await creditChampionshipPrize(request);
     expect(first).toMatchObject({ credited: false, alreadyCredited: false, ineligible: true });
     expect(mockDb.store.has('wallets/user-a')).toBe(false);
-    expect(mockDb.store.has(`championship_prize_awards/${championshipPrizeAwardId(request.championshipId, request.userId)}`)).toBe(false);
+    expect(mockDb.store.has(`championship_prize_awards/${championshipPrizeAwardId(request.editionId, request.userId)}`)).toBe(false);
 
-    // Mesmo que o perfil/registro seja alterado depois, o retry antigo não
-    // transforma uma inelegibilidade já homologada em novo pagamento.
-    mockDb.store.set('championship_registrations/user-a_invictus_cardio_v1', {
-      userId: 'user-a', championshipId: 'invictus_cardio_v1', status: 'paga', paymentStatus: 'PAID',
-      regulationVersion: 'invictus-cardio-v1', regulationHash: 'rules-digest-123',
-    });
+    seedPaidRegistration(EDITION_A);
     const retry = await creditChampionshipPrize(request);
     expect(retry).toMatchObject({ credited: false, alreadyCredited: false, ineligible: true });
     expect(mockDb.store.has('wallets/user-a')).toBe(false);
@@ -145,5 +150,18 @@ describe('paid championship cash prize settlement', () => {
     await creditChampionshipPrize(first);
     await expect(creditChampionshipPrize(input({ amount: 600 }))).rejects.toThrow(/Conflito no (award|settlement) de prêmio/);
     expect(mockDb.store.get('wallets/user-a')).toMatchObject({ redeemableBalance: 525 });
+  });
+
+  test('mesmo atleta pode receber prêmio em edição posterior sem colisão de ledger', async () => {
+    await creditChampionshipPrize(input({ editionId: EDITION_A, amount: 500 }));
+    seedPaidRegistration(EDITION_B, 'rules-digest-456');
+    const second = input({ editionId: EDITION_B, regulationHash: 'rules-digest-456', amount: 300 });
+    const result = await creditChampionshipPrize(second);
+
+    expect(result).toMatchObject({ credited: true, alreadyCredited: false, ineligible: false });
+    expect(result.transactionId).not.toBe(championshipPrizeTransactionId(input({ editionId: EDITION_A, amount: 500 })));
+    expect(mockDb.store.get('wallets/user-a')).toMatchObject({ redeemableBalance: 825 });
+    expect(mockDb.store.get(`championship_prize_awards/${championshipPrizeAwardId(EDITION_A, 'user-a')}`)).toBeTruthy();
+    expect(mockDb.store.get(`championship_prize_awards/${championshipPrizeAwardId(EDITION_B, 'user-a')}`)).toBeTruthy();
   });
 });
