@@ -53,32 +53,39 @@ describe('paid championship final settlement', () => {
     expect(ranking[0]).toMatchObject({ userId: 'ok', score: 10, validActivities: 1 });
   });
 
-  test('capacidade só é considerada implementada com calendário/digest e settlement fail-closed', () => {
+  test('capacidade só é considerada implementada com calendário, editionId, digest e settlement fail-closed', () => {
     const catalog = read('api/_lib/championship-catalog.ts');
     const settlement = read('api/_lib/paid-championship-settlement.ts');
     const credit = read('api/_lib/championship-prize-credit.ts');
+    const edition = read('api/_lib/paid-championship-edition.ts');
     const policy = read('shared/paidChampionshipPolicy.ts');
 
     expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true');
     expect(catalog).toContain('CHAMPIONSHIP_STRENGTH_SETTLEMENT_AT');
     expect(catalog).toContain('publishedConfigDigest');
+    expect(catalog).toContain('editionId');
     expect(catalog).toContain("regulationHash: `${offer.regulationHash}-${publishedConfigDigest.slice(0, 16)}`");
     expect(settlement).toContain('FINANCIAL_REVIEW_PENDING');
     expect(settlement).toContain('ACTIVITY_REVIEW_PENDING');
     expect(settlement).toContain('COMPETITION_DATA_MISMATCH');
     expect(settlement).toContain('UNRESOLVED_PRIZE_TIE');
     expect(settlement).toContain("status: 'LOCKED'");
+    expect(settlement).toContain('paidChampionshipSettlementDocumentId(editionId)');
+    expect(settlement).toContain('editionId,');
     expect(settlement).not.toContain('finalizeDuePaidChampionships');
     expect(credit).toContain("category: 'redeemable'");
     expect(credit).toContain("origin: 'championship'");
     expect(credit).toContain("registration.status === 'paga'");
     expect(credit).toContain("registration.paymentStatus === 'PAID'");
+    expect(credit).toContain('registration.editionId === input.editionId');
+    expect(edition).toContain("db.collection('championship_editions').doc(championship.editionId)");
+    expect(edition).toContain("previousSettlement.data()?.status !== 'FINALIZED'");
     expect(policy).toContain('maior número de atividades válidas');
     expect(policy).toContain('maior total de minutos válidos');
     expect(policy).toContain('quem atingiu a pontuação final primeiro');
   });
 
-  test('cron protegido tenta settlement diariamente e possui retomada de snapshot congelado', () => {
+  test('cron protegido tenta settlement diariamente e retoma somente a edição travada', () => {
     const vercel = read('vercel.json');
     const handler = read('api/_handlers/gym-championship-payout-cron.ts');
     const orchestrator = read('api/_lib/paid-championship-settlement-orchestrator.ts');
@@ -93,6 +100,8 @@ describe('paid championship final settlement', () => {
     expect(orchestrator).toContain('resumeLockedPaidChampionship');
     expect(orchestrator).toContain('executionLeaseToken');
     expect(orchestrator).toContain('FINALIZED_CONFIG_MISMATCH');
-    expect(orchestrator).toContain('stored.configDigest !== configured.publishedConfigDigest');
+    expect(orchestrator).toContain('getLockedChampionshipSnapshot(configured.id)');
+    expect(orchestrator).toContain('ACTIVE_EDITION_CONFIG_MISMATCH');
+    expect(orchestrator).toContain('paidChampionshipSettlementDocumentId(locked.editionId)');
   });
 });
