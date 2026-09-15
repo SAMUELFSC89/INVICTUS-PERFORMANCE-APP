@@ -75,24 +75,18 @@ function athleteFinalResult(champ: any, settlement: Record<string, any>, userId:
   const index = ranking.findIndex((entry: any) => String(entry?.userId || '') === userId);
   if (index < 0) return null;
 
+  const ineligibleFinalists = Array.isArray(settlement.ineligibleFinalists) ? settlement.ineligibleFinalists : [];
+  const ineligibleUserIds = new Set(ineligibleFinalists.map((entry: any) => String(entry?.userId || '')).filter(Boolean));
+  if (ineligibleUserIds.has(userId)) return null;
+
   const assignments = Array.isArray(settlement.winnerAssignments) ? settlement.winnerAssignments : [];
   const assignment = assignments.find((entry: any) => String(entry?.userId || '') === userId);
-  const assignedUserIds = new Set(assignments.map((entry: any) => String(entry?.userId || '')).filter(Boolean));
-  const assignedFrozenIndexes = assignments
-    .map((entry: any) => ranking.findIndex((candidate: any) => String(candidate?.userId || '') === String(entry?.userId || '')))
-    .filter((candidateIndex: number) => candidateIndex >= 0);
-  const lastAssignedFrozenIndex = assignedFrozenIndexes.length ? Math.max(...assignedFrozenIndexes) : -1;
-
-  const skippedIndexes = new Set<number>();
-  for (let candidateIndex = 0; candidateIndex <= lastAssignedFrozenIndex; candidateIndex += 1) {
-    const candidateUserId = String(ranking[candidateIndex]?.userId || '');
-    if (candidateUserId && !assignedUserIds.has(candidateUserId)) skippedIndexes.add(candidateIndex);
-  }
-  if (skippedIndexes.has(index)) return null;
-
-  const skippedBefore = [...skippedIndexes].filter((candidateIndex) => candidateIndex < index).length;
+  const ineligibleFrozenRanks = ineligibleFinalists
+    .map((entry: any) => Number(entry?.frozenRank))
+    .filter((rank: number) => Number.isInteger(rank) && rank > 0);
+  const skippedBefore = ineligibleFrozenRanks.filter((frozenRank: number) => frozenRank < index + 1).length;
   const adjustedRank = Math.max(1, index + 1 - skippedBefore);
-  const adjustedParticipants = Math.max(0, ranking.length - skippedIndexes.size);
+  const adjustedParticipants = Math.max(0, ranking.length - new Set(ineligibleFinalists.map((entry: any) => String(entry?.userId || '')).filter(Boolean)).size);
 
   return {
     championshipId: champ.id,
