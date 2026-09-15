@@ -1,6 +1,13 @@
 import { db } from './common.js';
 import { calculateWeeklyIGA, IGASession, IGAUserProfile, IGACalculationResult } from '../../src/core/iga/index.js';
 import { computeWindowAverageIGA } from '../../src/core/iga/windowAverage.js';
+import {
+  resolveCompetitionTimeZone,
+  zonedAddCalendarDays,
+  zonedStartOfMonth,
+  zonedStartOfNextMonth,
+  zonedStartOfWeek,
+} from '../../src/core/time/competitionTime.js';
 import { getOrInitCurrentSeasonWindow } from './season-prize-engine.js';
 import {
   hasTrustedCompetitionEvidence,
@@ -8,6 +15,8 @@ import {
 } from './competition-evidence.js';
 import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
+
+const COMPETITION_TIME_ZONE = resolveCompetitionTimeZone(process.env.COMPETITION_TIME_ZONE);
 
 /**
  * FONTE UNICA DE PONTUACAO DE RANKING.
@@ -27,16 +36,10 @@ import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePol
  * janela, nao a mesma formula aplicada de uma vez sobre o periodo inteiro
  * (isso derrubaria Fn pra quem treinou mais de 5 vezes no mes/temporada
  * inteiros). Decisao confirmada com o usuario em 2026-08-27.
+ *
+ * As fronteiras de semana/mes/temporada sao calculadas no timezone competitivo
+ * explicito. Nunca dependem do timezone local do runtime serverless.
  */
-
-function mondayOf(date: Date): Date {
-  const d = new Date(date);
-  const dayOfWeek = d.getDay(); // 0 = domingo
-  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  d.setDate(d.getDate() + diffToMonday);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
 
 interface DatedSession extends IGASession {
   createdAt: Date;
@@ -49,11 +52,12 @@ interface GymRankingEnrollmentEpoch {
 }
 
 /**
- * Busca TODOS os treinos do usuario com createdAt dentro de [earliestNeeded, agora]
- * numa unica ida ao Firestore. As tres janelas (semana/mes/temporada) recortam
- * essa mesma lista em memoria -- antes desta funcao existir, cada semana
- * calculada (ate ~10 por recalculo) refazia a query inteira do usuario no
- * Firestore, multiplicando leituras desnecessariamente.
+ * Busca TODOS os treinos do usuario e recorta a partir de earliestNeeded em
+ * memoria. A query histórica completa ainda existe por compatibilidade com
+ * atividades legadas que não possuem um único campo temporal indexável.
+ *
+ * TODO de escala: migrar o legado para um instante competitivo canônico e
+ * então aplicar o limite temporal diretamente no Firestore.
  */
 async function fetchAllSessionsSince(
   userId: string,
@@ -136,7 +140,7 @@ async function fetchAllSessionsSince(
 function sliceSessions(all: DatedSession[], start: Date, end: Date): IGASession[] {
   return all
     .filter((s) => s.createdAt >= start && s.createdAt < end)
-    .map(({ createdAt, ...session }) => session);
+    .map(({ createdAt: _createdAt, ...session }) => session);
 }
 
 async function buildProfile(userId: string, userData: any): Promise<IGAUserProfile> {
@@ -148,15 +152,14 @@ async function buildProfile(userId: string, userData: any): Promise<IGAUserProfi
   };
 }
 
-/** Calcula o IGA de UMA semana (Monday 00:00 -> Monday+7 00:00) a partir de uma lista ja carregada. */
+/** Calcula o IGA de UMA semana competitiva (segunda 00:00 -> segunda seguinte 00:00). */
 function computeWeekIGA(
   allSessions: DatedSession[],
   weekStart: Date,
   profile: IGAUserProfile,
   extraSession?: IGASession
 ): IGACalculationResult {
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekEnd = zonedAddCalendarDays(weekStart, 7, COMPETITION_TIME_ZONE);
 
   const sessions = sliceSessions(allSessions, weekStart, weekEnd);
   if (extraSession) sessions.push(extraSession);
@@ -212,9 +215,9 @@ export async function recalculateAllUserScores(
     : null;
 
   const now = new Date();
-  const currentWeekStart = mondayOf(now);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const currentWeekStart = zonedStartOfWeek(now, COMPETITION_TIME_ZONE);
+  const monthStart = zonedStartOfMonth(now, COMPETITION_TIME_ZONE);
+  const monthEnd = zonedStartOfNextMonth(now, COMPETITION_TIME_ZONE);
 
   let seasonWindow: { seasonId: string; startDate: Date; endDate: Date } | null = null;
   try {
@@ -246,7 +249,7 @@ export async function recalculateAllUserScores(
     monthStart,
     monthEnd,
     profile,
-    { activeFrom: enrollment?.enrolledAt, now },
+    { activeFrom: enrollment?.enrolledAt, now, timeZone: COMPETITION_TIME_ZONE },
   );
 
   const season: RecalculatedScores['season'] = seasonWindow
@@ -256,7 +259,7 @@ export async function recalculateAllUserScores(
           seasonWindow.startDate,
           seasonWindow.endDate,
           profile,
-          { activeFrom: enrollment?.enrolledAt, now },
+          { activeFrom: enrollment?.enrolledAt, now, timeZone: COMPETITION_TIME_ZONE },
         ),
         seasonId: seasonWindow.seasonId,
       }
