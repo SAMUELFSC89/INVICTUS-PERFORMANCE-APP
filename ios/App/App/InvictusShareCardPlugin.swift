@@ -27,7 +27,7 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            let requestedName = call.getString("fileName") ?? "invictus-atividade.png"
+            let requestedName = call.getString("fileName") ?? "invictus-atividade.jpg"
             let safeName = self.safeFileName(requestedName)
             let shareDirectory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("invictus-share-\(UUID().uuidString)", isDirectory: true)
@@ -74,7 +74,7 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                 PHPhotoLibrary.shared().performChanges({
                     let request = PHAssetCreationRequest.forAsset()
                     let options = PHAssetResourceCreationOptions()
-                    options.originalFilename = self.safeFileName(call.getString("fileName") ?? "invictus-atividade.png")
+                    options.originalFilename = self.safeFileName(call.getString("fileName") ?? "invictus-atividade.jpg")
                     request.addResource(with: .photo, data: data, options: options)
                 }) { success, error in
                     if success { call.resolve() }
@@ -139,17 +139,17 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
                 configuration.rect = CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
                 configuration.afterScreenUpdates = true
 
-                // O snapshot é renderizado pelo próprio WebKit, como o preview/screenshot
-                // nativo. Isso evita rasterizar o DOM via SVG foreignObject (html-to-image),
-                // que era a fonte da perda de nitidez no iOS.
+                // Story/social export: 1080px de largura já é o tamanho de entrega
+                // das principais redes. O WebKit preserva texto nítido e JPEG 94%
+                // evita PNGs de dezenas de MB quando o card contém foto/mapa.
                 configuration.snapshotWidth = NSNumber(value: 1080)
 
                 webView.takeSnapshot(with: configuration) { image, _ in
-                    guard let image, let png = image.pngData() else {
+                    guard let image, let jpeg = image.jpegData(compressionQuality: 0.94) else {
                         completion(nil)
                         return
                     }
-                    completion(png)
+                    completion(jpeg)
                 }
             }
         }
@@ -167,6 +167,11 @@ public class InvictusShareCardPlugin: CAPPlugin, CAPBridgedPlugin {
             options: .regularExpression
         )
         let nonEmpty = sanitized.isEmpty ? "invictus-atividade" : sanitized
-        return nonEmpty.lowercased().hasSuffix(".png") ? nonEmpty : nonEmpty + ".png"
+        let lower = nonEmpty.lowercased()
+        if lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") { return nonEmpty }
+        if lower.hasSuffix(".png") {
+            return String(nonEmpty.dropLast(4)) + ".jpg"
+        }
+        return nonEmpty + ".jpg"
     }
 }
