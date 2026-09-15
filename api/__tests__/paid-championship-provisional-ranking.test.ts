@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 jest.mock('../_lib/common', () => ({ db: {} }));
 jest.mock('../_lib/championship-catalog', () => ({
   getChampionship: jest.fn(),
@@ -13,8 +16,13 @@ jest.mock('../_lib/competitive-heart-rate-acknowledgement', () => ({
   isCurrentCompetitiveHrAcknowledgement: jest.fn(() => true),
 }));
 jest.mock('../_lib/account-state', () => ({ isActiveAccountState: jest.fn(() => true) }));
+jest.mock('../_lib/paid-championship-edition', () => ({
+  paidChampionshipSettlementDocumentId: jest.fn((editionId: string) => `settlement_${editionId}`),
+}));
 
 import { buildProvisionalChampionshipLeaderboard } from '../_lib/championship-scoring-service';
+
+const read = (relativePath: string) => fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
 
 describe('paid championship provisional ranking', () => {
   test('uses the published final tie-break order: score, activities, minutes, final-score time', () => {
@@ -59,5 +67,26 @@ describe('paid championship provisional ranking', () => {
 
     expect(ranking).toHaveLength(1);
     expect(ranking[0]).toMatchObject({ userId: 'ok', score: 10, validActivities: 1 });
+  });
+
+  test('finalized leaderboard is read from the frozen settlement before live scores', () => {
+    const source = read('api/_lib/championship-scoring-service.ts');
+    const handlerStart = source.indexOf('export async function getChampionshipLeaderboard');
+    const handler = source.slice(handlerStart);
+    expect(handler).toContain("db.collection('championship_settlements')");
+    expect(handler).toContain('paidChampionshipSettlementDocumentId(editionId)');
+    expect(handler).toContain('if (frozen) return frozen;');
+    expect(handler.indexOf("db.collection('championship_settlements')"))
+      .toBeLessThan(handler.indexOf("db.collection('championship_scores')"));
+
+    const frozenStart = source.indexOf('function frozenFinalLeaderboard');
+    const frozenEnd = source.indexOf('export async function getChampionshipLeaderboard', frozenStart);
+    const frozen = source.slice(frozenStart, frozenEnd);
+    expect(frozen).toContain("String(settlement.status || '') !== 'FINALIZED'");
+    expect(frozen).toContain('FINALIZED_RANKING_IDENTITY_MISMATCH');
+    expect(frozen).toContain('FINALIZED_RANKING_UNAVAILABLE');
+    expect(frozen).not.toContain('configDigest');
+    expect(frozen).not.toContain('transactionId');
+    expect(frozen).not.toContain('prizeDistribution');
   });
 });
