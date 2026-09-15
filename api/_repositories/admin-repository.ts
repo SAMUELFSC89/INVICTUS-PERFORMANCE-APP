@@ -3,6 +3,7 @@ import { db } from '../_lib/common.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { recalculateAllUserScores } from '../_lib/igaService.js';
 import { syncReviewedActivityCompetitionScores } from '../_lib/championship-scoring-service.js';
+import { readCompetitionEvidenceMetrics } from '../_lib/competition-evidence.js';
 
 export class AdminRepository extends BaseRepository<any> {
   constructor() {
@@ -84,6 +85,18 @@ export class AdminRepository extends BaseRepository<any> {
       const athleteData = athleteSnap.exists ? athleteSnap.data() || {} : {};
       const workoutData = workoutSnap.data() || {};
       const isVersionedActivity = Number(workoutData.schemaVersion) >= 2;
+      const trustedCompetitionMetrics = isVersionedActivity
+        ? readCompetitionEvidenceMetrics(workoutData)
+        : null;
+      const competitionEligibleAfterReview = status === 'valid'
+        && (!isVersionedActivity || Boolean(trustedCompetitionMetrics));
+      const effectiveCompetitionStatus = status === 'valid'
+        ? competitionEligibleAfterReview ? 'approved' : 'ineligible'
+        : 'rejected';
+      const effectiveReason = status === 'valid'
+        ? competitionEligibleAfterReview ? null : 'MISSING_TRUSTED_COMPETITION_EVIDENCE'
+        : 'ADMIN_REJECTED';
+      const effectiveCompetitionPoints = competitionEligibleAfterReview ? adjustedPoints : 0;
       const retryingProjection = isVersionedActivity
         && workoutData.competitionProjectionStatus === 'pending'
         && workoutData.adminReviewDecision === status;
@@ -106,13 +119,13 @@ export class AdminRepository extends BaseRepository<any> {
       transaction.update(workoutRef, {
         ...(isVersionedActivity ? {
           status: 'completed',
-          validationStatus: status === 'valid' ? 'validated' : 'rejected',
-          competitionReviewStatus: status === 'valid' ? 'approved' : 'rejected',
-          competitionStatus: status === 'valid' ? 'approved' : 'rejected',
-          competitionPoints: status === 'valid' ? adjustedPoints : 0,
-          isScoringEligible: status === 'valid',
-          nonScoringReason: status === 'valid' ? null : 'ADMIN_REJECTED',
-          rejectionReason: status === 'valid' ? null : 'ADMIN_REJECTED',
+          validationStatus: competitionEligibleAfterReview ? 'validated' : status === 'valid' ? 'not_eligible' : 'rejected',
+          competitionReviewStatus: effectiveCompetitionStatus,
+          competitionStatus: effectiveCompetitionStatus,
+          competitionPoints: effectiveCompetitionPoints,
+          isScoringEligible: competitionEligibleAfterReview,
+          nonScoringReason: effectiveReason,
+          rejectionReason: effectiveReason,
           competitionProjectionStatus: 'pending',
           adminReviewDecision: status,
         } : {
@@ -131,9 +144,9 @@ export class AdminRepository extends BaseRepository<any> {
 
       entriesSnap.docs.forEach((entry: any) => {
         transaction.set(entry.ref, {
-          reviewStatus: status === 'valid' ? 'approved' : 'rejected',
-          competitionPoints: status === 'valid' ? adjustedPoints : 0,
-          reasonCode: status === 'valid' ? null : 'ADMIN_REJECTED',
+          reviewStatus: isVersionedActivity ? effectiveCompetitionStatus : status === 'valid' ? 'approved' : 'rejected',
+          competitionPoints: isVersionedActivity ? effectiveCompetitionPoints : status === 'valid' ? adjustedPoints : 0,
+          reasonCode: isVersionedActivity ? effectiveReason : status === 'valid' ? null : 'ADMIN_REJECTED',
           reviewedBy: reviewerId,
           reviewedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -152,8 +165,9 @@ export class AdminRepository extends BaseRepository<any> {
         reviewerId,
         originalStatus: workoutData.competitionReviewStatus || workoutData.status,
         newStatus: status,
+        competitionStatusAfter: isVersionedActivity ? effectiveCompetitionStatus : status,
         pointsBefore: previousPoints,
-        pointsAfter: adjustedPoints,
+        pointsAfter: isVersionedActivity ? effectiveCompetitionPoints : adjustedPoints,
         resolution,
         timestamp: new Date().toISOString(),
         createdAt: FieldValue.serverTimestamp()
