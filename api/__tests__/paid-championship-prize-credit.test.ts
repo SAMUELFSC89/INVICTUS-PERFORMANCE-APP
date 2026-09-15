@@ -97,15 +97,18 @@ describe('paid championship cash prize settlement', () => {
       balanceBefore: 25,
       balanceAfter: 525,
     });
-    expect(mockDb.store.get(`championship_prize_awards/${championshipPrizeAwardId(request.championshipId, request.userId)}`)).toMatchObject({
+    const award = mockDb.store.get(`championship_prize_awards/${championshipPrizeAwardId(request.championshipId, request.userId)}`);
+    expect(award).toMatchObject({
       championshipId: request.championshipId,
       userId: request.userId,
       rank: 1,
       amount: 500,
       status: 'CREDITED',
-      financialRiskStatus: 'CLEAR',
       transactionId: championshipPrizeTransactionId(request),
     });
+    // Risco financeiro é sempre derivado da inscrição canônica vigente; não
+    // duplicamos um campo CLEAR/PENDING que poderia ficar obsoleto no award.
+    expect(award).not.toHaveProperty('financialRiskStatus');
   });
 
   test('refund ou perda de elegibilidade cria marker definitivo sem pagar', async () => {
