@@ -45,10 +45,12 @@ function policyFor(feature: AiQuotaFeature): FeaturePolicy {
   };
 }
 
-function quotaDocId(userId: string, feature: AiQuotaFeature, bucket: 'burst' | 'daily', windowStart: number): string {
-  return createHash('sha256')
-    .update(`${userId}\u0000${feature}\u0000${bucket}\u0000${windowStart}`)
-    .digest('hex');
+function quotaDocId(userId: string, feature: AiQuotaFeature): string {
+  return createHash('sha256').update(`${userId}\u0000${feature}`).digest('hex');
+}
+
+function windowStart(now: number, windowMs: number): number {
+  return Math.floor(now / windowMs) * windowMs;
 }
 
 export interface AiQuotaDecision {
@@ -60,11 +62,10 @@ export interface AiQuotaDecision {
 /**
  * Distributed fixed-window quota for paid AI calls.
  *
- * A serverless in-memory limiter is not authoritative because requests can land
- * on different Vercel instances. This transaction stores one counter per
- * user/feature/window and increments burst + daily buckets atomically. If the
- * quota store is unavailable we fail closed: paid AI is optional enrichment,
- * while deterministic product paths remain available to callers.
+ * One Firestore document is reused for each user+feature pair. Burst and daily
+ * counters reset in-place when their fixed window changes, so storage remains
+ * bounded even for highly active accounts. The transaction is authoritative
+ * across Vercel instances; if it cannot be verified, paid AI fails closed.
  */
 export async function consumeAiQuota(userId: string, feature: AiQuotaFeature): Promise<AiQuotaDecision> {
   if (!userId || !isDbAvailable()) {
@@ -73,49 +74,49 @@ export async function consumeAiQuota(userId: string, feature: AiQuotaFeature): P
 
   const now = Date.now();
   const policy = policyFor(feature);
-  const buckets = (['burst', 'daily'] as const).map((name) => {
-    const config = policy[name];
-    const windowStart = Math.floor(now / config.windowMs) * config.windowMs;
-    const windowEnd = windowStart + config.windowMs;
-    const ref = db.collection('ai_quota_windows').doc(quotaDocId(userId, feature, name, windowStart));
-    return { name, config, windowStart, windowEnd, ref };
-  });
+  const burstStart = windowStart(now, policy.burst.windowMs);
+  const dailyStart = windowStart(now, policy.daily.windowMs);
+  const ref = db.collection('ai_quota_counters').doc(quotaDocId(userId, feature));
 
   try {
     return await db.runTransaction(async (transaction: any) => {
-      const snapshots = await Promise.all(buckets.map((bucket) => transaction.get(bucket.ref)));
-      let retryAfterSeconds = 0;
+      const snapshot = await transaction.get(ref);
+      const data = snapshot.exists ? snapshot.data() || {} : {};
 
-      for (let index = 0; index < buckets.length; index += 1) {
-        const bucket = buckets[index];
-        const data = snapshots[index]?.exists ? snapshots[index].data() || {} : {};
-        const count = Math.max(0, Number(data.count) || 0);
-        if (count >= bucket.config.maxRequests) {
-          retryAfterSeconds = Math.max(retryAfterSeconds, Math.ceil((bucket.windowEnd - now) / 1000));
-        }
-      }
+      const storedBurstStart = Number(data.burstWindowStart);
+      const storedDailyStart = Number(data.dailyWindowStart);
+      const burstCount = storedBurstStart === burstStart ? Math.max(0, Number(data.burstCount) || 0) : 0;
+      const dailyCount = storedDailyStart === dailyStart ? Math.max(0, Number(data.dailyCount) || 0) : 0;
 
-      if (retryAfterSeconds > 0) {
-        return { allowed: false, retryAfterSeconds, reason: 'quota_exceeded' as const };
+      const burstExceeded = burstCount >= policy.burst.maxRequests;
+      const dailyExceeded = dailyCount >= policy.daily.maxRequests;
+      if (burstExceeded || dailyExceeded) {
+        const retryAfterMs = Math.max(
+          burstExceeded ? burstStart + policy.burst.windowMs - now : 0,
+          dailyExceeded ? dailyStart + policy.daily.windowMs - now : 0,
+        );
+        return {
+          allowed: false,
+          retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
+          reason: 'quota_exceeded' as const,
+        };
       }
 
       const nowIso = new Date(now).toISOString();
-      for (let index = 0; index < buckets.length; index += 1) {
-        const bucket = buckets[index];
-        const snapshot = snapshots[index];
-        const count = snapshot?.exists ? Math.max(0, Number(snapshot.data()?.count) || 0) : 0;
-        transaction.set(bucket.ref, {
-          userId,
-          feature,
-          bucket: bucket.name,
-          windowStart: new Date(bucket.windowStart).toISOString(),
-          windowEnd: new Date(bucket.windowEnd).toISOString(),
-          count: count + 1,
-          maxRequests: bucket.config.maxRequests,
-          updatedAt: nowIso,
-          ...(snapshot?.exists ? {} : { createdAt: nowIso }),
-        }, { merge: true });
-      }
+      transaction.set(ref, {
+        userId,
+        feature,
+        burstWindowStart: burstStart,
+        burstWindowEnd: burstStart + policy.burst.windowMs,
+        burstCount: burstCount + 1,
+        burstMaxRequests: policy.burst.maxRequests,
+        dailyWindowStart: dailyStart,
+        dailyWindowEnd: dailyStart + policy.daily.windowMs,
+        dailyCount: dailyCount + 1,
+        dailyMaxRequests: policy.daily.maxRequests,
+        updatedAt: nowIso,
+        ...(snapshot.exists ? {} : { createdAt: nowIso }),
+      }, { merge: true });
 
       return { allowed: true, retryAfterSeconds: 0 };
     });
