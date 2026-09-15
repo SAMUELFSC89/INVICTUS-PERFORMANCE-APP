@@ -18,8 +18,11 @@ let initializedUserId: string | null = null;
 const DEVICE_TOKEN_KEY = 'invictus_push_device_token';
 const DEVICE_TOKEN_OWNER_KEY = 'invictus_push_device_token_owner';
 const LEGACY_NOTIFICATION_PREFERENCE_KEY = 'notifications-enabled';
+const GENERAL_NOTIFICATION_CHANNEL_ID = 'invictus_general';
 const notificationPreferenceKey = (uid: string) => `notifications-enabled:${uid}`;
 const currentPushPlatform = () => Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+
+export type PushNotificationPreferenceState = 'enabled' | 'disabled' | 'unset';
 
 function safeInternalActionPath(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -31,22 +34,30 @@ function safeInternalActionPath(value: unknown): string | null {
   return path;
 }
 
-export function pushNotificationsEnabledForUser(uid: string): boolean {
+export function getPushNotificationPreferenceState(uid: string): PushNotificationPreferenceState {
   const scopedKey = notificationPreferenceKey(uid);
   const scoped = localStorage.getItem(scopedKey);
-  if (scoped !== null) return scoped === 'true';
+  if (scoped !== null) return scoped === 'true' ? 'enabled' : 'disabled';
 
   // Migração conservadora: a preferência antiga só pode ser atribuída a uma
   // conta quando o token salvo confirma que aquela mesma conta era a dona.
-  // Sem essa prova, a conta que acabou de entrar começa desativada.
   const legacy = localStorage.getItem(LEGACY_NOTIFICATION_PREFERENCE_KEY);
   const tokenOwner = localStorage.getItem(DEVICE_TOKEN_OWNER_KEY);
   if (tokenOwner === uid && legacy !== null) {
-    const enabled = legacy === 'true';
-    localStorage.setItem(scopedKey, String(enabled));
-    return enabled;
+    const state: PushNotificationPreferenceState = legacy === 'true' ? 'enabled' : 'disabled';
+    localStorage.setItem(scopedKey, String(state === 'enabled'));
+    return state;
   }
-  return false;
+
+  // IMPORTANTE: conta nova é "unset", não "disabled". A versão anterior
+  // transformava este estado em false durante o auth restore e, com isso,
+  // nunca chamava requestPermissions()/register(). O servidor então não tinha
+  // FCM/APNs token para entregar alertas na barra do celular.
+  return 'unset';
+}
+
+export function pushNotificationsEnabledForUser(uid: string): boolean {
+  return getPushNotificationPreferenceState(uid) === 'enabled';
 }
 
 function setPushNotificationPreference(uid: string, enabled: boolean): void {
@@ -62,7 +73,10 @@ function mirrorCurrentPreference(uid: string | null): void {
     localStorage.setItem(LEGACY_NOTIFICATION_PREFERENCE_KEY, 'false');
     return;
   }
-  localStorage.setItem(LEGACY_NOTIFICATION_PREFERENCE_KEY, String(pushNotificationsEnabledForUser(uid)));
+  localStorage.setItem(
+    LEGACY_NOTIFICATION_PREFERENCE_KEY,
+    String(getPushNotificationPreferenceState(uid) === 'enabled')
+  );
 }
 
 async function updateDeviceTokenOwnership(action: 'claim-device-token' | 'remove-device-token', token: string, expectedUid: string): Promise<void> {
@@ -93,8 +107,28 @@ async function saveDeviceToken(token: string, expectedUid: string): Promise<void
   localStorage.setItem(DEVICE_TOKEN_OWNER_KEY, expectedUid);
 }
 
+async function ensureGeneralAndroidChannel(): Promise<void> {
+  if (Capacitor.getPlatform() !== 'android') return;
+  try {
+    await PushNotifications.createChannel({
+      id: GENERAL_NOTIFICATION_CHANNEL_ID,
+      name: 'Invictus',
+      description: 'Missões, objetivos, conquistas e avisos importantes do Invictus.',
+      importance: 4,
+      visibility: 1,
+      vibration: true,
+      lights: true,
+    });
+  } catch (error) {
+    // Android < 8 não possui channels; falha de criação não impede o registro
+    // FCM e o SDK ainda dispõe do canal fallback.
+    console.warn('[Push] Não foi possível preparar o canal geral:', error);
+  }
+}
+
 async function installListeners(expectedUid: string, onNavigate?: (url: string) => void): Promise<void> {
   await PushNotifications.removeAllListeners();
+  await ensureGeneralAndroidChannel();
 
   await PushNotifications.addListener('registration', async (token: Token) => {
     if (auth.currentUser?.uid !== expectedUid) return;
@@ -111,6 +145,9 @@ async function installListeners(expectedUid: string, onNavigate?: (url: string) 
   });
 
   await PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
+    // A apresentação visual em foreground é controlada por
+    // capacitor.config.ts (alert/banner/list + sound). O listener permanece
+    // somente para telemetria/navegação e não substitui a notificação nativa.
     console.log('[Push] Notificação recebida em primeiro plano:', notification.title);
   });
 
@@ -158,6 +195,9 @@ export async function initPushNotifications(onNavigate?: (url: string) => void):
       const req = await PushNotifications.requestPermissions();
       if (req.receive !== 'granted') {
         console.warn('[Push] Permissão de notificações negada pelo usuário.');
+        // Só uma decisão real do sistema operacional vira opt-out persistente.
+        // Erro de rede/FCM abaixo permanece "unset" e poderá tentar novamente.
+        setPushNotificationPreference(expectedUid, false);
         return false;
       }
     }
@@ -172,14 +212,15 @@ export async function initPushNotifications(onNavigate?: (url: string) => void):
 }
 
 /**
- * Chamado pelo ciclo global de autenticação. Não abre prompt de permissão.
- * A preferência é por conta, não por aparelho:
- * - conta sem opt-in: não recebe push só porque outra conta autorizou antes;
- * - conta com opt-in: o token é transferido com segurança para o UID atual;
- * - troca de conta: antes de invalidar o token local, reivindicamos o token
- *   antigo para a identidade nova. Isso fecha a janela de entrega cruzada mesmo
- *   se unregister() nativo falhar; depois removemos novamente se a nova conta
- *   não tiver opt-in.
+ * Chamado pelo ciclo global de autenticação.
+ *
+ * A primeira versão tratava conta sem preferência como se tivesse escolhido
+ * "desativado". Por isso o app nunca solicitava a permissão nem registrava
+ * FCM/APNs para a maioria das instalações. Agora:
+ * - enabled: reconcilia/re-registra silenciosamente;
+ * - disabled: respeita o opt-out e remove o token;
+ * - unset: limpa qualquer token herdado de outra conta e executa o opt-in
+ *   inicial UMA vez. Negação do SO persiste disabled e não volta a incomodar.
  */
 export async function reconcilePushNotificationsForAuthChange(nextUid: string | null): Promise<void> {
   mirrorCurrentPreference(nextUid);
@@ -192,7 +233,7 @@ export async function reconcilePushNotificationsForAuthChange(nextUid: string | 
 
   if (auth.currentUser?.uid !== nextUid) return;
   try {
-    const enabledForAccount = pushNotificationsEnabledForUser(nextUid);
+    const preference = getPushNotificationPreferenceState(nextUid);
     const existingToken = localStorage.getItem(DEVICE_TOKEN_KEY);
     const existingOwner = localStorage.getItem(DEVICE_TOKEN_OWNER_KEY);
 
@@ -202,19 +243,33 @@ export async function reconcilePushNotificationsForAuthChange(nextUid: string | 
       await saveDeviceToken(existingToken, nextUid);
     }
 
-    if (!enabledForAccount) {
+    if (preference === 'disabled') {
       const tokenToRemove = localStorage.getItem(DEVICE_TOKEN_KEY);
       if (tokenToRemove) {
         await updateDeviceTokenOwnership('remove-device-token', tokenToRemove, nextUid);
       }
       await unregisterLocalPush();
-      setPushNotificationPreference(nextUid, false);
+      mirrorCurrentPreference(nextUid);
+      return;
+    }
+
+    if (preference === 'unset') {
+      // Um token transferido acima só serviu para tirar com segurança a posse
+      // da conta anterior. Conta nova ainda não consentiu: remova-o antes de
+      // abrir o prompt e só recadastre após permissão concedida.
+      const tokenToRemove = localStorage.getItem(DEVICE_TOKEN_KEY);
+      if (tokenToRemove) {
+        await updateDeviceTokenOwnership('remove-device-token', tokenToRemove, nextUid);
+        await unregisterLocalPush();
+      }
+      await initPushNotifications();
       return;
     }
 
     const permission = await PushNotifications.checkPermissions();
     if (permission.receive !== 'granted') {
-      // Nunca solicite uma permissão sensível só porque a conta mudou.
+      // O usuário pode ter revogado a permissão nas Configurações do sistema.
+      // Não reabrimos prompt automaticamente para uma preferência já definida.
       if (initializedUserId && initializedUserId !== nextUid) await unregisterLocalPush();
       return;
     }
