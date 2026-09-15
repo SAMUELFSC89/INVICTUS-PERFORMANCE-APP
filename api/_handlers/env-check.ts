@@ -1,6 +1,43 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from '../_lib/common.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
+import { getAsaasBaseUrl } from '../_lib/asaas-client.js';
+
+function hasConfiguredSecret(name: string): boolean {
+  return typeof process.env[name] === 'string' && process.env[name]!.trim().length > 0;
+}
+
+function getSafeAsaasReadiness() {
+  const apiKeyConfigured = hasConfiguredSecret('ASAAS_API_KEY');
+  const webhookTokenConfigured = hasConfiguredSecret('ASAAS_WEBHOOK_TOKEN');
+  const authorizationTokenConfigured = hasConfiguredSecret('ASAAS_AUTHORIZATION_TOKEN');
+
+  let host = 'invalid';
+  try {
+    host = new URL(getAsaasBaseUrl()).hostname.toLowerCase();
+  } catch {
+    // Nunca devolva a URL completa: ela pode ser customizada e não é necessária
+    // para o diagnóstico. O hostname basta para identificar o ambiente efetivo.
+  }
+
+  const environment = host === 'api.asaas.com'
+    ? 'production'
+    : host.includes('sandbox.asaas.com')
+      ? 'sandbox'
+      : 'custom';
+  const production = environment === 'production';
+
+  return {
+    environment,
+    host,
+    apiKeyConfigured,
+    webhookTokenConfigured,
+    authorizationTokenConfigured,
+    productionWithdrawalAuthorizationReady: !production || authorizationTokenConfigured,
+    paidChampionshipFinancialIntegrationReady:
+      apiKeyConfigured && webhookTokenConfigured && (!production || authorizationTokenConfigured),
+  };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -29,8 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Não exponha detalhes de credencial, topologia ou mensagens do SDK.
   }
 
+  const asaas = getSafeAsaasReadiness();
   return res.json({
-    ok: firestoreAvailable,
+    ok: firestoreAvailable && asaas.paidChampionshipFinancialIntegrationReady,
+    firestoreAvailable,
+    integrations: { asaas },
     timestamp: new Date().toISOString()
   });
 }
