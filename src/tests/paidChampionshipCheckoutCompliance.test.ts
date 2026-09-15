@@ -68,9 +68,24 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(page).toContain("const isNativeIOS = Capacitor.isNativePlatform() && platform === 'ios'");
     expect(page).toContain("const isNativeAndroid = Capacitor.isNativePlatform() && platform === 'android'");
     expect(page).toContain("championshipService.createPayment(championshipId, accepted.acceptanceId, 'ios_native')");
-    expect(page).toContain('{isNativeIOS && !paid && <button');
+    expect(page).toContain('{isNativeIOS && canStartEnrollment && <button');
     expect(page).toContain('ANDROID_EXTERNAL_ENROLLMENT_NOTICE');
     expect(page).not.toContain("checkoutSurface: 'android_native'");
+  });
+
+  it('bloqueia novo CTA em reembolso ou conciliação, mas não confunde cancelamento simples com disputa financeira', () => {
+    const page = read('src/pages/championships/ChampionshipPreview.tsx');
+    const types = read('src/types/championships.ts');
+    expect(page).toContain('const enrollmentBlocked = reconciliation || refunded;');
+    expect(page).toContain('const canStartEnrollment = !paid && !enrollmentBlocked;');
+    expect(page).toContain('CONCILIAÇÃO FINANCEIRA');
+    expect(page).toContain('REEMBOLSO REGISTRADO');
+    expect(page).toContain('{isNativeIOS && canStartEnrollment && <button');
+    expect(page).toContain("registration?.status === 'REJECTED'");
+    expect(page).toContain("registration?.status === 'REFUNDED'");
+    expect(page).not.toContain("registration?.status === 'CANCELLED' ||");
+    expect(types).toContain("| 'RECONCILIATION_REQUIRED'");
+    expect(types).toContain("| 'PAYMENT_CHARGEBACK_DISPUTE'");
   });
 
   it('mantém a abertura fail-closed até calendário, homologação, premiação e modalidade de cardio serem publicados', () => {
