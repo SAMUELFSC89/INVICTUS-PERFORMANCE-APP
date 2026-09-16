@@ -18,6 +18,14 @@
       "destination": "/api/performance-ai-guarded"
     },
     {
+      "source": "/api/activity-map",
+      "destination": "/api/activity-map-guarded"
+    },
+    {
+      "source": "/api/app/activity-map",
+      "destination": "/api/activity-map-guarded"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/app"
     },
