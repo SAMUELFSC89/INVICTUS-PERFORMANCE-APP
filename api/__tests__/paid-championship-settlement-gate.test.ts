@@ -6,9 +6,9 @@ const settlement = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championsh
 const prizeCredit = readFileSync(resolve(process.cwd(), 'api/_lib/championship-prize-credit.ts'), 'utf8');
 const edition = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championship-edition.ts'), 'utf8');
 
-describe('Contrato — motor de settlement existe, mas abertura comercial permanece hard-closed', () => {
-  test('motor monetário e editionId existem sem habilitar a capacidade comercial nesta PR', () => {
-    expect(catalog).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false;');
+describe('Contrato — motor de settlement habilitado, abertura comercial continua controlada por env', () => {
+  test('motor monetário e editionId estão habilitados após validação executável', () => {
+    expect(catalog).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true;');
     expect(catalog).toContain('championshipEditionId');
     expect(catalog).toContain('editionId,');
     expect(settlement).toContain('export async function finalizePaidChampionship');
@@ -22,7 +22,7 @@ describe('Contrato — motor de settlement existe, mas abertura comercial perman
     expect(edition).toContain('championship_edition_locks');
   });
 
-  test('a liberação comercial exige env e hard gate, ambos antes do calendário', () => {
+  test('a liberação comercial continua exigindo env antes do calendário', () => {
     const start = catalog.indexOf('function registrationReadiness');
     const end = catalog.indexOf('export function listChampionships', start);
     const block = catalog.slice(start, end);
