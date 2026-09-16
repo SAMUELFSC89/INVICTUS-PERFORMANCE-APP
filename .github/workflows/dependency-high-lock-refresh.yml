@@ -25,7 +25,7 @@ jobs:
           cache: npm
 
       - name: Apply non-breaking production audit fixes to lockfile only
-        run: npm audit fix --package-lock-only --omit=dev --ignore-scripts
+        run: npm audit fix --package-lock-only --omit=dev --ignore-scripts || true
 
       - name: Ensure package manifest was not rewritten
         run: git diff --exit-code -- package.json
@@ -46,7 +46,7 @@ jobs:
             .map(([name, v]) => `${v.severity}:${name}`);
           console.log('PRODUCTION_AUDIT_COUNTS', JSON.stringify(counts));
           console.log('REMAINING_HIGH_OR_CRITICAL', remaining.join(','));
-          if ((counts.critical || 0) !== 0) process.exit(1);
+          if ((counts.critical || 0) !== 0 || (counts.high || 0) !== 0) process.exit(1);
           NODE
 
       - name: Commit generated lockfile
