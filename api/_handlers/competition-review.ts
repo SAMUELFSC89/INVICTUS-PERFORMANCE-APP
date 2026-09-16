@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { FieldValue, cors, db, verifyAuth } from '../_lib/common.js';
 
@@ -7,6 +8,26 @@ const SOURCES = {
   power: 'power_records',
 } as const;
 const CATEGORIES = new Set(['activity', 'heart_rate', 'discarded_samples', 'validation', 'score', 'ranking', 'technical_failure']);
+const REVIEW_RATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const REVIEW_RATE_MAX = 10;
+
+function reviewRateLimitId(userId: string): string {
+  return `competition_review_${createHash('sha256').update(userId).digest('hex')}`;
+}
+
+export function competitionReviewRequestId(
+  userId: string,
+  source: keyof typeof SOURCES,
+  subjectId: string,
+  category: string,
+  now = new Date(),
+): string {
+  const day = now.toISOString().slice(0, 10);
+  const digest = createHash('sha256')
+    .update(`${userId}|${source}|${subjectId}|${category}|${day}`)
+    .digest('hex');
+  return `review_${digest}`;
+}
 
 export function buildCompetitionReviewAuditSnapshot(data: Record<string, any>) {
   const heartRate = data.healthSession?.heartRate || data.heartRateEvidence || data.heartRateAudit || {};
@@ -58,18 +79,77 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const sourceData = sourceSnapshot.data() || {};
   if (sourceData.userId !== auth.uid) return res.status(403).json({ error: 'Esta atividade pertence a outra conta.' });
 
-  const ref = db.collection('competition_review_requests').doc();
-  await ref.create({
-    requestId: ref.id,
-    userId: auth.uid,
-    subjectType: source,
-    subjectId,
-    category,
-    reason,
-    status: 'submitted',
-    auditSnapshot: buildCompetitionReviewAuditSnapshot(sourceData),
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
+  const now = new Date();
+  const nowMs = now.getTime();
+  const ref = db.collection('competition_review_requests').doc(
+    competitionReviewRequestId(auth.uid, source, subjectId, category, now),
+  );
+  const rateRef = db.collection('api_rate_limits').doc(reviewRateLimitId(auth.uid));
+
+  const result = await db.runTransaction(async (transaction: any) => {
+    const [existing, rateSnapshot] = await Promise.all([
+      transaction.get(ref),
+      transaction.get(rateRef),
+    ]);
+
+    if (existing.exists) {
+      const data = existing.data() || {};
+      return {
+        created: false,
+        rateLimited: false,
+        requestId: ref.id,
+        status: String(data.status || 'submitted'),
+        retryAfterSeconds: 0,
+      };
+    }
+
+    const rate = rateSnapshot.exists ? rateSnapshot.data() || {} : {};
+    const windowStartedAt = Number(rate.windowStartedAt) || 0;
+    const inCurrentWindow = windowStartedAt > 0 && nowMs - windowStartedAt < REVIEW_RATE_WINDOW_MS;
+    const count = inCurrentWindow ? Math.max(0, Number(rate.count) || 0) : 0;
+
+    if (count >= REVIEW_RATE_MAX) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((REVIEW_RATE_WINDOW_MS - (nowMs - windowStartedAt)) / 1000));
+      return { created: false, rateLimited: true, requestId: ref.id, status: 'rate_limited', retryAfterSeconds };
+    }
+
+    transaction.set(rateRef, {
+      scope: 'competition-review',
+      windowStartedAt: inCurrentWindow ? windowStartedAt : nowMs,
+      count: count + 1,
+      updatedAt: now.toISOString(),
+    }, { merge: true });
+
+    transaction.create(ref, {
+      requestId: ref.id,
+      userId: auth.uid,
+      subjectType: source,
+      subjectId,
+      category,
+      reason,
+      status: 'submitted',
+      auditSnapshot: buildCompetitionReviewAuditSnapshot(sourceData),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return { created: true, rateLimited: false, requestId: ref.id, status: 'submitted', retryAfterSeconds: 0 };
   });
-  return res.status(201).json({ requestId: ref.id, status: 'submitted', message: 'Contestação registrada para análise. O resultado não é alterado automaticamente.' });
+
+  if (result.rateLimited) {
+    res.setHeader('Retry-After', String(result.retryAfterSeconds));
+    return res.status(429).json({
+      error: 'Limite de contestações atingido. Aguarde antes de enviar uma nova solicitação.',
+      retryAfterSeconds: result.retryAfterSeconds,
+    });
+  }
+
+  return res.status(result.created ? 201 : 200).json({
+    requestId: result.requestId,
+    status: result.status,
+    idempotent: !result.created,
+    message: result.created
+      ? 'Contestação registrada para análise. O resultado não é alterado automaticamente.'
+      : 'Esta contestação já foi registrada hoje e continua na fila de análise.',
+  });
 }
