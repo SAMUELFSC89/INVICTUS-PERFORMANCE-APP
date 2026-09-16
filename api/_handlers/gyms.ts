@@ -1,8 +1,65 @@
-import { cors, verifyAuth } from '../_lib/common.js';
+import { createHash } from 'node:crypto';
+import { cors, db, verifyAuth } from '../_lib/common.js';
 import NodeCache from 'node-cache';
 import { classifyGooglePlacesError, getGooglePlacesApiKey } from '../_lib/google-places-config.js';
 
 const cache = new NodeCache({ stdTTL: 1800, maxKeys: 2000, useClones: false }); // 30 minutes cache for gyms
+const GYM_SEARCH_BURST_WINDOW_MS = 5 * 60 * 1000;
+const GYM_SEARCH_BURST_MAX = 24;
+const GYM_SEARCH_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const GYM_SEARCH_DAILY_MAX = 120;
+
+function gymSearchRateLimitId(userId: string): string {
+  return `gyms_${createHash('sha256').update(userId).digest('hex')}`;
+}
+
+async function consumeGymSearchRateLimit(userId: string): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
+  const ref = db.collection('api_rate_limits').doc(gymSearchRateLimitId(userId));
+  const now = Date.now();
+
+  return db.runTransaction(async (transaction: any) => {
+    const snap = await transaction.get(ref);
+    const data = snap.exists ? snap.data() || {} : {};
+
+    let burstStartedAt = Number(data.burstStartedAt) || 0;
+    let burstCount = Math.max(0, Number(data.burstCount) || 0);
+    let dailyStartedAt = Number(data.dailyStartedAt) || 0;
+    let dailyCount = Math.max(0, Number(data.dailyCount) || 0);
+
+    if (!burstStartedAt || now - burstStartedAt >= GYM_SEARCH_BURST_WINDOW_MS) {
+      burstStartedAt = now;
+      burstCount = 0;
+    }
+    if (!dailyStartedAt || now - dailyStartedAt >= GYM_SEARCH_DAILY_WINDOW_MS) {
+      dailyStartedAt = now;
+      dailyCount = 0;
+    }
+
+    if (dailyCount >= GYM_SEARCH_DAILY_MAX) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((dailyStartedAt + GYM_SEARCH_DAILY_WINDOW_MS - now) / 1000)),
+      };
+    }
+    if (burstCount >= GYM_SEARCH_BURST_MAX) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((burstStartedAt + GYM_SEARCH_BURST_WINDOW_MS - now) / 1000)),
+      };
+    }
+
+    transaction.set(ref, {
+      scope: 'gyms_search',
+      burstStartedAt,
+      burstCount: burstCount + 1,
+      dailyStartedAt,
+      dailyCount: dailyCount + 1,
+      updatedAt: new Date(now).toISOString(),
+    }, { merge: true });
+
+    return { allowed: true, retryAfterSeconds: 0 };
+  });
+}
 
 export default async function handler(req: any, res: any) {
   const requestId = Math.random().toString(36).substring(7);
@@ -47,7 +104,7 @@ export default async function handler(req: any, res: any) {
     
     const cached = cache.get(cacheKey);
     if (cached) {
-      console.log(`[GymAPI][${requestId}] Returning cached results for ${cacheKey}`);
+      console.log(`[GymAPI][${requestId}] Returning cached results.`);
       return res.json(cached);
     }
 
@@ -57,6 +114,19 @@ export default async function handler(req: any, res: any) {
       return res.status(503).json({ error: 'A busca de academias está indisponível no momento.' });
     }
 
+    if (!db) {
+      return res.status(503).json({ error: 'A busca de academias está temporariamente indisponível.' });
+    }
+
+    const quota = await consumeGymSearchRateLimit(auth.uid);
+    if (!quota.allowed) {
+      res.setHeader('Retry-After', String(quota.retryAfterSeconds));
+      return res.status(429).json({
+        success: false,
+        error: 'Muitas buscas de academia em pouco tempo. Aguarde antes de tentar novamente.',
+      });
+    }
+
     const fetchPlacesLegacy = async (type: 'nearbysearch' | 'textsearch', params: Record<string, string>) => {
       const requestId_f = Math.random().toString(36).substring(7);
       const url = new URL(`https://maps.googleapis.com/maps/api/place/${type}/json`);
@@ -64,7 +134,7 @@ export default async function handler(req: any, res: any) {
       url.searchParams.append('key', apiKey);
       
       try {
-        console.log(`[GymAPI][${requestId}][${requestId_f}] REQUEST: ${type} with params:`, params);
+        console.log(`[GymAPI][${requestId}][${requestId_f}] REQUEST: ${type}`);
         const response = await fetch(url.toString());
         
         if (!response.ok) {
@@ -136,7 +206,7 @@ export default async function handler(req: any, res: any) {
       };
 
       if (q) {
-        console.log(`[GymAPI][${requestId}] User searching for specific term: ${q}${hasCoordinates ? ' with location bias' : ' without GPS'}`);
+        console.log(`[GymAPI][${requestId}] Text search requested${hasCoordinates ? ' with location bias' : ' without GPS'}.`);
         const params: Record<string, string> = { query: q };
         if (hasCoordinates) {
           params.location = `${lat},${lng}`;
@@ -151,7 +221,7 @@ export default async function handler(req: any, res: any) {
         return legacy;
       }
 
-      console.log(`[GymAPI][${requestId}] Primary search (5km radius)...`);
+      console.log(`[GymAPI][${requestId}] Primary nearby search requested.`);
       let gyms = await fetchPlacesLegacy('nearbysearch', {
         location: `${lat},${lng}`,
         radius: '5000',
