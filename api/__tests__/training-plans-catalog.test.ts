@@ -28,6 +28,9 @@ jest.mock('../_lib/ai-config', () => ({
   getAiWorkoutModel: () => 'test-model',
   classifyAiError: () => ({ status: 503, message: 'test failure', code: 'UPSTREAM_ERROR', retryable: true }),
 }));
+jest.mock('../_lib/ai-quota', () => ({
+  consumeAiQuota: jest.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
+}));
 jest.mock('../_lib/entitlement', () => ({ isProUser: () => true }));
 jest.mock('../_lib/ai-usage-logger', () => ({
   extractUsage: () => ({}),

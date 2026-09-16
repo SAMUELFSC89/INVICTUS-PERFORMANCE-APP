@@ -1,4 +1,7 @@
-import { db } from '../_lib/common.js';
+const mockCollection = jest.fn(() => { throw new Error('Firestore must not be touched in test mode'); });
+
+jest.mock('../_lib/common.js', () => ({ db: { collection: mockCollection } }));
+
 import { incrementMetric, logEvent, memoryCache, triggerAlert } from '../_lib/observability.js';
 
 describe('observability test isolation', () => {
@@ -37,6 +40,6 @@ describe('observability test isolation', () => {
       'user-test',
     )).resolves.toBeUndefined();
 
-    expect(collectionSpy).not.toHaveBeenCalled();
+    expect(mockCollection).not.toHaveBeenCalled();
   });
 });
