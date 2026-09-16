@@ -18,6 +18,10 @@
       "destination": "/api/performance-ai-guarded"
     },
     {
+      "source": "/api/app",
+      "destination": "/api/app-guarded"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/app"
     },
