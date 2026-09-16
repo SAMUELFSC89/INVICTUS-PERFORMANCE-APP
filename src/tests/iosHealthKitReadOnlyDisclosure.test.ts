@@ -4,10 +4,12 @@ import path from 'node:path';
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8');
 
 describe('Gate 1 — HealthKit read-only disclosure', () => {
-  test('iOS declara somente a finalidade de leitura que o app realmente solicita', () => {
+  test('iOS declara as finalidades exigidas pela Apple sem afirmar escrita que o app não realiza', () => {
     const plist = read('ios/App/App/Info.plist');
     expect(plist).toContain('<key>NSHealthShareUsageDescription</key>');
-    expect(plist).not.toContain('<key>NSHealthUpdateUsageDescription</key>');
+    expect(plist).toContain('<key>NSHealthUpdateUsageDescription</key>');
+    expect(plist).toContain('O INVICTUS não grava dados no app Saúde.');
+    expect(plist).toContain('o INVICTUS solicita apenas acesso de leitura');
   });
 
   test('provider de métricas não solicita autorização de escrita no HealthKit', () => {
