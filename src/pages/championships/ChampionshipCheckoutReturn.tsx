@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BadgeCheck, Clock3, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
 import { championshipService } from '../../services/championshipService';
+import { auth } from '../../firebase';
+import { API_CONFIG } from '../../config';
 import { InvictusLogo } from '../../components/InvictusLogo';
 import './PaidChampionship.css';
 
@@ -31,6 +33,41 @@ export function ChampionshipCheckoutReturn() {
     return confirmed;
   };
 
+  const reconcilePayment = async (): Promise<void> => {
+    if (!championshipId || checking) return;
+    setChecking(true);
+    setMessage('Consultando o pagamento diretamente no provedor…');
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('Sua sessão expirou. Entre novamente para atualizar o pagamento.');
+      const idToken = await user.getIdToken();
+      const response = await fetch(`${API_CONFIG.baseUrl}/api/championship-payment-reconcile`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ championshipId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Não foi possível atualizar o pagamento agora.');
+
+      if (await checkRegistration()) return;
+
+      if (data.paymentFound === false) {
+        setMessage('O provedor ainda não vinculou uma cobrança a este checkout. Aguarde alguns instantes e tente novamente.');
+      } else if (data.providerStatus) {
+        setMessage(`O pagamento ainda não está confirmado pelo provedor (${data.providerStatus}). Você não precisa pagar novamente.`);
+      } else {
+        setMessage('A confirmação financeira ainda não chegou. Você não precisa pagar novamente.');
+      }
+    } catch (error: any) {
+      setMessage(error?.message || 'Não foi possível atualizar o pagamento agora. Tente novamente em instantes.');
+    } finally {
+      setChecking(false);
+    }
+  };
+
   useEffect(() => {
     if (status !== 'success' || !championshipId) {
       setChecking(false);
@@ -47,7 +84,7 @@ export function ChampionshipCheckoutReturn() {
       }
       if (!disposed) {
         setChecking(false);
-        setMessage('O checkout foi concluído, mas a confirmação financeira ainda não chegou. Você pode atualizar o status sem pagar novamente.');
+        setMessage('O checkout foi concluído, mas a confirmação financeira ainda não chegou. Use Atualizar status para consultar o provedor sem pagar novamente.');
       }
     })();
     return () => { disposed = true; };
@@ -62,8 +99,8 @@ export function ChampionshipCheckoutReturn() {
     <small>INVICTUS PERFORMANCE</small>
     <h1>{title}</h1>
     <p>{message}</p>
-    {status === 'success' && !paid && <button disabled={checking} onClick={() => void checkRegistration()}>{checking ? <RefreshCw className="spin" /> : <RefreshCw />} ATUALIZAR STATUS</button>}
+    {status === 'success' && !paid && <button disabled={checking} onClick={() => void reconcilePayment()}>{checking ? <RefreshCw className="spin" /> : <RefreshCw />} ATUALIZAR STATUS</button>}
     <button className="secondary" onClick={() => navigate(previewPath, { replace: true })}><ShieldCheck /> VOLTAR AO CAMPEONATO</button>
-    <span>O retorno do navegador não confirma pagamento. A inscrição só é ativada após a confirmação do Asaas recebida pelo servidor.</span>
+    <span>O retorno do navegador não confirma pagamento. A inscrição é ativada por confirmação do Asaas recebida por webhook ou por uma consulta pontual autenticada ao provedor.</span>
   </section></main>, document.body);
 }
