@@ -5,6 +5,7 @@ import { CHAMPIONSHIPS, matchActiveChampionshipsForActivity } from '../_lib/cham
 function fakeRunningCamp(allowedCardioTypes?: string[]) {
   return {
     id: 'cardio-camp-running-test',
+    editionId: 'cardio-camp-running-test_ed_stress',
     type: 'run_elite_corrida' as const,
     title: 'Cardio Camp Corrida',
     edition: 'stress',
