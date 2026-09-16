@@ -7,6 +7,8 @@ const BURST_MAX = 120;
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DAILY_MAX = 800;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_UPSTREAM_REDIRECTS = 3;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 function sourceKey(req: any): string {
   const forwarded = String(req.headers?.['x-vercel-forwarded-for'] || '').split(',')[0].trim();
@@ -85,11 +87,89 @@ function isAllowedGoogleMediaUrl(value: string): boolean {
     if (url.protocol !== 'https:') return false;
     const host = url.hostname.toLowerCase();
     return host === 'places.googleapis.com'
+      || host === 'maps.googleapis.com'
       || host.endsWith('.googleusercontent.com')
       || host.endsWith('.ggpht.com');
   } catch {
     return false;
   }
+}
+
+function resolveAllowedRedirect(location: string, currentUrl: string): string | null {
+  try {
+    const resolved = new URL(location, currentUrl).toString();
+    return isAllowedGoogleMediaUrl(resolved) ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchGoogleImageWithRedirectGuard(
+  initialUrl: string,
+  initialHeaders: Record<string, string>,
+): Promise<Response> {
+  let currentUrl = initialUrl;
+  let headers = initialHeaders;
+
+  for (let redirectCount = 0; redirectCount <= MAX_UPSTREAM_REDIRECTS; redirectCount += 1) {
+    const response = await fetch(currentUrl, {
+      method: 'GET',
+      headers,
+      redirect: 'manual',
+    });
+
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
+    if (redirectCount >= MAX_UPSTREAM_REDIRECTS) {
+      throw Object.assign(new Error('Too many upstream redirects'), { code: 'UPSTREAM_REDIRECT_LIMIT' });
+    }
+
+    const location = response.headers.get('location') || '';
+    const nextUrl = resolveAllowedRedirect(location, currentUrl);
+    if (!nextUrl) {
+      throw Object.assign(new Error('Unexpected upstream redirect'), { code: 'UPSTREAM_REDIRECT_REFUSED' });
+    }
+
+    currentUrl = nextUrl;
+    // Authentication material is only needed on the first Places V1 request.
+    // Do not forward X-Goog-Api-Key to the media host reached by redirects.
+    headers = {
+      Accept: 'image/*',
+      'User-Agent': 'Invictus Performance photo proxy/1.0',
+    };
+  }
+
+  throw Object.assign(new Error('Too many upstream redirects'), { code: 'UPSTREAM_REDIRECT_LIMIT' });
+}
+
+async function readImageBodyWithLimit(response: Response): Promise<Buffer> {
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
+    throw Object.assign(new Error('Photo payload too large'), { code: 'PHOTO_PAYLOAD_TOO_LARGE' });
+  }
+
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_IMAGE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw Object.assign(new Error('Photo payload too large'), { code: 'PHOTO_PAYLOAD_TOO_LARGE' });
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, totalBytes);
 }
 
 export default async function handler(req: any, res: any) {
@@ -121,50 +201,40 @@ export default async function handler(req: any, res: any) {
       return res.status(429).send('Too many photo requests');
     }
 
-    let finalUrl: string;
-    const headers: Record<string, string> = {
+    const publicHeaders: Record<string, string> = {
       Accept: 'image/*',
       'User-Agent': 'Invictus Performance photo proxy/1.0',
     };
 
+    let initialUrl: string;
+    let initialHeaders = publicHeaders;
     if (parsed.isV1) {
       const url = new URL(`https://places.googleapis.com/v1/${parsed.ref}/media`);
       url.searchParams.set('maxWidthPx', '800');
-
-      const redirectRes = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'X-Goog-Api-Key': apiKey,
-          'User-Agent': headers['User-Agent'],
-        },
-        redirect: 'manual',
-      });
-
-      if ([301, 302, 307, 308].includes(redirectRes.status)) {
-        const location = redirectRes.headers.get('location') || '';
-        if (!isAllowedGoogleMediaUrl(location)) {
-          console.warn(`[PhotoProxy][${requestId}] Refused unexpected upstream redirect`);
-          return res.status(502).send('Photo provider returned an invalid redirect');
-        }
-        finalUrl = location;
-      } else if (redirectRes.ok && (redirectRes.headers.get('content-type') || '').startsWith('image/')) {
-        const buffer = Buffer.from(await redirectRes.arrayBuffer());
-        if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) return res.status(502).send('Invalid photo payload');
-        res.setHeader('Content-Type', redirectRes.headers.get('content-type') || 'image/jpeg');
-        res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600');
-        return res.end(buffer);
-      } else {
-        return res.status(502).send('Photo provider unavailable');
-      }
+      initialUrl = url.toString();
+      initialHeaders = {
+        ...publicHeaders,
+        'X-Goog-Api-Key': apiKey,
+      };
     } else {
       const url = new URL('https://maps.googleapis.com/maps/api/place/photo');
       url.searchParams.set('maxwidth', '800');
       url.searchParams.set('photoreference', parsed.ref);
       url.searchParams.set('key', apiKey);
-      finalUrl = url.toString();
+      initialUrl = url.toString();
     }
 
-    const response = await fetch(finalUrl, { redirect: 'follow', headers });
+    let response: Response;
+    try {
+      response = await fetchGoogleImageWithRedirectGuard(initialUrl, initialHeaders);
+    } catch (error: any) {
+      if (error?.code === 'UPSTREAM_REDIRECT_REFUSED' || error?.code === 'UPSTREAM_REDIRECT_LIMIT') {
+        console.warn(`[PhotoProxy][${requestId}] Refused unsafe upstream redirect chain`);
+        return res.status(502).send('Photo provider returned an invalid redirect');
+      }
+      throw error;
+    }
+
     if (!response.ok) {
       console.warn(`[PhotoProxy][${requestId}] Upstream returned ${response.status}`);
       return res.status(response.status === 404 ? 404 : 502).send('Photo unavailable');
@@ -176,13 +246,17 @@ export default async function handler(req: any, res: any) {
       return res.status(502).send('Invalid photo payload');
     }
 
-    const contentLength = Number(response.headers.get('content-length') || 0);
-    if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
-      return res.status(502).send('Photo payload too large');
+    let buffer: Buffer;
+    try {
+      buffer = await readImageBodyWithLimit(response);
+    } catch (error: any) {
+      if (error?.code === 'PHOTO_PAYLOAD_TOO_LARGE') {
+        return res.status(502).send('Photo payload too large');
+      }
+      throw error;
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) {
+    if (!buffer.length) {
       return res.status(502).send('Invalid photo payload');
     }
 
