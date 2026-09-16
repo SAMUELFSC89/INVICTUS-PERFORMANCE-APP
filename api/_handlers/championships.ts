@@ -3,6 +3,7 @@ import { verifyAuth, db } from '../_lib/common.js';
 import { listChampionships, getChampionship } from '../_lib/championship-catalog.js';
 import {
   registrarAceiteRegulamento,
+  criarInscricaoChampionship,
   confirmarInscricaoChampionshipPorCheckout,
   confirmarInscricaoChampionshipPorPagamento,
   encerrarCheckoutChampionship,
@@ -16,7 +17,6 @@ import {
   getPaidChampionshipEditionGate,
   paidChampionshipSettlementDocumentId,
 } from '../_lib/paid-championship-edition.js';
-import { criarPresenceCheck } from '../_lib/presence-check-service.js';
 
 const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
   'PAYMENT_REFUNDED',
@@ -258,19 +258,14 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
       return res.status(409).json({ error: editionGate.reason || 'A edição ativa exige conciliação antes de novas inscrições.' });
     }
 
-    const { presenceCheckId, livenessPrompt } = await criarPresenceCheck({
-      userId: auth.uid,
-      actionType: 'championship_registration',
-      payload: { championshipId, acceptanceId, checkoutSurface },
-    });
+    const checkout = await criarInscricaoChampionship(
+      auth.uid,
+      String(championshipId),
+      String(acceptanceId),
+      checkoutSurface as 'ios_native' | 'web',
+    );
 
-    return res.json({
-      success: true,
-      presenceCheckRequired: true,
-      presenceCheckId,
-      livenessPrompt,
-      userMessage: 'Confirme sua presença por selfie. Depois da aprovação, o checkout seguro do Asaas será aberto.',
-    });
+    return res.json({ success: true, ...checkout });
   } catch (erro: any) {
     const { status, message } = erroComoResposta(erro);
     if (status === 500) console.error('[Championships] erro em payment:', erro);
