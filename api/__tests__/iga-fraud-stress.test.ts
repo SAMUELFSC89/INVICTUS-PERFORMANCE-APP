@@ -153,6 +153,19 @@ function activity(kind: StressKind, modality: 'workout' | 'cardio', index: numbe
       isScoringEligible: true,
       pendingReview: false,
       securityDecision: 'APPROVED',
+      competitionEvidenceStatus: 'trusted_server_source',
+      competitionEvidenceMetrics: {
+        activityType: modality,
+        cardioType: modality === 'cardio' ? 'running' : null,
+        isIndoorCardio: false,
+        startTime: base.startTime,
+        endTime: base.endTime,
+        durationMinutes: base.duration,
+        distanceKm: modality === 'cardio' ? 5 : null,
+        avgHeartRate: 145,
+        maxHeartRate: 170,
+        calories: 400,
+      },
     };
   }
   if (kind === 'personal') {

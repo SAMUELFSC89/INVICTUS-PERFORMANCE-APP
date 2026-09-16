@@ -59,6 +59,6 @@ describe('AI memory and training guardrails', () => {
     expect(performance).toContain('activeWorkoutSession');
     expect(performance).toContain('perfState');
     expect(performance).toContain('SESSÃO DE TREINO EM ANDAMENTO AGORA');
-    expect(performance).toContain('MÉTRICAS DE PERFORMANCE E HISTÓRICO DE TREINOS');
+    expect(performance).toContain('MÉTRICAS DE PERFORMANCE EXIBIDAS NO CLIENTE (CONTEXTO CONVERSACIONAL, NÃO AUTORIDADE DE SCORE/PREMIAÇÃO)');
   });
 });
