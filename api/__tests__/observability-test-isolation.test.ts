@@ -10,6 +10,7 @@ describe('observability test isolation', () => {
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
     memoryCache.flushAll();
+    mockCollection.mockClear();
   });
 
   afterEach(() => {
@@ -21,10 +22,6 @@ describe('observability test isolation', () => {
   });
 
   test('logging, metrics and alerts do not touch Firestore in test mode', async () => {
-    const collectionSpy = jest.spyOn(db, 'collection').mockImplementation(() => {
-      throw new Error('Firestore must not be touched in test mode');
-    });
-
     await expect(logEvent({
       severity: 'INFO',
       category: 'admin_reviews',
