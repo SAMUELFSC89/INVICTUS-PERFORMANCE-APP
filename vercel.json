@@ -18,6 +18,10 @@
       "destination": "/api/performance-ai-guarded"
     },
     {
+      "source": "/api/payments/verify-purchase",
+      "destination": "/api/payments-verify-purchase-guarded"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/app"
     },
