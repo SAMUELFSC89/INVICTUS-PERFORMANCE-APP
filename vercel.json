@@ -14,6 +14,10 @@
       "destination": "/api/activity-share-direct"
     },
     {
+      "source": "/api/performance-ai",
+      "destination": "/api/performance-ai-guarded"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/app"
     },
