@@ -1,0 +1,63 @@
+name: Dependency Audit Diagnostic
+
+on:
+  push:
+    branches:
+      - audit/dependency-report-20260916
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Collect npm audit reports
+        shell: bash
+        run: |
+          npm audit --json > audit-all.json || true
+          npm audit --omit=dev --json > audit-prod.json || true
+
+      - name: Print compact audit report
+        shell: node {0}
+        run: |
+          const fs = require('node:fs');
+
+          function compact(file, label) {
+            const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const vulnerabilities = Object.entries(report.vulnerabilities || {}).map(([name, item]) => ({
+              name,
+              severity: item.severity,
+              direct: item.isDirect === true,
+              range: item.range,
+              fixAvailable: item.fixAvailable,
+              via: (item.via || []).map((entry) => typeof entry === 'string' ? entry : ({
+                source: entry.source,
+                name: entry.name,
+                severity: entry.severity,
+                title: entry.title,
+                range: entry.range,
+                url: entry.url,
+              })),
+              effects: item.effects || [],
+            }));
+            console.log(`===== ${label} =====`);
+            console.log(JSON.stringify({
+              counts: report.metadata?.vulnerabilities || {},
+              totalDependencies: report.metadata?.dependencies?.total ?? null,
+              vulnerabilities,
+            }, null, 2));
+          }
+
+          compact('audit-prod.json', 'PRODUCTION ONLY (--omit=dev)');
+          compact('audit-all.json', 'ALL DEPENDENCIES');
