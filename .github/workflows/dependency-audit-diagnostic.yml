@@ -11,7 +11,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,3 +61,14 @@ jobs:
 
           compact('audit-prod.json', 'PRODUCTION ONLY (--omit=dev)');
           compact('audit-all.json', 'ALL DEPENDENCIES');
+
+      - name: Install tree without package scripts
+        run: npm ci --ignore-scripts
+
+      - name: Explain critical and high runtime paths
+        shell: bash
+        run: |
+          for pkg in protobufjs tar websocket-driver @grpc/grpc-js ws react-router react-router-dom firebase-admin jimp mercadopago; do
+            echo "===== npm explain $pkg ====="
+            npm explain "$pkg" || true
+          done
