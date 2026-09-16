@@ -6,10 +6,14 @@ const read = (file: string) => fs.readFileSync(path.resolve(process.cwd(), file)
 describe('profile photo retry and activity navigation', () => {
   test('profile accepts portable image formats and provides a safe compression fallback', () => {
     const profile = read('src/pages/ProfileNew.tsx');
+    const service = read('src/services/userService.ts');
     expect(profile).toContain('accept="image/jpeg,image/png,image/webp"');
     expect(profile).not.toContain('image/heic');
     expect(profile).toContain('compressed = file');
-    expect(read('src/services/userService.ts')).toContain('}, 120000)');
+    expect(service).toContain("new Error('UPLOAD_TIMEOUT')");
+    expect(service).toContain('}, 60_000);');
+    expect(service).toContain("15_000, 'DOWNLOAD_URL_TIMEOUT'");
+    expect(service).toContain("15_000, 'PROFILE_WRITE_TIMEOUT'");
   });
 
   test('recent activity cards open the matching history detail', () => {
