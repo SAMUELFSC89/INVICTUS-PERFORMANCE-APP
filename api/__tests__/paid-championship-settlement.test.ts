@@ -61,7 +61,8 @@ describe('paid championship final settlement', () => {
     const policy = read('shared/paidChampionshipPolicy.ts');
 
     expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false');
-    expect(catalog).toContain('CHAMPIONSHIP_STRENGTH_SETTLEMENT_AT');
+    expect(catalog).toContain("envPrefix: 'CHAMPIONSHIP_STRENGTH' | 'CHAMPIONSHIP_CARDIO'");
+    expect(catalog).toContain('env(`${envPrefix}_SETTLEMENT_AT`)');
     expect(catalog).toContain('publishedConfigDigest');
     expect(catalog).toContain('editionId');
     expect(catalog).toContain("regulationHash: `${offer.regulationHash}-${publishedConfigDigest.slice(0, 16)}`");
