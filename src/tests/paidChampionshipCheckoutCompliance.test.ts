@@ -54,13 +54,28 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(returnScreen).not.toContain('paymentStatus:');
   });
 
-  it('preserva a superfície de checkout através da confirmação biométrica', () => {
+  it('cria checkout diretamente após os aceites, sem prova de presença na inscrição', () => {
     const handler = read('api/_handlers/championships.ts');
-    const presence = read('api/_handlers/validate-presence.ts');
-    expect(handler).toContain('payload: { championshipId, acceptanceId, checkoutSurface }');
-    expect(presence).toContain("!['ios_native', 'web'].includes(checkoutSurface)");
-    expect(presence).toContain("checkoutSurface as 'ios_native' | 'web'");
-    expect(presence).toContain('criarInscricaoChampionship(');
+    const page = read('src/pages/championships/ChampionshipPreview.tsx');
+    const service = read('src/services/championshipService.ts');
+    expect(handler).toContain('criarInscricaoChampionship(');
+    expect(handler).not.toContain('criarPresenceCheck');
+    expect(handler).not.toContain("actionType: 'championship_registration'");
+    expect(page).not.toContain('VerifiedPresenceModal');
+    expect(page).toContain('checkout.checkoutUrl');
+    expect(service).toContain('checkoutUrl: string');
+    expect(service).not.toContain('presenceCheckRequired: true');
+  });
+
+  it('mostra os aceites em etapa compacta somente após tocar no CTA', () => {
+    const page = read('src/pages/championships/ChampionshipPreview.tsx');
+    expect(page).toContain('setConsentOpen(true)');
+    expect(page).toContain('Confirme os aceites');
+    expect(page).toContain('Li e aceito o Regulamento Oficial');
+    expect(page).toContain('Estou ciente sobre frequência cardíaca');
+    expect(page).toContain('Ver regulamento completo');
+    expect(page).toContain('ACEITAR E PAGAR');
+    expect(page).not.toContain('className="paid-acceptance"');
   });
 
   it('expõe CTA de pagamento somente no iOS nativo e deixa Android preparado para o site', () => {

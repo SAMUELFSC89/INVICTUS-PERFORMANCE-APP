@@ -19,7 +19,7 @@ interface VerifiedPresenceModalProps {
   livenessPrompt: string;
   userMessage?: string;
   onClose: () => void;
-  /** commitResult: payload especifico do actionType (ex.: QR code PIX da inscricao de campeonato, ou o registro de saque) -- ver commitResult em api/_handlers/validate-presence.ts. */
+  /** commitResult: payload específico da ação protegida (ex.: atividade sob revisão ou saque). */
   onSuccess: (result: { status: string; userMessage: string; pointsAwarded?: number; commitResult?: any }) => void;
 }
 
@@ -187,20 +187,11 @@ export const VerifiedPresenceModal: React.FC<VerifiedPresenceModalProps> = ({
 
   if (!isOpen) return null;
 
-  // #121: mesmo bug do #116 (ver ChallengeActivityFlow.tsx) -- este modal
-  // renderizava como filho normal de Challenges.tsx, dentro de <main
-  // className="relative z-[2] ..."> em Layout.tsx, que cria seu proprio
-  // contexto de empilhamento. O z-50 daqui so competia com outros elementos
-  // DENTRO desse <main>; nunca conseguia vencer nada fora dele por fora.
-  // Confirmado ao vivo: a checagem de presenca (prova de vida) e disparada
-  // ao finalizar uma corrida, mas o modal inteiro ficava invisivel atras da
-  // tela cheia "CARDIO EM ANDAMENTO" (ChallengeActivityFlow, agora portalada
-  // pro document.body com z-index:70) -- o atleta nunca via o pedido de
-  // gesto, a atividade nunca finalizava, e nao havia NENHUM indicio na tela
-  // do que estava faltando. Portalado pro document.body tambem, com z-index
-  // acima do da tela de atividade (que pode estar aberta ao mesmo tempo).
+  // Portalado diretamente no document.body e com camada global alta para que a
+  // prova de vida nunca fique escondida atrás de telas full-screen, headers,
+  // navegação ou outros portais do app quando um gatilho antifraude exigir a selfie.
   return createPortal(
-    <div id="verified-presence-backdrop" className="verified-presence-backdrop fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/80 backdrop-blur-md sm:items-center">
+    <div id="verified-presence-backdrop" className="verified-presence-backdrop fixed inset-0 z-[10060] flex items-start justify-center overflow-y-auto bg-black/80 backdrop-blur-md sm:items-center">
       <motion.div 
         id="verified-presence-card"
         initial={{ opacity: 0, scale: 0.95, y: 15 }}

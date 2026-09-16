@@ -165,10 +165,13 @@ class ChampionshipService {
     acceptanceId: string,
     checkoutSurface: 'ios_native' | 'web',
   ): Promise<{
-    presenceCheckRequired: true;
-    presenceCheckId: string;
-    livenessPrompt: string;
-    userMessage: string;
+    success: true;
+    championshipId: string;
+    editionId: string;
+    valor: number;
+    jaExistia: boolean;
+    checkoutId: string;
+    checkoutUrl: string;
   }> {
     const headers = await authHeaders();
     const resp = await fetch(`${API_CONFIG.baseUrl}/api/championships/payment`, {
@@ -177,7 +180,7 @@ class ChampionshipService {
       body: JSON.stringify({ championshipId, acceptanceId, checkoutSurface }),
     });
     const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'Falha ao iniciar a confirmação de presença para a inscrição.');
+    if (!resp.ok) throw new Error(data.error || 'Falha ao criar o checkout da inscrição.');
     return data;
   }
 
