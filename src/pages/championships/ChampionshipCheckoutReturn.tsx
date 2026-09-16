@@ -83,8 +83,11 @@ export function ChampionshipCheckoutReturn() {
         await new Promise((resolve) => window.setTimeout(resolve, 1500));
       }
       if (!disposed) {
-        setChecking(false);
-        setMessage('O checkout foi concluído, mas a confirmação financeira ainda não chegou. Use Atualizar status para consultar o provedor sem pagar novamente.');
+        const confirmed = await checkRegistration();
+        if (!confirmed && !disposed) {
+          setChecking(false);
+          setMessage('O checkout foi concluído, mas a confirmação financeira ainda não chegou. Use Atualizar status para consultar o provedor sem pagar novamente.');
+        }
       }
     })();
     return () => { disposed = true; };
