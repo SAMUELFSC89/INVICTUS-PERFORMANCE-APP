@@ -1,13 +1,45 @@
+import { randomUUID } from 'crypto';
 import { db, FieldValue } from './common.js';
 import { isActiveAccountState, isDeletedAccountState } from './account-state.js';
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
 
+const STRAVA_INCREMENTAL_OVERLAP_SECONDS = 24 * 60 * 60;
+const STRAVA_PROVIDER_FETCH_COOLDOWN_MS = 30_000;
+const STRAVA_PROVIDER_FETCH_LEASE_MS = 90_000;
+const STRAVA_ACTIVITIES_PER_PAGE = 100;
+const STRAVA_MAX_ACTIVITY_PAGES = 6;
+
 export interface StravaTokens {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+}
+
+function timestampMillis(value: unknown): number | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+  if (typeof (value as any)?.toMillis === 'function') {
+    const millis = Number((value as any).toMillis());
+    return Number.isFinite(millis) ? millis : null;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function resolveStravaActivitiesAfter(
+  requestedAfter: number | undefined,
+  lastSyncAt: unknown,
+): number | undefined {
+  const floor = Number.isFinite(Number(requestedAfter)) && Number(requestedAfter) > 0
+    ? Math.floor(Number(requestedAfter))
+    : undefined;
+  const lastSyncMs = timestampMillis(lastSyncAt);
+  if (lastSyncMs === null) return floor;
+
+  const incremental = Math.max(0, Math.floor(lastSyncMs / 1000) - STRAVA_INCREMENTAL_OVERLAP_SECONDS);
+  return floor === undefined ? incremental : Math.max(floor, incremental);
 }
 
 export class StravaApi {
@@ -216,26 +248,102 @@ export class StravaApi {
     return data.access_token;
   }
 
-  async fetchActivities(after?: number) {
-    const token = await this.getAccessToken();
-    if (!token) throw new Error('Not connected to Strava');
+  private async reserveActivitiesFetch(requestedAfter?: number): Promise<{ leaseToken: string; after?: number; before: number }> {
+    const ref = db.collection('strava_connections').doc(this.userId);
+    const nowMs = Date.now();
+    const leaseToken = randomUUID();
 
-    const url = new URL('https://www.strava.com/api/v3/athlete/activities');
-    if (after) url.searchParams.append('after', after.toString());
-    url.searchParams.append('per_page', '50');
-
-    const response = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${token}`
+    return db.runTransaction(async (transaction: any) => {
+      const snap = await transaction.get(ref);
+      if (!snap.exists) throw new Error('Not connected to Strava');
+      const data = snap.data() || {};
+      const leaseUntilMs = timestampMillis(data.activitiesFetchLeaseUntil);
+      if (leaseUntilMs !== null && leaseUntilMs > nowMs) {
+        throw new Error('STRAVA_SYNC_IN_PROGRESS');
       }
+
+      const lastAttemptMs = timestampMillis(data.lastActivitiesFetchAttemptAt);
+      if (lastAttemptMs !== null && nowMs - lastAttemptMs < STRAVA_PROVIDER_FETCH_COOLDOWN_MS) {
+        throw new Error('STRAVA_SYNC_COOLDOWN');
+      }
+
+      const after = resolveStravaActivitiesAfter(requestedAfter, data.lastSyncAt);
+      const before = Math.floor(nowMs / 1000) + 1;
+      transaction.update(ref, {
+        activitiesFetchLeaseToken: leaseToken,
+        activitiesFetchLeaseUntil: new Date(nowMs + STRAVA_PROVIDER_FETCH_LEASE_MS).toISOString(),
+        lastActivitiesFetchAttemptAt: new Date(nowMs).toISOString(),
+      });
+      return { leaseToken, after, before };
     });
+  }
 
-    if (!response.ok) {
-      throw new Error(`Strava activities request failed (${response.status}).`);
+  private async releaseActivitiesFetch(leaseToken: string, success: boolean) {
+    const ref = db.collection('strava_connections').doc(this.userId);
+    const nowIso = new Date().toISOString();
+    await db.runTransaction(async (transaction: any) => {
+      const snap = await transaction.get(ref);
+      if (!snap.exists || snap.data()?.activitiesFetchLeaseToken !== leaseToken) return;
+      transaction.update(ref, {
+        activitiesFetchLeaseToken: null,
+        activitiesFetchLeaseUntil: null,
+        ...(success
+          ? { lastActivitiesFetchAt: nowIso, lastActivitiesFetchErrorAt: null }
+          : { lastActivitiesFetchErrorAt: nowIso }),
+      });
+    });
+  }
+
+  async fetchActivities(after?: number) {
+    const reservation = await this.reserveActivitiesFetch(after);
+    const activities: any[] = [];
+    const seenIds = new Set<string>();
+
+    try {
+      // A lease vem antes até da renovação do token: uma rajada de /sync não
+      // pode transformar um token expirado em várias chamadas simultâneas ao
+      // endpoint OAuth do provedor.
+      const token = await this.getAccessToken();
+      if (!token) throw new Error('Not connected to Strava');
+
+      for (let page = 1; page <= STRAVA_MAX_ACTIVITY_PAGES; page += 1) {
+        const url = new URL('https://www.strava.com/api/v3/athlete/activities');
+        if (reservation.after) url.searchParams.append('after', reservation.after.toString());
+        url.searchParams.append('before', reservation.before.toString());
+        url.searchParams.append('page', String(page));
+        url.searchParams.append('per_page', String(STRAVA_ACTIVITIES_PER_PAGE));
+
+        const response = await fetch(url.toString(), {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Strava activities request failed (${response.status}).`);
+        }
+
+        const batch = await response.json();
+        if (!Array.isArray(batch)) throw new Error('Strava activities response invalid.');
+        for (const activity of batch) {
+          const id = activity?.id === undefined || activity?.id === null ? '' : String(activity.id);
+          if (id && seenIds.has(id)) continue;
+          if (id) seenIds.add(id);
+          activities.push(activity);
+        }
+
+        if (batch.length < STRAVA_ACTIVITIES_PER_PAGE) {
+          await this.releaseActivitiesFetch(reservation.leaseToken, true);
+          return activities;
+        }
+      }
+
+      // Nunca avance lastSyncAt com um histórico truncado silenciosamente.
+      throw new Error(`STRAVA_SYNC_RESULT_LIMIT:${activities.length}`);
+    } catch (error) {
+      await this.releaseActivitiesFetch(reservation.leaseToken, false).catch(() => {});
+      throw error;
     }
-
-    const activities = await response.json();
-    return Array.isArray(activities) ? activities : [];
   }
 
   async fetchActivity(activityId: string | number) {
