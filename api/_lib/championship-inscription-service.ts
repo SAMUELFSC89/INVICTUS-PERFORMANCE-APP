@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { db, FieldValue } from './common.js';
-import { AsaasClient } from './asaas-client.js';
+import { AsaasClient, AsaasRequestError } from './asaas-client.js';
 import { getChampionship, isRegistrationOpen } from './championship-catalog.js';
 import {
   lockPaidChampionshipEdition,
@@ -151,7 +151,6 @@ export async function criarInscricaoChampionship(
   const profileSnap = await getActiveProfile(userId);
   if (!profileSnap) throw new Error('Usuario nao encontrado ou conta inativa.');
   const profile: any = profileSnap.data();
-  if (!profile.cpf) throw new Error('Complete seu CPF no perfil para emitir o checkout da inscricao.');
 
   // Antes da primeira cobrança, persiste o snapshot material da edição e
   // impede que envs diferentes substituam uma edição ainda não homologada.
@@ -202,6 +201,10 @@ export async function criarInscricaoChampionship(
       checkoutCreationLeaseToken: leaseToken,
       checkoutCreationLeaseUntil: now + CHECKOUT_CREATION_LEASE_MS,
       checkoutCreationStartedAt: new Date(now).toISOString(),
+      checkoutCreationFailedAt: FieldValue.delete(),
+      checkoutCreationFailureStatus: FieldValue.delete(),
+      checkoutCreationFailureCode: FieldValue.delete(),
+      checkoutReconciliationReason: FieldValue.delete(),
       criadaEm: current.criadaEm || FieldValue.serverTimestamp(),
     }, { merge: true });
     return { existing: false, data: null };
@@ -227,14 +230,44 @@ export async function criarInscricaoChampionship(
       descricao: `Taxa de inscrição avulsa em ${champ.title} (${champ.edition}). Competição esportiva por desempenho físico.`,
       referenciaExterna: registrationId,
       nomeCliente: profile.name || profile.displayName || 'Atleta Invictus',
-      cpf: profile.cpf,
+      cpf: profile.cpf || undefined,
       email: profile.email,
       successUrl: checkoutReturnUrl('success', championshipId),
       cancelUrl: checkoutReturnUrl('cancelled', championshipId),
       expiredUrl: checkoutReturnUrl('expired', championshipId),
       minutosExpiracao: 60,
     });
-  } catch {
+  } catch (erro: any) {
+    if (erro instanceof AsaasRequestError && erro.deterministic) {
+      // O provedor respondeu e rejeitou a requisição: sabemos que nenhum
+      // checkout foi criado. Libera a inscrição para nova tentativa em vez de
+      // prender o atleta numa conciliação desnecessária.
+      await db.runTransaction(async (transaction: any) => {
+        const snap = await transaction.get(ref);
+        if (!snap.exists || snap.data()?.checkoutCreationLeaseToken !== leaseToken) return;
+        transaction.set(ref, {
+          status: 'cancelada' as StatusInscricaoChampionship,
+          paymentStatus: 'FAILED',
+          checkoutCreationStatus: 'FAILED',
+          checkoutCreationLeaseToken: FieldValue.delete(),
+          checkoutCreationLeaseUntil: FieldValue.delete(),
+          checkoutCreationFailedAt: new Date().toISOString(),
+          checkoutCreationFailureStatus: erro.status,
+          checkoutCreationFailureCode: erro.code || 'ASAAS_4XX',
+          checkoutReconciliationReason: FieldValue.delete(),
+        }, { merge: true });
+      });
+      console.warn('[Championship checkout] criação recusada de forma determinística pelo Asaas', {
+        championshipId,
+        editionId: champ.editionId,
+        providerStatus: erro.status,
+        providerCode: erro.code || 'ASAAS_4XX',
+      });
+      throw new Error('O checkout foi recusado pelo provedor de pagamento. Tente novamente; se o erro persistir, atualize os dados solicitados no próprio checkout.');
+    }
+
+    // Sem resposta conclusiva do provedor (timeout, rede, 5xx etc.) não é
+    // seguro criar outra cobrança. Mantemos fail-closed para evitar duplicata.
     await db.runTransaction(async (transaction: any) => {
       const snap = await transaction.get(ref);
       if (!snap.exists || snap.data()?.checkoutCreationLeaseToken !== leaseToken) return;
@@ -244,6 +277,11 @@ export async function criarInscricaoChampionship(
         checkoutCreationFailedAt: new Date().toISOString(),
         checkoutReconciliationReason: 'ASAAS_CREATE_RESULT_UNKNOWN',
       }, { merge: true });
+    });
+    console.error('[Championship checkout] resultado de criação ficou incerto', {
+      championshipId,
+      editionId: champ.editionId,
+      errorName: String(erro?.name || 'Error'),
     });
     throw new Error('Nao foi possivel confirmar a criacao do checkout. A tentativa entrou em conciliacao e nao sera duplicada.');
   }
@@ -259,6 +297,8 @@ export async function criarInscricaoChampionship(
       checkoutCreationStatus: 'READY',
       checkoutCreationLeaseToken: FieldValue.delete(),
       checkoutCreationLeaseUntil: FieldValue.delete(),
+      checkoutCreationFailureStatus: FieldValue.delete(),
+      checkoutCreationFailureCode: FieldValue.delete(),
       checkoutReconciliationReason: FieldValue.delete(),
       checkoutCriadoEm: FieldValue.serverTimestamp(),
     }, { merge: true });
@@ -538,9 +578,10 @@ export async function registrarEventoFinanceiroChampionship(
       status,
       paymentStatus: missingTimestamp ? 'RECONCILIATION_REQUIRED' : (refunded ? 'REFUNDED' : event),
       externalPaymentReference: doc.id,
+      asaasPaymentId: data.asaasPaymentId || asaasPaymentId,
+      valorEventoFinanceiro: numericPaymentValue(valorObservado),
       paymentLifecycleEvent: event,
       paymentLifecycleObservedAt: observedAt,
-      valorEventoFinanceiro: numericPaymentValue(valorObservado),
       ...(refunded ? { reembolsadaEm: FieldValue.serverTimestamp() } : { contestedAt: FieldValue.serverTimestamp() }),
       ...((missingTimestamp || event === 'PAYMENT_PARTIALLY_REFUNDED' || event === 'PAYMENT_REFUND_IN_PROGRESS')
         ? {
