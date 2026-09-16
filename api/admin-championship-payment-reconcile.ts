@@ -139,8 +139,10 @@ export default async function handler(
     providerPayment.raw?.externalReference,
     providerObservedAt,
   );
+  const requiresReconciliation = 'requerReconciliacao' in result
+    && result.requerReconciliacao === true;
 
-  if (!result?.encontrada || result?.requerReconciliacao) {
+  if (!result.encontrada || requiresReconciliation) {
     return res.status(409).json({
       error: 'O pagamento foi localizado no Asaas, mas a inscrição exige conciliação adicional.',
       result,
