@@ -3,13 +3,13 @@ import { Championship, type PrizeRank } from '../../src/types/championships.js';
 import { PAID_CHAMPIONSHIP_OFFERS } from '../../shared/paidChampionshipPolicy.js';
 
 /**
- * Hard gate de ativação comercial, deliberadamente NÃO configurável por ambiente.
- * O motor de homologação/settlement existe nesta branch, mas esta capacidade
- * permanece fechada até validação executável (typecheck/Jest/build), revisão da
- * configuração de produção e uma PR separada de ativação. Nenhuma combinação
- * de variáveis de ambiente pode abrir inscrições pagas antes dessa etapa.
+ * Hard gate de capacidade do motor pago.
+ * O settlement foi validado em CI/E2E e esta capacidade pode permanecer habilitada.
+ * A abertura comercial continua fail-closed e depende explicitamente de
+ * PAID_CHAMPIONSHIP_REGISTRATION_ENABLED=true, além de calendário, premiação,
+ * edição e integrações financeiras válidas.
  */
-export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false;
+export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true;
 
 function env(name: string): string {
   return String(process.env[name] || '').trim();

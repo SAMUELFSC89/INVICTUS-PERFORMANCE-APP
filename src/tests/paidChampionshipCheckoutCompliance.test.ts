@@ -88,10 +88,11 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(types).toContain("| 'PAYMENT_CHARGEBACK_DISPUTE'");
   });
 
-  it('mantém a abertura comercial hard-closed até uma PR separada de ativação', () => {
+  it('mantém a abertura comercial dependente de configuração explícita mesmo com o motor habilitado', () => {
     const catalog = read('api/_lib/championship-catalog.ts');
-    expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false');
+    expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true');
     expect(catalog).toContain('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED');
+    expect(catalog).toContain('A edição ainda não foi liberada para inscrições.');
     expect(catalog).toContain('A premiação oficial ainda não foi publicada ou possui posições inválidas.');
     expect(catalog).toContain('As modalidades de cardio elegíveis ainda não foram publicadas.');
     expect(catalog).toContain('registrationOpensAt');

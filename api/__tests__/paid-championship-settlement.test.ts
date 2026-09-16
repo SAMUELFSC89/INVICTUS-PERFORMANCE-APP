@@ -53,14 +53,15 @@ describe('paid championship final settlement', () => {
     expect(ranking[0]).toMatchObject({ userId: 'ok', score: 10, validActivities: 1 });
   });
 
-  test('motor de settlement existe, mas a capacidade comercial permanece hard-closed nesta PR', () => {
+  test('motor de settlement está habilitado, mas a abertura comercial continua fail-closed por configuração', () => {
     const catalog = read('api/_lib/championship-catalog.ts');
     const settlement = read('api/_lib/paid-championship-settlement.ts');
     const credit = read('api/_lib/championship-prize-credit.ts');
     const edition = read('api/_lib/paid-championship-edition.ts');
     const policy = read('shared/paidChampionshipPolicy.ts');
 
-    expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false');
+    expect(catalog).toContain('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true');
+    expect(catalog).toContain('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED');
     expect(catalog).toContain("envPrefix: 'CHAMPIONSHIP_STRENGTH' | 'CHAMPIONSHIP_CARDIO'");
     expect(catalog).toContain('env(`${envPrefix}_SETTLEMENT_AT`)');
     expect(catalog).toContain('publishedConfigDigest');
