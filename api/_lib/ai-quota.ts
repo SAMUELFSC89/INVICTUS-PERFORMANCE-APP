@@ -9,7 +9,8 @@ export type AiQuotaFeature =
   | 'workout_generation'
   | 'cardio_personalization'
   | 'powerlift_audit'
-  | 'activity_photo_validation';
+  | 'activity_photo_validation'
+  | 'presence_biometric';
 
 type BucketPolicy = { windowMs: number; maxRequests: number };
 type FeaturePolicy = { burst: BucketPolicy; daily: BucketPolicy };
@@ -27,6 +28,7 @@ const DEFAULT_POLICIES: Record<AiQuotaFeature, FeaturePolicy> = {
   cardio_personalization: { burst: { windowMs: HOUR, maxRequests: 20 }, daily: { windowMs: DAY, maxRequests: 60 } },
   powerlift_audit: { burst: { windowMs: HOUR, maxRequests: 6 }, daily: { windowMs: DAY, maxRequests: 20 } },
   activity_photo_validation: { burst: { windowMs: 30 * MINUTE, maxRequests: 12 }, daily: { windowMs: DAY, maxRequests: 60 } },
+  presence_biometric: { burst: { windowMs: HOUR, maxRequests: 8 }, daily: { windowMs: DAY, maxRequests: 24 } },
 };
 
 function boundedEnvInt(name: string, fallback: number, max = 10_000): number {

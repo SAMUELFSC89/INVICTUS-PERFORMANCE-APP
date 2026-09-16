@@ -18,6 +18,10 @@
       "destination": "/api/performance-ai-guarded"
     },
     {
+      "source": "/api/validate-presence",
+      "destination": "/api/validate-presence-guarded"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/app"
     },
