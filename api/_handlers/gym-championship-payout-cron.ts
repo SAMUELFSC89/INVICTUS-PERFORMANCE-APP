@@ -2,6 +2,19 @@ import { timingSafeEqual } from 'crypto';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors } from '../_lib/common.js';
 import { finalizeCommunityGymChampionshipCycle } from '../_lib/championship-scoring-service.js';
+import { runPaidChampionshipSettlementSweep } from '../_lib/paid-championship-settlement-orchestrator.js';
+
+/**
+ * Somente condições transitórias/operacionais conhecidas retornam 200 para o
+ * cron tentar novamente depois. Divergência de regulamento ou de dados
+ * competitivos é anomalia de integridade e precisa subir como 500/alerta.
+ */
+function isExpectedPaidBlock(reason: string): boolean {
+  return reason.startsWith('FINANCIAL_REVIEW_PENDING:')
+    || reason.startsWith('ACTIVITY_REVIEW_PENDING:')
+    || reason === 'UNRESOLVED_PRIZE_TIE'
+    || reason === 'Settlement já está em execução por outro worker.';
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -12,16 +25,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const provided = header?.startsWith('Bearer ') ? header.slice(7).trim() : String(custom || header || '').trim();
   const allowed = Boolean(secret) && provided.length === secret.length && timingSafeEqual(Buffer.from(provided), Buffer.from(secret));
   if (!allowed) return res.status(401).json({ success: false, message: 'Não autorizado.' });
-  const previousMonth = new Date();
+
+  const now = new Date();
+  const previousMonth = new Date(now);
   previousMonth.setUTCDate(1);
   previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1);
   const defaultCycle = previousMonth.toISOString().slice(0, 7);
-  const cycleKey = String(req.query?.cycleKey || req.body?.cycleKey || defaultCycle);
-  try {
-    const result = await finalizeCommunityGymChampionshipCycle(cycleKey);
-    return res.status(200).json({ success: true, cycleKey, result });
-  } catch (error) {
-    console.error('[GYM_CHAMPIONSHIP_PAYOUT]', error);
-    return res.status(500).json({ success: false, message: 'Não foi possível concluir a auditoria e a premiação do ciclo.' });
+  const requestedCycle = req.query?.cycleKey || req.body?.cycleKey;
+  const cycleKey = String(requestedCycle || defaultCycle);
+
+  // O cron agora roda diariamente por causa dos Campeonatos Oficiais pagos,
+  // mas o campeonato comunitário continua mensal. Uma chamada manual com
+  // cycleKey explícito ainda pode forçar a reconciliação de um ciclo específico.
+  const shouldRunCommunity = Boolean(requestedCycle) || now.getUTCDate() === 1;
+  let community: Record<string, any> | null = shouldRunCommunity
+    ? null
+    : { status: 'SKIPPED_NOT_MONTHLY_WINDOW', cycleKey };
+  let communityError: string | null = null;
+
+  if (shouldRunCommunity) {
+    try {
+      community = await finalizeCommunityGymChampionshipCycle(cycleKey);
+    } catch (error) {
+      communityError = error instanceof Error ? error.message : 'UNKNOWN_COMMUNITY_SETTLEMENT_ERROR';
+      console.warn('[GYM_CHAMPIONSHIP_PAYOUT][COMMUNITY_BLOCKED]', { cycleKey, reason: communityError });
+    }
   }
+
+  let paid;
+  try {
+    paid = await runPaidChampionshipSettlementSweep(now);
+  } catch (error) {
+    console.error('[GYM_CHAMPIONSHIP_PAYOUT][PAID_FATAL]', error);
+    return res.status(500).json({ success: false, message: 'Falha técnica ao executar settlement dos Campeonatos Oficiais.' });
+  }
+
+  for (const blocked of paid.blocked) {
+    const log = isExpectedPaidBlock(blocked.reason) ? console.warn : console.error;
+    log('[GYM_CHAMPIONSHIP_PAYOUT][PAID_BLOCKED]', blocked);
+  }
+
+  const communityExpectedBlock = Boolean(communityError?.includes('atividade(s) competitiva(s) em análise'));
+  const unexpectedPaidBlock = paid.blocked.some((item) => !isExpectedPaidBlock(item.reason));
+  const unexpectedCommunityError = Boolean(communityError) && !communityExpectedBlock;
+  const status = unexpectedPaidBlock || unexpectedCommunityError ? 500 : 200;
+
+  return res.status(status).json({
+    success: status === 200,
+    cycleKey,
+    community: community || { status: communityExpectedBlock ? 'BLOCKED_REVIEW' : 'ERROR', reason: communityError },
+    paid,
+  });
 }

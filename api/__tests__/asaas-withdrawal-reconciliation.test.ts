@@ -9,10 +9,13 @@ describe('Asaas withdrawal reconciliation hardening', () => {
   const originalFetch = global.fetch;
   const originalKey = process.env.ASAAS_API_KEY;
   const originalBase = process.env.ASAAS_API_BASE_URL;
+  const originalEnvironment = process.env.ASAAS_ENVIRONMENT;
+  const originalAuthorizationToken = process.env.ASAAS_AUTHORIZATION_TOKEN;
 
   beforeEach(() => {
     process.env.ASAAS_API_KEY = 'test-key';
     process.env.ASAAS_API_BASE_URL = 'https://asaas.example.test/v3';
+    delete process.env.ASAAS_AUTHORIZATION_TOKEN;
   });
 
   afterEach(() => {
@@ -21,6 +24,10 @@ describe('Asaas withdrawal reconciliation hardening', () => {
     else process.env.ASAAS_API_KEY = originalKey;
     if (originalBase === undefined) delete process.env.ASAAS_API_BASE_URL;
     else process.env.ASAAS_API_BASE_URL = originalBase;
+    if (originalEnvironment === undefined) delete process.env.ASAAS_ENVIRONMENT;
+    else process.env.ASAAS_ENVIRONMENT = originalEnvironment;
+    if (originalAuthorizationToken === undefined) delete process.env.ASAAS_AUTHORIZATION_TOKEN;
+    else process.env.ASAAS_AUTHORIZATION_TOKEN = originalAuthorizationToken;
     jest.restoreAllMocks();
   });
 
@@ -52,6 +59,43 @@ describe('Asaas withdrawal reconciliation hardening', () => {
       value: 42.5,
       externalReference: 'pix_req_user_request123',
     });
+  });
+
+  test('production transfer refuses before HTTP call when authorization gate token is absent', async () => {
+    process.env.ASAAS_API_BASE_URL = 'https://api.asaas.com/v3';
+    delete process.env.ASAAS_AUTHORIZATION_TOKEN;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as any;
+
+    await expect(AsaasClient.transferPix({
+      value: 42.5,
+      pixKey: 'evp-key',
+      pixKeyType: 'random',
+      externalReference: 'pix_req_user_request123',
+    })).rejects.toThrow(/ASAAS_AUTHORIZATION_TOKEN.*obrigatória/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('production transfer may reach provider only when authorization gate is configured', async () => {
+    process.env.ASAAS_API_BASE_URL = 'https://api.asaas.com/v3';
+    process.env.ASAAS_AUTHORIZATION_TOKEN = 'authorization-secret-for-test';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 'transfer_prod_123', status: 'PENDING', value: 42.5,
+        externalReference: 'pix_req_user_request123',
+      }),
+    });
+    global.fetch = fetchMock as any;
+
+    await expect(AsaasClient.transferPix({
+      value: 42.5,
+      pixKey: 'evp-key',
+      pixKeyType: 'random',
+      externalReference: 'pix_req_user_request123',
+    })).resolves.toMatchObject({ id: 'transfer_prod_123', value: 42.5 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   test('transfer response fails closed when provider value is missing', async () => {
@@ -109,9 +153,10 @@ describe('Asaas withdrawal reconciliation hardening', () => {
     expect(engine).toContain("reconciliationReason: 'PROVIDER_TRANSFER_ID_CONFLICT'");
   });
 
-  test('authorization callback recovers binding by reference and requires a numeric exact amount', () => {
+  test('authorization callback recovers binding, checks prize disputes and requires a numeric exact amount', () => {
     const authorization = read('api/_handlers/asaas-withdrawal-authorization.ts');
     expect(authorization).toContain("db.collection('withdrawals').doc(externalReference).get()");
+    expect(authorization).toContain('getChampionshipPrizeFinancialRisk(withdrawal.userId, tx)');
     expect(authorization).toContain("typeof transferValue === 'number'");
     expect(authorization).toContain('Number.isFinite(transferValue)');
     expect(authorization).toContain('providerAuthorizationBoundAt');

@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { timingSafeEqual } from 'crypto';
 import { cors, db } from '../_lib/common.js';
 import { isActiveAccountState } from '../_lib/account-state.js';
+import { getChampionshipPrizeFinancialRisk } from '../_lib/championship-prize-financial-risk.js';
 
 function normalizeWithdrawalReference(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -94,6 +95,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userSnap = await tx.get(db.collection('users').doc(withdrawal.userId));
       if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
         return { approved: false, reason: 'Conta do titular nao esta ativa para operacoes financeiras.' };
+      }
+
+      // Um prêmio já creditado cujo pagamento de inscrição entrou depois em
+      // refund/chargeback/conciliação torna qualquer saque daquele titular
+      // inelegível até resolução financeira. A leitura usa a mesma transação
+      // desta autorização, serializando com webhooks concorrentes do Firestore.
+      const championshipRisk = await getChampionshipPrizeFinancialRisk(withdrawal.userId, tx);
+      if (championshipRisk) {
+        return {
+          approved: false,
+          reason: 'Premiacao de campeonato esta em conciliacao financeira por reembolso ou chargeback.',
+        };
       }
 
       if (externalReference && externalReference !== canonicalWithdrawalId) {

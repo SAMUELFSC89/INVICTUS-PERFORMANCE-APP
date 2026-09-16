@@ -17,6 +17,8 @@ export interface ActivityCompetitionContext {
   requiresGymCheckIn: boolean;
   requiresContinuousGps: boolean;
   requiresMotionSensors: boolean;
+  /** Identidade imutável da edição paga; ausente nos outros contextos. */
+  editionId?: string;
   /** Identifica a adesão específica; muda quando o atleta sai e entra de novo. */
   epochId?: string;
   epochStartedAt?: string;
@@ -68,20 +70,12 @@ function timestampMs(value: any): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/**
- * Resolve adesao no instante em que a atividade comecou. O intervalo
- * enrolledAt/joinedAt -> withdrawnAt evita que uma saida durante a sessao
- * transforme retroativamente uma atividade competitiva em pessoal.
- */
 function activeAt(data: Record<string, any> | undefined, when: Date, activeNow: boolean, joinedField: string): boolean {
   if (!data) return false;
   const whenMs = when.getTime();
   const joinedMs = timestampMs(data[joinedField]);
   const withdrawnMs = timestampMs(data.withdrawnAt);
   if (joinedMs !== null && joinedMs > whenMs) return false;
-  // Uma reentrada limpa withdrawnAt, mas dados legados podem ter mantido uma
-  // retirada anterior ao novo enrolledAt. Essa retirada antiga não encerra a
-  // adesão nova.
   const applicableWithdrawal = withdrawnMs !== null && (joinedMs === null || withdrawnMs >= joinedMs)
     ? withdrawnMs
     : null;
@@ -205,11 +199,14 @@ export async function resolveActivityCompetitionPolicy(
     isIndoorCardio,
     when,
   });
-  const registrations = new Map(
-    paidRegistrationsSnap.docs.map((entry) => [String(entry.data()?.championshipId || ''), { id: entry.id, ...entry.data() }])
-  );
+  const paidRegistrations = paidRegistrationsSnap.docs.map((entry) => ({ id: entry.id, ...entry.data() } as any));
   for (const championship of candidates) {
-    const registration: any = registrations.get(championship.id);
+    const registration: any = paidRegistrations.find((entry: any) => (
+      String(entry.editionId || '') === championship.editionId
+      || (!entry.editionId
+        && entry.championshipId === championship.id
+        && entry.regulationHash === championship.regulationHash)
+    ));
     if (!registration || registration.status !== 'paga' || registration.paymentStatus !== 'PAID') continue;
     const paidAt = timestampMs(registration.pagaEm ?? registration.paidAt);
     if (paidAt === null || paidAt > when.getTime()) continue;
@@ -221,6 +218,7 @@ export async function resolveActivityCompetitionPolicy(
       activityType,
       isIndoorCardio,
       {
+        editionId: championship.editionId,
         ...enrollmentEpoch(registration, registration.pagaEm ? 'pagaEm' : 'paidAt', registration.id),
         cycleKey: cycleKey(when),
         gymId: String(user.gymId || user.academyId || ''),
@@ -255,8 +253,6 @@ export async function createActivityCompetitionPolicySnapshot(
   const ref = db.collection('activity_policy_snapshots').doc();
   const issuedAt = new Date();
   const startBy = new Date(issuedAt.getTime() + 30 * 60 * 1000).toISOString();
-  // Retenção suficiente para finalizar/repetir o envio após uma sessão longa
-  // ou uma breve indisponibilidade. `startBy` limita apenas o início.
   const expiresAt = new Date(issuedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const frozenPolicy = finalizePolicy(normalizedInput, input.when || issuedAt, policy.contexts, {
     snapshotId: ref.id,
@@ -275,8 +271,6 @@ export async function createActivityCompetitionPolicySnapshot(
     createdAt: issuedAt.toISOString(),
     startBy,
     expiresAt,
-    // Campo Timestamp separado para permitir TTL nativo do Firestore sem
-    // mudar o contrato JSON (que continua usando ISO no aplicativo).
     expiresAtTimestamp: new Date(expiresAt),
   });
   return frozenPolicy;
@@ -352,7 +346,8 @@ export async function persistActivityCompetitionEntries(params: {
   const batch = db.batch();
   const now = new Date().toISOString();
   for (const context of params.policy.contexts) {
-    const safeContextId = `${context.type}_${context.id}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 500);
+    const durableContextId = context.type === 'paid_championship' && context.editionId ? context.editionId : context.id;
+    const safeContextId = `${context.type}_${durableContextId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 500);
     const ref = db.collection('activity_competition_entries').doc(`${safeContextId}_${params.activityId}`);
     batch.set(ref, {
       id: ref.id,
@@ -360,6 +355,7 @@ export async function persistActivityCompetitionEntries(params: {
       userId: params.userId,
       contextType: context.type,
       contextId: context.id,
+      editionId: context.editionId || null,
       contextLabel: context.label,
       enrollmentId: context.enrollmentId,
       policyVersion: params.policy.version,

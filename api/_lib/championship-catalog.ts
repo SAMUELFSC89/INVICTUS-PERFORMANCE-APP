@@ -1,14 +1,13 @@
+import { createHash } from 'node:crypto';
 import { Championship, type PrizeRank } from '../../src/types/championships.js';
 import { PAID_CHAMPIONSHIP_OFFERS } from '../../shared/paidChampionshipPolicy.js';
 
 /**
- * Hard gate de capacidade, deliberadamente NÃO configurável por ambiente.
- * A cobrança de uma edição paga só pode ser liberada depois que o código de
- * homologação/settlement da premiação final existir e estiver coberto por CI.
- *
- * Quando esse motor for implementado, a mesma PR deve trocar este valor para
- * true e adicionar os testes de settlement; até lá nenhuma combinação de envs
- * consegue abrir inscrições pagas por acidente.
+ * Hard gate de ativação comercial, deliberadamente NÃO configurável por ambiente.
+ * O motor de homologação/settlement existe nesta branch, mas esta capacidade
+ * permanece fechada até validação executável (typecheck/Jest/build), revisão da
+ * configuração de produção e uma PR separada de ativação. Nenhuma combinação
+ * de variáveis de ambiente pode abrir inscrições pagas antes dessa etapa.
  */
 export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false;
 
@@ -25,11 +24,16 @@ function parsePrizeDistribution(name: string): PrizeRank[] {
     const valid = parsed
       .map((item: any) => ({
         rank: Math.floor(Number(item?.rank)),
-        amount: Number(item?.amount),
+        amount: Math.round(Number(item?.amount) * 100) / 100,
         percentage: Number(item?.percentage),
         label: String(item?.label || '').trim(),
       }))
-      .filter((item) => Number.isInteger(item.rank) && item.rank > 0 && Number.isFinite(item.amount) && item.amount > 0);
+      .filter((item) => Number.isInteger(item.rank) && item.rank > 0 && Number.isFinite(item.amount) && item.amount > 0)
+      .sort((a, b) => a.rank - b.rank);
+
+    if (new Set(valid.map((item) => item.rank)).size !== valid.length) return [];
+    if (valid.some((item, index) => item.rank !== index + 1)) return [];
+
     const pool = valid.reduce((sum, item) => sum + item.amount, 0);
     return valid.map((item) => ({
       ...item,
@@ -60,27 +64,63 @@ function durationDays(startAt: string, endAt: string): number {
   return Math.max(1, Math.ceil((end - start) / 86_400_000));
 }
 
+function digestPublishedConfig(value: Record<string, unknown>): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+export function championshipEditionId(championshipId: string, publishedConfigDigest: string): string {
+  const safeChampionshipId = String(championshipId || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  const digest = String(publishedConfigDigest || '').replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+  return `${safeChampionshipId}_${digest.slice(0, 24)}`;
+}
+
 function buildChampionship(
   id: keyof typeof PAID_CHAMPIONSHIP_OFFERS,
   envPrefix: 'CHAMPIONSHIP_STRENGTH' | 'CHAMPIONSHIP_CARDIO',
 ): Championship {
   const offer = PAID_CHAMPIONSHIP_OFFERS[id];
+  const edition = env(`${envPrefix}_EDITION`) || 'Edição de lançamento';
   const startAt = env(`${envPrefix}_START_AT`);
   const endAt = env(`${envPrefix}_END_AT`);
+  const settlementAt = env(`${envPrefix}_SETTLEMENT_AT`);
   const registrationOpensAt = env(`${envPrefix}_REGISTRATION_OPENS_AT`);
   const registrationClosesAt = env(`${envPrefix}_REGISTRATION_CLOSES_AT`);
   const prizes = parsePrizeDistribution(`${envPrefix}_PRIZES_JSON`);
-  const prizePool = prizes.reduce((sum, prize) => sum + prize.amount, 0);
+  const prizePool = Math.round(prizes.reduce((sum, prize) => sum + prize.amount, 0) * 100) / 100;
   const allowedCardioTypes = env('CHAMPIONSHIP_CARDIO_ALLOWED_TYPES')
     .split(',')
     .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort();
+  const antiFraudProfile = {
+    minDurationMinutes: 20,
+    maxDurationMinutes: 90,
+    requireGeofence: offer.modality === 'musculacao',
+    requireContinuousGPS: offer.modality === 'cardio',
+    maxRiskScore: 35,
+    ...(offer.modality === 'cardio' ? { allowedCardioTypes } : {}),
+  };
+
+  const publishedConfigDigest = digestPublishedConfig({
+    id: offer.id,
+    edition,
+    startAt,
+    endAt,
+    settlementAt,
+    registrationOpensAt,
+    registrationClosesAt,
+    registrationPrice: offer.entryPrice,
+    prizes,
+    antiFraudProfile,
+  });
+  const editionId = championshipEditionId(offer.id, publishedConfigDigest);
 
   return {
     id: offer.id,
+    editionId,
     type: offer.modality === 'cardio' ? 'run_elite_corrida' : 'arena_musculacao',
     title: offer.title,
-    edition: env(`${envPrefix}_EDITION`) || 'Edição de lançamento',
+    edition,
     subtitle: offer.modality === 'cardio' ? 'Desempenho real no cardio' : 'Desempenho real na musculação',
     description: offer.performanceDescription,
     categoryLabel: offer.modality === 'cardio' ? 'CARDIO' : 'MUSCULAÇÃO',
@@ -88,6 +128,8 @@ function buildChampionship(
     durationDays: durationDays(startAt, endAt),
     startAt,
     endAt,
+    settlementAt,
+    publishedConfigDigest,
     registrationPrice: offer.entryPrice,
     registrationOpensAt,
     registrationClosesAt,
@@ -98,15 +140,8 @@ function buildChampionship(
     prizeDistribution: prizes,
     status: statusForPeriod(startAt, endAt),
     regulationVersion: offer.regulationVersion,
-    regulationHash: offer.regulationHash,
-    antiFraudProfile: {
-      minDurationMinutes: 20,
-      maxDurationMinutes: 90,
-      requireGeofence: offer.modality === 'musculacao',
-      requireContinuousGPS: offer.modality === 'cardio',
-      maxRiskScore: 35,
-      ...(offer.modality === 'cardio' ? { allowedCardioTypes } : {}),
-    },
+    regulationHash: `${offer.regulationHash}-${publishedConfigDigest.slice(0, 16)}`,
+    antiFraudProfile,
   };
 }
 
@@ -126,14 +161,18 @@ function registrationReadiness(championship: Championship, now = new Date()): { 
   const registrationEnd = Date.parse(championship.registrationClosesAt || '');
   const competitionStart = Date.parse(championship.startAt);
   const competitionEnd = Date.parse(championship.endAt);
-  if (![registrationStart, registrationEnd, competitionStart, competitionEnd].every(Number.isFinite)) {
-    return { open: false, reason: 'O calendário oficial ainda não foi publicado.' };
+  const settlementAt = Date.parse(championship.settlementAt || '');
+  if (![registrationStart, registrationEnd, competitionStart, competitionEnd, settlementAt].every(Number.isFinite)) {
+    return { open: false, reason: 'O calendário oficial e a data de homologação ainda não foram publicados.' };
   }
-  if (registrationEnd <= registrationStart || competitionEnd <= competitionStart || registrationEnd > competitionEnd) {
+  if (registrationEnd <= registrationStart || competitionEnd <= competitionStart || registrationEnd > competitionEnd || settlementAt <= competitionEnd) {
     return { open: false, reason: 'O calendário da edição precisa ser revisado.' };
   }
   if (!championship.prizeDistribution.length || championship.prizePool <= 0) {
-    return { open: false, reason: 'A premiação oficial ainda não foi publicada.' };
+    return { open: false, reason: 'A premiação oficial ainda não foi publicada ou possui posições inválidas.' };
+  }
+  if (!championship.publishedConfigDigest || !championship.editionId || championship.regulationHash.length < 20) {
+    return { open: false, reason: 'A configuração publicada da edição ainda não foi congelada.' };
   }
   if (championship.type === 'run_elite_corrida' && !(championship.antiFraudProfile.allowedCardioTypes || []).length) {
     return { open: false, reason: 'As modalidades de cardio elegíveis ainda não foram publicadas.' };
@@ -172,10 +211,6 @@ export function isRegistrationOpen(championship: Championship, now: Date = new D
   return registrationReadiness(championship, now).open;
 }
 
-/**
- * O matcher permanece fail-closed: a edição de cardio só aceita modalidades
- * explicitamente publicadas e nenhuma competição pontua fora da janela real.
- */
 export function matchActiveChampionshipsForActivity(params: {
   activityType: string;
   cardioType?: string;
