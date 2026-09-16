@@ -26,6 +26,22 @@
       "destination": "/api/activity-map-guarded"
     },
     {
+      "source": "/api/payments/verify-purchase",
+      "destination": "/api/payments-verify-purchase-guarded"
+    },
+    {
+      "source": "/api/validate-presence",
+      "destination": "/api/validate-presence-guarded"
+    },
+    {
+      "source": "/api/strava/webhook",
+      "destination": "/api/strava-webhook-guarded"
+    },
+    {
+      "source": "/api/app",
+      "destination": "/api/app-guarded"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/app"
     },
