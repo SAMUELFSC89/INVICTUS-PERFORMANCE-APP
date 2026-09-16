@@ -6,6 +6,7 @@ const mockGenerate = jest.fn();
 const mockBuildSummary = jest.fn();
 const mockLoadMemory = jest.fn();
 const mockExtractMemory = jest.fn();
+const mockConsumeAiQuota = jest.fn();
 const mockCache = new Map<string, unknown>();
 
 jest.mock('../_lib/common', () => ({
@@ -28,6 +29,7 @@ jest.mock('../_lib/ai-config', () => ({
   classifyAiError: () => ({ status: 503, code: 'AI_UNAVAILABLE', message: 'Indisponível', retryable: true })
 }));
 jest.mock('../_lib/ai-usage-logger', () => ({ extractUsage: () => ({}), logAiUsage: jest.fn(async () => {}), newAiRequestId: () => 'request' }));
+jest.mock('../_lib/ai-quota', () => ({ consumeAiQuota: (...args: unknown[]) => mockConsumeAiQuota(...args) }));
 jest.mock('../_handlers/health-summary', () => ({ buildHealthSummary: (...args: unknown[]) => mockBuildSummary(...args) }));
 jest.mock('../_lib/health-data-layer', () => ({ lerSerieTemporalMetrica: jest.fn() }));
 jest.mock('../_lib/cache', () => ({ CacheManager: {
@@ -37,7 +39,7 @@ jest.mock('../_lib/cache', () => ({ CacheManager: {
 } }));
 
 function response() {
-  const res: any = { status: jest.fn(), json: jest.fn() };
+  const res: any = { status: jest.fn(), json: jest.fn(), setHeader: jest.fn() };
   res.status.mockReturnValue(res);
   res.json.mockReturnValue(res);
   return res;
@@ -47,6 +49,7 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
   beforeEach(() => {
     jest.clearAllMocks(); mockCache.clear();
     jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-05T15:00:00Z'));
+    mockConsumeAiQuota.mockResolvedValue({ allowed: true, retryAfterSeconds: 0 });
     mockUserGet.mockResolvedValue({
       exists: true,
       data: () => ({
@@ -79,6 +82,7 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ENTITLEMENT_UNAVAILABLE' }));
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(mockBuildSummary).not.toHaveBeenCalled();
+    expect(mockConsumeAiQuota).not.toHaveBeenCalled();
   });
 
   test('Free continua bloqueado apenas na geração IA', async () => {
@@ -88,6 +92,7 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(mockBuildSummary).not.toHaveBeenCalled();
+    expect(mockConsumeAiQuota).not.toHaveBeenCalled();
   });
 
   test('período inválido é rejeitado sem gastos', async () => {
@@ -95,6 +100,7 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
     await handler({ method: 'POST', body: { action: 'health-report', days: 365 } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockConsumeAiQuota).not.toHaveBeenCalled();
   });
 
   test('ausência de dados usa resposta determinística semGemini', async () => {
@@ -102,6 +108,7 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
     const res = response();
     await handler({ method: 'POST', body: { action: 'health-report', days: 30 } } as any, res);
     expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockConsumeAiQuota).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ generationMode: 'deterministic', confidence: 'DADOS INSUFICIENTES' }));
   });
 
@@ -111,6 +118,7 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
     const res = response();
     await handler({ method: 'POST', body: { action: 'health-report', days: 7 } } as any, res);
     expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockConsumeAiQuota).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ generationMode: 'deterministic', periodDays: 7 }));
   });
 
@@ -121,6 +129,7 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
     mockWorkoutGet.mockResolvedValueOnce({ docs: [activity, activity] });
     const res = response();
     await handler({ method: 'POST', body: { action: 'health-report', days: 7 } } as any, res);
+    expect(mockConsumeAiQuota).toHaveBeenCalledWith('owner', 'health_report');
     expect(mockGenerate).toHaveBeenCalledTimes(1);
     const prompt = mockGenerate.mock.calls[0][0].contents;
     expect(prompt).toContain('"sessions":1');
@@ -129,13 +138,25 @@ describe('relatório de saúde: autorização, período e isolamento da IA', () 
     expect(prompt).not.toMatch(/PRIVATE_DOCUMENT_ID|spoofed-id/);
   });
 
-  test('relatório respeita7dias, não envia identidade nem usa memória/TTS; repetir usa cache', async () => {
+  test('quota Health negada responde 429 sem chamar Gemini', async () => {
+    mockConsumeAiQuota.mockResolvedValueOnce({ allowed: false, retryAfterSeconds: 75, reason: 'quota_exceeded' });
+    const res = response();
+    await handler({ method: 'POST', body: { action: 'health-report', days: 7 } } as any, res);
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '75');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'AI_RATE_LIMITED', retryAfterSeconds: 75 }));
+  });
+
+  test('relatório respeita7dias, não envia identidade nem usa memória/TTS; repetir usa cache sem consumir nova quota', async () => {
     const req: any = { method: 'POST', body: { action: 'health-report', days: 7, timeZone: 'America/Sao_Paulo',
       includeAudio: true, userProfile: { uid: 'owner', displayName: 'PRIVATE NAME', cpf: 'PRIVATE CPF' } } };
     const first = response(); const second = response();
     await handler(req, first); await handler(req, second);
     expect(mockBuildSummary).toHaveBeenCalledWith('owner', 30, 'America/Sao_Paulo');
     expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(mockConsumeAiQuota).toHaveBeenCalledTimes(1);
+    expect(mockConsumeAiQuota).toHaveBeenCalledWith('owner', 'health_report');
     const prompt = mockGenerate.mock.calls[0][0].contents;
     expect(prompt).toContain('"days":7');
     expect(prompt).not.toMatch(/PRIVATE NAME|PRIVATE CPF|owner/);
