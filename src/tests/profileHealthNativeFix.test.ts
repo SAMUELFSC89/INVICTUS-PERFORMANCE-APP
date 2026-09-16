@@ -11,7 +11,8 @@ describe('profile photo flow', () => {
     expect(profile).toContain('setProfilePhotoOverride(uploadedPhotoURL)');
     expect(profile).toContain('refreshProfileInBackground()');
     expect(profile).not.toContain('await refreshUser();');
-    expect(profile).toContain('accept="image/*"');
+    expect(profile).toContain('accept="image/jpeg,image/png,image/webp"');
+    expect(profile).not.toContain('image/heic');
     expect(profile).toContain('await userService.removeProfilePhoto()');
     expect(profile).toContain('Trocar foto');
     expect(profile).toContain('Remover foto');
@@ -24,6 +25,7 @@ describe('profile photo flow', () => {
     expect(utils).toContain("new Error('IMAGE_PROCESSING_TIMEOUT')");
     expect(utils).toContain('URL.revokeObjectURL(objectUrl)');
     expect(service).toContain("new Error('UPLOAD_TIMEOUT')");
+    expect(service).toContain('}, 60_000);');
     expect(service).toContain("withTimeout(getDownloadURL(uploadTask.snapshot.ref), 15_000, 'DOWNLOAD_URL_TIMEOUT')");
     expect(service).toContain("15_000, 'PROFILE_WRITE_TIMEOUT'");
   });
