@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { API_CONFIG } from './config';
 import './features/shareCardMapAlignment';
 import './features/shareCardRoundEnhancer';
+import './features/shareActivityMapPrivacy.css';
 
 // #229: NO APP NATIVO, TODA CHAMADA /api PRECISA VIRAR URL ABSOLUTA.
 //

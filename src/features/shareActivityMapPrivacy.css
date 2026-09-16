@@ -1,0 +1,14 @@
+/*
+ * O backend remove uma faixa das duas extremidades antes de renderizar qualquer
+ * mapa da atividade. Estes marcadores eram projetados a partir da trajetória
+ * original mantida no cliente e, portanto, poderiam recolocar visualmente o
+ * ponto exato de saída/chegada sobre a imagem já redigida.
+ *
+ * Limitamos a regra à layer geográfica do card. O modo foto + rota continua
+ * com seus marcadores visuais porque ali não existe um mapa capaz de revelar
+ * a localização real.
+ */
+.share-screen .share-card-map-layer [data-share-map-markers],
+.share-screen .share-card-map-layer .share-round-map-markers {
+  display: none !important;
+}
