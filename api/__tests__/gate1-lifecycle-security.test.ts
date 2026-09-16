@@ -77,6 +77,22 @@ describe('Gate 1 lifecycle and privacy hardening', () => {
     expect(source).toContain('exige conciliacao antes de uma nova cobranca');
   });
 
+  test('deterministic Asaas checkout rejection stays retryable and hosted checkout can collect missing CPF', () => {
+    const championship = read('api/_lib/championship-inscription-service.ts');
+    const asaas = read('api/_lib/asaas-client.ts');
+    const deterministicBranch = championship.indexOf('erro instanceof AsaasRequestError && erro.deterministic');
+    const uncertainBranch = championship.indexOf("checkoutCreationStatus: 'UNCERTAIN'");
+
+    expect(championship).not.toContain("if (!profile.cpf) throw new Error('Complete seu CPF no perfil para emitir o checkout da inscricao.')");
+    expect(championship).toContain("checkoutCreationStatus: 'FAILED'");
+    expect(championship).toContain("status: 'cancelada' as StatusInscricaoChampionship");
+    expect(deterministicBranch).toBeGreaterThan(0);
+    expect(uncertainBranch).toBeGreaterThan(deterministicBranch);
+    expect(asaas).toContain('cpf?: string;');
+    expect(asaas).toContain('...(customerData ? { customerData } : {})');
+    expect(asaas).toContain('this.deterministic = status >= 400 && status < 500');
+  });
+
   test('public activity sharing is grant-based and revocable, not raw activity-id based', () => {
     const access = read('api/_lib/share-access.ts');
     const createHandler = read('api/_handlers/activity-share.ts');
