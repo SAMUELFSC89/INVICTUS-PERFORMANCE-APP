@@ -6,11 +6,14 @@ const read = (relativePath: string) => fs.readFileSync(path.join(process.cwd(), 
 describe('gym photo proxy guardrails', () => {
   test('rejects unsupported methods and malformed refs before touching Google', () => {
     const source = read('api/_handlers/gyms_photo.ts');
-    const methodGuard = source.indexOf("if (req.method !== 'GET')");
-    const parseRef = source.indexOf('const parsed = parsePhotoRef');
-    const apiKey = source.indexOf('const apiKey = getGooglePlacesApiKey()');
-    const providerFetch = source.indexOf('await fetch(url');
+    const handlerStart = source.indexOf('export default async function handler');
+    const handler = source.slice(handlerStart);
+    const methodGuard = handler.indexOf("if (req.method !== 'GET')");
+    const parseRef = handler.indexOf('const parsed = parsePhotoRef');
+    const apiKey = handler.indexOf('const apiKey = getGooglePlacesApiKey()');
+    const providerFetch = handler.indexOf('fetchGoogleImageWithRedirectGuard');
 
+    expect(handlerStart).toBeGreaterThan(-1);
     expect(methodGuard).toBeGreaterThan(-1);
     expect(parseRef).toBeGreaterThan(methodGuard);
     expect(apiKey).toBeGreaterThan(parseRef);
@@ -37,5 +40,17 @@ describe('gym photo proxy guardrails', () => {
     expect(source).toContain("contentType.startsWith('image/')");
     expect(source).toContain('MAX_IMAGE_BYTES');
     expect(source).toContain("host.endsWith('.googleusercontent.com')");
+  });
+
+  test('manually validates every redirect and bounds streamed response bytes before buffering', () => {
+    const source = read('api/_handlers/gyms_photo.ts');
+    expect(source).toContain('MAX_UPSTREAM_REDIRECTS = 3');
+    expect(source).toContain("redirect: 'manual'");
+    expect(source).not.toContain("redirect: 'follow'");
+    expect(source).toContain('resolveAllowedRedirect(location, currentUrl)');
+    expect(source).toContain("host === 'maps.googleapis.com'");
+    expect(source).toContain('response.body.getReader()');
+    expect(source).toContain('totalBytes > MAX_IMAGE_BYTES');
+    expect(source).toContain('await reader.cancel()');
   });
 });
