@@ -1,145 +1,196 @@
-import { cors } from '../_lib/common.js';
+import { createHash } from 'node:crypto';
+import { cors, db } from '../_lib/common.js';
+import { getGooglePlacesApiKey } from '../_lib/google-places-config.js';
+
+const BURST_WINDOW_MS = 5 * 60 * 1000;
+const BURST_MAX = 120;
+const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DAILY_MAX = 800;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+function sourceKey(req: any): string {
+  const forwarded = String(req.headers?.['x-vercel-forwarded-for'] || '').split(',')[0].trim();
+  const remote = String(req.socket?.remoteAddress || '').trim();
+  const source = (forwarded || remote || 'unknown').slice(0, 160);
+  return createHash('sha256').update(source).digest('hex');
+}
+
+async function consumePhotoQuota(req: any): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
+  const ref = db.collection('api_rate_limits').doc(`gym_photo_${sourceKey(req)}`);
+  const now = Date.now();
+
+  return db.runTransaction(async (transaction: any) => {
+    const snap = await transaction.get(ref);
+    const data = snap.exists ? snap.data() || {} : {};
+
+    let burstStartedAt = Number(data.burstStartedAt) || 0;
+    let burstCount = Math.max(0, Number(data.burstCount) || 0);
+    let dailyStartedAt = Number(data.dailyStartedAt) || 0;
+    let dailyCount = Math.max(0, Number(data.dailyCount) || 0);
+
+    if (!burstStartedAt || now - burstStartedAt >= BURST_WINDOW_MS) {
+      burstStartedAt = now;
+      burstCount = 0;
+    }
+    if (!dailyStartedAt || now - dailyStartedAt >= DAILY_WINDOW_MS) {
+      dailyStartedAt = now;
+      dailyCount = 0;
+    }
+
+    if (dailyCount >= DAILY_MAX) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((dailyStartedAt + DAILY_WINDOW_MS - now) / 1000)),
+      };
+    }
+    if (burstCount >= BURST_MAX) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((burstStartedAt + BURST_WINDOW_MS - now) / 1000)),
+      };
+    }
+
+    transaction.set(ref, {
+      scope: 'gym_photo_proxy',
+      burstStartedAt,
+      burstCount: burstCount + 1,
+      dailyStartedAt,
+      dailyCount: dailyCount + 1,
+      updatedAt: new Date(now).toISOString(),
+    }, { merge: true });
+
+    return { allowed: true, retryAfterSeconds: 0 };
+  });
+}
+
+function parsePhotoRef(value: unknown): { ref: string; isV1: boolean } | null {
+  const photoRef = typeof value === 'string' ? value.trim() : '';
+  if (!photoRef || photoRef.length > 1024) return null;
+
+  if (photoRef.startsWith('places/')) {
+    const match = photoRef.match(/^places\/[A-Za-z0-9_-]{8,256}\/photos\/[A-Za-z0-9_-]{8,512}$/);
+    return match ? { ref: photoRef, isV1: true } : null;
+  }
+
+  // Legacy Google photo references are opaque tokens. Keep the accepted
+  // alphabet deliberately narrow so this endpoint cannot be repurposed as an
+  // arbitrary upstream proxy.
+  if (!/^[A-Za-z0-9._~-]{20,1024}$/.test(photoRef)) return null;
+  return { ref: photoRef, isV1: false };
+}
+
+function isAllowedGoogleMediaUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return false;
+    const host = url.hostname.toLowerCase();
+    return host === 'places.googleapis.com'
+      || host.endsWith('.googleusercontent.com')
+      || host.endsWith('.ggpht.com');
+  } catch {
+    return false;
+  }
+}
 
 export default async function handler(req: any, res: any) {
   const requestId = Math.random().toString(36).substring(7);
-  
   if (cors(req, res)) return;
 
+  if (req.method !== 'GET') {
+    return res.status(405).send('Method not allowed');
+  }
+
+  const parsed = parsePhotoRef(req.query?.ref);
+  if (!parsed) {
+    return res.status(400).send('Invalid photo reference');
+  }
+
+  const apiKey = getGooglePlacesApiKey();
+  if (!apiKey) {
+    console.error(`[PhotoProxy][${requestId}] Google Places is not configured`);
+    return res.status(503).send('Photo service unavailable');
+  }
+  if (!db) {
+    return res.status(503).send('Photo service unavailable');
+  }
+
   try {
-    const photoRef = req.query.ref as string;
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
-
-    if (!photoRef) {
-      console.warn(`[PhotoProxy][${requestId}] Missing ref query parameter`);
-      return res.status(400).send('Missing photo reference');
+    const quota = await consumePhotoQuota(req);
+    if (!quota.allowed) {
+      res.setHeader('Retry-After', String(quota.retryAfterSeconds));
+      return res.status(429).send('Too many photo requests');
     }
 
-    if (!apiKey) {
-      console.error(`[PhotoProxy][${requestId}] Google API Key not found in environment`);
-      return res.status(500).send('Server configuration error: Missing API Key');
-    }
-
-    const isV1 = photoRef.startsWith('places/');
-    let url: URL;
-    const isInvalidV1 = isV1 && !photoRef.includes('/photos/');
-
-    if (isV1) {
-      if (isInvalidV1) {
-        console.warn(`[PhotoProxy][${requestId}] Invalid V1 ref (place name instead of photo name): ${photoRef}`);
-        return res.redirect('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=400&auto=format&fit=crop');
-      }
-      // Google Places API V1 Media Endpoint
-      url = new URL(`https://places.googleapis.com/v1/${photoRef}/media`);
-      url.searchParams.append('maxWidthPx', '800');
-      // No maxHeight for now, let it be proportional
-      console.log(`[PhotoProxy][${requestId}] Fetching from Places V1 API: ${photoRef.substring(0, 50)}...`);
-    } else {
-      // Google Places Photo Legacy Endpoint
-      url = new URL('https://maps.googleapis.com/maps/api/place/photo');
-      url.searchParams.append('maxwidth', '800');
-      url.searchParams.append('photoreference', photoRef);
-      url.searchParams.append('key', apiKey);
-      console.log(`[PhotoProxy][${requestId}] Fetching from Legacy Google API: ${photoRef.substring(0, 30)}...`);
-    }
-
-    let finalUrl = url.toString();
+    let finalUrl: string;
     const headers: Record<string, string> = {
-      'Accept': 'image/*',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
+      Accept: 'image/*',
+      'User-Agent': 'Invictus Performance photo proxy/1.0',
     };
 
-    if (isV1) {
-      // Resolve redirect manually to prevent forwarding the X-Goog-Api-Key header to the media storage CDN
-      console.log(`[PhotoProxy][${requestId}] Resolving V1 redirect for Google API...`);
-      const redirectRes = await fetch(finalUrl, {
+    if (parsed.isV1) {
+      const url = new URL(`https://places.googleapis.com/v1/${parsed.ref}/media`);
+      url.searchParams.set('maxWidthPx', '800');
+
+      const redirectRes = await fetch(url, {
         method: 'GET',
         headers: {
           'X-Goog-Api-Key': apiKey,
-          'User-Agent': headers['User-Agent']
+          'User-Agent': headers['User-Agent'],
         },
-        redirect: 'manual'
+        redirect: 'manual',
       });
 
-      if (redirectRes.status === 307 || redirectRes.status === 302 || redirectRes.status === 301 || redirectRes.status === 308) {
-        const redirectUrl = redirectRes.headers.get('location');
-        if (redirectUrl) {
-          finalUrl = redirectUrl;
-          console.log(`[PhotoProxy][${requestId}] Successfully resolved redirect to: ${finalUrl.substring(0, 70)}...`);
+      if ([301, 302, 307, 308].includes(redirectRes.status)) {
+        const location = redirectRes.headers.get('location') || '';
+        if (!isAllowedGoogleMediaUrl(location)) {
+          console.warn(`[PhotoProxy][${requestId}] Refused unexpected upstream redirect`);
+          return res.status(502).send('Photo provider returned an invalid redirect');
         }
-      } else if (!redirectRes.ok) {
-        const errorInfo = await redirectRes.text().catch(() => 'no error body');
-        console.error(`[PhotoProxy][${requestId}] Google API V1 Init Error: ${redirectRes.status} - KeyPrefix: ${apiKey.substring(0, 5)}`);
-        console.error(`[PhotoProxy][${requestId}] V1 Init Error Body: ${errorInfo.substring(0, 500)}`);
-        
-        if (redirectRes.status === 403 || redirectRes.status === 404 || redirectRes.status === 400) {
-          return res.redirect('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=400&auto=format&fit=crop');
-        }
-        return res.status(redirectRes.status).send(`Google API V1 Init Error: ${redirectRes.status}`);
-      }
-    }
-
-    const response = await fetch(finalUrl, {
-      redirect: 'follow',
-      headers
-    });
-
-    if (!response.ok) {
-      const contentType = response.headers.get('content-type');
-      let errorInfo = '';
-      
-      if (contentType && contentType.startsWith('image/')) {
-        errorInfo = '(Binary Image Content)';
+        finalUrl = location;
+      } else if (redirectRes.ok && (redirectRes.headers.get('content-type') || '').startsWith('image/')) {
+        const buffer = Buffer.from(await redirectRes.arrayBuffer());
+        if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) return res.status(502).send('Invalid photo payload');
+        res.setHeader('Content-Type', redirectRes.headers.get('content-type') || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600');
+        return res.end(buffer);
       } else {
-        errorInfo = await response.text().catch(() => 'no error body');
+        return res.status(502).send('Photo provider unavailable');
       }
-      
-      console.error(`[PhotoProxy][${requestId}] Google API Error: ${response.status} - KeyPrefix: ${apiKey.substring(0, 5)} - Ref: ${photoRef.substring(0, 60)}`);
-      console.error(`[PhotoProxy][${requestId}] Full Error Body: ${errorInfo.substring(0, 500)}`);
-      
-      if (response.status === 403) {
-        console.error(`[PhotoProxy][${requestId}] 403 Forbidden - Check if Places API (New) is enabled for V1 refs, or if the key is restricted.`);
-      }
-      
-      // Fallback to a generic image if it's a known error status to avoid broken images in UI
-      if (response.status === 403 || response.status === 404) {
-        return res.redirect('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=400&auto=format&fit=crop');
-      }
-
-      return res.status(response.status).send(`Google API Error: ${response.status}`);
+    } else {
+      const url = new URL('https://maps.googleapis.com/maps/api/place/photo');
+      url.searchParams.set('maxwidth', '800');
+      url.searchParams.set('photoreference', parsed.ref);
+      url.searchParams.set('key', apiKey);
+      finalUrl = url.toString();
     }
 
-    const contentType = response.headers.get('content-type');
-    console.log(`[PhotoProxy][${requestId}] Google response content-type: ${contentType}`);
-    
-    // If Google returns an image, the content-type should start with image/
-    // If it's something else (like text/html), it might be an error page even with 200 OK
-    if (contentType && !contentType.startsWith('image/')) {
-      console.warn(`[PhotoProxy][${requestId}] Google returned non-image content: ${contentType}`);
-      // If it's a small body, it might be an error message
+    const response = await fetch(finalUrl, { redirect: 'follow', headers });
+    if (!response.ok) {
+      console.warn(`[PhotoProxy][${requestId}] Upstream returned ${response.status}`);
+      return res.status(response.status === 404 ? 404 : 502).send('Photo unavailable');
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    
-    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-      console.warn(`[PhotoProxy][${requestId}] Received empty body from Google`);
-      return res.status(404).send('Not found');
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.startsWith('image/')) {
+      console.warn(`[PhotoProxy][${requestId}] Upstream returned non-image content`);
+      return res.status(502).send('Invalid photo payload');
     }
 
-    console.log(`[PhotoProxy][${requestId}] Success: ${arrayBuffer.byteLength} bytes, type: ${contentType}`);
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
+      return res.status(502).send('Photo payload too large');
+    }
 
-    const finalContentType = contentType || 'image/jpeg';
-    res.setHeader('Content-Type', finalContentType);
-    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
-    
-    // Safety check: sometimes the body is actually an error JSON even with 200 (unlikely for photo API but good practice)
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) {
+      return res.status(502).send('Invalid photo payload');
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600');
     return res.end(buffer);
-
   } catch (error: any) {
-    console.error(`[PhotoProxy][${requestId}] CRITICAL ERROR:`, error);
-    if (!res.headersSent) {
-      // Fallback response instead of 500 if possible, or clear 500
-      res.status(500).json({ success: false, error: error.message });
-    }
+    console.error(`[PhotoProxy][${requestId}] Request failed:`, error?.name || 'error');
+    if (!res.headersSent) return res.status(500).send('Photo service unavailable');
   }
 }
