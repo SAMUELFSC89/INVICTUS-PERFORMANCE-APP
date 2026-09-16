@@ -38,6 +38,10 @@
       "destination": "/api/strava-webhook-guarded"
     },
     {
+      "source": "/api/championships/payment",
+      "destination": "/api/championship-payment-guarded"
+    },
+    {
       "source": "/api/app",
       "destination": "/api/app-guarded"
     },
