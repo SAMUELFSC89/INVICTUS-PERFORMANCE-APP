@@ -19,7 +19,7 @@ describe('autoridade da academia e geofence', () => {
 
   it('academia nova é resolvida no Google pelo servidor antes de persistir', () => {
     const handler = read('api/_handlers/gyms_join.ts');
-    expect(handler).toContain('resolveCanonicalGoogleGym(gymId)');
+    expect(handler).toContain('resolveCanonicalGoogleGym(gymId, apiKey)');
     expect(handler).toContain('https://places.googleapis.com/v1/places/');
     expect(handler).toContain("source: 'google_places'");
   });
