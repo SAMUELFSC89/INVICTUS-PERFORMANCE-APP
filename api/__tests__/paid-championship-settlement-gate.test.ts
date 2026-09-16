@@ -1,26 +1,48 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const source = readFileSync(resolve(process.cwd(), 'api/_lib/championship-catalog.ts'), 'utf8');
+const catalog = readFileSync(resolve(process.cwd(), 'api/_lib/championship-catalog.ts'), 'utf8');
+const settlement = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championship-settlement.ts'), 'utf8');
+const prizeCredit = readFileSync(resolve(process.cwd(), 'api/_lib/championship-prize-credit.ts'), 'utf8');
+const edition = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championship-edition.ts'), 'utf8');
 
-describe('Contrato — campeonato pago não abre antes do settlement final existir', () => {
-  test('capacidade de settlement permanece hard-coded como não implementada', () => {
-    expect(source).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false;');
+describe('Contrato — motor de settlement existe, mas abertura comercial permanece hard-closed', () => {
+  test('motor monetário e editionId existem sem habilitar a capacidade comercial nesta PR', () => {
+    expect(catalog).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = false;');
+    expect(catalog).toContain('championshipEditionId');
+    expect(catalog).toContain('editionId,');
+    expect(settlement).toContain('export async function finalizePaidChampionship');
+    expect(settlement).toContain("status: 'LOCKED'");
+    expect(settlement).toContain('paidChampionshipSettlementDocumentId(editionId)');
+    expect(prizeCredit).toContain('export async function creditChampionshipPrize');
+    expect(prizeCredit).toContain('input.editionId');
+    expect(prizeCredit).toContain("category: 'redeemable'");
+    expect(prizeCredit).toContain("origin: 'championship'");
+    expect(edition).toContain('lockPaidChampionshipEdition');
+    expect(edition).toContain('championship_edition_locks');
   });
 
-  test('registrationReadiness bloqueia antes de calendário/prêmios quando settlement não existe', () => {
-    const start = source.indexOf('function registrationReadiness');
-    const end = source.indexOf('export function listChampionships', start);
-    const block = source.slice(start, end);
+  test('a liberação comercial exige env e hard gate, ambos antes do calendário', () => {
+    const start = catalog.indexOf('function registrationReadiness');
+    const end = catalog.indexOf('export function listChampionships', start);
+    const block = catalog.slice(start, end);
 
     expect(start).toBeGreaterThanOrEqual(0);
+    expect(block).toContain("env('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED').toLowerCase() !== 'true'");
     expect(block).toContain('if (!PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED)');
-    expect(block).toContain('A homologação e entrega da premiação ainda não foram liberadas.');
+    expect(block.indexOf('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED')).toBeLessThan(block.indexOf('registrationStart'));
     expect(block.indexOf('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED')).toBeLessThan(block.indexOf('registrationStart'));
+    expect(block).toContain('settlementAt <= competitionEnd');
+    expect(block).toContain('championship.prizeDistribution.length');
+    expect(block).toContain('championship.publishedConfigDigest');
+    expect(block).toContain('championship.editionId');
   });
 
-  test('o regulamento continua exigindo premiação publicada antes da abertura', () => {
+  test('o regulamento publica premiação, homologação, desempate e bloqueios financeiros', () => {
     const policy = readFileSync(resolve(process.cwd(), 'shared/paidChampionshipPolicy.ts'), 'utf8');
-    expect(policy).toContain('Nenhuma edição paga pode abrir sem esses dados.');
+    expect(policy).toContain('A premiação, quantidade de posições premiadas, valores e data de homologação são publicados');
+    expect(policy).toContain('maior número de atividades válidas');
+    expect(policy).toContain('empate técnico em posição premiada');
+    expect(policy).toContain('Inscrição em disputa ou conciliação bloqueia a homologação financeira');
   });
 });

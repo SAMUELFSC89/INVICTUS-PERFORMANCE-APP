@@ -1,7 +1,18 @@
 export type ChampionshipType = 'arena_musculacao' | 'run_elite_corrida';
 export type ChampionshipStatus = 'upcoming' | 'active' | 'in_review' | 'finished';
 export type RegistrationStatus = 'PENDING_PAYMENT' | 'ACTIVE' | 'CANCELLED' | 'REFUNDED' | 'REJECTED';
-export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+export type PaymentStatus =
+  | 'PENDING'
+  | 'PAID'
+  | 'FAILED'
+  | 'REFUNDED'
+  | 'RECONCILIATION_REQUIRED'
+  | 'PAYMENT_PARTIALLY_REFUNDED'
+  | 'PAYMENT_REFUND_IN_PROGRESS'
+  | 'PAYMENT_CHARGEBACK_REQUESTED'
+  | 'PAYMENT_CHARGEBACK_DISPUTE'
+  | 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL';
+export type ChampionshipSettlementStatus = 'NOT_DUE' | 'PENDING_REVIEW' | 'LOCKED' | 'FINALIZED';
 
 export interface PrizeRank {
   rank: number;
@@ -11,7 +22,13 @@ export interface PrizeRank {
 }
 
 export interface Championship {
+  /** ID estável da modalidade/produto (ex.: invictus_cardio_v1). */
   id: string;
+  /**
+   * ID imutável da edição publicada. Muda automaticamente quando calendário,
+   * prêmio, modalidade ou outra configuração material muda.
+   */
+  editionId: string;
   type: ChampionshipType;
   title: string;
   edition: string;
@@ -22,6 +39,14 @@ export interface Championship {
   durationDays: number;
   startAt: string;
   endAt: string;
+  /** Data/hora publicada a partir da qual o resultado pode ser homologado. */
+  settlementAt?: string;
+  /**
+   * Hash do calendário + premiação + modalidade publicados para a edição.
+   * Também compõe o regulationHash efetivo, invalidando aceite antigo se uma
+   * dessas regras materiais for alterada antes da abertura.
+   */
+  publishedConfigDigest?: string;
   registrationPrice: number;
   registrationOpensAt?: string;
   registrationClosesAt?: string;
@@ -55,6 +80,7 @@ export interface Championship {
 export interface ChampionshipRegistration {
   id: string;
   championshipId: string;
+  editionId: string;
   championshipTitle?: string;
   userId: string;
   userName?: string;
@@ -78,6 +104,7 @@ export interface ChampionshipRegistration {
 export interface ChampionshipScoreEntry {
   id: string;
   championshipId: string;
+  editionId: string;
   userId: string;
   userName: string;
   userPhoto?: string;
@@ -101,20 +128,9 @@ export interface ChampionshipScoreEntry {
   createdAt: string;
 }
 
-export interface UserChampionshipProgress {
-  championshipId: string;
-  userId: string;
-  currentRank: number;
-  totalScore: number;
-  validSessionsCount: number;
-  totalTimeMinutes: number;
-  progressPercentage: number;
-  daysRemaining: number;
-  lastUpdated: string;
-}
-
 export interface ChampionshipResult {
   championshipId: string;
+  editionId: string;
   championshipTitle: string;
   edition: string;
   finalRank: number;
@@ -123,4 +139,20 @@ export interface ChampionshipResult {
   status: 'finalized';
   homologatedAt: string;
   certificateUrl?: string;
+}
+
+export interface UserChampionshipProgress {
+  championshipId: string;
+  editionId: string;
+  userId: string;
+  currentRank: number;
+  totalScore: number;
+  validSessionsCount: number;
+  totalTimeMinutes: number;
+  progressPercentage: number;
+  daysRemaining: number;
+  settlementStatus: ChampionshipSettlementStatus;
+  settlementAt?: string;
+  finalResult?: ChampionshipResult | null;
+  lastUpdated: string;
 }

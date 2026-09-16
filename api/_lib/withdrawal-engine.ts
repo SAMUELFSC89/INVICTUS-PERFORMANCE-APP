@@ -5,6 +5,7 @@ import { notificationService } from '../_services/notification-service.js';
 import { isProUser } from './entitlement.js';
 import { isActiveAccountState } from './account-state.js';
 import { updateWithdrawalStatusSafely } from './withdrawal-admin-status.js';
+import { assertNoChampionshipPrizeFinancialRisk } from './championship-prize-financial-risk.js';
 
 export const DEFAULT_WITHDRAWAL_CONFIG: WithdrawalConfig = {
   minWithdrawalAmount: 20,
@@ -252,6 +253,7 @@ export class WithdrawalEngine {
       if (!transactionUserSnap.exists || !isActiveAccountState(transactionUserSnap.data())) {
         throw new Error('Conta deixou de estar ativa antes da reserva financeira.');
       }
+      await assertNoChampionshipPrizeFinancialRisk(userId, transaction);
       if (existingHold.exists) {
         throw new Error('Solicitação financeira em conciliação. Aguarde o suporte.');
       }
@@ -345,6 +347,7 @@ export class WithdrawalEngine {
       if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
         throw new Error('Conta do titular não está ativa para operações financeiras. Rejeite o saque para liberar o saldo bloqueado.');
       }
+      await assertNoChampionshipPrizeFinancialRisk(data.userId, tx);
       if (data.status === 'processing') {
         throw new Error('Este saque já está sendo processado agora. Aguarde a conciliação antes de tentar novamente.');
       }

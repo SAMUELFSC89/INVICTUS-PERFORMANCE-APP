@@ -61,10 +61,14 @@ describe('competition payment lifecycle hardening', () => {
 
   test('championship payment confirmation uses the same financial integrity invariants', () => {
     const source = read('api/_lib/championship-inscription-service.ts');
+    const context = block(source, 'async function paymentConfirmationContext', 'function finalizedSettlement');
     const confirmation = block(source, 'export async function confirmarInscricaoChampionshipPorPagamento', 'export async function encerrarCheckoutChampionship');
 
+    expect(context).toContain("db.collection('users').doc");
+    expect(context).toContain('transaction.get(userRef)');
+    expect(context).toContain('transaction.get(settlementRef)');
     expect(confirmation).toContain('db.runTransaction');
-    expect(confirmation).toContain('transaction.get(userRef)');
+    expect(confirmation).toContain('paymentConfirmationContext(transaction, data)');
     expect(confirmation).toContain('paymentAmountMatches(data.valor, valorPago)');
     expect(confirmation).toContain('isStaleProviderEvent');
     expect(confirmation).toContain('isActiveAccountState(userSnap.data())');
@@ -75,10 +79,12 @@ describe('competition payment lifecycle hardening', () => {
 
   test('checkout-paid callback cannot reopen refunded or contested championship registration', () => {
     const source = read('api/_lib/championship-inscription-service.ts');
+    const context = block(source, 'async function paymentConfirmationContext', 'function finalizedSettlement');
     const confirmation = block(source, 'export async function confirmarInscricaoChampionshipPorCheckout', 'export async function confirmarInscricaoChampionshipPorPagamento');
     expect(confirmation).toContain("data.status === 'reembolsada'");
     expect(confirmation).toContain("data.status === 'contestada'");
-    expect(confirmation).toContain('transaction.get(userRef)');
+    expect(confirmation).toContain('paymentConfirmationContext(transaction, data)');
+    expect(context).toContain('transaction.get(userRef)');
   });
 
   test('championship checkout cannot silently reuse a refunded or contested financial record', () => {

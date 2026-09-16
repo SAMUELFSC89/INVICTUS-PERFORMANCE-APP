@@ -12,6 +12,10 @@ import {
 } from '../_lib/championship-inscription-service.js';
 import { recordCompetitiveHrAcknowledgement } from '../_lib/competitive-heart-rate-acknowledgement.js';
 import { getChampionshipProgress, getChampionshipLeaderboard, getUserChampionshipActivities } from '../_lib/championship-scoring-service.js';
+import {
+  getPaidChampionshipEditionGate,
+  paidChampionshipSettlementDocumentId,
+} from '../_lib/paid-championship-edition.js';
 import { criarPresenceCheck } from '../_lib/presence-check-service.js';
 
 const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
@@ -24,20 +28,33 @@ const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
   'PAYMENT_AWAITING_CHARGEBACK_REVERSAL',
 ]);
 
-/**
- * Campeonatos pagos usam um catálogo servidor-autoritativo, aceite versionado,
- * presença verificada e Checkout Asaas hospedado. O navegador apenas conduz o
- * pagamento; a inscrição só é ativada por evento financeiro autenticado.
- */
-
 function erroComoResposta(erro: any): { status: number; message: string } {
   const mensagem = erro?.message || 'Falha ao processar a solicitacao.';
-  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad|frequência cardíaca|aceite|regras competitivas|checkout|calendário|premiação/i.test(mensagem);
+  const ehRegra = /campeonato|regulamento|inscri|CPF|Usuario nao encontrado|encerrad|frequência cardíaca|aceite|regras competitivas|checkout|calendário|premiação|edição|configuração/i.test(mensagem);
   return { status: ehRegra ? 400 : 500, message: mensagem };
 }
 
 export async function listChampionshipsHandler(_req: any, res: any) {
-  return res.json({ championships: listChampionships() });
+  const championships = await Promise.all(listChampionships().map(async (championship) => {
+    if (!championship.registrationOpen) return championship;
+    try {
+      const editionGate = await getPaidChampionshipEditionGate(championship);
+      if (editionGate.ok) return championship;
+      return {
+        ...championship,
+        registrationOpen: false,
+        registrationReadinessReason: editionGate.reason || 'A edição ativa precisa de conciliação antes de novas inscrições.',
+      };
+    } catch (error) {
+      console.error('[Championships] falha ao validar lock da edição no catálogo:', error);
+      return {
+        ...championship,
+        registrationOpen: false,
+        registrationReadinessReason: 'Não foi possível validar a edição ativa com segurança. Novas inscrições estão temporariamente bloqueadas.',
+      };
+    }
+  }));
+  return res.json({ championships });
 }
 
 function serializarRegistro(dados: any) {
@@ -64,25 +81,90 @@ export async function getMyRegistrationsHandler(req: any, res: any) {
   return res.json({ registrations: registrations.map(serializarRegistro) });
 }
 
+function toIso(value: any): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value;
+  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
+}
+
+function athleteFinalResult(champ: any, settlement: Record<string, any>, userId: string) {
+  if (String(settlement.status || '') !== 'FINALIZED') return null;
+  if (String(settlement.championshipId || '') !== String(champ.id || '')
+    || String(settlement.editionId || '') !== String(champ.editionId || '')) return null;
+  const ranking = Array.isArray(settlement.ranking) ? settlement.ranking : [];
+  const index = ranking.findIndex((entry: any) => String(entry?.userId || '') === userId);
+  if (index < 0) return null;
+
+  const ineligibleFinalists = Array.isArray(settlement.ineligibleFinalists) ? settlement.ineligibleFinalists : [];
+  const ineligibleUserIds = new Set(ineligibleFinalists.map((entry: any) => String(entry?.userId || '')).filter(Boolean));
+  if (ineligibleUserIds.has(userId)) return null;
+
+  const assignments = Array.isArray(settlement.winnerAssignments) ? settlement.winnerAssignments : [];
+  const assignment = assignments.find((entry: any) => String(entry?.userId || '') === userId);
+  const ineligibleFrozenRanks = ineligibleFinalists
+    .map((entry: any) => Number(entry?.frozenRank))
+    .filter((rank: number) => Number.isInteger(rank) && rank > 0);
+  const skippedBefore = ineligibleFrozenRanks.filter((frozenRank: number) => frozenRank < index + 1).length;
+  const adjustedRank = Math.max(1, index + 1 - skippedBefore);
+  const adjustedParticipants = Math.max(0, ranking.length - new Set(ineligibleFinalists.map((entry: any) => String(entry?.userId || '')).filter(Boolean)).size);
+
+  return {
+    championshipId: champ.id,
+    editionId: champ.editionId,
+    championshipTitle: champ.title,
+    edition: champ.edition,
+    finalRank: Number(assignment?.rank) || adjustedRank,
+    totalParticipants: adjustedParticipants,
+    prizeWon: Math.max(0, Number(assignment?.amount) || 0),
+    status: 'finalized' as const,
+    homologatedAt: toIso(settlement.finalizedAt) || new Date().toISOString(),
+  };
+}
+
 export async function getChampionshipProgressHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
   const champ = getChampionship(championshipId);
   if (!champ) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
+  const editionId = String(champ.editionId || '');
+  if (!editionId) return res.status(409).json({ error: 'A edição atual ainda não possui identidade publicada.' });
 
-  const progresso = await getChampionshipProgress(championshipId, auth.uid);
+  const [progresso, settlementSnap] = await Promise.all([
+    getChampionshipProgress(championshipId, auth.uid),
+    db.collection('championship_settlements').doc(paidChampionshipSettlementDocumentId(editionId)).get(),
+  ]);
   const agora = Date.now();
   const fimMs = new Date(champ.endAt).getTime();
+  const homologacaoMs = new Date(champ.settlementAt || '').getTime();
   const diasRestantes = Number.isFinite(fimMs) ? Math.max(0, Math.ceil((fimMs - agora) / 86_400_000)) : 0;
+  const settlement = settlementSnap.exists ? settlementSnap.data() || {} : {};
+  const settlementBelongsToCurrentEdition = String(settlement.editionId || '') === editionId
+    && String(settlement.championshipId || '') === championshipId;
+  const persistedStatus = settlementBelongsToCurrentEdition ? String(settlement.status || '') : '';
+  const settlementStatus = persistedStatus === 'FINALIZED'
+    ? 'FINALIZED'
+    : persistedStatus === 'LOCKED'
+      ? 'LOCKED'
+      : Number.isFinite(homologacaoMs) && agora >= homologacaoMs
+        ? 'PENDING_REVIEW'
+        : 'NOT_DUE';
+  const finalResult = settlementBelongsToCurrentEdition ? athleteFinalResult(champ, settlement, auth.uid) : null;
+
   return res.json({
     championshipId,
+    editionId,
     userId: auth.uid,
     ...progresso,
     progressPercentage: champ.durationDays > 0
       ? Math.min(100, Math.round((progresso.totalTimeMinutes / (champ.durationDays * 30)) * 100))
       : 0,
     daysRemaining: diasRestantes,
+    settlementStatus,
+    settlementAt: champ.settlementAt,
+    finalResult,
     lastUpdated: new Date().toISOString(),
   });
 }
@@ -91,18 +173,20 @@ export async function getChampionshipLeaderboardHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  if (!getChampionship(championshipId)) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
+  const championship = getChampionship(championshipId);
+  if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const leaderboard = await getChampionshipLeaderboard(championshipId, 50);
-  return res.json({ championshipId, leaderboard });
+  return res.json({ championshipId, editionId: championship.editionId, leaderboard });
 }
 
 export async function getMyChampionshipActivitiesHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  if (!getChampionship(championshipId)) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
+  const championship = getChampionship(championshipId);
+  if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const activities = await getUserChampionshipActivities(championshipId, auth.uid);
-  return res.json({ championshipId, activities });
+  return res.json({ championshipId, editionId: championship.editionId, activities });
 }
 
 export async function acceptChampionshipRegulationHandler(req: any, res: any) {
@@ -115,6 +199,10 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
 
     const championship = getChampionship(championshipId);
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
+    const editionGate = await getPaidChampionshipEditionGate(championship);
+    if (!editionGate.ok) {
+      return res.status(409).json({ error: editionGate.reason || 'A edição ativa exige conciliação antes de novos aceites.' });
+    }
     if (regulationVersion !== championship.regulationVersion || regulationHash !== championship.regulationHash) {
       return res.status(400).json({ error: 'O regulamento foi atualizado. Reabra a inscricao, leia e aceite a versao vigente.' });
     }
@@ -147,11 +235,6 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
   }
 }
 
-/**
- * Inicia a inscrição. Antes de criar o Checkout hospedado, confirma presença
- * e identidade por selfie. `checkoutSurface` aceita iOS nativo agora e web
- * para o site Android futuro; o app Android não expõe esse CTA.
- */
 export async function createChampionshipPaymentHandler(req: any, res: any) {
   try {
     const auth = await verifyAuth(req);
@@ -169,6 +252,10 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
     if (!championship.registrationOpen) {
       return res.status(400).json({ error: championship.registrationReadinessReason || 'Inscricoes ainda nao disponiveis.' });
+    }
+    const editionGate = await getPaidChampionshipEditionGate(championship);
+    if (!editionGate.ok) {
+      return res.status(409).json({ error: editionGate.reason || 'A edição ativa exige conciliação antes de novas inscrições.' });
     }
 
     const { presenceCheckId, livenessPrompt } = await criarPresenceCheck({
@@ -199,10 +286,6 @@ function webhookTokenIsValid(req: any): boolean {
   return timingSafeEqual(Buffer.from(receivedToken), Buffer.from(expectedToken));
 }
 
-/**
- * Aceita eventos CHECKOUT_* atuais e mantém PAYMENT_* por compatibilidade.
- * Ambos seguem a mesma maquina de estados financeira do webhook central.
- */
 export async function asaasChampionshipWebhookHandler(req: any, res: any) {
   try {
     if (!process.env.ASAAS_WEBHOOK_TOKEN?.trim()) {
@@ -270,10 +353,6 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
   }
 }
 
-/**
- * Consulta somente o resultado já calculado pelo servidor. O cliente nunca
- * envia score ou risco como autoridade competitiva.
- */
 export async function submitActivityToChampionshipHandler(req: any, res: any) {
   try {
     const auth = await verifyAuth(req);
@@ -283,22 +362,29 @@ export async function submitActivityToChampionshipHandler(req: any, res: any) {
     if (!championshipId || !activityId) {
       return res.status(400).json({ error: 'championshipId e activityId sao obrigatorios.' });
     }
+    const championship = getChampionship(String(championshipId));
+    if (!championship?.editionId) return res.status(404).json({ error: 'Campeonato ou edição não encontrado.' });
 
-    const scoreId = `${activityId}_${championshipId}`;
+    const scoreId = `${activityId}_${championship.editionId}`;
     const doc = await db.collection('championship_scores').doc(scoreId).get();
     if (!doc.exists) {
       return res.json({
         success: true,
         computed: false,
-        message: 'Esta atividade ainda nao foi processada para este campeonato (ou nao se qualifica).',
+        message: 'Esta atividade ainda nao foi processada para esta edição (ou nao se qualifica).',
       });
     }
 
     const dados: any = doc.data();
     if (dados.userId !== auth.uid) return res.status(403).json({ error: 'Esta atividade nao pertence a este usuario.' });
+    if (String(dados.championshipId || '') !== championship.id || String(dados.editionId || '') !== championship.editionId) {
+      return res.status(409).json({ error: 'O score encontrado pertence a outra edição.' });
+    }
     return res.json({
       success: true,
       computed: true,
+      championshipId: championship.id,
+      editionId: championship.editionId,
       eligible: dados.championshipValidation?.eligible ?? false,
       scoreAdded: dados.score || 0,
       riskScore: dados.championshipValidation?.riskScore ?? 0,

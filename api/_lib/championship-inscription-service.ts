@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { db, FieldValue } from './common.js';
 import { AsaasClient } from './asaas-client.js';
 import { getChampionship, isRegistrationOpen } from './championship-catalog.js';
+import {
+  lockPaidChampionshipEdition,
+  paidChampionshipRegistrationId,
+  paidChampionshipSettlementDocumentId,
+} from './paid-championship-edition.js';
 import { COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION } from '../../shared/competitiveHeartRatePolicy.js';
 import { isActiveAccountState } from './account-state.js';
 
@@ -17,10 +22,6 @@ export type ChampionshipPaymentRiskEvent =
   | 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL';
 
 const CHECKOUT_CREATION_LEASE_MS = 90_000;
-
-function idInscricaoChampionship(userId: string, championshipId: string) {
-  return `${userId}_${championshipId}`;
-}
 
 function publicAppOrigin(): string {
   const configured = String(process.env.PUBLIC_APP_URL || process.env.APP_BASE_URL || '').trim();
@@ -70,6 +71,13 @@ async function getActiveProfile(userId: string) {
   return snap.exists && isActiveAccountState(snap.data()) ? snap : null;
 }
 
+function settlementRefForRegistration(data: any) {
+  const editionId = String(data?.editionId || '').trim();
+  return editionId
+    ? db.collection('championship_settlements').doc(paidChampionshipSettlementDocumentId(editionId))
+    : null;
+}
+
 export async function registrarAceiteRegulamento(params: {
   userId: string;
   championshipId: string;
@@ -92,12 +100,13 @@ export async function registrarAceiteRegulamento(params: {
     throw new Error('O aceite vigente sobre frequência cardíaca é obrigatório antes da inscrição.');
   }
 
-  const acceptanceId = `acc_${params.userId}_${params.championshipId}_${Date.now()}`;
+  const acceptanceId = `acc_${params.userId}_${champ.editionId}_${Date.now()}`;
   const acceptedAt = new Date().toISOString();
   await db.collection('championship_acceptances').doc(acceptanceId).set({
     acceptanceId,
     userId: params.userId,
     championshipId: params.championshipId,
+    editionId: champ.editionId,
     regulationVersion: champ.regulationVersion,
     regulationHash: champ.regulationHash,
     acceptedAt,
@@ -109,7 +118,7 @@ export async function registrarAceiteRegulamento(params: {
     hrAcknowledgementVersion: params.hrAcknowledgementVersion,
     createdAt: FieldValue.serverTimestamp(),
   });
-  return { acceptanceId, regulationVersion: champ.regulationVersion, regulationHash: champ.regulationHash, acceptedAt };
+  return { acceptanceId, editionId: champ.editionId, regulationVersion: champ.regulationVersion, regulationHash: champ.regulationHash, acceptedAt };
 }
 
 export async function criarInscricaoChampionship(
@@ -127,8 +136,8 @@ export async function criarInscricaoChampionship(
   const acceptanceSnap = await db.collection('championship_acceptances').doc(acceptanceId).get();
   if (!acceptanceSnap.exists) throw new Error('Aceite do regulamento nao encontrado. Aceite o regulamento antes de se inscrever.');
   const acceptance: any = acceptanceSnap.data();
-  if (acceptance.userId !== userId || acceptance.championshipId !== championshipId) {
-    throw new Error('O aceite do regulamento nao corresponde a este usuario ou campeonato.');
+  if (acceptance.userId !== userId || acceptance.championshipId !== championshipId || acceptance.editionId !== champ.editionId) {
+    throw new Error('O aceite do regulamento nao corresponde a este usuario, campeonato ou edição.');
   }
   if (acceptance.regulationVersion !== champ.regulationVersion || acceptance.regulationHash !== champ.regulationHash) {
     throw new Error('O regulamento foi atualizado. Aceite a versao vigente antes de se inscrever.');
@@ -144,7 +153,11 @@ export async function criarInscricaoChampionship(
   const profile: any = profileSnap.data();
   if (!profile.cpf) throw new Error('Complete seu CPF no perfil para emitir o checkout da inscricao.');
 
-  const registrationId = idInscricaoChampionship(userId, championshipId);
+  // Antes da primeira cobrança, persiste o snapshot material da edição e
+  // impede que envs diferentes substituam uma edição ainda não homologada.
+  await lockPaidChampionshipEdition(champ);
+
+  const registrationId = paidChampionshipRegistrationId(userId, champ.editionId);
   const ref = db.collection('championship_registrations').doc(registrationId);
   const leaseToken = randomUUID();
   const now = Date.now();
@@ -152,7 +165,7 @@ export async function criarInscricaoChampionship(
   const reservation = await db.runTransaction(async (transaction: any) => {
     const snap = await transaction.get(ref);
     const current: any = snap.exists ? snap.data() || {} : {};
-    if (current.status === 'paga' && current.paymentStatus === 'PAID') throw new Error('Voce ja esta inscrito neste campeonato.');
+    if (current.status === 'paga' && current.paymentStatus === 'PAID') throw new Error('Voce ja esta inscrito nesta edição do campeonato.');
     if (current.status === 'reembolsada' || current.status === 'contestada') {
       throw new Error('Esta inscricao possui historico financeiro encerrado ou em disputa. Uma nova cobranca exige conciliacao antes de reutilizar o registro.');
     }
@@ -170,9 +183,12 @@ export async function criarInscricaoChampionship(
     }
 
     transaction.set(ref, {
+      id: registrationId,
       userId,
       championshipId,
+      editionId: champ.editionId,
       championshipTitle: champ.title,
+      edition: champ.edition,
       valor: champ.registrationPrice,
       status: 'pendente' as StatusInscricaoChampionship,
       paymentStatus: 'PENDING',
@@ -195,6 +211,7 @@ export async function criarInscricaoChampionship(
     const data: any = reservation.data;
     return {
       championshipId,
+      editionId: champ.editionId,
       valor: data.valor,
       jaExistia: true,
       checkoutId: data.asaasCheckoutId,
@@ -206,8 +223,8 @@ export async function criarInscricaoChampionship(
   try {
     checkout = await AsaasClient.criarCheckoutHospedado({
       valor: champ.registrationPrice,
-      nomeItem: `Inscrição — ${champ.title}`,
-      descricao: `Taxa de inscrição avulsa em ${champ.title}. Competição esportiva por desempenho físico.`,
+      nomeItem: `Inscrição — ${champ.title} · ${champ.edition}`,
+      descricao: `Taxa de inscrição avulsa em ${champ.title} (${champ.edition}). Competição esportiva por desempenho físico.`,
       referenciaExterna: registrationId,
       nomeCliente: profile.name || profile.displayName || 'Atleta Invictus',
       cpf: profile.cpf,
@@ -247,7 +264,7 @@ export async function criarInscricaoChampionship(
     }, { merge: true });
   });
 
-  return { championshipId, valor: champ.registrationPrice, jaExistia: false, checkoutId: checkout.id, checkoutUrl: checkout.link };
+  return { championshipId, editionId: champ.editionId, valor: champ.registrationPrice, jaExistia: false, checkoutId: checkout.id, checkoutUrl: checkout.link };
 }
 
 async function localizarPorCampo(field: 'asaasPaymentId' | 'asaasCheckoutId', id: string) {
@@ -261,6 +278,20 @@ async function localizarPorReferenciaExterna(value: unknown) {
   if (!reference || reference.includes('/') || reference.length > 200) return null;
   const snap = await db.collection('championship_registrations').doc(reference).get();
   return snap.exists ? snap : null;
+}
+
+async function paymentConfirmationContext(transaction: any, data: any) {
+  const userRef = db.collection('users').doc(String(data.userId || ''));
+  const settlementRef = settlementRefForRegistration(data);
+  const [userSnap, settlementSnap] = await Promise.all([
+    transaction.get(userRef),
+    settlementRef ? transaction.get(settlementRef) : Promise.resolve(null),
+  ]);
+  return { userSnap, settlementSnap };
+}
+
+function finalizedSettlement(settlementSnap: any): boolean {
+  return Boolean(settlementSnap?.exists && settlementSnap.data()?.status === 'FINALIZED');
 }
 
 export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId: string) {
@@ -284,11 +315,21 @@ export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId:
         requerReconciliacao: true,
         userId: data.userId,
         championshipId: data.championshipId,
+        editionId: data.editionId,
       };
     }
 
-    const userRef = db.collection('users').doc(String(data.userId || ''));
-    const userSnap = await transaction.get(userRef);
+    const { userSnap, settlementSnap } = await paymentConfirmationContext(transaction, data);
+    if (finalizedSettlement(settlementSnap)) {
+      transaction.set(doc.ref, {
+        status: 'contestada' as StatusInscricaoChampionship,
+        paymentStatus: 'RECONCILIATION_REQUIRED',
+        paymentReconciliationReason: 'PAYMENT_CONFIRMED_AFTER_EDITION_FINALIZED',
+        paymentReconciliationSourceId: asaasCheckoutId,
+        paymentReconciliationObservedAt: new Date().toISOString(),
+      }, { merge: true });
+      return { encontrada: true, requerReconciliacao: true, motivo: 'PAYMENT_CONFIRMED_AFTER_EDITION_FINALIZED', userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
+    }
     if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
       transaction.set(doc.ref, {
         paymentStatus: 'RECONCILIATION_REQUIRED',
@@ -302,6 +343,7 @@ export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId:
         requerReconciliacao: true,
         userId: data.userId,
         championshipId: data.championshipId,
+        editionId: data.editionId,
       };
     }
 
@@ -314,7 +356,7 @@ export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId:
       paymentLifecycleEvent: 'CHECKOUT_PAID',
       paymentLifecycleObservedAt: data.paymentLifecycleObservedAt || new Date().toISOString(),
     }, { merge: true });
-    return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId };
+    return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
   });
 }
 
@@ -340,7 +382,7 @@ export async function confirmarInscricaoChampionshipPorPagamento(
     const data: any = registrationSnap.data() || {};
 
     if (incomingEventAt && isStaleProviderEvent(data.paymentLifecycleObservedAt, incomingEventAt)) {
-      return { encontrada: true, ignoradoComoAntigo: true, userId: data.userId, championshipId: data.championshipId };
+      return { encontrada: true, ignoradoComoAntigo: true, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
     }
 
     const paymentBindingValid = data.asaasPaymentId
@@ -354,8 +396,7 @@ export async function confirmarInscricaoChampionshipPorPagamento(
     const amountValid = paymentAmountMatches(data.valor, valorPago);
     const orderingValid = Boolean(incomingEventAt);
 
-    const userRef = db.collection('users').doc(String(data.userId || ''));
-    const userSnap = await transaction.get(userRef);
+    const { userSnap, settlementSnap } = await paymentConfirmationContext(transaction, data);
 
     if (!paymentBindingValid || !referenceValid || !amountValid || !orderingValid) {
       const reason = !paymentBindingValid
@@ -375,7 +416,20 @@ export async function confirmarInscricaoChampionshipPorPagamento(
         valorPago: numericPaymentValue(valorPago),
         paymentLifecycleObservedAt: observedAt,
       }, { merge: true });
-      return { encontrada: true, requerReconciliacao: true, motivo: reason, userId: data.userId, championshipId: data.championshipId };
+      return { encontrada: true, requerReconciliacao: true, motivo: reason, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
+    }
+
+    if (finalizedSettlement(settlementSnap)) {
+      transaction.set(doc.ref, {
+        status: 'contestada' as StatusInscricaoChampionship,
+        paymentStatus: 'RECONCILIATION_REQUIRED',
+        paymentReconciliationReason: 'PAYMENT_CONFIRMED_AFTER_EDITION_FINALIZED',
+        paymentReconciliationSourceId: asaasPaymentId || asaasCheckoutId || null,
+        paymentReconciliationObservedAt: observedAt,
+        valorPago: numericPaymentValue(valorPago),
+        paymentLifecycleObservedAt: observedAt,
+      }, { merge: true });
+      return { encontrada: true, requerReconciliacao: true, motivo: 'PAYMENT_CONFIRMED_AFTER_EDITION_FINALIZED', userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
     }
 
     if (!userSnap.exists || !isActiveAccountState(userSnap.data())) {
@@ -393,6 +447,7 @@ export async function confirmarInscricaoChampionshipPorPagamento(
         requerReconciliacao: true,
         userId: data.userId,
         championshipId: data.championshipId,
+        editionId: data.editionId,
       };
     }
 
@@ -411,7 +466,7 @@ export async function confirmarInscricaoChampionshipPorPagamento(
       paymentLifecycleEvent: 'PAYMENT_CONFIRMED_OR_RECEIVED',
       paymentLifecycleObservedAt: incomingEventAt,
     }, { merge: true });
-    return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId };
+    return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
   });
 }
 
@@ -431,7 +486,7 @@ export async function encerrarCheckoutChampionship(asaasCheckoutId: string, reas
     asaasCheckoutId: FieldValue.delete(),
     asaasCheckoutUrl: FieldValue.delete(),
   });
-  return { encontrada: true, userId: data.userId, championshipId: data.championshipId };
+  return { encontrada: true, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
 }
 
 export async function registrarEventoFinanceiroChampionship(
@@ -457,7 +512,7 @@ export async function registrarEventoFinanceiroChampionship(
     const data: any = registrationSnap.data() || {};
 
     if (incomingEventAt && isStaleProviderEvent(data.paymentLifecycleObservedAt, incomingEventAt)) {
-      return { encontrada: true, ignoradoComoAntigo: true, userId: data.userId, championshipId: data.championshipId };
+      return { encontrada: true, ignoradoComoAntigo: true, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
     }
 
     const canonicalBinding = receivedReference === doc.id
@@ -473,7 +528,7 @@ export async function registrarEventoFinanceiroChampionship(
         paymentLifecycleEvent: event,
         paymentLifecycleObservedAt: observedAt,
       }, { merge: true });
-      return { encontrada: true, requerReconciliacao: true, userId: data.userId, championshipId: data.championshipId };
+      return { encontrada: true, requerReconciliacao: true, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
     }
 
     const refunded = event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_RECEIVED_IN_CASH_UNDONE';
@@ -498,7 +553,7 @@ export async function registrarEventoFinanceiroChampionship(
           }),
     }, { merge: true });
 
-    return { encontrada: true, userId: data.userId, championshipId: data.championshipId, status, event };
+    return { encontrada: true, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId, status, event };
   });
 }
 
@@ -514,13 +569,23 @@ export async function marcarInscricaoChampionshipComoReembolsada(asaasPaymentId:
 }
 
 export async function getUserRegistration(userId: string, championshipId: string) {
-  const doc = await db.collection('championship_registrations').doc(idInscricaoChampionship(userId, championshipId)).get();
-  return doc.exists ? (doc.data() as any) : null;
+  const champ = getChampionship(championshipId);
+  if (!champ) return null;
+  const currentRef = db.collection('championship_registrations').doc(paidChampionshipRegistrationId(userId, champ.editionId));
+  const current = await currentRef.get();
+  if (current.exists) return current.data() as any;
+
+  // Compatibilidade pré-lançamento com o ID antigo. Só aceita se o regulamento
+  // coincidir com a edição atual, impedindo vazamento entre edições.
+  const legacy = await db.collection('championship_registrations').doc(`${userId}_${championshipId}`).get();
+  if (!legacy.exists) return null;
+  const data: any = legacy.data() || {};
+  return data.regulationHash === champ.regulationHash ? data : null;
 }
 
 export async function getUserRegistrations(userId: string) {
   const snap = await db.collection('championship_registrations').where('userId', '==', userId).get();
-  return snap.docs.map((doc) => doc.data() as any);
+  return snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as any) }));
 }
 
 export async function isUserActiveInChampionship(userId: string, championshipId: string): Promise<boolean> {
