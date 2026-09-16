@@ -78,6 +78,17 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(page).not.toContain('className="paid-acceptance"');
   });
 
+  it('mantém como funciona, edição/premiação e os 12 tópicos do regulamento recolhidos até tocar em ver mais', () => {
+    const page = read('src/pages/championships/ChampionshipPreview.tsx');
+    expect(page).toContain('<details className="group overflow-hidden rounded-2xl');
+    expect(page).toContain('COMO FUNCIONA');
+    expect(page).toContain('EDIÇÃO E PREMIAÇÃO');
+    expect(page).toContain('REGULAMENTO OFICIAL');
+    expect(page).toContain('{rules.length} tópicos oficiais');
+    expect(page).toContain('VER MAIS');
+    expect(page).toContain('VER MENOS');
+  });
+
   it('expõe CTA de pagamento somente no iOS nativo e deixa Android preparado para o site', () => {
     const page = read('src/pages/championships/ChampionshipPreview.tsx');
     expect(page).toContain("const isNativeIOS = Capacitor.isNativePlatform() && platform === 'ios'");
