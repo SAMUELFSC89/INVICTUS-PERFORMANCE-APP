@@ -9,15 +9,22 @@ describe('destructive migrate-reset guardrails', () => {
     expect(source).toContain('hasActiveAdminAuthority');
   });
 
-  test('requires POST and an explicit destructive confirmation before mutation', () => {
-    const methodGuard = source.indexOf("req.method !== 'POST'");
-    const authGuard = source.indexOf('hasActiveAdminAuthority');
-    const confirmation = source.indexOf("String(req.body?.confirm || '') !== REQUIRED_CONFIRMATION");
-    const firstMutationRead = source.indexOf("db.collection('users').get()");
+  test('requires POST, authenticated active admin and explicit confirmation before destructive reads', () => {
+    const handlerStart = source.indexOf('export default async function handler');
+    expect(handlerStart).toBeGreaterThan(-1);
+    const handlerSource = source.slice(handlerStart);
+
+    const methodGuard = handlerSource.indexOf("req.method !== 'POST'");
+    const authGuard = handlerSource.indexOf('const auth = await verifyAuth(req)');
+    const adminAuthority = handlerSource.indexOf('hasActiveAdminAuthority(userSnap.data())');
+    const confirmation = handlerSource.indexOf("String(req.body?.confirm || '') !== REQUIRED_CONFIRMATION");
+    const firstDestructiveRead = handlerSource.indexOf("db.collection('users').get()");
+
     expect(methodGuard).toBeGreaterThan(-1);
     expect(authGuard).toBeGreaterThan(methodGuard);
-    expect(confirmation).toBeGreaterThan(authGuard);
-    expect(firstMutationRead).toBeGreaterThan(confirmation);
+    expect(adminAuthority).toBeGreaterThan(authGuard);
+    expect(confirmation).toBeGreaterThan(adminAuthority);
+    expect(firstDestructiveRead).toBeGreaterThan(confirmation);
     expect(source).toContain("const REQUIRED_CONFIRMATION = 'RESET_ALL_PROGRESS'");
   });
 
