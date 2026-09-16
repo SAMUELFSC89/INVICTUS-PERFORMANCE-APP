@@ -5,16 +5,105 @@
   --admin-panel:#0c0c0d;
   --admin-panel-2:#111113;
   --admin-line:rgba(255,255,255,.09);
+  --invictus-ui-secondary:#e7e1d8;
+  --invictus-ui-muted:#c9c1b6;
+  --invictus-ui-subtle:#aaa39a;
+  --color-on-surface:#f6f4ee;
+  --color-on-surface-variant:#d8d1c8;
   position:fixed;
   z-index:90;
   inset:0;
   overflow-y:auto;
   color:#f6f4ee;
+  color-scheme:dark;
   background:
     radial-gradient(circle at 50% -18%,rgba(241,185,40,.14),transparent 32rem),
     linear-gradient(180deg,#070707 0%,#030303 100%);
   font-family:"Roboto Condensed",sans-serif;
 }
+
+/*
+ * O painel administrativo é uma superfície deliberadamente escura. O tema
+ * claro global do aplicativo remapeia utilitários Tailwind claros para texto
+ * escuro; dentro do AdminShell isso derrubava o contraste de títulos, labels,
+ * inputs e metadados. Mantemos o painel como uma "dark island" independente
+ * do tema escolhido no restante do app.
+ */
+[data-theme='light'] .admin-new-shell{
+  --invictus-ui-secondary:#e7e1d8;
+  --invictus-ui-muted:#c9c1b6;
+  --invictus-ui-subtle:#aaa39a;
+  --texto-suave:#e7e1d8;
+  --color-on-surface:#f6f4ee;
+  --color-on-surface-variant:#d8d1c8;
+  color:#f6f4ee;
+}
+
+[data-theme='light'] .admin-new-shell :is(
+  .text-white,
+  .text-white\/90,
+  .text-white\/80,
+  .text-white\/70,
+  .text-neutral-100,
+  .text-neutral-200,
+  .text-zinc-100,
+  .text-zinc-200,
+  .text-gray-100,
+  .text-gray-200,
+  .text-slate-100,
+  .text-slate-200
+){color:#f6f4ee!important}
+
+[data-theme='light'] .admin-new-shell :is(
+  .text-white\/60,
+  .text-white\/50,
+  .text-white\/40,
+  .text-neutral-300,
+  .text-neutral-400,
+  .text-neutral-500,
+  .text-neutral-600,
+  .text-neutral-700,
+  .text-zinc-300,
+  .text-zinc-400,
+  .text-zinc-500,
+  .text-zinc-600,
+  .text-zinc-700,
+  .text-gray-300,
+  .text-gray-400,
+  .text-gray-500,
+  .text-gray-600,
+  .text-gray-700,
+  .text-slate-300,
+  .text-slate-400,
+  .text-slate-500,
+  .text-slate-600,
+  .text-slate-700,
+  .text-on-surface-variant
+){color:#c9c1b6!important}
+
+[data-theme='light'] .admin-new-shell :is(
+  .border-white\/5,
+  .border-white\/10,
+  .border-white\/20,
+  .border-white\/30,
+  .border-white\/40
+){border-color:rgba(255,255,255,.12)!important}
+
+[data-theme='light'] .admin-new-shell :is(
+  .bg-black\/20,
+  .bg-black\/30,
+  .bg-black\/40,
+  .bg-black\/50,
+  .bg-black\/60
+){background-color:rgba(0,0,0,.42)!important}
+
+.admin-new-shell input:not([type='checkbox']):not([type='radio']),
+.admin-new-shell select,
+.admin-new-shell textarea{
+  color:#f6f4ee;
+  caret-color:#f1b928;
+}
+.admin-new-shell input::placeholder,.admin-new-shell textarea::placeholder{color:#aaa39a!important;opacity:1}
 
 .admin-shell-header{
   position:sticky;
@@ -73,7 +162,7 @@
   padding:0 13px;
   border:1px solid var(--admin-line);
   border-radius:14px;
-  color:#9d9b94;
+  color:#b9b4ac;
   background:rgba(255,255,255,.025);
   font:800 10px inherit;
   letter-spacing:.05em;
