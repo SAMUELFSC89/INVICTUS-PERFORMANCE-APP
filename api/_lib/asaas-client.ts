@@ -82,6 +82,22 @@ export interface AsaasHostedCheckoutResult {
   raw: any;
 }
 
+export class AsaasRequestError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly deterministic: boolean;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'AsaasRequestError';
+    this.status = status;
+    this.code = code;
+    // Um 4xx prova que o Asaas rejeitou a criação e nenhum checkout foi criado.
+    // Timeout, erro de rede e 5xx continuam ambíguos e exigem conciliação.
+    this.deterministic = status >= 400 && status < 500;
+  }
+}
+
 function mensagemDeErroAsaas(data: any, status: number, acao: string): string {
   return (data && data.errors && data.errors[0] && data.errors[0].description)
     || data?.message
@@ -101,7 +117,8 @@ async function chamarAsaas(caminho: string, init: RequestInit, acao: string): Pr
   });
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(mensagemDeErroAsaas(data, response.status, acao));
+    const code = typeof data?.errors?.[0]?.code === 'string' ? data.errors[0].code : undefined;
+    throw new AsaasRequestError(mensagemDeErroAsaas(data, response.status, acao), response.status, code);
   }
   return data;
 }
@@ -171,14 +188,16 @@ export class AsaasClient {
    * Checkout hospedado para inscrição avulsa em campeonato esportivo.
    * A API key permanece exclusivamente no servidor. O cliente recebe apenas
    * a URL pública do Checkout e a confirmação financeira vem por webhook.
+   * Dados do cliente são opcionais: se o perfil não tiver CPF válido, o próprio
+   * checkout hospedado coleta os dados necessários do pagador.
    */
   static async criarCheckoutHospedado(params: {
     valor: number;
     nomeItem: string;
     descricao: string;
     referenciaExterna: string;
-    nomeCliente: string;
-    cpf: string;
+    nomeCliente?: string;
+    cpf?: string;
     email?: string;
     successUrl: string;
     cancelUrl: string;
@@ -186,11 +205,28 @@ export class AsaasClient {
     minutosExpiracao?: number;
   }): Promise<AsaasHostedCheckoutResult> {
     const cpfLimpo = String(params.cpf || '').replace(/\D/g, '');
-    if (!Number.isFinite(params.valor) || params.valor <= 0) throw new Error('Valor do checkout deve ser maior que zero.');
-    if (!params.referenciaExterna?.trim()) throw new Error('Referência externa do checkout é obrigatória.');
-    if (!params.nomeCliente?.trim() || !cpfLimpo) throw new Error('Nome e CPF são obrigatórios para o checkout.');
+    const nomeCliente = String(params.nomeCliente || '').trim();
+    const email = String(params.email || '').trim();
+    const cpfValido = cpfLimpo.length === 11 || cpfLimpo.length === 14;
+    const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const customerData = nomeCliente && cpfValido
+      ? {
+          name: nomeCliente,
+          cpfCnpj: cpfLimpo,
+          ...(emailValido ? { email } : {}),
+        }
+      : undefined;
+
+    if (!Number.isFinite(params.valor) || params.valor <= 0) {
+      throw new AsaasRequestError('Valor do checkout deve ser maior que zero.', 400, 'LOCAL_VALIDATION');
+    }
+    if (!params.referenciaExterna?.trim()) {
+      throw new AsaasRequestError('Referência externa do checkout é obrigatória.', 400, 'LOCAL_VALIDATION');
+    }
     for (const url of [params.successUrl, params.cancelUrl, params.expiredUrl]) {
-      if (!/^https:\/\//i.test(url)) throw new Error('Callbacks do checkout devem usar HTTPS.');
+      if (!/^https:\/\//i.test(url)) {
+        throw new AsaasRequestError('Callbacks do checkout devem usar HTTPS.', 400, 'LOCAL_VALIDATION');
+      }
     }
 
     const data = await chamarAsaas('/checkouts', {
@@ -212,11 +248,7 @@ export class AsaasClient {
           quantity: 1,
           value: Number(params.valor.toFixed(2)),
         }],
-        customerData: {
-          name: params.nomeCliente.trim(),
-          cpfCnpj: cpfLimpo,
-          ...(params.email?.trim() ? { email: params.email.trim() } : {}),
-        },
+        ...(customerData ? { customerData } : {}),
       }),
     }, 'criar checkout hospedado');
 

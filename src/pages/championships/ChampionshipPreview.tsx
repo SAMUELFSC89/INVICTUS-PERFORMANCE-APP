@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   CalendarClock,
+  ChevronDown,
   CreditCard,
   Dumbbell,
   ExternalLink,
@@ -153,6 +154,14 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   const finalized = progress?.settlementStatus === 'FINALIZED';
   const finalResult = progress?.finalResult || null;
 
+  const moreToggle = (
+    <span className="flex shrink-0 items-center gap-1 text-[10px] font-black tracking-[.08em] text-amber-400">
+      <span className="group-open:hidden">VER MAIS</span>
+      <span className="hidden group-open:inline">VER MENOS</span>
+      <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+    </span>
+  );
+
   return createPortal(
     <>
       <main className="ch-new-screen paid-championship-screen">
@@ -178,26 +187,49 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
           {!paid && reconciliation && <section className="paid-status is-pending"><LockKeyhole /><div><b>CONCILIAÇÃO FINANCEIRA</b><p>Esta inscrição possui uma pendência financeira em análise. Um novo checkout fica bloqueado nesta edição até a conciliação ser resolvida.</p></div></section>}
           {!paid && refunded && <section className="paid-status is-pending"><RefreshCw /><div><b>REEMBOLSO REGISTRADO</b><p>O pagamento desta edição foi reembolsado. Este mesmo registro não pode ser reutilizado para uma nova cobrança.</p></div></section>}
 
-          <h2 className="ch-new-title">COMO FUNCIONA</h2>
-          <section className="paid-championship-grid">
-            <article><CreditCard /><b>INSCRIÇÃO</b><span>{brl(price)} por campeonato, pagamento avulso. Não é assinatura.</span></article>
-            <article><ModalityIcon /><b>ATIVIDADE REAL</b><span>O resultado vem de desempenho físico real dentro do período oficial.</span></article>
-            <article><ShieldCheck /><b>VALIDAÇÃO</b><span>Somente atividades elegíveis e homologadas pelo servidor entram no ranking.</span></article>
-            <article><Trophy /><b>RESULTADO</b><span>Classificação final após as validações e revisões previstas no regulamento.</span></article>
-          </section>
+          <section className="mt-6 space-y-3" aria-label="Informações do campeonato">
+            <details className="group overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0e]">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0"><b className="block text-sm font-black text-white">COMO FUNCIONA</b><small className="mt-1 block text-xs leading-relaxed text-zinc-400">Inscrição, atividade real, validação e resultado.</small></span>
+                {moreToggle}
+              </summary>
+              <div className="border-t border-zinc-800 p-3">
+                <section className="paid-championship-grid">
+                  <article><CreditCard /><b>INSCRIÇÃO</b><span>{brl(price)} por campeonato, pagamento avulso. Não é assinatura.</span></article>
+                  <article><ModalityIcon /><b>ATIVIDADE REAL</b><span>O resultado vem de desempenho físico real dentro do período oficial.</span></article>
+                  <article><ShieldCheck /><b>VALIDAÇÃO</b><span>Somente atividades elegíveis e homologadas pelo servidor entram no ranking.</span></article>
+                  <article><Trophy /><b>RESULTADO</b><span>Classificação final após as validações e revisões previstas no regulamento.</span></article>
+                </section>
+              </div>
+            </details>
 
-          <h2 className="ch-new-title">EDIÇÃO E PREMIAÇÃO</h2>
-          <section className="paid-edition-card">
-            <div><CalendarClock /><span><small>INSCRIÇÕES</small><b>{dateLabel(championship?.registrationOpensAt)} — {dateLabel(championship?.registrationClosesAt)}</b></span></div>
-            <div><Trophy /><span><small>COMPETIÇÃO</small><b>{dateLabel(championship?.startAt)} — {dateLabel(championship?.endAt)}</b></span></div>
-            <div><ShieldCheck /><span><small>HOMOLOGAÇÃO DO RESULTADO</small><b>{dateLabel(championship?.settlementAt)}</b></span></div>
-            <div><Medal /><span><small>PREMIAÇÃO PUBLICADA</small><b>{championship?.prizePool ? brl(championship.prizePool) : 'A definir antes da abertura'}</b></span></div>
-            {!!championship?.prizeDistribution?.length && <div className="paid-prize-list">{championship.prizeDistribution.map((prize) => <span key={prize.rank}>{prize.rank}º — {brl(prize.amount)}</span>)}</div>}
-          </section>
+            <details className="group overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0e]">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0"><b className="block text-sm font-black text-white">EDIÇÃO E PREMIAÇÃO</b><small className="mt-1 block text-xs leading-relaxed text-zinc-400">{championship?.edition || 'Edição atual'} · {championship?.prizePool ? `${brl(championship.prizePool)} em premiação publicada` : 'premiação publicada antes da abertura'}.</small></span>
+                {moreToggle}
+              </summary>
+              <div className="border-t border-zinc-800 p-3">
+                <section className="paid-edition-card">
+                  <div><CalendarClock /><span><small>INSCRIÇÕES</small><b>{dateLabel(championship?.registrationOpensAt)} — {dateLabel(championship?.registrationClosesAt)}</b></span></div>
+                  <div><Trophy /><span><small>COMPETIÇÃO</small><b>{dateLabel(championship?.startAt)} — {dateLabel(championship?.endAt)}</b></span></div>
+                  <div><ShieldCheck /><span><small>HOMOLOGAÇÃO DO RESULTADO</small><b>{dateLabel(championship?.settlementAt)}</b></span></div>
+                  <div><Medal /><span><small>PREMIAÇÃO PUBLICADA</small><b>{championship?.prizePool ? brl(championship.prizePool) : 'A definir antes da abertura'}</b></span></div>
+                  {!!championship?.prizeDistribution?.length && <div className="paid-prize-list">{championship.prizeDistribution.map((prize) => <span key={prize.rank}>{prize.rank}º — {brl(prize.amount)}</span>)}</div>}
+                </section>
+              </div>
+            </details>
 
-          <h2 className="ch-new-title">REGULAMENTO OFICIAL</h2>
-          <section className="paid-rules" aria-label="Regulamento oficial do campeonato">
-            {rules.map((section) => <article key={section.id}><h3>{section.title}</h3><p>{section.content}</p></article>)}
+            <details className="group overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0e]">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0"><b className="block text-sm font-black text-white">REGULAMENTO OFICIAL</b><small className="mt-1 block text-xs leading-relaxed text-zinc-400">{rules.length} tópicos oficiais. Abra apenas quando quiser consultar todos.</small></span>
+                {moreToggle}
+              </summary>
+              <div className="border-t border-zinc-800 p-3">
+                <section className="paid-rules" aria-label="Regulamento oficial do campeonato">
+                  {rules.map((section) => <article key={section.id}><h3>{section.title}</h3><p>{section.content}</p></article>)}
+                </section>
+              </div>
+            </details>
           </section>
 
           <section className="paid-legal-highlight">
