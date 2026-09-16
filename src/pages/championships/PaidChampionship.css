@@ -16,3 +16,27 @@
 [aria-label="Aceites obrigatórios da inscrição"] [role="alert"]{font-size:14px!important;line-height:1.55}
 [aria-label="Aceites obrigatórios da inscrição"] button[type="button"]{font-size:15px}
 [aria-label="Aceites obrigatórios da inscrição"] button[type="button"]+p{font-size:12px!important;line-height:1.5;color:#a1a1aa!important}
+
+/* Cards recolhíveis do campeonato: leitura confortável no app nativo. */
+[aria-label="Informações do campeonato"]{-webkit-text-size-adjust:100%;text-rendering:optimizeLegibility}
+[aria-label="Informações do campeonato"]>details{border-color:#3f3f46!important;background:#101012!important}
+[aria-label="Informações do campeonato"]>details>summary{min-height:76px}
+[aria-label="Informações do campeonato"]>details>summary b{font-size:17px!important;line-height:1.25;letter-spacing:.01em;color:#fff!important}
+[aria-label="Informações do campeonato"]>details>summary small{font-size:14px!important;line-height:1.5;color:#e4e4e7!important}
+[aria-label="Informações do campeonato"] .champ-info-toggle{font-size:12px!important;line-height:1.2;color:#f4d37b!important}
+[aria-label="Informações do campeonato"] .paid-championship-grid{gap:12px;padding:2px}
+[aria-label="Informações do campeonato"] .paid-championship-grid article{min-height:144px;padding:16px;border-color:#3f3f46;background:linear-gradient(145deg,#151517,#0d0d0f)}
+[aria-label="Informações do campeonato"] .paid-championship-grid b{font-size:14px!important;line-height:1.35;color:#fff}
+[aria-label="Informações do campeonato"] .paid-championship-grid span{font-size:14px!important;line-height:1.55;color:#d4d4d8}
+[aria-label="Informações do campeonato"] .paid-edition-card{margin:0;padding:7px 15px;border-color:#3f3f46;background:#101012}
+[aria-label="Informações do campeonato"] .paid-edition-card small{font-size:11px!important;line-height:1.4;color:#a1a1aa!important}
+[aria-label="Informações do campeonato"] .paid-edition-card b{font-size:14px!important;line-height:1.5;color:#f4f4f5}
+[aria-label="Informações do campeonato"] .paid-prize-list span{font-size:13px!important;line-height:1.4;color:#f4f4f5}
+[aria-label="Informações do campeonato"] .paid-rules{margin:0;border-color:#3f3f46;background:#101012}
+[aria-label="Informações do campeonato"] .paid-rules article{padding:17px}
+[aria-label="Informações do campeonato"] .paid-rules h3{font-size:14px!important;line-height:1.4;color:#f4d37b}
+[aria-label="Informações do campeonato"] .paid-rules p{font-size:14px!important;line-height:1.68;color:#e4e4e7}
+.paid-legal-highlight b{font-size:14px!important;color:#fff}
+.paid-legal-highlight p{font-size:14px!important;line-height:1.6;color:#d4d4d8!important}
+.paid-readiness{font-size:13px!important;line-height:1.55;color:#d4d4d8!important}
+.paid-enroll-button{font-size:14px}

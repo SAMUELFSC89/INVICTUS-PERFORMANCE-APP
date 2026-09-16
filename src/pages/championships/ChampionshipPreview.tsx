@@ -47,6 +47,12 @@ function dateLabel(value?: string): string {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeZone: 'America/Sao_Paulo' }).format(parsed);
 }
 
+function unavailableRegistrationLabel(championship?: Championship | null): string {
+  if (!championship) return 'CARREGANDO…';
+  const reason = String(championship.registrationReadinessReason || '').toLowerCase();
+  return reason.includes('encerrad') ? 'INSCRIÇÕES ENCERRADAS' : 'INSCRIÇÕES AINDA NÃO ABERTAS';
+}
+
 export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   const navigate = useNavigate();
   const isStrength = modality === 'musculacao';
@@ -155,10 +161,10 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   const finalResult = progress?.finalResult || null;
 
   const moreToggle = (
-    <span className="flex shrink-0 items-center gap-1 text-[10px] font-black tracking-[.08em] text-amber-400">
+    <span className="champ-info-toggle flex shrink-0 items-center gap-1 font-black tracking-[.06em] text-amber-300">
       <span className="group-open:hidden">VER MAIS</span>
       <span className="hidden group-open:inline">VER MENOS</span>
-      <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+      <ChevronDown className="h-5 w-5 transition-transform group-open:rotate-180" />
     </span>
   );
 
@@ -188,12 +194,12 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
           {!paid && refunded && <section className="paid-status is-pending"><RefreshCw /><div><b>REEMBOLSO REGISTRADO</b><p>O pagamento desta edição foi reembolsado. Este mesmo registro não pode ser reutilizado para uma nova cobrança.</p></div></section>}
 
           <section className="mt-6 space-y-3" aria-label="Informações do campeonato">
-            <details className="group overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0e]">
+            <details className="group overflow-hidden rounded-2xl border border-zinc-700 bg-[#101012]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0"><b className="block text-sm font-black text-white">COMO FUNCIONA</b><small className="mt-1 block text-xs leading-relaxed text-zinc-400">Inscrição, atividade real, validação e resultado.</small></span>
+                <span className="min-w-0"><b className="block font-black text-white">COMO FUNCIONA</b><small className="mt-1 block leading-relaxed text-zinc-200">Inscrição, atividade real, validação e resultado.</small></span>
                 {moreToggle}
               </summary>
-              <div className="border-t border-zinc-800 p-3">
+              <div className="border-t border-zinc-700 p-3">
                 <section className="paid-championship-grid">
                   <article><CreditCard /><b>INSCRIÇÃO</b><span>{brl(price)} por campeonato, pagamento avulso. Não é assinatura.</span></article>
                   <article><ModalityIcon /><b>ATIVIDADE REAL</b><span>O resultado vem de desempenho físico real dentro do período oficial.</span></article>
@@ -203,12 +209,12 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
               </div>
             </details>
 
-            <details className="group overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0e]">
+            <details className="group overflow-hidden rounded-2xl border border-zinc-700 bg-[#101012]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0"><b className="block text-sm font-black text-white">EDIÇÃO E PREMIAÇÃO</b><small className="mt-1 block text-xs leading-relaxed text-zinc-400">{championship?.edition || 'Edição atual'} · {championship?.prizePool ? `${brl(championship.prizePool)} em premiação publicada` : 'premiação publicada antes da abertura'}.</small></span>
+                <span className="min-w-0"><b className="block font-black text-white">EDIÇÃO E PREMIAÇÃO</b><small className="mt-1 block leading-relaxed text-zinc-200">{championship?.edition || 'Edição atual'} · {championship?.prizePool ? `${brl(championship.prizePool)} em premiação publicada` : 'premiação publicada antes da abertura'}.</small></span>
                 {moreToggle}
               </summary>
-              <div className="border-t border-zinc-800 p-3">
+              <div className="border-t border-zinc-700 p-3">
                 <section className="paid-edition-card">
                   <div><CalendarClock /><span><small>INSCRIÇÕES</small><b>{dateLabel(championship?.registrationOpensAt)} — {dateLabel(championship?.registrationClosesAt)}</b></span></div>
                   <div><Trophy /><span><small>COMPETIÇÃO</small><b>{dateLabel(championship?.startAt)} — {dateLabel(championship?.endAt)}</b></span></div>
@@ -219,24 +225,23 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
               </div>
             </details>
 
-            <details className="group overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0e]">
+            <details className="group overflow-hidden rounded-2xl border border-zinc-700 bg-[#101012]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0"><b className="block text-sm font-black text-white">REGULAMENTO OFICIAL</b><small className="mt-1 block text-xs leading-relaxed text-zinc-400">{rules.length} tópicos oficiais. Abra apenas quando quiser consultar todos.</small></span>
+                <span className="min-w-0"><b className="block font-black text-white">REGULAMENTO OFICIAL</b><small className="mt-1 block leading-relaxed text-zinc-200">{rules.length} tópicos oficiais. Abra apenas quando quiser consultar todos.</small></span>
                 {moreToggle}
               </summary>
-              <div className="border-t border-zinc-800 p-3">
+              <div className="border-t border-zinc-700 p-3">
                 <section className="paid-rules" aria-label="Regulamento oficial do campeonato">
                   {rules.map((section) => <article key={section.id}><h3>{section.title}</h3><p>{section.content}</p></article>)}
+                  <article><h3>APPLE / APP STORE</h3><p>{APPLE_CHAMPIONSHIP_DISCLAIMER}</p></article>
                 </section>
               </div>
             </details>
           </section>
 
           <section className="paid-legal-highlight">
-            <Landmark /><div><b>ORGANIZADOR</b><p>{CHAMPIONSHIP_ORGANIZER.legalName}<br />CNPJ {CHAMPIONSHIP_ORGANIZER.cnpj}<br />{CHAMPIONSHIP_ORGANIZER.address}<br />{CHAMPIONSHIP_ORGANIZER.contactEmail}</p></div>
+            <Landmark /><div><b>ORGANIZADOR</b><p>{CHAMPIONSHIP_ORGANIZER.legalName}<br />CNPJ {CHAMPIONSHIP_ORGANIZER.cnpj}<br />{CHAMPIONSHIP_ORGANIZER.contactEmail}</p></div>
           </section>
-
-          <section className="paid-apple-disclaimer"><LockKeyhole /><div><b>APPLE / APP STORE</b><p>{APPLE_CHAMPIONSHIP_DISCLAIMER}</p></div></section>
 
           {isNativeAndroid && canStartEnrollment && <section className="paid-platform-notice"><ExternalLink /><div><b>INSCRIÇÃO NO ANDROID</b><p>{ANDROID_EXTERNAL_ENROLLMENT_NOTICE}</p></div></section>}
           {!Capacitor.isNativePlatform() && canStartEnrollment && <section className="paid-platform-notice"><ExternalLink /><div><b>INSCRIÇÃO PELO SITE</b><p>O fluxo web usará a mesma conta e o mesmo backend. O botão de pagamento será habilitado quando o site oficial estiver pronto.</p></div></section>}
@@ -248,7 +253,7 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
             disabled={loading || busy || !championship?.registrationOpen}
             onClick={openEnrollmentConsent}
           >
-            {busy ? 'PREPARANDO INSCRIÇÃO…' : championship?.registrationOpen ? `INSCREVER-SE — ${brl(price)}` : 'INSCRIÇÕES AINDA NÃO ABERTAS'}
+            {busy ? 'PREPARANDO INSCRIÇÃO…' : championship?.registrationOpen ? `INSCREVER-SE — ${brl(price)}` : unavailableRegistrationLabel(championship)}
             {!busy && championship?.registrationOpen && <ExternalLink />}
           </button>}
 
@@ -276,7 +281,10 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
             </label>
             <details className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-zinc-400">
               <summary className="cursor-pointer font-bold text-zinc-200">Ver regulamento completo</summary>
-              <div className="mt-3 space-y-3">{rules.map((section) => <div key={section.id}><b className="text-zinc-200">{section.title}</b><p className="mt-1 whitespace-pre-line leading-relaxed">{section.content}</p></div>)}</div>
+              <div className="mt-3 space-y-3">
+                {rules.map((section) => <div key={section.id}><b className="text-zinc-200">{section.title}</b><p className="mt-1 whitespace-pre-line leading-relaxed">{section.content}</p></div>)}
+                <div><b className="text-zinc-200">APPLE / APP STORE</b><p className="mt-1 whitespace-pre-line leading-relaxed">{APPLE_CHAMPIONSHIP_DISCLAIMER}</p></div>
+              </div>
             </details>
 
             <label className="flex cursor-pointer gap-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
