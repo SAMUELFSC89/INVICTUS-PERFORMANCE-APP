@@ -302,3 +302,125 @@
     --podium-lift: 12px;
   }
 }
+
+
+/* -------------------------------------------------------------------------
+ * Pódios master 4:5
+ * Fundo, bases e coroas são um único asset por modalidade. As únicas camadas
+ * dinâmicas são as fotos dos atletas, encaixadas nos centros circulares.
+ * As coordenadas abaixo foram calibradas individualmente em cada asset para
+ * impedir desalinhamento entre academia, musculação e cardio.
+ * ------------------------------------------------------------------------- */
+.community-ranking-top3 .academy-podium--master {
+  --slot-1-left: 50%;
+  --slot-1-top: 41.4%;
+  --slot-1-size: 13.4%;
+  --slot-2-left: 17.4%;
+  --slot-2-top: 54.1%;
+  --slot-2-size: 9.7%;
+  --slot-3-left: 82.7%;
+  --slot-3-top: 54%;
+  --slot-3-size: 9%;
+  position: relative;
+  display: block !important;
+  width: 100%;
+  min-height: 0 !important;
+  aspect-ratio: 4 / 5;
+  margin: 10px 0 4px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(242, 181, 22, .20) !important;
+  border-radius: 18px !important;
+  background: #050403 !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .38);
+}
+
+.community-ranking-top3 .academy-podium--master-musculacao {
+  --slot-1-left: 49.6%;
+  --slot-1-top: 42.1%;
+  --slot-1-size: 13.9%;
+  --slot-2-left: 16.9%;
+  --slot-2-top: 52%;
+  --slot-2-size: 12.2%;
+  --slot-3-left: 82.3%;
+  --slot-3-top: 52.7%;
+  --slot-3-size: 11.3%;
+}
+
+.community-ranking-top3 .academy-podium--master-cardio {
+  --slot-1-left: 49.1%;
+  --slot-1-top: 42.1%;
+  --slot-1-size: 12.3%;
+  --slot-2-left: 16.5%;
+  --slot-2-top: 53.1%;
+  --slot-2-size: 9.9%;
+  --slot-3-left: 82.6%;
+  --slot-3-top: 53.3%;
+  --slot-3-size: 10%;
+}
+
+.community-ranking-top3 .academy-podium-master-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.community-ranking-top3 .academy-podium-master-slot {
+  position: absolute;
+  z-index: 4;
+  display: block;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: #111;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+  transform: translate(-50%, -50%);
+}
+
+.community-ranking-top3 .academy-podium-master-slot--1 {
+  left: var(--slot-1-left);
+  top: var(--slot-1-top);
+  width: var(--slot-1-size);
+}
+
+.community-ranking-top3 .academy-podium-master-slot--2 {
+  left: var(--slot-2-left);
+  top: var(--slot-2-top);
+  width: var(--slot-2-size);
+}
+
+.community-ranking-top3 .academy-podium-master-slot--3 {
+  left: var(--slot-3-left);
+  top: var(--slot-3-top);
+  width: var(--slot-3-size);
+}
+
+.community-ranking-top3 .academy-podium-master-slot > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.community-ranking-top3 .academy-podium-master-slot.is-current {
+  box-shadow: 0 0 0 2px rgba(242, 181, 22, .72), 0 0 18px rgba(242, 181, 22, .42);
+}
+
+.community-ranking-top3 .academy-podium-master-slot:focus-visible {
+  outline: 2px solid #f2b516;
+  outline-offset: 3px;
+}
+
+@media (max-width: 430px) {
+  .community-ranking-top3 .academy-podium--master {
+    margin-top: 8px !important;
+    border-radius: 14px !important;
+  }
+}
