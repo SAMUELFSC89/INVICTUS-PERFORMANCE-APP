@@ -23,7 +23,7 @@ describe('carteira de prêmios e saque PIX', () => {
 
     expect(financial).toContain('emailVerified: identity.emailVerified');
     expect(financial).toContain('phoneVerified: identity.phoneVerified');
-    expect(financial).toContain('cpfVerified: identity.cpfVerified');
+    expect(financial).toContain('return identity.emailVerified && identity.phoneVerified;');
     expect(financial).toContain("action !== 'request-withdrawal'");
     expect(financial).toContain('requireFreshFirebasePhoneReauth');
     expect(financial).toContain("provider === 'phone'");
@@ -37,6 +37,8 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(wallet).toContain('reauthenticateWithPhoneNumber');
     expect(wallet).toContain('RECEBER CÓDIGO POR SMS');
     expect(wallet).toContain('Não usamos selfie para liberar PIX.');
+    expect(wallet).not.toContain('CPF/Receita');
+    expect(wallet).not.toContain('e-mail, telefone e CPF');
   });
 
   it('usa o telefone do Firebase Auth como fonte de verdade', () => {
@@ -57,26 +59,26 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(identityPage).toContain("action: 'sync-phone'");
   });
 
-  it('só considera CPF oficialmente verificado quando Receita retorna REGULAR', () => {
+  it('mantém CPF/Serpro fora do gate de saque enquanto a integração oficial não está disponível', () => {
     const financial = read('api/_handlers/financial.ts');
-    const identityApi = read('api/identity-verification-guarded.ts');
-    const identityService = read('api/_lib/identity-verification-service.ts');
+    const wallet = read('src/pages/PrizeWallet.tsx');
+    const identityPage = read('src/pages/IdentityVerification.tsx');
 
-    expect(identityApi).toContain("receitaStatus === 'REGULAR'");
-    expect(identityApi).toContain("return normalized === '0' ? 'REGULAR' : normalized");
-    expect(identityApi).toContain('result.regular === true');
-    expect(identityApi).toContain('cpfVerified: false');
-    expect(identityService).toContain("status === 'REGULAR' || status === '0'");
-    expect(financial).toContain('profile.cpfReceitaRegular === true');
-    expect(financial).toContain("String(profile.cpfReceitaStatus || '').trim().toUpperCase() === 'REGULAR'");
+    expect(financial).toContain('return identity.emailVerified && identity.phoneVerified;');
+    expect(financial).toContain('CPF/Serpro fica fora do gate temporariamente');
+    expect(wallet).not.toContain('CPF/Receita');
+    expect(wallet).not.toContain('e-mail, telefone e CPF');
+    expect(identityPage).not.toContain('CONFIRMAR NA RECEITA FEDERAL');
+    expect(identityPage).not.toContain('verifyCpf');
+    expect(identityPage).toContain('identity?.email.verified && identity?.phone.verified');
   });
 
-  it('mantém a carteira disponível para sessão válida sem perfil e bloqueia CPF financeiro', () => {
+  it('mantém a carteira disponível para sessão válida sem perfil e exige apenas e-mail e telefone', () => {
     const financial = read('api/_handlers/financial.ts');
     expect(financial).toContain('const profile = profileSnap.exists ? profileSnap.data() || {} : {}');
     expect(financial).toContain('emailVerified: authUser.emailVerified === true');
     expect(financial).toContain('phoneVerified: Boolean(phone)');
-    expect(financial).toContain('cpfVerified: profileSnap.exists');
+    expect(financial).toContain('return identity.emailVerified && identity.phoneVerified;');
   });
 
   it('usa o uid autenticado e nunca aceita userId do cliente', () => {
@@ -85,22 +87,20 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(financial).not.toContain('req.body?.userId');
   });
 
-  it('expõe a tela de identidade verificada com Firebase + Serpro', () => {
+  it('expõe a tela de identidade apenas com e-mail e telefone para o saque', () => {
     const app = read('src/App.tsx');
     const identityPage = read('src/pages/IdentityVerification.tsx');
     const identityApi = read('api/identity-verification-guarded.ts');
-    const identityService = read('api/_lib/identity-verification-service.ts');
 
     expect(app).toContain("import('./pages/IdentityVerification')");
     expect(app).toContain('<Route path="/profile/identity" element={<IdentityVerification />} />');
-    expect(identityPage).toContain('CONFIRMAR NA RECEITA FEDERAL');
     expect(identityPage).toContain('ENVIAR SMS PELO FIREBASE');
     expect(identityPage).toContain("action: 'send-verification-email'");
-    expect(identityApi).toContain("action === 'verify-cpf'");
+    expect(identityPage).not.toContain('CONFIRMAR NA RECEITA FEDERAL');
+    expect(identityPage).not.toContain('Fingerprint');
+    expect(identityPage).toContain("navigate('/profile/wallet')");
     expect(identityApi).toContain("action === 'sync-phone'");
     expect(identityApi).toContain("action === 'send-verification-email'");
-    expect(identityService).toContain('verifyCpfWithReceita');
-    expect(identityService).not.toContain('CustomFriendlyName');
   });
 
   it('envia o e-mail de verificação customizado pela Zoho em vez do template padrão do Firebase', () => {
