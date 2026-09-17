@@ -23,6 +23,14 @@ function maskEmail(value: unknown): string {
   return `${visible}${'•'.repeat(Math.max(2, Math.min(6, name.length - visible.length)))}@${domain}`;
 }
 
+function normalizeReceitaStatus(value: unknown): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase();
+}
+
 async function loadAccount(uid: string) {
   const [userSnap, authUser] = await Promise.all([
     db.collection('users').doc(uid).get(),
@@ -147,28 +155,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ success: false, error: 'CPF e data de nascimento precisam estar preenchidos na conta.' });
       }
       const result = await verifyCpfWithReceita(cpf, birthDate);
-      if (!result.matched) {
+      const receitaStatus = normalizeReceitaStatus(result.status);
+      const canVerifyCpf = result.matched === true && result.regular === true && receitaStatus === 'REGULAR';
+
+      if (!canVerifyCpf) {
         await account.ref.set({
           cpfVerified: false,
-          cpfReceitaStatus: result.status,
+          cpfVerifiedAt: null,
+          cpfReceitaStatus: receitaStatus || 'DESCONHECIDA',
+          cpfReceitaRegular: false,
           cpfVerificationProvider: result.provider,
           cpfLastCheckedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
-        return res.status(409).json({ success: false, error: 'CPF e data de nascimento não conferem com a base da Receita Federal.' });
+
+        if (!result.matched) {
+          return res.status(409).json({ success: false, error: 'CPF e data de nascimento não conferem com a base da Receita Federal.' });
+        }
+        return res.status(409).json({
+          success: false,
+          status: receitaStatus || 'DESCONHECIDA',
+          error: 'O CPF foi localizado na Receita Federal, mas a situação cadastral não está REGULAR. Regularize o documento antes de usar recursos financeiros.',
+        });
       }
+
       await account.ref.set({
         cpfVerified: true,
         cpfVerifiedAt: FieldValue.serverTimestamp(),
-        cpfReceitaStatus: result.status,
-        cpfReceitaRegular: result.regular,
+        cpfReceitaStatus: 'REGULAR',
+        cpfReceitaRegular: true,
         cpfVerificationProvider: result.provider,
         cpfLastCheckedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       return res.json({
         success: true,
         verified: true,
-        status: result.status,
-        regular: result.regular,
+        status: 'REGULAR',
+        regular: true,
         userMessage: 'CPF confirmado diretamente na base da Receita Federal via Serpro.',
       });
     }
