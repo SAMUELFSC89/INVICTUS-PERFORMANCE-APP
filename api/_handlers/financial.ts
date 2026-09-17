@@ -62,7 +62,12 @@ async function loadIdentity(userId: string): Promise<AccountIdentity> {
 }
 
 function identityReady(identity: AccountIdentity): boolean {
-  return identity.emailVerified && identity.phoneVerified && identity.cpfVerified;
+  // CPF/Serpro fica fora do gate temporariamente (credenciais Serpro ainda
+  // não configuradas em produção) -- decisão explícita do usuário em
+  // 17/09/2026. cpfVerified continua computado e exposto no payload pra não
+  // perder o dado nem quebrar a tela de identidade; só não bloqueia mais o
+  // saque. Reativar assim que a Consulta CPF v3 da Serpro estiver contratada.
+  return identity.emailVerified && identity.phoneVerified;
 }
 
 function identityPayload(identity: AccountIdentity) {
@@ -213,8 +218,9 @@ async function validateWithdrawalInput(userId: string, body: any) {
 /**
  * Carteira financeira exclusiva para premiações oficiais em dinheiro.
  * Invictus Coins continuam isolados e sem valor monetário. Saque financeiro
- * exige e-mail + telefone Firebase + CPF Serpro e uma reautenticação Firebase
- * por SMS nova para cada solicitação. Selfie/biometria não participa do PIX.
+ * exige e-mail + telefone Firebase e uma reautenticação Firebase por SMS nova
+ * para cada solicitação. CPF/Serpro fica fora do gate por ora (ver
+ * identityReady()). Selfie/biometria não participa do PIX.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -266,7 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({
         success: false,
         code: 'IDENTITY_VERIFICATION_REQUIRED',
-        error: 'Confirme seu e-mail, telefone e CPF antes de solicitar um saque.',
+        error: 'Confirme seu e-mail e telefone antes de solicitar um saque.',
         identity: identityPayload(identity),
       });
     }
