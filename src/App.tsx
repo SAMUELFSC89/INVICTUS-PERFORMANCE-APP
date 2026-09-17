@@ -25,6 +25,7 @@ const ActivityTypeChooser = lazyNamed(() => import('./components/ActivityTypeCho
 const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
 const ProfileSecondary = lazyNamed(() => import('./pages/ProfileSecondary'), 'ProfileSecondary');
+const PrizeWallet = lazyNamed(() => import('./pages/PrizeWallet'), 'PrizeWallet');
 const AcademySearch = lazyNamed(() => import('./pages/AcademySearch'), 'AcademySearch');
 const AcademyConfirm = lazyNamed(() => import('./pages/AcademyConfirm'), 'AcademyConfirm');
 const IGAExplanation = lazyNamed(() => import('./pages/IGAExplanation'), 'IGAExplanation');
@@ -43,6 +44,7 @@ const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifica
 const ChampionshipsHub = lazyNamed(() => import('./pages/championships/ChampionshipsHub'), 'ChampionshipsHub');
 const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');
 const CommunityRanking = lazyNamed(() => import('./pages/championships/CommunityRanking'), 'CommunityRanking');
+const PaidChampionshipRanking = lazyNamed(() => import('./pages/championships/PaidChampionshipRanking'), 'PaidChampionshipRanking');
 const ChampionshipPreview = lazyNamed(() => import('./pages/championships/ChampionshipPreview'), 'ChampionshipPreview');
 const ChampionshipCheckoutReturn = lazyNamed(() => import('./pages/championships/ChampionshipCheckoutReturn'), 'ChampionshipCheckoutReturn');
 const Musculation = lazyNamed(() => import('./pages/Musculation'), 'Musculation');
@@ -120,7 +122,7 @@ export default function App() {
                 <Route path="/profile/academy/search" element={<AcademySearch />} />
                 <Route path="/profile/academy/confirm" element={<AcademyConfirm />} />
                 <Route path="/profile/wearables" element={<ProfileSecondary />} />
-                <Route path="/profile/wallet" element={<Navigate to="/profile" replace />} />
+                <Route path="/profile/wallet" element={<PrizeWallet />} />
                 <Route path="/profile/goals" element={<ProfileSecondary />} />
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
@@ -130,6 +132,8 @@ export default function App() {
                 <Route path="/championships" element={<ChampionshipsHub />} />
                 <Route path="/championships/community" element={<CommunityChampionship />} />
                 <Route path="/championships/community/ranking" element={<CommunityRanking />} />
+                <Route path="/championships/ranking/musculacao" element={<PaidChampionshipRanking modality="musculacao" />} />
+                <Route path="/championships/ranking/cardio" element={<PaidChampionshipRanking modality="cardio" />} />
                 <Route path="/championships/preview/musculacao" element={<ChampionshipPreview modality="musculacao" />} />
                 <Route path="/championships/preview/cardio" element={<ChampionshipPreview modality="cardio" />} />
                 <Route path="/championships/checkout-return" element={<ChampionshipCheckoutReturn />} />
@@ -143,7 +147,7 @@ export default function App() {
                 <Route path="/championships/:id/confirmed" element={<Navigate to="/championships" replace />} />
                 <Route path="/championships/:id" element={<Navigate to="/championships" replace />} />
                 <Route path="/achievements" element={<Achievements />} />
-                <Route path="/wallet" element={<Navigate to="/profile" replace />} />
+                <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
                 <Route path="/performance" element={<Navigate to="/health" replace />} />
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
