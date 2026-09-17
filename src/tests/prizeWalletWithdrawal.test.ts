@@ -16,34 +16,45 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(legacyCoinRedeem).toContain('PIX_REDEMPTION_DISABLED');
   });
 
-  it('remove selfie do novo saque e exige identidade verificada + OTP por SMS', () => {
+  it('remove selfie/Twilio do saque e exige reautenticação Firebase por telefone', () => {
     const financial = read('api/_handlers/financial.ts');
     const wallet = read('src/pages/PrizeWallet.tsx');
+    const identityService = read('api/_lib/identity-verification-service.ts');
 
     expect(financial).toContain('emailVerified: identity.emailVerified');
     expect(financial).toContain('phoneVerified: identity.phoneVerified');
     expect(financial).toContain('cpfVerified: identity.cpfVerified');
-    expect(financial).toContain("action === 'request-withdrawal'");
-    expect(financial).toContain('startPhoneVerification(identity.phone)');
-    expect(financial).toContain("action === 'confirm-withdrawal-otp'");
-    expect(financial).toContain('checkPhoneVerification(identity.phone, code)');
+    expect(financial).toContain("action !== 'request-withdrawal'");
+    expect(financial).toContain('requireFreshFirebasePhoneReauth');
+    expect(financial).toContain("provider === 'phone'");
+    expect(financial).toContain('PHONE_REAUTH_MAX_AGE_SECONDS = 5 * 60');
     expect(financial).toContain('WithdrawalEngine.requestWithdrawal({');
-    expect(financial).not.toContain("actionType: 'withdrawal'");
-    expect(financial).not.toContain('criarPresenceCheck');
+    expect(financial).not.toContain('pending_withdrawal_otps');
+    expect(financial).not.toContain('checkPhoneVerification');
+    expect(identityService).not.toContain('TWILIO_');
+    expect(identityService).not.toContain('verify.twilio.com');
     expect(wallet).not.toContain('VerifiedPresenceModal');
+    expect(wallet).toContain('reauthenticateWithPhoneNumber');
     expect(wallet).toContain('RECEBER CÓDIGO POR SMS');
     expect(wallet).toContain('Não usamos selfie para liberar PIX.');
   });
 
-  it('atrela telefone confirmado ao número atual e limita tentativas do OTP', () => {
+  it('usa o telefone do Firebase Auth como fonte de verdade', () => {
     const financial = read('api/_handlers/financial.ts');
     const identityApi = read('api/identity-verification-guarded.ts');
+    const identityPage = read('src/pages/IdentityVerification.tsx');
 
-    expect(identityApi).toContain('phoneVerifiedHash: hashVerifiedPhone(normalizedPhone)');
-    expect(identityApi).toContain('samePhoneHash(phone, data.phoneVerifiedHash)');
-    expect(financial).toContain('samePhoneHash(phone, profile.phoneVerifiedHash)');
-    expect(financial).toContain('WITHDRAWAL_OTP_MAX_ATTEMPTS = 5');
-    expect(financial).toContain("status: 'attempts_exhausted'");
+    expect(financial).toContain('authUser.phoneNumber');
+    expect(financial).toContain('decoded.phone_number');
+    expect(identityApi).toContain('account.authUser.phoneNumber');
+    expect(identityApi).toContain("phoneVerificationProvider: 'firebase_auth_phone'");
+    expect(identityApi).toContain("action === 'sync-phone'");
+    expect(identityApi).not.toContain("action === 'start-phone'");
+    expect(identityApi).not.toContain("action === 'confirm-phone'");
+    expect(identityPage).toContain('PhoneAuthProvider');
+    expect(identityPage).toContain('RecaptchaVerifier');
+    expect(identityPage).toContain('linkWithCredential');
+    expect(identityPage).toContain("action: 'sync-phone'");
   });
 
   it('só considera CPF oficialmente verificado quando Receita retorna REGULAR', () => {
@@ -60,13 +71,12 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(financial).toContain("String(profile.cpfReceitaStatus || '').trim().toUpperCase() === 'REGULAR'");
   });
 
-  it('mantém a carteira disponível para sessão válida sem perfil e bloqueia identidade financeira', () => {
+  it('mantém a carteira disponível para sessão válida sem perfil e bloqueia CPF financeiro', () => {
     const financial = read('api/_handlers/financial.ts');
-    expect(financial).toContain('if (!profileSnap.exists)');
+    expect(financial).toContain('const profile = profileSnap.exists ? profileSnap.data() || {} : {}');
     expect(financial).toContain('emailVerified: authUser.emailVerified === true');
-    expect(financial).toContain('phoneVerified: false');
-    expect(financial).toContain('cpfVerified: false');
-    expect(financial).toContain("phone: ''");
+    expect(financial).toContain('phoneVerified: Boolean(phone)');
+    expect(financial).toContain('cpfVerified: profileSnap.exists');
   });
 
   it('usa o uid autenticado e nunca aceita userId do cliente', () => {
@@ -75,7 +85,7 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(financial).not.toContain('req.body?.userId');
   });
 
-  it('expõe a tela de identidade verificada e o fluxo oficial de CPF/telefone', () => {
+  it('expõe a tela de identidade verificada com Firebase + Serpro', () => {
     const app = read('src/App.tsx');
     const identityPage = read('src/pages/IdentityVerification.tsx');
     const identityApi = read('api/identity-verification-guarded.ts');
@@ -84,12 +94,12 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(app).toContain("import('./pages/IdentityVerification')");
     expect(app).toContain('<Route path="/profile/identity" element={<IdentityVerification />} />');
     expect(identityPage).toContain('CONFIRMAR NA RECEITA FEDERAL');
-    expect(identityPage).toContain('ENVIAR SMS INVICTUS');
+    expect(identityPage).toContain('ENVIAR SMS PELO FIREBASE');
     expect(identityPage).toContain('sendEmailVerification');
     expect(identityApi).toContain("action === 'verify-cpf'");
-    expect(identityApi).toContain("action === 'confirm-phone'");
+    expect(identityApi).toContain("action === 'sync-phone'");
     expect(identityService).toContain('verifyCpfWithReceita');
-    expect(identityService).toContain('CustomFriendlyName');
+    expect(identityService).not.toContain('CustomFriendlyName');
   });
 
   it('mantém a rota e a tela da carteira de prêmios', () => {
