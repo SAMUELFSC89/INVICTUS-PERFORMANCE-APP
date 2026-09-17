@@ -24,7 +24,7 @@ No Firebase Console:
 1. abrir **Authentication > Sign-in method**;
 2. habilitar o provedor **Phone**;
 3. manter os domínios usados pelo app/web em **Authorized domains**;
-4. manter faturamento habilitado para uso real de Phone Auth;
+4. manter uma conta de faturamento vinculada ao projeto para uso real de Phone Auth;
 5. não desabilitar a verificação antiabuso/reCAPTCHA em produção.
 
 O app usa `PhoneAuthProvider` + `RecaptchaVerifier` para enviar o SMS. Depois que o código é confirmado, o número fica vinculado ao próprio usuário do Firebase Authentication. O backend usa o `UserRecord.phoneNumber` do Firebase Admin como fonte de verdade; não aceita `phoneVerified=true` vindo do cliente.
@@ -72,4 +72,6 @@ O código SMS nunca é enviado ao backend Invictus e nunca é salvo no Firestore
 
 ## Custo operacional
 
-O Phone Auth é cobrado pelo Google/Firebase por SMS enviado conforme a tabela vigente do Identity Platform. Não existe custo Twilio adicional. O Serpro continua sendo cobrado conforme o contrato da Consulta CPF; a aplicação foi desenhada para confirmar o CPF na verificação de identidade, não em cada saque.
+O Phone Auth é cobrado pelo Google/Firebase por SMS enviado conforme a tabela vigente do Identity Platform. No Brasil, a tabela consultada em setembro de 2026 indica US$ 0,02 por SMS, com as primeiras 10 mensagens por dia sem cobrança. O valor deve ser conferido novamente antes do lançamento porque a tabela pode mudar.
+
+Não existe custo Twilio adicional. O Serpro continua sendo cobrado conforme o contrato da Consulta CPF; a aplicação foi desenhada para confirmar o CPF na verificação de identidade, não em cada saque.
