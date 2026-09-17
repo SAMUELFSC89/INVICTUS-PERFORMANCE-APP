@@ -25,6 +25,7 @@ const ActivityTypeChooser = lazyNamed(() => import('./components/ActivityTypeCho
 const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicProfile');
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
 const ProfileSecondary = lazyNamed(() => import('./pages/ProfileSecondary'), 'ProfileSecondary');
+const PrizeWallet = lazyNamed(() => import('./pages/PrizeWallet'), 'PrizeWallet');
 const AcademySearch = lazyNamed(() => import('./pages/AcademySearch'), 'AcademySearch');
 const AcademyConfirm = lazyNamed(() => import('./pages/AcademyConfirm'), 'AcademyConfirm');
 const IGAExplanation = lazyNamed(() => import('./pages/IGAExplanation'), 'IGAExplanation');
@@ -103,7 +104,7 @@ export default function App() {
                 <Route path="/profile/academy/search" element={<AcademySearch />} />
                 <Route path="/profile/academy/confirm" element={<AcademyConfirm />} />
                 <Route path="/profile/wearables" element={<ProfileSecondary />} />
-                <Route path="/profile/wallet" element={<Navigate to="/profile" replace />} />
+                <Route path="/profile/wallet" element={<PrizeWallet />} />
                 <Route path="/profile/goals" element={<ProfileSecondary />} />
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
@@ -128,7 +129,7 @@ export default function App() {
                 <Route path="/championships/:id/confirmed" element={<Navigate to="/championships" replace />} />
                 <Route path="/championships/:id" element={<Navigate to="/championships" replace />} />
                 <Route path="/achievements" element={<Achievements />} />
-                <Route path="/wallet" element={<Navigate to="/profile" replace />} />
+                <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
                 <Route path="/performance" element={<Navigate to="/health" replace />} />
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
