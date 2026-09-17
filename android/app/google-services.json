@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "477394623748-d2qggf5rtddcar217nfi6n8cmk45ogb1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.desafiosemdesculpa.app",
+            "certificate_hash": "599530b1176ec4f77cf0f08cc4e2017b6493d4fb"
+          }
+        },
+        {
           "client_id": "477394623748-ctub58ff4451qj6e0huovihls4n15pgh.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -30,6 +38,13 @@
             {
               "client_id": "477394623748-ctub58ff4451qj6e0huovihls4n15pgh.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "477394623748-ugnc921oeqh3ith5iiqskv4pu87p958f.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.desafiosemdesculpa.app"
+              }
             }
           ]
         }
