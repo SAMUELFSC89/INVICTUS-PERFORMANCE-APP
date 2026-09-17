@@ -8,6 +8,11 @@ import { logEvent } from './_lib/observability.js';
 
 const TARGET_URL = 'https://sem-desculpa.vercel.app/api/championships/webhook-asaas';
 const TARGET_PATH = '/api/championships/webhook-asaas';
+const ALLOWED_CURRENT_HOSTS = new Set([
+  'invictusperformance.app.br',
+  'www.invictusperformance.app.br',
+  'sem-desculpa.vercel.app',
+]);
 const CONFIRMATION = 'FIX_ASAAS_SANDBOX_WEBHOOK_REDIRECT_308';
 
 function safeWebhookSummary(webhook: any) {
@@ -82,7 +87,7 @@ export default async function handler(
     const candidates = webhooks.filter((webhook: any) => {
       try {
         const url = new URL(String(webhook?.url || ''));
-        return url.pathname === TARGET_PATH;
+        return ALLOWED_CURRENT_HOSTS.has(url.hostname.toLowerCase()) && url.pathname === TARGET_PATH;
       } catch {
         return false;
       }
