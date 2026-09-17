@@ -139,7 +139,7 @@ if (storedPid && storedPid !== currentPid) {
 // #223: no app nativo NAO deixe o Firebase Auth escolher IndexedDB sozinho.
 //
 // O Auth persiste a sessao em IndexedDB por padrao. Sob o esquema
-// capacitor:// o IndexedDB e inconsistente no WKWebView, e quando ele trava
+// capacitor:// o IndexedDB e inconsistente, e quando ele trava
 // o onAuthStateChanged pode simplesmente NUNCA disparar -- o app fica preso
 // na tela de carregamento sem nenhum erro. browserLocalPersistence usa
 // localStorage, que funciona de forma confiavel nesse ambiente.
@@ -167,35 +167,32 @@ type InvictusGoogleAuthPlugin = {
 
 const nativeGoogleAuth = registerPlugin<InvictusGoogleAuthPlugin>('InvictusGoogleAuth');
 
-// No iOS nativo, Firebase Web Auth via popup/redirect roda dentro do WKWebView
-// e pode perder o retorno da conta Google. Interceptamos somente esse caso:
-// o iOS faz OAuth nativo com ASWebAuthenticationSession + PKCE, devolve os
-// tokens e o Firebase Web SDK cria a mesma sessao usada pelo restante do app.
-// Web e Android continuam exatamente no fluxo Firebase existente.
+// Em app nativo, Firebase Web Auth via popup/redirect roda dentro de WKWebView
+// ou Android WebView e pode falhar antes de abrir a conta Google. iOS e Android
+// usam a mesma ponte `InvictusGoogleAuth`: cada plataforma abre o fluxo nativo,
+// devolve um ID token e o Firebase Web SDK cria a sessão canônica do app.
 async function signInWithRedirect(authInstance: any, provider: any): Promise<void> {
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && provider instanceof GoogleAuthProvider) {
+  if (Capacitor.isNativePlatform() && provider instanceof GoogleAuthProvider) {
     const result = await nativeGoogleAuth.signIn();
     if (!result?.idToken) {
       throw new Error('O Google não retornou um token de identidade válido.');
     }
     const credential = GoogleAuthProvider.credential(result.idToken, result.accessToken);
     await signInWithCredential(authInstance, credential);
-    marcarDiag('login Google nativo iOS -> Firebase concluido');
+    marcarDiag(`login Google nativo ${Capacitor.getPlatform()} -> Firebase concluido`);
     return;
   }
 
   await firebaseSignInWithRedirect(authInstance, provider);
 }
 
-// O iOS nativo conclui Google acima via credencial nativa e não possui
-// redirect Web pendente. Nesse caso específico evitamos getRedirectResult no
-// boot do WKWebView, que já causou auth/argument-error sem login pendente.
-// Android, por outro lado, continua usando firebaseSignInWithRedirect(); por
-// isso PRECISA executar o getRedirectResult real depois que o app recebe o
-// callback. Tornar todo Capacitor no-op deixava o fluxo Android sem consumidor.
+// O login Google de iOS/Android é concluído diretamente pela credencial nativa,
+// portanto não existe redirect Web pendente para o Firebase consumir no boot.
+// Chamar firebaseGetRedirectResult dentro do WebView Android era justamente o
+// caminho que produzia auth/argument-error antes mesmo do seletor de contas.
 async function getRedirectResult(authInstance: any): Promise<any> {
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios') {
-    marcarDiag('getRedirectResult ignorado no iOS nativo');
+  if (Capacitor.isNativePlatform()) {
+    marcarDiag(`getRedirectResult ignorado no ${Capacitor.getPlatform()} nativo`);
     return null;
   }
   return firebaseGetRedirectResult(authInstance);
