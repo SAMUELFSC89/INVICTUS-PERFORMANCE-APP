@@ -78,7 +78,11 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
     expect(install).toContain('await registrationReady');
     expect(install.indexOf('await saveDeviceToken(token.value, expectedUid)')).toBeLessThan(install.indexOf('settleSuccess()'));
     expect(install.indexOf('await registrationReady')).toBeLessThan(install.indexOf('initialized = true'));
-    expect(init.indexOf('await installListeners(expectedUid, onNavigate)')).toBeLessThan(init.indexOf('setPushNotificationPreference(expectedUid, true)'));
+
+    const installCallIndex = init.indexOf('await installListeners(expectedUid, onNavigate)');
+    const enabledAfterInstallIndex = init.indexOf('setPushNotificationPreference(expectedUid, true)', installCallIndex);
+    expect(installCallIndex).toBeGreaterThan(-1);
+    expect(enabledAfterInstallIndex).toBeGreaterThan(installCallIndex);
   });
 
   it('não fica eternamente habilitado sem token e limita o handshake nativo', () => {
