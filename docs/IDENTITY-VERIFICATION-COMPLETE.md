@@ -1,0 +1,1 @@
+Implemented scope: account identity status, email sync, phone OTP verification, CPF Receita/Serpro verification, and withdrawal OTP replacing selfie authorization. Activity presence verification is intentionally handled in a separate change.
