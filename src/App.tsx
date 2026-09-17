@@ -26,6 +26,7 @@ const PublicProfile = lazyNamed(() => import('./pages/PublicProfile'), 'PublicPr
 const ProfileNew = lazyNamed(() => import('./pages/ProfileNew'), 'ProfileNew');
 const ProfileSecondary = lazyNamed(() => import('./pages/ProfileSecondary'), 'ProfileSecondary');
 const PrizeWallet = lazyNamed(() => import('./pages/PrizeWallet'), 'PrizeWallet');
+const IdentityVerification = lazyNamed(() => import('./pages/IdentityVerification'), 'IdentityVerification');
 const AcademySearch = lazyNamed(() => import('./pages/AcademySearch'), 'AcademySearch');
 const AcademyConfirm = lazyNamed(() => import('./pages/AcademyConfirm'), 'AcademyConfirm');
 const IGAExplanation = lazyNamed(() => import('./pages/IGAExplanation'), 'IGAExplanation');
@@ -123,6 +124,7 @@ export default function App() {
                 <Route path="/profile/academy/confirm" element={<AcademyConfirm />} />
                 <Route path="/profile/wearables" element={<ProfileSecondary />} />
                 <Route path="/profile/wallet" element={<PrizeWallet />} />
+                <Route path="/profile/identity" element={<IdentityVerification />} />
                 <Route path="/profile/goals" element={<ProfileSecondary />} />
                 <Route path="/profile/security" element={<ProfileSecondary />} />
                 <Route path="/profile/preferences" element={<ProfileSecondary />} />
