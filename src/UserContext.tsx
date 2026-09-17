@@ -269,8 +269,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
       // Push também é estado privado da identidade. O token nativo pertence ao
       // aparelho, então precisa ser invalidado no logout ou reivindicado pela
-      // conta nova. A rotina não solicita nova permissão: ela só reconcilia uma
-      // autorização já concedida pelo usuário.
+      // conta nova. Em uma conta sem decisão anterior, a própria reconciliação
+      // executa o primeiro opt-in nativo e só considera o push ativo depois de
+      // o token APNs/FCM ser confirmado pelo backend.
       void reconcilePushNotificationsForAuthChange(firebaseUser?.uid || null).catch((error: any) => {
         console.error(`[AUTH] [PUSH] [${firebaseUser?.uid || 'GUEST'}] [FAILURE] ${error?.message || 'Falha ao reconciliar dispositivo'}`);
       });
