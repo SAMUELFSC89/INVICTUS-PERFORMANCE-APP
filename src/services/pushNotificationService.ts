@@ -19,6 +19,8 @@ const DEVICE_TOKEN_KEY = 'invictus_push_device_token';
 const DEVICE_TOKEN_OWNER_KEY = 'invictus_push_device_token_owner';
 const LEGACY_NOTIFICATION_PREFERENCE_KEY = 'notifications-enabled';
 const GENERAL_NOTIFICATION_CHANNEL_ID = 'invictus_general';
+const REGISTRATION_TIMEOUT_MS = 15_000;
+const TOKEN_CLAIM_MAX_ATTEMPTS = 2;
 const notificationPreferenceKey = (uid: string) => `notifications-enabled:${uid}`;
 const currentPushPlatform = () => Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
 
@@ -79,25 +81,46 @@ function mirrorCurrentPreference(uid: string | null): void {
   );
 }
 
-async function updateDeviceTokenOwnership(action: 'claim-device-token' | 'remove-device-token', token: string, expectedUid: string): Promise<void> {
-  const currentUser = auth.currentUser;
-  if (!currentUser || currentUser.uid !== expectedUid) throw new Error('A conta mudou durante o registro de notificações.');
-  const idToken = await currentUser.getIdToken();
-  if (auth.currentUser?.uid !== expectedUid) throw new Error('A conta mudou durante o registro de notificações.');
+const delay = (ms: number) => new Promise<void>(resolve => globalThis.setTimeout(resolve, ms));
 
-  const response = await fetch(`${API_CONFIG.baseUrl}/api/notifications`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify({ action, token, platform: currentPushPlatform() }),
-  });
-  if (auth.currentUser?.uid !== expectedUid) throw new Error('A conta mudou durante o registro de notificações.');
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.error || 'Não foi possível atualizar este dispositivo.');
+async function updateDeviceTokenOwnership(action: 'claim-device-token' | 'remove-device-token', token: string, expectedUid: string): Promise<void> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= TOKEN_CLAIM_MAX_ATTEMPTS; attempt += 1) {
+    const currentUser = auth.currentUser;
+    if (!currentUser || currentUser.uid !== expectedUid) throw new Error('A conta mudou durante o registro de notificações.');
+
+    try {
+      const idToken = await currentUser.getIdToken(attempt > 1);
+      if (auth.currentUser?.uid !== expectedUid) throw new Error('A conta mudou durante o registro de notificações.');
+
+      const response = await fetch(`${API_CONFIG.baseUrl}/api/notifications`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ action, token, platform: currentPushPlatform() }),
+      });
+      if (auth.currentUser?.uid !== expectedUid) throw new Error('A conta mudou durante o registro de notificações.');
+      if (response.ok) return;
+
+      const payload = await response.json().catch(() => null);
+      const error = new Error(payload?.error || 'Não foi possível atualizar este dispositivo.');
+      // 4xx é definitivo para este payload/sessão; repetir só esconderia o
+      // problema. Falha transitória do backend (5xx) ganha uma tentativa curta.
+      if (response.status < 500 || attempt === TOKEN_CLAIM_MAX_ATTEMPTS) throw error;
+      lastError = error;
+    } catch (error) {
+      if (auth.currentUser?.uid !== expectedUid) throw new Error('A conta mudou durante o registro de notificações.');
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt === TOKEN_CLAIM_MAX_ATTEMPTS) throw lastError;
+    }
+
+    await delay(450);
   }
+
+  throw lastError || new Error('Não foi possível atualizar este dispositivo.');
 }
 
 async function saveDeviceToken(token: string, expectedUid: string): Promise<void> {
@@ -126,22 +149,63 @@ async function ensureGeneralAndroidChannel(): Promise<void> {
   }
 }
 
+/**
+ * Instala os listeners e só considera o dispositivo registrado DEPOIS que o
+ * token nativo foi obtido e reivindicado pelo UID no backend.
+ *
+ * Antes, `PushNotifications.register()` retornava antes do callback
+ * `registration`; o app já gravava a preferência como enabled mesmo que o
+ * APNs/FCM nunca entregasse token ou a chamada /api/notifications falhasse.
+ * Isso produzia exatamente o estado "notificações ativadas, mas nada chega".
+ */
 async function installListeners(expectedUid: string, onNavigate?: (url: string) => void): Promise<void> {
   await PushNotifications.removeAllListeners();
   await ensureGeneralAndroidChannel();
 
+  let settled = false;
+  let resolveRegistration!: () => void;
+  let rejectRegistration!: (error: Error) => void;
+  const registrationReady = new Promise<void>((resolve, reject) => {
+    resolveRegistration = resolve;
+    rejectRegistration = reject;
+  });
+  const timeout = globalThis.setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    rejectRegistration(new Error('O aparelho não retornou um token de notificações a tempo.'));
+  }, REGISTRATION_TIMEOUT_MS);
+
+  const settleSuccess = () => {
+    if (settled) return;
+    settled = true;
+    globalThis.clearTimeout(timeout);
+    resolveRegistration();
+  };
+  const settleFailure = (error: unknown) => {
+    if (settled) return;
+    settled = true;
+    globalThis.clearTimeout(timeout);
+    rejectRegistration(error instanceof Error ? error : new Error(String(error)));
+  };
+
   await PushNotifications.addListener('registration', async (token: Token) => {
-    if (auth.currentUser?.uid !== expectedUid) return;
+    if (auth.currentUser?.uid !== expectedUid) {
+      settleFailure(new Error('A conta mudou durante o registro de notificações.'));
+      return;
+    }
     console.log('[Push] Dispositivo registrado, token obtido.');
     try {
       await saveDeviceToken(token.value, expectedUid);
+      settleSuccess();
     } catch (err) {
       console.error('[Push] Falha ao vincular token de push à conta atual:', err);
+      settleFailure(err);
     }
   });
 
   await PushNotifications.addListener('registrationError', (err) => {
     console.error('[Push] Erro ao registrar para push notifications:', err.error);
+    settleFailure(new Error(err.error || 'O sistema não conseguiu registrar notificações neste aparelho.'));
   });
 
   await PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
@@ -158,9 +222,18 @@ async function installListeners(expectedUid: string, onNavigate?: (url: string) 
     else window.location.assign(actionPath);
   });
 
-  await PushNotifications.register();
-  initialized = true;
-  initializedUserId = expectedUid;
+  try {
+    await PushNotifications.register();
+    await registrationReady;
+    initialized = true;
+    initializedUserId = expectedUid;
+  } catch (error) {
+    globalThis.clearTimeout(timeout);
+    initialized = false;
+    initializedUserId = null;
+    try { await PushNotifications.removeAllListeners(); } catch { /* best effort */ }
+    throw error;
+  }
 }
 
 async function unregisterLocalPush(): Promise<void> {
@@ -184,8 +257,16 @@ export async function initPushNotifications(onNavigate?: (url: string) => void):
   const expectedUid = auth.currentUser?.uid;
   if (!expectedUid) return false;
   if (initialized && initializedUserId === expectedUid) {
-    setPushNotificationPreference(expectedUid, true);
-    return true;
+    const token = localStorage.getItem(DEVICE_TOKEN_KEY);
+    const owner = localStorage.getItem(DEVICE_TOKEN_OWNER_KEY);
+    if (token && owner === expectedUid) {
+      setPushNotificationPreference(expectedUid, true);
+      return true;
+    }
+    // Estado JS "inicializado" sem token confirmado não é suficiente. Refaz o
+    // handshake para que a interface nunca prometa push sem backend registrado.
+    initialized = false;
+    initializedUserId = null;
   }
 
   try {
@@ -196,12 +277,13 @@ export async function initPushNotifications(onNavigate?: (url: string) => void):
       if (req.receive !== 'granted') {
         console.warn('[Push] Permissão de notificações negada pelo usuário.');
         // Só uma decisão real do sistema operacional vira opt-out persistente.
-        // Erro de rede/FCM abaixo permanece "unset" e poderá tentar novamente.
+        // Erro de rede/APNs/FCM permanece "unset" e poderá tentar novamente.
         setPushNotificationPreference(expectedUid, false);
         return false;
       }
     }
 
+    // Só retorna sucesso depois de token nativo + claim autenticado no servidor.
     await installListeners(expectedUid, onNavigate);
     setPushNotificationPreference(expectedUid, true);
     return true;
