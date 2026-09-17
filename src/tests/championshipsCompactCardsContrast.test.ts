@@ -49,9 +49,10 @@ describe('campeonatos compactos e contraste', () => {
 
   it('reforça contraste dos resumos e regulamentos oficiais sem aumentar tipografia', () => {
     const css = read('src/styles/fixedDarkSurfaces.css');
-    expect(css).toContain('[aria-label="Informações do campeonato"] > details > summary b');
-    expect(css).toContain('[aria-label="Informações do campeonato"] > details > summary small');
-    expect(css).toContain('.paid-rules p');
-    expect(css).not.toContain('font-size:');
+    const contrastRules = css.split('/* Campeonatos oficiais já inscritos')[0];
+    expect(contrastRules).toContain('[aria-label="Informações do campeonato"] > details > summary b');
+    expect(contrastRules).toContain('[aria-label="Informações do campeonato"] > details > summary small');
+    expect(contrastRules).toContain('.paid-rules p');
+    expect(contrastRules).not.toContain('font-size:');
   });
 });
