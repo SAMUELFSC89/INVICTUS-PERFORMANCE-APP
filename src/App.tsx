@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, type ComponentType } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { AdminGuard } from './components/AdminGuard';
 import { AuthGuard } from './components/AuthGuard';
@@ -39,6 +39,7 @@ const AdminFlaggedActivities = lazyNamed(() => import('./pages/AdminFlaggedActiv
 const PowerLift = lazyNamed(() => import('./pages/PowerLift'), 'PowerLift');
 const Health = lazyNamed(() => import('./pages/Health'), 'Health');
 const HealthReport = lazyNamed(() => import('./pages/HealthReport'), 'HealthReport');
+const SleepCheckin = lazyNamed(() => import('./pages/SleepCheckin'), 'SleepCheckin');
 const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifications');
 const ChampionshipsHub = lazyNamed(() => import('./pages/championships/ChampionshipsHub'), 'ChampionshipsHub');
 const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');
@@ -54,6 +55,23 @@ const AdminStoreOrders = lazyNamed(() => import('./pages/AdminStoreOrders'), 'Ad
 
 function RouteLoading() {
   return <div className="app-route-loading" role="status" aria-live="polite">CARREGANDO…</div>;
+}
+
+function HealthWithSleepEntry() {
+  return <>
+    <Health />
+    <Link
+      to="/health/sleep-checkin"
+      aria-label="Registrar sono manualmente"
+      style={{
+        position: 'fixed', right: '16px', bottom: 'calc(82px + env(safe-area-inset-bottom, 0px))', zIndex: 80,
+        display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '11px 14px', borderRadius: '999px',
+        background: 'linear-gradient(135deg,#655bff,#8f87ff)', color: '#fff', textDecoration: 'none',
+        fontSize: '12px', fontWeight: 900, letterSpacing: '.05em', boxShadow: '0 12px 28px rgba(72,61,220,.34)',
+        border: '1px solid rgba(255,255,255,.18)'
+      }}
+    >☾ REGISTRAR SONO</Link>
+  </>;
 }
 
 export default function App() {
@@ -134,7 +152,8 @@ export default function App() {
                 <Route path="/power" element={<PowerLift />} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
-                <Route path="/health" element={<ProFeatureGate feature="health"><Health /></ProFeatureGate>} />
+                <Route path="/health" element={<ProFeatureGate feature="health"><HealthWithSleepEntry /></ProFeatureGate>} />
+                <Route path="/health/sleep-checkin" element={<ProFeatureGate feature="health"><SleepCheckin /></ProFeatureGate>} />
                 <Route path="/health/report" element={<ProFeatureGate feature="health"><HealthReport /></ProFeatureGate>} />
                 <Route path="/health/report/full" element={<Navigate to="/health/report" replace />} />
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
