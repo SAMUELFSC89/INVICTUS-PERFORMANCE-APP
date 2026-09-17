@@ -8,16 +8,17 @@ import {
   CheckCircle2,
   Clock3,
   Loader2,
+  MessageSquareText,
   Plus,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
   Trophy,
   UserRound,
   XCircle,
 } from 'lucide-react';
 import { auth } from '../firebase';
 import { InvictusLogo } from '../components/InvictusLogo';
-import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
 import type { PIXWithdrawal, WithdrawalStatus } from '../types';
 import './PrizeWallet.css';
 
@@ -34,13 +35,21 @@ type WalletPayload = {
     minWithdrawalAmount: number;
     maxDailyWithdrawalAmount: number;
   };
+  identity?: {
+    emailVerified: boolean;
+    phoneVerified: boolean;
+    cpfVerified: boolean;
+    ready: boolean;
+    phone?: string;
+  };
   cashSource: 'official_prizes_only';
   coinsWithdrawable: false;
 };
 
-type PresenceState = {
-  id: string;
-  prompt: string;
+type OtpState = {
+  requestId: string;
+  phone: string;
+  expiresAt?: string;
   message?: string;
 } | null;
 
@@ -67,7 +76,7 @@ function formatDate(value?: string): string {
 async function authenticatedFetch(path: string, init?: RequestInit) {
   const currentUser = auth.currentUser;
   if (!currentUser) throw new Error('Sua sessão expirou. Entre novamente.');
-  const token = await currentUser.getIdToken();
+  const token = await currentUser.getIdToken(true);
   const response = await fetch(path, {
     ...init,
     headers: {
@@ -78,7 +87,10 @@ async function authenticatedFetch(path: string, init?: RequestInit) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success === false) {
-    throw new Error(payload?.error || payload?.userMessage || 'Não foi possível concluir a operação.');
+    const error: any = new Error(payload?.error || payload?.userMessage || 'Não foi possível concluir a operação.');
+    error.code = payload?.code;
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }
@@ -93,7 +105,8 @@ export function PrizeWallet() {
   const [amount, setAmount] = useState('');
   const [pixKeyType, setPixKeyType] = useState<'cpf' | 'email' | 'phone' | 'random'>('email');
   const [pixKey, setPixKey] = useState(auth.currentUser?.email || '');
-  const [presence, setPresence] = useState<PresenceState>(null);
+  const [otp, setOtp] = useState<OtpState>(null);
+  const [otpCode, setOtpCode] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,8 +128,11 @@ export function PrizeWallet() {
   const minWithdrawal = Number(data?.config.minWithdrawalAmount || 20);
   const maxDaily = Number(data?.config.maxDailyWithdrawalAmount || 1000);
   const requestedAmount = Number(String(amount).replace(',', '.'));
+  const identityReady = data?.identity?.ready === true;
   const canRequest = Boolean(
     data?.config.enabled
+    && identityReady
+    && !otp
     && Number.isFinite(requestedAmount)
     && requestedAmount >= minWithdrawal
     && requestedAmount <= Math.min(available, maxDaily)
@@ -141,31 +157,46 @@ export function PrizeWallet() {
           pixKeyType,
         }),
       });
-      if (!result.presenceCheckRequired || !result.presenceCheckId) {
-        throw new Error('O servidor não abriu a confirmação de identidade para o saque.');
+      if (!result.otpRequired || !result.otpRequestId) {
+        throw new Error('O servidor não abriu a confirmação por código para o saque.');
       }
-      setPresence({
-        id: result.presenceCheckId,
-        prompt: result.livenessPrompt || 'Siga o gesto indicado',
+      setOtp({
+        requestId: result.otpRequestId,
+        phone: result.phone || data?.identity?.phone || '',
+        expiresAt: result.expiresAt,
         message: result.userMessage,
       });
+      setOtpCode('');
+      setNotice(result.userMessage || 'Enviamos um código de confirmação por SMS.');
     } catch (reason: any) {
-      setError(reason?.message || 'Não foi possível iniciar o saque.');
+      if (reason?.code === 'IDENTITY_VERIFICATION_REQUIRED') {
+        setError('Sua conta ainda precisa confirmar e-mail, telefone e CPF antes do saque.');
+        await load();
+      } else {
+        setError(reason?.message || 'Não foi possível iniciar o saque.');
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handlePresenceSuccess = async (result: { status: string; userMessage: string; commitResult?: any }) => {
-    setPresence(null);
-    if (result.status !== 'approved' || !result.commitResult) {
-      setError(result.userMessage || 'A confirmação de identidade não foi aprovada.');
-      return;
-    }
-    setNotice('Solicitação de saque criada. O valor ficou reservado até a análise e envio do PIX.');
-    setAmount('');
-    await load();
+  const confirmOtp = async () => {
+    if (!otp || otpCode.length < 4 || submitting) return;
+    setSubmitting(true); setError(''); setNotice('');
+    try {
+      const result = await authenticatedFetch('/api/financial', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'confirm-withdrawal-otp', otpRequestId: otp.requestId, code: otpCode }),
+      });
+      setOtp(null); setOtpCode(''); setAmount('');
+      setNotice(result.userMessage || 'Solicitação de saque criada. O valor ficou reservado para processamento do PIX.');
+      await load();
+    } catch (reason: any) {
+      setError(reason?.message || 'Não foi possível confirmar o código do saque.');
+    } finally { setSubmitting(false); }
   };
+
+  const identity = data?.identity;
 
   return createPortal(<main className="prize-wallet-screen"><div className="prize-wallet-page">
     <header className="prize-wallet-header">
@@ -187,23 +218,31 @@ export function PrizeWallet() {
 
       <section className="prize-wallet-separation"><ShieldCheck /><div><b>INVICTUS COINS NÃO SÃO DINHEIRO</b><p>Coins continuam sendo pontos internos do ecossistema e nunca entram neste saldo nem podem ser sacadas.</p></div></section>
 
+      <section className="prize-wallet-separation"><ShieldCheck /><div><b>{identityReady ? 'CONTA VERIFICADA PARA SAQUE' : 'CONFIRME SUA IDENTIDADE'}</b><p>E-mail {identity?.emailVerified ? '✓' : 'pendente'} · telefone {identity?.phoneVerified ? '✓' : 'pendente'} · CPF/Receita {identity?.cpfVerified ? '✓' : 'pendente'}.</p>{!identityReady ? <button type="button" className="prize-wallet-submit" onClick={() => navigate('/profile/identity')}>VERIFICAR MINHA CONTA</button> : null}</div></section>
+
       <section className="prize-wallet-withdrawal">
         <header><div><small>SAQUE DE PRÊMIO</small><h2>RECEBER POR PIX</h2></div><Banknote /></header>
         {!data?.config.enabled ? <div className="prize-wallet-disabled">Saques temporariamente indisponíveis.</div> : <>
           <div className="prize-wallet-limits"><span>Mínimo <b>{money(minWithdrawal)}</b></span><span>Limite diário <b>{money(maxDaily)}</b></span></div>
           <label>VALOR A SACAR
-            <div className="prize-wallet-money-input"><span>R$</span><input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value.replace(/[^0-9,.]/g, ''))} placeholder={minWithdrawal.toFixed(2).replace('.', ',')} /></div>
+            <div className="prize-wallet-money-input"><span>R$</span><input inputMode="decimal" value={amount} disabled={Boolean(otp)} onChange={event => setAmount(event.target.value.replace(/[^0-9,.]/g, ''))} placeholder={minWithdrawal.toFixed(2).replace('.', ',')} /></div>
           </label>
           <div className="prize-wallet-pix-grid">
             <label>TIPO DE CHAVE
-              <select value={pixKeyType} onChange={event => setPixKeyType(event.target.value as typeof pixKeyType)}>
+              <select value={pixKeyType} disabled={Boolean(otp)} onChange={event => setPixKeyType(event.target.value as typeof pixKeyType)}>
                 <option value="cpf">CPF</option><option value="email">E-mail</option><option value="phone">Telefone</option><option value="random">Chave aleatória</option>
               </select>
             </label>
-            <label>CHAVE PIX<input value={pixKey} onChange={event => setPixKey(event.target.value)} autoComplete="off" placeholder="Digite sua chave PIX" /></label>
+            <label>CHAVE PIX<input value={pixKey} disabled={Boolean(otp)} onChange={event => setPixKey(event.target.value)} autoComplete="off" placeholder="Digite sua chave PIX" /></label>
           </div>
-          <p className="prize-wallet-biometric"><ShieldCheck /> Por segurança, cada solicitação exige uma confirmação facial ao vivo antes de reservar o saldo.</p>
-          <button type="button" className="prize-wallet-submit" disabled={!canRequest || submitting} onClick={() => void requestWithdrawal()}>{submitting ? <><Loader2 className="is-spinning" /> PREPARANDO VALIDAÇÃO</> : <><Banknote /> SOLICITAR SAQUE VIA PIX</>}</button>
+
+          {!otp ? <>
+            <p className="prize-wallet-biometric"><Smartphone /> Cada saque exige um novo código de uso único enviado por SMS ao telefone verificado da sua conta. Não usamos selfie para liberar PIX.</p>
+            <button type="button" className="prize-wallet-submit" disabled={!canRequest || submitting} onClick={() => void requestWithdrawal()}>{submitting ? <><Loader2 className="is-spinning" /> ENVIANDO CÓDIGO</> : <><MessageSquareText /> RECEBER CÓDIGO POR SMS</>}</button>
+          </> : <div className="prize-wallet-pix-grid">
+            <label>CÓDIGO ENVIADO PARA {otp.phone || 'SEU TELEFONE'}<input value={otpCode} onChange={event => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" /></label>
+            <div><button type="button" className="prize-wallet-submit" disabled={otpCode.length < 4 || submitting} onClick={() => void confirmOtp()}>{submitting ? <><Loader2 className="is-spinning" /> CONFIRMANDO</> : <><ShieldCheck /> CONFIRMAR SAQUE</>}</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => { setOtp(null); setOtpCode(''); setNotice(''); }}>CANCELAR CÓDIGO</button></div>
+          </div>}
           {available < minWithdrawal ? <p className="prize-wallet-hint">Você poderá solicitar o PIX quando tiver pelo menos {money(minWithdrawal)} em prêmios disponíveis.</p> : null}
         </>}
       </section>
@@ -220,14 +259,5 @@ export function PrizeWallet() {
   </div>
 
   <nav className="prize-wallet-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button className="is-active" onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>
-
-  <VerifiedPresenceModal
-    isOpen={Boolean(presence)}
-    presenceCheckId={presence?.id || ''}
-    livenessPrompt={presence?.prompt || ''}
-    userMessage={presence?.message}
-    onClose={() => setPresence(null)}
-    onSuccess={result => void handlePresenceSuccess(result)}
-  />
   </main>, document.body);
 }
