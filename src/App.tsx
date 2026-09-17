@@ -42,6 +42,7 @@ const Notifications = lazyNamed(() => import('./pages/Notifications'), 'Notifica
 const ChampionshipsHub = lazyNamed(() => import('./pages/championships/ChampionshipsHub'), 'ChampionshipsHub');
 const CommunityChampionship = lazyNamed(() => import('./pages/championships/CommunityChampionship'), 'CommunityChampionship');
 const CommunityRanking = lazyNamed(() => import('./pages/championships/CommunityRanking'), 'CommunityRanking');
+const PaidChampionshipRanking = lazyNamed(() => import('./pages/championships/PaidChampionshipRanking'), 'PaidChampionshipRanking');
 const ChampionshipPreview = lazyNamed(() => import('./pages/championships/ChampionshipPreview'), 'ChampionshipPreview');
 const ChampionshipCheckoutReturn = lazyNamed(() => import('./pages/championships/ChampionshipCheckoutReturn'), 'ChampionshipCheckoutReturn');
 const Musculation = lazyNamed(() => import('./pages/Musculation'), 'Musculation');
@@ -112,6 +113,8 @@ export default function App() {
                 <Route path="/championships" element={<ChampionshipsHub />} />
                 <Route path="/championships/community" element={<CommunityChampionship />} />
                 <Route path="/championships/community/ranking" element={<CommunityRanking />} />
+                <Route path="/championships/ranking/musculacao" element={<PaidChampionshipRanking modality="musculacao" />} />
+                <Route path="/championships/ranking/cardio" element={<PaidChampionshipRanking modality="cardio" />} />
                 <Route path="/championships/preview/musculacao" element={<ChampionshipPreview modality="musculacao" />} />
                 <Route path="/championships/preview/cardio" element={<ChampionshipPreview modality="cardio" />} />
                 <Route path="/championships/checkout-return" element={<ChampionshipCheckoutReturn />} />
