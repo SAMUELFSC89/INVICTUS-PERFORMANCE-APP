@@ -57,7 +57,7 @@ export function PaidRankingCard({ category, title, image, icon: Icon, onOpen }: 
   return <button type="button" className="ch-friends-ranking-card ch-paid-ranking-card" onClick={onOpen} aria-label={`${title}, participando, ver ranking`}>
     <img className="ch-friends-ranking-card__background" src={image} alt="" aria-hidden="true" />
     <span className="ch-friends-ranking-card__scrim" aria-hidden="true" />
-    <span className="ch-friends-ranking-card__identity"><Icon aria-hidden="true" /><span><small>CAMPEONATO OFICIAL</small><strong>{title}</strong></span></span>
+    <span className="ch-friends-ranking-card__identity"><Icon aria-hidden={true} /><span><small>CAMPEONATO OFICIAL</small><strong>{title}</strong></span></span>
     <span className="ch-friends-ranking-card__status"><CheckCircle2 aria-hidden="true" /> PARTICIPANDO <small>{category}</small></span>
     <span className="ch-friends-ranking-card__ranking">VER RANKING <ChevronRight aria-hidden="true" /></span>
   </button>;
