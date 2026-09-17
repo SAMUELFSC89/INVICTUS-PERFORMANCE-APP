@@ -26,6 +26,17 @@ async function resolveStorageUrl(value: string): Promise<string> {
   return getDownloadURL(ref(storage, value));
 }
 
+function withAvatarRetryNonce(value: string): string {
+  try {
+    const url = new URL(value);
+    url.searchParams.set('invictus_avatar_retry', String(Date.now()));
+    return url.toString();
+  } catch {
+    const separator = value.includes('?') ? '&' : '?';
+    return `${value}${separator}invictus_avatar_retry=${Date.now()}`;
+  }
+}
+
 interface ProfilePhotoImageProps {
   source: string;
   alt?: string;
@@ -39,6 +50,8 @@ interface ProfilePhotoImageProps {
  * - URLs http/data/blob renderizam imediatamente.
  * - gs:// e paths profiles/... sao convertidos com getDownloadURL().
  * - URLs antigas do Firebase sao renovadas em background e novamente no onError.
+ * - se o Firebase devolver a mesma URL, uma segunda requisicao com cache-bust
+ *   evita que WKWebView/Safari perpetue uma resposta de imagem quebrada em cache.
  *
  * Isso evita que um avatar legado/stale deixe um <img> quebrado no perfil.
  */
@@ -84,11 +97,18 @@ export function ProfilePhotoImage({ source, alt = '', className, fallback = null
 
     try {
       const freshUrl = await resolveStorageUrl(normalizedSource);
-      if (!freshUrl || freshUrl === resolvedSrc) {
+      if (!freshUrl) {
         setFailed(true);
         return;
       }
-      setResolvedSrc(freshUrl);
+
+      // getDownloadURL pode retornar exatamente a URL que o WKWebView acabou
+      // de falhar ao carregar. Antes isso encerrava a recuperacao imediatamente.
+      // Uma query local nao muda o objeto/token do Firebase, mas força uma nova
+      // requisicao HTTP e contorna cache negativo/stale do WebKit.
+      const retryUrl = freshUrl === resolvedSrc ? withAvatarRetryNonce(freshUrl) : freshUrl;
+      setFailed(false);
+      setResolvedSrc(retryUrl);
     } catch {
       setFailed(true);
     }
