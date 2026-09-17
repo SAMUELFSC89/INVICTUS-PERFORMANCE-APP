@@ -152,21 +152,21 @@ export function PrizeWallet() {
   const maxDaily = Number(data?.config.maxDailyWithdrawalAmount || 1000);
   const requestedAmount = Number(String(amount).replace(',', '.'));
   const identityReady = data?.identity?.ready === true;
-  const canRequest = Boolean(
+  const withdrawalInputValid = Boolean(
     data?.config.enabled
     && identityReady
-    && !phoneChallenge
     && Number.isFinite(requestedAmount)
     && requestedAmount >= minWithdrawal
     && requestedAmount <= Math.min(available, maxDaily)
     && pixKey.trim(),
   );
+  const canRequest = withdrawalInputValid && !phoneChallenge;
 
   const orderedWithdrawals = useMemo(() => [...(data?.withdrawals || [])]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [data?.withdrawals]);
 
   const startPhoneReauth = async () => {
-    if (!canRequest || submitting) return;
+    if (!withdrawalInputValid || submitting) return;
     const current = auth.currentUser;
     if (!current?.phoneNumber) {
       setError('Confirme um telefone na sua conta antes de solicitar o saque.');
@@ -193,6 +193,11 @@ export function PrizeWallet() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const resendPhoneCode = async () => {
+    clearPhoneChallenge();
+    await startPhoneReauth();
   };
 
   const confirmPhoneAndWithdraw = async () => {
@@ -280,7 +285,7 @@ export function PrizeWallet() {
             <button type="button" className="prize-wallet-submit" disabled={!canRequest || submitting} onClick={() => void startPhoneReauth()}>{submitting ? <><Loader2 className="is-spinning" /> ENVIANDO CÓDIGO</> : <><MessageSquareText /> RECEBER CÓDIGO POR SMS</>}</button>
           </> : <div className="prize-wallet-pix-grid">
             <label>CÓDIGO ENVIADO PARA {identity?.phone || 'SEU TELEFONE'}<input value={otpCode} onChange={event => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" /></label>
-            <div><button type="button" className="prize-wallet-submit" disabled={otpCode.length < 4 || submitting} onClick={() => void confirmPhoneAndWithdraw()}>{submitting ? <><Loader2 className="is-spinning" /> CONFIRMANDO</> : <><ShieldCheck /> CONFIRMAR E SOLICITAR PIX</>}</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => clearPhoneChallenge()}>CANCELAR CÓDIGO</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => { clearPhoneChallenge(); setTimeout(() => void startPhoneReauth(), 0); }}>REENVIAR SMS</button></div>
+            <div><button type="button" className="prize-wallet-submit" disabled={otpCode.length < 4 || submitting} onClick={() => void confirmPhoneAndWithdraw()}>{submitting ? <><Loader2 className="is-spinning" /> CONFIRMANDO</> : <><ShieldCheck /> CONFIRMAR E SOLICITAR PIX</>}</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => clearPhoneChallenge()}>CANCELAR CÓDIGO</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => void resendPhoneCode()}>REENVIAR SMS</button></div>
           </div>}
           {available < minWithdrawal ? <p className="prize-wallet-hint">Você poderá solicitar o PIX quando tiver pelo menos {money(minWithdrawal)} em prêmios disponíveis.</p> : null}
           <div id="invictus-withdrawal-recaptcha" aria-hidden="true" />
