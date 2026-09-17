@@ -106,9 +106,11 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(storeHandler).not.toContain("snapshot.data()?.role === 'admin'");
   });
 
-  test('prelaunch store stays hidden from users while Admin remains available and profile shows canonical Coins', () => {
+  test('prelaunch store stays hidden while official cash prizes remain isolated from Invictus Coins', () => {
     const app = read('src/App.tsx');
     const profile = read('src/pages/ProfileNew.tsx');
+    const prizeWallet = read('src/pages/PrizeWallet.tsx');
+    const coinRedeem = read('api/_handlers/wallet-redeem.ts');
     const challenges = read('src/components/ChallengesHubNew.tsx');
     const storeHandler = read('api/_handlers/store.ts');
 
@@ -118,14 +120,23 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(app).not.toContain("import('./pages/StoreOrders')");
     expect(app).toContain('<Route path="/store" element={<Navigate to="/" replace />} />');
     expect(app).toContain('<Route path="/store/product/:productId" element={<Navigate to="/" replace />} />');
-    expect(app).toContain('<Route path="/profile/wallet" element={<Navigate to="/profile" replace />} />');
+    expect(app).toContain('<Route path="/profile/wallet" element={<PrizeWallet />} />');
     expect(app).toContain('<Route path="/admin/store/drops" element={<AdminGuard><AdminStoreDrops /></AdminGuard>} />');
 
     expect(profile).toContain('INVICTUS COINS');
     expect(profile).toContain('missionService.dashboard()');
     expect(profile).toContain('data.coinWallet?.balance');
+    expect(profile).toContain('Prêmios e saques');
     expect(profile).not.toContain('Loja Invictus');
     expect(profile).not.toContain("navigate('/store')");
+
+    expect(prizeWallet).toContain("cashSource: 'official_prizes_only'");
+    expect(prizeWallet).toContain('coinsWithdrawable: false');
+    expect(prizeWallet).toContain('INVICTUS COINS NÃO SÃO DINHEIRO');
+    expect(prizeWallet).toContain('Coins continuam sendo pontos internos do ecossistema e nunca entram neste saldo nem podem ser sacadas.');
+    expect(prizeWallet).toContain("authenticatedFetch('/api/financial'");
+    expect(prizeWallet).toContain('VerifiedPresenceModal');
+    expect(coinRedeem).toContain('PIX_REDEMPTION_DISABLED');
 
     expect(challenges).not.toContain('futura Loja Invictus');
     expect(challenges).toContain('Invictus Coins são pontos internos de recompensa vinculados ao seu perfil');
