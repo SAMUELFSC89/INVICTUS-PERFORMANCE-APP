@@ -1,23 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors, db, verifyAuth, getAuth, app, FieldValue } from '../_lib/common.js';
+import { cors, db, verifyAuth, getAuth, app } from '../_lib/common.js';
 import { WalletEngine } from '../_lib/wallet-engine.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
-import {
-  checkPhoneVerification,
-  hashVerifiedPhone,
-  maskPhone,
-  normalizeBrazilianPhone,
-  samePhoneHash,
-  startPhoneVerification,
-} from '../_lib/identity-verification-service.js';
+import { maskPhone, normalizeBrazilianPhone } from '../_lib/identity-verification-service.js';
 
 const ALLOWED_PIX_KEY_TYPES = new Set(['cpf', 'email', 'phone', 'random']);
 const SANDBOX_WITHDRAWAL_TEST_CREDIT = 20;
 const SANDBOX_WITHDRAWAL_TEST_KEY = 'withdrawal-r20-2026-09';
-const WITHDRAWAL_OTP_TTL_MS = 10 * 60 * 1000;
-const WITHDRAWAL_OTP_MAX_ATTEMPTS = 5;
+const PHONE_REAUTH_MAX_AGE_SECONDS = 5 * 60;
 
 type AccountIdentity = {
   emailVerified: boolean;
@@ -25,6 +17,8 @@ type AccountIdentity = {
   cpfVerified: boolean;
   phone: string;
 };
+
+type FinancialError = Error & { code?: string };
 
 function money(value: unknown): number {
   return Math.round((Number(value) || 0) * 100) / 100;
@@ -36,30 +30,33 @@ function isStrictAsaasSandbox(): boolean {
   return environment === 'sandbox' && (!baseUrl || baseUrl.includes('sandbox'));
 }
 
+function financialError(code: string, message: string): FinancialError {
+  const error = new Error(message) as FinancialError;
+  error.code = code;
+  return error;
+}
+
 async function loadIdentity(userId: string): Promise<AccountIdentity> {
   const [profileSnap, authUser] = await Promise.all([
     db.collection('users').doc(userId).get(),
     getAuth(app).getUser(userId),
   ]);
-  // Uma sessão Firebase válida pode existir antes de o onboarding criar
-  // users/{uid}. A carteira deve continuar carregando nesse estado e apenas
-  // considerar telefone/CPF não verificados, em vez de transformar GET em 500.
-  if (!profileSnap.exists) {
-    return {
-      emailVerified: authUser.emailVerified === true,
-      phoneVerified: false,
-      cpfVerified: false,
-      phone: '',
-    };
-  }
-  const profile = profileSnap.data() || {};
-  const rawPhone = String(profile.phoneNumberNormalized || profile.phoneNumber || '');
+  const profile = profileSnap.exists ? profileSnap.data() || {} : {};
+
   let phone = '';
-  try { phone = rawPhone ? normalizeBrazilianPhone(rawPhone) : ''; } catch { phone = ''; }
+  try {
+    phone = authUser.phoneNumber ? normalizeBrazilianPhone(authUser.phoneNumber) : '';
+  } catch {
+    phone = '';
+  }
+
   return {
     emailVerified: authUser.emailVerified === true,
-    phoneVerified: profile.phoneVerified === true && Boolean(phone) && samePhoneHash(phone, profile.phoneVerifiedHash),
-    cpfVerified: profile.cpfVerified === true && profile.cpfReceitaRegular === true && String(profile.cpfReceitaStatus || '').trim().toUpperCase() === 'REGULAR',
+    phoneVerified: Boolean(phone),
+    cpfVerified: profileSnap.exists
+      && profile.cpfVerified === true
+      && profile.cpfReceitaRegular === true
+      && String(profile.cpfReceitaStatus || '').trim().toUpperCase() === 'REGULAR',
     phone,
   };
 }
@@ -76,6 +73,44 @@ function identityPayload(identity: AccountIdentity) {
     ready: identityReady(identity),
     phone: identity.phone ? maskPhone(identity.phone) : '',
   };
+}
+
+/**
+ * Cada saque exige uma autenticação Firebase recente especificamente pelo
+ * telefone já vinculado à conta. O SMS/código é validado pelo Firebase no
+ * cliente; o servidor nunca recebe nem armazena o código. Aqui revalidamos a
+ * assinatura do ID token, auth_time, provider e número antes de reservar saldo.
+ */
+async function requireFreshFirebasePhoneReauth(req: VercelRequest, userId: string, expectedPhone: string): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    throw financialError('PHONE_REAUTH_REQUIRED', 'Confirme seu telefone novamente para continuar o saque.');
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim();
+  const decoded = await getAuth(app).verifyIdToken(token, true);
+  if (decoded.uid !== userId) {
+    throw financialError('PHONE_REAUTH_REQUIRED', 'A confirmação de telefone não pertence a esta conta.');
+  }
+
+  const provider = String(decoded.firebase?.sign_in_provider || '');
+  const secondFactor = String(decoded.firebase?.sign_in_second_factor || '');
+  const usedPhoneFactor = provider === 'phone' || secondFactor === 'phone';
+  const authTime = Number(decoded.auth_time || 0);
+  const ageSeconds = Math.floor(Date.now() / 1000) - authTime;
+  if (!usedPhoneFactor || !Number.isFinite(ageSeconds) || ageSeconds < -30 || ageSeconds > PHONE_REAUTH_MAX_AGE_SECONDS) {
+    throw financialError('PHONE_REAUTH_REQUIRED', 'Digite um novo código enviado ao seu telefone para autorizar este saque.');
+  }
+
+  let tokenPhone = '';
+  try {
+    tokenPhone = decoded.phone_number ? normalizeBrazilianPhone(decoded.phone_number) : '';
+  } catch {
+    tokenPhone = '';
+  }
+  if (!tokenPhone || tokenPhone !== expectedPhone) {
+    throw financialError('PHONE_REAUTH_REQUIRED', 'O telefone usado na confirmação não corresponde ao telefone verificado da conta.');
+  }
 }
 
 /**
@@ -177,11 +212,9 @@ async function validateWithdrawalInput(userId: string, body: any) {
 
 /**
  * Carteira financeira exclusiva para premiações oficiais em dinheiro.
- *
  * Invictus Coins continuam isolados e sem valor monetário. Saque financeiro
- * exige conta verificada (e-mail, telefone e CPF/Receita) e um OTP NOVO enviado
- * ao telefone verificado para cada solicitação. Selfie/biometria não participa
- * deste fluxo.
+ * exige e-mail + telefone Firebase + CPF Serpro e uma reautenticação Firebase
+ * por SMS nova para cada solicitação. Selfie/biometria não participa do PIX.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -224,142 +257,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const action = String(req.body?.action || '').trim();
+    if (action !== 'request-withdrawal') {
+      return res.status(400).json({ success: false, error: 'Ação financeira inválida.' });
+    }
 
-    if (action === 'request-withdrawal') {
-      const identity = await loadIdentity(auth.uid);
-      if (!identityReady(identity)) {
-        return res.status(403).json({
-          success: false,
-          code: 'IDENTITY_VERIFICATION_REQUIRED',
-          error: 'Confirme seu e-mail, telefone e CPF antes de solicitar um saque.',
-          identity: identityPayload(identity),
-        });
-      }
-
-      const withdrawal = await validateWithdrawalInput(auth.uid, req.body);
-      const otpRequestId = `wotp_${randomUUID().replace(/-/g, '')}`;
-      const expiresAt = new Date(Date.now() + WITHDRAWAL_OTP_TTL_MS).toISOString();
-      await startPhoneVerification(identity.phone);
-      await db.collection('pending_withdrawal_otps').doc(otpRequestId).set({
-        userId: auth.uid,
-        status: 'pending',
-        phoneHash: hashVerifiedPhone(identity.phone),
-        withdrawal,
-        createdAt: FieldValue.serverTimestamp(),
-        expiresAt,
-        attempts: 0,
-      });
-
-      return res.status(201).json({
-        success: true,
-        otpRequired: true,
-        otpRequestId,
-        phone: maskPhone(identity.phone),
-        expiresAt,
-        userMessage: `Enviamos um código Invictus por SMS para ${maskPhone(identity.phone)}. Digite o código para confirmar o saque.`,
+    const identity = await loadIdentity(auth.uid);
+    if (!identityReady(identity)) {
+      return res.status(403).json({
+        success: false,
+        code: 'IDENTITY_VERIFICATION_REQUIRED',
+        error: 'Confirme seu e-mail, telefone e CPF antes de solicitar um saque.',
+        identity: identityPayload(identity),
       });
     }
 
-    if (action === 'confirm-withdrawal-otp') {
-      const otpRequestId = String(req.body?.otpRequestId || '').trim();
-      const code = String(req.body?.code || '').replace(/\D/g, '');
-      if (!/^wotp_[a-f0-9]{32}$/i.test(otpRequestId) || code.length < 4 || code.length > 10) {
-        return res.status(400).json({ success: false, error: 'Código ou solicitação de saque inválidos.' });
-      }
+    await requireFreshFirebasePhoneReauth(req, auth.uid, identity.phone);
+    const withdrawal = await validateWithdrawalInput(auth.uid, req.body);
 
-      const identity = await loadIdentity(auth.uid);
-      if (!identityReady(identity)) {
-        return res.status(403).json({
-          success: false,
-          code: 'IDENTITY_VERIFICATION_REQUIRED',
-          error: 'A verificação da sua conta mudou. Confirme novamente seus dados antes do saque.',
-          identity: identityPayload(identity),
-        });
-      }
+    const suppliedRequestId = String(req.body?.requestId || '').trim();
+    const requestId = /^[a-zA-Z0-9_-]{8,96}$/.test(suppliedRequestId)
+      ? suppliedRequestId
+      : `firebase_phone_${randomUUID().replace(/-/g, '')}`;
 
-      const otpRef = db.collection('pending_withdrawal_otps').doc(otpRequestId);
-      const otpSnap = await otpRef.get();
-      if (!otpSnap.exists) return res.status(404).json({ success: false, error: 'Confirmação de saque não encontrada. Solicite um novo código.' });
-      const otp = otpSnap.data() || {};
-      if (otp.userId !== auth.uid) return res.status(403).json({ success: false, error: 'Esta confirmação pertence a outra conta.' });
-      if (otp.status === 'completed') return res.status(409).json({ success: false, error: 'Este código já foi utilizado.' });
-      if (otp.status !== 'pending') return res.status(409).json({ success: false, error: 'Esta confirmação não está mais disponível.' });
-      const attempts = Math.max(0, Number(otp.attempts) || 0);
-      if (attempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS) {
-        await otpRef.set({ status: 'attempts_exhausted', completedAt: FieldValue.serverTimestamp() }, { merge: true });
-        return res.status(429).json({ success: false, error: 'Limite de tentativas atingido. Solicite um novo código para o saque.' });
-      }
-      const expiresAt = new Date(String(otp.expiresAt || ''));
-      if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
-        await otpRef.set({ status: 'expired', completedAt: FieldValue.serverTimestamp() }, { merge: true });
-        return res.status(400).json({ success: false, error: 'O código expirou. Solicite um novo código para o saque.' });
-      }
-      if (!samePhoneHash(identity.phone, otp.phoneHash)) {
-        await otpRef.set({ status: 'phone_changed', completedAt: FieldValue.serverTimestamp() }, { merge: true });
-        return res.status(409).json({ success: false, error: 'O telefone verificado mudou. Solicite um novo código.' });
-      }
+    const commitResult = await WithdrawalEngine.requestWithdrawal({
+      ...withdrawal,
+      userId: auth.uid,
+      requestId,
+    });
 
-      const approved = await checkPhoneVerification(identity.phone, code);
-      if (!approved) {
-        const nextAttempts = attempts + 1;
-        await otpRef.set({
-          attempts: FieldValue.increment(1),
-          lastAttemptAt: FieldValue.serverTimestamp(),
-          ...(nextAttempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS ? { status: 'attempts_exhausted', completedAt: FieldValue.serverTimestamp() } : {}),
-        }, { merge: true });
-        return res.status(nextAttempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS ? 429 : 400).json({
-          success: false,
-          error: nextAttempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS
-            ? 'Limite de tentativas atingido. Solicite um novo código para o saque.'
-            : 'Código incorreto ou expirado. Confira o SMS da Invictus e tente novamente.',
-        });
-      }
-
-      try {
-        await db.runTransaction(async (transaction: any) => {
-          const fresh = await transaction.get(otpRef);
-          const data = fresh.data() || {};
-          if (!fresh.exists || data.userId !== auth.uid || data.status !== 'pending') throw new Error('OTP_ALREADY_CLAIMED');
-          transaction.update(otpRef, { status: 'processing', confirmedAt: FieldValue.serverTimestamp() });
-        });
-      } catch (claimError: any) {
-        if (claimError?.message === 'OTP_ALREADY_CLAIMED') {
-          return res.status(409).json({ success: false, error: 'Este código já está sendo processado ou foi utilizado.' });
-        }
-        throw claimError;
-      }
-
-      try {
-        const withdrawalData = otp.withdrawal || {};
-        const validated = await validateWithdrawalInput(auth.uid, withdrawalData);
-        const commitResult = await WithdrawalEngine.requestWithdrawal({
-          ...validated,
-          userId: auth.uid,
-          requestId: String(withdrawalData.requestId || otpRequestId),
-        });
-        await otpRef.set({
-          status: 'completed',
-          completedAt: FieldValue.serverTimestamp(),
-          withdrawalId: commitResult.id,
-        }, { merge: true });
-        return res.status(201).json({
-          success: true,
-          otpRequired: false,
-          status: 'approved',
-          commitResult,
-          userMessage: 'Telefone confirmado. Solicitação de saque criada e saldo reservado para processamento do PIX.',
-        });
-      } catch (commitError) {
-        await otpRef.set({ status: 'pending', processingErrorAt: FieldValue.serverTimestamp() }, { merge: true });
-        throw commitError;
-      }
-    }
-
-    return res.status(400).json({ success: false, error: 'Ação financeira inválida.' });
+    return res.status(201).json({
+      success: true,
+      status: commitResult.status,
+      commitResult,
+      userMessage: 'Telefone confirmado pelo Firebase. Solicitação de saque criada e saldo reservado para processamento do PIX.',
+    });
   } catch (error: any) {
-    console.error('[Financial Prize Wallet] Error:', error);
+    console.error('[Financial Prize Wallet] Error:', error?.message || error);
+    if (error?.code === 'PHONE_REAUTH_REQUIRED') {
+      return res.status(403).json({ success: false, code: 'PHONE_REAUTH_REQUIRED', error: error.message });
+    }
     const message = error?.message || 'Não foi possível carregar ou processar a carteira de premiações.';
-    const status = /mínimo|limite|saldo|chave PIX|valor de saque|desativados/i.test(message) ? 400 : 500;
+    const status = /mínimo|limite|saldo|chave PIX|valor de saque|desativados|Identificador da requisição/i.test(message) ? 400 : 500;
     return res.status(status).json({ success: false, error: message });
   }
 }
