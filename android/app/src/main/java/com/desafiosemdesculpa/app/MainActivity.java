@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(InstagramStoriesSharePlugin.class);
         registerPlugin(InvictusShareCardPlugin.class);
         registerPlugin(InvictusPdfPlugin.class);
+        registerPlugin(InvictusGoogleAuthPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
