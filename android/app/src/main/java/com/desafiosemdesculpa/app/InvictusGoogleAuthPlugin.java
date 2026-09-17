@@ -58,7 +58,6 @@ public class InvictusGoogleAuthPlugin extends Plugin {
         // apenas o estado local do Google Sign-In não encerra a sessão Firebase;
         // serve para evitar que uma conta anterior seja escolhida silenciosamente.
         googleClient.signOut().addOnCompleteListener(task -> {
-            if (call.isReleased()) return;
             Intent intent = googleClient.getSignInIntent();
             startActivityForResult(call, intent, "handleGoogleSignInResult");
         });
@@ -66,7 +65,7 @@ public class InvictusGoogleAuthPlugin extends Plugin {
 
     @ActivityCallback
     private void handleGoogleSignInResult(PluginCall call, ActivityResult result) {
-        if (call == null || call.isReleased()) return;
+        if (call == null) return;
         Intent data = result != null ? result.getData() : null;
         if (data == null) {
             call.reject("Login com Google cancelado.");
