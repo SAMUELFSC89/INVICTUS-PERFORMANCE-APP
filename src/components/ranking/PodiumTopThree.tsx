@@ -21,14 +21,15 @@ function Crown({ rank, photoURL, empty = false }: { rank: number; photoURL?: str
 }
 
 function PodiumBase({ rank }: { rank: number }) {
-  return <img className="academy-podium-base" src={`${PODIUM_BASE_ASSETS[rank]}?v=20260913`} alt="" aria-hidden="true" />;
+  return <img className="academy-podium-base" src={`${PODIUM_BASE_ASSETS[rank]}?v=20260917`} alt="" aria-hidden="true" />;
 }
 
-function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = false }: {
+function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = false, scoreUnit }: {
   entry: RankingEntry;
   currentUserId?: string;
   onSelect?: (uid: string) => void;
   cleanSeasonLayout?: boolean;
+  scoreUnit: string;
 }) {
   const isCurrent = entry.uid === currentUserId;
   const athleteClass = `academy-podium-athlete academy-podium-athlete--${entry.rank}${isCurrent ? ' is-current' : ''}${cleanSeasonLayout ? ' academy-podium-athlete--clean' : ''}`;
@@ -38,7 +39,7 @@ function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = fal
       type="button"
       className={athleteClass}
       onClick={() => onSelect?.(entry.uid)}
-      aria-label={`${entry.rank}º lugar, ${entry.displayName}, ${entry.score} pontos IGA${isCurrent ? ', você' : ''}`}
+      aria-label={`${entry.rank}º lugar, ${entry.displayName}, ${entry.score} pontos ${scoreUnit}${isCurrent ? ', você' : ''}`}
     >
       <span className="academy-podium-visual">
         <Crown rank={entry.rank} photoURL={entry.photoURL} />
@@ -46,7 +47,7 @@ function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = fal
       </span>
       <span className="academy-podium-meta">
         <strong>{entry.displayName || 'Atleta Invictus'}{isCurrent ? <em>VOCÊ</em> : null}</strong>
-        <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></b>
+        <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>{scoreUnit}</small></b>
         {Number(entry.streak) > 0 ? <span className="academy-podium-streak">{entry.streak} dias em sequência</span> : null}
       </span>
     </button>;
@@ -56,12 +57,12 @@ function PodiumAthlete({ entry, currentUserId, onSelect, cleanSeasonLayout = fal
     type="button"
     className={athleteClass}
     onClick={() => onSelect?.(entry.uid)}
-    aria-label={`${entry.rank}º lugar, ${entry.displayName}, ${entry.score} pontos IGA${isCurrent ? ', você' : ''}`}
+    aria-label={`${entry.rank}º lugar, ${entry.displayName}, ${entry.score} pontos ${scoreUnit}${isCurrent ? ', você' : ''}`}
   >
     <span className="academy-podium-panel">
       <Crown rank={entry.rank} photoURL={entry.photoURL} />
       <strong>{entry.displayName || 'Atleta Invictus'}{isCurrent ? <em>VOCÊ</em> : null}</strong>
-      <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>IGA</small></b>
+      <b>{Number(entry.score || 0).toLocaleString('pt-BR')} <small>{scoreUnit}</small></b>
       {Number(entry.streak) > 0 ? <span className="academy-podium-streak">{entry.streak} dias em sequência</span> : null}
     </span>
     <PodiumBase rank={entry.rank} />
@@ -90,12 +91,13 @@ function EmptyPodiumSlot({ rank, cleanSeasonLayout = false }: { rank: number; cl
   </div>;
 }
 
-export function PodiumTopThree({ entries, currentUserId, onSelect, showEmptySlots = false, cleanSeasonLayout = false }: {
+export function PodiumTopThree({ entries, currentUserId, onSelect, showEmptySlots = false, cleanSeasonLayout = false, scoreUnit = 'IGA' }: {
   entries: RankingEntry[];
   currentUserId?: string;
   onSelect?: (uid: string) => void;
   showEmptySlots?: boolean;
   cleanSeasonLayout?: boolean;
+  scoreUnit?: string;
 }) {
   // Ordem visual clássica de pódio: 2º à esquerda, 1º no centro, 3º à direita.
   const slots = [2, 1, 3].map((rank) => ({ rank, entry: entries.find((entry) => entry.rank === rank) }));
@@ -103,7 +105,7 @@ export function PodiumTopThree({ entries, currentUserId, onSelect, showEmptySlot
 
   return <section className={`academy-podium${cleanSeasonLayout ? ' academy-podium--clean-season' : ''}`} aria-label="Pódio da academia">
     {slots.map(({ rank, entry }) => entry
-      ? <PodiumAthlete key={entry.uid} entry={entry} currentUserId={currentUserId} onSelect={onSelect} cleanSeasonLayout={cleanSeasonLayout} />
+      ? <PodiumAthlete key={entry.uid} entry={entry} currentUserId={currentUserId} onSelect={onSelect} cleanSeasonLayout={cleanSeasonLayout} scoreUnit={scoreUnit} />
       : showEmptySlots ? <EmptyPodiumSlot key={`empty-${rank}`} rank={rank} cleanSeasonLayout={cleanSeasonLayout} /> : null)}
   </section>;
 }
