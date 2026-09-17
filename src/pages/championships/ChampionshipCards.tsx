@@ -14,6 +14,14 @@ type PreviewCardProps = {
   onPreview: () => void;
 };
 
+type ParticipatingCardProps = {
+  category: string;
+  title: string;
+  image: string;
+  icon: ComponentType<{ 'aria-hidden'?: boolean }>;
+  onOpen: () => void;
+};
+
 export function FriendsChampionshipCard({ onParticipate }: { onParticipate: () => void }) {
   return <section className="ch-friends-card" aria-labelledby="friends-championship-title">
     <img className="ch-friends-card__background" src={FRIENDS_BANNER} alt="" aria-hidden="true" width={1672} height={941} decoding="async" fetchPriority="high" />
@@ -41,6 +49,16 @@ export function FriendsRankingCard({ onOpen }: { onOpen: () => void }) {
     <span className="ch-friends-ranking-card__scrim" aria-hidden="true" />
     <span className="ch-friends-ranking-card__identity"><Users aria-hidden="true" /><span><small>CAMPEONATO</small><strong>ENTRE AMIGOS</strong></span></span>
     <span className="ch-friends-ranking-card__status"><CheckCircle2 aria-hidden="true" /> PARTICIPANDO <small>MUSCULAÇÃO + CARDIO</small></span>
+    <span className="ch-friends-ranking-card__ranking">VER RANKING <ChevronRight aria-hidden="true" /></span>
+  </button>;
+}
+
+export function PaidRankingCard({ category, title, image, icon: Icon, onOpen }: ParticipatingCardProps) {
+  return <button type="button" className="ch-friends-ranking-card ch-paid-ranking-card" onClick={onOpen} aria-label={`${title}, participando, ver ranking`}>
+    <img className="ch-friends-ranking-card__background" src={image} alt="" aria-hidden="true" />
+    <span className="ch-friends-ranking-card__scrim" aria-hidden="true" />
+    <span className="ch-friends-ranking-card__identity"><Icon aria-hidden="true" /><span><small>CAMPEONATO OFICIAL</small><strong>{title}</strong></span></span>
+    <span className="ch-friends-ranking-card__status"><CheckCircle2 aria-hidden="true" /> PARTICIPANDO <small>{category}</small></span>
     <span className="ch-friends-ranking-card__ranking">VER RANKING <ChevronRight aria-hidden="true" /></span>
   </button>;
 }
