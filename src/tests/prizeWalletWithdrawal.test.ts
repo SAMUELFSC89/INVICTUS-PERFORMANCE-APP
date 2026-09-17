@@ -95,11 +95,28 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(app).toContain('<Route path="/profile/identity" element={<IdentityVerification />} />');
     expect(identityPage).toContain('CONFIRMAR NA RECEITA FEDERAL');
     expect(identityPage).toContain('ENVIAR SMS PELO FIREBASE');
-    expect(identityPage).toContain('sendEmailVerification');
+    expect(identityPage).toContain("action: 'send-verification-email'");
     expect(identityApi).toContain("action === 'verify-cpf'");
     expect(identityApi).toContain("action === 'sync-phone'");
+    expect(identityApi).toContain("action === 'send-verification-email'");
     expect(identityService).toContain('verifyCpfWithReceita');
     expect(identityService).not.toContain('CustomFriendlyName');
+  });
+
+  it('envia o e-mail de verificação customizado pela Zoho em vez do template padrão do Firebase', () => {
+    const identityPage = read('src/pages/IdentityVerification.tsx');
+    const identityApi = read('api/identity-verification-guarded.ts');
+    const mailer = read('api/_lib/zoho-mailer-service.ts');
+
+    expect(identityPage).not.toContain('sendEmailVerification');
+    expect(identityApi).toContain('generateEmailVerificationLink');
+    expect(identityApi).toContain('buildVerificationEmail');
+    expect(identityApi).toContain('sendInvictusEmail');
+    expect(mailer).toContain('ZOHO_SMTP_HOST');
+    expect(mailer).toContain('ZOHO_SMTP_PORT');
+    expect(mailer).toContain('ZOHO_SMTP_USER');
+    expect(mailer).toContain('ZOHO_SMTP_PASSWORD');
+    expect(mailer).toContain('nodemailer');
   });
 
   it('mantém a rota e a tela da carteira de prêmios', () => {

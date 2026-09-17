@@ -8,7 +8,7 @@ import {
   updatePhoneNumber,
 } from 'firebase/auth';
 import { ArrowLeft, CheckCircle2, Fingerprint, Loader2, MailCheck, MessageSquareText, RefreshCw, ShieldCheck, Smartphone, UserCheck } from 'lucide-react';
-import { auth, sendEmailVerification } from '../firebase';
+import { auth } from '../firebase';
 import { useUser } from '../UserContext';
 import { InvictusLogo } from '../components/InvictusLogo';
 import './IdentityVerification.css';
@@ -110,12 +110,11 @@ export function IdentityVerification() {
       await load();
       return;
     }
-    auth.languageCode = 'pt-BR';
-    await sendEmailVerification(current, {
-      url: 'https://invictusperformance.app.br/profile/identity',
-      handleCodeInApp: false,
-    });
-    setNotice('Enviamos um novo e-mail de verificação da Invictus. Abra a mensagem e confirme seu endereço.');
+    // E-mail customizado com a marca Invictus, enviado pelo backend via SMTP
+    // da Zoho -- o editor de modelos do Firebase Auth está bloqueado para
+    // este projeto, então o envio deixou de ser feito pelo SDK do cliente.
+    const result = await authenticatedFetch('/api/identity-verification', { method: 'POST', body: JSON.stringify({ action: 'send-verification-email' }) });
+    setNotice(result.userMessage || 'Enviamos um novo e-mail de verificação da Invictus. Abra a mensagem e confirme seu endereço.');
   });
 
   const syncEmail = () => run('sync-email', async () => {

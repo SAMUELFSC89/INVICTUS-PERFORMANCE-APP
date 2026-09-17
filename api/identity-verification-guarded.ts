@@ -7,6 +7,7 @@ import {
   normalizeBrazilianPhone,
   verifyCpfWithReceita,
 } from './_lib/identity-verification-service.js';
+import { buildVerificationEmail, sendInvictusEmail } from './_lib/zoho-mailer-service.js';
 
 function maskCpf(value: unknown): string {
   const cpf = String(value || '').replace(/\D/g, '');
@@ -167,6 +168,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         verified: true,
         phone: maskPhone(phoneState.phone),
         userMessage: 'Telefone confirmado pelo Firebase Authentication.',
+      });
+    }
+
+    if (action === 'send-verification-email') {
+      const account = await loadAccount(auth.uid);
+      const email = String(account.authUser.email || '').trim();
+      if (!email) {
+        return res.status(400).json({ success: false, error: 'Esta conta não tem um e-mail cadastrado.' });
+      }
+      if (account.authUser.emailVerified === true) {
+        return res.json({
+          success: true,
+          verified: true,
+          userMessage: 'Seu e-mail já está confirmado.',
+        });
+      }
+
+      // O link de ação (token, expiração, validação) é sempre gerado e
+      // conferido pelo Firebase Admin -- só o envelope do e-mail é da Zoho.
+      const link = await getAuth(app).generateEmailVerificationLink(email, {
+        url: 'https://invictusperformance.app.br/profile/identity',
+        handleCodeInApp: false,
+      });
+      const { subject, html, text } = buildVerificationEmail(link);
+
+      try {
+        await sendInvictusEmail({ to: email, subject, html, text });
+      } catch (error: any) {
+        console.error('[IdentityVerification] Falha ao enviar e-mail via Zoho SMTP:', error?.message || error);
+        return res.status(502).json({
+          success: false,
+          error: 'Não foi possível enviar o e-mail agora. Tente novamente em instantes.',
+        });
+      }
+
+      return res.json({
+        success: true,
+        verified: false,
+        userMessage: 'Enviamos um novo e-mail de verificação da Invictus. Abra a mensagem e confirme seu endereço.',
       });
     }
 
