@@ -41,7 +41,17 @@ async function loadIdentity(userId: string): Promise<AccountIdentity> {
     db.collection('users').doc(userId).get(),
     getAuth(app).getUser(userId),
   ]);
-  if (!profileSnap.exists) throw new Error('Perfil da conta não encontrado.');
+  // Uma sessão Firebase válida pode existir antes de o onboarding criar
+  // users/{uid}. A carteira deve continuar carregando nesse estado e apenas
+  // considerar telefone/CPF não verificados, em vez de transformar GET em 500.
+  if (!profileSnap.exists) {
+    return {
+      emailVerified: authUser.emailVerified === true,
+      phoneVerified: false,
+      cpfVerified: false,
+      phone: '',
+    };
+  }
   const profile = profileSnap.data() || {};
   const rawPhone = String(profile.phoneNumberNormalized || profile.phoneNumber || '');
   let phone = '';
