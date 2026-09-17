@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { reauthenticateWithPhoneNumber, RecaptchaVerifier, type ConfirmationResult } from 'firebase/auth';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -8,16 +9,15 @@ import {
   CheckCircle2,
   Clock3,
   Loader2,
-  Plus,
+  MessageSquareText,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
   Trophy,
-  UserRound,
   XCircle,
 } from 'lucide-react';
 import { auth } from '../firebase';
 import { InvictusLogo } from '../components/InvictusLogo';
-import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
 import type { PIXWithdrawal, WithdrawalStatus } from '../types';
 import './PrizeWallet.css';
 
@@ -34,15 +34,16 @@ type WalletPayload = {
     minWithdrawalAmount: number;
     maxDailyWithdrawalAmount: number;
   };
+  identity?: {
+    emailVerified: boolean;
+    phoneVerified: boolean;
+    cpfVerified: boolean;
+    ready: boolean;
+    phone?: string;
+  };
   cashSource: 'official_prizes_only';
   coinsWithdrawable: false;
 };
-
-type PresenceState = {
-  id: string;
-  prompt: string;
-  message?: string;
-} | null;
 
 const STATUS_META: Record<WithdrawalStatus, { label: string; icon: typeof Clock3 }> = {
   pending: { label: 'Solicitado', icon: Clock3 },
@@ -64,10 +65,20 @@ function formatDate(value?: string): string {
   return Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR') : '—';
 }
 
+function firebasePhoneError(reason: any): string {
+  const code = String(reason?.code || '');
+  if (code.includes('invalid-verification-code')) return 'Código incorreto. Confira o SMS e tente novamente.';
+  if (code.includes('code-expired')) return 'O código expirou. Solicite um novo SMS.';
+  if (code.includes('too-many-requests')) return 'Muitas tentativas de SMS. Aguarde um pouco e tente novamente.';
+  if (code.includes('quota-exceeded')) return 'O limite temporário de SMS do Firebase foi atingido. Tente novamente mais tarde.';
+  if (code.includes('captcha-check-failed')) return 'A proteção antiabuso do Firebase não foi concluída. Tente novamente.';
+  return reason?.message || 'Não foi possível confirmar o telefone.';
+}
+
 async function authenticatedFetch(path: string, init?: RequestInit) {
   const currentUser = auth.currentUser;
   if (!currentUser) throw new Error('Sua sessão expirou. Entre novamente.');
-  const token = await currentUser.getIdToken();
+  const token = await currentUser.getIdToken(true);
   const response = await fetch(path, {
     ...init,
     headers: {
@@ -78,9 +89,19 @@ async function authenticatedFetch(path: string, init?: RequestInit) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success === false) {
-    throw new Error(payload?.error || payload?.userMessage || 'Não foi possível concluir a operação.');
+    const error: any = new Error(payload?.error || payload?.userMessage || 'Não foi possível concluir a operação.');
+    error.code = payload?.code;
+    error.payload = payload;
+    throw error;
   }
   return payload;
+}
+
+function newWithdrawalRequestId(): string {
+  const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replace(/-/g, '')
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+  return `wdr_${random}`;
 }
 
 export function PrizeWallet() {
@@ -93,7 +114,22 @@ export function PrizeWallet() {
   const [amount, setAmount] = useState('');
   const [pixKeyType, setPixKeyType] = useState<'cpf' | 'email' | 'phone' | 'random'>('email');
   const [pixKey, setPixKey] = useState(auth.currentUser?.email || '');
-  const [presence, setPresence] = useState<PresenceState>(null);
+  const [phoneChallenge, setPhoneChallenge] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const confirmationRef = useRef<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
+
+  const clearPhoneChallenge = useCallback(() => {
+    try { recaptchaRef.current?.clear(); } catch { /* best effort */ }
+    recaptchaRef.current = null;
+    confirmationRef.current = null;
+    setPhoneChallenge(false);
+    setOtpCode('');
+  }, []);
+
+  useEffect(() => () => {
+    try { recaptchaRef.current?.clear(); } catch { /* best effort */ }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,23 +151,64 @@ export function PrizeWallet() {
   const minWithdrawal = Number(data?.config.minWithdrawalAmount || 20);
   const maxDaily = Number(data?.config.maxDailyWithdrawalAmount || 1000);
   const requestedAmount = Number(String(amount).replace(',', '.'));
-  const canRequest = Boolean(
+  const identityReady = data?.identity?.ready === true;
+  const withdrawalInputValid = Boolean(
     data?.config.enabled
+    && identityReady
     && Number.isFinite(requestedAmount)
     && requestedAmount >= minWithdrawal
     && requestedAmount <= Math.min(available, maxDaily)
     && pixKey.trim(),
   );
+  const canRequest = withdrawalInputValid && !phoneChallenge;
 
   const orderedWithdrawals = useMemo(() => [...(data?.withdrawals || [])]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [data?.withdrawals]);
 
-  const requestWithdrawal = async () => {
-    if (!canRequest || submitting) return;
+  const startPhoneReauth = async () => {
+    if (!withdrawalInputValid || submitting) return;
+    const current = auth.currentUser;
+    if (!current?.phoneNumber) {
+      setError('Confirme um telefone na sua conta antes de solicitar o saque.');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
     setNotice('');
     try {
+      try { recaptchaRef.current?.clear(); } catch { /* best effort */ }
+      auth.languageCode = 'pt-BR';
+      const verifier = new RecaptchaVerifier(auth, 'invictus-withdrawal-recaptcha', { size: 'invisible' });
+      recaptchaRef.current = verifier;
+      confirmationRef.current = await reauthenticateWithPhoneNumber(current, current.phoneNumber, verifier);
+      setPhoneChallenge(true);
+      setOtpCode('');
+      setNotice('O Firebase enviou um código por SMS ao telefone verificado da sua conta.');
+    } catch (reason: any) {
+      try { recaptchaRef.current?.clear(); } catch { /* best effort */ }
+      recaptchaRef.current = null;
+      confirmationRef.current = null;
+      setError(firebasePhoneError(reason));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resendPhoneCode = async () => {
+    clearPhoneChallenge();
+    await startPhoneReauth();
+  };
+
+  const confirmPhoneAndWithdraw = async () => {
+    if (!phoneChallenge || !confirmationRef.current || otpCode.length < 4 || submitting) return;
+    setSubmitting(true);
+    setError('');
+    setNotice('');
+    try {
+      await confirmationRef.current.confirm(otpCode);
+      await auth.currentUser?.getIdToken(true);
+
       const result = await authenticatedFetch('/api/financial', {
         method: 'POST',
         body: JSON.stringify({
@@ -139,33 +216,31 @@ export function PrizeWallet() {
           amount: requestedAmount,
           pixKey: pixKey.trim(),
           pixKeyType,
+          requestId: newWithdrawalRequestId(),
         }),
       });
-      if (!result.presenceCheckRequired || !result.presenceCheckId) {
-        throw new Error('O servidor não abriu a confirmação de identidade para o saque.');
-      }
-      setPresence({
-        id: result.presenceCheckId,
-        prompt: result.livenessPrompt || 'Siga o gesto indicado',
-        message: result.userMessage,
-      });
+
+      clearPhoneChallenge();
+      setAmount('');
+      setNotice(result.userMessage || 'Solicitação de saque criada. O valor ficou reservado para processamento do PIX.');
+      await load();
     } catch (reason: any) {
-      setError(reason?.message || 'Não foi possível iniciar o saque.');
+      if (reason?.code === 'IDENTITY_VERIFICATION_REQUIRED') {
+        setError('Sua conta ainda precisa confirmar e-mail, telefone e CPF antes do saque.');
+        clearPhoneChallenge();
+        await load();
+      } else if (reason?.code === 'PHONE_REAUTH_REQUIRED') {
+        setError('A confirmação por telefone expirou. Solicite um novo código por SMS.');
+        clearPhoneChallenge();
+      } else {
+        setError(firebasePhoneError(reason));
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handlePresenceSuccess = async (result: { status: string; userMessage: string; commitResult?: any }) => {
-    setPresence(null);
-    if (result.status !== 'approved' || !result.commitResult) {
-      setError(result.userMessage || 'A confirmação de identidade não foi aprovada.');
-      return;
-    }
-    setNotice('Solicitação de saque criada. O valor ficou reservado até a análise e envio do PIX.');
-    setAmount('');
-    await load();
-  };
+  const identity = data?.identity;
 
   return createPortal(<main className="prize-wallet-screen"><div className="prize-wallet-page">
     <header className="prize-wallet-header">
@@ -187,24 +262,33 @@ export function PrizeWallet() {
 
       <section className="prize-wallet-separation"><ShieldCheck /><div><b>INVICTUS COINS NÃO SÃO DINHEIRO</b><p>Coins continuam sendo pontos internos do ecossistema e nunca entram neste saldo nem podem ser sacadas.</p></div></section>
 
+      <section className="prize-wallet-separation"><ShieldCheck /><div><b>{identityReady ? 'CONTA VERIFICADA PARA SAQUE' : 'CONFIRME SUA IDENTIDADE'}</b><p>E-mail {identity?.emailVerified ? '✓' : 'pendente'} · telefone {identity?.phoneVerified ? '✓' : 'pendente'} · CPF/Receita {identity?.cpfVerified ? '✓' : 'pendente'}.</p>{!identityReady ? <button type="button" className="prize-wallet-submit" onClick={() => navigate('/profile/identity')}>VERIFICAR MINHA CONTA</button> : null}</div></section>
+
       <section className="prize-wallet-withdrawal">
         <header><div><small>SAQUE DE PRÊMIO</small><h2>RECEBER POR PIX</h2></div><Banknote /></header>
         {!data?.config.enabled ? <div className="prize-wallet-disabled">Saques temporariamente indisponíveis.</div> : <>
           <div className="prize-wallet-limits"><span>Mínimo <b>{money(minWithdrawal)}</b></span><span>Limite diário <b>{money(maxDaily)}</b></span></div>
           <label>VALOR A SACAR
-            <div className="prize-wallet-money-input"><span>R$</span><input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value.replace(/[^0-9,.]/g, ''))} placeholder={minWithdrawal.toFixed(2).replace('.', ',')} /></div>
+            <div className="prize-wallet-money-input"><span>R$</span><input inputMode="decimal" value={amount} disabled={phoneChallenge} onChange={event => setAmount(event.target.value.replace(/[^0-9,.]/g, ''))} placeholder={minWithdrawal.toFixed(2).replace('.', ',')} /></div>
           </label>
           <div className="prize-wallet-pix-grid">
             <label>TIPO DE CHAVE
-              <select value={pixKeyType} onChange={event => setPixKeyType(event.target.value as typeof pixKeyType)}>
+              <select value={pixKeyType} disabled={phoneChallenge} onChange={event => setPixKeyType(event.target.value as typeof pixKeyType)}>
                 <option value="cpf">CPF</option><option value="email">E-mail</option><option value="phone">Telefone</option><option value="random">Chave aleatória</option>
               </select>
             </label>
-            <label>CHAVE PIX<input value={pixKey} onChange={event => setPixKey(event.target.value)} autoComplete="off" placeholder="Digite sua chave PIX" /></label>
+            <label>CHAVE PIX<input value={pixKey} disabled={phoneChallenge} onChange={event => setPixKey(event.target.value)} autoComplete="off" placeholder="Digite sua chave PIX" /></label>
           </div>
-          <p className="prize-wallet-biometric"><ShieldCheck /> Por segurança, cada solicitação exige uma confirmação facial ao vivo antes de reservar o saldo.</p>
-          <button type="button" className="prize-wallet-submit" disabled={!canRequest || submitting} onClick={() => void requestWithdrawal()}>{submitting ? <><Loader2 className="is-spinning" /> PREPARANDO VALIDAÇÃO</> : <><Banknote /> SOLICITAR SAQUE VIA PIX</>}</button>
+
+          {!phoneChallenge ? <>
+            <p className="prize-wallet-biometric"><Smartphone /> Cada saque exige uma nova confirmação por SMS do Firebase no telefone verificado da conta. Não usamos selfie para liberar PIX.</p>
+            <button type="button" className="prize-wallet-submit" disabled={!canRequest || submitting} onClick={() => void startPhoneReauth()}>{submitting ? <><Loader2 className="is-spinning" /> ENVIANDO CÓDIGO</> : <><MessageSquareText /> RECEBER CÓDIGO POR SMS</>}</button>
+          </> : <div className="prize-wallet-pix-grid">
+            <label>CÓDIGO ENVIADO PARA {identity?.phone || 'SEU TELEFONE'}<input value={otpCode} onChange={event => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" /></label>
+            <div><button type="button" className="prize-wallet-submit" disabled={otpCode.length < 4 || submitting} onClick={() => void confirmPhoneAndWithdraw()}>{submitting ? <><Loader2 className="is-spinning" /> CONFIRMANDO</> : <><ShieldCheck /> CONFIRMAR E SOLICITAR PIX</>}</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => clearPhoneChallenge()}>CANCELAR CÓDIGO</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => void resendPhoneCode()}>REENVIAR SMS</button></div>
+          </div>}
           {available < minWithdrawal ? <p className="prize-wallet-hint">Você poderá solicitar o PIX quando tiver pelo menos {money(minWithdrawal)} em prêmios disponíveis.</p> : null}
+          <div id="invictus-withdrawal-recaptcha" aria-hidden="true" />
         </>}
       </section>
 
@@ -217,17 +301,5 @@ export function PrizeWallet() {
         })}</div>}
       </section>
     </>}
-  </div>
-
-  <nav className="prize-wallet-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button className="is-active" onClick={() => navigate('/profile')}><UserRound /><span>Perfil</span></button></nav>
-
-  <VerifiedPresenceModal
-    isOpen={Boolean(presence)}
-    presenceCheckId={presence?.id || ''}
-    livenessPrompt={presence?.prompt || ''}
-    userMessage={presence?.message}
-    onClose={() => setPresence(null)}
-    onSuccess={result => void handlePresenceSuccess(result)}
-  />
-  </main>, document.body);
+  </div></main>, document.body);
 }

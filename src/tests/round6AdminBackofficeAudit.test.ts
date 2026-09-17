@@ -135,7 +135,10 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(prizeWallet).toContain('INVICTUS COINS NÃO SÃO DINHEIRO');
     expect(prizeWallet).toContain('Coins continuam sendo pontos internos do ecossistema e nunca entram neste saldo nem podem ser sacadas.');
     expect(prizeWallet).toContain("authenticatedFetch('/api/financial'");
-    expect(prizeWallet).toContain('VerifiedPresenceModal');
+    expect(prizeWallet).not.toContain('VerifiedPresenceModal');
+    expect(prizeWallet).toContain('reauthenticateWithPhoneNumber');
+    expect(prizeWallet).toContain("action: 'request-withdrawal'");
+    expect(prizeWallet).toContain('Cada saque exige uma nova confirmação por SMS do Firebase');
     expect(coinRedeem).toContain('PIX_REDEMPTION_DISABLED');
 
     expect(challenges).not.toContain('futura Loja Invictus');

@@ -6,16 +6,18 @@ const firebaseSource = fs.readFileSync(
   'utf8',
 );
 
-describe('Gate 1 — Google redirect completion by native platform', () => {
-  test('only iOS native skips Firebase getRedirectResult', () => {
-    expect(firebaseSource).toContain("Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'");
-    expect(firebaseSource).toContain("marcarDiag('getRedirectResult ignorado no iOS nativo')");
+describe('Gate 1 — Google auth completion by native platform', () => {
+  test('all Capacitor native platforms skip Firebase Web getRedirectResult', () => {
+    expect(firebaseSource).toContain('if (Capacitor.isNativePlatform()) {');
+    expect(firebaseSource).toContain('getRedirectResult ignorado no ${Capacitor.getPlatform()} nativo');
     expect(firebaseSource).toContain('return firebaseGetRedirectResult(authInstance);');
-    expect(firebaseSource).not.toContain("if (Capacitor.isNativePlatform()) {\n    marcarDiag('getRedirectResult ignorado no app nativo')");
+    expect(firebaseSource).not.toContain("Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'");
   });
 
-  test('Android still starts the Firebase redirect flow that requires that result consumer', () => {
+  test('iOS and Android native Google login use the native bridge while web keeps Firebase redirect', () => {
+    expect(firebaseSource).toContain('Capacitor.isNativePlatform() && provider instanceof GoogleAuthProvider');
+    expect(firebaseSource).toContain('await nativeGoogleAuth.signIn();');
+    expect(firebaseSource).toContain('await signInWithCredential(authInstance, credential);');
     expect(firebaseSource).toContain('await firebaseSignInWithRedirect(authInstance, provider);');
-    expect(firebaseSource).toContain('// Web e Android continuam exatamente no fluxo Firebase existente.');
   });
 });
