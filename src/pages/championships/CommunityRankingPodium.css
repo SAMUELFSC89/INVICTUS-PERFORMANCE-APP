@@ -124,7 +124,7 @@
 }
 
 /*
- * Bases: nenhuma é desenhada em CSS. Top 1 usa a versão ampliada com halo,
+ * Bases: nenhuma é desenhada em CSS. Top 1 usa PNG com transparência real,
  * Top 2 usa o asset restaurado e Top 3 mantém a base aprovada já existente.
  * A margem positiva impede o escudo inferior da coroa bronze de ser encoberto.
  */
@@ -141,7 +141,6 @@
 
 .community-ranking-top3 .academy-podium-athlete--clean.academy-podium-athlete--1 .academy-podium-base {
   width: 148% !important;
-  mix-blend-mode: screen;
   filter: drop-shadow(0 0 15px rgba(242, 181, 22, .30));
 }
 
@@ -153,7 +152,7 @@
   width: 124% !important;
 }
 
-/* Nome/IGA ficam abaixo da base, nunca entre coroa e pódio. */
+/* Nome/pontuação ficam abaixo da base, nunca entre coroa e pódio. */
 .community-ranking-top3 .academy-podium-meta {
   position: absolute;
   z-index: 6;
