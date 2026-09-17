@@ -1,13 +1,10 @@
+import type { UserRecord } from 'firebase-admin/auth';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth, getAuth, app, FieldValue } from './_lib/common.js';
 import {
-  checkPhoneVerification,
   getIdentityProviderReadiness,
-  hashVerifiedPhone,
   maskPhone,
   normalizeBrazilianPhone,
-  samePhoneHash,
-  startPhoneVerification,
   verifyCpfWithReceita,
 } from './_lib/identity-verification-service.js';
 
@@ -31,23 +28,28 @@ function normalizeReceitaStatus(value: unknown): string {
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toUpperCase();
-  // A API do Serpro pode representar situação REGULAR tanto pela descrição
-  // textual quanto pelo código cadastral "0". Internamente persistimos sempre
-  // a forma canônica REGULAR para que os gates financeiros usem uma só regra.
   return normalized === '0' ? 'REGULAR' : normalized;
 }
 
-function isVerifiedPhone(data: any, phone: string): boolean {
-  return data.phoneVerified === true && Boolean(phone) && samePhoneHash(phone, data.phoneVerifiedHash);
-}
+type AccountContext = {
+  ref: FirebaseFirestore.DocumentReference;
+  data: Record<string, any>;
+  authUser: UserRecord;
+  exists: boolean;
+};
 
-async function loadAccount(uid: string) {
+async function loadAccount(uid: string): Promise<AccountContext> {
+  const ref = db.collection('users').doc(uid);
   const [userSnap, authUser] = await Promise.all([
-    db.collection('users').doc(uid).get(),
+    ref.get(),
     getAuth(app).getUser(uid),
   ]);
-  if (!userSnap.exists) throw new Error('Perfil da conta não encontrado.');
-  return { ref: userSnap.ref, data: userSnap.data() || {}, authUser };
+  return {
+    ref,
+    data: userSnap.exists ? userSnap.data() || {} : {},
+    authUser,
+    exists: userSnap.exists,
+  };
 }
 
 async function syncEmailVerification(uid: string) {
@@ -63,6 +65,41 @@ async function syncEmailVerification(uid: string) {
   return { ...account, emailVerified: verified };
 }
 
+async function syncFirebasePhone(account: AccountContext) {
+  const rawPhone = String(account.authUser.phoneNumber || '');
+  if (!rawPhone) return { phone: '', verified: false };
+
+  const phone = normalizeBrazilianPhone(rawPhone);
+  const duplicate = await db.collection('users').where('phoneNumberNormalized', '==', phone).limit(2).get();
+  if (duplicate.docs.some((document: any) => document.id !== account.authUser.uid)) {
+    throw new Error('Este telefone já está confirmado em outra conta.');
+  }
+
+  const needsSync = account.data.phoneNumberNormalized !== phone
+    || account.data.phoneVerified !== true
+    || account.data.phoneVerificationProvider !== 'firebase_auth_phone';
+
+  if (needsSync) {
+    await account.ref.set({
+      phoneNumber: phone,
+      phoneNumberNormalized: phone,
+      phoneVerified: true,
+      phoneVerifiedAt: FieldValue.serverTimestamp(),
+      phoneVerificationProvider: 'firebase_auth_phone',
+      pendingPhoneNumber: null,
+    }, { merge: true });
+    account.data = {
+      ...account.data,
+      phoneNumber: phone,
+      phoneNumberNormalized: phone,
+      phoneVerified: true,
+      phoneVerificationProvider: 'firebase_auth_phone',
+    };
+  }
+
+  return { phone, verified: true };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
   const auth = await verifyAuth(req);
@@ -71,9 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === 'GET') {
       const account = await syncEmailVerification(auth.uid);
-      const rawPhone = String(account.data.phoneNumberNormalized || account.data.phoneNumber || '');
-      let phone = '';
-      try { phone = rawPhone ? normalizeBrazilianPhone(rawPhone) : ''; } catch { phone = ''; }
+      const phoneState = await syncFirebasePhone(account);
       const cpf = String(account.data.cpf || '');
       return res.json({
         success: true,
@@ -84,9 +119,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             verifiedAt: account.data.emailVerifiedAt || null,
           },
           phone: {
-            value: phone ? maskPhone(phone) : '',
-            verified: isVerifiedPhone(account.data, phone),
-            verifiedAt: isVerifiedPhone(account.data, phone) ? account.data.phoneVerifiedAt || null : null,
+            value: phoneState.phone ? maskPhone(phoneState.phone) : '',
+            verified: phoneState.verified,
+            verifiedAt: phoneState.verified ? account.data.phoneVerifiedAt || null : null,
           },
           cpf: {
             value: maskCpf(cpf),
@@ -106,7 +141,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const action = String(req.body?.action || '').trim();
-    const account = await loadAccount(auth.uid);
 
     if (action === 'sync-email') {
       const synced = await syncEmailVerification(auth.uid);
@@ -119,54 +153,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (action === 'start-phone') {
-      const inputPhone = req.body?.phoneNumber || account.data.phoneNumberNormalized || account.data.phoneNumber;
-      const normalizedPhone = normalizeBrazilianPhone(inputPhone);
-      const duplicate = await db.collection('users').where('phoneNumberNormalized', '==', normalizedPhone).limit(2).get();
-      if (duplicate.docs.some((document: any) => document.id !== auth.uid)) {
-        return res.status(409).json({ success: false, error: 'Este telefone já está confirmado em outra conta.' });
+    if (action === 'sync-phone') {
+      const account = await loadAccount(auth.uid);
+      const phoneState = await syncFirebasePhone(account);
+      if (!phoneState.verified) {
+        return res.status(409).json({
+          success: false,
+          error: 'O Firebase ainda não confirmou um telefone nesta conta. Conclua o código por SMS primeiro.',
+        });
       }
-      await startPhoneVerification(normalizedPhone);
-      await account.ref.set({
-        pendingPhoneNumber: normalizedPhone,
-        phoneVerificationRequestedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-      return res.status(201).json({
+      return res.json({
         success: true,
-        phone: maskPhone(normalizedPhone),
-        userMessage: `Enviamos um código de verificação da Invictus para ${maskPhone(normalizedPhone)}.`,
+        verified: true,
+        phone: maskPhone(phoneState.phone),
+        userMessage: 'Telefone confirmado pelo Firebase Authentication.',
       });
     }
 
-    if (action === 'confirm-phone') {
-      const pendingPhone = String(account.data.pendingPhoneNumber || req.body?.phoneNumber || account.data.phoneNumber || '');
-      const normalizedPhone = normalizeBrazilianPhone(pendingPhone);
-      const approved = await checkPhoneVerification(normalizedPhone, req.body?.code);
-      if (!approved) {
-        return res.status(400).json({ success: false, error: 'Código incorreto ou expirado. Solicite um novo código e tente novamente.' });
-      }
-      const duplicate = await db.collection('users').where('phoneNumberNormalized', '==', normalizedPhone).limit(2).get();
-      if (duplicate.docs.some((document: any) => document.id !== auth.uid)) {
-        return res.status(409).json({ success: false, error: 'Este telefone já está confirmado em outra conta.' });
-      }
-      await account.ref.set({
-        phoneNumber: normalizedPhone,
-        phoneNumberNormalized: normalizedPhone,
-        phoneVerified: true,
-        phoneVerifiedHash: hashVerifiedPhone(normalizedPhone),
-        phoneVerifiedAt: FieldValue.serverTimestamp(),
-        phoneVerificationProvider: 'twilio_verify',
-        pendingPhoneNumber: null,
-      }, { merge: true });
-      return res.json({ success: true, verified: true, phone: maskPhone(normalizedPhone), userMessage: 'Telefone confirmado com sucesso.' });
-    }
-
     if (action === 'verify-cpf') {
+      const account = await loadAccount(auth.uid);
       const cpf = String(account.data.cpf || '').replace(/\D/g, '');
       const birthDate = String(account.data.birthDate || '');
       if (!cpf || !birthDate) {
         return res.status(400).json({ success: false, error: 'CPF e data de nascimento precisam estar preenchidos na conta.' });
       }
+
       const result = await verifyCpfWithReceita(cpf, birthDate);
       const receitaStatus = normalizeReceitaStatus(result.status);
       const canVerifyCpf = result.matched === true && result.regular === true && receitaStatus === 'REGULAR';
@@ -211,9 +222,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ success: false, error: 'Ação de verificação inválida.' });
   } catch (error: any) {
     console.error('[IdentityVerification] request failed:', error?.message || error);
-    return res.status(500).json({
-      success: false,
-      error: error?.message || 'Não foi possível concluir a verificação da conta.',
-    });
+    const message = error?.message || 'Não foi possível concluir a verificação da conta.';
+    const status = /já está confirmado em outra conta/i.test(message) ? 409 : 500;
+    return res.status(status).json({ success: false, error: message });
   }
 }
