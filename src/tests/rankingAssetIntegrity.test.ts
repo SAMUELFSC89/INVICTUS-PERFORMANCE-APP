@@ -22,17 +22,16 @@ describe('assets restaurados do pódio e Powerlift', () => {
     expect(homeCss).toContain('/assets/home/home-season-dumbbells-v1.webp');
   });
 
-  it('entrega a nova base do líder em alta resolução e fundo preto para composição de luz', async () => {
+  it('entrega a base aprovada do líder em PNG com transparência real', async () => {
     const base = await Jimp.read(path.join(process.cwd(), 'public/assets/ranking/podium-top1-glow-v2.png'));
-    expect(base.bitmap.width).toBe(800);
-    expect(base.bitmap.height).toBe(400);
-    for (const [x, y] of [[0, 0], [799, 0], [0, 399], [799, 399]]) {
-      const { r, g, b } = Jimp.intToRGBA(base.getPixelColor(x, y));
-      expect(Math.max(r, g, b)).toBeLessThan(16);
+    expect(base.bitmap.width).toBe(1254);
+    expect(base.bitmap.height).toBe(1254);
+    for (const [x, y] of [[0, 0], [1253, 0], [0, 1253], [1253, 1253]]) {
+      const { a } = Jimp.intToRGBA(base.getPixelColor(x, y));
+      expect(a).toBe(0);
     }
-    const glow = Jimp.intToRGBA(base.getPixelColor(400, 313));
-    expect(glow.r).toBeGreaterThan(150);
-    expect(glow.r).toBeGreaterThan(glow.b);
+    const center = Jimp.intToRGBA(base.getPixelColor(627, 627));
+    expect(center.a).toBeGreaterThan(200);
   });
 
   it('mantém a coroa de bronze completa com transparência real e margem sem corte', async () => {

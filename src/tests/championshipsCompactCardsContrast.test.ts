@@ -19,18 +19,26 @@ describe('campeonatos compactos e contraste', () => {
     expect(cards).toContain('VER RANKING');
   });
 
-  it('abre ranking oficial de força e cardio pelos novos cards', () => {
+  it('abre força e cardio com o mesmo layout visual do ranking da temporada', () => {
     const app = read('src/App.tsx');
     const hub = read('src/pages/championships/ChampionshipsHub.tsx');
     const ranking = read('src/pages/championships/PaidChampionshipRanking.tsx');
+    const podium = read('src/components/ranking/PodiumTopThree.tsx');
 
     expect(app).toContain('/championships/ranking/musculacao');
     expect(app).toContain('/championships/ranking/cardio');
     expect(hub).toContain("navigate('/championships/ranking/musculacao')");
     expect(hub).toContain("navigate('/championships/ranking/cardio')");
     expect(ranking).toContain('championshipService.getLeaderboard(championshipId)');
+    expect(ranking).toContain('community-ranking-top3');
+    expect(ranking).toContain('community-ranking-summary');
+    expect(ranking).toContain('<PodiumTopThree');
+    expect(ranking).toContain('scoreUnit="PTS"');
     expect(ranking).toContain('RANKING ATUAL');
     expect(ranking).toContain('MINHA POSIÇÃO');
+    expect(ranking).toContain('RANKING COMPLETO');
+    expect(podium).toContain("scoreUnit = 'IGA'");
+    expect(podium).toContain('?v=20260917');
   });
 
   it('mantém texto claro em superfícies fixas escuras mesmo com tema claro', () => {

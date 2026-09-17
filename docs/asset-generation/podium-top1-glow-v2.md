@@ -1,26 +1,19 @@
-# Pódio Top 1 — luz ampliada
+# Pódio Top 1 — asset aprovado
 
-Criado em 2026-09-13 com a habilidade imagegen, ferramenta integrada (sem CLI).
+O asset usado pelo ranking permanece em `public/assets/ranking/podium-top1-glow-v2.png` para preservar o contrato do app e evitar troca de caminho.
 
-Asset aplicado: `public/assets/ranking/podium-top1-glow-v2.png` (800 × 400).
-Referência: `public/assets/ranking/podium-top1.webp`, preservada sem alteração.
+Em 2026-09-17, a arte anterior de 800 × 400 com fundo preto foi substituída, sem recompressão, pelo PNG aprovado enviado pelo usuário:
 
-A ferramenta retornou fundo quadriculado na primeira edição. A segunda edição trocou esse fundo por preto puro. O componente usa composição CSS `screen` para integrar a luz ao fundo escuro, sem afirmar que o PNG possui transparência real. O arquivo final foi somente reduzido, sem cortar a arte.
+- dimensões: 1254 × 1254;
+- formato: PNG RGBA;
+- fundo: transparência alpha real;
+- identidade preservada: base preta, acabamento dourado, louros e palavra `INVICTUS`;
+- o arquivo é renderizado diretamente; não depende mais de `mix-blend-mode: screen` para esconder um fundo preto.
 
-## Prompt inicial
+A referência histórica `public/assets/ranking/podium-top1.webp` permanece preservada sem alteração.
 
-```text
-Use case: precise-object-edit
-Asset type: first-place podium base for the Invictus fitness ranking mobile app.
-Input image 1: reference and edit target, the existing small black marble podium with gold trim and INVICTUS lettering.
-Recreate this SAME first-place pedestal at high resolution with a substantially more prominent, wider and taller black marble body, polished gold rims, elegant gold laurels on both sides of the front word "INVICTUS". Keep the same straight-on slightly elevated viewpoint and oval top.
-Upgrade the golden lighting: brighter luminous top and bottom rims, a much broader warm golden halo underneath and around the sides, beautiful larger soft golden light flares rising just behind the two outer edges. Preserve sharp readable marble body, gold details and word INVICTUS. Luxury sports champion visual, not fireworks.
-Composition: landscape 2:1 image; entire pedestal and all major glow visible, pedestal body occupies approximately 85% of image width and 45% of image height, centered in lower-middle. Compact safe margins, no vast empty square canvas. No crown, athlete, number, scene, stage or extra text. Outside the podium and its soft semi-transparent gold light must be a genuinely transparent alpha background. Deliver an isolated cutout suitable to place on a nearly black UI. Preserve INVICTUS exactly.
-```
+## Histórico
 
-## Ajuste do fundo
+A versão de 2026-09-13 havia sido criada a partir da referência com halo ampliado. Como o arquivo final daquela rodada terminou com fundo preto, a interface utilizava composição CSS `screen` para integrá-lo ao fundo escuro.
 
-```text
-Edit target: this newly recreated first-place Invictus podium. Replace ONLY the gray checkered background with solid pure black (#000000). The gold halo and larger rising side lights must smoothly fade all the way to pure black. Preserve the entire black marble podium, front INVICTUS word, gold laurels and gold rims exactly, with the same dimensions and framing. No checkerboard and no gray pixels in the background. Keep all the golden lighting and full uncropped silhouette. This will be composited over a black app interface.
-```
-
+Esse workaround deixou de ser necessário depois da substituição pelo PNG transparente aprovado em 2026-09-17.

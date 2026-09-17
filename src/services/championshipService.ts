@@ -20,6 +20,16 @@ export interface RegulationSection {
   content: string;
 }
 
+export interface PaidChampionshipLeaderboardEntry {
+  rank: number;
+  userId: string;
+  name: string;
+  gym: string;
+  score: number;
+  photoURL?: string;
+  isUser?: boolean;
+}
+
 export function getRegulationSections(championshipId: string): RegulationSection[] {
   const offer = PAID_CHAMPIONSHIP_OFFERS[championshipId as keyof typeof PAID_CHAMPIONSHIP_OFFERS];
   if (!offer) return [];
@@ -209,14 +219,22 @@ class ChampionshipService {
     }
   }
 
-  async getLeaderboard(championshipId: string): Promise<Array<{ rank: number; name: string; gym: string; score: number; isUser?: boolean }>> {
+  async getLeaderboard(championshipId: string): Promise<PaidChampionshipLeaderboardEntry[]> {
     try {
       const headers = await authHeaders();
       const resp = await fetch(`${API_CONFIG.baseUrl}/api/championships/leaderboard?championshipId=${encodeURIComponent(championshipId)}`, { headers });
       if (!resp.ok) return [];
       const data = await resp.json();
       const uid = auth.currentUser?.uid;
-      return (data.leaderboard || []).map((e: any) => ({ ...e, isUser: e.userId === uid }));
+      return (data.leaderboard || []).map((entry: any) => ({
+        rank: Number(entry?.rank || 0),
+        userId: String(entry?.userId || ''),
+        name: String(entry?.name || 'Atleta Invictus'),
+        gym: String(entry?.gym || ''),
+        score: Number(entry?.score || 0),
+        photoURL: typeof entry?.photoURL === 'string' ? entry.photoURL : '',
+        isUser: String(entry?.userId || '') === uid,
+      }));
     } catch (erro) {
       console.warn('[championshipService] falha ao buscar leaderboard:', erro);
       return [];
