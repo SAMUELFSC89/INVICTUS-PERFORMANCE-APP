@@ -37,7 +37,6 @@ type WalletPayload = {
   identity?: {
     emailVerified: boolean;
     phoneVerified: boolean;
-    cpfVerified: boolean;
     ready: boolean;
     phone?: string;
   };
@@ -226,7 +225,7 @@ export function PrizeWallet() {
       await load();
     } catch (reason: any) {
       if (reason?.code === 'IDENTITY_VERIFICATION_REQUIRED') {
-        setError('Sua conta ainda precisa confirmar e-mail, telefone e CPF antes do saque.');
+        setError('Sua conta ainda precisa confirmar e-mail e telefone antes do saque.');
         clearPhoneChallenge();
         await load();
       } else if (reason?.code === 'PHONE_REAUTH_REQUIRED') {
@@ -262,7 +261,7 @@ export function PrizeWallet() {
 
       <section className="prize-wallet-separation"><ShieldCheck /><div><b>INVICTUS COINS NÃO SÃO DINHEIRO</b><p>Coins continuam sendo pontos internos do ecossistema e nunca entram neste saldo nem podem ser sacadas.</p></div></section>
 
-      <section className="prize-wallet-separation"><ShieldCheck /><div><b>{identityReady ? 'CONTA VERIFICADA PARA SAQUE' : 'CONFIRME SUA IDENTIDADE'}</b><p>E-mail {identity?.emailVerified ? '✓' : 'pendente'} · telefone {identity?.phoneVerified ? '✓' : 'pendente'} · CPF/Receita {identity?.cpfVerified ? '✓' : 'pendente'}.</p>{!identityReady ? <button type="button" className="prize-wallet-submit" onClick={() => navigate('/profile/identity')}>VERIFICAR MINHA CONTA</button> : null}</div></section>
+      <section className="prize-wallet-separation"><ShieldCheck /><div><b>{identityReady ? 'CONTA VERIFICADA PARA SAQUE' : 'CONFIRME SUA IDENTIDADE'}</b><p>E-mail {identity?.emailVerified ? '✓' : 'pendente'} · telefone {identity?.phoneVerified ? '✓' : 'pendente'}.</p>{!identityReady ? <button type="button" className="prize-wallet-submit" onClick={() => navigate('/profile/identity')}>VERIFICAR MINHA CONTA</button> : null}</div></section>
 
       <section className="prize-wallet-withdrawal">
         <header><div><small>SAQUE DE PRÊMIO</small><h2>RECEBER POR PIX</h2></div><Banknote /></header>
