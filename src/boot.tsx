@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
 import './styles/readability.css';
+import './styles/fixedDarkSurfaces.css';
 import './styles/ChallengeCardioModern.css';
 import './styles/ChallengeCardioIndoor.css';
 import './styles/ChallengeCardioBackgroundFix.css';
