@@ -26,11 +26,15 @@ function maskEmail(value: unknown): string {
 }
 
 function normalizeReceitaStatus(value: unknown): string {
-  return String(value || '')
+  const normalized = String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toUpperCase();
+  // A API do Serpro pode representar situação REGULAR tanto pela descrição
+  // textual quanto pelo código cadastral "0". Internamente persistimos sempre
+  // a forma canônica REGULAR para que os gates financeiros usem uma só regra.
+  return normalized === '0' ? 'REGULAR' : normalized;
 }
 
 function isVerifiedPhone(data: any, phone: string): boolean {
