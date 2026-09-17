@@ -141,7 +141,7 @@ async function ensureSandboxWithdrawalTestCredit(userId: string): Promise<boolea
 async function validateWithdrawalInput(userId: string, body: any) {
   const amount = money(body?.amount);
   const pixKey = String(body?.pixKey || '').trim();
-  const pixKeyType = String(body?.pixKeyType || '').trim();
+  const pixKeyType = String(body?.pixKeyType || '').trim() as 'cpf' | 'email' | 'phone' | 'random';
 
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Informe um valor de saque válido.');
   if (!pixKey || pixKey.length > 200) throw new Error('Informe uma chave PIX válida.');
@@ -330,7 +330,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await otpRef.set({
           status: 'completed',
           completedAt: FieldValue.serverTimestamp(),
-          withdrawalId: commitResult?.id || commitResult?.withdrawalId || null,
+          withdrawalId: commitResult.id,
         }, { merge: true });
         return res.status(201).json({
           success: true,
