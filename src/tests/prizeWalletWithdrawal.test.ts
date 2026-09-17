@@ -44,7 +44,7 @@ describe('carteira de prêmios e saque PIX', () => {
   it('expõe a tela de identidade verificada e o fluxo oficial de CPF/telefone', () => {
     const app = read('src/App.tsx');
     const identityPage = read('src/pages/IdentityVerification.tsx');
-    const identityApi = read('api/identity-verification.ts');
+    const identityApi = read('api/identity-verification-guarded.ts');
     const identityService = read('api/_lib/identity-verification-service.ts');
 
     expect(app).toContain("import('./pages/IdentityVerification')");
