@@ -46,7 +46,7 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
   it('solicita registro no primeiro uso nativo, mas respeita quem já desativou', () => {
     const service = read('src/services/pushNotificationService.ts');
     const start = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
-    const end = service.indexOf('/**\n * Desativa', start);
+    const end = service.indexOf('export async function disablePushNotifications', start);
     const reconciliation = service.slice(start, end);
     expect(reconciliation).toContain("preference === 'unset'");
     expect(reconciliation).toContain('await initPushNotifications()');
@@ -64,6 +64,45 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
     expect(init.indexOf('setPushNotificationPreference(expectedUid, false)')).toBeGreaterThan(init.indexOf("req.receive !== 'granted'"));
   });
 
+  it('só marca push como ativo depois de obter e reivindicar o token nativo', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    const installStart = service.indexOf('async function installListeners');
+    const unregisterStart = service.indexOf('async function unregisterLocalPush', installStart);
+    const install = service.slice(installStart, unregisterStart);
+    const initStart = service.indexOf('export async function initPushNotifications');
+    const reconcileStart = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
+    const init = service.slice(initStart, reconcileStart);
+
+    expect(install).toContain("PushNotifications.addListener('registration'");
+    expect(install).toContain('await saveDeviceToken(token.value, expectedUid)');
+    expect(install).toContain('await registrationReady');
+    expect(install.indexOf('await saveDeviceToken(token.value, expectedUid)')).toBeLessThan(install.indexOf('settleSuccess()'));
+    expect(install.indexOf('await registrationReady')).toBeLessThan(install.indexOf('initialized = true'));
+
+    const installCallIndex = init.indexOf('await installListeners(expectedUid, onNavigate)');
+    const enabledAfterInstallIndex = init.indexOf('setPushNotificationPreference(expectedUid, true)', installCallIndex);
+    expect(installCallIndex).toBeGreaterThan(-1);
+    expect(enabledAfterInstallIndex).toBeGreaterThan(installCallIndex);
+  });
+
+  it('não fica eternamente habilitado sem token e limita o handshake nativo', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    expect(service).toContain('REGISTRATION_TIMEOUT_MS = 15_000');
+    expect(service).toContain("new Error('O aparelho não retornou um token de notificações a tempo.')");
+    expect(service).toContain('localStorage.getItem(DEVICE_TOKEN_KEY)');
+    expect(service).toContain('owner === expectedUid');
+    expect(service).toContain('initialized = false');
+  });
+
+  it('repete uma vez o claim do token em falha transitória do backend', () => {
+    const service = read('src/services/pushNotificationService.ts');
+    expect(service).toContain('TOKEN_CLAIM_MAX_ATTEMPTS = 2');
+    expect(service).toContain('attempt <= TOKEN_CLAIM_MAX_ATTEMPTS');
+    expect(service).toContain('currentUser.getIdToken(attempt > 1)');
+    expect(service).toContain('response.status < 500 || attempt === TOKEN_CLAIM_MAX_ATTEMPTS');
+    expect(service).toContain('await delay(450)');
+  });
+
   it('cria canal Android visível e mantém presentation options para foreground', () => {
     const service = read('src/services/pushNotificationService.ts');
     const config = read('capacitor.config.ts');
@@ -76,7 +115,7 @@ describe('isolamento de push entre contas no mesmo aparelho', () => {
   it('transfere o token antigo antes de invalidá-lo na troca de conta', () => {
     const service = read('src/services/pushNotificationService.ts');
     const start = service.indexOf('export async function reconcilePushNotificationsForAuthChange');
-    const end = service.indexOf('/**\n * Desativa', start);
+    const end = service.indexOf('export async function disablePushNotifications', start);
     const reconciliation = service.slice(start, end);
     expect(reconciliation.indexOf('await saveDeviceToken(existingToken, nextUid)')).toBeGreaterThan(-1);
     expect(reconciliation.indexOf('await saveDeviceToken(existingToken, nextUid)')).toBeLessThan(reconciliation.lastIndexOf('await unregisterLocalPush()'));
