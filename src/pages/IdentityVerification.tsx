@@ -7,7 +7,7 @@ import {
   RecaptchaVerifier,
   updatePhoneNumber,
 } from 'firebase/auth';
-import { ArrowLeft, CheckCircle2, Fingerprint, Loader2, MailCheck, MessageSquareText, RefreshCw, ShieldCheck, Smartphone, UserCheck } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, MailCheck, MessageSquareText, RefreshCw, ShieldCheck, Smartphone, UserCheck } from 'lucide-react';
 import { auth } from '../firebase';
 import { useUser } from '../UserContext';
 import { InvictusLogo } from '../components/InvictusLogo';
@@ -16,13 +16,11 @@ import './IdentityVerification.css';
 type IdentityStatus = {
   email: { value: string; verified: boolean; verifiedAt?: unknown };
   phone: { value: string; verified: boolean; verifiedAt?: unknown };
-  cpf: { value: string; verified: boolean; verifiedAt?: unknown; status?: string; provider?: string | null };
 };
 
 type IdentityPayload = {
   success: boolean;
   identity: IdentityStatus;
-  providers?: { phone?: boolean; cpf?: boolean };
 };
 
 function normalizeBrazilPhone(value: string): string {
@@ -183,37 +181,27 @@ export function IdentityVerification() {
     await load();
   });
 
-  const verifyCpf = () => run('cpf', async () => {
-    const result = await authenticatedFetch('/api/identity-verification', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'verify-cpf' }),
-    });
-    setNotice(result.userMessage || 'CPF confirmado.');
-    await refreshUser?.();
-    await load();
-  });
 
   const identity = data?.identity;
-  const complete = Boolean(identity?.email.verified && identity?.phone.verified && identity?.cpf.verified);
+  const complete = Boolean(identity?.email.verified && identity?.phone.verified);
 
   const status = (verified?: boolean) => verified
     ? <span className="identity-status is-ok"><CheckCircle2 /> CONFIRMADO</span>
     : <span className="identity-status"><RefreshCw /> PENDENTE</span>;
 
   return createPortal(<main className="identity-screen"><div className="identity-page">
-    <header className="identity-header"><button onClick={() => navigate(-1)} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={40}/><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><span /></header>
-    <section className="identity-title"><small>SEGURANÇA DA CONTA</small><h1>IDENTIDADE <span>VERIFICADA</span></h1><p>E-mail e telefone são confirmados pelo Firebase; CPF é conferido na base oficial antes de operações financeiras.</p></section>
+    <header className="identity-header"><button onClick={() => navigate('/profile/wallet')} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={40}/><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><span /></header>
+    <section className="identity-title"><small>SEGURANÇA DA CONTA</small><h1>IDENTIDADE <span>VERIFICADA</span></h1><p>Para liberar saques, confirme seu e-mail e seu telefone pelo Firebase.</p></section>
 
     {error ? <div className="identity-alert is-error">{error}</div> : null}
     {notice ? <div className="identity-alert is-success">{notice}</div> : null}
     {loading && !data ? <div className="identity-loading"><Loader2 className="is-spinning"/> CONSULTANDO CONTA</div> : <>
-      <section className={complete ? 'identity-complete is-ok' : 'identity-complete'}><ShieldCheck/><div><b>{complete ? 'CONTA VERIFICADA' : 'VERIFICAÇÃO PENDENTE'}</b><p>{complete ? 'Os três fatores de identidade estão confirmados.' : 'Conclua os itens abaixo. O saque fica protegido até todos estarem verificados.'}</p></div></section>
+      <section className={complete ? 'identity-complete is-ok' : 'identity-complete'}><ShieldCheck/><div><b>{complete ? 'CONTA VERIFICADA' : 'VERIFICAÇÃO PENDENTE'}</b><p>{complete ? 'E-mail e telefone estão confirmados.' : 'Conclua e-mail e telefone para liberar o saque.'}</p></div></section>
 
       <section className="identity-card"><header><MailCheck/><div><small>E-MAIL</small><h2>{identity?.email.value || auth.currentUser?.email || 'E-mail da conta'}</h2></div>{status(identity?.email.verified)}</header>{!identity?.email.verified ? <div className="identity-actions"><button disabled={Boolean(busy)} onClick={() => void resendEmail()}>{busy === 'email' ? <Loader2 className="is-spinning"/> : <MessageSquareText/>} ENVIAR E-MAIL INVICTUS</button><button className="is-secondary" disabled={Boolean(busy)} onClick={() => void syncEmail()}>JÁ CONFIRMEI</button></div> : <p>Endereço confirmado pelo Firebase Authentication.</p>}</section>
 
       <section className="identity-card"><header><Smartphone/><div><small>TELEFONE</small><h2>{identity?.phone.value || 'Confirme seu celular'}</h2></div>{status(identity?.phone.verified)}</header>{!identity?.phone.verified ? <div className="identity-form"><label>CELULAR COM DDD<input value={phone} onChange={event => setPhone(event.target.value)} inputMode="tel" placeholder="(51) 99999-9999" /></label>{phoneStep === 'code' ? <label>CÓDIGO RECEBIDO<input value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" /></label> : null}<div className="identity-actions">{phoneStep === 'code' ? <><button disabled={Boolean(busy) || code.length < 4} onClick={() => void confirmPhone()}>{busy === 'phone-confirm' ? <Loader2 className="is-spinning"/> : <UserCheck/>} CONFIRMAR CÓDIGO</button><button className="is-secondary" disabled={Boolean(busy)} onClick={() => void startPhone()}>REENVIAR SMS</button></> : <button id="identity-send-phone-button" disabled={Boolean(busy) || phone.replace(/\D/g, '').length < 10} onClick={() => void startPhone()}>{busy === 'phone-start' ? <Loader2 className="is-spinning"/> : <MessageSquareText/>} ENVIAR SMS PELO FIREBASE</button>}</div></div> : <p>Número confirmado pelo Firebase Authentication.</p>}</section>
 
-      <section className="identity-card"><header><Fingerprint/><div><small>CPF</small><h2>{identity?.cpf.value || 'CPF cadastrado'}</h2></div>{status(identity?.cpf.verified)}</header>{identity?.cpf.status ? <p>Situação retornada: <b>{identity.cpf.status}</b></p> : null}{!identity?.cpf.verified ? <div className="identity-actions"><button disabled={Boolean(busy) || data?.providers?.cpf === false} onClick={() => void verifyCpf()}>{busy === 'cpf' ? <Loader2 className="is-spinning"/> : <UserCheck/>} CONFIRMAR NA RECEITA FEDERAL</button></div> : <p>CPF e data de nascimento conferidos via Consulta CPF do Serpro/Receita Federal.</p>}{data?.providers?.cpf === false && !identity?.cpf.verified ? <small className="identity-provider-note">A integração oficial ainda precisa das credenciais do Serpro no ambiente de produção.</small> : null}</section>
 
       <div id="invictus-phone-recaptcha" aria-hidden="true" />
     </>}
