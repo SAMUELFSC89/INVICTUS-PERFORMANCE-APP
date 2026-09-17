@@ -34,6 +34,10 @@
       "destination": "/api/validate-presence-guarded"
     },
     {
+      "source": "/api/identity-verification",
+      "destination": "/api/identity-verification"
+    },
+    {
       "source": "/api/strava/webhook",
       "destination": "/api/strava-webhook-guarded"
     },
