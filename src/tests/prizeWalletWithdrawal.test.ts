@@ -35,6 +35,28 @@ describe('carteira de prêmios e saque PIX', () => {
     expect(wallet).toContain('Não usamos selfie para liberar PIX.');
   });
 
+  it('atrela telefone confirmado ao número atual e limita tentativas do OTP', () => {
+    const financial = read('api/_handlers/financial.ts');
+    const identityApi = read('api/identity-verification-guarded.ts');
+
+    expect(identityApi).toContain('phoneVerifiedHash: hashVerifiedPhone(normalizedPhone)');
+    expect(identityApi).toContain('samePhoneHash(phone, data.phoneVerifiedHash)');
+    expect(financial).toContain('samePhoneHash(phone, profile.phoneVerifiedHash)');
+    expect(financial).toContain('WITHDRAWAL_OTP_MAX_ATTEMPTS = 5');
+    expect(financial).toContain("status: 'attempts_exhausted'");
+  });
+
+  it('só considera CPF oficialmente verificado quando Receita retorna REGULAR', () => {
+    const financial = read('api/_handlers/financial.ts');
+    const identityApi = read('api/identity-verification-guarded.ts');
+
+    expect(identityApi).toContain("receitaStatus === 'REGULAR'");
+    expect(identityApi).toContain('result.regular === true');
+    expect(identityApi).toContain('cpfVerified: false');
+    expect(financial).toContain('profile.cpfReceitaRegular === true');
+    expect(financial).toContain("String(profile.cpfReceitaStatus || '').trim().toUpperCase() === 'REGULAR'");
+  });
+
   it('usa o uid autenticado e nunca aceita userId do cliente', () => {
     const financial = read('api/_handlers/financial.ts');
     expect(financial).toContain('userId: auth.uid');
