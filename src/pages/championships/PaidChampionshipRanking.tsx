@@ -134,7 +134,7 @@ export function PaidChampionshipRanking({ modality }: PaidChampionshipRankingPro
     {loading ? <section className="academy-ranking-state academy-ranking-loading"><RefreshCw /><p>ATUALIZANDO CLASSIFICAÇÃO…</p></section> : error ? <section className="academy-ranking-state"><RefreshCw /><h2>NÃO FOI POSSÍVEL CARREGAR</h2><p>{error}</p><button type="button" onClick={() => setReload((value) => value + 1)}>TENTAR NOVAMENTE <RefreshCw /></button></section> : !participating ? <div className="paid-ranking-state"><b>INSCRIÇÃO NÃO CONFIRMADA</b>Abra o campeonato para consultar o status da edição antes de acessar o ranking.<div className="paid-ranking-actions"><button type="button" onClick={() => navigate(previewPath)}><ShieldCheck /> VER CAMPEONATO</button></div></div> : <>
       <section className="community-ranking-top3 paid-ranking-top3">
         <header className="community-ranking-season-head"><div><small>RANKING ATUAL</small><h2>{podiumTitle}</h2><p>ATIVIDADES VÁLIDAS E HOMOLOGADAS</p></div><span><Trophy /><b>DISCIPLINA<br/>GERA RESULTADOS</b></span></header>
-        <PodiumTopThree entries={topThree} currentUserId={user?.uid} onSelect={openProfile} showEmptySlots cleanSeasonLayout scoreUnit="PTS" />
+        <PodiumTopThree entries={topThree} currentUserId={user?.uid} onSelect={openProfile} showEmptySlots cleanSeasonLayout scoreUnit="PTS" theme={isStrength ? "musculacao" : "cardio"} />
       </section>
 
       <section className="community-ranking-summary" aria-label={`Destaques do ${modalityTitle.toLowerCase()}`}>
