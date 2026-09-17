@@ -28,9 +28,9 @@ describe('Android native Google authentication', () => {
     expect(gradle).toContain('com.google.android.gms:play-services-auth:21.2.0');
   });
 
-  it('surfaces a configuration-specific message instead of auth/argument-error', () => {
+  it('surfaces a configuration-specific message if the Android OAuth signature is missing', () => {
     const plugin = read('android/app/src/main/java/com/desafiosemdesculpa/app/InvictusGoogleAuthPlugin.java');
     expect(plugin).toContain('Registre o SHA-1/SHA-256 do APK no Firebase');
-    expect(plugin).not.toContain('auth/argument-error');
+    expect(plugin).toContain('status == 10');
   });
 });
