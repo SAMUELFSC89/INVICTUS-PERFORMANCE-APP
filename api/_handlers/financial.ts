@@ -17,6 +17,7 @@ const ALLOWED_PIX_KEY_TYPES = new Set(['cpf', 'email', 'phone', 'random']);
 const SANDBOX_WITHDRAWAL_TEST_CREDIT = 20;
 const SANDBOX_WITHDRAWAL_TEST_KEY = 'withdrawal-r20-2026-09';
 const WITHDRAWAL_OTP_TTL_MS = 10 * 60 * 1000;
+const WITHDRAWAL_OTP_MAX_ATTEMPTS = 5;
 
 type AccountIdentity = {
   emailVerified: boolean;
@@ -47,8 +48,8 @@ async function loadIdentity(userId: string): Promise<AccountIdentity> {
   try { phone = rawPhone ? normalizeBrazilianPhone(rawPhone) : ''; } catch { phone = ''; }
   return {
     emailVerified: authUser.emailVerified === true,
-    phoneVerified: profile.phoneVerified === true && Boolean(phone),
-    cpfVerified: profile.cpfVerified === true,
+    phoneVerified: profile.phoneVerified === true && Boolean(phone) && samePhoneHash(phone, profile.phoneVerifiedHash),
+    cpfVerified: profile.cpfVerified === true && profile.cpfReceitaRegular === true && String(profile.cpfReceitaStatus || '').trim().toUpperCase() === 'REGULAR',
     phone,
   };
 }
@@ -273,6 +274,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (otp.userId !== auth.uid) return res.status(403).json({ success: false, error: 'Esta confirmação pertence a outra conta.' });
       if (otp.status === 'completed') return res.status(409).json({ success: false, error: 'Este código já foi utilizado.' });
       if (otp.status !== 'pending') return res.status(409).json({ success: false, error: 'Esta confirmação não está mais disponível.' });
+      const attempts = Math.max(0, Number(otp.attempts) || 0);
+      if (attempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS) {
+        await otpRef.set({ status: 'attempts_exhausted', completedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return res.status(429).json({ success: false, error: 'Limite de tentativas atingido. Solicite um novo código para o saque.' });
+      }
       const expiresAt = new Date(String(otp.expiresAt || ''));
       if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
         await otpRef.set({ status: 'expired', completedAt: FieldValue.serverTimestamp() }, { merge: true });
@@ -285,8 +291,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const approved = await checkPhoneVerification(identity.phone, code);
       if (!approved) {
-        await otpRef.set({ attempts: FieldValue.increment(1), lastAttemptAt: FieldValue.serverTimestamp() }, { merge: true });
-        return res.status(400).json({ success: false, error: 'Código incorreto ou expirado. Confira o SMS da Invictus e tente novamente.' });
+        const nextAttempts = attempts + 1;
+        await otpRef.set({
+          attempts: FieldValue.increment(1),
+          lastAttemptAt: FieldValue.serverTimestamp(),
+          ...(nextAttempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS ? { status: 'attempts_exhausted', completedAt: FieldValue.serverTimestamp() } : {}),
+        }, { merge: true });
+        return res.status(nextAttempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS ? 429 : 400).json({
+          success: false,
+          error: nextAttempts >= WITHDRAWAL_OTP_MAX_ATTEMPTS
+            ? 'Limite de tentativas atingido. Solicite um novo código para o saque.'
+            : 'Código incorreto ou expirado. Confira o SMS da Invictus e tente novamente.',
+        });
       }
 
       try {
@@ -305,9 +321,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       try {
         const withdrawalData = otp.withdrawal || {};
-        // Revalida saldo, limites e formato no instante da confirmação. O cliente
-        // não consegue trocar valor/chave depois do SMS porque usamos só o payload
-        // persistido no servidor.
         const validated = await validateWithdrawalInput(auth.uid, withdrawalData);
         const commitResult = await WithdrawalEngine.requestWithdrawal({
           ...validated,
