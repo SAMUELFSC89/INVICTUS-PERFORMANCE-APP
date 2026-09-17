@@ -23,6 +23,13 @@ describe('foto de perfil resiliente', () => {
     expect(avatar).toContain('onError={() => void recover()}');
   });
 
+  it('faz uma nova requisicao quando o WebKit falha mas o Firebase devolve a mesma url', () => {
+    expect(avatar).toContain('withAvatarRetryNonce');
+    expect(avatar).toContain("url.searchParams.set('invictus_avatar_retry'");
+    expect(avatar).toContain('freshUrl === resolvedSrc ? withAvatarRetryNonce(freshUrl) : freshUrl');
+    expect(avatar).not.toContain('freshUrl === resolvedSrc) {\n        setFailed(true)');
+  });
+
   it('usa fallback visual em vez de manter imagem quebrada', () => {
     expect(avatar).toContain('fallback?: ReactNode');
     expect(avatar).toContain('if (!resolvedSrc || failed) return <>{fallback}</>');
