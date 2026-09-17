@@ -3,8 +3,10 @@ import { cors, db, verifyAuth, getAuth, app, FieldValue } from './_lib/common.js
 import {
   checkPhoneVerification,
   getIdentityProviderReadiness,
+  hashVerifiedPhone,
   maskPhone,
   normalizeBrazilianPhone,
+  samePhoneHash,
   startPhoneVerification,
   verifyCpfWithReceita,
 } from './_lib/identity-verification-service.js';
@@ -29,6 +31,10 @@ function normalizeReceitaStatus(value: unknown): string {
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toUpperCase();
+}
+
+function isVerifiedPhone(data: any, phone: string): boolean {
+  return data.phoneVerified === true && Boolean(phone) && samePhoneHash(phone, data.phoneVerifiedHash);
 }
 
 async function loadAccount(uid: string) {
@@ -61,7 +67,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === 'GET') {
       const account = await syncEmailVerification(auth.uid);
-      const phone = String(account.data.phoneNumberNormalized || account.data.phoneNumber || '');
+      const rawPhone = String(account.data.phoneNumberNormalized || account.data.phoneNumber || '');
+      let phone = '';
+      try { phone = rawPhone ? normalizeBrazilianPhone(rawPhone) : ''; } catch { phone = ''; }
       const cpf = String(account.data.cpf || '');
       return res.json({
         success: true,
@@ -73,8 +81,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
           phone: {
             value: phone ? maskPhone(phone) : '',
-            verified: account.data.phoneVerified === true,
-            verifiedAt: account.data.phoneVerifiedAt || null,
+            verified: isVerifiedPhone(account.data, phone),
+            verifiedAt: isVerifiedPhone(account.data, phone) ? account.data.phoneVerifiedAt || null : null,
           },
           cpf: {
             value: maskCpf(cpf),
@@ -141,6 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         phoneNumber: normalizedPhone,
         phoneNumberNormalized: normalizedPhone,
         phoneVerified: true,
+        phoneVerifiedHash: hashVerifiedPhone(normalizedPhone),
         phoneVerifiedAt: FieldValue.serverTimestamp(),
         phoneVerificationProvider: 'twilio_verify',
         pendingPhoneNumber: null,
