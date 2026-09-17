@@ -35,7 +35,7 @@
     },
     {
       "source": "/api/identity-verification",
-      "destination": "/api/identity-verification"
+      "destination": "/api/identity-verification-guarded"
     },
     {
       "source": "/api/strava/webhook",
