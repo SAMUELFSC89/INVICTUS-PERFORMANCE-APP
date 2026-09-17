@@ -49,12 +49,24 @@ describe('carteira de prêmios e saque PIX', () => {
   it('só considera CPF oficialmente verificado quando Receita retorna REGULAR', () => {
     const financial = read('api/_handlers/financial.ts');
     const identityApi = read('api/identity-verification-guarded.ts');
+    const identityService = read('api/_lib/identity-verification-service.ts');
 
     expect(identityApi).toContain("receitaStatus === 'REGULAR'");
+    expect(identityApi).toContain("return normalized === '0' ? 'REGULAR' : normalized");
     expect(identityApi).toContain('result.regular === true');
     expect(identityApi).toContain('cpfVerified: false');
+    expect(identityService).toContain("status === 'REGULAR' || status === '0'");
     expect(financial).toContain('profile.cpfReceitaRegular === true');
     expect(financial).toContain("String(profile.cpfReceitaStatus || '').trim().toUpperCase() === 'REGULAR'");
+  });
+
+  it('mantém a carteira disponível para sessão válida sem perfil e bloqueia identidade financeira', () => {
+    const financial = read('api/_handlers/financial.ts');
+    expect(financial).toContain('if (!profileSnap.exists)');
+    expect(financial).toContain('emailVerified: authUser.emailVerified === true');
+    expect(financial).toContain('phoneVerified: false');
+    expect(financial).toContain('cpfVerified: false');
+    expect(financial).toContain("phone: ''");
   });
 
   it('usa o uid autenticado e nunca aceita userId do cliente', () => {
