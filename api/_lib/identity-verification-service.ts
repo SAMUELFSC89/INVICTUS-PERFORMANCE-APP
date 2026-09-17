@@ -1,10 +1,7 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
-
-const TWILIO_VERIFY_BASE = 'https://verify.twilio.com/v2';
 const SERPRO_TOKEN_URL = 'https://gateway.apiserpro.serpro.gov.br/token';
 
 export type IdentityProviderReadiness = {
-  sms: boolean;
+  phone: true;
   cpf: boolean;
 };
 
@@ -25,10 +22,20 @@ function basicAuth(username: string, password: string): string {
   return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 }
 
+/**
+ * Telefone é verificado pelo Firebase Authentication no cliente e sincronizado
+ * no backend a partir do UserRecord do Firebase Admin. Portanto não existe
+ * segredo/provedor SMS adicional no servidor. O único provider externo que
+ * ainda precisa de credenciais próprias é a Consulta CPF do Serpro.
+ */
 export function getIdentityProviderReadiness(): IdentityProviderReadiness {
   return {
-    sms: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID),
-    cpf: Boolean(process.env.SERPRO_CPF_CONSUMER_KEY && process.env.SERPRO_CPF_CONSUMER_SECRET && process.env.SERPRO_CPF_QUERY_URL_TEMPLATE),
+    phone: true,
+    cpf: Boolean(
+      process.env.SERPRO_CPF_CONSUMER_KEY
+      && process.env.SERPRO_CPF_CONSUMER_SECRET
+      && process.env.SERPRO_CPF_QUERY_URL_TEMPLATE
+    ),
   };
 }
 
@@ -45,65 +52,6 @@ export function maskPhone(input: string): string {
   const ddd = digits.slice(-11, -9);
   const end = digits.slice(-4);
   return `(${ddd}) •••••-${end}`;
-}
-
-export async function startPhoneVerification(phone: string): Promise<void> {
-  const accountSid = requiredEnv('TWILIO_ACCOUNT_SID');
-  const authToken = requiredEnv('TWILIO_AUTH_TOKEN');
-  const serviceSid = requiredEnv('TWILIO_VERIFY_SERVICE_SID');
-  const normalized = normalizeBrazilianPhone(phone);
-
-  const body = new URLSearchParams();
-  body.set('To', normalized);
-  body.set('Channel', 'sms');
-  body.set('Locale', 'pt');
-  // O nome amigável aparece no template do Verify. O Sender ID real depende
-  // das regras/registro das operadoras brasileiras e é configurado na Twilio.
-  body.set('CustomFriendlyName', String(process.env.TWILIO_VERIFY_FRIENDLY_NAME || 'Invictus').slice(0, 30));
-
-  const response = await fetch(`${TWILIO_VERIFY_BASE}/Services/${encodeURIComponent(serviceSid)}/Verifications`, {
-    method: 'POST',
-    headers: {
-      Authorization: basicAuth(accountSid, authToken),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body,
-  });
-
-  const payload: any = await response.json().catch(() => ({}));
-  if (!response.ok || !['pending', 'approved'].includes(String(payload?.status || ''))) {
-    const code = String(payload?.code || response.status || 'SMS_VERIFY_START_FAILED');
-    console.warn(`[IdentityVerification] Twilio Verify start failed (${code}).`);
-    throw new Error('Não foi possível enviar o código por SMS agora. Tente novamente em instantes.');
-  }
-}
-
-export async function checkPhoneVerification(phone: string, code: unknown): Promise<boolean> {
-  const accountSid = requiredEnv('TWILIO_ACCOUNT_SID');
-  const authToken = requiredEnv('TWILIO_AUTH_TOKEN');
-  const serviceSid = requiredEnv('TWILIO_VERIFY_SERVICE_SID');
-  const normalized = normalizeBrazilianPhone(phone);
-  const cleanCode = String(code || '').replace(/\D/g, '');
-  if (cleanCode.length < 4 || cleanCode.length > 10) throw new Error('Código de verificação inválido.');
-
-  const body = new URLSearchParams();
-  body.set('To', normalized);
-  body.set('Code', cleanCode);
-  const response = await fetch(`${TWILIO_VERIFY_BASE}/Services/${encodeURIComponent(serviceSid)}/VerificationCheck`, {
-    method: 'POST',
-    headers: {
-      Authorization: basicAuth(accountSid, authToken),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body,
-  });
-  const payload: any = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (response.status === 404 || response.status === 400) return false;
-    console.warn(`[IdentityVerification] Twilio Verify check failed (${response.status}).`);
-    throw new Error('O serviço de confirmação por telefone está temporariamente indisponível.');
-  }
-  return String(payload?.status || '') === 'approved';
 }
 
 function formatBirthDateForSerpro(value: unknown): string {
@@ -201,18 +149,4 @@ export async function verifyCpfWithReceita(cpfInput: unknown, birthDateInput: un
   const status = readCpfStatus(payload) || 'CONSULTADO';
   const regular = matched && (status === 'REGULAR' || status === '0');
   return { matched, regular, status, provider: 'serpro_receita_federal' };
-}
-
-/** Hash utilitário para atrelar desafios financeiros a um telefone sem
- * persistir cópias adicionais do número em documentos temporários. */
-export function hashVerifiedPhone(phone: string): string {
-  return createHash('sha256').update(normalizeBrazilianPhone(phone)).digest('hex');
-}
-
-export function samePhoneHash(phone: string, expectedHex: unknown): boolean {
-  const expected = String(expectedHex || '');
-  if (!/^[a-f0-9]{64}$/i.test(expected)) return false;
-  const actual = Buffer.from(hashVerifiedPhone(phone), 'hex');
-  const target = Buffer.from(expected, 'hex');
-  return actual.length === target.length && timingSafeEqual(actual, target);
 }
