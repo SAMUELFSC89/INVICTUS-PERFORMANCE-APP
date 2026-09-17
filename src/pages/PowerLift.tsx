@@ -422,17 +422,34 @@ export function PowerLift() {
         <span><Users /> {athleteCount || '—'} atletas</span>
       </div>
       {loadError && <p className="power-load-error">Não foi possível carregar o ranking agora. Tente novamente em instantes.</p>}
-      <div className="power-podium">
-        {[1,0,2].map((rank, position) => {
-          const row=top[rank];
-          return <button key={rank} onClick={()=>{setSelected(row?.exercise || 'supino');setView('ranking')}} className={`power-podium-item pos-${position}`}>
-            <span className="power-podium-avatar">{row?.userPhoto ? <img src={row.userPhoto} alt="" /> : <span className="power-avatar">{row?.userName?.slice(0,1) || '—'}</span>}<img className="power-podium-frame" src={`/ranking-frame-${rank === 0 ? 'gold' : rank === 1 ? 'silver' : 'bronze'}-reference.png`} alt="" aria-hidden="true" /></span>
-            <i>{rank+1}</i>
-            <b>{row?.userName || 'Sem registros'}</b>
-            <strong>{row ? `${row.weight} kg` : '—'}</strong>
-          </button>
+      <div className="power-podium power-podium--master">
+        <img className="power-podium-master-image" src="/assets/ranking/podium-powerlift-v1.webp" alt="" aria-hidden="true" />
+        {[0, 1, 2].map((index) => {
+          const row = top[index];
+          const rank = index + 1;
+          if (!row) return null;
+          return <button
+            key={row.userId || rank}
+            type="button"
+            onClick={()=>{setSelected(row.exercise || 'supino');setView('ranking')}}
+            className={`power-podium-master-slot power-podium-master-slot--${rank}`}
+            aria-label={`${rank}º lugar, ${row.userName || 'Atleta Invictus'}, ${row.weight} kg`}
+          >
+            {row.userPhoto ? <img src={row.userPhoto} alt="" /> : <span>{row.userName?.slice(0, 1) || '—'}</span>}
+          </button>;
         })}
         <ChevronRight className="power-next" />
+      </div>
+      <div className="power-podium-master-meta" aria-label="Top 3 do Power Lift">
+        {[1, 0, 2].map((index) => {
+          const row = top[index];
+          const rank = index + 1;
+          return <button key={`power-meta-${rank}`} type="button" onClick={()=>{setSelected(row?.exercise || 'supino');setView('ranking')}}>
+            <small>{rank}º</small>
+            <b>{row?.userName || 'Sem registros'}</b>
+            <strong>{row ? `${row.weight} kg` : '—'}</strong>
+          </button>;
+        })}
       </div>
     </section>
 
