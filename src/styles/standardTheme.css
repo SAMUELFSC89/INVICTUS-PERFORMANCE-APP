@@ -1,0 +1,8 @@
+/*
+ * O Invictus usa uma unica identidade visual (preto/grafite/dourado).
+ * A opcao de tema antiga permanece apenas como codigo legado ate a proxima
+ * limpeza estrutural, mas nao pode mais ser exibida ao usuario.
+ */
+.profile-flow-list > button:has(svg.lucide-moon) {
+  display: none !important;
+}

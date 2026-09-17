@@ -4,6 +4,7 @@ import App from './App';
 import './index.css';
 import './styles/readability.css';
 import './styles/fixedDarkSurfaces.css';
+import './styles/standardTheme.css';
 import './styles/ChallengeCardioModern.css';
 import './styles/ChallengeCardioIndoor.css';
 import './styles/ChallengeCardioBackgroundFix.css';
@@ -34,9 +35,24 @@ import './lib/locationUtils';
 // em vez do "Script error." mascarado que o WebView do iOS entrega para o
 // window.onerror quando o script vem do esquema capacitor://.
 
+const STANDARD_THEME = 'dark';
+
+function enforceStandardTheme() {
+  try {
+    localStorage.setItem('theme', STANDARD_THEME);
+  } catch {
+    // Storage indisponivel nao pode impedir o app de iniciar.
+  }
+  document.documentElement.setAttribute('data-theme', STANDARD_THEME);
+}
+
 export function iniciarApp() {
   const root = document.getElementById('root');
   if (!root) throw new Error('Elemento #root nao encontrado no index.html');
+
+  // O Invictus passa a ter uma unica identidade visual. Isso neutraliza
+  // preferencias antigas salvas antes de renderizar qualquer tela.
+  enforceStandardTheme();
 
   createRoot(root).render(
     <StrictMode>
