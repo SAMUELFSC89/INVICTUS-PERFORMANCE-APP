@@ -1,0 +1,85 @@
+/*
+ * Fixed-dark overlays/pages must stay readable even when the account theme is light.
+ * readability.css intentionally adapts shared Tailwind text utilities to the active
+ * theme; these surfaces are always black/grafite, so they need local light tokens.
+ */
+:is(
+  .ch-new-screen,
+  [aria-labelledby="competitive-hr-title"],
+  [aria-label="Aceites obrigatórios da inscrição"],
+  [aria-label="Termos de Uso e Integridade"]
+) {
+  --invictus-ui-secondary: #e4e0da;
+  --invictus-ui-muted: #d0cbc3;
+  --invictus-ui-subtle: #bdb7ae;
+  --texto-suave: #e4e0da;
+  --color-on-surface-variant: #e4e0da;
+  color-scheme: dark;
+}
+
+/* Frequência cardíaca / ciência competitiva. */
+[aria-labelledby="competitive-hr-title"] {
+  color: #f7f5ef;
+}
+[aria-labelledby="competitive-hr-title"] #competitive-hr-title {
+  color: #fff !important;
+}
+[aria-labelledby="competitive-hr-title"] p,
+[aria-labelledby="competitive-hr-title"] li {
+  color: #d7d2ca !important;
+}
+[aria-labelledby="competitive-hr-title"] label {
+  color: #f0ece5 !important;
+}
+[aria-labelledby="competitive-hr-title"] button:not(:last-child) {
+  -webkit-text-fill-color: currentColor;
+}
+
+/* Aceites e regulamentos pagos: título branco, resumo claro e conteúdo legível. */
+[aria-label="Aceites obrigatórios da inscrição"] {
+  color: #f7f5ef;
+}
+[aria-label="Aceites obrigatórios da inscrição"] h2,
+[aria-label="Aceites obrigatórios da inscrição"] label b,
+[aria-label="Aceites obrigatórios da inscrição"] details summary,
+[aria-label="Aceites obrigatórios da inscrição"] details b {
+  color: #fff !important;
+}
+[aria-label="Aceites obrigatórios da inscrição"] p,
+[aria-label="Aceites obrigatórios da inscrição"] label small,
+[aria-label="Aceites obrigatórios da inscrição"] details,
+[aria-label="Aceites obrigatórios da inscrição"] details p {
+  color: #d7d2ca !important;
+}
+
+/* Termos gerais e documentos legais também usam superfícies permanentemente escuras. */
+[aria-label="Termos de Uso e Integridade"] {
+  color: #f7f5ef;
+}
+[aria-label="Termos de Uso e Integridade"] h1,
+[aria-label="Termos de Uso e Integridade"] h2,
+[aria-label="Termos de Uso e Integridade"] button span {
+  color: #fff !important;
+}
+[aria-label="Termos de Uso e Integridade"] p,
+[aria-label="Termos de Uso e Integridade"] label span {
+  color: #d7d2ca !important;
+}
+
+/* Cards recolhíveis das páginas de cardio/força. */
+.paid-championship-screen [aria-label="Informações do campeonato"] > details > summary b {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff;
+}
+.paid-championship-screen [aria-label="Informações do campeonato"] > details > summary small {
+  color: #ded9d1 !important;
+  -webkit-text-fill-color: #ded9d1;
+}
+.paid-championship-screen [aria-label="Informações do campeonato"] .paid-championship-grid b,
+.paid-championship-screen [aria-label="Informações do campeonato"] .paid-edition-card b {
+  color: #f7f5ef !important;
+}
+.paid-championship-screen [aria-label="Informações do campeonato"] .paid-championship-grid span,
+.paid-championship-screen [aria-label="Informações do campeonato"] .paid-rules p {
+  color: #d7d2ca !important;
+}
