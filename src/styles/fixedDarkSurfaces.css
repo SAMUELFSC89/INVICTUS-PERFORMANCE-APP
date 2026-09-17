@@ -83,3 +83,20 @@
 .paid-championship-screen [aria-label="Informações do campeonato"] .paid-rules p {
   color: #d7d2ca !important;
 }
+
+/* Campeonatos oficiais já inscritos usam o mesmo padrão compacto do Entre Amigos. */
+.ch-paid-participating-stack {
+  display: grid;
+  gap: 9px;
+}
+.ch-paid-ranking-card .ch-friends-ranking-card__identity strong {
+  font-size: 18px;
+}
+.ch-paid-ranking-card .ch-friends-ranking-card__background {
+  object-position: center right;
+}
+@media (max-width: 390px) {
+  .ch-paid-ranking-card .ch-friends-ranking-card__identity strong {
+    font-size: 16px;
+  }
+}
