@@ -364,7 +364,7 @@ async function processChallengeExpiration(challengeId: string) {
   }
 
   const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
-  const members = membersSnap.docs.map(mDoc => mDoc.data());
+  const members = membersSnap.docs.map(mDoc => mDoc.data() as { userId: string; userName?: string; userPhoto?: string; points?: number; workoutsCount?: number; [key: string]: unknown });
   if (members.length < 2) {
     console.log(`[Private Challenges] Cancelling challenge ${challengeId} (below 2 participants, no money involved).`);
     await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
