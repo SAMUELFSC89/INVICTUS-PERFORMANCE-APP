@@ -123,6 +123,21 @@ export function AdminPayouts() {
     }
   };
 
+  const reconcileProvider = async (item: PIXWithdrawal) => {
+    if (!window.confirm('Consultar o Asaas para saber se a tentativa anterior criou uma transferência? Se nada existir, o saque voltará para Aprovado.')) return;
+    setActingId(item.id);
+    setFeedback(null);
+    try {
+      const result = await requestAdmin('reconcile-withdrawal-provider', { withdrawalId: item.id });
+      setFeedback({ type: 'success', text: result.message || 'Conciliação concluída.' });
+      await load();
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err?.message || 'Falha ao conciliar o saque com o Asaas.' });
+    } finally {
+      setActingId(null);
+    }
+  };
+
   const tabs: { key: FinanceFilter; label: string }[] = [
     { key: 'attention', label: 'Requer atenção' },
     { key: 'approved', label: 'Aprovados' },
@@ -201,8 +216,16 @@ export function AdminPayouts() {
                   )}
 
                   {item.status === 'approved' && (
-                    <div className="mt-5 border-t border-white/[0.06] pt-4">
+                    <div className="mt-5 flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
                       <button disabled={busy} onClick={() => void sendPix(item)} className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-[10px] font-black uppercase text-black disabled:opacity-50"><Send size={14} /> {busy ? 'Enviando...' : 'Enviar PIX via Asaas'}</button>
+                      <button disabled={busy} onClick={() => void updateStatus(item, 'cancelled')} className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] px-4 py-2 text-[10px] font-black uppercase text-rose-300 disabled:opacity-50"><XCircle size={14} /> Cancelar e estornar</button>
+                    </div>
+                  )}
+
+                  {item.status === 'processing' && item.reconciliationRequired && !item.providerTransferId && (
+                    <div className="mt-5 border-t border-white/[0.06] pt-4">
+                      <p className="mb-3 text-[10px] leading-relaxed text-amber-300">A tentativa anterior ficou sem ID de transferência. Consulte o Asaas antes de tentar novamente para evitar PIX duplicado.</p>
+                      <button disabled={busy} onClick={() => void reconcileProvider(item)} className="flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-[10px] font-black uppercase text-black disabled:opacity-50"><RefreshCw size={14} /> {busy ? 'Conciliando...' : 'Conciliar com Asaas'}</button>
                     </div>
                   )}
                 </article>
