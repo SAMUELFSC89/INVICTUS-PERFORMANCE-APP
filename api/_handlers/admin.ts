@@ -11,6 +11,7 @@ import { resolveGymChampionshipReview } from '../_lib/championship-scoring-servi
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 import { fixGymFromGoogle, runAdminGymAudit } from '../_lib/admin-gym-audit.js';
 import { getPowerLiftReviewVideo, listPowerLiftReviews, reviewPowerLiftRecord } from '../_lib/powerlift-admin.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 
 const adminRepository = new AdminRepository();
 const adminService = new AdminService(adminRepository);
@@ -100,6 +101,7 @@ export default async function handler(req: VercelRequest & { userId?: string; us
           route: '/api/admin?action=set-user-role',
           details: { targetUid, previousRole, role, changedBy: req.userId },
         });
+        publishAdminRealtimeSignalSafe({ type: 'USER_CHANGED', source: 'admin:set-user-role' });
 
         return res.status(200).json({ success: true, targetUid, role, previousRole });
       }
@@ -122,6 +124,7 @@ export default async function handler(req: VercelRequest & { userId?: string; us
             route: '/api/admin?action=fix-gym-coordinates',
             details: { gymId, affectedUsers: result.affectedUsers },
           });
+          publishAdminRealtimeSignalSafe({ type: 'SYSTEM_CHANGED', source: 'admin:fix-gym-coordinates' });
           return res.status(200).json(result);
         } catch (error: any) {
           throw new AppError(String(error?.message || 'Não foi possível corrigir a academia.'), 409);
@@ -159,15 +162,18 @@ export default async function handler(req: VercelRequest & { userId?: string; us
           db.collection('reward_coin_economy').doc('global').set(economy, { merge: true }),
           db.collection('gym_championship_config').doc('global').set(championship, { merge: true }),
         ]);
+        publishAdminRealtimeSignalSafe({ type: 'ADMIN_CONFIG_CHANGED', source: 'admin:update-reward-economy-config' });
         return res.status(200).json({ success: true, economy, championship });
       }
 
       case 'review-gym-championship-result': {
         const decision = String(req.body?.decision || '').toUpperCase();
         if (decision !== 'APPROVED' && decision !== 'REJECTED') throw new AppError('Decisão inválida.', 400);
-        return res.status(200).json(await resolveGymChampionshipReview({
+        const result = await resolveGymChampionshipReview({
           resultId: String(req.body?.resultId || ''), decision, reviewerId: req.userId!, reason: String(req.body?.reason || ''),
-        }));
+        });
+        publishAdminRealtimeSignalSafe({ type: 'SYSTEM_CHANGED', source: 'admin:review-gym-championship-result' });
+        return res.status(200).json(result);
       }
 
       case 'list-powerlift-reviews': {
@@ -276,6 +282,7 @@ export default async function handler(req: VercelRequest & { userId?: string; us
           route: '/api/admin?action=delete-user',
           details: { deletedUids, identityWarnings },
         });
+        publishAdminRealtimeSignalSafe({ type: 'USER_CHANGED', source: 'admin:delete-user' });
 
         return res.status(200).json({
           success: true,
@@ -295,6 +302,7 @@ export default async function handler(req: VercelRequest & { userId?: string; us
 
       case 'review-activity': {
         const result = await adminService.reviewActivity(req.userId!, req.body);
+        publishAdminRealtimeSignalSafe({ type: 'ACTIVITY_REVIEWED', source: 'admin:review-activity' });
         return res.status(200).json(result);
       }
 
@@ -311,24 +319,28 @@ export default async function handler(req: VercelRequest & { userId?: string; us
       case 'update-withdrawal-status': {
         const { withdrawalId, status, reason } = req.body;
         const result = await adminService.updateWithdrawalStatus(req.userId!, withdrawalId, status, reason);
+        publishAdminRealtimeSignalSafe({ type: 'WITHDRAWAL_STATUS_CHANGED', source: 'admin:update-withdrawal-status' });
         return res.status(200).json(result);
       }
 
       case 'process-withdrawal-payment': {
         const { withdrawalId } = req.body;
-        const result = await adminService.processWithdrawalPayment(req.userId!, withdrawalId);
+        const result: any = await adminService.processWithdrawalPayment(req.userId!, withdrawalId);
+        publishAdminRealtimeSignalSafe({ type: result?.status === 'paid' ? 'WITHDRAWAL_PAID' : 'WITHDRAWAL_STATUS_CHANGED', source: 'admin:process-withdrawal-payment' });
         return res.status(200).json(result);
       }
 
       case 'reconcile-withdrawal-provider': {
         const { withdrawalId } = req.body;
-        const result = await adminService.reconcileWithdrawalProviderSubmission(req.userId!, withdrawalId);
+        const result: any = await adminService.reconcileWithdrawalProviderSubmission(req.userId!, withdrawalId);
+        publishAdminRealtimeSignalSafe({ type: result?.status === 'paid' ? 'WITHDRAWAL_PAID' : 'WITHDRAWAL_STATUS_CHANGED', source: 'admin:reconcile-withdrawal-provider' });
         return res.status(200).json(result);
       }
 
       case 'update-withdrawal-min-amount': {
         const { minWithdrawalAmount } = req.body;
         const result = await adminService.updateWithdrawalMinAmount(req.userId!, Number(minWithdrawalAmount));
+        publishAdminRealtimeSignalSafe({ type: 'ADMIN_CONFIG_CHANGED', source: 'admin:update-withdrawal-min-amount' });
         return res.status(200).json(result);
       }
 
@@ -339,6 +351,7 @@ export default async function handler(req: VercelRequest & { userId?: string; us
           'upsert-store-item': 'store_item'
         };
         const result = await adminService.upsertEntity(typeMap[action], req.body.id, req.body);
+        publishAdminRealtimeSignalSafe({ type: action === 'upsert-store-item' ? 'DROP_CHANGED' : 'SYSTEM_CHANGED', source: `admin:${action}` });
         return res.status(200).json(result);
       }
 
