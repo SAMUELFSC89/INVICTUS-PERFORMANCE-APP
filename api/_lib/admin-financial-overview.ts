@@ -1,6 +1,7 @@
 import { db } from './common.js';
 
 type FinancialPoint = { key: string; label: string; revenue: number; payments: number };
+type CategoryPoint = { category: string; revenue: number; payments: number };
 
 function asDate(value: any): Date | null {
   if (!value) return null;
@@ -37,8 +38,7 @@ function canonicalPaymentCategory(data: Record<string, any>): string {
   const orderId = String(data.orderId || data.id || '').toLowerCase();
   if (orderId.includes('performance')) return 'performance';
   if (orderId.includes('open')) return 'open';
-  if (orderId.includes('champ')) return 'championship';
-  return 'outros';
+  return 'assinaturas/outros';
 }
 
 async function approvedPaymentDocs(start: Date): Promise<any[]> {
@@ -57,6 +57,23 @@ async function approvedPaymentDocs(start: Date): Promise<any[]> {
       const paidAt = asDate(doc.data()?.paidAt);
       return paidAt && paidAt >= start;
     });
+  }
+}
+
+async function paidChampionshipDocs(start: Date): Promise<any[]> {
+  try {
+    const snap = await db.collection('championship_registrations')
+      .where('paymentStatus', '==', 'PAID')
+      .where('status', '==', 'paga')
+      .limit(5000)
+      .get();
+    return snap.docs.filter((doc: any) => {
+      const paidAt = asDate(doc.data()?.pagaEm);
+      return paidAt && paidAt >= start;
+    });
+  } catch (error: any) {
+    console.warn('[Admin Financial] Could not read paid championship registrations:', error?.message || error);
+    return [];
   }
 }
 
@@ -87,41 +104,50 @@ export async function getAdminFinancialOverview() {
     days.set(dayKey(date), { key: dayKey(date), label: dayLabel(date), revenue: 0, payments: 0 });
   }
 
-  const [paymentDocs, storeDocs, withdrawalDocs] = await Promise.all([
+  const [paymentDocs, championshipDocs, storeDocs, withdrawalDocs] = await Promise.all([
     approvedPaymentDocs(firstMonth),
+    paidChampionshipDocs(firstMonth),
     recentCollection('physicalOrders'),
     recentCollection('withdrawals'),
   ]);
 
   let grossRevenue = 0;
   let approvedPayments = 0;
-  const byCategory = new Map<string, { category: string; revenue: number; payments: number }>();
+  let championshipRevenue = 0;
+  let championshipRegistrations = 0;
+  const byCategory = new Map<string, CategoryPoint>();
+
+  const addRevenue = (amount: number, paidAt: Date, category: string) => {
+    if (!amount || paidAt < firstMonth) return;
+    grossRevenue += amount;
+    approvedPayments += 1;
+    const monthly = months.get(monthKey(paidAt));
+    if (monthly) { monthly.revenue += amount; monthly.payments += 1; }
+    const daily = days.get(dayKey(paidAt));
+    if (daily && paidAt >= firstDay) { daily.revenue += amount; daily.payments += 1; }
+    const current = byCategory.get(category) || { category, revenue: 0, payments: 0 };
+    current.revenue += amount;
+    current.payments += 1;
+    byCategory.set(category, current);
+  };
 
   paymentDocs.forEach((doc: any) => {
     const data = doc.data() || {};
     const amount = asAmount(data.amount);
     const paidAt = asDate(data.paidAt);
-    if (!amount || !paidAt || paidAt < firstMonth) return;
+    if (!amount || !paidAt) return;
+    addRevenue(amount, paidAt, canonicalPaymentCategory({ id: doc.id, ...data }));
+  });
 
-    grossRevenue += amount;
-    approvedPayments += 1;
-
-    const monthly = months.get(monthKey(paidAt));
-    if (monthly) {
-      monthly.revenue += amount;
-      monthly.payments += 1;
-    }
-    const daily = days.get(dayKey(paidAt));
-    if (daily && paidAt >= firstDay) {
-      daily.revenue += amount;
-      daily.payments += 1;
-    }
-
-    const category = canonicalPaymentCategory({ id: doc.id, ...data });
-    const current = byCategory.get(category) || { category, revenue: 0, payments: 0 };
-    current.revenue += amount;
-    current.payments += 1;
-    byCategory.set(category, current);
+  championshipDocs.forEach((doc: any) => {
+    const data = doc.data() || {};
+    const amount = asAmount(data.valorPago ?? data.valor);
+    const paidAt = asDate(data.pagaEm);
+    if (!amount || !paidAt) return;
+    championshipRevenue += amount;
+    championshipRegistrations += 1;
+    const label = String(data.championshipTitle || data.championshipId || 'campeonatos').trim().slice(0, 80);
+    addRevenue(amount, paidAt, `campeonato · ${label}`);
   });
 
   let storeRevenue = 0;
@@ -145,10 +171,7 @@ export async function getAdminFinancialOverview() {
     if (!createdAt || createdAt < firstMonth) return;
     const status = String(data.status || '').toLowerCase();
     const amount = asAmount(data.amount);
-    if (status === 'paid') {
-      payoutsPaid += amount;
-      payoutsPaidCount += 1;
-    }
+    if (status === 'paid') { payoutsPaid += amount; payoutsPaidCount += 1; }
     if (['pending', 'under_review', 'approved', 'processing'].includes(status)) payoutsInFlow += 1;
   });
 
@@ -170,6 +193,7 @@ export async function getAdminFinancialOverview() {
     currentMonthRevenue,
     previousMonthRevenue,
     monthOverMonthPercent,
+    championships: { revenue: championshipRevenue, registrations: championshipRegistrations },
     store: { revenue: storeRevenue, orders: storeOrders },
     payouts: { paidAmount: payoutsPaid, paidCount: payoutsPaidCount, inFlowCount: payoutsInFlow },
     monthly: Array.from(months.values()).map((point) => ({ ...point, revenue: Number(point.revenue.toFixed(2)) })),
