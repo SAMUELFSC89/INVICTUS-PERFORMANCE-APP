@@ -21,9 +21,19 @@ import { PrivateChallengesPageNew } from '../components/PrivateChallengesPageNew
 import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
 import { bindObjectiveSession, objectiveRequest } from '../services/cardioObjectiveService';
 import { localDate, safetyDecision } from '../core/cardioObjective/engine';
+import { resolvePersonalActivityPolicy } from '../services/personalWorkoutPolicyService';
 
 type CoreChallenge = { id: 'workout' | 'cardio' };
 const CORE_CHALLENGES: CoreChallenge[] = [{ id: 'workout' }, { id: 'cardio' }];
+
+// O controle de "pontuação ativa/desativada" só faz diferença pra corrida e
+// caminhada: são as únicas modalidades de cardio que exigem GPS contínuo em
+// modo competitivo. As demais (bike ergométrica, esteira etc.) já rodam sem
+// essa exigência, então desativar a pontuação não mudaria nada pra elas --
+// ver api/_handlers/activity-policy.ts, que aplica a mesma regra no servidor.
+function isScoringToggleRelevant(cardioTypeId: string): boolean {
+  return cardioTypeId === 'running' || cardioTypeId === 'walking';
+}
 
 export function Challenges() {
   const { user: profile, refreshUser } = useUser();
@@ -91,6 +101,16 @@ export function Challenges() {
     CARDIO_OPTIONS.find(o => o.id === (initialActive?.cardioType || searchParams.get('modality'))) || CARDIO_OPTIONS[0]
   );
   const [startPolicy, setStartPolicy] = useState<ActivityCompetitionPolicy | null>(initialActive?.competitionPolicy || null);
+  // #cardio-scoring-toggle: mesmo controle "pontuação ativa/desativada" que a
+  // Musculação já tinha (ver src/components/ScoringModeToggle.tsx). Só se
+  // aplica a corrida/caminhada -- as demais modalidades de cardio nunca
+  // exigem GPS contínuo em modo competitivo, então o controle não muda nada
+  // pra elas e por isso nem aparece na UI.
+  const [scoringEnabled, setScoringEnabled] = useState(true);
+  // Registra se `startPolicy` em cache veio do fluxo pessoal ou competitivo,
+  // já que os dois podem ter o mesmo formato quando o atleta não está
+  // inscrito em nenhum ranking/campeonato no momento (contexts: []).
+  const [startPolicyIsPersonal, setStartPolicyIsPersonal] = useState(false);
   const [policyLoading, setPolicyLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [startingActivity, setStartingActivity] = useState(false);
@@ -118,12 +138,16 @@ export function Challenges() {
     let active = true;
     setPolicyLoading(true);
     setStartPolicy(null);
-    activityService.resolveCompetitionPolicy('cardio', selectedCardioOption.id)
-      .then((policy) => { if (active) setStartPolicy(policy); })
+    const wantsPersonalMode = isScoringToggleRelevant(selectedCardioOption.id) && !scoringEnabled;
+    const request = wantsPersonalMode
+      ? resolvePersonalActivityPolicy({ activityType: 'cardio', cardioType: selectedCardioOption.id as 'running' | 'walking' })
+      : activityService.resolveCompetitionPolicy('cardio', selectedCardioOption.id);
+    request
+      .then((policy) => { if (active) { setStartPolicy(policy); setStartPolicyIsPersonal(wantsPersonalMode); } })
       .catch((reason) => { if (active) setStartActivityError(reason.message || 'Não foi possível preparar o cardio.'); })
       .finally(() => { if (active) setPolicyLoading(false); });
     return () => { active = false; };
-  }, [profile?.uid, flowScreen, selectedCardioOption.id, activeSession?.id]);
+  }, [profile?.uid, flowScreen, selectedCardioOption.id, activeSession?.id, scoringEnabled]);
 
   const [selectedCardioType, setSelectedCardioType] = useState<string>(initialActive?.cardioType || 'running');
 
@@ -316,13 +340,19 @@ export function Challenges() {
     setError(null);
     const policy = startPolicy;
     const expectedCardio = type === 'cardio' ? selectedCardioOption.id : undefined;
+    const wantsPersonalMode = type === 'cardio' && isScoringToggleRelevant(expectedCardio || '') && !scoringEnabled;
     if (!policy || policy.activityType !== type
       || String(policy.cardioType || '') !== String(expectedCardio || '')
-      || Date.parse(policy.startBy) < Date.now()) {
+      || Date.parse(policy.startBy) < Date.now()
+      || (type === 'cardio' && startPolicyIsPersonal !== wantsPersonalMode)) {
       setPolicyLoading(true);
       setStartActivityError('Estamos renovando a autorização. Quando esta mensagem sumir, toque em iniciar novamente.');
       try {
-        setStartPolicy(await activityService.resolveCompetitionPolicy(type, expectedCardio));
+        const refreshed = wantsPersonalMode
+          ? await resolvePersonalActivityPolicy({ activityType: 'cardio', cardioType: expectedCardio as 'running' | 'walking' })
+          : await activityService.resolveCompetitionPolicy(type, expectedCardio);
+        setStartPolicy(refreshed);
+        setStartPolicyIsPersonal(wantsPersonalMode);
         setStartActivityError(null);
       } catch (err: any) {
         setStartActivityError(err.message || 'Não foi possível preparar a atividade.');
@@ -812,6 +842,8 @@ export function Challenges() {
           onGroup={setSelectedMuscleGroup}
           cardio={selectedCardioOption}
           onCardio={(option) => { setStartPolicy(null); setSelectedCardioOption(option); setSelectedCardioType(option.id); }}
+          scoringEnabled={scoringEnabled}
+          onScoringChange={setScoringEnabled}
           session={activeSession}
           elapsed={elapsedTime}
           distance={liveDistanceKm}

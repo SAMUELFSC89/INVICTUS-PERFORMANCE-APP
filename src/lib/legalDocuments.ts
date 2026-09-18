@@ -39,7 +39,7 @@ O campeonato gratuito é uma experiência social entre amigos e comunidade, sem 
 
 O check-in presencial é opcional em treinos comuns. Quem optar por realizá-lo pode receber a pontuação e o progresso de missão exibidos no app. Durante participação ativa em campeonato que exija comprovação presencial, o check-in poderá ser obrigatório para que a atividade seja competitivamente elegível; essa exigência deve ser informada antes do início do treino.
 
-Campeonatos pagos de musculação ou cardio permanecem EM BREVE. Sem edição publicada com organizador, datas, preço, critérios, premiação e regulamento específico aprovados, não haverá inscrição ou cobrança. Uma edição futura exigirá aceite separado do respectivo regulamento.
+Os campeonatos pagos de musculação e cardio (Campeonato de Força e Campeonato de Cardio) ficam disponíveis para inscrição quando há uma edição publicada com organizador, datas, preço, critérios, premiação e regulamento específico aprovados; a inscrição exige aceite separado desse regulamento e confirmação de pagamento antes de qualquer cobrança se tornar efetiva.
 
 8. INVICTUS COINS
 Coins são pontos promocionais internos, cumulativos e destinados a resgates elegíveis na Loja Invictus. Não são moeda, ativo financeiro, dinheiro eletrônico ou investimento; não têm cotação fixa em reais, não rendem juros e não podem ser sacados via PIX, transferidos ou convertidos em dinheiro. Créditos obtidos por erro, duplicidade ou fraude podem ser corrigidos com registro auditável.
@@ -160,7 +160,7 @@ ${HEADER}
 
 4.2. O encerramento gera resultado provisório. O Top 3 passa por auditoria automática reforçada e pode ficar APPROVED, REVIEW ou REJECTED. O crédito ocorre somente após aprovação. Irregularidades podem alterar a classificação final válida.
 
-5. Campeonatos pagos só poderão ser de musculação ou cardio. Permanecem EM BREVE. Antes de cobrança, deverão informar organizador, elegibilidade, datas, preço, cancelamento, critérios, auditoria, premiação e regulamento próprio. Este texto não cria direito a edição futura.
+5. Campeonatos pagos só poderão ser de musculação ou cardio, mediante edição publicada informando organizador, elegibilidade, datas, preço, cancelamento, critérios, auditoria, premiação e regulamento próprio antes de qualquer cobrança. Este texto não cria direito a uma edição além da vigente.
 
 6. Coins podem ser concedidos por missões, trilha de consistência, campeonato ou campanha habilitada. A consistência mensal é acessível a FREE e PRO e representa o cumprimento da meta semanal válida, não a obrigação de treinar diariamente. Missões PRO criam caminhos adicionais, mas não alteram IGA ou ranking.
 
@@ -259,7 +259,7 @@ export const LEGAL_FAQ_100: FAQItem[] = [
   { id: 22, category: 'Desafios e Power Lift', question: 'A IA sempre aprova ou reprova?', answer: 'Não. Evidência insuficiente pode gerar revisão.' },
   { id: 23, category: 'Campeonatos', question: 'Quais modalidades existirão?', answer: 'Musculação e cardio.' },
   { id: 24, category: 'Campeonatos', question: 'Como funciona o gratuito?', answer: 'Disputa social opcional entre amigos/comunidade, sem dinheiro e sem vínculo com academia.' },
-  { id: 25, category: 'Campeonatos', question: 'Já existe campeonato pago?', answer: 'Não. As prévias permanecem EM BREVE, sem cobrança.' },
+  { id: 25, category: 'Campeonatos', question: 'Já existe campeonato pago?', answer: 'Sim, quando há uma edição publicada com organizador, datas, preço e premiação visíveis no app antes da inscrição. Fora desse período, a tela fica só informativa, sem cobrança.' },
   { id: 26, category: 'Campeonatos', question: 'Quando poderá haver inscrição?', answer: 'Quando edição real publicar preço, datas, regras, cancelamento e eventual premiação.' },
   { id: 27, category: 'Invictus Coins e Loja', question: 'O que são Coins?', answer: 'Pontos internos cumulativos para resgates elegíveis na Loja.' },
   { id: 28, category: 'Invictus Coins e Loja', question: 'Posso sacar via PIX?', answer: 'Não. Coins não são dinheiro, não podem ser sacados, transferidos ou vendidos.' },

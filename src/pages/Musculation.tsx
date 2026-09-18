@@ -20,6 +20,7 @@ import {
 import { workoutPlanService } from '../services/workoutPlanService';
 import { activityService } from '../services/activityService';
 import { resolvePersonalWorkoutPolicy } from '../services/personalWorkoutPolicyService';
+import { ScoringModeToggle } from '../components/ScoringModeToggle';
 import type { ActivityCompetitionPolicy } from '../types';
 import type { PlannedExercise, PlannedWorkout, WorkoutPlan, WorkoutPlanAnswers, WorkoutPlanDraft } from '../types/workoutPlan';
 import './Musculation.css';
@@ -127,29 +128,6 @@ function ExerciseRow({ exerciseId, onAdd, added = false, addDisabled = false }: 
     <OfficialExerciseMedia exercise={exercise} className="mus-exercise-media" />
     <div><strong>{exercise.name}</strong><span>{exercise.muscleSubgroup === 'biceps' ? 'Bíceps' : exercise.muscleSubgroup === 'triceps' ? 'Tríceps' : OFFICIAL_MUSCLE_GROUP_LABELS[exercise.muscleGroup]}</span></div>
     {onAdd ? <button type="button" className={added ? 'is-added' : ''} aria-label={addLabel} title={addLabel} onClick={onAdd} disabled={disabled}>{added ? <Check /> : <Plus />}</button> : null}
-  </article>;
-}
-
-function ScoringModeToggle({ enabled, onChange, disabled = false }: { enabled: boolean; onChange: (enabled: boolean) => void; disabled?: boolean }) {
-  return <article className="mus-plan-lock-note" style={{ alignItems: 'center', margin: '0 0 12px', padding: '12px 14px' }}>
-    <Trophy size={18} />
-    <span style={{ display: 'grid', gap: 2, flex: 1 }}>
-      <b style={{ color: enabled ? '#f5b514' : '#f3f3f3', fontSize: 13 }}>PONTUAÇÃO {enabled ? 'ATIVADA' : 'DESATIVADA'}</b>
-      <small style={{ color: '#aaa', lineHeight: 1.35 }}>{enabled ? 'Se este treino for elegível para ranking/campeonato, o check-in competitivo será exigido.' : 'Treino pessoal: salva cargas, volume, histórico e saúde, mas não entra em ranking ou campeonato.'}</small>
-    </span>
-    <button
-      type="button"
-      aria-label={enabled ? 'Desativar pontuação neste treino' : 'Ativar pontuação neste treino'}
-      aria-pressed={enabled}
-      disabled={disabled}
-      onClick={() => onChange(!enabled)}
-      style={{
-        position: 'relative', flex: '0 0 auto', width: 48, height: 28, border: 0, borderRadius: 20,
-        background: enabled ? '#f5b514' : '#2c2c2c', opacity: disabled ? .55 : 1, cursor: disabled ? 'default' : 'pointer'
-      }}
-    >
-      <span style={{ position: 'absolute', top: 4, left: enabled ? 24 : 4, width: 20, height: 20, borderRadius: '50%', background: enabled ? '#171107' : '#e7e7e7', transition: 'left .18s ease' }} />
-    </button>
   </article>;
 }
 

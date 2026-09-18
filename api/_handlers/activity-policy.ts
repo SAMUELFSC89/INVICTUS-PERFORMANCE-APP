@@ -23,8 +23,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const requestedMode = req.body?.requestedMode === 'personal' ? 'personal' : 'competitive';
   if (requestedMode === 'personal') {
-    if (modality.activityType !== 'workout') {
-      return res.status(400).json({ error: 'O modo pessoal sem pontuação está disponível para musculação neste fluxo.' });
+    // Musculação sempre pôde virar pessoal. Cardio só entra para
+    // corrida/caminhada: são as únicas modalidades que exigem GPS contínuo em
+    // modo competitivo -- as demais (bike ergométrica, esteira etc.) já
+    // rodam sem essa exigência, então o controle de pontuação não se aplica
+    // a elas (pedido de produto: "o cardio só vai precisar caso a pessoa for
+    // fazer a corrida ou caminhada").
+    const isPersonalModeEligible = modality.activityType === 'workout'
+      || (modality.activityType === 'cardio' && (modality.cardioType === 'running' || modality.cardioType === 'walking'));
+    if (!isPersonalModeEligible) {
+      return res.status(400).json({ error: 'O modo pessoal sem pontuação está disponível para musculação, corrida e caminhada neste fluxo.' });
     }
 
     // O modo pessoal precisa ser decidido no servidor, não por um bypass do
@@ -36,7 +44,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ref = db.collection('activity_policy_snapshots').doc();
     const policy = {
       version: 'activity-competition-v2' as const,
-      activityType: 'workout' as const,
+      activityType: modality.activityType,
+      ...(modality.activityType === 'cardio' ? { cardioType: modality.cardioType } : {}),
       isIndoorCardio: false,
       resolvedAt: issuedAt.toISOString(),
       effectiveAt: issuedAt.toISOString(),
@@ -54,8 +63,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       id: ref.id,
       sessionId: ref.id,
       userId: auth.uid,
-      activityType: 'workout',
-      cardioType: null,
+      activityType: modality.activityType,
+      cardioType: modality.activityType === 'cardio' ? modality.cardioType : null,
       isIndoorCardio: false,
       policy,
       createdAt: issuedAt.toISOString(),

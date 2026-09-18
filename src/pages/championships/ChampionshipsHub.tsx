@@ -8,6 +8,7 @@ import { hasActiveProEntitlement } from '../../lib/proEntitlement';
 import { communityChampionshipService } from '../../services/communityChampionshipService';
 import { championshipService } from '../../services/championshipService';
 import { powerLiftService } from '../../services/powerLiftService';
+import type { Championship } from '../../types/championships';
 import {
   cardioPreviewCard,
   ChampionshipPreviewCard,
@@ -24,6 +25,29 @@ import './ChampionshipsRound.css';
 const PAID_CHAMPIONSHIP_IDS = ['invictus_strength_v1', 'invictus_cardio_v1'] as const;
 
 type PaidParticipationState = Record<(typeof PAID_CHAMPIONSHIP_IDS)[number], boolean>;
+type PaidCatalogState = Record<(typeof PAID_CHAMPIONSHIP_IDS)[number], Championship | undefined>;
+
+function dateLabel(value?: string): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', timeZone: 'America/Sao_Paulo' }).format(parsed);
+}
+
+/**
+ * Selo do card na Home de campeonatos. Antes disso o card sempre mostrava
+ * "EM BREVE" fixo, mesmo depois do calendário real (produção, dez/2026) ter
+ * sido publicado -- este selo reflete o estado real: se as inscrições já
+ * estão abertas, mostra isso; senão, mostra a data real de início em vez de
+ * um "em breve" genérico. Só cai para "EM BREVE" enquanto o catálogo ainda
+ * não carregou ou se a data não estiver disponível.
+ */
+function paidChampionshipBannerLabel(championship: Championship | undefined): string {
+  if (!championship) return 'EM BREVE';
+  if (championship.registrationOpen) return 'INSCRIÇÕES ABERTAS';
+  const start = dateLabel(championship.startAt);
+  return start ? `COMEÇA EM ${start.toUpperCase()}` : 'EM BREVE';
+}
 
 export function ChampionshipsHub() {
   const navigate = useNavigate();
@@ -33,6 +57,7 @@ export function ChampionshipsHub() {
   const [friendsStatusError, setFriendsStatusError] = useState('');
   const [friendsStatusReload, setFriendsStatusReload] = useState(0);
   const [paidParticipation, setPaidParticipation] = useState<PaidParticipationState | null>(null);
+  const [paidCatalog, setPaidCatalog] = useState<PaidCatalogState | null>(null);
   const [powerLiftParticipating, setPowerLiftParticipating] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -62,6 +87,7 @@ export function ChampionshipsHub() {
   useEffect(() => {
     let cancelled = false;
     setPaidParticipation(null);
+    setPaidCatalog(null);
 
     void Promise.all([
       championshipService.getChampionships(true),
@@ -79,6 +105,9 @@ export function ChampionshipsHub() {
         return [championshipId, participating];
       })) as PaidParticipationState;
       setPaidParticipation(next);
+      setPaidCatalog(Object.fromEntries(PAID_CHAMPIONSHIP_IDS.map((championshipId) => (
+        [championshipId, catalog.find((item) => item.id === championshipId)]
+      ))) as PaidCatalogState);
     }).catch((error) => {
       console.warn('[ChampionshipsHub] falha ao carregar participações oficiais:', error);
       if (!cancelled) setPaidParticipation({ invictus_strength_v1: false, invictus_cardio_v1: false });
@@ -113,8 +142,8 @@ export function ChampionshipsHub() {
     {hasAvailablePaidCard ? <>
       <div className="ch-paid-head ch-paid-head--first"><h2>CAMPEONATOS</h2><span>{paidParticipation === null ? 'CARREGANDO' : 'OFICIAIS'}</span></div>
       {paidParticipation === null ? <div className="ch-friends-status-loading" aria-label="Carregando campeonatos oficiais" /> : <section className="ch-future">
-        {!strengthParticipating ? <ChampionshipPreviewCard {...strengthPreviewCard} onPreview={() => navigate('/championships/preview/musculacao')} /> : null}
-        {!cardioParticipating ? <ChampionshipPreviewCard {...cardioPreviewCard} onPreview={() => navigate('/championships/preview/cardio')} /> : null}
+        {!strengthParticipating ? <ChampionshipPreviewCard {...strengthPreviewCard} statusLabel={paidChampionshipBannerLabel(paidCatalog?.invictus_strength_v1)} onPreview={() => navigate('/championships/preview/musculacao')} /> : null}
+        {!cardioParticipating ? <ChampionshipPreviewCard {...cardioPreviewCard} statusLabel={paidChampionshipBannerLabel(paidCatalog?.invictus_cardio_v1)} onPreview={() => navigate('/championships/preview/cardio')} /> : null}
       </section>}
     </> : null}
 

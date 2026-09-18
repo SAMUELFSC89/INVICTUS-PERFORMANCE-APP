@@ -17,9 +17,9 @@ describe('políticas do ecossistema atual', () => {
     expect(LEGAL_PROMOTIONAL_RULES).toContain('Não têm valor monetário');
   });
 
-  it('mantém campeonato gratuito sem vínculo com academia e a edição paga fechada até publicação final', () => {
+  it('mantém campeonato gratuito sem vínculo com academia e a edição paga condicionada à publicação', () => {
     expect(LEGAL_TERMS_OF_USE).toContain('sem vínculo, patrocínio ou associação presumida com academias');
-    expect(LEGAL_TERMS_OF_USE).toContain('permanecem EM BREVE');
+    expect(LEGAL_TERMS_OF_USE).toContain('quando há uma edição publicada com organizador, datas, preço, critérios, premiação e regulamento específico aprovados');
   });
 
   it('não expõe FAQ legado de ligas, desafios pagos ou saques', () => {

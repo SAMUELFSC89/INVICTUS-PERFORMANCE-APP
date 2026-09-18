@@ -12,6 +12,14 @@ type PreviewCardProps = {
   imagePosition: string;
   icon: ComponentType<{ 'aria-hidden'?: boolean }>;
   onPreview: () => void;
+  /**
+   * Selo de status do card (ex.: "INSCRIÇÕES ABERTAS" ou "COMEÇA EM 1 DE
+   * DEZEMBRO"), calculado a partir do calendário real do campeonato. Cai
+   * para "EM BREVE" enquanto o catálogo ainda está carregando ou se a data
+   * não estiver disponível -- nunca fica travado em "em breve" depois que a
+   * inscrição/calendário reais já são conhecidos.
+   */
+  statusLabel?: string;
 };
 
 type ParticipatingCardProps = {
@@ -92,11 +100,11 @@ export function PowerLiftFeatureCard({ onEnroll }: { onEnroll: () => void }) {
   </section>;
 }
 
-export function ChampionshipPreviewCard({ category, title, description, image, imagePosition, icon: Icon, onPreview }: PreviewCardProps) {
+export function ChampionshipPreviewCard({ category, title, description, image, imagePosition, icon: Icon, onPreview, statusLabel }: PreviewCardProps) {
   return <article className="ch-paid-card" style={{ '--ch-paid-image-position': imagePosition } as CSSProperties}>
     <img className="ch-paid-card__background" src={image} alt="" aria-hidden="true" width={1672} height={941} loading="lazy" decoding="async" />
     <div className="ch-paid-card__overlay" />
-    <div className="ch-paid-card__content"><Icon aria-hidden={true} /><small>{category}</small><h3>{title}</h3><p>{description}</p><strong>EM BREVE</strong><button type="button" onClick={onPreview}>CONHECER A PRÉVIA <ArrowRight aria-hidden="true" /></button></div>
+    <div className="ch-paid-card__content"><Icon aria-hidden={true} /><small>{category}</small><h3>{title}</h3><p>{description}</p><strong>{statusLabel || 'EM BREVE'}</strong><button type="button" onClick={onPreview}>CONHECER A PRÉVIA <ArrowRight aria-hidden="true" /></button></div>
   </article>;
 }
 

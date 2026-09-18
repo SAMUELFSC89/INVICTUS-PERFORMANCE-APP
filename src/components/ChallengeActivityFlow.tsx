@@ -7,6 +7,7 @@ import { LiveTrackingMap, GpsSignalIndicator } from './LiveTrackingMap';
 import { getModalityConfig } from '../config/cardioConfig';
 import { InvictusLogo } from './InvictusLogo';
 import { WorkoutActiveScreen } from './WorkoutActiveScreen';
+import { ScoringModeToggle } from './ScoringModeToggle';
 import { formatPaceFromSpeed, formatPaceValue } from '../lib/runUtils';
 
 export type ChallengeFlowScreen = 'workout-details' | 'workout-checkin' | 'cardio-picker' | 'active' | 'workout-complete' | 'day-progress';
@@ -74,6 +75,8 @@ export function ChallengeActivityFlow({
   statusMessage,
   loading = false,
   startingActivity = false,
+  scoringEnabled = true,
+  onScoringChange,
   onBack,
   onStart,
   onEnd,
@@ -107,6 +110,8 @@ export function ChallengeActivityFlow({
   statusMessage?: string | null;
   loading?: boolean;
   startingActivity?: boolean;
+  scoringEnabled?: boolean;
+  onScoringChange?: (enabled: boolean) => void;
   onBack: () => void;
   onStart: (type: 'workout' | 'cardio', options?: { checkIn?: boolean }) => void;
   onEnd: () => void;
@@ -257,6 +262,16 @@ export function ChallengeActivityFlow({
               <span><b>{cardio.gps ? 'GPS + MAPA' : 'REGISTRO POR TEMPO'}</b><small>{cardio.gps ? 'Ative a localização' : 'Sem localização necessária'}</small></span>
             </div>
           </div>
+
+          {(cardio.id === 'running' || cardio.id === 'walking') && onScoringChange ? (
+            <ScoringModeToggle
+              enabled={scoringEnabled}
+              onChange={onScoringChange}
+              disabled={startingActivity}
+              onLabel="Se você estiver em ranking ou campeonato, o GPS contínuo será exigido para pontuar."
+              offLabel="Atividade pessoal: salva distância, pace e histórico, mas não entra em ranking ou campeonato. O GPS deixa de ser obrigatório."
+            />
+          ) : null}
 
           <div className="challenge-flow-cardio-count"><span>ESCOLHA SUA MODALIDADE</span><b>4 DE {CARDIO_OPTIONS.length} OPÇÕES</b></div>
           <div className="challenge-flow-cardio-featured-grid">

@@ -10,6 +10,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   return res.status(410).json({
     success: false,
     code: 'PAID_SEASON_DISABLED',
-    error: 'A antiga temporada paga foi encerrada. O campeonato gratuito continua disponível; campeonatos pagos de musculação e cardio estão EM BREVE.'
+    error: 'A antiga temporada paga foi encerrada. Use os Campeonatos de Musculação e Cardio (campeonatos oficiais) para participar de edições pagas atuais.'
   });
 }

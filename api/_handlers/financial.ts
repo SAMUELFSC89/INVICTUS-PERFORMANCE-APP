@@ -5,8 +5,15 @@ import { WalletEngine } from '../_lib/wallet-engine.js';
 import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 import { maskPhone, normalizeBrazilianPhone } from '../_lib/identity-verification-service.js';
+import { logEvent } from '../_lib/observability.js';
 
 const ALLOWED_PIX_KEY_TYPES = new Set(['cpf', 'email', 'phone', 'random']);
+// #saque-automatico: identifica no reviewerId/log de auditoria que o
+// pagamento foi disparado pelo próprio fluxo de solicitação, sem um admin
+// humano ter clicado em "processar" -- ver decisão do usuário em 18/09/2026:
+// só 'pending' (antifraude passou, score >=80) vira automático; 'under_review'
+// (score <80) continua exigindo aprovação manual como antes.
+const AUTO_WITHDRAWAL_REVIEWER_ID = 'system_auto_asaas';
 const SANDBOX_WITHDRAWAL_TEST_CREDIT = 20;
 const SANDBOX_WITHDRAWAL_TEST_KEY = 'withdrawal-r20-2026-09';
 const PHONE_REAUTH_MAX_AGE_SECONDS = 5 * 60;
@@ -233,6 +240,16 @@ async function validateWithdrawalInput(userId: string, body: any) {
  * (atualmente desligado -- ver comentário #238 acima). CPF/Serpro fica fora
  * do gate por ora independentemente disso (ver identityReady()). Selfie/
  * biometria não participa do PIX.
+ *
+ * #saque-automatico (decisão do usuário em 18/09/2026): a solicitação que sai
+ * com status 'pending' (passou no antifraude, score >=80) é enviada na hora
+ * para o Asaas -- não existe mais aprovação manual nesse caminho. Só
+ * 'under_review' (score <80, sinal de risco) continua parado esperando um
+ * admin aprovar via /api/admin (process-withdrawal-payment), exatamente como
+ * já funcionava antes. Se o disparo automático falhar (Asaas fora do ar,
+ * etc.), WithdrawalEngine.processPayment já deixa o saque marcado para
+ * conciliação (reconciliationRequired) em vez de perder o dinheiro reservado
+ * -- o mesmo caminho de erro que a aprovação manual sempre teve.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -262,7 +279,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           minWithdrawalAmount: money(config.minWithdrawalAmount),
           maxDailyWithdrawalAmount: money(config.maxDailyWithdrawalAmount),
           identityCheckEnabled: ENFORCE_IDENTITY_FOR_WITHDRAWAL,
-          paymentEnvironment: isStrictAsaasSandbox() ? 'sandbox' : 'production',
         },
         identity: identityPayload(identity),
         cashSource: 'official_prizes_only',
@@ -307,12 +323,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       requestId,
     });
 
-    return res.status(201).json({
-      success: true,
-      status: commitResult.status,
-      commitResult,
-      userMessage: 'Telefone confirmado. Solicitação de saque criada e saldo reservado para processamento do PIX.',
-    });
+    if (commitResult.status !== 'pending') {
+      // 'under_review' (antifraude sinalizou risco) ou um saque idempotente
+      // que já existia com outro status: nenhum dos dois dispara pagamento
+      // automático. Continua exigindo aprovação manual como hoje.
+      return res.status(201).json({
+        success: true,
+        status: commitResult.status,
+        commitResult,
+        userMessage: commitResult.status === 'under_review'
+          ? 'Solicitação de saque criada e saldo reservado. Sua solicitação entrou em análise de segurança antes do envio para pagamento.'
+          : 'Telefone confirmado. Solicitação de saque criada e saldo reservado para processamento do PIX.',
+      });
+    }
+
+    try {
+      const processed = await WithdrawalEngine.processPayment(commitResult.id, AUTO_WITHDRAWAL_REVIEWER_ID);
+      await logEvent({
+        severity: 'INFO',
+        category: 'payment_logs',
+        message: `Saque PIX ${processed.id} enviado automaticamente ao Asaas (transferId: ${(processed as any).providerTransferId}) logo após a solicitação, sem aprovação manual.`,
+        userId: processed.userId,
+        route: '/api/financial',
+        details: { withdrawalId: processed.id, amount: processed.amount, providerTransferId: (processed as any).providerTransferId, providerStatus: (processed as any).providerStatus },
+      });
+      return res.status(201).json({
+        success: true,
+        status: processed.status,
+        commitResult: processed,
+        userMessage: 'Telefone confirmado. Solicitação de saque criada e enviada automaticamente para pagamento via PIX.',
+      });
+    } catch (autoProcessError: any) {
+      // A reserva de saldo e a solicitação já foram criadas com sucesso; só o
+      // disparo automático para o Asaas falhou (rede, provedor fora do ar,
+      // etc.). Não derrubamos a resposta -- processPayment já deixou o saque
+      // marcado para conciliação, e o suporte/admin resolve manualmente a
+      // partir daí, igual sempre foi tratado nesse caminho de erro.
+      console.error('[Financial Prize Wallet] Falha ao disparar pagamento automático no Asaas:', autoProcessError?.message || autoProcessError);
+      await logEvent({
+        severity: 'WARNING',
+        category: 'payment_logs',
+        message: `Falha ao enviar automaticamente o saque PIX ${commitResult.id} ao Asaas: ${autoProcessError?.message || autoProcessError}`,
+        userId: auth.uid,
+        route: '/api/financial',
+        details: { withdrawalId: commitResult.id, amount: commitResult.amount },
+      }).catch(() => {});
+      return res.status(201).json({
+        success: true,
+        status: commitResult.status,
+        commitResult,
+        userMessage: 'Telefone confirmado. Solicitação de saque criada e saldo reservado. O envio automático para pagamento está sendo confirmado; se demorar, nossa equipe finaliza manualmente.',
+      });
+    }
   } catch (error: any) {
     console.error('[Financial Prize Wallet] Error:', error?.message || error);
     if (error?.code === 'PHONE_REAUTH_REQUIRED') {
