@@ -532,10 +532,11 @@ async function handleFinalizeAudit(req: any, res: any, userId: string) {
       transaction.update(recordRef, updates);
       transaction.update(validationRef, { consumedAt: now, recordId, effectiveDecision: status });
 
+      // A vaga diária é determinística e pertence ao próprio record. Se a
+      // auditoria reprovar, liberamos a modalidade para uma nova tentativa no
+      // mesmo dia sem fazer leitura depois das escritas da transação.
       if (status === 'rejected' && record.dailySlotId) {
-        const dailySlotRef = db.collection('powerlift_daily_slots').doc(String(record.dailySlotId));
-        const slotSnap = await transaction.get(dailySlotRef);
-        if (slotSnap.exists && slotSnap.data()?.recordId === recordId) transaction.delete(dailySlotRef);
+        transaction.delete(db.collection('powerlift_daily_slots').doc(String(record.dailySlotId)));
       }
 
       transaction.set(auditRef, {
