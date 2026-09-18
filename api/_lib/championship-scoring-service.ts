@@ -8,6 +8,7 @@ import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
 import { isActiveAccountState } from './account-state.js';
 import { paidChampionshipSettlementDocumentId } from './paid-championship-edition.js';
+import { publishAdminRealtimeSignalSafe } from './admin-realtime.js';
 
 const COMMUNITY_EVENT_ID = 'community_friends_v1';
 
@@ -109,6 +110,7 @@ async function submitActivityToCommunityGymChampionship(input: ChampionshipActiv
     createdAt: existingData.createdAt || input.when.toISOString(),
     updatedAt: new Date().toISOString(),
   }, { merge: true });
+  publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_SCORE_CHANGED', source: 'championship-score:community' });
 }
 
 export async function submitActivityToActiveChampionships(input: ChampionshipActivityInput): Promise<void> {
@@ -178,6 +180,7 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
       createdAt: existingData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }, { merge: true });
+    publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_SCORE_CHANGED', source: 'championship-score:paid' });
   }
 }
 
@@ -244,6 +247,7 @@ export async function syncReviewedActivityCompetitionScores(activityId: string):
     }
   }
   await batch.commit();
+  publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_SCORE_CHANGED', source: 'championship-score:review-sync' });
 }
 
 type CommunityRankingPeriod = 'weekly' | 'monthly' | 'all';
@@ -454,6 +458,7 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
       payouts += 1;
     }
   }
+  publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_SETTLEMENT_CHANGED', source: 'championship-settlement:community' });
   return { gyms: eligibleGyms, payouts, reviews };
 }
 
