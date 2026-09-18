@@ -1,0 +1,51 @@
+name: Fix Private Challenge member type
+
+on:
+  push:
+    branches:
+      - feat/site-admin-powerlift-20260918
+
+permissions:
+  contents: write
+
+jobs:
+  fix-type:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/site-admin-powerlift-20260918
+          fetch-depth: 0
+      - name: Fix Firestore member inference
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('api/_handlers/private-challenges.ts')
+          text = path.read_text()
+          old = """  const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+  const members = membersSnap.docs.map(mDoc => mDoc.data());
+  if (members.length < 2) {
+"""
+          new = """  const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+  const members = membersSnap.docs.map(mDoc => mDoc.data() as {
+    userId: string;
+    userName?: string;
+    userPhoto?: string;
+    points?: number;
+    workoutsCount?: number;
+    [key: string]: unknown;
+  });
+  if (members.length < 2) {
+"""
+          if old not in text:
+              raise SystemExit('member typing block not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git add api/_handlers/private-challenges.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: preserve private challenge member fields in IGA settlement"
+          git push origin HEAD:feat/site-admin-powerlift-20260918
