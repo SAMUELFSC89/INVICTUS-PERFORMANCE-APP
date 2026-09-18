@@ -70,6 +70,7 @@ describe('web admin backoffice contracts', () => {
   test('championship web administration publishes immutable editions behind active-admin authority', () => {
     const endpoint = source('api/admin-championships.ts');
     const service = source('api/_lib/admin-championship-service.ts');
+    const operations = source('api/_lib/admin-championship-operations.ts');
     const catalog = source('api/_lib/championship-catalog.ts');
     const edition = source('api/_lib/paid-championship-edition.ts');
     expect(endpoint).toContain('verifyAuth');
@@ -77,6 +78,9 @@ describe('web admin backoffice contracts', () => {
     expect(endpoint).toContain("action === 'save-draft'");
     expect(endpoint).toContain("action === 'delete-draft'");
     expect(endpoint).toContain("action === 'publish'");
+    expect(endpoint).toContain("action === 'registrations'");
+    expect(endpoint).toContain("action === 'leaderboard'");
+    expect(endpoint).toContain("action === 'homologate'");
     expect(endpoint).toContain('publishChampionshipDraft');
     expect(service).toContain("status: 'DRAFT'");
     expect(service).toContain("phase: 'ATOMIC_RUNTIME_READY'");
@@ -84,6 +88,10 @@ describe('web admin backoffice contracts', () => {
     expect(service).toContain('lockPaidChampionshipEdition(championship)');
     expect(service).toContain("db.collection('championship_admin_publications')");
     expect(service).toContain("status: 'PUBLISHED'");
+    expect(operations).toContain('getChampionshipLeaderboard');
+    expect(operations).toContain('finalizePaidChampionship');
+    expect(operations).toContain("category: 'admin_reviews'");
+    expect(operations).toContain("severity: 'HIGH_RISK'");
     expect(catalog).toContain('getRuntimeChampionship');
     expect(catalog).toContain('getLockedChampionshipSnapshot');
     expect(catalog).toContain('registrationEnabled');
