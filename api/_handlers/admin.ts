@@ -10,6 +10,7 @@ import { AdminService } from '../_services/admin/admin-service.js';
 import { resolveGymChampionshipReview } from '../_lib/championship-scoring-service.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 import { fixGymFromGoogle, runAdminGymAudit } from '../_lib/admin-gym-audit.js';
+import { getPowerLiftReviewVideo, listPowerLiftReviews, reviewPowerLiftRecord } from '../_lib/powerlift-admin.js';
 
 const adminRepository = new AdminRepository();
 const adminService = new AdminService(adminRepository);
@@ -167,6 +168,29 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         return res.status(200).json(await resolveGymChampionshipReview({
           resultId: String(req.body?.resultId || ''), decision, reviewerId: req.userId!, reason: String(req.body?.reason || ''),
         }));
+      }
+
+      case 'list-powerlift-reviews': {
+        const status = String(req.query.status || 'manual_review');
+        const limit = Number(req.query.limit || 50);
+        return res.status(200).json(await listPowerLiftReviews(status, limit));
+      }
+
+      case 'get-powerlift-review-video': {
+        const recordId = String(req.query.recordId || req.body?.recordId || '');
+        return res.status(200).json(await getPowerLiftReviewVideo(recordId));
+      }
+
+      case 'review-powerlift-record': {
+        const recordId = String(req.body?.recordId || '');
+        const decision = String(req.body?.decision || '').toLowerCase();
+        if (decision !== 'approved' && decision !== 'rejected') throw new AppError('Decisão Power Lift inválida.', 400);
+        return res.status(200).json(await reviewPowerLiftRecord(
+          req.userId!,
+          recordId,
+          decision as 'approved' | 'rejected',
+          String(req.body?.note || ''),
+        ));
       }
 
       case 'delete-user': {
