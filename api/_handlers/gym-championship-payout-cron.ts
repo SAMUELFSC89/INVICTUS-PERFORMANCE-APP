@@ -3,6 +3,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors } from '../_lib/common.js';
 import { finalizeCommunityGymChampionshipCycle } from '../_lib/championship-scoring-service.js';
 import { runPaidChampionshipSettlementSweep } from '../_lib/paid-championship-settlement-orchestrator.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 
 /**
  * Somente condições transitórias/operacionais conhecidas retornam 200 para o
@@ -58,6 +59,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (error) {
     console.error('[GYM_CHAMPIONSHIP_PAYOUT][PAID_FATAL]', error);
     return res.status(500).json({ success: false, message: 'Falha técnica ao executar settlement dos Campeonatos Oficiais.' });
+  }
+
+  if (paid.finalized.length > 0 || paid.blocked.length > 0) {
+    publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_SETTLEMENT_CHANGED', source: 'championship-settlement:cron' });
   }
 
   for (const blocked of paid.blocked) {
