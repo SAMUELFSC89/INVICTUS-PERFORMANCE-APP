@@ -65,6 +65,7 @@
   "crons": [
     { "path": "/api/audit-fraud", "schedule": "0 6 * * *" },
     { "path": "/api/gym-championship-payout-cron", "schedule": "0 7 * * *" },
-    { "path": "/api/store-expiration-cron", "schedule": "0 3 * * *" }
+    { "path": "/api/store-expiration-cron", "schedule": "0 3 * * *" },
+    { "path": "/api/engagement-notifications-cron", "schedule": "0 23 * * *" }
   ]
 }

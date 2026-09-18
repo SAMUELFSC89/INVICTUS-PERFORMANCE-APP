@@ -47,6 +47,7 @@ import asaasAuthorizeWithdrawalHandler from './_handlers/asaas-withdrawal-author
 import seasonPayoutCronHandler from './_handlers/season-payout-cron.js';
 import gymChampionshipPayoutCronHandler from './_handlers/gym-championship-payout-cron.js';
 import storeExpirationCronHandler from './_handlers/store-expiration-cron.js';
+import engagementNotificationsCronHandler from './_handlers/engagement-notifications-cron.js';
 import seasonPrizeHandler from './_handlers/season-prize.js';
 import seasonInscriptionHandler from './_handlers/season-inscription.js';
 import paymentsStatusHandler from './_handlers/payments-status.js';
@@ -178,6 +179,7 @@ assertHandler('performanceDashboardHandler', performanceDashboardHandler);
 assertHandler('performanceAiHandler', performanceAiHandler);
 assertHandler('activityMapHandler', activityMapHandler);
 assertHandler('storeExpirationCronHandler', storeExpirationCronHandler);
+assertHandler('engagementNotificationsCronHandler', engagementNotificationsCronHandler);
 
 console.log('[ROUTE-INIT] All handlers validated successfully. Registering routes...');
 
@@ -276,6 +278,8 @@ console.log('[ROUTE] /gym-championship-payout-cron', typeof gymChampionshipPayou
 router.all('/gym-championship-payout-cron', wrap(gymChampionshipPayoutCronHandler));
 console.log('[ROUTE] /store-expiration-cron', typeof storeExpirationCronHandler);
 router.all('/store-expiration-cron', wrap(storeExpirationCronHandler));
+console.log('[ROUTE] /engagement-notifications-cron', typeof engagementNotificationsCronHandler);
+router.all('/engagement-notifications-cron', wrap(engagementNotificationsCronHandler));
 console.log('[ROUTE] /season-prize', typeof seasonPrizeHandler);
 router.all('/season-prize', wrap(seasonPrizeHandler));
 console.log('[ROUTE] /season-inscription', typeof seasonInscriptionHandler);
