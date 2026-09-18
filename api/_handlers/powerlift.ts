@@ -2,12 +2,24 @@ import { createHash } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { cors, db, app, verifyAuth } from '../_lib/common.js';
 import { resolvePowerLiftAuditStatus } from '../_lib/powerlift-audit.js';
-import { mergePowerLiftRankingRows, type PowerLiftExercise } from '../../src/core/powerLift/ranking.js';
+import {
+  mergePowerLiftRankingRows,
+  powerLiftRankingValue,
+  type PowerLiftExercise,
+} from '../../src/core/powerLift/ranking.js';
+import {
+  calculatePowerVolume,
+  countedReps,
+  powerLiftDateKey,
+  resolvePowerLiftSeason,
+  type PowerLiftSetInput,
+  type PowerLiftSex,
+} from '../../src/core/powerLift/season.js';
 
 const EXERCISES = new Set(['supino', 'agachamento', 'terra']);
 const RANKING_EXERCISES: PowerLiftExercise[] = ['supino', 'agachamento', 'terra'];
 const MAX_RANKING_RESULTS = 100;
-const MAX_RANKING_SCAN = 500;
+const MAX_RANKING_SCAN = 1000;
 const MAX_MY_RECORDS = 100;
 
 type Exercise = 'supino' | 'agachamento' | 'terra';
@@ -41,6 +53,25 @@ function parseWeight(value: unknown): number | null {
   return Number.isFinite(weight) && weight >= 2.5 && weight <= 1000 ? weight : null;
 }
 
+function parseSeries(value: unknown, fallbackWeight: number): PowerLiftSetInput[] | null {
+  if (value === undefined || value === null) return [{ weight: fallbackWeight, reps: 1 }];
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) return null;
+
+  const series: PowerLiftSetInput[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') return null;
+    const weight = parseWeight((raw as any).weight);
+    const rawReps = Math.floor(Number((raw as any).reps));
+    if (weight === null || !Number.isFinite(rawReps) || rawReps < 1 || rawReps > 100) return null;
+    series.push({ weight, reps: countedReps(rawReps) });
+  }
+  return series;
+}
+
+function parseCompetitionSex(value: unknown): PowerLiftSex | null {
+  return value === 'male' || value === 'female' ? value : null;
+}
+
 function safeMotives(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -50,11 +81,6 @@ function safeMotives(value: unknown): string[] {
     .slice(0, 10);
 }
 
-/**
- * Aceita somente URLs de download do próprio bucket Firebase/Google Storage e
- * extrai o objeto. Não aceitamos URL arbitrária para evitar apontar um record
- * a vídeo de outra pessoa ou a um host externo.
- */
 function storagePathFromDownloadUrl(videoUrl: string, expectedBucket: string): string | null {
   let url: URL;
   try {
@@ -118,6 +144,14 @@ function publicRecord(record: Record<string, any>, includeVideoUrl: boolean) {
     gymName: record.gymName || '',
     exercise: record.exercise,
     weight: Number(record.weight) || 0,
+    series: Array.isArray(record.series) ? record.series.slice(0, 3) : [],
+    powerVolume: Number(record.powerVolume) || Number(record.weight) || 0,
+    seasonId: record.seasonId || '',
+    seasonNumber: Number(record.seasonNumber) || 0,
+    seasonScore: Number(record.seasonScore) || 0,
+    seasonTier: record.seasonTier || 'UNRANKED',
+    competitionSex: record.competitionSex || '',
+    dateKey: record.dateKey || record.date || '',
     videoStatus: record.videoStatus,
     date: record.date || '',
     createdAt: record.createdAt || '',
@@ -139,6 +173,19 @@ async function handleSubmit(req: any, res: any, userId: string) {
     return res.status(400).json({ error: 'Identificador de auditoria inválido.' });
   }
 
+  const series = parseSeries(body.series, weight);
+  if (!series) return res.status(400).json({ error: 'As séries do Power Lift são inválidas.' });
+  const powerVolume = calculatePowerVolume(series);
+  if (!Number.isFinite(powerVolume) || powerVolume <= 0) {
+    return res.status(400).json({ error: 'O Power Volume calculado é inválido.' });
+  }
+
+  const season = resolvePowerLiftSeason(new Date());
+  if (body.seasonId && safeText(body.seasonId, 64) !== season.id) {
+    return res.status(409).json({ error: 'A temporada mudou. Atualize o Power Lift antes de enviar a marca.' });
+  }
+  const dateKey = powerLiftDateKey(new Date());
+
   let video: { path: string; contentType: string; size: number };
   try {
     video = await verifyOwnedVideo(videoUrl, userId);
@@ -147,19 +194,23 @@ async function handleSubmit(req: any, res: any, userId: string) {
     return res.status(400).json({ error: 'Não foi possível validar o vídeo enviado.' });
   }
 
-  // Mesmo path de objeto só pode originar um record: torna a repetição da
-  // requisição idempotente e impede duplicar posição/pontuação por retry.
   const recordId = `power_${createHash('sha256').update(video.path).digest('hex')}`;
+  const dailySlotId = `powerday_${createHash('sha256').update(`${userId}|${season.id}|${exercise}|${dateKey}`).digest('hex')}`;
   const recordRef = db.collection('power_records').doc(recordId);
   const auditRef = db.collection('power_audit_logs').doc(`audit_${recordId}`);
+  const dailySlotRef = db.collection('powerlift_daily_slots').doc(dailySlotId);
   const validationRef = validationId ? db.collection('power_validation_sessions').doc(validationId) : null;
   const now = new Date().toISOString();
 
   try {
     const result = await db.runTransaction(async (transaction: any) => {
-      const reads: Promise<any>[] = [transaction.get(recordRef), transaction.get(db.collection('users').doc(userId))];
+      const reads: Promise<any>[] = [
+        transaction.get(recordRef),
+        transaction.get(db.collection('users').doc(userId)),
+        transaction.get(dailySlotRef),
+      ];
       if (validationRef) reads.push(transaction.get(validationRef));
-      const [existingRecordSnap, profileSnap, validationSnap] = await Promise.all(reads);
+      const [existingRecordSnap, profileSnap, slotSnap, validationSnap] = await Promise.all(reads);
 
       if (existingRecordSnap.exists) {
         const existing = existingRecordSnap.data() || {};
@@ -167,6 +218,11 @@ async function handleSubmit(req: any, res: any, userId: string) {
         return { record: { id: existingRecordSnap.id, ...existing }, idempotent: true };
       }
       if (!profileSnap.exists) throw new Error('Perfil do atleta não encontrado.');
+      if (slotSnap.exists) throw new Error('Marca oficial diária já utilizada.');
+
+      const profile = profileSnap.data() || {};
+      const competitionSex = parseCompetitionSex(profile.sex);
+      if (!competitionSex) throw new Error('Sexo biológico competitivo não informado.');
 
       let effectiveDecision: Decision = 'manual_review';
       let confidence = 0;
@@ -196,20 +252,15 @@ async function handleSubmit(req: any, res: any, userId: string) {
         analysis = safeText(validation.analysis, 2000) || analysis;
         motives = safeMotives(validation.motives);
         estimatedWeight = parseWeight(validation.estimatedWeight) ?? weight;
-
-        // Somente uma sessão criada pelo servidor pode aprovar/reprovar;
-        // campos decision/confidence/analysis/motives enviados pelo aparelho
-        // são deliberadamente ignorados. Aprovação exige confiança alta
-        // segundo a política antifraude atual.
         effectiveDecision = resolvePowerLiftAuditStatus(validation.decision, confidence);
       }
 
-      const profile = profileSnap.data() || {};
       const status = effectiveDecision === 'approved'
         ? 'approved'
         : effectiveDecision === 'rejected'
           ? 'rejected'
           : 'manual_review';
+
       const record = {
         id: recordId,
         userId,
@@ -219,6 +270,17 @@ async function handleSubmit(req: any, res: any, userId: string) {
         gymName: safeText(profile.gymName, 128),
         exercise,
         weight,
+        series,
+        powerVolume,
+        seasonId: season.id,
+        seasonNumber: season.number,
+        seasonStartsAt: season.startsAt,
+        seasonEndsAt: season.endsAt,
+        seasonScore: 0,
+        seasonTier: 'UNRANKED',
+        competitionSex,
+        dateKey,
+        dailySlotId,
         videoUrl,
         storagePath: video.path,
         videoContentType: video.contentType,
@@ -228,7 +290,7 @@ async function handleSubmit(req: any, res: any, userId: string) {
         userMessage: analysis,
         motives,
         reports: [],
-        date: now.slice(0, 10),
+        date: dateKey,
         createdAt: now,
         updatedAt: now,
         ...(status === 'approved' ? { approvedAt: now, approvalSource: 'server_validation_session' } : {}),
@@ -237,6 +299,17 @@ async function handleSubmit(req: any, res: any, userId: string) {
       const auditResult = status === 'approved' ? 'VALIDADO' : status === 'rejected' ? 'REPROVADO' : 'AUDITORIA_MANUAL';
 
       transaction.create(recordRef, record);
+      if (status !== 'rejected') {
+        transaction.create(dailySlotRef, {
+          id: dailySlotId,
+          userId,
+          recordId,
+          exercise,
+          seasonId: season.id,
+          dateKey,
+          createdAt: now,
+        });
+      }
       transaction.create(auditRef, {
         id: auditRef.id,
         recordId,
@@ -244,6 +317,11 @@ async function handleSubmit(req: any, res: any, userId: string) {
         userName: record.userName,
         exercise,
         declaredWeight: weight,
+        powerVolume,
+        series,
+        seasonId: season.id,
+        competitionSex,
+        declaredSexFromClient: parseCompetitionSex(body.competitionSex),
         estimatedWeight,
         confidence,
         result: auditResult,
@@ -255,9 +333,7 @@ async function handleSubmit(req: any, res: any, userId: string) {
         aiVersion: 'Invictus Audit Server v2',
         validationId: validationId || null
       });
-      if (validationRef) {
-        transaction.update(validationRef, { consumedAt: now, recordId, effectiveDecision });
-      }
+      if (validationRef) transaction.update(validationRef, { consumedAt: now, recordId, effectiveDecision });
 
       return { record, idempotent: false };
     });
@@ -272,9 +348,17 @@ async function handleSubmit(req: any, res: any, userId: string) {
   } catch (error: any) {
     console.error('[PowerLift] Falha ao persistir levantamento:', error?.message || error);
     const message = String(error?.message || '');
-    const userError = /sessão de auditoria|Perfil do atleta|Conflito de registro|já foi utilizada|expirou|não corresponde/i.test(message);
+    const dailyUsed = /Marca oficial diária já utilizada/i.test(message);
+    const profileSex = /Sexo biológico competitivo não informado/i.test(message);
+    const userError = dailyUsed || profileSex || /sessão de auditoria|Perfil do atleta|Conflito de registro|já foi utilizada|expirou|não corresponde/i.test(message);
     return res.status(userError ? 409 : 500).json({
-      error: userError ? 'Não foi possível concluir este envio de vídeo. Faça uma nova validação e tente novamente.' : 'Não foi possível registrar o levantamento agora.'
+      error: dailyUsed
+        ? 'Você já utilizou a marca oficial de hoje nesta modalidade.'
+        : profileSex
+          ? 'Complete o campo Sexo Biológico no perfil antes de competir no Power Lift.'
+          : userError
+            ? 'Não foi possível concluir este envio de vídeo. Faça uma nova validação e tente novamente.'
+            : 'Não foi possível registrar o levantamento agora.'
     });
   }
 }
@@ -283,20 +367,16 @@ async function approvedExerciseCandidates(exercise: Exercise) {
   try {
     const snap = await db.collection('power_records')
       .where('videoStatus', '==', 'approved')
-      .where('exercise', '==', exercise)
-      .orderBy('weight', 'desc')
       .limit(MAX_RANKING_SCAN)
       .get();
-    return { records: snap.docs.map((item: any) => ({ id: item.id, ...item.data() })), degraded: false };
-  } catch (error: any) {
-    // Se o índice composto estiver em criação, preservamos correção funcional
-    // com um scan limitado dos homologados e filtragem no servidor.
-    const snap = await db.collection('power_records').where('videoStatus', '==', 'approved').limit(MAX_RANKING_SCAN).get();
     const records = snap.docs
       .map((item: any) => ({ id: item.id, ...item.data() }))
       .filter((record: any) => record.exercise === exercise)
-      .sort((a: any, b: any) => Number(b.weight || 0) - Number(a.weight || 0));
-    return { records, degraded: true };
+      .sort((a: any, b: any) => powerLiftRankingValue(b) - powerLiftRankingValue(a));
+    return { records, degraded: false };
+  } catch (error: any) {
+    console.warn('[PowerLift] Ranking em modo degradado:', error?.message || error);
+    return { records: [], degraded: true };
   }
 }
 
@@ -314,7 +394,7 @@ async function approvedOwnRecords(userId: string) {
 function rankingWindow(records: any[], exercise: Exercise, take: number, userId: string) {
   const deduped = mergePowerLiftRankingRows(records)
     .filter((record) => record.exercise === exercise)
-    .sort((a, b) => Number(b.weight) - Number(a.weight));
+    .sort((a, b) => powerLiftRankingValue(b) - powerLiftRankingValue(a));
   const top = deduped.slice(0, take);
   const own = deduped.find((record) => record.userId === userId);
   if (own && !top.some((record) => record.userId === userId)) top.push(own);
@@ -327,8 +407,13 @@ async function handleRanking(req: any, res: any, userId: string) {
   if (exerciseParam && !exercise) return res.status(400).json({ error: 'Modalidade inválida.' });
   const requestedLimit = Math.floor(Number(req.query.limit) || 50);
   const take = Math.min(MAX_RANKING_RESULTS, Math.max(1, requestedLimit));
+  const season = resolvePowerLiftSeason(new Date());
 
   try {
+    const profileSnap = await db.collection('users').doc(userId).get();
+    const competitionSex = parseCompetitionSex(profileSnap.data()?.sex);
+    if (!competitionSex) return res.status(409).json({ error: 'Complete o campo Sexo Biológico no perfil para acessar o ranking.' });
+
     const requestedExercises = exercise ? [exercise] : RANKING_EXERCISES;
     const [own, ...candidateResults] = await Promise.all([
       approvedOwnRecords(userId),
@@ -336,13 +421,16 @@ async function handleRanking(req: any, res: any, userId: string) {
     ]);
     const records = candidateResults.flatMap((result, index) => {
       const currentExercise = requestedExercises[index];
-      const ownForExercise = own.filter((record: any) => record.exercise === currentExercise);
-      return rankingWindow([...result.records, ...ownForExercise], currentExercise, take, userId);
+      const eligible = result.records.filter((record: any) => record.seasonId === season.id && record.competitionSex === competitionSex);
+      const ownForExercise = own.filter((record: any) => record.exercise === currentExercise && record.seasonId === season.id && record.competitionSex === competitionSex);
+      return rankingWindow([...eligible, ...ownForExercise], currentExercise, take, userId);
     });
     return res.status(200).json({
       success: true,
       records: records.map((record) => publicRecord(record, false)),
       rankingMode: exercise ? 'exercise' : 'per_exercise',
+      season,
+      competitionSex,
       degraded: candidateResults.some((result) => result.degraded)
     });
   } catch (error: any) {
@@ -360,6 +448,7 @@ async function handleMyRecords(_req: any, res: any, userId: string) {
       .get();
     return res.status(200).json({
       success: true,
+      season: resolvePowerLiftSeason(new Date()),
       records: snap.docs.map((item: any) => publicRecord({ id: item.id, ...item.data() }, true))
     });
   } catch (error: any) {
@@ -369,7 +458,7 @@ async function handleMyRecords(_req: any, res: any, userId: string) {
         .map((item: any) => ({ id: item.id, ...item.data() }))
         .sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
         .map((record: any) => publicRecord(record, true));
-      return res.status(200).json({ success: true, records, degraded: true });
+      return res.status(200).json({ success: true, season: resolvePowerLiftSeason(new Date()), records, degraded: true });
     } catch (fallbackError: any) {
       console.error('[PowerLift] Falha ao carregar registros próprios:', fallbackError?.message || error?.message || 'erro desconhecido');
       return res.status(500).json({ error: 'Não foi possível carregar seus levantamentos agora.' });
@@ -394,10 +483,7 @@ async function handleVideo(req: any, res: any, userId: string) {
     }
 
     const expiresAt = Date.now() + 15 * 60 * 1000;
-    const [url] = await getStorage(app).bucket().file(storagePath).getSignedUrl({
-      action: 'read',
-      expires: expiresAt
-    });
+    const [url] = await getStorage(app).bucket().file(storagePath).getSignedUrl({ action: 'read', expires: expiresAt });
     return res.status(200).json({ success: true, url, expiresAt: new Date(expiresAt).toISOString() });
   } catch (error: any) {
     console.error('[PowerLift] Falha ao gerar reprodução segura:', error?.message || error);
@@ -445,11 +531,22 @@ async function handleFinalizeAudit(req: any, res: any, userId: string) {
       };
       transaction.update(recordRef, updates);
       transaction.update(validationRef, { consumedAt: now, recordId, effectiveDecision: status });
+
+      if (status === 'rejected' && record.dailySlotId) {
+        const dailySlotRef = db.collection('powerlift_daily_slots').doc(String(record.dailySlotId));
+        const slotSnap = await transaction.get(dailySlotRef);
+        if (slotSnap.exists && slotSnap.data()?.recordId === recordId) transaction.delete(dailySlotRef);
+      }
+
       transaction.set(auditRef, {
         recordId,
         userId,
         exercise: record.exercise,
         declaredWeight: Number(record.weight) || 0,
+        powerVolume: Number(record.powerVolume) || Number(record.weight) || 0,
+        series: Array.isArray(record.series) ? record.series : [],
+        seasonId: record.seasonId || '',
+        competitionSex: record.competitionSex || '',
         estimatedWeight: parseWeight(validation.estimatedWeight) ?? (Number(record.weight) || 0),
         confidence,
         result: status === 'approved' ? 'VALIDADO' : status === 'rejected' ? 'REPROVADO' : 'AUDITORIA_MANUAL',
