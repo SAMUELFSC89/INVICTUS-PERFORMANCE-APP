@@ -262,6 +262,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           minWithdrawalAmount: money(config.minWithdrawalAmount),
           maxDailyWithdrawalAmount: money(config.maxDailyWithdrawalAmount),
           identityCheckEnabled: ENFORCE_IDENTITY_FOR_WITHDRAWAL,
+          paymentEnvironment: isStrictAsaasSandbox() ? 'sandbox' : 'production',
         },
         identity: identityPayload(identity),
         cashSource: 'official_prizes_only',

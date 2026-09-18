@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { AsaasClient } from '../_lib/asaas-client';
+import { AsaasClient, AsaasRequestError } from '../_lib/asaas-client';
 
 const root = process.cwd();
 const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -59,6 +59,37 @@ describe('Asaas withdrawal reconciliation hardening', () => {
       value: 42.5,
       externalReference: 'pix_req_user_request123',
     });
+  });
+
+  test('4xx transfer rejection is classified as deterministic so the withdrawal can be retried safely', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ errors: [{ code: 'invalid_pix_key', description: 'A chave informada não foi encontrada.' }] }),
+    }) as any;
+
+    await expect(AsaasClient.transferPix({
+      value: 20,
+      pixKey: 'real-key-not-present-in-sandbox',
+      pixKeyType: 'email',
+      externalReference: 'pix_req_user_request123',
+    })).rejects.toMatchObject({
+      name: 'AsaasRequestError',
+      status: 400,
+      code: 'invalid_pix_key',
+      deterministic: true,
+    });
+
+    try {
+      await AsaasClient.transferPix({
+        value: 20,
+        pixKey: 'real-key-not-present-in-sandbox',
+        pixKeyType: 'email',
+        externalReference: 'pix_req_user_request123',
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(AsaasRequestError);
+    }
   });
 
   test('production transfer refuses before HTTP call when authorization gate token is absent', async () => {

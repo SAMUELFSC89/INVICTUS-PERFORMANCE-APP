@@ -10,14 +10,16 @@ describe('Asaas withdrawal monotonic state', () => {
     expect(source).toContain('if (binding.terminal)');
   });
 
-  test('catch path never forces status back to processing', () => {
-    const catchMarker = 'Nunca force status=processing aqui';
-    const catchStart = source.indexOf(catchMarker);
-    const webhookStart = source.indexOf('static async handleAsaasTransferWebhook', catchStart);
-    expect(catchStart).toBeGreaterThan(-1);
-    const catchBlock = source.slice(catchStart, webhookStart);
-    expect(catchBlock).not.toContain("status: 'processing'");
-    expect(catchBlock).toContain('reconciliationRequired: true');
+  test('deterministic provider rejection reopens the withdrawal but ambiguous failures stay in reconciliation', () => {
+    const processStart = source.indexOf('static async processPayment');
+    const reconcileStart = source.indexOf('static async reconcileProviderSubmission', processStart);
+    expect(processStart).toBeGreaterThan(-1);
+    const processBlock = source.slice(processStart, reconcileStart);
+    expect(processBlock).toContain('err instanceof AsaasRequestError && err.deterministic');
+    expect(processBlock).toContain("status: 'approved'");
+    expect(processBlock).toContain("providerStatus: 'REJECTED_BEFORE_CREATION'");
+    expect(processBlock).toContain("reconciliationReason: 'PROVIDER_SUBMISSION_UNCERTAIN'");
+    expect(processBlock).toContain('reconciliationRequired: true');
   });
 
   test('existing reconciliation is not silently cleared by a late provider response', () => {

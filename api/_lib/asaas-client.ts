@@ -146,14 +146,8 @@ export class AsaasClient {
       throw new Error('Referência externa da transferência PIX é inválida.');
     }
 
-    const response = await fetch(getAsaasBaseUrl() + '/transfers', {
+    const data: any = await chamarAsaas('/transfers', {
       method: 'POST',
-      signal: AbortSignal.timeout(30_000),
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'InvictusPerformance/1.0 (Node.js)',
-        'access_token': getAsaasApiKey()
-      },
       body: JSON.stringify({
         value,
         pixAddressKey: pixKey.trim(),
@@ -161,11 +155,7 @@ export class AsaasClient {
         description: description || 'Saque Invictus Performance',
         ...(normalizedReference ? { externalReference: normalizedReference } : {})
       })
-    });
-    const data: any = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(mensagemDeErroAsaas(data, response.status, 'solicitar transferência PIX'));
-    }
+    }, 'solicitar transferência PIX');
     if (typeof data?.id !== 'string' || !data.id.trim()) {
       throw new Error('Asaas não devolveu o identificador da transferência PIX. A operação exige conciliação antes de nova tentativa.');
     }
@@ -182,6 +172,52 @@ export class AsaasClient {
       externalReference: typeof data.externalReference === 'string' ? data.externalReference : normalizedReference,
       raw: data
     };
+  }
+
+  static async findTransferByExternalReference(
+    externalReference: string,
+    createdAt?: string
+  ): Promise<AsaasTransferResult | null> {
+    const reference = externalReference.trim();
+    if (!reference || reference.includes('/') || reference.length > 500) {
+      throw new Error('Referência externa inválida para conciliação de transferência.');
+    }
+
+    let sinceDate = '';
+    if (createdAt) {
+      const parsed = new Date(createdAt);
+      if (Number.isFinite(parsed.getTime())) sinceDate = parsed.toISOString().slice(0, 10);
+    }
+
+    for (let offset = 0; offset < 1000; offset += 100) {
+      const query = new URLSearchParams({ offset: String(offset), limit: '100' });
+      if (sinceDate) query.set('dateCreated[ge]', sinceDate);
+      const data: any = await chamarAsaas(
+        `/transfers?${query.toString()}`,
+        { method: 'GET' },
+        'consultar transferências'
+      );
+      const rows = Array.isArray(data?.data) ? data.data : [];
+      const match = rows.find((item: any) =>
+        typeof item?.externalReference === 'string'
+        && item.externalReference.trim() === reference
+      );
+      if (match) {
+        if (typeof match.id !== 'string' || !match.id.trim()) {
+          throw new Error('Transferência encontrada sem identificador no Asaas.');
+        }
+        const numericValue = Number(match.value);
+        return {
+          id: match.id.trim(),
+          status: String(match.status || 'PENDING'),
+          value: Number.isFinite(numericValue) ? numericValue : 0,
+          externalReference: reference,
+          raw: match,
+        };
+      }
+      if (data?.hasMore !== true || rows.length === 0) break;
+    }
+    return null;
   }
 
   /**

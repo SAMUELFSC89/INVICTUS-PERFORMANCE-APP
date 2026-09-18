@@ -296,6 +296,12 @@ export default async function handler(req: VercelRequest & { userId?: string; us
         return res.status(200).json(result);
       }
 
+      case 'reconcile-withdrawal-provider': {
+        const { withdrawalId } = req.body;
+        const result = await adminService.reconcileWithdrawalProviderSubmission(req.userId!, withdrawalId);
+        return res.status(200).json(result);
+      }
+
       case 'update-withdrawal-min-amount': {
         const { minWithdrawalAmount } = req.body;
         const result = await adminService.updateWithdrawalMinAmount(req.userId!, Number(minWithdrawalAmount));
