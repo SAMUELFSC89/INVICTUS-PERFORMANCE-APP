@@ -179,15 +179,9 @@ describe('entitlement canônico nos consumidores de score', () => {
 
   test('contrato dos consumidores não volta a confiar no plano enviado ou no tier legado', () => {
     const scoreEngine = readFileSync(resolve(process.cwd(), 'api/_lib/score-engine/index.ts'), 'utf8');
-    const presence = readFileSync(resolve(process.cwd(), 'api/_handlers/validate-presence.ts'), 'utf8');
     const season = readFileSync(resolve(process.cwd(), 'api/_lib/season-prize-engine.ts'), 'utf8');
 
     expect(scoreEngine).not.toMatch(/event\.payload\?\.(?:subscriptionTier|plan)/);
-    // validate-presence agora é exclusivamente um gate biométrico financeiro;
-    // não pontua atividade nem deriva entitlement. Isso remove por construção
-    // qualquer confiança em tier/plan enviado pelo cliente nesse endpoint.
-    expect(presence).not.toContain('userData.subscriptionTier');
-    expect(presence).not.toContain('isProUser(');
     expect(season).not.toContain('d.data().subscriptionTier');
     expect(season).toContain('isProUser(doc.data())');
     expect(season).toContain('isActiveAccountState(doc.data())');

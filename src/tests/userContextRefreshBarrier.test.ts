@@ -15,10 +15,14 @@ describe('UserContext explicit refresh reconciliation barrier', () => {
     expect(context).toContain('await pendingStatsSync.promise');
   });
 
-  test('activity completion flows await refreshUser before the handler settles', () => {
+  test('activity completion flow awaits refreshUser before the handler settles', () => {
     const challenges = read('src/pages/Challenges.tsx');
     const awaitedRefreshes = challenges.match(/await Promise\.allSettled\(\[refreshUser\(\), loadSubmissions\(\)\]\);/g) || [];
 
-    expect(awaitedRefreshes.length).toBeGreaterThanOrEqual(2);
+    // Havia duas ocorrências enquanto existia um segundo fluxo de conclusão
+    // via confirmação de presença por selfie (VerifiedPresenceModal). Esse
+    // fluxo foi removido em 2026-09 (verificação passou a ser só SMS/e-mail),
+    // então agora só o handleEndActivity principal chama esse barrier.
+    expect(awaitedRefreshes.length).toBeGreaterThanOrEqual(1);
   });
 });

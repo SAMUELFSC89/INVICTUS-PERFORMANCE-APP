@@ -1,5 +1,4 @@
 import { ValidateActivityService } from '../_services/activities/validate-activity-service';
-import { commitActivityAfterPresenceCheck } from '../_lib/activity-commit-service';
 import { ActivityRepository } from '../_repositories/activity-repository';
 import { UserRepository } from '../_repositories/user-repository';
 import { SecurityPipeline } from '../_lib/security-pipeline';
@@ -254,16 +253,6 @@ test('saúde malformada não rejeita treino nem altera XP', async () => {
   expect(result.healthSessionStatus).toBe('unavailable');
   expect(result.workout.healthSession).toBeUndefined();
   expect(activities.create.mock.calls[1][0].healthSessionStatus).toBe('unavailable');
-});
-
-test.each(['approved', 'pending'] as const)('confirmação de presença persiste saúde sem mudar pontos: %s', async (presenceOutcome) => {
-  const baseline = await commitActivityAfterPresenceCheck({ userId: 'authenticated-user', rawActivity: request().activityData, presenceOutcome });
-  const result = await commitActivityAfterPresenceCheck({ userId: 'authenticated-user', rawActivity: request(health()).activityData, presenceOutcome });
-  expect(result.pointsAwarded).toBe(baseline.pointsAwarded);
-  expect(result.weeklyIgaScore).toBe(baseline.weeklyIgaScore);
-  expect(result.healthSession?.sessionId).toBe('session-authenticated');
-  expect(activities.create.mock.calls[1][0].healthSession).toEqual(result.healthSession);
-  expect(activities.create.mock.calls[1][0].userId).toBe('authenticated-user');
 });
 
 test('saúde nunca neutraliza rejeição por fraude existente', async () => {

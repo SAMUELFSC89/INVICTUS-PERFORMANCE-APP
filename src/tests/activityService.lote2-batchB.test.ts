@@ -4,8 +4,7 @@
 // auditoria.
 //
 // ACT-03: a escrita final que marca active_sessions/{id} como 'completed'
-// (tanto em endSession() quanto em completeSessionAfterPresence()) não tinha
-// NENHUM timeout -- diferente de quase toda outra chamada ao Firestore neste
+// em endSession() não tinha NENHUM timeout -- diferente de quase toda outra chamada ao Firestore neste
 // arquivo. Uma conexão que trava (nem fecha, nem abre) deixava o atleta preso
 // numa tela de finalização que nunca sai do lugar, mesmo com a atividade já
 // validada e persistida pelo servidor.
@@ -97,7 +96,7 @@ jest.mock('../config', () => ({ API_CONFIG: { baseUrl: '' } }));
 // Polyfill mínimo de localStorage -- jest.config.cjs usa testEnvironment:
 // 'node', que não tem localStorage nem window. activityService.ts lê
 // localStorage diretamente (sem guarda de `typeof window`) em
-// getCurrentSession/cancelSession/completeSessionAfterPresence, então
+// getCurrentSession/cancelSession, então
 // precisamos de um stub em memória para exercitar esse código exatamente
 // como ele roda no navegador/WebView real.
 class MemoryStorage {
@@ -223,15 +222,6 @@ describe('ACT-03 / ACT-04: falha na escrita final de encerramento nunca trava ne
     expect(localStorage.getItem('sessao_encerrada_session-final-fail')).not.toBeNull();
   });
 
-  test('completeSessionAfterPresence() marca a sessão como encerrada localmente quando a confirmação final falha', async () => {
-    const session = seedLocalSession({ id: 'session-presence-fail' });
-    (updateDoc as jest.Mock).mockRejectedValue(new Error('offline'));
-
-    await activityService.completeSessionAfterPresence();
-
-    expect(localStorage.getItem('sessao_encerrada_' + session.id)).not.toBeNull();
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
-  });
 });
 
 describe('ACT-06: uma falha ao enviar a finalização reinicia o coletor nativo de GPS', () => {
@@ -262,22 +252,6 @@ describe('ACT-06: uma falha ao enviar a finalização reinicia o coletor nativo 
     expect(nativeBackgroundLocationService.start).not.toHaveBeenCalled();
   });
 
-  test('confirmação de presença é intermediária: preserva a sessão e retoma o GPS drenado', async () => {
-    const session = seedLocalSession({ id: 'session-presence-open' });
-    mockFetchOnce({
-      ok: true,
-      json: async () => ({ presenceCheckRequired: true, presenceCheckId: 'presence-1', livenessPrompt: 'pisque' }),
-    });
-
-    const result = await activityService.endSession();
-
-    expect(result.presenceCheckRequired).toBe(true);
-    expect(nativeBackgroundLocationService.start).toHaveBeenCalledTimes(1);
-    const persisted = JSON.parse(localStorage.getItem(SESSION_KEY) || '{}');
-    expect(persisted.id).toBe(session.id);
-    expect(persisted.status).toBe('active');
-    expect(persisted.checkpoints).toHaveLength(2);
-  });
 });
 
 describe('barreira central de início: ausência só é aceita após resposta confiável', () => {

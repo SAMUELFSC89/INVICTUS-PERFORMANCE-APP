@@ -9,7 +9,6 @@ describe('consolidated sensitive route guards', () => {
     const routes = [
       '/api/performance-ai',
       '/api/payments/verify-purchase',
-      '/api/validate-presence',
       '/api/strava/webhook',
       '/api/app',
       '/api/(.*)',
@@ -21,7 +20,6 @@ describe('consolidated sensitive route guards', () => {
     }
     expect(vercel).toContain('"destination": "/api/performance-ai-guarded"');
     expect(vercel).toContain('"destination": "/api/payments-verify-purchase-guarded"');
-    expect(vercel).toContain('"destination": "/api/validate-presence-guarded"');
     expect(vercel).toContain('"destination": "/api/strava-webhook-guarded"');
     expect(vercel).toContain('"destination": "/api/app-guarded"');
   });

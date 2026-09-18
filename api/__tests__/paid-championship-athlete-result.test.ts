@@ -45,8 +45,6 @@ jest.mock('../_lib/championship-scoring-service', () => ({
   getUserChampionshipActivities: jest.fn(),
 }));
 
-jest.mock('../_lib/presence-check-service', () => ({ criarPresenceCheck: jest.fn() }));
-
 import { getChampionshipProgressHandler } from '../_handlers/championships';
 
 function responseCapture() {
