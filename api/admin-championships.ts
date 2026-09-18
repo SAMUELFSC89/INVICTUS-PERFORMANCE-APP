@@ -7,6 +7,11 @@ import {
   publishChampionshipDraft,
   saveChampionshipDraft,
 } from './_lib/admin-championship-service.js';
+import {
+  getChampionshipAdminLeaderboard,
+  homologateChampionshipAsAdmin,
+  listChampionshipAdminRegistrations,
+} from './_lib/admin-championship-operations.js';
 
 async function requireAdmin(req: VercelRequest, res: VercelResponse) {
   const auth = await verifyAuth(req);
@@ -32,6 +37,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET' && action === 'state') {
       return res.status(200).json({ success: true, ...(await getChampionshipAdminState()) });
     }
+    if (req.method === 'GET' && action === 'registrations') {
+      const result = await listChampionshipAdminRegistrations(req.query.championshipId, req.query.limit);
+      return res.status(200).json({ success: true, ...result });
+    }
+    if (req.method === 'GET' && action === 'leaderboard') {
+      const result = await getChampionshipAdminLeaderboard(req.query.championshipId, req.query.limit);
+      return res.status(200).json({ success: true, ...result });
+    }
     if (req.method === 'POST' && action === 'save-draft') {
       const draft = await saveChampionshipDraft(req.body?.draft || {}, auth.uid);
       return res.status(200).json({ success: true, draft });
@@ -44,12 +57,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!championshipId) return res.status(400).json({ success: false, error: 'championshipId é obrigatório.' });
       return res.status(200).json(await publishChampionshipDraft(championshipId, auth.uid));
     }
+    if (req.method === 'POST' && action === 'homologate') {
+      const championshipId = String(req.body?.championshipId || '').trim();
+      if (!championshipId) return res.status(400).json({ success: false, error: 'championshipId é obrigatório.' });
+      return res.status(200).json(await homologateChampionshipAsAdmin(championshipId, auth.uid));
+    }
     return res.status(400).json({ success: false, error: 'Ação administrativa de campeonato não suportada.' });
   } catch (error: any) {
     console.error('[Admin championships]', error);
     const message = String(error?.message || 'Falha ao administrar campeonato.');
-    const conflict = /edição anterior|concilia|conflito|imutável|FINALIZED|homologação/i.test(message);
-    return res.status(conflict ? 409 : /inválid|precisa|deve|não pode|informe|publique|rascunho|obrigat/i.test(message) ? 400 : 500)
+    const conflict = /edição anterior|concilia|conflito|imutável|FINALIZED|homologação|RUNTIME_/i.test(message);
+    return res.status(conflict ? 409 : /inválid|precisa|deve|não pode|informe|publique|rascunho|obrigat|encontrada/i.test(message) ? 400 : 500)
       .json({ success: false, error: message });
   }
 }
