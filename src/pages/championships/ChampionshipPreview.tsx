@@ -36,6 +36,11 @@ import './PaidChampionship.css';
 
 type ChampionshipPreviewProps = { modality: 'musculacao' | 'cardio' };
 
+// Store-submission kill switch. Paid championship registration is intentionally
+// disabled in the build sent to App Store / Google Play. Re-enabling it requires
+// a separate store/legal review and a new audited release.
+const STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED = false;
+
 function brl(value: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
@@ -97,6 +102,10 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   useEffect(() => { void refresh(); }, [championshipId]);
 
   const openEnrollmentConsent = () => {
+    if (!STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED) {
+      setError('As inscrições pagas não estão disponíveis nesta versão do aplicativo.');
+      return;
+    }
     if (!championship || busy) return;
     setError('');
     setConsentError('');
@@ -114,6 +123,10 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   };
 
   const confirmEnrollment = async () => {
+    if (!STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED) {
+      setConsentError('As inscrições pagas não estão disponíveis nesta versão do aplicativo.');
+      return;
+    }
     if (!championship || busy) return;
     setConsentError('');
     if (!rulesAccepted || !hrAccepted) {
@@ -155,7 +168,7 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   const refunded = registration?.status === 'REFUNDED' || registration?.paymentStatus === 'REFUNDED';
   const enrollmentBlocked = reconciliation || refunded;
   const pending = registration?.status === 'PENDING_PAYMENT' && !reconciliation;
-  const canStartEnrollment = !paid && !enrollmentBlocked;
+  const canStartEnrollment = STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED && !paid && !enrollmentBlocked;
   const price = championship?.registrationPrice ?? PAID_CHAMPIONSHIP_ENTRY_PRICE_BRL;
   const finalized = progress?.settlementStatus === 'FINALIZED';
   const finalResult = progress?.finalResult || null;
@@ -185,9 +198,16 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
             <small>CAMPEONATO ESPORTIVO POR DESEMPENHO</small>
             <h1>{offer.title.toUpperCase()}</h1>
             <p>{offer.performanceDescription}</p>
-            <strong>{brl(price)} <em>POR INSCRIÇÃO</em></strong>
-            <div className="paid-championship-tags"><span>18+</span><span>PIX OU CARTÃO</span><span>COBRANÇA ÚNICA</span><span>SEM SORTEIO</span></div>
+            {STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED ? <>
+              <strong>{brl(price)} <em>POR INSCRIÇÃO</em></strong>
+              <div className="paid-championship-tags"><span>18+</span><span>PIX OU CARTÃO</span><span>COBRANÇA ÚNICA</span><span>SEM SORTEIO</span></div>
+            </> : <>
+              <strong>EM BREVE</strong>
+              <div className="paid-championship-tags"><span>18+</span><span>SEM INSCRIÇÃO NESTA VERSÃO</span><span>EDIÇÃO FUTURA</span></div>
+            </>}
           </section>
+
+          {!STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED && <section className="paid-status is-pending"><ShieldCheck /><div><b>EDIÇÃO PAGA AINDA NÃO DISPONÍVEL</b><p>Esta tela é apenas informativa. A versão submetida às lojas não permite inscrição, cobrança ou acesso a premiação paga nestas modalidades.</p></div></section>}
 
           {paid && !finalized && <section className="paid-status is-paid"><BadgeCheck /><div><b>INSCRIÇÃO CONFIRMADA</b><p>Seu pagamento foi confirmado pelo servidor e esta edição está vinculada à sua conta. Homologação prevista para {dateLabel(championship?.settlementAt)}.</p></div></section>}
           {paid && finalized && finalResult && <section className="paid-status is-paid"><Trophy /><div><b>RESULTADO HOMOLOGADO</b><p>{finalResult.finalRank}º lugar de {finalResult.totalParticipants} participante{finalResult.totalParticipants === 1 ? '' : 's'}{finalResult.prizeWon ? ` · ${brl(finalResult.prizeWon)} creditados na carteira sacável.` : ' · sem premiação em dinheiro nesta colocação.'}</p></div></section>}
@@ -199,45 +219,47 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
           <section className="mt-6 space-y-3" aria-label="Informações do campeonato">
             <details className="group overflow-hidden rounded-2xl border border-zinc-700 bg-[#101012]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0"><b className="block font-black text-white">COMO FUNCIONA</b><small className="mt-1 block leading-relaxed text-zinc-200">Inscrição, atividade real, validação e resultado.</small></span>
+                <span className="min-w-0"><b className="block font-black text-white">COMO FUNCIONA</b><small className="mt-1 block leading-relaxed text-zinc-200">Atividade real, validação e resultado.</small></span>
                 {moreToggle}
               </summary>
               <div className="border-t border-zinc-700 p-3">
                 <section className="paid-championship-grid">
-                  <article><CreditCard /><b>INSCRIÇÃO</b><span>{brl(price)} por campeonato, pagamento avulso. Não é assinatura.</span></article>
-                  <article><ModalityIcon /><b>ATIVIDADE REAL</b><span>O resultado vem de desempenho físico real dentro do período oficial.</span></article>
-                  <article><ShieldCheck /><b>VALIDAÇÃO</b><span>Somente atividades elegíveis e homologadas pelo servidor entram no ranking.</span></article>
-                  <article><Trophy /><b>RESULTADO</b><span>Classificação final após as validações e revisões previstas no regulamento.</span></article>
+                  <article><CreditCard /><b>INSCRIÇÃO</b><span>{STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED ? `${brl(price)} por campeonato, pagamento avulso. Não é assinatura.` : 'Inscrições pagas não estão disponíveis nesta versão.'}</span></article>
+                  <article><ModalityIcon /><b>ATIVIDADE REAL</b><span>O resultado decorre de desempenho físico real dentro do período oficial de uma futura edição publicada.</span></article>
+                  <article><ShieldCheck /><b>VALIDAÇÃO</b><span>Somente atividades elegíveis e homologadas pelo servidor podem entrar em um ranking competitivo.</span></article>
+                  <article><Trophy /><b>RESULTADO</b><span>Uma edição futura só será aberta depois da publicação das regras e informações obrigatórias.</span></article>
                 </section>
               </div>
             </details>
 
             <details className="group overflow-hidden rounded-2xl border border-zinc-700 bg-[#101012]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0"><b className="block font-black text-white">EDIÇÃO E PREMIAÇÃO</b><small className="mt-1 block leading-relaxed text-zinc-200">{championship?.edition || 'Edição atual'} · {displayedPrizePool ? `${brl(displayedPrizePool)}${prizeRevealed ? ' em premiação final' : ' garantidos'}` : 'premiação publicada antes da abertura'}.</small></span>
+                <span className="min-w-0"><b className="block font-black text-white">EDIÇÃO E PREMIAÇÃO</b><small className="mt-1 block leading-relaxed text-zinc-200">{STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED ? `${championship?.edition || 'Edição atual'} · ${displayedPrizePool ? `${brl(displayedPrizePool)}${prizeRevealed ? ' em premiação final' : ' garantidos'}` : 'premiação publicada antes da abertura'}.` : 'Informações comerciais serão publicadas apenas quando uma edição futura for oficialmente aberta.'}</small></span>
                 {moreToggle}
               </summary>
               <div className="border-t border-zinc-700 p-3">
-                <section className="paid-edition-card">
+                {STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED ? <section className="paid-edition-card">
                   <div><CalendarClock /><span><small>INSCRIÇÕES</small><b>{dateLabel(championship?.registrationOpensAt)} — {dateLabel(championship?.registrationClosesAt)}</b></span></div>
                   <div><Trophy /><span><small>COMPETIÇÃO</small><b>{dateLabel(championship?.startAt)} — {dateLabel(championship?.endAt)}</b></span></div>
                   <div><ShieldCheck /><span><small>HOMOLOGAÇÃO DO RESULTADO</small><b>{dateLabel(championship?.settlementAt)}</b></span></div>
                   <div><Medal /><span><small>{prizeRevealed ? 'PREMIAÇÃO FINAL' : 'PRÊMIO MÍNIMO GARANTIDO'}</small><b>{displayedPrizePool ? brl(displayedPrizePool) : 'A definir antes da abertura'}</b></span></div>
                   {!prizeRevealed && !!displayedPrizePool && <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">Este valor é garantido independentemente do número de inscritos. O valor final é revelado quando as inscrições fecharem em {dateLabel(championship?.registrationClosesAt)}.</p>}
                   {!!displayedPrizeDistribution.length && <div className="paid-prize-list">{displayedPrizeDistribution.map((prize) => <span key={prize.rank}>{prize.rank}º — {brl(prize.amount)}</span>)}</div>}
-                </section>
+                </section> : <section className="paid-edition-card">
+                  <div><ShieldCheck /><span><small>STATUS DA VERSÃO SUBMETIDA</small><b>EM BREVE — SEM EDIÇÃO PAGA ATIVA</b></span></div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">Nenhuma taxa, janela de inscrição ou premiação em dinheiro está ativa nesta versão. Uma edição futura exigirá nova publicação das condições antes de qualquer inscrição.</p>
+                </section>}
               </div>
             </details>
 
             <details className="group overflow-hidden rounded-2xl border border-zinc-700 bg-[#101012]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0"><b className="block font-black text-white">REGULAMENTO OFICIAL</b><small className="mt-1 block leading-relaxed text-zinc-200">{rules.length} tópicos oficiais. Abra apenas quando quiser consultar todos.</small></span>
+                <span className="min-w-0"><b className="block font-black text-white">REGULAMENTO OFICIAL</b><small className="mt-1 block leading-relaxed text-zinc-200">{STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED ? `${rules.length} tópicos oficiais. Abra apenas quando quiser consultar todos.` : 'O regulamento específico será publicado antes da abertura de uma futura edição paga.'}</small></span>
                 {moreToggle}
               </summary>
               <div className="border-t border-zinc-700 p-3">
                 <section className="paid-rules" aria-label="Regulamento oficial do campeonato">
-                  {rules.map((section) => <article key={section.id}><h3>{section.title}</h3><p>{section.content}</p></article>)}
-                  <article><h3>APPLE / APP STORE</h3><p>{APPLE_CHAMPIONSHIP_DISCLAIMER}</p></article>
+                  {STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED ? <>{rules.map((section) => <article key={section.id}><h3>{section.title}</h3><p>{section.content}</p></article>)}<article><h3>APPLE / APP STORE</h3><p>{APPLE_CHAMPIONSHIP_DISCLAIMER}</p></article></> : <article><h3>EDIÇÃO FUTURA</h3><p>A modalidade paga não está aberta nesta versão. Antes de uma futura abertura, a Invictus publicará o regulamento aplicável, elegibilidade, calendário e demais condições da edição.</p></article>}
                 </section>
               </div>
             </details>
