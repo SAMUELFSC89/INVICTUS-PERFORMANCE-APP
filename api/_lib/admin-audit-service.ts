@@ -1,6 +1,6 @@
 import { db } from './common.js';
 import { SECURITY_CONFIG } from './security-config.js';
-import { recalculateAllUserScores } from './igaService.js';
+import { calculateAllUserScores, recalculateAllUserScores } from './igaService.js';
 import {
   DEFAULT_FREQUENCY_CONFIG,
   DEFAULT_TIME_CONFIG,
@@ -31,6 +31,18 @@ function serializeDocument(document: any) {
   return { id: document.id, ...document.data() };
 }
 
+function scoreDrift(persisted: unknown, expected: unknown) {
+  const persistedValue = Number(persisted || 0);
+  const expectedValue = Number(expected || 0);
+  const difference = Number((persistedValue - expectedValue).toFixed(6));
+  return {
+    persisted: persistedValue,
+    expected: expectedValue,
+    difference,
+    matches: Math.abs(difference) < 0.000001,
+  };
+}
+
 async function queryByActivity(collectionName: string, activityId: string, limit = 50) {
   try {
     const snapshot = await db.collection(collectionName)
@@ -51,6 +63,15 @@ async function readDirectDocument(collectionName: string, documentId: string) {
   } catch (error: any) {
     console.warn(`[Admin audit] Falha ao ler ${collectionName}/${documentId}:`, error?.message || error);
     return null;
+  }
+}
+
+async function calculateIgaPreview(userId: string) {
+  try {
+    return { result: await calculateAllUserScores(userId), error: null };
+  } catch (error: any) {
+    console.warn(`[Admin audit] Falha no dry-run IGA de ${userId}:`, error?.message || error);
+    return { result: null, error: String(error?.message || 'Falha ao recalcular IGA em modo de auditoria.') };
   }
 }
 
@@ -87,6 +108,7 @@ export function getAuditEngineCatalog() {
         calories: 'Somente auditoria/telemetria; não alteram o IGA.',
         scoringGate: 'Somente atividade competitiva homologada e elegível entra no ranking.',
         windows: 'Semana usa o IGA semanal; mês e temporada são médias das semanas para não distorcer frequência.',
+        auditMode: 'O Admin pode recalcular em dry-run e comparar esperado x persistido sem alterar a pontuação.',
       },
       frequencyConfig: DEFAULT_FREQUENCY_CONFIG,
       timeConfig: DEFAULT_TIME_CONFIG,
@@ -189,6 +211,7 @@ export async function getActivityAudit(activityId: string) {
     championshipScores,
     adminReviews,
     activityRewardLedger,
+    igaPreview,
   ] = await Promise.all([
     userId ? db.collection('users').doc(userId).get() : Promise.resolve(null as any),
     userId ? db.collection('user_trust_profiles').doc(userId).get() : Promise.resolve(null as any),
@@ -197,6 +220,7 @@ export async function getActivityAudit(activityId: string) {
     queryByActivity('championship_scores', normalized),
     queryByActivity('admin_reviews', normalized),
     readDirectDocument('activity_reward_ledger', normalized),
+    userId ? calculateIgaPreview(userId) : Promise.resolve({ result: null, error: null }),
   ]);
 
   const user = userSnap?.exists ? serializeDocument(userSnap) : null;
@@ -205,6 +229,12 @@ export async function getActivityAudit(activityId: string) {
   const sessionAudit = Array.isArray(weeklyAudit?.topSessions)
     ? weeklyAudit.topSessions.find((entry: any) => String(entry?.sessionId || '') === normalized) || null
     : null;
+  const expected = igaPreview.result;
+  const drift = user && expected ? {
+    weekly: scoreDrift(user.weeklyScore, expected.weekly.igaRanking),
+    monthly: scoreDrift(user.monthlyScore, expected.monthly.average),
+    season: scoreDrift(user.score, expected.season.average),
+  } : null;
 
   return {
     activityId: normalized,
@@ -227,6 +257,15 @@ export async function getActivityAudit(activityId: string) {
         monthlyScore: Number(user.monthlyScore || 0),
         seasonScore: Number(user.score || 0),
       },
+      expectedScores: expected ? {
+        weeklyScore: expected.weekly.igaRanking,
+        monthlyScore: expected.monthly.average,
+        seasonScore: expected.season.average,
+      } : null,
+      drift,
+      inSync: drift ? drift.weekly.matches && drift.monthly.matches && drift.season.matches : null,
+      dryRunError: igaPreview.error,
+      expectedAudit: expected,
       weeklyAudit,
       monthlyAudit: user.igaAuditMonthly || null,
       seasonAudit: user.igaAuditSeason || null,
