@@ -319,9 +319,10 @@ function installPrivateMapFetch() {
           };
         }
 
-        // satellite-v9 não contém labels de ruas/bairros/POIs. A privacidade
-        // continua preservada sem interferir na geometria da rota.
-        body.mapType = 'satellite-plain';
+        // #239: mapType não é mais sobrescrito aqui -- o editor (RunShareCard)
+        // já manda o estilo escolhido pelo usuário (satellite/outdoors/roadmap)
+        // e esse valor é o que deve chegar ao backend. Este wrapper só
+        // registra a trajetória para o cálculo de projeção dos marcadores.
         const response = await originalFetch(input, { ...init, body: JSON.stringify(body) });
         try {
           const json = await response.clone().json();

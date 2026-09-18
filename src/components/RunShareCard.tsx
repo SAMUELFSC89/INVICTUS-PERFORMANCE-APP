@@ -56,7 +56,7 @@ interface RunShareCardProps {
   onClose: () => void;
 }
 
-type MapVariant = 'satellite' | 'outdoors';
+type MapVariant = 'satellite' | 'outdoors' | 'roadmap';
 type CompositionMode = 'map' | 'photo-map' | 'photo-route';
 type Point = { lat: number; lng: number };
 type LayerTransform = { x: number; y: number; scale: number; rotation: number };
@@ -166,6 +166,20 @@ function savedMapOpacity(): number {
   return Number.isFinite(stored) ? Math.max(0.1, Math.min(1, stored)) : 0.5;
 }
 
+/**
+ * #240 (decisão do usuário, 18/09/2026): a imagem do mapa que sai no card
+ * compartilhado não deve expor nome de rua/bairro/POI, por privacidade --
+ * quem vê o card não precisa saber onde o atleta mora ou treina. O backend
+ * tem um estilo satélite sem rótulos (satellite-plain -> satellite-v9);
+ * usamos ele sempre que o usuário escolhe "Satélite" no editor, mantendo o
+ * mesmo estado/classe CSS 'satellite' (só o mapType real enviado ao backend
+ * muda). "Navegação" e o padrão "roadmap" ainda não têm uma versão sem
+ * rótulo publicada no Mapbox deste projeto -- ver nota para o usuário.
+ */
+function mapRequestType(variant: MapVariant): string {
+  return variant === 'satellite' ? 'satellite-plain' : variant;
+}
+
 function isPhraseId(value: SelectedElement): value is PhraseId {
   return value === 'movement' || value === 'freedom' || value === 'journey' || value === 'choice' || value === 'discipline';
 }
@@ -251,8 +265,12 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   }), [distanceKm, durationSeconds, session.activityType, session.calories, session.points, session.rankingPointsEarned, session.weightKg]);
 
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(existingPhoto);
-  const [compositionMode, setCompositionMode] = useState<CompositionMode>(() => existingPhoto ? 'photo-route' : 'map');
-  const [mapVariant, setMapVariant] = useState<MapVariant>('satellite');
+  // Padrão (decisão do usuário, 18/09/2026): assim que há foto + rota, o card
+  // já nasce em "foto + mapa" com o estilo "roadmap" (mapa meio transparente
+  // por baixo, rota por cima, igual à referência aprovada). Sem foto, o modo
+  // "Mapa" continua abrindo em satélite, como sempre foi.
+  const [compositionMode, setCompositionMode] = useState<CompositionMode>(() => existingPhoto ? 'photo-map' : 'map');
+  const [mapVariant, setMapVariant] = useState<MapVariant>(() => existingPhoto ? 'roadmap' : 'satellite');
   const [mapImages, setMapImages] = useState<Record<string, string | null>>({});
   const [mapError, setMapError] = useState(false);
   const [mapTransform, setMapTransform] = useState(DEFAULT_MAP_TRANSFORM);
@@ -328,7 +346,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
             trajectory: routePoints,
             width: 720,
             height: 1280,
-            mapType: mapVariant,
+            mapType: mapRequestType(mapVariant),
             zoomAdjust: -0.75,
           }),
         });
@@ -562,6 +580,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
     try {
       setSelectedPhoto(await fileToDataUrl(file));
       setCompositionMode('photo-map');
+      setMapVariant('roadmap');
       setSelectedElement('map');
       setCustomizerOpen(false);
       setFeedback(null);
@@ -573,6 +592,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
   const usePhotoMap = () => {
     if (selectedPhoto) {
       setCompositionMode('photo-map');
+      setMapVariant('roadmap');
       setSelectedElement('map');
       setCustomizerOpen(false);
       return;
@@ -784,7 +804,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
           <section className="share-customizer share-customizer--compact" onClick={(event) => event.stopPropagation()} aria-label="Composição do card">
             <header><strong>COMPOSIÇÃO</strong><button type="button" onClick={() => setCustomizerOpen(false)} aria-label="Fechar opções"><X size={18} /></button></header>
             <div className="share-customizer-modes share-customizer-modes--two">
-              <button type="button" className={compositionMode === 'map' ? 'is-active' : ''} onClick={() => { setCompositionMode('map'); setSelectedElement('map'); setCustomizerOpen(false); }}><MapIcon size={18} /><span>Mapa</span></button>
+              <button type="button" className={compositionMode === 'map' ? 'is-active' : ''} onClick={() => { setCompositionMode('map'); setSelectedElement('map'); setCustomizerOpen(false); setMapVariant((current) => current === 'roadmap' ? 'satellite' : current); }}><MapIcon size={18} /><span>Mapa</span></button>
               <button type="button" className={compositionMode !== 'map' ? 'is-active' : ''} onClick={usePhotoMap}><ImageIcon size={18} /><span>Foto + mapa</span></button>
             </div>
             <input ref={photoInputRef} className="share-hidden-file-input" type="file" accept="image/*" onChange={(event) => void handlePhotoSelection(event)} />
@@ -794,7 +814,7 @@ export function RunShareCard({ session: rawSession, onClose }: RunShareCardProps
                 <span>Estilo do mapa</span>
                 <div>
                   <button type="button" className={mapVariant === 'satellite' ? 'is-active' : ''} onClick={() => setMapVariant('satellite')}>Satélite</button>
-                  <button type="button" className={mapVariant === 'outdoors' ? 'is-active' : ''} onClick={() => setMapVariant('outdoors')}>Ruas</button>
+                  <button type="button" className={mapVariant === 'outdoors' ? 'is-active' : ''} onClick={() => setMapVariant('outdoors')}>Navegação</button>
                 </div>
               </div>
             ) : null}

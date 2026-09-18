@@ -1,84 +1,7 @@
-type MapStyle = 'streets' | 'outdoors';
-
 type PixelPoint = { x: number; y: number };
 
-let selectedMapStyle: MapStyle = 'streets';
 let snapScheduled = false;
 const snappedSourceByLayer = new WeakMap<HTMLElement, string>();
-
-function isActivityMapRequest(input: RequestInfo | URL): boolean {
-  try {
-    const url = typeof input === 'string'
-      ? input
-      : input instanceof URL
-        ? input.toString()
-        : input.url;
-    return new URL(url, window.location.href).pathname.endsWith('/api/activity-map');
-  } catch {
-    return false;
-  }
-}
-
-/**
- * shareCardRoundEnhancer ainda normaliza o request para satellite-plain por
- * compatibilidade. Este wrapper fica abaixo dele na cadeia de fetch e troca o
- * tipo pelo estilo realmente selecionado no editor. Assim nenhum card novo
- * usa satélite.
- */
-function installMapStyleRequestOverride() {
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (isActivityMapRequest(input) && init?.method?.toUpperCase() === 'POST' && typeof init.body === 'string') {
-      try {
-        const body = JSON.parse(init.body);
-        body.mapType = selectedMapStyle;
-        return originalFetch(input, { ...init, body: JSON.stringify(body) });
-      } catch {
-        // Se o payload não puder ser lido, não derruba a geração do mapa.
-      }
-    }
-    return originalFetch(input, init);
-  };
-}
-
-function installMapOptionLabels() {
-  document.addEventListener('click', (event) => {
-    const button = (event.target as Element | null)?.closest<HTMLButtonElement>('[data-invictus-map-style]');
-    if (!button) return;
-    selectedMapStyle = button.dataset.invictusMapStyle === 'navigation' ? 'outdoors' : 'streets';
-  }, true);
-}
-
-function normalizeMapButtons() {
-  const row = document.querySelector<HTMLElement>('.share-customizer-row');
-  if (!row || !/Estilo do mapa/i.test(row.textContent || '')) return;
-  const buttons = Array.from(row.querySelectorAll<HTMLButtonElement>('button'));
-  if (buttons.length < 2) return;
-
-  // Mantemos os dois estados React existentes (satellite/outdoors), mas o
-  // request real é reescrito para streets/outdoors. Isso evita uma alteração
-  // grande no componente e remove satélite da experiência do usuário.
-  if (buttons[0].textContent !== 'Ruas') buttons[0].textContent = 'Ruas';
-  if (buttons[0].dataset.invictusMapStyle !== 'streets') buttons[0].dataset.invictusMapStyle = 'streets';
-  if (buttons[1].textContent !== 'Navegação') buttons[1].textContent = 'Navegação';
-  if (buttons[1].dataset.invictusMapStyle !== 'navigation') buttons[1].dataset.invictusMapStyle = 'navigation';
-}
-
-function installNavigationMapVisual() {
-  if (document.getElementById('invictus-share-navigation-map-style')) return;
-  const style = document.createElement('style');
-  style.id = 'invictus-share-navigation-map-style';
-  style.textContent = `
-    /* Visual urbano claro/simplificado, inspirado em apps de mobilidade. */
-    .share-card-art--outdoors .share-card-map-layer img {
-      filter: grayscale(.18) saturate(.62) brightness(1.10) contrast(.92) !important;
-    }
-    .share-card-art--outdoors .share-card-map-layer--inset {
-      filter: grayscale(.10) saturate(.68) brightness(.94) contrast(.96) !important;
-    }
-  `;
-  document.head.appendChild(style);
-}
 
 function routePixel(data: Uint8ClampedArray, width: number, x: number, y: number): boolean {
   const index = (y * width + x) * 4;
@@ -199,12 +122,7 @@ function scheduleSnap() {
   });
 }
 
-installMapStyleRequestOverride();
-installMapOptionLabels();
-installNavigationMapVisual();
-
 const observer = new MutationObserver(() => {
-  normalizeMapButtons();
   scheduleSnap();
 });
 observer.observe(document.documentElement, {
@@ -216,10 +134,8 @@ observer.observe(document.documentElement, {
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    normalizeMapButtons();
     scheduleSnap();
   }, { once: true });
 } else {
-  normalizeMapButtons();
   scheduleSnap();
 }
