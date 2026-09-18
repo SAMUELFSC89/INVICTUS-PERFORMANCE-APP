@@ -32,6 +32,63 @@ function isoText(value: unknown): string | null {
   return ms > 0 ? new Date(ms).toISOString() : null;
 }
 
+function registrationAmount(data: any): number {
+  const value = Number(data?.valorPago ?? data?.valor ?? data?.amount ?? 0);
+  return Number.isFinite(value) && value > 0 ? Math.round(value * 100) / 100 : 0;
+}
+
+function registrationCreatedAt(data: any): string | null {
+  return isoText(data?.criadaEm ?? data?.createdAt) || null;
+}
+
+function registrationPaidAt(data: any): string | null {
+  return isoText(data?.pagaEm ?? data?.paidAt) || null;
+}
+
+export async function getChampionshipAdminSummary(championshipIdInput: unknown) {
+  const championshipId = safeId(championshipIdInput);
+  const championship = await getRuntimeChampionship(championshipId);
+  if (!championship?.editionId) throw new Error('Edição ativa não encontrada.');
+
+  const snapshot = await db.collection('championship_registrations')
+    .where('editionId', '==', championship.editionId)
+    .get();
+
+  let paid = 0;
+  let pending = 0;
+  let reconciliation = 0;
+  let cancelled = 0;
+  let refunded = 0;
+  let confirmedRevenue = 0;
+
+  snapshot.forEach((document: any) => {
+    const data = document.data() || {};
+    const isPaid = data.status === 'paga' && data.paymentStatus === 'PAID';
+    const isReconciliation = data.paymentStatus === 'RECONCILIATION_REQUIRED' || data.status === 'contestada';
+    if (isPaid) {
+      paid += 1;
+      confirmedRevenue += registrationAmount(data);
+    }
+    if (data.status === 'pendente' || data.paymentStatus === 'PENDING') pending += 1;
+    if (isReconciliation) reconciliation += 1;
+    if (data.status === 'cancelada' || data.paymentStatus === 'FAILED') cancelled += 1;
+    if (data.status === 'reembolsada' || data.paymentStatus === 'REFUNDED') refunded += 1;
+  });
+
+  return {
+    championshipId: championship.id,
+    editionId: championship.editionId,
+    title: championship.title,
+    total: snapshot.size,
+    paid,
+    pending,
+    reconciliation,
+    cancelled,
+    refunded,
+    confirmedRevenue: Math.round(confirmedRevenue * 100) / 100,
+  };
+}
+
 export async function listChampionshipAdminRegistrations(championshipIdInput: unknown, limitInput?: unknown) {
   const championshipId = safeId(championshipIdInput);
   const championship = await getRuntimeChampionship(championshipId);
@@ -43,21 +100,29 @@ export async function listChampionshipAdminRegistrations(championshipIdInput: un
     .limit(limit)
     .get();
 
-  const registrations = snapshot.docs
-    .map((document: any) => {
-      const data = document.data() || {};
+  const raw = snapshot.docs.map((document: any) => ({ id: document.id, data: document.data() || {} }));
+  const userIds = [...new Set(raw.map(item => String(item.data.userId || '')).filter(Boolean))];
+  const profileRefs = userIds.map(userId => db.collection('users').doc(userId));
+  const profileSnaps = profileRefs.length ? await db.getAll(...profileRefs) : [];
+  const profiles = new Map(profileSnaps.map((profile: any) => [profile.id, profile.data() || {}]));
+
+  const registrations = raw
+    .map(({ id, data }: any) => {
+      const profile: any = profiles.get(String(data.userId || '')) || {};
+      const createdAt = registrationCreatedAt(data);
+      const paidAt = registrationPaidAt(data);
       return {
-        id: document.id,
+        id,
         userId: String(data.userId || ''),
-        userName: String(data.userName || data.displayName || 'Atleta Invictus'),
-        userPhoto: data.userPhoto || null,
+        userName: String(data.userName || data.displayName || profile.displayName || profile.name || 'Atleta Invictus'),
+        userPhoto: data.userPhoto || profile.photoURL || null,
         status: String(data.status || ''),
         paymentStatus: String(data.paymentStatus || ''),
-        amount: Number(data.amount || 0),
-        paymentMethod: data.paymentMethod || null,
+        amount: registrationAmount(data),
+        paymentMethod: data.paymentMethod || data.billingType || null,
         checkoutSurface: data.checkoutSurface || null,
-        createdAt: isoText(data.createdAt) || data.createdAt || null,
-        paidAt: isoText(data.paidAt) || data.paidAt || null,
+        createdAt,
+        paidAt,
         reconciliationRequired: data.paymentStatus === 'RECONCILIATION_REQUIRED' || data.status === 'contestada',
         externalPaymentReference: data.externalPaymentReference || null,
         asaasPaymentId: data.asaasPaymentId || null,
@@ -117,6 +182,6 @@ export async function homologateChampionshipAsAdmin(championshipIdInput: unknown
       winners: Array.isArray(settlement?.winnerAssignments) ? settlement.winnerAssignments.length : 0,
     },
   });
-  publishAdminRealtimeSignalSafe({ type: 'ADMIN_CONFIG_CHANGED', source: 'admin-championships:homologate' });
+  publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_CHANGED', source: 'admin-championships:homologate' });
   return { success: true, championshipId: championship.id, editionId: championship.editionId, settlement };
 }
