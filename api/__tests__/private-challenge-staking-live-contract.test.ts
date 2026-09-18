@@ -108,6 +108,7 @@ beforeEach(() => {
   serial = 0;
   jest.useFakeTimers().setSystemTime(new Date(now));
   (verifyAuth as jest.Mock).mockResolvedValue({ uid: 'u1' });
+  (computePrivateChallengeIGAForWindow as jest.Mock).mockClear();
   (computePrivateChallengeIGAForWindow as jest.Mock).mockResolvedValue({ average: 0, weeks: [] });
   records.set('users/u1', { displayName: 'Atleta 1', status: 'active' });
   records.set('users/u2', { displayName: 'Atleta 2', status: 'active' });
