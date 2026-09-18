@@ -1,5 +1,5 @@
 import { db } from './common.js';
-import { matchActiveChampionshipsForActivity } from './championship-catalog.js';
+import { matchRuntimeActiveChampionshipsForActivity } from './championship-catalog.js';
 import { normalizeSessionPolicyModality } from './modality-config.js';
 import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
@@ -194,7 +194,7 @@ export async function resolveActivityCompetitionPolicy(
     ));
   }
 
-  const candidates = matchActiveChampionshipsForActivity({
+  const candidates = await matchRuntimeActiveChampionshipsForActivity({
     activityType,
     cardioType: input.cardioType,
     isIndoorCardio,
@@ -325,7 +325,7 @@ export async function loadActivityCompetitionPolicySnapshot(params: {
     return null;
   }
   if (policyModality.activityType !== storedModality.activityType
-    || String(policyModality.cardioType || '') !== String(storedModality.cardioType || '')
+    || String(policyModality.cardioType || '') !== String(requestedModality.cardioType || '')
     || policyModality.isIndoorCardio !== storedModality.isIndoorCardio) return null;
   return { ...policy, snapshotId: snap.id, sessionId: data.sessionId || policy.sessionId || snap.id };
 }
