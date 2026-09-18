@@ -54,7 +54,7 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(returnScreen).not.toContain('paymentStatus:');
   });
 
-  it('cria checkout diretamente após os aceites, sem prova de presença na inscrição', () => {
+  it('preserva o motor futuro, mas bloqueia inscrição paga no build de submissão', () => {
     const handler = read('api/_handlers/championships.ts');
     const page = read('src/pages/championships/ChampionshipPreview.tsx');
     const service = read('src/services/championshipService.ts');
@@ -63,11 +63,14 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(handler).not.toContain("actionType: 'championship_registration'");
     expect(page).not.toContain('VerifiedPresenceModal');
     expect(page).toContain('checkout.checkoutUrl');
+    expect(page).toContain('const STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED = false;');
+    expect(page).toContain('SEM INSCRIÇÃO NESTA VERSÃO');
+    expect(page).toContain('SEM EDIÇÃO PAGA ATIVA');
     expect(service).toContain('checkoutUrl: string');
     expect(service).not.toContain('presenceCheckRequired: true');
   });
 
-  it('mostra os aceites em etapa compacta somente após tocar no CTA', () => {
+  it('mantém os aceites compactos no motor futuro, inacessíveis enquanto o kill switch está fechado', () => {
     const page = read('src/pages/championships/ChampionshipPreview.tsx');
     expect(page).toContain('setConsentOpen(true)');
     expect(page).toContain('Confirme os aceites');
@@ -78,32 +81,33 @@ describe('campeonatos pagos — contrato de checkout e compliance', () => {
     expect(page).not.toContain('className="paid-acceptance"');
   });
 
-  it('mantém como funciona, edição/premiação e os 12 tópicos do regulamento recolhidos até tocar em ver mais', () => {
+  it('mantém como funciona, edição/premiação e regulamento recolhidos até tocar em ver mais', () => {
     const page = read('src/pages/championships/ChampionshipPreview.tsx');
     expect(page).toContain('<details className="group overflow-hidden rounded-2xl');
     expect(page).toContain('COMO FUNCIONA');
     expect(page).toContain('EDIÇÃO E PREMIAÇÃO');
     expect(page).toContain('REGULAMENTO OFICIAL');
-    expect(page).toContain('{rules.length} tópicos oficiais');
+    expect(page).toContain('O regulamento específico será publicado antes da abertura');
     expect(page).toContain('VER MAIS');
     expect(page).toContain('VER MENOS');
   });
 
-  it('expõe CTA de pagamento somente no iOS nativo e deixa Android preparado para o site', () => {
+  it('mantém o checkout futuro isolado no iOS, porém sem CTA no build enviado às lojas', () => {
     const page = read('src/pages/championships/ChampionshipPreview.tsx');
     expect(page).toContain("const isNativeIOS = Capacitor.isNativePlatform() && platform === 'ios'");
     expect(page).toContain("const isNativeAndroid = Capacitor.isNativePlatform() && platform === 'android'");
     expect(page).toContain("championshipService.createPayment(championshipId, accepted.acceptanceId, 'ios_native')");
     expect(page).toContain('{isNativeIOS && canStartEnrollment && <button');
     expect(page).toContain('ANDROID_EXTERNAL_ENROLLMENT_NOTICE');
+    expect(page).toContain('const canStartEnrollment = STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED && !paid && !enrollmentBlocked;');
     expect(page).not.toContain("checkoutSurface: 'android_native'");
   });
 
-  it('bloqueia novo CTA em reembolso ou conciliação, mas não confunde cancelamento simples com disputa financeira', () => {
+  it('bloqueia novo CTA em reembolso ou conciliação e mantém o kill switch da loja', () => {
     const page = read('src/pages/championships/ChampionshipPreview.tsx');
     const types = read('src/types/championships.ts');
     expect(page).toContain('const enrollmentBlocked = reconciliation || refunded;');
-    expect(page).toContain('const canStartEnrollment = !paid && !enrollmentBlocked;');
+    expect(page).toContain('const canStartEnrollment = STORE_SUBMISSION_PAID_ENROLLMENT_ENABLED && !paid && !enrollmentBlocked;');
     expect(page).toContain('CONCILIAÇÃO FINANCEIRA');
     expect(page).toContain('REEMBOLSO REGISTRADO');
     expect(page).toContain('{isNativeIOS && canStartEnrollment && <button');
