@@ -1,0 +1,37 @@
+From 633e3749a487d3bc7e344e1dc3077655f1984046 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 18 Sep 2026 22:18:07 +0000
+Subject: [PATCH] fix(financial): expose paymentEnvironment in wallet config
+ response
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+O CI estava falhando em withdrawal-provider-rejection-recovery.test.ts:
+o handler já calculava isStrictAsaasSandbox() e o PrizeWallet.tsx já
+sabia exibir o aviso de Ambiente Asaas Sandbox, mas o campo
+config.paymentEnvironment nunca era incluído na resposta do GET
+/api/financial, então o frontend nunca recebia o sinal para mostrar
+o aviso.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GJxr5k2q4nCkbZphek1rFs
+---
+ api/_handlers/financial.ts | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/api/_handlers/financial.ts b/api/_handlers/financial.ts
+index 9523086..35adfdb 100644
+--- a/api/_handlers/financial.ts
++++ b/api/_handlers/financial.ts
+@@ -279,6 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
+           minWithdrawalAmount: money(config.minWithdrawalAmount),
+           maxDailyWithdrawalAmount: money(config.maxDailyWithdrawalAmount),
+           identityCheckEnabled: ENFORCE_IDENTITY_FOR_WITHDRAWAL,
++          paymentEnvironment: isStrictAsaasSandbox() ? 'sandbox' : 'production',
+         },
+         identity: identityPayload(identity),
+         cashSource: 'official_prizes_only',
+-- 
+2.43.0
+
