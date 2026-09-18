@@ -61,20 +61,45 @@ describe('web admin backoffice contracts', () => {
     expect(service).toContain('recalculateAllUserScores');
   });
 
-  test('championship web administration is fail-closed while runtime migration is incomplete', () => {
+  test('championship web administration publishes immutable editions behind active-admin authority', () => {
     const endpoint = source('api/admin-championships.ts');
     const service = source('api/_lib/admin-championship-service.ts');
     const catalog = source('api/_lib/championship-catalog.ts');
+    const edition = source('api/_lib/paid-championship-edition.ts');
     expect(endpoint).toContain('verifyAuth');
     expect(endpoint).toContain('hasActiveAdminAuthority');
     expect(endpoint).toContain("action === 'save-draft'");
     expect(endpoint).toContain("action === 'delete-draft'");
     expect(endpoint).toContain("action === 'publish'");
-    expect(endpoint).toContain('Publicação live protegida');
+    expect(endpoint).toContain('publishChampionshipDraft');
     expect(service).toContain("status: 'DRAFT'");
-    expect(service).toContain('split-brain');
+    expect(service).toContain("phase: 'ATOMIC_RUNTIME_READY'");
+    expect(service).toContain('publishEnabled: true');
+    expect(service).toContain('lockPaidChampionshipEdition(championship)');
+    expect(service).toContain("db.collection('championship_admin_publications')");
+    expect(service).toContain("status: 'PUBLISHED'");
     expect(catalog).toContain('getRuntimeChampionship');
     expect(catalog).toContain('getLockedChampionshipSnapshot');
     expect(catalog).toContain('registrationEnabled');
+    expect(edition).toContain('previousSettlement.data()?.status !== \'FINALIZED\'');
+    expect(edition).toContain("db.collection('championship_editions').doc(championship.editionId)");
+  });
+
+  test('all paid championship server flows converge on the published runtime source', () => {
+    const handler = source('api/_handlers/championships.ts');
+    const inscription = source('api/_lib/championship-inscription-service.ts');
+    const scoring = source('api/_lib/championship-scoring-service.ts');
+    const policy = source('api/_lib/activity-competition-policy.ts');
+    const settlement = source('api/_lib/paid-championship-settlement.ts');
+    const reconciliation = source('api/championship-payment-reconcile.ts');
+
+    expect(handler).toContain('listRuntimeChampionships');
+    expect(handler).toContain('getRuntimeChampionship');
+    expect(inscription).toContain('getRuntimeChampionship');
+    expect(scoring).toContain('getRuntimeChampionship');
+    expect(scoring).toContain('matchRuntimeActiveChampionshipsForActivity');
+    expect(policy).toContain('matchRuntimeActiveChampionshipsForActivity');
+    expect(settlement).toContain('getRuntimeChampionship');
+    expect(reconciliation).toContain('getRuntimeChampionship');
   });
 });
