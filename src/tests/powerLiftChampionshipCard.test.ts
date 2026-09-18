@@ -37,4 +37,11 @@ describe('Power Lift na aba Campeonatos (campeonato de força gratuito)', () => 
     expect(service).toContain("action=me");
     expect(service).toContain('records.length > 0');
   });
+
+  it('o botão Voltar e o rodapé da própria página retornam para Campeonatos, não para Desafios', () => {
+    const powerLift = read('src/pages/PowerLift.tsx');
+    expect(powerLift).not.toContain("navigate('/challenges')} aria-label=\"Voltar\"");
+    expect(powerLift).toContain("navigate('/championships')} aria-label=\"Voltar\"");
+    expect(powerLift).toContain('className="is-active" onClick={() => navigate(\'/championships\')}');
+  });
 });

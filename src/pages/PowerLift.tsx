@@ -408,7 +408,7 @@ export function PowerLift() {
 
   return createPortal(<main className="power-screen">
     <header className="power-header">
-      <button onClick={()=>navigate('/challenges')} aria-label="Voltar"><ArrowLeft /></button>
+      <button onClick={()=>navigate('/championships')} aria-label="Voltar"><ArrowLeft /></button>
       <div>
         <h1>DESAFIO DE FORÇA <em>PRO</em></h1>
         <p>Supere seus limites. Prove sua força.</p>
@@ -520,7 +520,7 @@ export function PowerLift() {
       </button>
     </section>
 
-    <nav className="power-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={22} /><small>INÍCIO</small></button><button onClick={() => navigate('/championships')}><Trophy /><small>CAMPEONATOS</small></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Abrir construção do treino"><Plus /></button><button className="is-active" onClick={() => navigate('/challenges')}><ShieldCheck /><small>DESAFIOS</small></button><button onClick={() => navigate('/profile')}><UserRound /><small>PERFIL</small></button></nav>
+    <nav className="power-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={22} /><small>INÍCIO</small></button><button className="is-active" onClick={() => navigate('/championships')}><Trophy /><small>CAMPEONATOS</small></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Abrir construção do treino"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><small>DESAFIOS</small></button><button onClick={() => navigate('/profile')}><UserRound /><small>PERFIL</small></button></nav>
 
     {modal && <div className="power-overlay" onClick={()=>setModal(null)}>
       <section onClick={e=>e.stopPropagation()}>
