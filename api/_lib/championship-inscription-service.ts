@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db, FieldValue } from './common.js';
 import { AsaasClient, AsaasRequestError } from './asaas-client.js';
-import { getChampionship, isRegistrationOpen } from './championship-catalog.js';
+import { getRuntimeChampionship, isRegistrationOpen } from './championship-catalog.js';
 import {
   lockPaidChampionshipEdition,
   paidChampionshipRegistrationId,
@@ -91,7 +91,7 @@ export async function registrarAceiteRegulamento(params: {
   hrAcknowledgementId: string;
   hrAcknowledgementVersion: string;
 }) {
-  const champ = getChampionship(params.championshipId);
+  const champ = await getRuntimeChampionship(params.championshipId);
   if (!champ) throw new Error('Campeonato nao encontrado.');
   if (!await getActiveProfile(params.userId)) throw new Error('Conta inativa nao pode participar de campeonato.');
   if (params.regulationVersion !== champ.regulationVersion || params.regulationHash !== champ.regulationHash) {
@@ -128,7 +128,7 @@ export async function criarInscricaoChampionship(
   acceptanceId: string,
   checkoutSurface?: ChampionshipCheckoutSurface,
 ) {
-  const champ = getChampionship(championshipId);
+  const champ = await getRuntimeChampionship(championshipId);
   if (!champ) throw new Error('Campeonato nao encontrado.');
   if (!isRegistrationOpen(champ)) throw new Error(champ.registrationReadinessReason || 'As inscricoes para este campeonato nao estao abertas.');
   if (!acceptanceId) throw new Error('E obrigatorio aceitar o regulamento antes de se inscrever.');
@@ -654,7 +654,7 @@ export async function marcarInscricaoChampionshipComoReembolsada(asaasPaymentId:
 }
 
 export async function getUserRegistration(userId: string, championshipId: string) {
-  const champ = getChampionship(championshipId);
+  const champ = await getRuntimeChampionship(championshipId);
   if (!champ) return null;
   const currentRef = db.collection('championship_registrations').doc(paidChampionshipRegistrationId(userId, champ.editionId));
   const current = await currentRef.get();

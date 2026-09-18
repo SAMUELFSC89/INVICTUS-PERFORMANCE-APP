@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './common.js';
-import { CHAMPIONSHIPS } from './championship-catalog.js';
+import { listRuntimeChampionships } from './championship-catalog.js';
 import { finalizePaidChampionship, type PaidChampionshipRankingEntry } from './paid-championship-settlement.js';
 import { creditChampionshipPrize } from './championship-prize-credit.js';
 import {
@@ -225,43 +225,40 @@ export async function runPaidChampionshipSettlementSweep(now = new Date()): Prom
   const finalized: Array<Record<string, any>> = [];
   const blocked: Array<{ championshipId: string; reason: string }> = [];
   const skipped: string[] = [];
+  const runtimeChampionships = await listRuntimeChampionships(now);
 
-  for (const configured of CHAMPIONSHIPS) {
+  for (const configured of runtimeChampionships) {
     try {
       const locked = await getLockedChampionshipSnapshot(configured.id);
       if (!locked?.editionId) {
         skipped.push(configured.id);
         continue;
       }
-      if (locked.editionId !== configured.editionId) {
-        const previousSettlement = await db.collection('championship_settlements')
-          .doc(paidChampionshipSettlementDocumentId(locked.editionId))
-          .get();
-        if (!previousSettlement.exists || previousSettlement.data()?.status !== 'FINALIZED') {
-          throw new Error('ACTIVE_EDITION_CONFIG_MISMATCH');
-        }
-        skipped.push(configured.id);
-        continue;
+      if (String(locked.editionId) !== String(configured.editionId)) {
+        throw new Error('RUNTIME_EDITION_MISMATCH');
+      }
+      if (String(locked.publishedConfigDigest || '') !== String(configured.publishedConfigDigest || '')) {
+        throw new Error('RUNTIME_CONFIG_DIGEST_MISMATCH');
       }
 
-      const settlementAt = millis(locked.settlementAt);
+      const settlementAt = millis(configured.settlementAt);
       if (settlementAt === null || now.getTime() < settlementAt) {
         skipped.push(configured.id);
         continue;
       }
 
       const settlementRef = db.collection('championship_settlements')
-        .doc(paidChampionshipSettlementDocumentId(locked.editionId));
+        .doc(paidChampionshipSettlementDocumentId(configured.editionId));
       const existing = await settlementRef.get();
       let result: Record<string, any>;
       if (existing.exists && existing.data()?.status === 'LOCKED') {
-        result = await resumeLockedPaidChampionship(locked);
+        result = await resumeLockedPaidChampionship(configured);
       } else if (existing.exists && existing.data()?.status === 'FINALIZED') {
         const stored = existing.data() || {};
-        if (stored.configDigest !== locked.publishedConfigDigest || stored.editionId !== locked.editionId) {
+        if (stored.configDigest !== configured.publishedConfigDigest || stored.editionId !== configured.editionId) {
           throw new Error('FINALIZED_CONFIG_MISMATCH');
         }
-        await markPaidChampionshipEditionFinalized(locked, String(stored.finalizedAt || new Date().toISOString()));
+        await markPaidChampionshipEditionFinalized(configured, String(stored.finalizedAt || new Date().toISOString()));
         result = stored;
       } else {
         result = await finalizePaidChampionship(configured.id, now);

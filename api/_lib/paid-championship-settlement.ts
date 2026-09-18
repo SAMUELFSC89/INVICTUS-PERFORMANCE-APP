@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { db } from './common.js';
-import { getChampionship } from './championship-catalog.js';
+import { getRuntimeChampionship } from './championship-catalog.js';
 import { isActiveAccountState } from './account-state.js';
 import { creditChampionshipPrize } from './championship-prize-credit.js';
 import { computeFinalPrizeForEdition } from './paid-championship-dynamic-prize.js';
@@ -275,7 +275,7 @@ export async function finalizePaidChampionship(
   championshipId: string,
   now = new Date(),
 ): Promise<Record<string, any>> {
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId, now);
   if (!championship) throw new Error('Campeonato oficial não encontrado.');
   const editionId = currentEditionId(championship);
   const endAtMs = millis(championship.endAt);

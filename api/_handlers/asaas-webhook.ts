@@ -13,6 +13,7 @@ import {
   type ChampionshipPaymentRiskEvent,
 } from '../_lib/championship-inscription-service.js';
 import { StoreEngine } from '../_lib/store-engine.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 
 const PAYMENT_RISK_EVENTS = new Set<SeasonPaymentRiskEvent & ChampionshipPaymentRiskEvent>([
   'PAYMENT_REFUNDED',
@@ -73,6 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         externalReference: payment.externalReference,
       });
       if (resultadoLoja.found) {
+        publishAdminRealtimeSignalSafe({ type: 'STORE_ORDER_CHANGED', source: 'asaas-webhook' });
         return res.status(resultadoLoja.retryable ? 503 : 200).json({ received: !resultadoLoja.retryable, retryable: Boolean(resultadoLoja.retryable), loja: resultadoLoja });
       }
 
@@ -84,6 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           providerEventAt,
         );
         if (resultadoTemporada.encontrada) {
+          publishAdminRealtimeSignalSafe({ type: 'SYSTEM_CHANGED', source: 'asaas-webhook:season-registration' });
           return res.status(200).json({ received: true, inscricao: resultadoTemporada });
         }
 
@@ -94,6 +97,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           payment.externalReference,
           providerEventAt,
         );
+        if (resultadoChampionship.encontrada) {
+          const requerReconciliacao = 'requerReconciliacao' in resultadoChampionship
+            && resultadoChampionship.requerReconciliacao === true;
+          publishAdminRealtimeSignalSafe({
+            type: requerReconciliacao
+              ? 'CHAMPIONSHIP_PAYMENT_RECONCILIATION_REQUIRED'
+              : 'CHAMPIONSHIP_REGISTRATION_CONFIRMED',
+            source: 'asaas-webhook:championship',
+          });
+        }
         return res.status(200).json({ received: true, inscricao: resultadoChampionship });
       }
 
@@ -106,6 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           providerEventAt,
         );
         if (resultadoTemporada.encontrada) {
+          publishAdminRealtimeSignalSafe({ type: 'SYSTEM_CHANGED', source: 'asaas-webhook:season-risk' });
           return res.status(200).json({ received: true, inscricao: resultadoTemporada });
         }
 
@@ -118,6 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           providerEventAt,
         );
         if (resultadoChampionship.encontrada) {
+          publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_PAYMENT_RECONCILIATION_REQUIRED', source: 'asaas-webhook:championship-risk' });
           return res.status(200).json({ received: true, inscricao: resultadoChampionship });
         }
       }
@@ -141,6 +156,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       transfer.externalReference,
       transfer.value
     );
+    publishAdminRealtimeSignalSafe({
+      type: String(event).toUpperCase().includes('DONE') || String(transfer.status).toUpperCase() === 'DONE'
+        ? 'WITHDRAWAL_PAID'
+        : 'WITHDRAWAL_STATUS_CHANGED',
+      source: 'asaas-webhook:transfer',
+    });
 
     return res.status(200).json({ received: true });
   } catch (error: any) {

@@ -3,6 +3,16 @@ const mockGetChampionshipProgress = jest.fn();
 const mockSettlementGet = jest.fn();
 const mockCurrentEditionId = 'invictus_cardio_v1_ed_current';
 
+const mockRuntimeChampionship = {
+  id: 'invictus_cardio_v1',
+  editionId: mockCurrentEditionId,
+  title: 'Campeonato Invictus de Cardio',
+  edition: 'Edição 1',
+  endAt: '2026-10-01T03:00:00.000Z',
+  settlementAt: '2026-10-03T03:00:00.000Z',
+  durationDays: 30,
+};
+
 jest.mock('../_lib/common', () => ({
   verifyAuth: (...args: any[]) => mockVerifyAuth(...args),
   db: {
@@ -15,15 +25,9 @@ jest.mock('../_lib/common', () => ({
 
 jest.mock('../_lib/championship-catalog', () => ({
   listChampionships: jest.fn(() => []),
-  getChampionship: jest.fn(() => ({
-    id: 'invictus_cardio_v1',
-    editionId: mockCurrentEditionId,
-    title: 'Campeonato Invictus de Cardio',
-    edition: 'Edição 1',
-    endAt: '2026-10-01T03:00:00.000Z',
-    settlementAt: '2026-10-03T03:00:00.000Z',
-    durationDays: 30,
-  })),
+  listRuntimeChampionships: jest.fn(async () => []),
+  getChampionship: jest.fn(() => mockRuntimeChampionship),
+  getRuntimeChampionship: jest.fn(async () => mockRuntimeChampionship),
 }));
 
 jest.mock('../_lib/championship-inscription-service', () => ({

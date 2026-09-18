@@ -6,7 +6,7 @@ const settlement = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championsh
 const prizeCredit = readFileSync(resolve(process.cwd(), 'api/_lib/championship-prize-credit.ts'), 'utf8');
 const edition = readFileSync(resolve(process.cwd(), 'api/_lib/paid-championship-edition.ts'), 'utf8');
 
-describe('Contrato — motor de settlement habilitado, abertura comercial continua controlada por env', () => {
+describe('Contrato — motor de settlement habilitado, abertura comercial continua fail-closed', () => {
   test('motor monetário e editionId estão habilitados após validação executável', () => {
     expect(catalog).toContain('export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true;');
     expect(catalog).toContain('championshipEditionId');
@@ -22,20 +22,29 @@ describe('Contrato — motor de settlement habilitado, abertura comercial contin
     expect(edition).toContain('championship_edition_locks');
   });
 
-  test('a liberação comercial continua exigindo env antes do calendário', () => {
-    const start = catalog.indexOf('function registrationReadiness');
-    const end = catalog.indexOf('export function listChampionships', start);
+  test('a liberação comercial exige autorização publicada ou fallback legado antes do calendário', () => {
+    const start = catalog.indexOf('export function registrationReadiness');
+    const end = catalog.indexOf('function materialize', start);
     const block = catalog.slice(start, end);
 
     expect(start).toBeGreaterThanOrEqual(0);
-    expect(block).toContain("env('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED').toLowerCase() !== 'true'");
+    expect(block).toContain("typeof championship.registrationEnabled === 'boolean'");
+    expect(block).toContain("env('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED').toLowerCase() === 'true'");
+    expect(block).toContain('if (!registrationEnabled)');
     expect(block).toContain('if (!PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED)');
-    expect(block.indexOf('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED')).toBeLessThan(block.indexOf('registrationStart'));
+    expect(block.indexOf('registrationEnabled')).toBeLessThan(block.indexOf('registrationStart'));
     expect(block.indexOf('PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED')).toBeLessThan(block.indexOf('registrationStart'));
     expect(block).toContain('settlementAt <= competitionEnd');
     expect(block).toContain('championship.prizeDistribution.length');
     expect(block).toContain('championship.publishedConfigDigest');
     expect(block).toContain('championship.editionId');
+  });
+
+  test('runtime publicado lê snapshot imutável e preserva fallback da implantação', () => {
+    expect(catalog).toContain('export async function getRuntimeChampionship');
+    expect(catalog).toContain('getLockedChampionshipSnapshot(id)');
+    expect(catalog).toContain('materialize(locked || fallback, now)');
+    expect(catalog).toContain('export async function listRuntimeChampionships');
   });
 
   test('o regulamento publica premiação, homologação, desempate e bloqueios financeiros', () => {

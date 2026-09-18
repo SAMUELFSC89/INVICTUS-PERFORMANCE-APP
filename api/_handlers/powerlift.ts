@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { cors, db, app, verifyAuth } from '../_lib/common.js';
 import { resolvePowerLiftAuditStatus } from '../_lib/powerlift-audit.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 import { mergePowerLiftRankingRows, type PowerLiftExercise } from '../../src/core/powerLift/ranking.js';
 
 const EXERCISES = new Set(['supino', 'agachamento', 'terra']);
@@ -147,8 +148,6 @@ async function handleSubmit(req: any, res: any, userId: string) {
     return res.status(400).json({ error: 'Não foi possível validar o vídeo enviado.' });
   }
 
-  // Mesmo path de objeto só pode originar um record: torna a repetição da
-  // requisição idempotente e impede duplicar posição/pontuação por retry.
   const recordId = `power_${createHash('sha256').update(video.path).digest('hex')}`;
   const recordRef = db.collection('power_records').doc(recordId);
   const auditRef = db.collection('power_audit_logs').doc(`audit_${recordId}`);
@@ -196,11 +195,6 @@ async function handleSubmit(req: any, res: any, userId: string) {
         analysis = safeText(validation.analysis, 2000) || analysis;
         motives = safeMotives(validation.motives);
         estimatedWeight = parseWeight(validation.estimatedWeight) ?? weight;
-
-        // Somente uma sessão criada pelo servidor pode aprovar/reprovar;
-        // campos decision/confidence/analysis/motives enviados pelo aparelho
-        // são deliberadamente ignorados. Aprovação exige confiança alta
-        // segundo a política antifraude atual.
         effectiveDecision = resolvePowerLiftAuditStatus(validation.decision, confidence);
       }
 
@@ -263,6 +257,12 @@ async function handleSubmit(req: any, res: any, userId: string) {
     });
 
     const stored = result.record as Record<string, any>;
+    if (!result.idempotent) {
+      publishAdminRealtimeSignalSafe({
+        type: stored.videoStatus === 'manual_review' ? 'POWERLIFT_REVIEW_REQUIRED' : 'POWERLIFT_SUBMITTED',
+        source: 'powerlift:submit',
+      });
+    }
     return res.status(result.idempotent ? 200 : 201).json({
       success: true,
       idempotent: result.idempotent,
@@ -289,8 +289,6 @@ async function approvedExerciseCandidates(exercise: Exercise) {
       .get();
     return { records: snap.docs.map((item: any) => ({ id: item.id, ...item.data() })), degraded: false };
   } catch (error: any) {
-    // Se o índice composto estiver em criação, preservamos correção funcional
-    // com um scan limitado dos homologados e filtragem no servidor.
     const snap = await db.collection('power_records').where('videoStatus', '==', 'approved').limit(MAX_RANKING_SCAN).get();
     const records = snap.docs
       .map((item: any) => ({ id: item.id, ...item.data() }))
@@ -462,6 +460,10 @@ async function handleFinalizeAudit(req: any, res: any, userId: string) {
         validationId
       }, { merge: true });
       return { id: recordId, ...record, ...updates };
+    });
+    publishAdminRealtimeSignalSafe({
+      type: result.videoStatus === 'manual_review' ? 'POWERLIFT_REVIEW_REQUIRED' : 'POWERLIFT_SUBMITTED',
+      source: 'powerlift:finalize-audit',
     });
     return res.status(200).json({ success: true, decision: result.videoStatus, record: publicRecord(result, true) });
   } catch (error: any) {

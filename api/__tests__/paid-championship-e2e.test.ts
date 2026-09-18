@@ -39,6 +39,9 @@ jest.mock('../_lib/common', () => ({
 jest.mock('../_lib/championship-catalog', () => ({
   CHAMPIONSHIPS: [mockChampionship],
   getChampionship: jest.fn((id: string) => id === mockChampionship.id ? mockChampionship : null),
+  getRuntimeChampionship: jest.fn(async (id: string) => id === mockChampionship.id ? mockChampionship : undefined),
+  listRuntimeChampionships: jest.fn(async () => [mockChampionship]),
+  matchRuntimeActiveChampionshipsForActivity: jest.fn(async () => [mockChampionship]),
   isRegistrationOpen: jest.fn(() => true),
 }));
 

@@ -106,7 +106,9 @@ describe('paid championship final settlement', () => {
     expect(orchestrator).toContain('executionLeaseToken');
     expect(orchestrator).toContain('FINALIZED_CONFIG_MISMATCH');
     expect(orchestrator).toContain('getLockedChampionshipSnapshot(configured.id)');
-    expect(orchestrator).toContain('ACTIVE_EDITION_CONFIG_MISMATCH');
-    expect(orchestrator).toContain('paidChampionshipSettlementDocumentId(locked.editionId)');
+    expect(orchestrator).toContain('RUNTIME_EDITION_MISMATCH');
+    expect(orchestrator).toContain('RUNTIME_CONFIG_DIGEST_MISMATCH');
+    expect(orchestrator).toContain('paidChampionshipSettlementDocumentId(configured.editionId)');
+    expect(orchestrator).toContain('listRuntimeChampionships(now)');
   });
 });

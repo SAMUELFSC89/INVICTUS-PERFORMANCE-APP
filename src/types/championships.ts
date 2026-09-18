@@ -50,6 +50,11 @@ export interface Championship {
   registrationPrice: number;
   registrationOpensAt?: string;
   registrationClosesAt?: string;
+  /**
+   * Chave de abertura publicada junto da edição. Quando ausente, edições
+   * legadas continuam usando PAID_CHAMPIONSHIP_REGISTRATION_ENABLED.
+   */
+  registrationEnabled?: boolean;
   registrationOpen?: boolean;
   registrationReadinessReason?: string;
   participantCount: number;

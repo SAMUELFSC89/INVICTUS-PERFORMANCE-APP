@@ -1,8 +1,9 @@
 import { db } from './common.js';
-import { matchActiveChampionshipsForActivity } from './championship-catalog.js';
+import { matchRuntimeActiveChampionshipsForActivity } from './championship-catalog.js';
 import { normalizeSessionPolicyModality } from './modality-config.js';
 import { isCurrentCompetitiveHrAcknowledgement } from './competitive-heart-rate-acknowledgement.js';
 import { COMPETITION_RULES_VERSIONS } from '../../shared/competitiveHeartRatePolicy.js';
+import { publishAdminRealtimeSignalSafe } from './admin-realtime.js';
 
 export type ActivityCompetitionContextType =
   | 'gym_ranking'
@@ -193,7 +194,7 @@ export async function resolveActivityCompetitionPolicy(
     ));
   }
 
-  const candidates = matchActiveChampionshipsForActivity({
+  const candidates = await matchRuntimeActiveChampionshipsForActivity({
     activityType,
     cardioType: input.cardioType,
     isIndoorCardio,
@@ -378,4 +379,7 @@ export async function persistActivityCompetitionEntries(params: {
     }, { merge: true });
   }
   await batch.commit();
+  if (params.reviewStatus === 'pending_review') {
+    publishAdminRealtimeSignalSafe({ type: 'ACTIVITY_REVIEW_REQUIRED', source: 'activity-competition-policy' });
+  }
 }

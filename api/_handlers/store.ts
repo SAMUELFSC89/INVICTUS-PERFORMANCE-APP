@@ -3,6 +3,7 @@ import { cors, db, verifyAuth } from '../_lib/common.js';
 import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 import { StoreEngine } from '../_lib/store-engine.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 
 const publicStoreEnabled = () => process.env.NODE_ENV === 'test'
   || String(process.env.PUBLIC_STORE_ENABLED || '').trim().toLowerCase() === 'true';
@@ -31,9 +32,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = String(req.query.action || req.body?.action || 'catalogue');
 
   try {
-    // Pré-lançamento: toda a estrutura comercial permanece disponível apenas
-    // no backoffice. Usuários não recebem catálogo, produto, checkout, pedidos
-    // ou qualquer outro sinal de uma loja ainda não lançada.
     if (!publicStoreEnabled() && !ADMIN_ACTIONS.has(action)) {
       return res.status(404).json({ success: false, error: 'Recurso indisponível.' });
     }
@@ -75,6 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const payment = await StoreEngine.createPaymentForOrder(auth.uid, orderId);
       const order = await StoreEngine.getPhysicalOrder(auth.uid, orderId);
       if (!order) return res.status(404).json({ success: false, error: 'Pedido não encontrado.' });
+      publishAdminRealtimeSignalSafe({ type: 'STORE_ORDER_CHANGED', source: 'store:resume-payment' });
       return res.status(200).json({ success: true, order, payment });
     }
 
@@ -84,11 +83,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const financialOperation = await StoreEngine.cancelPendingOrder(auth.uid, orderId);
       const order = await StoreEngine.getPhysicalOrder(auth.uid, orderId);
       const pending = financialOperation.state === 'PENDING';
+      publishAdminRealtimeSignalSafe({ type: 'STORE_ORDER_CHANGED', source: 'store:cancel-order' });
       return res.status(pending ? 202 : 200).json({ success: true, pending, order, financialOperation });
     }
 
     if (req.method === 'POST' && action === 'redeem-with-coins') {
       const result = await StoreEngine.redeemWithCoins({ userId: auth.uid, productId: String(req.body.productId || ''), quantity: Number(req.body.quantity), address: req.body.address, idempotencyKey: String(req.body.idempotencyKey || '') });
+      if (!result.duplicated) publishAdminRealtimeSignalSafe({ type: 'STORE_ORDER_CHANGED', source: 'store:redeem-with-coins' });
       return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result });
     }
 
@@ -96,6 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const paymentMethod = req.body.paymentMethod === 'COINS_PLUS_MONEY' ? 'COINS_PLUS_MONEY' : 'MONEY';
       const result = await StoreEngine.createMoneyOrder({ userId: auth.uid, productId: String(req.body.productId || ''), quantity: Number(req.body.quantity), address: req.body.address, paymentMethod, idempotencyKey: String(req.body.idempotencyKey || '') });
       const payment = await StoreEngine.createPaymentForOrder(auth.uid, result.order.orderId);
+      if (!result.duplicated) publishAdminRealtimeSignalSafe({ type: 'STORE_ORDER_CHANGED', source: 'store:create-cash-order' });
       return res.status(result.duplicated ? 200 : 201).json({ success: true, ...result, payment });
     }
 
@@ -119,32 +121,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'POST' && action === 'import-catalogue') {
       const result = await StoreEngine.ensureRealCatalogue();
+      publishAdminRealtimeSignalSafe({ type: 'STORE_PRODUCT_CHANGED', source: 'store:import-catalogue' });
       return res.status(200).json({ success: true, result });
     }
 
     if (req.method === 'POST' && action === 'update-pricing') {
       const product = await StoreEngine.updatePricing(String(req.body.productId || ''), req.body.pricing || {});
+      publishAdminRealtimeSignalSafe({ type: 'STORE_PRODUCT_CHANGED', source: 'store:update-pricing' });
       return res.status(200).json({ success: true, product });
     }
 
     if (req.method === 'POST' && action === 'update-supplier-cost') {
       await StoreEngine.updateSupplierCost(String(req.body.productId || ''), Number(req.body.newCost), String(req.body.source || 'admin'));
+      publishAdminRealtimeSignalSafe({ type: 'STORE_PRODUCT_CHANGED', source: 'store:update-supplier-cost' });
       return res.status(200).json({ success: true });
     }
 
     if (req.method === 'POST' && action === 'update-product-configuration') {
       const product = await StoreEngine.updateProductConfiguration(String(req.body.productId || ''), req.body.configuration || {});
+      publishAdminRealtimeSignalSafe({ type: 'STORE_PRODUCT_CHANGED', source: 'store:update-product-configuration' });
       return res.status(200).json({ success: true, product });
     }
 
     if (req.method === 'POST' && action === 'save-drop') {
       const drop = await StoreEngine.saveDrop(req.body.drop || {});
+      publishAdminRealtimeSignalSafe({ type: 'DROP_CHANGED', source: 'store:save-drop' });
       return res.status(200).json({ success: true, drop });
     }
 
     if (req.method === 'POST' && action === 'update-order-status') {
       const financialOperation = await StoreEngine.updateOrderStatus(String(req.body.orderId || ''), req.body.status, req.body.trackingCode);
       const pending = financialOperation ? financialOperation.state === 'PENDING' : false;
+      publishAdminRealtimeSignalSafe({ type: 'STORE_ORDER_CHANGED', source: 'store:update-order-status' });
       return res.status(pending ? 202 : 200).json({ success: true, pending, financialOperation: financialOperation || null });
     }
 

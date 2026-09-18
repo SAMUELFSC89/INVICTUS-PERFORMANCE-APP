@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authMiddleware } from './_middleware/auth.js';
 import { corsMiddleware } from './_middleware/cors.js';
 import { db } from './_lib/common.js';
-import { getChampionship } from './_lib/championship-catalog.js';
+import { getRuntimeChampionship } from './_lib/championship-catalog.js';
 import { getAsaasBaseUrl } from './_lib/asaas-client.js';
 import { confirmarInscricaoChampionshipPorPagamento } from './_lib/championship-inscription-service.js';
 import { paidChampionshipRegistrationId } from './_lib/paid-championship-edition.js';
@@ -38,7 +38,7 @@ export default async function handler(
   const championshipId = String(req.body?.championshipId || '').trim();
   if (!championshipId) return res.status(400).json({ error: 'championshipId é obrigatório.' });
 
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship) return res.status(404).json({ error: 'Campeonato não encontrado.' });
 
   const editionId = String(championship.editionId || '').trim();

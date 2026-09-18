@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
 import { Championship, type PrizeRank } from '../../src/types/championships.js';
 import { PAID_CHAMPIONSHIP_OFFERS } from '../../shared/paidChampionshipPolicy.js';
+import { getLockedChampionshipSnapshot } from './paid-championship-edition.js';
 
 /**
  * Hard gate de capacidade do motor pago.
  * O settlement foi validado em CI/E2E e esta capacidade pode permanecer habilitada.
- * A abertura comercial continua fail-closed e depende explicitamente de
- * PAID_CHAMPIONSHIP_REGISTRATION_ENABLED=true, além de calendário, premiação,
- * edição e integrações financeiras válidas.
+ * A abertura comercial continua fail-closed e depende de calendário, premiação,
+ * edição e integrações financeiras válidas. Edições legadas usam a flag de
+ * ambiente; edições publicadas pelo backoffice carregam registrationEnabled
+ * dentro do snapshot imutável.
  */
 export const PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED = true;
 
@@ -47,7 +49,7 @@ function parsePrizeDistribution(name: string): PrizeRank[] {
   }
 }
 
-function statusForPeriod(startAt: string, endAt: string, now = new Date()): Championship['status'] {
+export function statusForPeriod(startAt: string, endAt: string, now = new Date()): Championship['status'] {
   const start = Date.parse(startAt);
   const end = Date.parse(endAt);
   const current = now.getTime();
@@ -57,14 +59,14 @@ function statusForPeriod(startAt: string, endAt: string, now = new Date()): Cham
   return 'in_review';
 }
 
-function durationDays(startAt: string, endAt: string): number {
+export function championshipDurationDays(startAt: string, endAt: string): number {
   const start = Date.parse(startAt);
   const end = Date.parse(endAt);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 30;
   return Math.max(1, Math.ceil((end - start) / 86_400_000));
 }
 
-function digestPublishedConfig(value: Record<string, unknown>): string {
+export function digestChampionshipPublishedConfig(value: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
@@ -101,7 +103,7 @@ function buildChampionship(
     ...(offer.modality === 'cardio' ? { allowedCardioTypes } : {}),
   };
 
-  const publishedConfigDigest = digestPublishedConfig({
+  const publishedConfigDigest = digestChampionshipPublishedConfig({
     id: offer.id,
     edition,
     startAt,
@@ -125,7 +127,7 @@ function buildChampionship(
     description: offer.performanceDescription,
     categoryLabel: offer.modality === 'cardio' ? 'CARDIO' : 'MUSCULAÇÃO',
     accentColor: offer.modality === 'cardio' ? 'teal' : 'gold',
-    durationDays: durationDays(startAt, endAt),
+    durationDays: championshipDurationDays(startAt, endAt),
     startAt,
     endAt,
     settlementAt,
@@ -145,13 +147,20 @@ function buildChampionship(
   };
 }
 
+/**
+ * Fallback legado imutável da implantação. Novas edições publicadas pelo
+ * backoffice são lidas do snapshot travado no Firestore pelas funções Runtime.
+ */
 export const CHAMPIONSHIPS: Championship[] = [
   buildChampionship('invictus_strength_v1', 'CHAMPIONSHIP_STRENGTH'),
   buildChampionship('invictus_cardio_v1', 'CHAMPIONSHIP_CARDIO'),
 ];
 
-function registrationReadiness(championship: Championship, now = new Date()): { open: boolean; reason: string } {
-  if (env('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED').toLowerCase() !== 'true') {
+export function registrationReadiness(championship: Championship, now = new Date()): { open: boolean; reason: string } {
+  const registrationEnabled = typeof championship.registrationEnabled === 'boolean'
+    ? championship.registrationEnabled
+    : env('PAID_CHAMPIONSHIP_REGISTRATION_ENABLED').toLowerCase() === 'true';
+  if (!registrationEnabled) {
     return { open: false, reason: 'A edição ainda não foi liberada para inscrições.' };
   }
   if (!PAID_CHAMPIONSHIP_SETTLEMENT_IMPLEMENTED) {
@@ -183,60 +192,94 @@ function registrationReadiness(championship: Championship, now = new Date()): { 
   return { open: true, reason: '' };
 }
 
-export function listChampionships(now = new Date()): Championship[] {
-  return CHAMPIONSHIPS.map((championship) => {
-    const readiness = registrationReadiness(championship, now);
-    return {
-      ...championship,
-      status: statusForPeriod(championship.startAt, championship.endAt, now),
-      registrationOpen: readiness.open,
-      registrationReadinessReason: readiness.reason,
-    };
-  });
-}
-
-export function getChampionship(id: string): Championship | undefined {
-  const championship = CHAMPIONSHIPS.find((candidate) => candidate.id === id);
-  if (!championship) return undefined;
-  const readiness = registrationReadiness(championship);
+function materialize(championship: Championship, now = new Date()): Championship {
+  const readiness = registrationReadiness(championship, now);
   return {
     ...championship,
-    status: statusForPeriod(championship.startAt, championship.endAt),
+    status: statusForPeriod(championship.startAt, championship.endAt, now),
     registrationOpen: readiness.open,
     registrationReadinessReason: readiness.reason,
   };
+}
+
+/** Legado síncrono: usado somente como fallback de compatibilidade. */
+export function listChampionships(now = new Date()): Championship[] {
+  return CHAMPIONSHIPS.map((championship) => materialize(championship, now));
+}
+
+/** Legado síncrono: novos fluxos server-side devem usar getRuntimeChampionship. */
+export function getChampionship(id: string): Championship | undefined {
+  const championship = CHAMPIONSHIPS.find((candidate) => candidate.id === id);
+  return championship ? materialize(championship) : undefined;
+}
+
+/**
+ * Fonte canônica de runtime. Quando existe um lock de edição, lê o snapshot
+ * imutável publicado pelo backoffice; se ainda não houve migração/publicação,
+ * cai de forma compatível para a configuração de ambiente atual.
+ */
+export async function getRuntimeChampionship(id: string, now = new Date()): Promise<Championship | undefined> {
+  const fallback = CHAMPIONSHIPS.find((candidate) => candidate.id === id);
+  if (!fallback) return undefined;
+  try {
+    const locked = await getLockedChampionshipSnapshot(id);
+    return materialize(locked || fallback, now);
+  } catch (error: any) {
+    console.error(`[Championship catalog] Falha ao ler snapshot publicado ${id}; usando fallback da implantação:`, error?.message || error);
+    return materialize(fallback, now);
+  }
+}
+
+export async function listRuntimeChampionships(now = new Date()): Promise<Championship[]> {
+  const resolved = await Promise.all(CHAMPIONSHIPS.map((championship) => getRuntimeChampionship(championship.id, now)));
+  return resolved.filter((championship): championship is Championship => Boolean(championship));
 }
 
 export function isRegistrationOpen(championship: Championship, now: Date = new Date()): boolean {
   return registrationReadiness(championship, now).open;
 }
 
+function matchesActivity(championship: Championship, params: {
+  activityType: string;
+  cardioType?: string;
+  isIndoorCardio?: boolean;
+  when: Date;
+}): boolean {
+  const activityType = String(params.activityType || '').trim().toLowerCase();
+  const cardioType = String(params.cardioType || '').trim().toLowerCase();
+  const whenMs = params.when.getTime();
+  if (!Number.isFinite(whenMs)) return false;
+  const startMs = Date.parse(championship.startAt);
+  const endMs = Date.parse(championship.endAt);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || whenMs < startMs || whenMs > endMs) return false;
+
+  const expectsCardio = championship.type === 'run_elite_corrida';
+  if (expectsCardio !== (activityType === 'cardio')) return false;
+  if (expectsCardio) {
+    const allowed = (championship.antiFraudProfile?.allowedCardioTypes || [])
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+    if (allowed.length === 0 || !cardioType || !allowed.includes(cardioType)) return false;
+  }
+  return true;
+}
+
+/** Compatibilidade síncrona para código legado ainda sem acesso ao snapshot. */
 export function matchActiveChampionshipsForActivity(params: {
   activityType: string;
   cardioType?: string;
   isIndoorCardio?: boolean;
   when: Date;
 }): Championship[] {
-  const activityType = String(params.activityType || '').trim().toLowerCase();
-  const cardioType = String(params.cardioType || '').trim().toLowerCase();
-  const whenMs = params.when.getTime();
-  if (!Number.isFinite(whenMs)) return [];
+  return CHAMPIONSHIPS.filter((championship) => matchesActivity(championship, params));
+}
 
-  return CHAMPIONSHIPS.filter((championship) => {
-    const startMs = Date.parse(championship.startAt);
-    const endMs = Date.parse(championship.endAt);
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || whenMs < startMs || whenMs > endMs) return false;
-
-    const expectsCardio = championship.type === 'run_elite_corrida';
-    if (expectsCardio !== (activityType === 'cardio')) return false;
-
-    if (expectsCardio) {
-      const allowed = (championship.antiFraudProfile?.allowedCardioTypes || [])
-        .map((value) => String(value || '').trim().toLowerCase())
-        .filter(Boolean);
-      if (allowed.length === 0 || !cardioType || !allowed.includes(cardioType)) return false;
-    }
-
-    return true;
-  });
+export async function matchRuntimeActiveChampionshipsForActivity(params: {
+  activityType: string;
+  cardioType?: string;
+  isIndoorCardio?: boolean;
+  when: Date;
+}): Promise<Championship[]> {
+  const championships = await listRuntimeChampionships(params.when);
+  return championships.filter((championship) => matchesActivity(championship, params));
 }

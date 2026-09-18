@@ -1,6 +1,43 @@
+import { createHash } from 'node:crypto';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth } from '../_lib/common.js';
 import { isProUser } from '../_lib/entitlement.js';
+import { isActiveAccountState } from '../_lib/account-state.js';
+import { computePrivateChallengeIGAForWindow } from '../_lib/private-challenge-iga.js';
+
+const MAX_STAKE_AMOUNT = 2000;
+
+type CoinWallet = {
+  userId?: string;
+  balance?: number;
+  lifetimeEarned?: number;
+  lifetimeSpent?: number;
+  updatedAt?: string;
+};
+
+function emptyWallet(userId: string): CoinWallet {
+  return { userId, balance: 0, lifetimeEarned: 0, lifetimeSpent: 0, updatedAt: new Date().toISOString() };
+}
+
+function coinTransactionId(userId: string, idempotencyKey: string): string {
+  const digest = createHash('sha256').update(`${userId}\u0000${idempotencyKey}`).digest('hex');
+  return `coin_${digest}`;
+}
+
+function normalizeStake(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return 0;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 0 || amount > MAX_STAKE_AMOUNT) return null;
+  return amount;
+}
+
+function walletValues(wallet: CoinWallet) {
+  return {
+    balance: Math.max(0, Number(wallet.balance) || 0),
+    lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0),
+    lifetimeSpent: Math.max(0, Number(wallet.lifetimeSpent) || 0),
+  };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -8,12 +45,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Não autorizado.' });
 
-  const action = (req.query.action || req.body.action) as string;
+  const action = String(req.query.action || req.body?.action || 'list');
 
   try {
-    if (!db) {
-      return res.status(500).json({ error: 'Banco de dados não disponível.' });
-    }
+    if (!db) return res.status(500).json({ error: 'Banco de dados não disponível.' });
 
     switch (action) {
       case 'create':
@@ -30,69 +65,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-/**
- * Lists challenges, updating any that have completed or expired.
- *
- * FIX DE PRIVACIDADE (achado da auditoria): antes, esta função devolvia TODOS
- * os desafios privados de TODOS os usuários — incluindo o inviteCode — para
- * qualquer chamador autenticado. Agora só retorna desafios em que o usuário
- * é o criador ou já é membro.
- */
 async function handleListChallenges(_req: VercelRequest, res: VercelResponse, userId: string) {
   const challengesRef = db.collection('private_challenges');
-  const now = new Date();
-  const nowISO = now.toISOString();
-
-  // Load all non-completed/non-cancelled challenges to check for expiration.
-  // IMPORTANT: a rota normal nunca liquida dinheiro legado. Desafios antigos
-  // com entryFee ficam reservados para a migração administrativa dedicada,
-  // que é auditável, protegida e idempotente.
-  const activeAndFormingSnap = await challengesRef
-    .where('status', 'in', ['forming', 'active'])
-    .get();
+  const nowISO = new Date().toISOString();
+  const activeAndFormingSnap = await challengesRef.where('status', 'in', ['forming', 'active']).get();
 
   for (const challengeDoc of activeAndFormingSnap.docs) {
     const challenge = challengeDoc.data();
-    if (challenge.endDate && challenge.endDate < nowISO) {
-      await processChallengeExpiration(challengeDoc.id);
-    }
+    if (challenge.endDate && challenge.endDate < nowISO) await processChallengeExpiration(challengeDoc.id);
   }
 
-  // Now reload all private challenges to filter down to the ones this user can see
   const allChallengesSnap = await challengesRef.orderBy('createdAt', 'desc').get();
   const challengesList: any[] = [];
 
   for (const challengeDoc of allChallengesSnap.docs) {
     const cData = challengeDoc.data();
     const challengeId = challengeDoc.id;
-
-    // Visibilidade: só o criador ou quem já é membro pode ver o desafio.
-    // (checagem rápida antes de carregar membros, para não vazar nada)
     const isCreator = cData.creatorId === userId;
+    const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+    const rawMembers = membersSnap.docs.map(mDoc => mDoc.data());
+    const isCurrentUserMember = rawMembers.some(m => m.userId === userId);
+    if (!isCreator && !isCurrentUserMember) continue;
 
-    // Load members of this challenge to build custom ranking
-    const membersSnap = await db.collection('private_challenge_members')
-      .where('challengeId', '==', challengeId)
-      .get();
-
-    const members = membersSnap.docs.map(mDoc => {
-      const m = mDoc.data();
+    const isLegacyMoneyChallenge = typeof cData.entryFee === 'number' && cData.entryFee > 0;
+    const scoreStart = new Date(cData.startDate || cData.createdAt || nowISO);
+    const configuredScoreEnd = new Date(cData.endDate || nowISO);
+    const nowMs = Date.parse(nowISO);
+    const scoreEnd = ['forming', 'active'].includes(cData.status) && Number.isFinite(configuredScoreEnd.getTime())
+      ? new Date(Math.min(configuredScoreEnd.getTime(), nowMs))
+      : configuredScoreEnd;
+    const members = await Promise.all(rawMembers.map(async m => {
+      let points = Math.max(0, Number(m.points) || 0);
+      let workoutsCount = Math.max(0, Number(m.workoutsCount) || 0);
+      if (!isLegacyMoneyChallenge && Number.isFinite(scoreStart.getTime()) && Number.isFinite(scoreEnd.getTime())) {
+        const iga = await computePrivateChallengeIGAForWindow(m.userId, scoreStart, scoreEnd);
+        points = Number(Math.max(0, Number(iga.average) || 0).toFixed(6));
+        workoutsCount = iga.weeks.reduce((sum, week) => sum + Math.max(0, Number(week.frequency) || 0), 0);
+      }
       return {
         userId: m.userId,
         userName: m.userName || 'Atleta',
         userPhoto: m.userPhoto || '',
-        points: m.points || 0,
-        workoutsCount: m.workoutsCount || 0,
-        joinedAt: m.joinedAt
+        points,
+        igaScore: isLegacyMoneyChallenge ? null : points,
+        workoutsCount,
+        joinedAt: m.joinedAt,
+        stakePaid: Math.max(0, Number(m.stakeAmount) || 0),
       };
-    }).sort((a, b) => b.points - a.points); // Sort by highest score/points
-
-    const isCurrentUserMember = members.some(m => m.userId === userId);
-
-    // Só inclui na resposta se o usuário puder ver este desafio.
-    if (!isCreator && !isCurrentUserMember) {
-      continue;
-    }
+    }));
+    members.sort((a, b) => b.points - a.points || String(a.userId).localeCompare(String(b.userId)));
 
     challengesList.push({
       id: challengeId,
@@ -111,65 +132,81 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
       winnerId: cData.winnerId || null,
       winnerName: cData.winnerName || null,
       winnerPhoto: cData.winnerPhoto || null,
+      resultStatus: cData.resultStatus || null,
+      resultReason: cData.resultReason || null,
+      stakeAmount: Math.max(0, Number(cData.stakeAmount) || 0),
+      potTotal: Math.max(0, Number(cData.potTotal) || 0),
+      extendedOnce: cData.extendedOnce === true,
       isMember: isCurrentUserMember,
       members,
-      // Campos legados (só existem em desafios criados antes da migração
-      // que removeu dinheiro do recurso; ver tarefa #125). Mantidos apenas
-      // para exibir o histórico real de quem participou desses desafios —
-      // não são usados por nenhum desafio novo.
-      isLegacyMoneyChallenge: typeof cData.entryFee === 'number' && cData.entryFee > 0,
+      isLegacyMoneyChallenge,
+      scoringMode: isLegacyMoneyChallenge ? 'LEGACY' : 'IGA',
       entryFee: cData.entryFee,
-      netPrizePool: cData.netPrizePool
+      netPrizePool: cData.netPrizePool,
     });
   }
 
   return res.status(200).json({ success: true, challenges: challengesList });
 }
 
-/**
- * Creates a new private challenge.
- *
- * Desafios privados agora são um BENEFÍCIO DO PLANO PRO, sem nenhum valor em
- * dinheiro envolvido: sem taxa de entrada, sem pool, sem prêmio em R$. Apenas
- * reconhecimento (badge/destaque) para quem terminar em 1º lugar.
- */
 async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, userId: string) {
-  const { title, durationDays, description } = req.body;
-
-  if (!title || !durationDays) {
-    return res.status(400).json({ error: 'Parâmetros título e duração são obrigatórios.' });
-  }
+  const { title, durationDays, description, stakeAmount } = req.body || {};
+  if (!title || !durationDays) return res.status(400).json({ error: 'Parâmetros título e duração são obrigatórios.' });
 
   const durationNum = Number(durationDays);
-  if (![7, 15, 30].includes(durationNum)) {
-    return res.status(400).json({ error: 'Duração aceita apenas 7, 15 ou 30 dias.' });
-  }
+  if (![7, 15, 30].includes(durationNum)) return res.status(400).json({ error: 'Duração aceita apenas 7, 15 ou 30 dias.' });
+  const stakeNum = normalizeStake(stakeAmount);
+  if (stakeNum === null) return res.status(400).json({ error: `A aposta deve ser um número inteiro de Invictus Coins entre 0 e ${MAX_STAKE_AMOUNT}.` });
 
-  // Get user profile for creator details + checagem de plano PRO
   const userRef = db.collection('users').doc(userId);
   const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    return res.status(404).json({ error: 'Perfil do usuário não encontrado.' });
-  }
-
+  if (!userSnap.exists) return res.status(404).json({ error: 'Perfil do usuário não encontrado.' });
   const userData = userSnap.data() || {};
-
   if (!isProUser(userData)) {
-    return res.status(403).json({
-      error: 'Desafios privados são exclusivos para assinantes PRO. Assine o Invictus PRO para criar um desafio.'
-    });
+    return res.status(403).json({ error: 'Desafios privados são exclusivos para assinantes PRO. Assine o Invictus PRO para criar um desafio.' });
   }
+  if (stakeNum > 0 && !isActiveAccountState(userData)) return res.status(403).json({ error: 'Conta inativa não pode apostar Invictus Coins.' });
 
-  // Generate unique 6-character Invite Code
   const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-
   const now = new Date();
   const endDate = new Date(now.getTime() + durationNum * 24 * 60 * 60 * 1000);
-
   const challengeId = db.collection('private_challenges').doc().id;
 
-  await db.runTransaction(async (transaction) => {
+  await db.runTransaction(async (transaction: any) => {
     const challengeRef = db.collection('private_challenges').doc(challengeId);
+    const memberRef = db.collection('private_challenge_members').doc(`${userId}_${challengeId}`);
+    let stakeTxId: string | null = null;
+
+    if (stakeNum > 0) {
+      const walletRef = db.collection('reward_coin_wallets').doc(userId);
+      const walletSnap = await transaction.get(walletRef);
+      const wallet = walletSnap.exists ? (walletSnap.data() as CoinWallet) : emptyWallet(userId);
+      const current = walletValues(wallet);
+      if (current.balance < stakeNum) throw new Error('Saldo de Invictus Coins insuficiente para esta aposta.');
+      stakeTxId = coinTransactionId(userId, `private_challenge_stake_${challengeId}`);
+      const createdAt = now.toISOString();
+      transaction.create(db.collection('reward_coin_transactions').doc(stakeTxId), {
+        id: stakeTxId,
+        userId,
+        amount: stakeNum,
+        type: 'debit',
+        origin: 'private_challenge_stake',
+        ledgerType: 'PRIVATE_CHALLENGE_STAKE',
+        description: `Aposta ao criar o desafio privado "${title}"`,
+        idempotencyKey: `private_challenge_stake_${challengeId}`,
+        balanceBefore: current.balance,
+        balanceAfter: current.balance - stakeNum,
+        createdAt,
+      });
+      transaction.set(walletRef, {
+        userId,
+        balance: current.balance - stakeNum,
+        lifetimeEarned: current.lifetimeEarned,
+        lifetimeSpent: current.lifetimeSpent + stakeNum,
+        updatedAt: createdAt,
+      }, { merge: true });
+    }
+
     transaction.set(challengeRef, {
       title,
       description: description || '',
@@ -178,15 +215,16 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
       creatorPhoto: userData.photoURL || '',
       inviteCode,
       durationDays: durationNum,
-      status: 'forming', // vira 'active' assim que o 2º participante entrar
+      status: 'forming',
       createdAt: now.toISOString(),
       startDate: now.toISOString(),
       endDate: endDate.toISOString(),
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      stakeAmount: stakeNum,
+      potTotal: stakeNum,
+      extendedOnce: false,
     });
 
-    // Enroll Creator as the first member
-    const memberRef = db.collection('private_challenge_members').doc(`${userId}_${challengeId}`);
     transaction.set(memberRef, {
       userId,
       userName: userData.displayName || 'Atleta',
@@ -195,82 +233,91 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
       points: 0,
       workoutsCount: 0,
       joinedAt: now.toISOString(),
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      stakeAmount: stakeNum,
+      stakeTxId,
     });
   });
 
-  return res.status(200).json({ success: true, challengeId, inviteCode });
+  return res.status(200).json({ success: true, challengeId, inviteCode, stakeAmount: stakeNum });
 }
 
-/**
- * Enrolls a user in a private challenge using an invitation code.
- */
 async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, userId: string) {
-  const { inviteCode } = req.body;
+  const inviteCode = String(req.body?.inviteCode || '').trim().toUpperCase();
+  if (!inviteCode) return res.status(400).json({ error: 'Código de convite é obrigatório.' });
 
-  if (!inviteCode) {
-    return res.status(400).json({ error: 'Código de convite é obrigatório.' });
-  }
-
-  // Find the challenge by invite code
-  const uppercaseCode = inviteCode.trim().toUpperCase();
-  const challengeQuerySnap = await db.collection('private_challenges')
-    .where('inviteCode', '==', uppercaseCode)
-    .limit(1)
-    .get();
-
-  if (challengeQuerySnap.empty) {
-    return res.status(404).json({ error: 'Desafio não encontrado com este código de convite.' });
-  }
-
+  const challengeQuerySnap = await db.collection('private_challenges').where('inviteCode', '==', inviteCode).limit(1).get();
+  if (challengeQuerySnap.empty) return res.status(404).json({ error: 'Desafio não encontrado com este código de convite.' });
   const challengeDoc = challengeQuerySnap.docs[0];
   const challengeId = challengeDoc.id;
   const cData = challengeDoc.data();
-
-  if (['completed', 'cancelled'].includes(cData.status)) {
-    return res.status(400).json({ error: 'Este desafio privado já foi finalizado ou cancelado.' });
-  }
-
-  // Defesa extra: se por algum motivo este ainda for um desafio legado com
-  // dinheiro (antes da migração da tarefa #125), bloqueia a entrada em vez
-  // de cobrar taxa — o modelo com dinheiro foi descontinuado.
+  if (['completed', 'cancelled'].includes(cData.status)) return res.status(400).json({ error: 'Este desafio privado já foi finalizado ou cancelado.' });
   if (typeof cData.entryFee === 'number' && cData.entryFee > 0) {
-    return res.status(400).json({
-      error: 'Este desafio usa o modelo antigo (com taxa em dinheiro) e está sendo encerrado. Peça ao criador para abrir um novo desafio PRO, sem custo.'
-    });
+    return res.status(400).json({ error: 'Este desafio usa o modelo antigo (com taxa em dinheiro) e está sendo encerrado. Peça ao criador para abrir um novo desafio PRO, sem custo.' });
   }
 
-  // Check if they are already enrolled
   const memberRef = db.collection('private_challenge_members').doc(`${userId}_${challengeId}`);
-  const memberSnap = await memberRef.get();
-  if (memberSnap.exists) {
-    return res.status(400).json({ error: 'Você já faz parte deste desafio privado!' });
-  }
+  if ((await memberRef.get()).exists) return res.status(400).json({ error: 'Você já faz parte deste desafio privado!' });
 
-  // Get user profile details + checagem de plano PRO
-  const userRef = db.collection('users').doc(userId);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    return res.status(404).json({ error: 'Perfil do usuário não encontrado.' });
-  }
-
+  const userSnap = await db.collection('users').doc(userId).get();
+  if (!userSnap.exists) return res.status(404).json({ error: 'Perfil do usuário não encontrado.' });
   const userData = userSnap.data() || {};
-
   if (!isProUser(userData)) {
-    return res.status(403).json({
-      error: 'Desafios privados são exclusivos para assinantes PRO. Assine o Invictus PRO para participar.'
-    });
+    return res.status(403).json({ error: 'Desafios privados são exclusivos para assinantes PRO. Assine o Invictus PRO para participar.' });
   }
-
+  const stakeNum = Math.max(0, Number(cData.stakeAmount) || 0);
+  if (stakeNum > 0 && !isActiveAccountState(userData)) return res.status(403).json({ error: 'Conta inativa não pode apostar Invictus Coins.' });
   const now = new Date();
 
-  await db.runTransaction(async (transaction) => {
-    // Status é 'active' assim que houver pelo menos 2 participantes
+  await db.runTransaction(async (transaction: any) => {
+    const freshChallengeSnap = await transaction.get(challengeDoc.ref);
+    if (!freshChallengeSnap.exists) throw new Error('Desafio não encontrado.');
+    const freshChallenge = freshChallengeSnap.data() || {};
+    if (['completed', 'cancelled'].includes(freshChallenge.status)) throw new Error('Este desafio privado já foi finalizado ou cancelado.');
+    const freshStake = Math.max(0, Number(freshChallenge.stakeAmount) || 0);
+    if (freshStake !== stakeNum) throw new Error('A regra de aposta deste desafio mudou. Reabra o desafio e tente novamente.');
+
+    let stakeTxId: string | null = null;
+    let walletRef: any = null;
+    let walletCurrent: ReturnType<typeof walletValues> | null = null;
+    if (stakeNum > 0) {
+      walletRef = db.collection('reward_coin_wallets').doc(userId);
+      const walletSnap = await transaction.get(walletRef);
+      const wallet = walletSnap.exists ? (walletSnap.data() as CoinWallet) : emptyWallet(userId);
+      walletCurrent = walletValues(wallet);
+      if (walletCurrent.balance < stakeNum) throw new Error('Saldo de Invictus Coins insuficiente para esta aposta.');
+      stakeTxId = coinTransactionId(userId, `private_challenge_stake_${challengeId}`);
+    }
+
+    if (stakeNum > 0 && walletRef && walletCurrent) {
+      const createdAt = now.toISOString();
+      transaction.create(db.collection('reward_coin_transactions').doc(stakeTxId!), {
+        id: stakeTxId,
+        userId,
+        amount: stakeNum,
+        type: 'debit',
+        origin: 'private_challenge_stake',
+        ledgerType: 'PRIVATE_CHALLENGE_STAKE',
+        description: `Aposta ao entrar no desafio privado "${freshChallenge.title}"`,
+        idempotencyKey: `private_challenge_stake_${challengeId}`,
+        balanceBefore: walletCurrent.balance,
+        balanceAfter: walletCurrent.balance - stakeNum,
+        createdAt,
+      });
+      transaction.set(walletRef, {
+        userId,
+        balance: walletCurrent.balance - stakeNum,
+        lifetimeEarned: walletCurrent.lifetimeEarned,
+        lifetimeSpent: walletCurrent.lifetimeSpent + stakeNum,
+        updatedAt: createdAt,
+      }, { merge: true });
+    }
+
     transaction.update(challengeDoc.ref, {
       status: 'active',
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      ...(stakeNum > 0 ? { potTotal: Math.max(0, Number(freshChallenge.potTotal) || 0) + stakeNum } : {}),
     });
-
     transaction.set(memberRef, {
       userId,
       userName: userData.displayName || 'Atleta',
@@ -279,78 +326,64 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
       points: 0,
       workoutsCount: 0,
       joinedAt: now.toISOString(),
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      stakeAmount: stakeNum,
+      stakeTxId,
     });
-
-    // Entrada no feed público, sem qualquer menção a dinheiro
-    const feedRef = db.collection('elite_feed').doc();
-    transaction.set(feedRef, {
+    transaction.set(db.collection('elite_feed').doc(), {
       userId,
       userName: userData.displayName || 'Atleta',
       userPhoto: userData.photoURL || '',
-      text: `aceitou o desafio privado ${cData.title}! 💥`,
+      text: `aceitou o desafio privado ${freshChallenge.title}! 💥`,
       type: 'join',
-      timestamp: now.toISOString()
+      timestamp: now.toISOString(),
     });
   });
 
-  return res.status(200).json({ success: true, challengeId });
+  return res.status(200).json({ success: true, challengeId, stakeAmount: stakeNum });
 }
 
-/**
- * Handles expiration and completion/cancellation of a challenge.
- *
- * Desafios privados atuais nunca envolvem dinheiro. Qualquer documento legado
- * com entryFee > 0 é deliberadamente ignorado aqui e só pode ser encerrado pela
- * migração administrativa `migrate-legacy-private-challenges`, que existe para
- * devolver o valor original aos participantes com trilha de auditoria.
- *
- * Isso é intencional: abrir/listar desafios é uma ação comum do usuário e nunca
- * pode funcionar como gatilho de settlement financeiro legado.
- */
 async function processChallengeExpiration(challengeId: string) {
   const challengeRef = db.collection('private_challenges').doc(challengeId);
   const challengeSnap = await challengeRef.get();
   if (!challengeSnap.exists) return;
-
   const challenge = challengeSnap.data()!;
   if (['completed', 'cancelled'].includes(challenge.status)) return;
 
   const now = new Date();
   const isLegacyMoneyChallenge = typeof challenge.entryFee === 'number' && challenge.entryFee > 0;
-
   if (isLegacyMoneyChallenge) {
     console.warn(`[Private Challenges][LEGACY] Challenge ${challengeId} requires admin refund migration; user-facing expiration will not move money.`);
     return;
   }
 
-  const membersSnap = await db.collection('private_challenge_members')
-    .where('challengeId', '==', challengeId)
-    .get();
+  const stakeNum = Math.max(0, Number(challenge.stakeAmount) || 0);
+  if (stakeNum > 0) {
+    await processStakedChallengeExpiration(challengeId, challengeRef, challenge, now);
+    return;
+  }
 
-  const members = membersSnap.docs.map(mDoc => mDoc.data());
-  const isMinParticipantsMet = members.length >= 2;
-
-  // ---- RAMO ATUAL: sem dinheiro, só reconhecimento ----
-  if (!isMinParticipantsMet) {
+  const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+  const members = membersSnap.docs.map(mDoc => mDoc.data() as { userId: string; userName?: string; userPhoto?: string; points?: number; workoutsCount?: number; [key: string]: unknown });
+  if (members.length < 2) {
     console.log(`[Private Challenges] Cancelling challenge ${challengeId} (below 2 participants, no money involved).`);
     await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
     return;
   }
 
-  const sortedMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
+  const startDate = new Date(challenge.startDate || challenge.createdAt);
+  const endDate = new Date(challenge.endDate);
+  const scoredMembers = await Promise.all(members.map(async member => {
+    const iga = await computePrivateChallengeIGAForWindow(member.userId, startDate, endDate);
+    return { ...member, points: Number(Math.max(0, Number(iga.average) || 0).toFixed(6)) };
+  }));
+  const sortedMembers = scoredMembers.sort((a, b) => b.points - a.points || String(a.userId).localeCompare(String(b.userId)));
   if (sortedMembers.length === 0) {
     await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
     return;
   }
-
   const topScore = Math.max(0, Number(sortedMembers[0].points) || 0);
   const topMembers = sortedMembers.filter(member => Math.max(0, Number(member.points) || 0) === topScore);
-
-  // Não existe hoje writer vivo para `private_challenge_members.points`.
-  // Até uma regra oficial de pontuação/desempate ser implementada, nunca
-  // inventamos campeão por ordem de leitura do Firestore. Score zero ou
-  // empate no topo encerram o período sem vencedor simbólico.
   if (topScore <= 0 || topMembers.length !== 1) {
     const reason = topScore <= 0 ? 'NO_SCORING_DATA' : 'TOP_SCORE_TIE';
     console.warn(`[Private Challenges] Challenge ${challengeId} completed without deterministic winner (${reason}).`);
@@ -368,8 +401,7 @@ async function processChallengeExpiration(challengeId: string) {
 
   const winner = topMembers[0];
   console.log(`[Private Challenges] Completing challenge ${challengeId}. Champion: ${winner.userId}.`);
-
-  await db.runTransaction(async (transaction) => {
+  await db.runTransaction(async (transaction: any) => {
     transaction.update(challengeRef, {
       status: 'completed',
       winnerId: winner.userId,
@@ -377,17 +409,211 @@ async function processChallengeExpiration(challengeId: string) {
       winnerPhoto: winner.userPhoto || '',
       resultStatus: 'WINNER_CONFIRMED',
       resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
     });
-
-    const feedRef = db.collection('elite_feed').doc();
-    transaction.set(feedRef, {
+    transaction.set(db.collection('elite_feed').doc(), {
       userId: winner.userId,
       userName: winner.userName || 'Atleta',
       userPhoto: winner.userPhoto || '',
       text: `venceu o desafio privado "${challenge.title}"! 🏆💥`,
       type: 'join',
-      timestamp: now.toISOString()
+      timestamp: now.toISOString(),
     });
+  });
+}
+
+async function processStakedChallengeExpiration(
+  challengeId: string,
+  challengeRef: FirebaseFirestore.DocumentReference,
+  challenge: FirebaseFirestore.DocumentData,
+  now: Date,
+) {
+  const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+  const members = membersSnap.docs.map(mDoc => mDoc.data());
+  const potTotal = Math.max(0, Number(challenge.potTotal) || 0);
+
+  if (members.length < 2) {
+    await db.runTransaction(async (transaction: any) => {
+      const freshSnap = await transaction.get(challengeRef);
+      const fresh = freshSnap.data();
+      if (!fresh || ['completed', 'cancelled'].includes(fresh.status)) return;
+
+      const refundable = members.filter(member => Math.max(0, Number(member.stakeAmount) || 0) > 0);
+      const walletRefs = refundable.map(member => db.collection('reward_coin_wallets').doc(member.userId));
+      const walletSnaps = await Promise.all(walletRefs.map(ref => transaction.get(ref)));
+
+      refundable.forEach((member, index) => {
+        const refundAmount = Math.max(0, Number(member.stakeAmount) || 0);
+        const wallet = walletSnaps[index].exists ? (walletSnaps[index].data() as CoinWallet) : emptyWallet(member.userId);
+        const current = walletValues(wallet);
+        const refundTxId = coinTransactionId(member.userId, `private_challenge_refund_${challengeId}`);
+        const createdAt = now.toISOString();
+        transaction.create(db.collection('reward_coin_transactions').doc(refundTxId), {
+          id: refundTxId,
+          userId: member.userId,
+          amount: refundAmount,
+          type: 'credit',
+          origin: 'private_challenge_refund',
+          ledgerType: 'PRIVATE_CHALLENGE_REFUND',
+          description: `Reembolso da aposta — desafio privado "${challenge.title}" cancelado (menos de 2 participantes)`,
+          idempotencyKey: `private_challenge_refund_${challengeId}`,
+          balanceBefore: current.balance,
+          balanceAfter: current.balance + refundAmount,
+          createdAt,
+        });
+        transaction.set(walletRefs[index], {
+          userId: member.userId,
+          balance: current.balance + refundAmount,
+          lifetimeEarned: current.lifetimeEarned,
+          lifetimeSpent: current.lifetimeSpent,
+          updatedAt: createdAt,
+        }, { merge: true });
+      });
+
+      transaction.set(challengeRef, {
+        status: 'cancelled',
+        resultStatus: 'CANCELLED_BELOW_MIN_PARTICIPANTS',
+        resultReason: 'BELOW_MIN_PARTICIPANTS',
+        updatedAt: now.toISOString(),
+      }, { merge: true });
+    });
+    return;
+  }
+
+  const startDate = new Date(challenge.startDate);
+  const endDate = new Date(challenge.endDate);
+  const scored = await Promise.all(members.map(async member => ({
+    member,
+    score: Math.max(0, (await computePrivateChallengeIGAForWindow(member.userId, startDate, endDate)).average || 0),
+  })));
+  const topScore = scored.reduce((max, entry) => Math.max(max, entry.score), 0);
+  const topEntries = scored.filter(entry => entry.score === topScore);
+
+  if (topEntries.length === 1 && topScore > 0) {
+    const winner = topEntries[0].member;
+    await db.runTransaction(async (transaction: any) => {
+      const freshSnap = await transaction.get(challengeRef);
+      const fresh = freshSnap.data();
+      if (!fresh || ['completed', 'cancelled'].includes(fresh.status)) return;
+
+      let walletRef: any = null;
+      let current: ReturnType<typeof walletValues> | null = null;
+      if (potTotal > 0) {
+        walletRef = db.collection('reward_coin_wallets').doc(winner.userId);
+        const walletSnap = await transaction.get(walletRef);
+        current = walletValues(walletSnap.exists ? (walletSnap.data() as CoinWallet) : emptyWallet(winner.userId));
+      }
+      if (potTotal > 0 && walletRef && current) {
+        const payoutTxId = coinTransactionId(winner.userId, `private_challenge_payout_${challengeId}`);
+        const createdAt = now.toISOString();
+        transaction.create(db.collection('reward_coin_transactions').doc(payoutTxId), {
+          id: payoutTxId,
+          userId: winner.userId,
+          amount: potTotal,
+          type: 'credit',
+          origin: 'private_challenge_payout',
+          ledgerType: 'PRIVATE_CHALLENGE_PAYOUT',
+          description: `Prêmio por vencer o desafio privado "${challenge.title}"`,
+          idempotencyKey: `private_challenge_payout_${challengeId}`,
+          balanceBefore: current.balance,
+          balanceAfter: current.balance + potTotal,
+          createdAt,
+        });
+        transaction.set(walletRef, {
+          userId: winner.userId,
+          balance: current.balance + potTotal,
+          lifetimeEarned: current.lifetimeEarned + potTotal,
+          lifetimeSpent: current.lifetimeSpent,
+          updatedAt: createdAt,
+        }, { merge: true });
+      }
+      transaction.set(challengeRef, {
+        status: 'completed',
+        winnerId: winner.userId,
+        winnerName: winner.userName || 'Atleta',
+        winnerPhoto: winner.userPhoto || '',
+        resultStatus: 'WINNER_CONFIRMED',
+        resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
+        updatedAt: now.toISOString(),
+      }, { merge: true });
+      transaction.set(db.collection('elite_feed').doc(), {
+        userId: winner.userId,
+        userName: winner.userName || 'Atleta',
+        userPhoto: winner.userPhoto || '',
+        text: `venceu o desafio privado "${challenge.title}" e levou ${potTotal} Invictus Coins! 🏆💰`,
+        type: 'join',
+        timestamp: now.toISOString(),
+      });
+    });
+    return;
+  }
+
+  if (!challenge.extendedOnce) {
+    await db.runTransaction(async (transaction: any) => {
+      const freshSnap = await transaction.get(challengeRef);
+      const fresh = freshSnap.data();
+      if (!fresh || ['completed', 'cancelled'].includes(fresh.status) || fresh.extendedOnce === true) return;
+      const newEndDate = new Date(new Date(fresh.endDate).getTime() + 24 * 60 * 60 * 1000);
+      transaction.set(challengeRef, {
+        endDate: newEndDate.toISOString(),
+        extendedOnce: true,
+        resultStatus: 'TIE_EXTENDED',
+        resultReason: topScore <= 0 ? 'NO_SCORING_DATA' : 'TOP_SCORE_TIE',
+        updatedAt: now.toISOString(),
+      }, { merge: true });
+    });
+    return;
+  }
+
+  const sortedTopEntries = [...topEntries].sort((a, b) => String(a.member.userId).localeCompare(String(b.member.userId)));
+  const base = sortedTopEntries.length ? Math.floor(potTotal / sortedTopEntries.length) : 0;
+  const remainder = sortedTopEntries.length ? potTotal - base * sortedTopEntries.length : 0;
+
+  await db.runTransaction(async (transaction: any) => {
+    const freshSnap = await transaction.get(challengeRef);
+    const fresh = freshSnap.data();
+    if (!fresh || ['completed', 'cancelled'].includes(fresh.status)) return;
+
+    const payable = sortedTopEntries.map((entry, index) => ({ entry, share: base + (index < remainder ? 1 : 0) })).filter(item => item.share > 0);
+    const walletRefs = payable.map(item => db.collection('reward_coin_wallets').doc(item.entry.member.userId));
+    const walletSnaps = await Promise.all(walletRefs.map(ref => transaction.get(ref)));
+
+    payable.forEach((item, index) => {
+      const member = item.entry.member;
+      const wallet = walletSnaps[index].exists ? (walletSnaps[index].data() as CoinWallet) : emptyWallet(member.userId);
+      const current = walletValues(wallet);
+      const splitTxId = coinTransactionId(member.userId, `private_challenge_refund_${challengeId}`);
+      const createdAt = now.toISOString();
+      transaction.create(db.collection('reward_coin_transactions').doc(splitTxId), {
+        id: splitTxId,
+        userId: member.userId,
+        amount: item.share,
+        type: 'credit',
+        origin: 'private_challenge_refund',
+        ledgerType: 'PRIVATE_CHALLENGE_REFUND',
+        description: `Pote dividido — empate persistente no desafio privado "${challenge.title}"`,
+        idempotencyKey: `private_challenge_refund_${challengeId}`,
+        balanceBefore: current.balance,
+        balanceAfter: current.balance + item.share,
+        createdAt,
+      });
+      transaction.set(walletRefs[index], {
+        userId: member.userId,
+        balance: current.balance + item.share,
+        lifetimeEarned: current.lifetimeEarned,
+        lifetimeSpent: current.lifetimeSpent,
+        updatedAt: createdAt,
+      }, { merge: true });
+    });
+
+    transaction.set(challengeRef, {
+      status: 'completed',
+      winnerId: null,
+      winnerName: null,
+      winnerPhoto: null,
+      resultStatus: 'SPLIT_ON_PERSISTENT_TIE',
+      resultReason: topScore <= 0 ? 'NO_SCORING_DATA' : 'TOP_SCORE_TIE',
+      updatedAt: now.toISOString(),
+    }, { merge: true });
   });
 }

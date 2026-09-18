@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'crypto';
 import { verifyAuth, db } from '../_lib/common.js';
-import { listChampionships, getChampionship } from '../_lib/championship-catalog.js';
+import { listRuntimeChampionships, getRuntimeChampionship } from '../_lib/championship-catalog.js';
 import {
   registrarAceiteRegulamento,
   criarInscricaoChampionship,
@@ -18,6 +18,7 @@ import {
   paidChampionshipSettlementDocumentId,
 } from '../_lib/paid-championship-edition.js';
 import { computeFinalPrizeForEdition, registrationHasClosed } from '../_lib/paid-championship-dynamic-prize.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 
 const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
   'PAYMENT_REFUNDED',
@@ -55,7 +56,8 @@ async function withRevealedPrize(championship: any) {
 }
 
 export async function listChampionshipsHandler(_req: any, res: any) {
-  const championships = await Promise.all(listChampionships().map(async (championship) => {
+  const runtimeChampionships = await listRuntimeChampionships();
+  const championships = await Promise.all(runtimeChampionships.map(async (championship) => {
     if (!championship.registrationOpen) return withRevealedPrize(championship);
     try {
       const editionGate = await getPaidChampionshipEditionGate(championship);
@@ -147,7 +149,7 @@ export async function getChampionshipProgressHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  const champ = getChampionship(championshipId);
+  const champ = await getRuntimeChampionship(championshipId);
   if (!champ) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const editionId = String(champ.editionId || '');
   if (!editionId) return res.status(409).json({ error: 'A edição atual ainda não possui identidade publicada.' });
@@ -193,7 +195,7 @@ export async function getChampionshipLeaderboardHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const leaderboard = await getChampionshipLeaderboard(championshipId, 50);
   return res.json({ championshipId, editionId: championship.editionId, leaderboard });
@@ -203,7 +205,7 @@ export async function getMyChampionshipActivitiesHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const activities = await getUserChampionshipActivities(championshipId, auth.uid);
   return res.json({ championshipId, editionId: championship.editionId, activities });
@@ -217,7 +219,7 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
     const { championshipId, regulationVersion, regulationHash, locale, platform } = req.body || {};
     if (!championshipId) return res.status(400).json({ error: 'championshipId e obrigatorio.' });
 
-    const championship = getChampionship(championshipId);
+    const championship = await getRuntimeChampionship(championshipId);
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
     const editionGate = await getPaidChampionshipEditionGate(championship);
     if (!editionGate.ok) {
@@ -268,7 +270,7 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
       return res.status(400).json({ error: 'Superficie de checkout nao autorizada.' });
     }
 
-    const championship = getChampionship(championshipId);
+    const championship = await getRuntimeChampionship(championshipId);
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
     if (!championship.registrationOpen) {
       return res.status(400).json({ error: championship.registrationReadinessReason || 'Inscricoes ainda nao disponiveis.' });
@@ -284,6 +286,7 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
       String(acceptanceId),
       checkoutSurface as 'ios_native' | 'web',
     );
+    publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_REGISTRATION_PENDING', source: 'championships:create-payment' });
 
     return res.json({ success: true, ...checkout });
   } catch (erro: any) {
@@ -323,14 +326,17 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
       console.log(`[Championship Webhook] ${event} checkout=${checkout.id}`);
       if (event === 'CHECKOUT_PAID') {
         const resultado = await confirmarInscricaoChampionshipPorCheckout(checkout.id);
+        publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_REGISTRATION_CONFIRMED', source: 'championship-webhook:checkout-paid' });
         return res.status(200).json({ received: true, inscricao: resultado });
       }
       if (event === 'CHECKOUT_CANCELED') {
         const resultado = await encerrarCheckoutChampionship(checkout.id, 'cancelled');
+        publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_CHANGED', source: 'championship-webhook:checkout-cancelled' });
         return res.status(200).json({ received: true, inscricao: resultado });
       }
       if (event === 'CHECKOUT_EXPIRED') {
         const resultado = await encerrarCheckoutChampionship(checkout.id, 'expired');
+        publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_CHANGED', source: 'championship-webhook:checkout-expired' });
         return res.status(200).json({ received: true, inscricao: resultado });
       }
       return res.status(200).json({ received: true, ignored: event });
@@ -348,6 +354,7 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
         payment.externalReference,
         providerEventAt,
       );
+      publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_REGISTRATION_CONFIRMED', source: 'championship-webhook:payment-confirmed' });
       return res.status(200).json({ received: true, inscricao: resultado });
     }
     if (CHAMPIONSHIP_PAYMENT_RISK_EVENTS.has(event as ChampionshipPaymentRiskEvent)) {
@@ -359,6 +366,7 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
         payment.value,
         providerEventAt,
       );
+      publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_PAYMENT_RECONCILIATION_REQUIRED', source: 'championship-webhook:payment-risk' });
       return res.status(200).json({ received: true, inscricao: resultado });
     }
     return res.status(200).json({ received: true, ignored: event });
@@ -377,7 +385,7 @@ export async function submitActivityToChampionshipHandler(req: any, res: any) {
     if (!championshipId || !activityId) {
       return res.status(400).json({ error: 'championshipId e activityId sao obrigatorios.' });
     }
-    const championship = getChampionship(String(championshipId));
+    const championship = await getRuntimeChampionship(String(championshipId));
     if (!championship?.editionId) return res.status(404).json({ error: 'Campeonato ou edição não encontrado.' });
 
     const scoreId = `${activityId}_${championship.editionId}`;
