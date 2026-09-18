@@ -5,16 +5,25 @@ const root = process.cwd();
 const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 
 describe('Asaas withdrawal settlement contract', () => {
-  test('processing state is never reopened automatically after provider submission', () => {
+  test('only deterministic pre-creation rejection may reopen automatically', () => {
     const source = read('api/_lib/withdrawal-engine.ts');
     const processStart = source.indexOf('static async processPayment');
-    const webhookStart = source.indexOf('static async handleAsaasTransferWebhook');
-    const processBlock = source.slice(processStart, webhookStart);
+    const reconcileStart = source.indexOf('static async reconcileProviderSubmission', processStart);
+    const processBlock = source.slice(processStart, reconcileStart);
 
     expect(processBlock).toContain("status: 'processing'");
-    expect(processBlock).toContain('reconciliationRequired: true');
+    expect(processBlock).toContain('err instanceof AsaasRequestError && err.deterministic');
+    expect(processBlock).toContain("status: 'approved'");
+    expect(processBlock).toContain("providerStatus: 'REJECTED_BEFORE_CREATION'");
+    expect(processBlock).toContain("reconciliationReason: 'PROVIDER_SUBMISSION_UNCERTAIN'");
     expect(processBlock).not.toContain("status: 'pending'");
-    expect(processBlock).not.toContain("status: 'approved'");
+  });
+
+  test('operator reconciliation queries Asaas before reopening an uncertain withdrawal', () => {
+    const source = read('api/_lib/withdrawal-engine.ts');
+    expect(source).toContain('AsaasClient.findTransferByExternalReference');
+    expect(source).toContain("providerStatus: 'NOT_FOUND_AFTER_RECONCILIATION'");
+    expect(source).toContain('providerRecoveredBy: reviewerId');
   });
 
   test('terminal provider events require exact amount before wallet settlement', () => {

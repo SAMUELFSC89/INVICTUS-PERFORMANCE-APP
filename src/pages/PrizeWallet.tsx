@@ -34,6 +34,7 @@ type WalletPayload = {
     minWithdrawalAmount: number;
     maxDailyWithdrawalAmount: number;
     identityCheckEnabled: boolean;
+    paymentEnvironment?: 'sandbox' | 'production';
   };
   identity?: {
     emailVerified: boolean;
@@ -305,6 +306,7 @@ export function PrizeWallet() {
       <section className="prize-wallet-withdrawal">
         <header><div><small>SAQUE DE PRÊMIO</small><h2>RECEBER POR PIX</h2></div><Banknote /></header>
         {!data?.config.enabled ? <div className="prize-wallet-disabled">Saques temporariamente indisponíveis.</div> : <>
+          {data?.config.paymentEnvironment === 'sandbox' ? <div className="prize-wallet-alert is-error"><AlertTriangle /> <span>Ambiente Asaas Sandbox: use uma chave PIX de homologação do Asaas ou uma chave cadastrada em outra conta Sandbox. Chaves PIX reais podem não existir neste ambiente.</span></div> : null}
           <div className="prize-wallet-limits"><span>Mínimo <b>{money(minWithdrawal)}</b></span><span>Limite diário <b>{money(maxDaily)}</b></span></div>
           <label>VALOR A SACAR
             <div className="prize-wallet-money-input"><span>R$</span><input inputMode="decimal" value={amount} disabled={phoneChallenge} onChange={event => setAmount(event.target.value.replace(/[^0-9,.]/g, ''))} placeholder={minWithdrawal.toFixed(2).replace('.', ',')} /></div>

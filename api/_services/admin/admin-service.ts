@@ -178,6 +178,33 @@ export class AdminService {
     return { success: true, message: 'Pagamento PIX de R$ ' + updated.amount.toFixed(2) + ' enviado via Asaas.', withdrawal: updated };
   }
 
+  async reconcileWithdrawalProviderSubmission(reviewerId: string, withdrawalId: string) {
+    if (!withdrawalId) {
+      throw new AppError('withdrawalId é obrigatório.', 400);
+    }
+    const updated: any = await WithdrawalEngine.reconcileProviderSubmission(withdrawalId, reviewerId);
+    await logEvent({
+      severity: 'INFO',
+      category: 'payment_logs',
+      message: `Saque PIX ${withdrawalId} conciliado com o Asaas por Admin (${reviewerId}); status atual '${updated.status}'.`,
+      userId: updated.userId,
+      route: '/api/admin',
+      details: {
+        withdrawalId,
+        status: updated.status,
+        providerTransferId: updated.providerTransferId || null,
+        providerStatus: updated.providerStatus || null,
+      }
+    });
+    return {
+      success: true,
+      message: updated.providerTransferId
+        ? 'Transferência localizada no Asaas e vinculada ao saque.'
+        : 'Nenhuma transferência foi criada no Asaas. O saque voltou para Aprovado e pode ser cancelado ou tentado novamente.',
+      withdrawal: updated,
+    };
+  }
+
   async updateWithdrawalMinAmount(reviewerId: string, minWithdrawalAmount: number) {
     if (!minWithdrawalAmount || minWithdrawalAmount <= 0) {
       throw new AppError('minWithdrawalAmount deve ser maior que zero.', 400);
