@@ -325,7 +325,7 @@ export async function loadActivityCompetitionPolicySnapshot(params: {
     return null;
   }
   if (policyModality.activityType !== storedModality.activityType
-    || String(policyModality.cardioType || '') !== String(requestedModality.cardioType || '')
+    || String(policyModality.cardioType || '') !== String(storedModality.cardioType || '')
     || policyModality.isIndoorCardio !== storedModality.isIndoorCardio) return null;
   return { ...policy, snapshotId: snap.id, sessionId: data.sessionId || policy.sessionId || snap.id };
 }
