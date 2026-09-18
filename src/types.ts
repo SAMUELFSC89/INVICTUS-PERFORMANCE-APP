@@ -622,7 +622,10 @@ export type IVCoinTransactionOrigin =
   | 'campaign' 
   | 'admin_adjustment'
   | 'withdrawal_hold'
-  | 'withdrawal_refund';
+  | 'withdrawal_refund'
+  | 'private_challenge_stake'
+  | 'private_challenge_payout'
+  | 'private_challenge_refund';
 
 export type IVCoinLedgerType =
   | 'MISSION_REWARD'
@@ -637,7 +640,10 @@ export type IVCoinLedgerType =
   | 'DROP_REFUND'
   | 'ORDER_REFUND'
   | 'PROMOTIONAL_REWARD'
-  | 'ADMIN_ADJUSTMENT';
+  | 'ADMIN_ADJUSTMENT'
+  | 'PRIVATE_CHALLENGE_STAKE'
+  | 'PRIVATE_CHALLENGE_PAYOUT'
+  | 'PRIVATE_CHALLENGE_REFUND';
 
 export interface IVCoinTransaction {
   id: string;
