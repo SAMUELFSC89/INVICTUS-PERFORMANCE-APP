@@ -1,6 +1,6 @@
 import { db } from './common.js';
 import { PIXWithdrawal, WithdrawalStatus, WithdrawalConfig } from '../../src/types.js';
-import { AsaasClient } from './asaas-client.js';
+import { AsaasClient, AsaasRequestError } from './asaas-client.js';
 import { notificationService } from '../_services/notification-service.js';
 import { isProUser } from './entitlement.js';
 import { isActiveAccountState } from './account-state.js';
@@ -462,18 +462,137 @@ export class WithdrawalEngine {
 
       return { ...withdrawal, ...updated } as PIXWithdrawal;
     } catch (err: any) {
-      // Nunca force status=processing aqui: o webhook pode ter concluído o
-      // saque antes da resposta HTTP do POST /transfers retornar.
+      // Um 4xx do Asaas é determinístico: o provedor recusou a criação e não
+      // existe transferência para conciliar. Nessa situação o saque pode voltar
+      // para approved, mantendo o dinheiro bloqueado e permitindo uma nova
+      // tentativa/cancelamento sem deixar o operador preso em processing.
+      if (err instanceof AsaasRequestError && err.deterministic) {
+        await db.runTransaction(async (tx: any) => {
+          const freshSnap = await tx.get(docRef);
+          if (!freshSnap.exists) return;
+          const fresh = freshSnap.data() as PIXWithdrawal & Record<string, any>;
+          if (fresh.status !== 'processing' || fresh.providerTransferId) return;
+          const now = new Date().toISOString();
+          tx.set(docRef, {
+            status: 'approved',
+            paymentProvider: 'asaas',
+            providerExternalReference: withdrawalId,
+            providerStatus: 'REJECTED_BEFORE_CREATION',
+            providerLastError: String(err.message || 'Requisição recusada pelo Asaas').slice(0, 300),
+            providerLastErrorCode: err.code || null,
+            providerLastErrorAt: now,
+            reconciliationRequired: false,
+            reconciliationReason: null,
+            updatedAt: now,
+          }, { merge: true });
+        });
+        throw err;
+      }
+
+      // Timeout, erro de rede, 5xx ou resposta inconsistente continuam
+      // ambíguos: uma transferência pode existir mesmo sem termos recebido o
+      // ID. Nesses casos falhamos fechado e exigimos conciliação.
       await docRef.set({
         paymentProvider: 'asaas',
         providerExternalReference: withdrawalId,
         reconciliationRequired: true,
+        reconciliationReason: 'PROVIDER_SUBMISSION_UNCERTAIN',
         updatedAt: new Date().toISOString()
       }, { merge: true }).catch((persistError) =>
         console.error('[WithdrawalEngine] Falha crítica ao marcar conciliação:', persistError)
       );
       throw err;
     }
+  }
+
+  static async reconcileProviderSubmission(withdrawalId: string, reviewerId: string): Promise<PIXWithdrawal> {
+    if (!db) throw new Error('Database not initialized');
+    const docRef = db.collection('withdrawals').doc(withdrawalId);
+    const snapshot = await docRef.get();
+    if (!snapshot.exists) throw new Error('Solicitação de saque não encontrada.');
+
+    const current = snapshot.data() as PIXWithdrawal & Record<string, any>;
+    if (current.status !== 'processing' || current.reconciliationRequired !== true) {
+      throw new Error('Este saque não está aguardando conciliação de envio ao provedor.');
+    }
+
+    if (current.providerTransferId) {
+      throw new Error('Este saque já possui transferência vinculada no Asaas e deve aguardar o webhook/conciliação pelo ID do provedor.');
+    }
+
+    const providerTransfer = await AsaasClient.findTransferByExternalReference(
+      withdrawalId,
+      current.providerSubmissionStartedAt
+    );
+
+    if (providerTransfer) {
+      const internalAmount = Number(current.amount);
+      if (!Number.isFinite(internalAmount)
+        || !Number.isFinite(providerTransfer.value)
+        || Math.abs(providerTransfer.value - internalAmount) >= 0.01) {
+        throw new Error('Transferência localizada no Asaas com valor divergente. Mantenha o saque em conciliação.');
+      }
+
+      await db.runTransaction(async (tx: any) => {
+        const freshSnap = await tx.get(docRef);
+        if (!freshSnap.exists) throw new Error('Solicitação de saque não encontrada durante a conciliação.');
+        const fresh = freshSnap.data() as PIXWithdrawal & Record<string, any>;
+        if (fresh.providerTransferId && fresh.providerTransferId !== providerTransfer.id) {
+          throw new Error('Conflito de transferência durante a conciliação.');
+        }
+        tx.set(docRef, {
+          status: 'processing',
+          paymentProvider: 'asaas',
+          providerTransferId: providerTransfer.id,
+          providerExternalReference: withdrawalId,
+          providerStatus: providerTransfer.status,
+          reconciliationRequired: false,
+          reconciliationReason: null,
+          providerRecoveredAt: new Date().toISOString(),
+          providerRecoveredBy: reviewerId,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      });
+
+      const status = providerTransfer.status.toUpperCase();
+      if (status === 'DONE' || status === 'FAILED' || status === 'CANCELLED') {
+        await this.handleAsaasTransferWebhook(
+          providerTransfer.id,
+          status === 'DONE' ? 'TRANSFER_DONE' : status === 'FAILED' ? 'TRANSFER_FAILED' : 'TRANSFER_CANCELLED',
+          status,
+          undefined,
+          withdrawalId,
+          providerTransfer.value
+        );
+      }
+
+      const rebound = await docRef.get();
+      return rebound.data() as PIXWithdrawal;
+    }
+
+    // Nenhuma transferência com a referência canônica existe no Asaas.
+    // Portanto a tentativa anterior não criou pagamento e pode ser reaberta.
+    await db.runTransaction(async (tx: any) => {
+      const freshSnap = await tx.get(docRef);
+      if (!freshSnap.exists) throw new Error('Solicitação de saque não encontrada durante a conciliação.');
+      const fresh = freshSnap.data() as PIXWithdrawal & Record<string, any>;
+      if (fresh.status !== 'processing' || fresh.reconciliationRequired !== true || fresh.providerTransferId) {
+        throw new Error('O estado do saque mudou durante a conciliação. Atualize a tela.');
+      }
+      const now = new Date().toISOString();
+      tx.set(docRef, {
+        status: 'approved',
+        providerStatus: 'NOT_FOUND_AFTER_RECONCILIATION',
+        reconciliationRequired: false,
+        reconciliationReason: null,
+        providerRecoveredAt: now,
+        providerRecoveredBy: reviewerId,
+        updatedAt: now,
+      }, { merge: true });
+    });
+
+    const reopened = await docRef.get();
+    return reopened.data() as PIXWithdrawal;
   }
 
   static async handleAsaasTransferWebhook(
