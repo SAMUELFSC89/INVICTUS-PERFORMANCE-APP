@@ -34,7 +34,7 @@ type Props = {
 
 const fieldMeta: Record<RegistrationField, { label: string; placeholder: string; type?: string; icon: React.ReactNode; maxLength?: number }> = {
   fullName: { label: 'Nome completo', placeholder: 'Como você quer ser chamado', icon: <User /> },
-  cpf: { label: 'CPF', placeholder: '000.000.000-00', icon: <Fingerprint />, maxLength: 14 },
+  cpf: { label: 'CPF (opcional)', placeholder: '000.000.000-00', icon: <Fingerprint />, maxLength: 14 },
   birthDate: { label: 'Data de nascimento', placeholder: '', type: 'date', icon: <Calendar /> },
   email: { label: 'E-mail', placeholder: 'seu@email.com', type: 'email', icon: <Mail /> },
   password: { label: 'Senha', placeholder: 'Mínimo de 6 caracteres', type: 'password', icon: <Lock /> },
@@ -52,6 +52,17 @@ function Progress({ step }: { step: number }) {
   return <div className="auth-progress" aria-label={`Etapa ${step} de 4`}>{labels.map((label, index) => <div key={label} className={index + 1 <= step ? 'is-active' : ''}><i>{index + 1 < step ? <Check /> : index + 1}</i><span>{label}</span></div>)}</div>;
 }
 
+function isAdultBirthDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const birth = new Date(`${value}T12:00:00`);
+  if (!Number.isFinite(birth.getTime())) return false;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDelta = today.getMonth() - birth.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birth.getDate())) age -= 1;
+  return age >= 18;
+}
+
 export function AuthExperience(props: Props) {
   const { fields } = props;
   // Apple Guideline 4.8: enquanto Sign in with Apple não estiver habilitado e
@@ -59,10 +70,13 @@ export function AuthExperience(props: Props) {
   // autenticação própria por e-mail/senha. Google continua disponível no Web e
   // no Android. Isso evita expor no iOS um login social sem opção equivalente.
   const showGoogleLogin = !(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios');
+  const cleanCpf = fields.cpf.replace(/\D/g, '');
+  const cpfValidWhenProvided = cleanCpf.length === 0 || cleanCpf.length === 11;
+  const adult = isAdultBirthDate(fields.birthDate);
   const stepValid = props.step === 1
     ? Boolean(fields.fullName.trim() && fields.email.trim() && fields.password.length >= 6)
     : props.step === 2
-      ? Boolean(fields.cpf.replace(/\D/g, '').length === 11 && fields.birthDate)
+      ? Boolean(adult && cpfValidWhenProvided)
       : props.step === 3
         ? true
         : props.termsAccepted;
@@ -95,11 +109,11 @@ export function AuthExperience(props: Props) {
         </form>}
       </div> : <div className="auth-card auth-registration">
         <button type="button" className="auth-back" onClick={back}><ArrowLeft /> {props.step === 1 ? 'Voltar ao login' : 'Etapa anterior'}</button>
-        <div className="auth-copy"><small>CADASTRO INVICTUS</small><h1>{['SUA CONTA', 'SEUS DADOS', 'COMO FALAR COM VOCÊ', 'ESCOLHA SEU ACESSO'][props.step - 1]}</h1><p>{['Crie suas credenciais de acesso.', 'Dados usados para segurança e elegibilidade.', 'Essas informações são opcionais e podem ser alteradas.', 'Comece grátis ou conheça os recursos PRO.'][props.step - 1]}</p></div>
+        <div className="auth-copy"><small>CADASTRO INVICTUS</small><h1>{['SUA CONTA', 'SEUS DADOS', 'COMO FALAR COM VOCÊ', 'ESCOLHA SEU ACESSO'][props.step - 1]}</h1><p>{['Crie suas credenciais de acesso.', 'Confirme que você tem 18 anos ou mais. O CPF é opcional no cadastro.', 'Essas informações são opcionais e podem ser alteradas.', 'Comece grátis ou conheça os recursos PRO.'][props.step - 1]}</p></div>
         <Progress step={props.step} />
         <form onSubmit={props.onRegister}>
           {props.step === 1 && <><Field name="fullName" value={fields.fullName} onChange={props.onField} /><Field name="email" value={fields.email} onChange={props.onField} /><Field name="password" value={fields.password} onChange={props.onField} /></>}
-          {props.step === 2 && <><Field name="cpf" value={fields.cpf} onChange={props.onField} /><Field name="birthDate" value={fields.birthDate} onChange={props.onField} /><div className="auth-trust"><ShieldCheck /><span><b>Seus dados são protegidos</b><small>O CPF evita contas duplicadas e será necessário apenas em operações que exigem identificação.</small></span></div></>}
+          {props.step === 2 && <><Field name="birthDate" value={fields.birthDate} onChange={props.onField} /><Field name="cpf" value={fields.cpf} onChange={props.onField} />{fields.birthDate && !adult ? <div className="auth-error">O Invictus é destinado a pessoas com 18 anos ou mais.</div> : null}{cleanCpf.length > 0 && cleanCpf.length !== 11 ? <div className="auth-error">Se informar o CPF, use os 11 dígitos.</div> : null}<div className="auth-trust"><ShieldCheck /><span><b>Coletamos somente o necessário</b><small>A data de nascimento confirma a elegibilidade 18+. O CPF é opcional agora e poderá ser solicitado em operações futuras que exijam identificação.</small></span></div></>}
           {props.step === 3 && <><Field name="whatsapp" value={fields.whatsapp} onChange={props.onField} /><Field name="referralCode" value={fields.referralCode} onChange={props.onField} /><label className="auth-check"><input type="checkbox" checked={props.whatsappOptIn} onChange={(event) => props.onWhatsappOptIn(event.target.checked)} /><i><Check /></i><span><b>Lembretes pelo WhatsApp</b><small>Opcional. Você pode desativar quando quiser.</small></span></label></>}
           {props.step === 4 && <><div className="auth-plans"><button type="button" className={props.preferredPlan === 'open' ? 'is-selected' : ''} onClick={() => props.onPlan('open')}><Dumbbell /><span><b>INVICTUS OPEN</b><small>Treinos, desafios e evolução essencial</small></span><em>GRÁTIS</em></button><button type="button" className={props.preferredPlan === 'performance' ? 'is-selected' : ''} onClick={() => props.onPlan('performance')}><Sparkles /><span><b>PERFORMANCE PRO</b><small>Recursos avançados e inteligência personalizada</small></span><em>PRO</em></button></div><label className="auth-check"><input type="checkbox" checked={props.termsAccepted} onChange={(event) => props.onTerms(event.target.checked)} /><i><Check /></i><span><b>Termos e privacidade</b><small>Li e aceito os Termos de Uso e a Política de Privacidade. Permissões sensíveis serão solicitadas no momento do uso.</small></span></label></>}
           {props.error && <div className="auth-error">{props.error}</div>}
