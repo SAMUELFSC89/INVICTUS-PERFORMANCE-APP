@@ -44,15 +44,14 @@ describe('master podiums dos rankings Invictus', () => {
     expect(css).toContain('.academy-podium-master-slot--3');
   });
 
-  it('aplica o quarto asset ao Power Lift e preserva foto real do atleta', () => {
+  it('Power Lift deixa o pódio legado fora do fluxo e usa a nova experiência sazonal', () => {
     const power = read('src/pages/PowerLift.tsx');
-    const css = read('src/pages/PowerLiftNew.css');
+    const css = read('src/pages/PowerLiftSeason.css');
 
-    expect(power).toContain('/assets/ranking/podium-powerlift-v2.webp');
-    expect(power).toContain('row.userPhoto');
-    expect(power).toContain('power-podium-master-slot');
-    expect(css).toContain('.power-podium-master-slot--1');
-    expect(css).toContain('.power-podium-master-slot--2');
-    expect(css).toContain('.power-podium-master-slot--3');
+    expect(power).toContain("import './PowerLiftSeason.css'");
+    expect(power).not.toContain('power-podium-master-slot');
+    expect(power).not.toContain('/assets/ranking/podium-powerlift-v2.webp');
+    expect(css).toContain('.pl-ranking-grid');
+    expect(css).toContain('.pl-leaderboard');
   });
 });
