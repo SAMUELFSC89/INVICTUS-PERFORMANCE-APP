@@ -1,0 +1,36 @@
+From 42384ed26b6f51d98620bde02e07da240e8ba090 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 18 Sep 2026 17:04:19 +0000
+Subject: [PATCH 1/4] fix(wallet): expose paymentEnvironment in /api/financial
+ config response
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+O frontend (PrizeWallet.tsx) já lia data?.config.paymentEnvironment para
+decidir se mostra o aviso "Ambiente Asaas Sandbox" e o lembrete de usar
+chave PIX de homologação, mas o backend nunca populava esse campo no
+config retornado -- o aviso nunca aparecia porque o valor sempre chegava
+undefined. isStrictAsaasSandbox() já existia e já era usada para outra
+decisão (linha 144); só faltava expor o resultado dela no payload do
+config, como o teste api/__tests__/withdrawal-provider-rejection-recovery.test.ts
+já cobrava.
+---
+ api/_handlers/financial.ts | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/api/_handlers/financial.ts b/api/_handlers/financial.ts
+index 9523086..35adfdb 100644
+--- a/api/_handlers/financial.ts
++++ b/api/_handlers/financial.ts
+@@ -279,6 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
+           minWithdrawalAmount: money(config.minWithdrawalAmount),
+           maxDailyWithdrawalAmount: money(config.maxDailyWithdrawalAmount),
+           identityCheckEnabled: ENFORCE_IDENTITY_FOR_WITHDRAWAL,
++          paymentEnvironment: isStrictAsaasSandbox() ? 'sandbox' : 'production',
+         },
+         identity: identityPayload(identity),
+         cashSource: 'official_prizes_only',
+-- 
+2.43.0
+

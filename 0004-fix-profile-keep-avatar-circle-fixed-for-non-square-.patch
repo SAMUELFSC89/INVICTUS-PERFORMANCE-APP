@@ -1,0 +1,227 @@
+From e17010f1068c3384b7b5efc92e33da560d6b3eed Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 18 Sep 2026 21:11:06 +0000
+Subject: [PATCH 4/4] fix(profile): keep avatar circle fixed for non-square
+ photos, add drag/zoom crop
+
+The circular avatar frame in ProfileNew was distorting into an oval for
+non-square uploads (e.g. 9:16 portraits): .np-photo used display:grid with
+place-items:center, which let a percentage-sized <img> child size its
+implicit grid track from the image's own intrinsic aspect ratio instead of
+staying a fixed square. Positioning the image absolutely inside its
+(already position:relative) parent removes it from grid-track sizing, so
+object-fit:cover and border-radius:50% now clip a true circle regardless of
+the source photo's aspect ratio.
+
+On top of that, add an Instagram-style adjust step: after picking/compressing
+a photo, a modal opens showing it inside the same circular frame, and the
+person can drag to pan and use a slider to zoom before confirming. The final
+crop is rendered to an 800x800 canvas and only then uploaded, replacing the
+previous fully-automatic center-crop.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GJxr5k2q4nCkbZphek1rFs
+---
+ src/pages/ProfileNew.css                 |   6 +-
+ src/pages/ProfileNew.tsx                 | 112 +++++++++++++++++++++--
+ src/tests/profileHealthNativeFix.test.ts |   4 +-
+ 3 files changed, 111 insertions(+), 11 deletions(-)
+
+diff --git a/src/pages/ProfileNew.css b/src/pages/ProfileNew.css
+index c2af317..d9264e8 100644
+--- a/src/pages/ProfileNew.css
++++ b/src/pages/ProfileNew.css
+@@ -1,3 +1,5 @@
+-.np-screen{position:fixed;inset:0;z-index:90;overflow-y:auto;background:transparent;color:#f5f5f3;font-family:"Roboto Condensed",sans-serif}.np-page{width:min(100%,540px);min-height:100%;margin:auto;padding:env(safe-area-inset-top) 18px calc(105px + env(safe-area-inset-bottom));background:transparent}.np-header{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;height:78px;border-bottom:1px solid #222}.np-header>button{position:relative;display:grid;width:43px;height:43px;place-items:center;border:1px solid #d39c00;border-radius:50%;color:#f2b516;background:#080808}.np-header>div{display:flex;align-items:center;justify-content:center;gap:8px}.np-header>div b{font-family:Barlow;font-size:22px;letter-spacing:.08em}.np-header>div small{position:absolute;margin:35px 0 0 74px;color:#f2b516;font-size:8px;letter-spacing:.3em}.np-title{padding:22px 2px 8px}.np-title h1{margin:0;font-family:"Bebas Neue";font-size:39px;font-weight:400}.np-title h1 span{color:#f2b516}.np-title p{margin:2px 0;color:var(--invictus-text-secondary)}.np-identity{display:flex;flex-direction:column;gap:14px;padding:14px 0 18px}.np-id-top{display:flex;align-items:center;gap:20px}.np-photo{position:relative;display:grid;flex:0 0 auto;width:88px;height:88px;place-items:center;border:3px solid #e0a400;border-radius:50%;color:#f2b516;background:#111;box-shadow:0 0 20px rgba(235,170,0,.25)}.np-photo img{width:100%;height:100%;border-radius:50%;object-fit:cover}.np-photo>svg{width:38px}.np-photo i{position:absolute;right:-2px;bottom:-2px;display:grid;width:30px;height:30px;place-items:center;border:1px solid #e0a400;border-radius:50%;color:#f2b516;background:#080808}.np-photo i svg{width:15px}.np-id-stats{display:flex;flex:1;justify-content:space-around}.np-id-stat{display:flex;flex-direction:column;align-items:center;gap:3px}.np-id-stat b{font-family:"Bebas Neue";font-size:22px;font-weight:400}.np-id-stat small{color:var(--invictus-text-secondary);font-size:9px;letter-spacing:.03em}.np-name h2{margin:0;display:flex;align-items:center;gap:8px;font-family:"Bebas Neue";font-size:22px;font-weight:400}.np-name h2 em{padding:2px 5px;border-radius:3px;color:#171004;background:#f2b516;font-family:Arial;font-size:9px;font-style:normal}.np-name p{margin:6px 0 0;color:var(--invictus-text-secondary);font-size:12px}.np-name span{display:flex;align-items:center;gap:6px;margin-top:4px;color:var(--invictus-text-secondary);font-size:11px}.np-name svg{width:17px;color:#f2b516}.np-edit-btn{width:100%;padding:9px;border:1px solid #373737;border-radius:8px;color:#f5f5f3;background:#161616;font-family:"Roboto Condensed";font-size:12px;font-weight:700;letter-spacing:.03em}.np-xp{display:grid}.np-xp>span,.np-xp>small{text-align:right;color:var(--invictus-text-secondary);font-size:10px}.np-xp i{display:block;height:8px;margin:5px 0;border-radius:5px;background:#272727}.np-xp i b{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#eda80a,#ffd153)}.np-error{padding:8px;color:#ff8585;text-align:center}.np-stats{display:grid;grid-template-columns:repeat(6,1fr);padding:12px;border:1px solid #393939;border-radius:9px;background:#111}.np-stats article{display:flex;min-height:112px;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid #2e2e2e;text-align:center}.np-stats article:last-child{border:0}.np-stats svg{width:25px;color:#f2b516}.np-stats small{margin-top:7px;font-size:8px}.np-stats b{margin:5px 0;font-family:"Bebas Neue";font-size:25px;font-weight:400}.np-stats span{color:var(--invictus-text-muted);font-size:8px}.np-section-head{display:flex;align-items:center;justify-content:space-between;margin:20px 0 9px}.np-section-head h2{margin:0;padding-left:9px;border-left:2px solid #f2b516;font-family:"Bebas Neue";font-size:20px;font-weight:400}.np-section-head button{display:flex;align-items:center;gap:5px;border:0;color:#f2b516;background:none;font-size:10px}.np-section-head button svg{width:16px}.np-achievements{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;overflow-x:auto}.np-achievements article{display:flex;min-width:88px;min-height:122px;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid #363636;border-radius:8px;text-align:center;background:#111}.np-achievements svg{width:38px;color:#f2b516}.np-achievements b{margin-top:7px;font-size:10px}.np-achievements span{color:var(--invictus-text-muted);font-size:8px}.np-achievements>p,.np-recent>p{grid-column:1/-1;padding:25px;text-align:center;color:var(--invictus-text-muted);border:1px solid #333;border-radius:8px}.np-recent{overflow:hidden;border:1px solid #383838;border-radius:9px;background:#101010}.np-recent article{display:grid;grid-template-columns:43px 1fr 72px 75px 35px 20px;align-items:center;gap:8px;padding:10px;border-bottom:1px solid #2c2c2c}.np-recent article:last-child{border:0}.np-recent article>span{display:grid;width:39px;height:39px;place-items:center;border:1px solid #d39c00;border-radius:50%;color:#f2b516}.np-recent article>span svg{width:21px}.np-recent article>div{display:grid}.np-recent article small,.np-recent article p,.np-recent time{margin:0;color:var(--invictus-text-secondary);font-size:9px}.np-recent article p{display:flex;align-items:center;gap:4px}.np-recent article p svg{width:14px;color:#f2b516}.np-recent article>svg{width:18px;color:#23bd53}.np-menu{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;overflow-x:auto}.np-menu button{display:flex;min-width:78px;min-height:85px;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:1px solid #373737;border-radius:7px;color:var(--invictus-text-secondary);background:#111;font-size:9px}.np-menu button svg{width:26px}.np-footer{position:fixed;z-index:92;bottom:0;left:0;right:0;display:grid;grid-template-columns:1fr 1fr 76px 1fr 1fr;height:calc(76px + env(safe-area-inset-bottom));padding:0 max(8px,calc((100vw - 540px)/2)) env(safe-area-inset-bottom);border-top:1px solid #222;background:rgba(3,3,3,.97)}.np-footer button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;color:var(--invictus-text-subtle);background:none;font-size:9px}.np-footer button svg{width:23px}.np-footer .is-active{color:#f2b516}.np-footer .is-plus{align-self:start;display:grid;width:62px;height:62px;margin-top:-15px;place-items:center;border:1px solid #f2b516;border-radius:50%;color:#f2b516;background:radial-gradient(circle,#2b2107,#050505 70%)}.np-footer .is-plus svg{width:30px}@media(max-width:430px){.np-page{padding-left:12px;padding-right:12px}.np-id-top{gap:14px}.np-photo{width:78px;height:78px}.np-name h2{font-size:19px}.np-stats{grid-template-columns:repeat(6,minmax(74px,1fr));overflow-x:auto}.np-recent article{grid-template-columns:42px 1fr 55px 20px}.np-recent article p:nth-of-type(2),.np-recent time{display:none}}
++.np-screen{position:fixed;inset:0;z-index:90;overflow-y:auto;background:transparent;color:#f5f5f3;font-family:"Roboto Condensed",sans-serif}.np-page{width:min(100%,540px);min-height:100%;margin:auto;padding:env(safe-area-inset-top) 18px calc(105px + env(safe-area-inset-bottom));background:transparent}.np-header{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;height:78px;border-bottom:1px solid #222}.np-header>button{position:relative;display:grid;width:43px;height:43px;place-items:center;border:1px solid #d39c00;border-radius:50%;color:#f2b516;background:#080808}.np-header>div{display:flex;align-items:center;justify-content:center;gap:8px}.np-header>div b{font-family:Barlow;font-size:22px;letter-spacing:.08em}.np-header>div small{position:absolute;margin:35px 0 0 74px;color:#f2b516;font-size:8px;letter-spacing:.3em}.np-title{padding:22px 2px 8px}.np-title h1{margin:0;font-family:"Bebas Neue";font-size:39px;font-weight:400}.np-title h1 span{color:#f2b516}.np-title p{margin:2px 0;color:var(--invictus-text-secondary)}.np-identity{display:flex;flex-direction:column;gap:14px;padding:14px 0 18px}.np-id-top{display:flex;align-items:center;gap:20px}.np-photo{position:relative;display:grid;flex:0 0 auto;width:88px;height:88px;place-items:center;border:3px solid #e0a400;border-radius:50%;color:#f2b516;background:#111;box-shadow:0 0 20px rgba(235,170,0,.25)}.np-photo img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}.np-photo>svg{width:38px}.np-photo i{position:absolute;right:-2px;bottom:-2px;display:grid;width:30px;height:30px;place-items:center;border:1px solid #e0a400;border-radius:50%;color:#f2b516;background:#080808}.np-photo i svg{width:15px}.np-id-stats{display:flex;flex:1;justify-content:space-around}.np-id-stat{display:flex;flex-direction:column;align-items:center;gap:3px}.np-id-stat b{font-family:"Bebas Neue";font-size:22px;font-weight:400}.np-id-stat small{color:var(--invictus-text-secondary);font-size:9px;letter-spacing:.03em}.np-name h2{margin:0;display:flex;align-items:center;gap:8px;font-family:"Bebas Neue";font-size:22px;font-weight:400}.np-name h2 em{padding:2px 5px;border-radius:3px;color:#171004;background:#f2b516;font-family:Arial;font-size:9px;font-style:normal}.np-name p{margin:6px 0 0;color:var(--invictus-text-secondary);font-size:12px}.np-name span{display:flex;align-items:center;gap:6px;margin-top:4px;color:var(--invictus-text-secondary);font-size:11px}.np-name svg{width:17px;color:#f2b516}.np-edit-btn{width:100%;padding:9px;border:1px solid #373737;border-radius:8px;color:#f5f5f3;background:#161616;font-family:"Roboto Condensed";font-size:12px;font-weight:700;letter-spacing:.03em}.np-xp{display:grid}.np-xp>span,.np-xp>small{text-align:right;color:var(--invictus-text-secondary);font-size:10px}.np-xp i{display:block;height:8px;margin:5px 0;border-radius:5px;background:#272727}.np-xp i b{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#eda80a,#ffd153)}.np-error{padding:8px;color:#ff8585;text-align:center}.np-stats{display:grid;grid-template-columns:repeat(6,1fr);padding:12px;border:1px solid #393939;border-radius:9px;background:#111}.np-stats article{display:flex;min-height:112px;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid #2e2e2e;text-align:center}.np-stats article:last-child{border:0}.np-stats svg{width:25px;color:#f2b516}.np-stats small{margin-top:7px;font-size:8px}.np-stats b{margin:5px 0;font-family:"Bebas Neue";font-size:25px;font-weight:400}.np-stats span{color:var(--invictus-text-muted);font-size:8px}.np-section-head{display:flex;align-items:center;justify-content:space-between;margin:20px 0 9px}.np-section-head h2{margin:0;padding-left:9px;border-left:2px solid #f2b516;font-family:"Bebas Neue";font-size:20px;font-weight:400}.np-section-head button{display:flex;align-items:center;gap:5px;border:0;color:#f2b516;background:none;font-size:10px}.np-section-head button svg{width:16px}.np-achievements{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;overflow-x:auto}.np-achievements article{display:flex;min-width:88px;min-height:122px;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid #363636;border-radius:8px;text-align:center;background:#111}.np-achievements svg{width:38px;color:#f2b516}.np-achievements b{margin-top:7px;font-size:10px}.np-achievements span{color:var(--invictus-text-muted);font-size:8px}.np-achievements>p,.np-recent>p{grid-column:1/-1;padding:25px;text-align:center;color:var(--invictus-text-muted);border:1px solid #333;border-radius:8px}.np-recent{overflow:hidden;border:1px solid #383838;border-radius:9px;background:#101010}.np-recent article{display:grid;grid-template-columns:43px 1fr 72px 75px 35px 20px;align-items:center;gap:8px;padding:10px;border-bottom:1px solid #2c2c2c}.np-recent article:last-child{border:0}.np-recent article>span{display:grid;width:39px;height:39px;place-items:center;border:1px solid #d39c00;border-radius:50%;color:#f2b516}.np-recent article>span svg{width:21px}.np-recent article>div{display:grid}.np-recent article small,.np-recent article p,.np-recent time{margin:0;color:var(--invictus-text-secondary);font-size:9px}.np-recent article p{display:flex;align-items:center;gap:4px}.np-recent article p svg{width:14px;color:#f2b516}.np-recent article>svg{width:18px;color:#23bd53}.np-menu{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;overflow-x:auto}.np-menu button{display:flex;min-width:78px;min-height:85px;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:1px solid #373737;border-radius:7px;color:var(--invictus-text-secondary);background:#111;font-size:9px}.np-menu button svg{width:26px}.np-footer{position:fixed;z-index:92;bottom:0;left:0;right:0;display:grid;grid-template-columns:1fr 1fr 76px 1fr 1fr;height:calc(76px + env(safe-area-inset-bottom));padding:0 max(8px,calc((100vw - 540px)/2)) env(safe-area-inset-bottom);border-top:1px solid #222;background:rgba(3,3,3,.97)}.np-footer button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;color:var(--invictus-text-subtle);background:none;font-size:9px}.np-footer button svg{width:23px}.np-footer .is-active{color:#f2b516}.np-footer .is-plus{align-self:start;display:grid;width:62px;height:62px;margin-top:-15px;place-items:center;border:1px solid #f2b516;border-radius:50%;color:#f2b516;background:radial-gradient(circle,#2b2107,#050505 70%)}.np-footer .is-plus svg{width:30px}@media(max-width:430px){.np-page{padding-left:12px;padding-right:12px}.np-id-top{gap:14px}.np-photo{width:78px;height:78px}.np-name h2{font-size:19px}.np-stats{grid-template-columns:repeat(6,minmax(74px,1fr));overflow-x:auto}.np-recent article{grid-template-columns:42px 1fr 55px 20px}.np-recent article p:nth-of-type(2),.np-recent time{display:none}}
+ 
+-.np-menu .np-menu-pro{border-color:rgba(242,181,22,.5);color:#f2b516;background:linear-gradient(135deg,rgba(242,181,22,.12),rgba(8,8,8,.95))}.np-menu .np-menu-pro svg{color:#f2b516}
+\ No newline at end of file
++.np-menu .np-menu-pro{border-color:rgba(242,181,22,.5);color:#f2b516;background:linear-gradient(135deg,rgba(242,181,22,.12),rgba(8,8,8,.95))}.np-menu .np-menu-pro svg{color:#f2b516}
++
++.np-crop-backdrop{position:fixed;z-index:170;inset:0;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.85);backdrop-filter:blur(8px)}.np-crop-modal{display:grid;gap:14px;width:100%;max-width:340px;padding:18px;border:1px solid #5d470f;border-radius:16px;background:linear-gradient(145deg,#17140c,#090909);box-shadow:0 -10px 35px rgba(0,0,0,.5)}.np-crop-modal>header{display:flex;align-items:flex-start;justify-content:space-between;padding:0 0 10px;border-bottom:1px solid #29261d}.np-crop-modal>header small{color:#dca30a;font-size:8px;font-weight:900;letter-spacing:.14em}.np-crop-modal>header h2{margin:2px 0 0;font-family:"Bebas Neue";font-size:23px;font-weight:400}.np-crop-modal>header button{display:grid;width:34px;height:34px;place-items:center;border:1px solid #393939;border-radius:8px;color:#ddd;background:#111}.np-crop-modal>header svg{width:18px}.np-crop-viewport{position:relative;width:260px;height:260px;margin:0 auto;overflow:hidden;border:3px solid #e0a400;border-radius:50%;background:#111;touch-action:none;cursor:grab;box-shadow:0 0 20px rgba(235,170,0,.25)}.np-crop-viewport:active{cursor:grabbing}.np-crop-viewport img{position:absolute;left:50%;top:50%;max-width:none;user-select:none;pointer-events:none}.np-crop-zoom{display:flex;align-items:center;gap:10px;padding:0 6px}.np-crop-zoom span{color:#f2b516;font-size:16px;font-weight:700}.np-crop-zoom input[type=range]{flex:1;accent-color:#f2b516}.np-crop-hint{margin:0;color:var(--invictus-text-secondary);font-size:10px;text-align:center}.np-crop-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.np-crop-actions button{padding:11px;border-radius:8px;font-family:"Roboto Condensed";font-size:12px;font-weight:700;letter-spacing:.03em}.np-crop-actions .is-cancel{border:1px solid #373737;color:#f5f5f3;background:#161616}.np-crop-actions .is-confirm{border:1px solid #e0a400;color:#171004;background:linear-gradient(135deg,#f2b516,#e0a400)}.np-crop-actions .is-confirm:disabled{opacity:.6}
+\ No newline at end of file
+diff --git a/src/pages/ProfileNew.tsx b/src/pages/ProfileNew.tsx
+index 83371c7..56eae26 100644
+--- a/src/pages/ProfileNew.tsx
++++ b/src/pages/ProfileNew.tsx
+@@ -1,4 +1,4 @@
+-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
++import { ChangeEvent, PointerEvent as ReactPointerEvent, SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
+ import { createPortal } from 'react-dom';
+ import { useNavigate } from 'react-router-dom';
+ import { ArrowRight, Bell, Brain, Camera, CheckCircle2, Clock, Coins, Crown, Dumbbell, Flame, HeartPulse, HelpCircle, ImagePlus, Landmark, Medal, Plus, Settings, ShieldCheck, Trash2, Trophy, UserRound, Watch, X } from 'lucide-react';
+@@ -17,6 +17,8 @@ import { compressImage } from '../lib/utils';
+ import './ProfileNew.css';
+ import './ProfilePhotoMenu.css';
+ 
++const CROP_VIEWPORT = 260;
++
+ export function ProfileNew() {
+   const navigate = useNavigate();
+   const { user, refreshUser } = useUser();
+@@ -31,6 +33,14 @@ export function ProfileNew() {
+   // undefined = use the profile from UserContext; string/null = optimistic
+   // avatar while the heavier profile/statistics refresh finishes in background.
+   const [profilePhotoOverride, setProfilePhotoOverride] = useState<string | null | undefined>(undefined);
++  // Ajuste da foto (arrastar/zoom) dentro do círculo antes de confirmar o upload.
++  const [cropSource, setCropSource] = useState<string | null>(null);
++  const [cropNaturalSize, setCropNaturalSize] = useState<{ width: number; height: number } | null>(null);
++  const [cropZoom, setCropZoom] = useState(1);
++  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
++  const [cropBusy, setCropBusy] = useState(false);
++  const cropImgRef = useRef<HTMLImageElement>(null);
++  const cropDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+ 
+   useEffect(() => { workoutService.getUserWorkouts(500).then(setActivities).catch(reason => setError(reason.message)); }, [user?.uid]);
+   useEffect(() => {
+@@ -73,10 +83,24 @@ export function ProfileNew() {
+       .then(() => setProfilePhotoOverride(undefined))
+       .catch(reason => console.warn('[ProfileNew] Background profile refresh failed:', reason));
+   };
++  const performUpload = async (photoBlob: Blob) => {
++    setUploading(true); setError(null); setNotice(null);
++    try {
++      const uploadedPhotoURL = await userService.updateProfilePhoto(photoBlob);
++      setProfilePhotoOverride(uploadedPhotoURL);
++      setNotice('Foto de perfil atualizada.');
++      refreshProfileInBackground();
++    } catch (reason: any) {
++      setError(reason?.message || 'Não foi possível atualizar sua foto.');
++    } finally {
++      setUploading(false);
++    }
++  };
+   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
+     const file = event.target.files?.[0];
++    event.target.value = '';
+     if (!file) return;
+-    setUploading(true); setError(null); setNotice(null);
++    setError(null); setNotice(null);
+     try {
+       const supportedSource = /^image\/(jpeg|jpg|png|webp)$/i.test(file.type);
+       let compressed: Blob;
+@@ -89,14 +113,75 @@ export function ProfileNew() {
+         console.warn('[ProfileNew] Image compression unavailable; uploading original image:', compressionError);
+         compressed = file;
+       }
+-      const uploadedPhotoURL = await userService.updateProfilePhoto(compressed);
+-      setProfilePhotoOverride(uploadedPhotoURL);
+-      setNotice('Foto de perfil atualizada.');
+-      refreshProfileInBackground();
++      // Não envia direto: abre o ajuste (arrastar/zoom) dentro do círculo,
++      // igual ao Instagram, pra pessoa escolher como a foto fica.
++      setCropZoom(1); setCropOffset({ x: 0, y: 0 }); setCropNaturalSize(null);
++      setCropSource(URL.createObjectURL(compressed));
+     } catch (reason: any) {
+-      setError(reason?.message || 'Não foi possível atualizar sua foto.');
++      setError(reason?.message || 'Não foi possível preparar sua foto.');
++    }
++  };
++  const clampCropOffset = (offset: { x: number; y: number }, zoom: number, natural: { width: number; height: number } | null) => {
++    if (!natural) return { x: 0, y: 0 };
++    const scale = (CROP_VIEWPORT / Math.min(natural.width, natural.height)) * zoom;
++    const maxX = Math.max(0, (natural.width * scale - CROP_VIEWPORT) / 2);
++    const maxY = Math.max(0, (natural.height * scale - CROP_VIEWPORT) / 2);
++    return { x: Math.min(maxX, Math.max(-maxX, offset.x)), y: Math.min(maxY, Math.max(-maxY, offset.y)) };
++  };
++  const onCropImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
++    const { naturalWidth, naturalHeight } = event.currentTarget;
++    setCropNaturalSize({ width: naturalWidth, height: naturalHeight });
++  };
++  const onCropZoomChange = (event: ChangeEvent<HTMLInputElement>) => {
++    const zoom = Number(event.target.value);
++    setCropZoom(zoom);
++    setCropOffset(prev => clampCropOffset(prev, zoom, cropNaturalSize));
++  };
++  const onCropPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
++    event.currentTarget.setPointerCapture(event.pointerId);
++    cropDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: cropOffset.x, originY: cropOffset.y };
++  };
++  const onCropPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
++    const drag = cropDragRef.current;
++    if (!drag || drag.pointerId !== event.pointerId) return;
++    const next = { x: drag.originX + (event.clientX - drag.startX), y: drag.originY + (event.clientY - drag.startY) };
++    setCropOffset(clampCropOffset(next, cropZoom, cropNaturalSize));
++  };
++  const onCropPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
++    if (cropDragRef.current?.pointerId === event.pointerId) cropDragRef.current = null;
++    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* já liberado */ }
++  };
++  const cancelCrop = () => {
++    if (cropSource) URL.revokeObjectURL(cropSource);
++    setCropSource(null); setCropNaturalSize(null); setCropZoom(1); setCropOffset({ x: 0, y: 0 });
++  };
++  const confirmCrop = async () => {
++    const img = cropImgRef.current;
++    if (!img || !cropNaturalSize || cropBusy) return;
++    setCropBusy(true); setError(null);
++    try {
++      const scale = (CROP_VIEWPORT / Math.min(cropNaturalSize.width, cropNaturalSize.height)) * cropZoom;
++      const displayedWidth = cropNaturalSize.width * scale;
++      const displayedHeight = cropNaturalSize.height * scale;
++      const originX = (CROP_VIEWPORT - displayedWidth) / 2 + cropOffset.x;
++      const originY = (CROP_VIEWPORT - displayedHeight) / 2 + cropOffset.y;
++      const sSize = CROP_VIEWPORT / scale;
++      const sx = Math.min(Math.max(0, -originX / scale), Math.max(0, cropNaturalSize.width - sSize));
++      const sy = Math.min(Math.max(0, -originY / scale), Math.max(0, cropNaturalSize.height - sSize));
++      const canvas = document.createElement('canvas');
++      canvas.width = 800; canvas.height = 800;
++      const ctx = canvas.getContext('2d');
++      if (!ctx) throw new Error('Não foi possível processar a imagem.');
++      ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, 800, 800);
++      const croppedBlob: Blob = await new Promise((resolve, reject) => {
++        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Falha ao gerar a imagem recortada.')), 'image/jpeg', 0.85);
++      });
++      cancelCrop();
++      await performUpload(croppedBlob);
++    } catch (reason: any) {
++      setError(reason?.message || 'Não foi possível recortar sua foto.');
+     } finally {
+-      setUploading(false); event.target.value = '';
++      setCropBusy(false);
+     }
+   };
+   const removePhoto = async () => {
+@@ -142,6 +227,9 @@ export function ProfileNew() {
+   const activityName = (item: Workout) => item.type === 'cardio' ? (item.cardioTypeLabel || 'Cardio') : 'Musculação';
+   const activityDetail = (item: Workout) => item.type === 'cardio' ? (item.cardioTypeLabel || item.cardioType || 'Atividade concluída') : (item.muscleGroup || 'Treino concluído');
+   const openRecentActivity = (item: Workout) => navigate(`/challenges?view=history&activity=${encodeURIComponent(item.id)}&source=workout`);
++  const cropScale = cropNaturalSize ? (CROP_VIEWPORT / Math.min(cropNaturalSize.width, cropNaturalSize.height)) * cropZoom : 1;
++  const cropDisplayWidth = cropNaturalSize ? cropNaturalSize.width * cropScale : CROP_VIEWPORT;
++  const cropDisplayHeight = cropNaturalSize ? cropNaturalSize.height * cropScale : CROP_VIEWPORT;
+ 
+   return createPortal(<main className="np-screen"><div className="np-page"><input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={upload} />
+     <header className="np-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><span /></header>
+@@ -168,5 +256,13 @@ export function ProfileNew() {
+     <div className="np-section-head"><h2>CONFIGURAÇÕES</h2></div><section className="np-menu"><button className="np-menu-pro" onClick={() => navigate('/profile/preferences/subscriptions', { state: { returnTo: '/profile' } })}><Crown /><span>{paid ? 'Assinatura PRO' : 'Virar PRO'}</span></button>    <button onClick={() => navigate('/profile/wallet')}><Trophy /><span>Prêmios e saques</span></button><button onClick={() => navigate('/profile/preferences')}><UserRound /><span>Minha conta</span></button><button onClick={() => navigate('/profile/academy')}><Landmark /><span>Academia</span></button><button onClick={() => navigate('/profile/wearables')}><Watch /><span>Dispositivos</span></button><button onClick={() => navigate('/health')}><HeartPulse /><span>Saúde</span></button><button onClick={() => navigate('/ai')}><Brain /><span>Invictus IA</span></button><button onClick={() => navigate('/profile/preferences')}><Settings /><span>Preferências</span></button><button onClick={() => navigate('/profile/preferences/faq')}><HelpCircle /><span>Ajuda</span></button><button className="is-danger" onClick={() => void requestAccountDeletion()} disabled={deletionLoading}><Trash2 /><span>{deletionLoading ? 'Registrando exclusão…' : 'Excluir minha conta'}</span></button></section>
+   </div><nav className="np-footer"><button onClick={() => navigate('/')}><InvictusLogo size={24} /><span>Início</span></button><button onClick={() => navigate('/championships')}><Trophy /><span>Campeonatos</span></button><button className="is-plus" onClick={() => navigate('/activity')} aria-label="Escolher modalidade"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><span>Desafios</span></button><button className="is-active"><UserRound /><span>Perfil</span></button></nav>
+     {photoMenuOpen ? <div className="np-photo-menu-backdrop" role="presentation" onClick={() => setPhotoMenuOpen(false)}><section className="np-photo-menu" role="dialog" aria-modal="true" aria-labelledby="np-photo-menu-title" onClick={event => event.stopPropagation()}><header><div><small>FOTO DO PERFIL</small><h2 id="np-photo-menu-title">ESCOLHA UMA AÇÃO</h2></div><button onClick={() => setPhotoMenuOpen(false)} aria-label="Fechar"><X /></button></header><button className="is-change" onClick={choosePhoto}><ImagePlus /><span><b>Trocar foto</b><small>Escolher uma imagem do dispositivo</small></span></button><button className="is-remove" onClick={removePhoto}><Trash2 /><span><b>Remover foto</b><small>Voltar para o avatar padrão</small></span></button></section></div> : null}
++    {cropSource ? <div className="np-crop-backdrop" role="presentation"><section className="np-crop-modal" role="dialog" aria-modal="true" aria-labelledby="np-crop-title"><header><div><small>FOTO DO PERFIL</small><h2 id="np-crop-title">AJUSTE SUA FOTO</h2></div><button onClick={cancelCrop} disabled={cropBusy} aria-label="Cancelar"><X /></button></header>
++      <div className="np-crop-viewport" onPointerDown={onCropPointerDown} onPointerMove={onCropPointerMove} onPointerUp={onCropPointerUp} onPointerCancel={onCropPointerUp}>
++        <img ref={cropImgRef} src={cropSource} alt="" draggable={false} onLoad={onCropImageLoad} style={{ width: `${cropDisplayWidth}px`, height: `${cropDisplayHeight}px`, transform: `translate(calc(-50% + ${cropOffset.x}px), calc(-50% + ${cropOffset.y}px))` }} />
++      </div>
++      <div className="np-crop-zoom"><span aria-hidden="true">−</span><input type="range" min="1" max="3" step="0.01" value={cropZoom} onChange={onCropZoomChange} aria-label="Zoom da foto" /><span aria-hidden="true">+</span></div>
++      <p className="np-crop-hint">Arraste para posicionar e use o controle para dar zoom.</p>
++      <div className="np-crop-actions"><button className="is-cancel" onClick={cancelCrop} disabled={cropBusy}>CANCELAR</button><button className="is-confirm" onClick={() => void confirmCrop()} disabled={cropBusy || !cropNaturalSize}>{cropBusy ? 'PROCESSANDO…' : 'CONFIRMAR'}</button></div>
++    </section></div> : null}
+   </main>, document.body);
+ }
+diff --git a/src/tests/profileHealthNativeFix.test.ts b/src/tests/profileHealthNativeFix.test.ts
+index afdd489..e7a7ae5 100644
+--- a/src/tests/profileHealthNativeFix.test.ts
++++ b/src/tests/profileHealthNativeFix.test.ts
+@@ -7,7 +7,9 @@ describe('profile photo flow', () => {
+   test('new profile exposes change/remove actions and never blocks UI on the heavy refresh', () => {
+     const profile = read('src/pages/ProfileNew.tsx');
+     expect(profile).toContain('await compressImage(file, 800, 0.82)');
+-    expect(profile).toContain('const uploadedPhotoURL = await userService.updateProfilePhoto(compressed)');
++    // O envio final saiu do handler de seleção de arquivo e foi para performUpload,
++    // chamado depois que a pessoa ajusta (arrasta/zoom) a foto dentro do círculo.
++    expect(profile).toContain('const uploadedPhotoURL = await userService.updateProfilePhoto(photoBlob)');
+     expect(profile).toContain('setProfilePhotoOverride(uploadedPhotoURL)');
+     expect(profile).toContain('refreshProfileInBackground()');
+     expect(profile).not.toContain('await refreshUser();');
+-- 
+2.43.0
+

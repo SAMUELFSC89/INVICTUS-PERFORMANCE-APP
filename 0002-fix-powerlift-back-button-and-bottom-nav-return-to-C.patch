@@ -1,0 +1,59 @@
+From e98ababb4735f259e0df7202b57b84aebe4cb07f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 18 Sep 2026 19:53:09 +0000
+Subject: [PATCH 2/4] fix(powerlift): back button and bottom nav return to
+ Campeonatos, not Desafios
+
+Power Lift moved from the Desafios hub to the Campeonatos hub (335d906),
+but its own back button and footer nav highlight were never updated and
+still pointed at /challenges -- so tapping Voltar (or the footer) sent
+the athlete to the wrong tab instead of back to Campeonatos, where the
+page is actually reached from now.
+
+Added a regression test locking in both destinations.
+---
+ src/pages/PowerLift.tsx                     | 4 ++--
+ src/tests/powerLiftChampionshipCard.test.ts | 7 +++++++
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/pages/PowerLift.tsx b/src/pages/PowerLift.tsx
+index ec1a94b..122540b 100644
+--- a/src/pages/PowerLift.tsx
++++ b/src/pages/PowerLift.tsx
+@@ -408,7 +408,7 @@ export function PowerLift() {
+ 
+   return createPortal(<main className="power-screen">
+     <header className="power-header">
+-      <button onClick={()=>navigate('/challenges')} aria-label="Voltar"><ArrowLeft /></button>
++      <button onClick={()=>navigate('/championships')} aria-label="Voltar"><ArrowLeft /></button>
+       <div>
+         <h1>DESAFIO DE FORÇA <em>PRO</em></h1>
+         <p>Supere seus limites. Prove sua força.</p>
+@@ -520,7 +520,7 @@ export function PowerLift() {
+       </button>
+     </section>
+ 
+-    <nav className="power-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={22} /><small>INÍCIO</small></button><button onClick={() => navigate('/championships')}><Trophy /><small>CAMPEONATOS</small></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Abrir construção do treino"><Plus /></button><button className="is-active" onClick={() => navigate('/challenges')}><ShieldCheck /><small>DESAFIOS</small></button><button onClick={() => navigate('/profile')}><UserRound /><small>PERFIL</small></button></nav>
++    <nav className="power-new-footer"><button onClick={() => navigate('/')}><InvictusLogo size={22} /><small>INÍCIO</small></button><button className="is-active" onClick={() => navigate('/championships')}><Trophy /><small>CAMPEONATOS</small></button><button className="is-plus" onClick={() => navigate('/musculacao')} aria-label="Abrir construção do treino"><Plus /></button><button onClick={() => navigate('/challenges')}><ShieldCheck /><small>DESAFIOS</small></button><button onClick={() => navigate('/profile')}><UserRound /><small>PERFIL</small></button></nav>
+ 
+     {modal && <div className="power-overlay" onClick={()=>setModal(null)}>
+       <section onClick={e=>e.stopPropagation()}>
+diff --git a/src/tests/powerLiftChampionshipCard.test.ts b/src/tests/powerLiftChampionshipCard.test.ts
+index 6b82e3e..3e5c310 100644
+--- a/src/tests/powerLiftChampionshipCard.test.ts
++++ b/src/tests/powerLiftChampionshipCard.test.ts
+@@ -37,4 +37,11 @@ describe('Power Lift na aba Campeonatos (campeonato de força gratuito)', () =>
+     expect(service).toContain("action=me");
+     expect(service).toContain('records.length > 0');
+   });
++
++  it('o botão Voltar e o rodapé da própria página retornam para Campeonatos, não para Desafios', () => {
++    const powerLift = read('src/pages/PowerLift.tsx');
++    expect(powerLift).not.toContain("navigate('/challenges')} aria-label=\"Voltar\"");
++    expect(powerLift).toContain("navigate('/championships')} aria-label=\"Voltar\"");
++    expect(powerLift).toContain('className="is-active" onClick={() => navigate(\'/championships\')}');
++  });
+ });
+-- 
+2.43.0
+
