@@ -2,6 +2,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { app, db } from './common.js';
 import { AppError } from '../_middleware/error.js';
 import { logEvent } from './observability.js';
+import { publishAdminRealtimeSignalSafe } from './admin-realtime.js';
 
 type PowerLiftDecision = 'approved' | 'rejected';
 
@@ -138,6 +139,7 @@ export async function reviewPowerLiftRecord(
     route: '/api/admin',
     details: { recordId: id, decision, exercise: result.exercise, weight: result.weight, note: reviewNote },
   });
+  publishAdminRealtimeSignalSafe({ type: 'POWERLIFT_REVIEWED', source: 'powerlift-admin' });
 
   return {
     success: true,
