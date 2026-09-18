@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
-  Coins,
   Crown,
   Diamond,
   Dumbbell,
@@ -14,6 +13,7 @@ import {
   Info,
   LockKeyhole,
   Medal,
+  Save,
   ShieldCheck,
   Target,
   TrendingUp,
@@ -146,6 +146,8 @@ const modalities: ModalityMeta[] = [
   { id: 'agachamento', title: 'AGACHAMENTO LIVRE', short: 'Agachamento', image: '/powerlift-agachamento.jpg' },
   { id: 'terra', title: 'LEVANTAMENTO TERRA', short: 'Terra', image: '/powerlift-terra.jpg' },
 ];
+
+const views: View[] = ['home', 'modality', 'register', 'elite', 'unlock', 'general', 'processing', 'submitted'];
 
 const emptySeries = (): SeriesDraft[] => [
   { weight: '', reps: '' },
@@ -319,9 +321,12 @@ export function PowerLift() {
   const navigate = useNavigate();
   const { user } = useUser();
   const profileSex = normalizeCompetitionSex(user?.sex);
-  const preview = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('preview') === '1';
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const preview = params?.get('preview') === '1';
+  const requestedPreviewView = params?.get('view');
+  const initialView: View = preview && requestedPreviewView && views.includes(requestedPreviewView as View) ? requestedPreviewView as View : 'home';
 
-  const [view, setView] = useState<View>('home');
+  const [view, setView] = useState<View>(initialView);
   const [selected, setSelected] = useState<Exercise>('supino');
   const [status, setStatus] = useState<SeasonStatus | null>(null);
   const [records, setRecords] = useState<RecordRow[]>([]);
@@ -335,6 +340,7 @@ export function PowerLift() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submissionMessage, setSubmissionMessage] = useState('');
   const [optInBusy, setOptInBusy] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
 
   const effectiveStatus = useMemo(() => {
     if (preview) return previewStatus(profileSex || 'male');
@@ -424,6 +430,7 @@ export function PowerLift() {
   const generalOptIn = effectiveStatus?.general.optedIn === true;
   const generalRawScore = effectiveStatus?.general.rawScore || 0;
   const generalCompetitive = effectiveStatus?.general.competitiveScore || 0;
+  const draftKey = `powerlift-draft:${season.id}:${selected}`;
 
   const publicRanking = useMemo(() => {
     if (!preview) {
@@ -482,6 +489,31 @@ export function PowerLift() {
     setVideoFile(null);
     setSubmissionError('');
     setUploadProgress(0);
+    setDraftSaved(false);
+  };
+
+  const openRegistration = () => {
+    resetRegistration();
+    try {
+      const draft = window.localStorage.getItem(draftKey);
+      if (draft) {
+        const parsed = JSON.parse(draft) as { series?: SeriesDraft[] };
+        if (Array.isArray(parsed.series) && parsed.series.length === 3) setSeries(parsed.series);
+      }
+    } catch (error) {
+      console.warn('[PowerLift] Não foi possível restaurar rascunho local:', error);
+    }
+    setView('register');
+  };
+
+  const saveDraft = () => {
+    try {
+      window.localStorage.setItem(draftKey, JSON.stringify({ series, savedAt: new Date().toISOString() }));
+      setDraftSaved(true);
+    } catch (error) {
+      console.warn('[PowerLift] Não foi possível salvar rascunho local:', error);
+      setSubmissionError('Não foi possível salvar o rascunho neste dispositivo.');
+    }
   };
 
   const submitMark = async () => {
@@ -583,6 +615,7 @@ export function PowerLift() {
         setSubmissionMessage('Marca salva e aguardando revisão técnica.');
       }
 
+      window.localStorage.removeItem(draftKey);
       resetRegistration();
       setView('submitted');
     } catch (error: any) {
@@ -595,6 +628,7 @@ export function PowerLift() {
         });
         if (outcome.status === 'confirmed') {
           setMyRecords((current) => [outcome.record, ...current.filter((item) => item.id !== outcome.record.id)]);
+          window.localStorage.removeItem(draftKey);
           setSubmissionMessage('Marca recebida pelo servidor e encaminhada para revisão.');
           resetRegistration();
           setView('submitted');
@@ -649,11 +683,11 @@ export function PowerLift() {
     else setView('home');
   };
 
-  const Header = ({ title, accent, subtitle, image }: { title: string; accent?: string; subtitle?: string; image?: string }) => (
-    <header className="pl-approved-header">
+  const Header = ({ title, accent, subtitle, image, showBack = true }: { title: string; accent?: string; subtitle?: string; image?: string; showBack?: boolean }) => (
+    <header className={`pl-approved-header ${showBack ? '' : 'pl-approved-header--no-back'}`}>
       <div className="pl-header-art" style={image ? { backgroundImage: `linear-gradient(90deg,rgba(4,4,4,.1),rgba(4,4,4,.72)),url(${image})` } : undefined} />
       <div className="pl-topbar">
-        <button className="pl-back" type="button" aria-label="Voltar" onClick={back}><ArrowLeft size={19} /></button>
+        {showBack ? <button className="pl-back" type="button" aria-label="Voltar" onClick={back}><ArrowLeft size={19} /></button> : null}
         <div className="pl-brand">INVICTUS</div>
         <div className="pl-season-chip"><CalendarDays size={13} /> T{season.number} · {season.daysRemaining} dias</div>
       </div>
@@ -673,7 +707,7 @@ export function PowerLift() {
 
   const Dashboard = () => (
     <>
-      <Header title="POWER" accent="LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" />
+      <Header title="POWER" accent="LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" showBack={false} />
       <section className="pl-hero pl-hero--season-score">
         <div className="pl-score-icon"><BarChart3 size={25} /></div>
         <div>
@@ -838,7 +872,7 @@ export function PowerLift() {
           </div>
         </section>
 
-        <button className="pl-primary" type="button" disabled={selectedStats.todayUsed} onClick={() => { resetRegistration(); setView('register'); }}>
+        <button className="pl-primary" type="button" disabled={selectedStats.todayUsed} onClick={openRegistration}>
           <Dumbbell size={18} /> {selectedStats.todayUsed ? 'Marca oficial de hoje já utilizada' : 'Registrar marca oficial de hoje'}
         </button>
         {canEnterEliteRanking(selectedStats.tier) ? <button className="pl-secondary" type="button" onClick={() => setView('elite')}><Trophy size={17} /> Abrir Ranking Elite</button> : null}
@@ -871,8 +905,8 @@ export function PowerLift() {
               <div className="pl-form-card" key={index}>
                 <div className="pl-form-card-head"><b>Série {index + 1}</b><small>até {repCap} reps pontuam nesta carga</small></div>
                 <div className="pl-form-grid">
-                  <div className="pl-field"><label>Carga (kg)</label><input inputMode="decimal" value={item.weight} onChange={(event) => setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, weight: event.target.value } : row))} placeholder="0" /></div>
-                  <div className="pl-field"><label>Repetições</label><input inputMode="numeric" value={item.reps} onChange={(event) => setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, reps: event.target.value } : row))} placeholder="0" /></div>
+                  <div className="pl-field"><label>Carga (kg)</label><input inputMode="decimal" value={item.weight} onChange={(event) => { setDraftSaved(false); setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, weight: event.target.value } : row)); }} placeholder="0" /></div>
+                  <div className="pl-field"><label>Repetições</label><input inputMode="numeric" value={item.reps} onChange={(event) => { setDraftSaved(false); setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, reps: event.target.value } : row)); }} placeholder="0" /></div>
                   <div className="pl-volume"><small>{scored?.eligible === false && parsed.weight > 0 ? 'Não pontua' : 'Volume'}</small><strong>{formatNumber(scored?.volume || 0)} kg</strong></div>
                 </div>
                 {scored?.eligible === false && parsed.weight > 0 ? <small style={{ color: '#ffbe55' }}>Carga abaixo de 70% da maior série ({formatNumber(minimumSetWeight)} kg).</small> : null}
@@ -902,6 +936,7 @@ export function PowerLift() {
         <div className="pl-warning"><Info size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />A marca do dia pode conquistar no máximo uma categoria. O score usa sempre sua melhor marca válida da temporada.</div>
         {submissionError ? <p className="pl-error">{submissionError}</p> : null}
         <button className="pl-primary" type="button" onClick={() => void submitMark()}><Upload size={18} /> Enviar para validação</button>
+        <button className="pl-secondary" type="button" onClick={saveDraft}><Save size={18} /> {draftSaved ? 'Rascunho salvo neste dispositivo' : 'Salvar rascunho'}</button>
       </>
     );
   };
@@ -931,9 +966,10 @@ export function PowerLift() {
     const reward2 = Number(effectiveStatus?.rewards.podium[2] || 600);
     const reward3 = Number(effectiveStatus?.rewards.podium[3] || 400);
     const myIndex = publicRanking.findIndex((row) => row.userId === user?.uid);
+    const myOutsideTopTen = myIndex >= 10 ? publicRanking[myIndex] : null;
     return (
       <>
-        <Header title="RANKING" accent="ELITE" subtitle={`${selectedMeta.short.toUpperCase()} · ${sexLabel} · Diamante obrigatório`} image={selectedMeta.image} />
+        <Header title="RANKING" accent="ELITE" subtitle={`${selectedMeta.short.toUpperCase()} · ${sexLabel} · Diamante obrigatório`} image={selectedMeta.image} showBack={false} />
         <section className="pl-elite-status">
           <TierBadge tier="DIAMANTE" compact />
           <div><small>Status Elite</small><b>{selectedStats.eliteOptIn || preview ? 'Você está elegível e participando do ranking' : 'Você está elegível para o ranking'}</b><p>Continue registrando suas marcas para subir na classificação.</p></div>
@@ -968,7 +1004,7 @@ export function PowerLift() {
                 {publicRanking.length ? publicRanking.slice(0, 10).map((row, index) => {
                   const competitive = Number(row.competitiveScore || row.seasonScore || 0);
                   const raw = Number(row.seasonScore || competitive);
-                  const defending = Boolean((row as any).defendingChampion);
+                  const defending = Boolean((row as RecordRow & { defendingChampion?: boolean }).defendingChampion);
                   return (
                     <div key={row.id} className={`pl-leader-row ${row.userId === user?.uid ? 'is-me' : ''}`}>
                       <div className="pl-rank-num">{index + 1}</div>
@@ -977,6 +1013,13 @@ export function PowerLift() {
                     </div>
                   );
                 }) : <div className="pl-card" style={{ padding: 18, color: '#9d9da5' }}>Ainda não há atletas participantes nesta categoria.</div>}
+                {myOutsideTopTen ? (
+                  <div className="pl-leader-row is-me pl-leader-row--outside-top">
+                    <div className="pl-rank-num">{myIndex + 1}</div>
+                    <div className="pl-athlete"><AthleteAvatar photo={myOutsideTopTen.userPhoto} name={myOutsideTopTen.userName} /><div><b>Você</b><small>{formatNumber(Number(myOutsideTopTen.powerVolume || 0))} kg · sua posição atual</small></div></div>
+                    <div className="pl-leader-points"><strong>{formatNumber(Number(myOutsideTopTen.competitiveScore || myOutsideTopTen.seasonScore || 0))} pts</strong><small>ranking</small></div>
+                  </div>
+                ) : null}
               </div>
             </section>
             {!preview ? <button className="pl-secondary" type="button" disabled={optInBusy} onClick={() => void updateOptIn('elite', false, selected)}>Sair do Ranking Elite</button> : null}
@@ -991,7 +1034,7 @@ export function PowerLift() {
 
   const Unlock = () => (
     <>
-      <Header title="TRIPLO" accent="DIAMANTE" subtitle="Força total. Sem limites." image="/powerlift-terra.jpg" />
+      <Header title="TRIPLO" accent="DIAMANTE" subtitle="Força total. Sem limites." image="/powerlift-terra.jpg" showBack={false} />
       <section className="pl-triplo-grid">
         {modalities.map((modality) => (
           <article key={modality.id} style={{ backgroundImage: `linear-gradient(180deg,rgba(0,0,0,.2),rgba(0,0,0,.86)),url(${modality.image})` }}>
@@ -1033,7 +1076,7 @@ export function PowerLift() {
     const myIndex = visibleGeneralRanking.findIndex((item) => item.userId === user?.uid);
     return (
       <>
-        <Header title="RANKING GERAL" accent="POWER LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" />
+        <Header title="RANKING GERAL" accent="POWER LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" showBack={false} />
         <section className="pl-general-filters">
           <span>{sexLabel}</span><span>Temporada {season.number}</span><span><CoinMark size={18} /> Premiação em Invictus Coins</span>
         </section>
@@ -1083,6 +1126,8 @@ export function PowerLift() {
     </>
   );
 
+  const showBottomNav = view === 'home' || view === 'modality' || view === 'elite' || view === 'general';
+
   return (
     <main className={`pl-season pl-view-${view}`}>
       <div className="pl-shell">
@@ -1096,7 +1141,7 @@ export function PowerLift() {
         {view === 'processing' ? <Processing /> : null}
         {view === 'submitted' ? <Submitted /> : null}
       </div>
-      {view !== 'processing' ? <BottomNav /> : null}
+      {showBottomNav ? <BottomNav /> : null}
     </main>
   );
 }
