@@ -26,7 +26,8 @@ jobs:
             echo "Approved UI patch is already materialized."
             exit 0
           fi
-          git apply --3way --include=src/components/PrivateChallengesTab.tsx 0002-feat-challenges-add-Invictus-Coins-wagering-to-priva.patch
+          git show origin/main:0002-feat-challenges-add-Invictus-Coins-wagering-to-priva.patch > /tmp/private-challenges.patch
+          git apply --3way --include=src/components/PrivateChallengesTab.tsx /tmp/private-challenges.patch
           git diff --check
           git add src/components/PrivateChallengesTab.tsx
           git config user.name "github-actions[bot]"
