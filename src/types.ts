@@ -715,6 +715,14 @@ export interface PIXWithdrawal {
   updatedAt: string;
   processedAt?: string;
   adminNote?: string;
+  paymentProvider?: string;
+  providerTransferId?: string;
+  providerExternalReference?: string;
+  providerStatus?: string;
+  reconciliationRequired?: boolean;
+  reconciliationReason?: string | null;
+  providerLastError?: string;
+  providerLastErrorCode?: string | null;
 }
 
 export type LeagueTier = 'bronze' | 'prata' | 'ouro' | 'diamante' | 'mestre' | 'lendario';
