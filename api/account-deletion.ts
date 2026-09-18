@@ -73,8 +73,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     requestedAt: result.requestedAt,
     status: 'requested',
     message: result.alreadyRequested
-      ? 'Sua solicitação de exclusão já está registrada.'
-      : 'Solicitação de exclusão registrada. A conta e os dados associados serão processados conforme a política de retenção e as obrigações legais aplicáveis.',
+      ? 'Sua solicitação de exclusão já está registrada e será concluída normalmente em até 30 dias, salvo retenção legal aplicável.'
+      : 'Solicitação de exclusão registrada. A conta e os dados associados serão processados normalmente em até 30 dias, salvo retenção exigida por lei, segurança, prevenção a fraude ou exercício regular de direitos.',
     subscriptionNotice: 'Excluir a conta Invictus não cancela automaticamente uma assinatura feita pela App Store ou Google Play. Cancele a renovação na própria loja, se houver assinatura ativa.',
   });
 }
