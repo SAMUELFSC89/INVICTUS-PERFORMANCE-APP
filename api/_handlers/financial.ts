@@ -6,6 +6,7 @@ import { WithdrawalEngine } from '../_lib/withdrawal-engine.js';
 import { hasActiveAdminAuthority } from '../_lib/admin-authority.js';
 import { maskPhone, normalizeBrazilianPhone } from '../_lib/identity-verification-service.js';
 import { logEvent } from '../_lib/observability.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 
 const ALLOWED_PIX_KEY_TYPES = new Set(['cpf', 'email', 'phone', 'random']);
 // #saque-automatico: identifica no reviewerId/log de auditoria que o
@@ -324,6 +325,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       requestId,
     });
 
+    publishAdminRealtimeSignalSafe({ type: 'WITHDRAWAL_REQUESTED', source: '/api/financial' });
+
     if (commitResult.status !== 'pending') {
       return res.status(201).json({
         success: true,
@@ -345,6 +348,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         route: '/api/financial',
         details: { withdrawalId: processed.id, amount: processed.amount, providerTransferId: (processed as any).providerTransferId, providerStatus: (processed as any).providerStatus },
       });
+      publishAdminRealtimeSignalSafe({
+        type: processed.status === 'paid' ? 'WITHDRAWAL_PAID' : 'WITHDRAWAL_STATUS_CHANGED',
+        source: '/api/financial',
+      });
       return res.status(201).json({
         success: true,
         status: processed.status,
@@ -361,6 +368,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         route: '/api/financial',
         details: { withdrawalId: commitResult.id, amount: commitResult.amount },
       }).catch(() => {});
+      publishAdminRealtimeSignalSafe({ type: 'WITHDRAWAL_STATUS_CHANGED', source: '/api/financial' });
       return res.status(201).json({
         success: true,
         status: commitResult.status,
