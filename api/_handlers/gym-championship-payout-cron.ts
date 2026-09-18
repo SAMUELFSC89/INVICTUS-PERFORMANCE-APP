@@ -3,6 +3,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors } from '../_lib/common.js';
 import { finalizeCommunityGymChampionshipCycle } from '../_lib/championship-scoring-service.js';
 import { runPaidChampionshipSettlementSweep } from '../_lib/paid-championship-settlement-orchestrator.js';
+import { runPowerLiftSettlementSweep } from '../_lib/powerlift-season-engine.js';
 
 /**
  * Somente condições transitórias/operacionais conhecidas retornam 200 para o
@@ -34,9 +35,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestedCycle = req.query?.cycleKey || req.body?.cycleKey;
   const cycleKey = String(requestedCycle || defaultCycle);
 
-  // O cron agora roda diariamente por causa dos Campeonatos Oficiais pagos,
-  // mas o campeonato comunitário continua mensal. Uma chamada manual com
-  // cycleKey explícito ainda pode forçar a reconciliação de um ciclo específico.
+  // O cron agora roda diariamente por causa dos Campeonatos Oficiais pagos e
+  // também reconcilia temporadas encerradas do Power Lift. O campeonato
+  // comunitário continua mensal.
   const shouldRunCommunity = Boolean(requestedCycle) || now.getUTCDate() === 1;
   let community: Record<string, any> | null = shouldRunCommunity
     ? null
@@ -60,20 +61,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ success: false, message: 'Falha técnica ao executar settlement dos Campeonatos Oficiais.' });
   }
 
+  let powerLift;
+  try {
+    powerLift = await runPowerLiftSettlementSweep(now);
+  } catch (error) {
+    console.error('[POWER_LIFT_PAYOUT][FATAL]', error);
+    return res.status(500).json({ success: false, message: 'Falha técnica ao executar settlement do Power Lift.' });
+  }
+
   for (const blocked of paid.blocked) {
     const log = isExpectedPaidBlock(blocked.reason) ? console.warn : console.error;
     log('[GYM_CHAMPIONSHIP_PAYOUT][PAID_BLOCKED]', blocked);
   }
+  for (const blocked of powerLift.blocked) {
+    if (blocked.status === 'BLOCKED_REVIEW' || blocked.status === 'IN_PROGRESS') {
+      console.warn('[POWER_LIFT_PAYOUT][WAITING]', blocked);
+    } else {
+      console.error('[POWER_LIFT_PAYOUT][BLOCKED]', blocked);
+    }
+  }
 
   const communityExpectedBlock = Boolean(communityError?.includes('atividade(s) competitiva(s) em análise'));
   const unexpectedPaidBlock = paid.blocked.some((item) => !isExpectedPaidBlock(item.reason));
+  const unexpectedPowerLiftBlock = powerLift.blocked.some((item) => !['BLOCKED_REVIEW', 'IN_PROGRESS'].includes(String(item.status || '')));
   const unexpectedCommunityError = Boolean(communityError) && !communityExpectedBlock;
-  const status = unexpectedPaidBlock || unexpectedCommunityError ? 500 : 200;
+  const status = unexpectedPaidBlock || unexpectedPowerLiftBlock || unexpectedCommunityError ? 500 : 200;
 
   return res.status(status).json({
     success: status === 200,
     cycleKey,
     community: community || { status: communityExpectedBlock ? 'BLOCKED_REVIEW' : 'ERROR', reason: communityError },
     paid,
+    powerLift,
   });
 }
