@@ -279,6 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           minWithdrawalAmount: money(config.minWithdrawalAmount),
           maxDailyWithdrawalAmount: money(config.maxDailyWithdrawalAmount),
           identityCheckEnabled: ENFORCE_IDENTITY_FOR_WITHDRAWAL,
+          paymentEnvironment: isStrictAsaasSandbox() ? 'sandbox' : 'production',
         },
         identity: identityPayload(identity),
         cashSource: 'official_prizes_only',
@@ -324,9 +325,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (commitResult.status !== 'pending') {
-      // 'under_review' (antifraude sinalizou risco) ou um saque idempotente
-      // que já existia com outro status: nenhum dos dois dispara pagamento
-      // automático. Continua exigindo aprovação manual como hoje.
       return res.status(201).json({
         success: true,
         status: commitResult.status,
@@ -354,11 +352,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         userMessage: 'Telefone confirmado. Solicitação de saque criada e enviada automaticamente para pagamento via PIX.',
       });
     } catch (autoProcessError: any) {
-      // A reserva de saldo e a solicitação já foram criadas com sucesso; só o
-      // disparo automático para o Asaas falhou (rede, provedor fora do ar,
-      // etc.). Não derrubamos a resposta -- processPayment já deixou o saque
-      // marcado para conciliação, e o suporte/admin resolve manualmente a
-      // partir daí, igual sempre foi tratado nesse caminho de erro.
       console.error('[Financial Prize Wallet] Falha ao disparar pagamento automático no Asaas:', autoProcessError?.message || autoProcessError);
       await logEvent({
         severity: 'WARNING',
