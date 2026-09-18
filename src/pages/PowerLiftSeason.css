@@ -23,6 +23,11 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.pl-view-register,
+.pl-view-unlock,
+.pl-view-processing,
+.pl-view-submitted { padding-bottom: 28px; }
+
 .pl-season * { box-sizing: border-box; }
 .pl-season button,
 .pl-season input { font: inherit; }
@@ -82,6 +87,10 @@
   gap: 8px;
   padding-top: 9px;
   margin-bottom: 24px;
+}
+
+.pl-approved-header--no-back .pl-topbar {
+  grid-template-columns: minmax(0,1fr) auto;
 }
 
 .pl-back {
@@ -637,6 +646,7 @@
 .pl-leader-row:nth-child(2) { border-color:rgba(204,210,218,.42); }
 .pl-leader-row:nth-child(3) { border-color:rgba(184,106,58,.54); }
 .pl-leader-row.is-me { border-color:rgba(231,189,104,.87); background:linear-gradient(90deg,rgba(91,60,10,.34),rgba(24,22,16,.95)); }
+.pl-leader-row--outside-top { margin-top:8px; box-shadow:0 -1px rgba(231,189,104,.25); }
 .pl-rank-num { font-size:16px; font-weight:950; color:#c4c4c4; text-align:center; }
 .pl-leader-row:nth-child(1) .pl-rank-num { color:#efc85f; }
 .pl-leader-row:nth-child(2) .pl-rank-num { color:#dfe4e9; }
@@ -737,9 +747,14 @@
 
 @media (max-width: 720px) {
   .pl-season { padding:10px 9px 108px; }
+  .pl-view-register,
+  .pl-view-unlock,
+  .pl-view-processing,
+  .pl-view-submitted { padding-bottom:22px; }
   .pl-approved-header { margin:-10px -9px 14px; padding-left:9px; padding-right:9px; min-height:224px; }
   .pl-approved-header::after { right:11px; top:20px; font-size:6px; }
   .pl-topbar { grid-template-columns:34px minmax(0,1fr) auto; margin-bottom:20px; }
+  .pl-approved-header--no-back .pl-topbar { grid-template-columns:minmax(0,1fr) auto; }
   .pl-brand { font-size:13px; letter-spacing:.22em; }
   .pl-brand::after { font-size:5px; margin-top:5px; }
   .pl-season-chip { padding:6px 8px; font-size:8px; }
