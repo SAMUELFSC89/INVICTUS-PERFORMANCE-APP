@@ -1,5 +1,5 @@
 import { db } from './common.js';
-import { getChampionship, matchActiveChampionshipsForActivity } from './championship-catalog.js';
+import { getRuntimeChampionship, matchRuntimeActiveChampionshipsForActivity } from './championship-catalog.js';
 import { getUserRegistration } from './championship-inscription-service.js';
 import { RewardCoinEngine } from './reward-coin-engine.js';
 import type { ActivityCompetitionContext } from './activity-competition-policy.js';
@@ -43,9 +43,9 @@ function scoreBelongsToEdition(data: any, championship: any): boolean {
     && data?.regulationHash === championship.regulationHash;
 }
 
-function paidContextEditionId(context: ActivityCompetitionContext): string | null {
+async function paidContextEditionId(context: ActivityCompetitionContext): Promise<string | null> {
   if (context.editionId) return context.editionId;
-  const current = getChampionship(context.id);
+  const current = await getRuntimeChampionship(context.id);
   return current && context.regulationHash === current.regulationHash ? current.editionId : null;
 }
 
@@ -116,20 +116,20 @@ export async function submitActivityToActiveChampionships(input: ChampionshipAct
   await submitActivityToCommunityGymChampionship(input);
 
   const candidates = input.contexts
-    ? input.contexts
+    ? await Promise.all(input.contexts
         .filter((context) => context.type === 'paid_championship')
-        .map((context) => ({
+        .map(async (context) => ({
           id: context.id,
-          editionId: paidContextEditionId(context),
+          editionId: await paidContextEditionId(context),
           context,
           minDurationMinutes: context.minDurationMinutes,
           maxDurationMinutes: context.maxDurationMinutes,
-        }))
-    : matchActiveChampionshipsForActivity({
+        })))
+    : (await matchRuntimeActiveChampionshipsForActivity({
         activityType: input.activityType,
         isIndoorCardio: input.isIndoorCardio,
         when: input.when,
-      }).map((championship) => ({
+      })).map((championship) => ({
         id: championship.id,
         editionId: championship.editionId,
         context: undefined,
@@ -231,7 +231,7 @@ export async function syncReviewedActivityCompetitionScores(activityId: string):
         ...(!userIsActive ? { invalidationReason: 'ACCOUNT_INACTIVE' } : {}),
       }, { merge: true });
     } else if (context.type === 'paid_championship') {
-      const editionId = paidContextEditionId(context);
+      const editionId = await paidContextEditionId(context);
       if (!editionId) continue;
       batch.set(db.collection('championship_scores').doc(`${activityId}_${editionId}`), {
         championshipId: context.id,
@@ -458,7 +458,7 @@ export async function finalizeCommunityGymChampionshipCycle(cycleKey: string): P
 }
 
 export async function getChampionshipProgress(championshipId: string, userId: string) {
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship || !await isActiveCompetitiveUser(userId)) {
     return { totalScore: 0, totalTimeMinutes: 0, validSessionsCount: 0, currentRank: 0, totalParticipants: 0 };
   }
@@ -495,7 +495,7 @@ export interface ChampionshipActivityEntry {
 }
 
 export async function getUserChampionshipActivities(championshipId: string, userId: string, limit = 20): Promise<ChampionshipActivityEntry[]> {
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship || !await isActiveCompetitiveUser(userId)) return [];
   const snap = await db.collection('championship_scores').where('championshipId', '==', championshipId).get();
   const entries: ChampionshipActivityEntry[] = [];
@@ -627,7 +627,7 @@ function frozenFinalLeaderboard(
 }
 
 export async function getChampionshipLeaderboard(championshipId: string, limit = 50): Promise<ChampionshipLeaderboardEntry[]> {
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship) return [];
   const editionId = String(championship.editionId || '');
   if (editionId) {
