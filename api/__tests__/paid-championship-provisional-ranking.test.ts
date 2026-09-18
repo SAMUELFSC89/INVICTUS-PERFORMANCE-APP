@@ -3,8 +3,8 @@ import path from 'node:path';
 
 jest.mock('../_lib/common', () => ({ db: {} }));
 jest.mock('../_lib/championship-catalog', () => ({
-  getChampionship: jest.fn(),
-  matchActiveChampionshipsForActivity: jest.fn(() => []),
+  getRuntimeChampionship: jest.fn(async () => undefined),
+  matchRuntimeActiveChampionshipsForActivity: jest.fn(async () => []),
 }));
 jest.mock('../_lib/championship-inscription-service', () => ({ getUserRegistration: jest.fn() }));
 jest.mock('../_lib/reward-coin-engine', () => ({ RewardCoinEngine: { credit: jest.fn() } }));
