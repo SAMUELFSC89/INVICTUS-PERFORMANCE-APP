@@ -14,8 +14,8 @@ describe('Contrato — IGA permanece a única persistência competitiva', () => 
   test('igaService continua responsável pelos três campos canônicos do ranking', () => {
     const igaService = readFileSync(resolve(process.cwd(), 'api/_lib/igaService.ts'), 'utf8');
 
-    expect(igaService).toContain('weeklyScore: weekly.igaRanking');
-    expect(igaService).toContain('monthlyScore: monthly.average');
-    expect(igaService).toContain('score: season.average');
+    expect(igaService).toContain('weeklyScore: result.weekly.igaRanking');
+    expect(igaService).toContain('monthlyScore: result.monthly.average');
+    expect(igaService).toContain('score: result.season.average');
   });
 });
