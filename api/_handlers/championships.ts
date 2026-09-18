@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'crypto';
 import { verifyAuth, db } from '../_lib/common.js';
-import { listChampionships, getChampionship } from '../_lib/championship-catalog.js';
+import { listRuntimeChampionships, getRuntimeChampionship } from '../_lib/championship-catalog.js';
 import {
   registrarAceiteRegulamento,
   criarInscricaoChampionship,
@@ -55,7 +55,8 @@ async function withRevealedPrize(championship: any) {
 }
 
 export async function listChampionshipsHandler(_req: any, res: any) {
-  const championships = await Promise.all(listChampionships().map(async (championship) => {
+  const runtimeChampionships = await listRuntimeChampionships();
+  const championships = await Promise.all(runtimeChampionships.map(async (championship) => {
     if (!championship.registrationOpen) return withRevealedPrize(championship);
     try {
       const editionGate = await getPaidChampionshipEditionGate(championship);
@@ -147,7 +148,7 @@ export async function getChampionshipProgressHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  const champ = getChampionship(championshipId);
+  const champ = await getRuntimeChampionship(championshipId);
   if (!champ) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const editionId = String(champ.editionId || '');
   if (!editionId) return res.status(409).json({ error: 'A edição atual ainda não possui identidade publicada.' });
@@ -193,7 +194,7 @@ export async function getChampionshipLeaderboardHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const leaderboard = await getChampionshipLeaderboard(championshipId, 50);
   return res.json({ championshipId, editionId: championship.editionId, leaderboard });
@@ -203,7 +204,7 @@ export async function getMyChampionshipActivitiesHandler(req: any, res: any) {
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Nao autenticado.' });
   const championshipId = String(req.query?.championshipId || '');
-  const championship = getChampionship(championshipId);
+  const championship = await getRuntimeChampionship(championshipId);
   if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
   const activities = await getUserChampionshipActivities(championshipId, auth.uid);
   return res.json({ championshipId, editionId: championship.editionId, activities });
@@ -217,7 +218,7 @@ export async function acceptChampionshipRegulationHandler(req: any, res: any) {
     const { championshipId, regulationVersion, regulationHash, locale, platform } = req.body || {};
     if (!championshipId) return res.status(400).json({ error: 'championshipId e obrigatorio.' });
 
-    const championship = getChampionship(championshipId);
+    const championship = await getRuntimeChampionship(championshipId);
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
     const editionGate = await getPaidChampionshipEditionGate(championship);
     if (!editionGate.ok) {
@@ -268,7 +269,7 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
       return res.status(400).json({ error: 'Superficie de checkout nao autorizada.' });
     }
 
-    const championship = getChampionship(championshipId);
+    const championship = await getRuntimeChampionship(championshipId);
     if (!championship) return res.status(404).json({ error: 'Campeonato nao encontrado.' });
     if (!championship.registrationOpen) {
       return res.status(400).json({ error: championship.registrationReadinessReason || 'Inscricoes ainda nao disponiveis.' });
@@ -377,7 +378,7 @@ export async function submitActivityToChampionshipHandler(req: any, res: any) {
     if (!championshipId || !activityId) {
       return res.status(400).json({ error: 'championshipId e activityId sao obrigatorios.' });
     }
-    const championship = getChampionship(String(championshipId));
+    const championship = await getRuntimeChampionship(String(championshipId));
     if (!championship?.editionId) return res.status(404).json({ error: 'Campeonato ou edição não encontrado.' });
 
     const scoreId = `${activityId}_${championship.editionId}`;
