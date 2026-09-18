@@ -42,11 +42,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (req.method === 'POST' && action === 'reconcile-iga') {
       const userId = String(req.body?.userId || '').trim();
-      const reason = String(req.body?.reason || '').trim();
       const activityId = String(req.body?.activityId || '').trim();
-      if (reason.length < 8) {
-        return res.status(400).json({ success: false, error: 'Informe um motivo de auditoria com pelo menos 8 caracteres para reconciliar o IGA.' });
-      }
+      const suppliedReason = String(req.body?.reason || '').trim();
+      const reason = suppliedReason || `Reconciliação IGA solicitada pela Central de Auditoria${activityId ? ` para a atividade ${activityId}` : ''}.`;
       const result = await reconcileUserIgaAsAdmin(userId, auth.uid);
       await db.collection('admin_reviews').add({
         type: 'IGA_RECONCILIATION',
@@ -55,6 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         userId,
         activityId: activityId || null,
         reason,
+        reasonSource: suppliedReason ? 'admin' : 'system',
         before: result.before,
         after: result.after,
         calculated: result.calculated,
