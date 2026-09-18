@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors, db, verifyAuth } from './_lib/common.js';
 import { hasActiveAdminAuthority } from './_lib/admin-authority.js';
+import { getAdminAthleteAudit } from './_lib/admin-athlete-audit.js';
 import {
   getActivityAudit,
   getAuditEngineCatalog,
@@ -38,6 +39,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (req.method === 'GET' && action === 'activity') {
       const audit = await getActivityAudit(String(req.query.activityId || ''));
+      return res.status(200).json({ success: true, audit });
+    }
+    if (req.method === 'GET' && action === 'athlete') {
+      const audit = await getAdminAthleteAudit(req.query.target, req.query.limit);
       return res.status(200).json({ success: true, audit });
     }
     if (req.method === 'POST' && action === 'reconcile-iga') {
