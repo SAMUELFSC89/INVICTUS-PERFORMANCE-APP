@@ -42,4 +42,39 @@ describe('web admin backoffice contracts', () => {
     expect(helper).toContain('power_audit_logs');
     expect(helper).toContain('admin_reviews');
   });
+
+  test('forensic audit center exposes engines and evidence only to active admins', () => {
+    const endpoint = source('api/admin-audit.ts');
+    const service = source('api/_lib/admin-audit-service.ts');
+    expect(endpoint).toContain('verifyAuth');
+    expect(endpoint).toContain('hasActiveAdminAuthority');
+    expect(endpoint).toContain("action === 'engine-catalog'");
+    expect(endpoint).toContain("action === 'security-reports'");
+    expect(endpoint).toContain("action === 'activity'");
+    expect(endpoint).toContain("action === 'reconcile-iga'");
+    expect(service).toContain('SECURITY_CONFIG');
+    expect(service).toContain("formula: '100 × ∛(Fn × Tn × In)'");
+    expect(service).toContain("queryByActivity('security_audit_log'");
+    expect(service).toContain("queryByActivity('activity_competition_entries'");
+    expect(service).toContain("queryByActivity('championship_scores'");
+    expect(service).toContain("readDirectDocument('activity_reward_ledger'");
+    expect(service).toContain('recalculateAllUserScores');
+  });
+
+  test('championship web administration is fail-closed while runtime migration is incomplete', () => {
+    const endpoint = source('api/admin-championships.ts');
+    const service = source('api/_lib/admin-championship-service.ts');
+    const catalog = source('api/_lib/championship-catalog.ts');
+    expect(endpoint).toContain('verifyAuth');
+    expect(endpoint).toContain('hasActiveAdminAuthority');
+    expect(endpoint).toContain("action === 'save-draft'");
+    expect(endpoint).toContain("action === 'delete-draft'");
+    expect(endpoint).toContain("action === 'publish'");
+    expect(endpoint).toContain('Publicação live protegida');
+    expect(service).toContain("status: 'DRAFT'");
+    expect(service).toContain('split-brain');
+    expect(catalog).toContain('getRuntimeChampionship');
+    expect(catalog).toContain('getLockedChampionshipSnapshot');
+    expect(catalog).toContain('registrationEnabled');
+  });
 });
