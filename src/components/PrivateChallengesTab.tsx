@@ -9,12 +9,9 @@ import { auth } from '../firebase';
 import { useUser } from '../UserContext';
 import { hasActiveProEntitlement } from '../lib/proEntitlement';
 
-// #325/#124 (pedido do usuario): Desafios Privados deixou de ser uma disputa
-// com dinheiro real (taxa de entrada, pool, premio em R$) e virou um
-// beneficio exclusivo do plano PRO -- sem nenhum valor monetario envolvido.
-// So o TOP 1 leva reconhecimento (destaque/badge). Usuarios Free nao tem
-// acesso ao recurso (nem visualizam desafios de terceiros), so a tela de
-// upsell abaixo.
+// Desafios Privados são um benefício PRO sem dinheiro real. A disputa usa
+// o IGA canônico e pode ter aposta opcional em Invictus Coins, moeda virtual
+// do ecossistema. Usuários Free não acessam desafios nem a lista privada.
 export function PrivateChallengesTab() {
   const { user: profile, refreshUser } = useUser();
   const navigate = useNavigate();
@@ -175,7 +172,7 @@ export function PrivateChallengesTab() {
         <div className="space-y-2">
           <h3 className="font-headline italic font-black text-2xl uppercase tracking-tight text-on-surface">Benefício Exclusivo PRO</h3>
           <p className="text-on-surface-variant font-label text-[10px] uppercase tracking-wider leading-relaxed max-w-sm mx-auto">
-            Desafios Privados são para assinantes do plano PRO: crie ou entre em disputas com seus parceiros de treino usando um código de convite, sem nenhum custo por desafio. Apenas reconhecimento para quem terminar em 1º lugar.
+            Desafios Privados são para assinantes PRO: crie ou entre por código, dispute pelo IGA e, se o grupo quiser, defina uma aposta opcional em Invictus Coins. O vencedor leva o pote; empates seguem as regras automáticas do desafio.
           </p>
         </div>
         <button
