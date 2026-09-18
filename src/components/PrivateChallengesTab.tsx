@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, Trophy, RefreshCw, Plus, CheckCircle, AlertCircle,
-  Copy, ShieldAlert, Crown, Lock
+  Copy, ShieldAlert, Crown, Lock, Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -31,6 +31,9 @@ export function PrivateChallengesTab() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [durationDays, setDurationDays] = useState<7 | 15 | 30>(7);
+  // Aposta em Invictus Coins (moeda virtual do app, sem valor em dinheiro):
+  // opcional, 0 = desafio livre/simbólico igual ao comportamento de sempre.
+  const [stakeAmount, setStakeAmount] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
@@ -86,7 +89,7 @@ export function PrivateChallengesTab() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${idToken}`
         },
-        body: JSON.stringify({ title, description, durationDays })
+        body: JSON.stringify({ title, description, durationDays, stakeAmount })
       });
 
       const data = await response.json();
@@ -94,9 +97,14 @@ export function PrivateChallengesTab() {
         throw new Error(data.error || 'Não foi possível criar o desafio.');
       }
 
-      setCreateSuccess(`Desafio "${title}" criado com sucesso! Código de convite: ${data.inviteCode}`);
+      setCreateSuccess(
+        data.stakeAmount > 0
+          ? `Desafio "${title}" criado! Sua aposta de ${data.stakeAmount} Invictus Coins já foi debitada. Código de convite: ${data.inviteCode}`
+          : `Desafio "${title}" criado com sucesso! Código de convite: ${data.inviteCode}`
+      );
       setTitle('');
       setDescription('');
+      setStakeAmount(0);
       await refreshUser();
       await fetchChallenges();
       setActiveSubTab('ativos');
@@ -132,7 +140,11 @@ export function PrivateChallengesTab() {
         throw new Error(data.error || 'Não foi possível entrar no desafio.');
       }
 
-      setJoinSuccess('Você entrou no desafio privado com sucesso! Comece a treinar para pontuar.');
+      setJoinSuccess(
+        data.stakeAmount > 0
+          ? `Você entrou no desafio! Sua aposta de ${data.stakeAmount} Invictus Coins já foi debitada. Comece a treinar para pontuar.`
+          : 'Você entrou no desafio privado com sucesso! Comece a treinar para pontuar.'
+      );
       setInviteCode('');
       await refreshUser();
       await fetchChallenges();
@@ -297,6 +309,7 @@ export function PrivateChallengesTab() {
                   // entryFee/netPrizePool reais -- exibidos como registro
                   // fiel do que aconteceu, nunca inventado.
                   const isLegacyMoney = challenge.isLegacyMoneyChallenge && typeof challenge.entryFee === 'number' && challenge.entryFee > 0;
+                  const hasStake = !isLegacyMoney && Number(challenge.stakeAmount) > 0;
 
                   return (
                     <motion.div
@@ -336,6 +349,12 @@ export function PrivateChallengesTab() {
                             <span className="bg-surface-container-high text-on-surface-variant px-2.5 py-0.5 rounded-full font-label font-bold text-[8px] uppercase tracking-wider">
                               {challenge.durationDays} DIAS
                             </span>
+
+                            {hasStake && (
+                              <span className="bg-primary/15 text-primary border border-primary/25 px-2.5 py-0.5 rounded-full font-label font-bold text-[8px] uppercase tracking-wider flex items-center gap-1">
+                                <Coins size={9} /> APOSTA: {challenge.stakeAmount} COINS
+                              </span>
+                            )}
 
                             {challenge.isMember && (
                               <span className="bg-primary text-black px-2 py-0.5 rounded-full font-label font-bold text-[8px] uppercase tracking-wider flex items-center gap-1">
@@ -392,6 +411,11 @@ export function PrivateChallengesTab() {
                               <span className="font-headline italic font-black text-lg text-on-surface">R$ {(challenge.entryFee || 0).toFixed(2)}</span>
                             </div>
                           </>
+                        ) : hasStake ? (
+                          <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
+                            <span className="block font-label text-[7px] uppercase tracking-[0.25em] invictus-text-muted mb-1 leading-none">POTE (COINS)</span>
+                            <span className="font-headline italic font-black text-lg text-primary flex items-center gap-1"><Coins size={14} /> {challenge.potTotal || 0}</span>
+                          </div>
                         ) : (
                           <div className="bg-surface-container-high/60 p-4 rounded-2xl border border-outline-variant/20">
                             <span className="block font-label text-[7px] uppercase tracking-[0.25em] invictus-text-muted mb-1 leading-none">PRÊMIO</span>
@@ -445,6 +469,30 @@ export function PrivateChallengesTab() {
                               <span className="font-headline italic font-black text-lg text-primary">R$ {(challenge.netPrizePool || 0).toFixed(2)}</span>
                             </div>
                           )}
+                          {hasStake && (
+                            <div className="text-right">
+                              <span className="block font-label text-[7px] uppercase tracking-widest invictus-text-muted mb-0.5">Pote levado</span>
+                              <span className="font-headline italic font-black text-lg text-primary flex items-center gap-1 justify-end"><Coins size={14} /> {challenge.potTotal || 0}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {challenge.status === 'completed' && !challenge.winnerId && challenge.resultStatus === 'SPLIT_ON_PERSISTENT_TIE' && (
+                        <div className="bg-surface-container-high/60 border border-outline-variant/25 p-4 rounded-2xl flex items-start gap-3">
+                          <Coins size={16} className="text-primary shrink-0 mt-0.5" />
+                          <p className="text-on-surface-variant font-bold text-[9px] uppercase tracking-wider leading-relaxed">
+                            Empate persistiu mesmo após a extensão de 1 dia. O pote de {challenge.potTotal || 0} Coins foi dividido em partes iguais entre quem empatou no topo.
+                          </p>
+                        </div>
+                      )}
+
+                      {challenge.status === 'cancelled' && hasStake && challenge.resultStatus === 'CANCELLED_BELOW_MIN_PARTICIPANTS' && (
+                        <div className="bg-surface-container-high/60 border border-outline-variant/25 p-4 rounded-2xl flex items-start gap-3">
+                          <Coins size={16} className="text-primary shrink-0 mt-0.5" />
+                          <p className="text-on-surface-variant font-bold text-[9px] uppercase tracking-wider leading-relaxed">
+                            Desafio cancelado por não atingir o mínimo de participantes. A aposta foi devolvida integralmente.
+                          </p>
                         </div>
                       )}
 
@@ -577,8 +625,47 @@ export function PrivateChallengesTab() {
                 ))}
               </div>
 
-              {/* Resumo limpo, sem taxa nem formulas internas -- o desafio e
-                  100% gratis, so exige plano PRO pra criar/entrar. */}
+              <div className="space-y-2">
+                <label className="block font-label font-black text-[9px] text-on-surface-variant uppercase tracking-widest leading-none">
+                  APOSTAR INVICTUS COINS (OPCIONAL)
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {([0, 50, 100, 250] as const).map((amount) => (
+                    <button
+                      key={amount}
+                      type="button"
+                      onClick={() => setStakeAmount(amount)}
+                      className={`py-3 rounded-2xl font-headline italic font-black text-xs uppercase tracking-wider border-2 transition-all ${
+                        stakeAmount === amount
+                          ? 'bg-primary/10 border-primary text-primary'
+                          : 'bg-surface-container-high border-outline-variant/20 text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {amount === 0 ? 'SEM APOSTA' : amount}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={2000}
+                  step={1}
+                  placeholder="OU DIGITE OUTRO VALOR"
+                  value={stakeAmount === 0 ? '' : stakeAmount}
+                  onChange={(e) => setStakeAmount(Math.max(0, Math.min(2000, Math.floor(Number(e.target.value) || 0))))}
+                  className="w-full bg-surface-container-high border-2 border-outline-variant/30 text-on-surface rounded-2xl px-4 py-3 text-xs uppercase tracking-widest font-label focus:border-primary transition-all focus:outline-none"
+                />
+                {stakeAmount > 0 && (
+                  <p className="invictus-text-muted leading-relaxed text-[8px] uppercase tracking-wide flex items-start gap-1.5 pt-1">
+                    <Coins size={12} className="text-primary shrink-0 mt-px" />
+                    Sua aposta é debitada agora, ao criar o desafio. Cada pessoa que entrar aposta o mesmo valor. Quem vencer leva o pote inteiro (moeda virtual do app, sem valor em dinheiro).
+                  </p>
+                )}
+              </div>
+
+              {/* Resumo limpo -- o desafio em si sempre exige plano PRO pra
+                  criar/entrar; a aposta (quando houver) e a UNICA coisa que
+                  custa Coins, nunca dinheiro real. */}
               <div className="bg-surface-container-high p-5 rounded-2xl border border-outline-variant/15 space-y-3 font-label text-[10px] text-on-surface-variant">
                 <div className="flex justify-between items-center pb-1 border-b border-outline-variant/10 font-bold">
                   <span className="uppercase text-on-surface font-black">RESUMO DO DESAFIO</span>
@@ -586,7 +673,7 @@ export function PrivateChallengesTab() {
                 </div>
 
                 <div className="flex justify-between">
-                  <span className="uppercase tracking-wider">CUSTO:</span>
+                  <span className="uppercase tracking-wider">CUSTO PARA CRIAR:</span>
                   <span className="font-bold text-primary">Gratuito (benefício PRO)</span>
                 </div>
 
@@ -596,12 +683,21 @@ export function PrivateChallengesTab() {
                 </div>
 
                 <div className="flex justify-between">
+                  <span className="uppercase tracking-wider">APOSTA POR PARTICIPANTE:</span>
+                  <span className="font-bold text-on-surface flex items-center gap-1">
+                    {stakeAmount > 0 ? <><Coins size={11} className="text-primary" /> {stakeAmount} Coins</> : 'Nenhuma'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
                   <span className="uppercase tracking-wider font-bold">GANHADOR:</span>
-                  <span className="font-black text-primary">TOP 1 leva o reconhecimento de campeão</span>
+                  <span className="font-black text-primary">
+                    {stakeAmount > 0 ? 'TOP 1 leva o pote inteiro em Coins' : 'TOP 1 leva o reconhecimento de campeão'}
+                  </span>
                 </div>
 
                 <p className="invictus-text-muted leading-relaxed text-[8px] uppercase tracking-wide border-t border-outline-variant/10 pt-2">
-                  *Para que o desafio seja ativado, é necessário um mínimo de 2 participantes confirmados (inclusive você). Caso o prazo final expire sem atingir o mínimo, o desafio é cancelado — sem qualquer custo envolvido.
+                  *Para que o desafio seja ativado, é necessário um mínimo de 2 participantes confirmados (inclusive você). Caso o prazo final expire sem atingir o mínimo, o desafio é cancelado{stakeAmount > 0 ? ' e a aposta devolvida' : ', sem qualquer custo envolvido'}. Em caso de empate no topo, o desafio estende 1 dia automaticamente antes de decidir{stakeAmount > 0 ? ' -- se persistir, o pote é dividido entre quem empatou' : ''}.
                 </p>
               </div>
 
@@ -644,6 +740,10 @@ export function PrivateChallengesTab() {
                   onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                   className="w-full bg-surface-container-high border-2 border-outline-variant/30 text-on-surface text-center font-headline italic font-black text-3xl uppercase tracking-[0.3em] rounded-2xl py-4 focus:border-primary transition-all focus:outline-none"
                 />
+                <p className="invictus-text-muted leading-relaxed text-[8px] uppercase tracking-wide flex items-start gap-1.5 text-left pt-1">
+                  <Coins size={12} className="text-primary shrink-0 mt-px" />
+                  Se este desafio tiver aposta em Invictus Coins, o valor é debitado automaticamente ao confirmar sua entrada.
+                </p>
               </div>
 
               <button
