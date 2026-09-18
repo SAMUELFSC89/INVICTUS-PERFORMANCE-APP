@@ -21,7 +21,7 @@
  * (sem token, sem rede, resposta inesperada) resulta em NÃO apagar o vídeo.
  */
 
-jest.mock('../pages/PowerLiftNew.css', () => ({}), { virtual: true });
+jest.mock('../pages/PowerLiftSeason.css', () => ({}), { virtual: true });
 
 jest.mock('../firebase', () => ({
   auth: { currentUser: null as any },
@@ -47,10 +47,6 @@ jest.mock('../config', () => ({
   API_CONFIG: { baseUrl: '' },
 }));
 
-jest.mock('../components/InvictusLogo', () => ({
-  InvictusLogo: () => null,
-}));
-
 jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
 }));
@@ -67,8 +63,6 @@ function fakeStorageRef(fullPath = 'power_records/user-1/123_video.mp4') {
 
 describe('ACT-09: reconciliação pós-falha de envio do PowerLift', () => {
   beforeAll(() => {
-    // O código sob teste usa window.setTimeout/clearTimeout; o ambiente de
-    // teste roda em 'node' (sem jsdom), então fornecemos um `window` mínimo.
     (global as any).window = {
       setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args),
       clearTimeout: (...args: Parameters<typeof clearTimeout>) => clearTimeout(...args),
@@ -93,8 +87,6 @@ describe('ACT-09: reconciliação pós-falha de envio do PowerLift', () => {
     const outcome = await reconcilePowerLiftSubmission(fakeStorageRef(), 'supino', 120);
 
     expect(outcome).toEqual({ status: 'confirmed', record });
-    // Reenvia exatamente a mesma ação/endpoint — nenhum novo endpoint de
-    // backend é necessário para reconciliar.
     const [url, init] = (global as any).fetch.mock.calls[0];
     expect(String(url)).toContain('action=submit');
     expect(JSON.parse(init.body)).toEqual({ exercise: 'supino', weight: 120, videoUrl: 'https://example.com/video.mp4' });
