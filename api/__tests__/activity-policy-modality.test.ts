@@ -4,7 +4,7 @@ jest.mock('../_lib/common', () => ({
   get db() { return mockDb; },
 }));
 jest.mock('../_lib/championship-catalog', () => ({
-  matchActiveChampionshipsForActivity: jest.fn(() => []),
+  matchRuntimeActiveChampionshipsForActivity: jest.fn(async () => []),
 }));
 
 import { loadActivityCompetitionPolicySnapshot } from '../_lib/activity-competition-policy';
