@@ -98,8 +98,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           providerEventAt,
         );
         if (resultadoChampionship.encontrada) {
+          const requerReconciliacao = 'requerReconciliacao' in resultadoChampionship
+            && resultadoChampionship.requerReconciliacao === true;
           publishAdminRealtimeSignalSafe({
-            type: resultadoChampionship.requerReconciliacao
+            type: requerReconciliacao
               ? 'CHAMPIONSHIP_PAYMENT_RECONCILIATION_REQUIRED'
               : 'CHAMPIONSHIP_REGISTRATION_CONFIRMED',
             source: 'asaas-webhook:championship',
