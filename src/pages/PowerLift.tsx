@@ -10,12 +10,16 @@ import {
   Crown,
   Diamond,
   Dumbbell,
+  Home,
   Info,
   LockKeyhole,
   Medal,
   ShieldCheck,
+  Target,
+  TrendingUp,
   Trophy,
   Upload,
+  UserRound,
   Video,
   Zap,
 } from 'lucide-react';
@@ -292,6 +296,25 @@ function previewStatus(sex: PowerLiftSex): SeasonStatus {
   };
 }
 
+function TierBadge({ tier, compact = false }: { tier: PowerLiftTier; compact?: boolean }) {
+  const normalized = tier.toLowerCase();
+  return (
+    <span className={`pl-tier-badge pl-tier-badge--${normalized} ${compact ? 'is-compact' : ''}`} aria-label={tierLabel(tier)}>
+      <span className="pl-tier-badge-core"><Diamond size={compact ? 10 : 14} /></span>
+      {!compact ? <b>{tierLabel(tier)}</b> : null}
+    </span>
+  );
+}
+
+function AthleteAvatar({ photo, name }: { photo?: string; name?: string }) {
+  if (photo) return <img className="pl-avatar" src={photo} alt="" />;
+  return <span className="pl-avatar pl-avatar--fallback" aria-hidden="true">{(name || 'I').slice(0, 1).toUpperCase()}</span>;
+}
+
+function CoinMark({ size = 24 }: { size?: number }) {
+  return <img className="pl-coin-mark" src="/assets/coins/invictus-coins-stack.png" alt="" width={size} height={size} />;
+}
+
 export function PowerLift() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -409,16 +432,16 @@ export function PowerLift() {
         .sort((a, b) => Number(b.competitiveScore || b.seasonScore || 0) - Number(a.competitiveScore || a.seasonScore || 0))
         .slice(0, 20);
     }
-    const names = ['Bruno Almeida', 'Felipe Souza', 'Lucas Carvalho', user?.displayName || 'Você', 'Rafael Mendes', 'Gabriel Pereira'];
+    const names = ['Rafael Medeiros', 'Bruno Carvalho', 'Lucas Ferreira', 'Felipe Andrade', 'Daniel Costa', 'Gustavo Lima', 'Matheus Rocha', 'Thiago Martins', 'Eduardo Santos', 'Vitor Almeida', user?.displayName || 'Você'];
     return names.map((name, index) => ({
       id: `preview-${selected}-${index}`,
-      userId: index === 3 ? user?.uid || 'me' : `preview-${index}`,
+      userId: index === 10 ? user?.uid || 'me' : `preview-${index}`,
       userName: name,
       exercise: selected,
-      weight: 220 - index * 5,
-      powerVolume: 2400 - index * 80,
-      seasonScore: 1120 - index * 35,
-      competitiveScore: 1120 - index * 35,
+      weight: 230 - index * 4,
+      powerVolume: 5230 - index * 255,
+      seasonScore: 4980 - index * 265,
+      competitiveScore: 4980 - index * 265,
       competitionSex: competitionSex || 'male',
       seasonTier: 'DIAMANTE',
     } as RecordRow));
@@ -426,17 +449,21 @@ export function PowerLift() {
 
   const visibleGeneralRanking = useMemo(() => {
     if (!preview) return generalRanking.slice(0, 20);
-    const names = ['Bruno Almeida', 'Felipe Souza', 'Lucas Carvalho', user?.displayName || 'Você', 'Rafael Mendes'];
+    const names = ['Bruno Almeida', 'Felipe Souza', 'Lucas Carvalho', user?.displayName || 'Você', 'Rafael Mendes', 'Gabriel Pereira', 'Matheus Torres', 'Diego Santos', 'Caio Nascimento', 'Leonardo Pinto'];
     return names.map((name, index) => ({
       rank: index + 1,
       userId: index === 3 ? user?.uid || 'me' : `general-${index}`,
       userName: name,
       userPhoto: '',
-      rawScore: 3300 - index * 80,
-      competitiveScore: 3300 - index * 80,
+      rawScore: 8420 - index * 260,
+      competitiveScore: 8420 - index * 260,
       defendingMaster: index === 0,
       defenseMultiplier: index === 0 ? 0.95 : 1,
-      scores: { supino: 1100 - index * 20, agachamento: 1120 - index * 30, terra: 1080 - index * 30 },
+      scores: {
+        supino: 2810 - index * 90,
+        agachamento: 2920 - index * 100,
+        terra: 2690 - index * 70,
+      },
       bestVolumes: { supino: 2300, agachamento: 3450, terra: 3700 },
     } as GeneralRankingRow));
   }, [generalRanking, preview, user?.uid, user?.displayName]);
@@ -622,31 +649,45 @@ export function PowerLift() {
     else setView('home');
   };
 
-  const Header = ({ title, accent, subtitle }: { title: string; accent?: string; subtitle?: string }) => (
-    <>
+  const Header = ({ title, accent, subtitle, image }: { title: string; accent?: string; subtitle?: string; image?: string }) => (
+    <header className="pl-approved-header">
+      <div className="pl-header-art" style={image ? { backgroundImage: `linear-gradient(90deg,rgba(4,4,4,.1),rgba(4,4,4,.72)),url(${image})` } : undefined} />
       <div className="pl-topbar">
         <button className="pl-back" type="button" aria-label="Voltar" onClick={back}><ArrowLeft size={19} /></button>
-        <div className="pl-brand">INVICTUS PERFORMANCE</div>
+        <div className="pl-brand">INVICTUS</div>
         <div className="pl-season-chip"><CalendarDays size={13} /> T{season.number} · {season.daysRemaining} dias</div>
       </div>
       <h1 className="pl-title">{title} {accent ? <em>{accent}</em> : null}</h1>
       {subtitle ? <p className="pl-subtitle">{subtitle}</p> : null}
-    </>
+    </header>
+  );
+
+  const BottomNav = () => (
+    <nav className="pl-bottom-nav" aria-label="Navegação principal do Power Lift">
+      <button type="button" onClick={() => navigate('/')}><Home size={22} /><span>Início</span></button>
+      <button type="button" className="is-active" onClick={() => setView('home')}><Dumbbell size={22} /><span>Power Lift</span></button>
+      <button type="button" onClick={() => navigate('/challenges')}><Trophy size={22} /><span>Desafios</span></button>
+      <button type="button" onClick={() => navigate('/profile')}><UserRound size={22} /><span>Perfil</span></button>
+    </nav>
   );
 
   const Dashboard = () => (
     <>
-      <Header title="POWER" accent="LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} />
-      <section className="pl-hero">
-        <div className="pl-eyebrow"><BarChart3 size={14} /> Power Score geral da temporada</div>
-        <div className="pl-score">
-          <strong>{formatNumber(generalRawScore)} pts</strong>
-          {effectiveStatus?.general.defendingMaster ? <small>Defesa de título Master: ranking usa {formatNumber(generalCompetitive)} pts · fator 0,95×</small> : <small>Histórico permanente preservado</small>}
+      <Header title="POWER" accent="LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" />
+      <section className="pl-hero pl-hero--season-score">
+        <div className="pl-score-icon"><BarChart3 size={25} /></div>
+        <div>
+          <div className="pl-eyebrow">Pontuação geral da temporada</div>
+          <div className="pl-score">
+            <strong>{formatNumber(generalRawScore)} pts</strong>
+            {effectiveStatus?.general.defendingMaster ? <small>Defesa de título Master: ranking usa {formatNumber(generalCompetitive)} pts · fator 0,95×</small> : <small>Histórico permanente disponível</small>}
+          </div>
         </div>
+        <div className="pl-legacy-mark">EVOLUÇÃO<br />CONQUISTA<br />LEGADO</div>
       </section>
 
       <section className="pl-section">
-        <div className="pl-section-head"><h2>Minhas modalidades</h2><span>1 marca oficial por dia</span></div>
+        <div className="pl-section-head"><h2>Minhas modalidades</h2><span>Três lifts. Uma grande versão sua.</span></div>
         <div className="pl-modality-grid">
           {modalities.map((modality) => {
             const stat = modalityStats[modality.id];
@@ -654,14 +695,18 @@ export function PowerLift() {
             return (
               <article key={modality.id} className="pl-card pl-modality" onClick={() => openModality(modality.id)}>
                 <img className="pl-modality-image" src={modality.image} alt="" />
-                <div>
+                <div className="pl-modality-body">
                   <h3>{modality.title}</h3>
-                  <p>Power Volume: <b>{stat.bestVolume ? `${formatNumber(stat.bestVolume)} kg` : '—'}</b> · {formatNumber(stat.rawScore)} pts</p>
+                  <small>1 marca oficial por dia</small>
+                  <div className="pl-modality-data">
+                    <span><small>Power Volume (temporada)</small><b>{stat.bestVolume ? `${formatNumber(stat.bestVolume)} kg` : '—'}</b></span>
+                    <span><small>Pontuação</small><b>{formatNumber(stat.rawScore)} pts</b></span>
+                  </div>
                   <div className="pl-modality-meta">
-                    <span className={`pl-tier ${stat.tier === 'DIAMANTE' ? 'pl-tier--diamond' : ''}`}><Diamond size={11} /> {tierLabel(stat.tier)}</span>
+                    <TierBadge tier={stat.tier} />
                     <div className="pl-progress" aria-label="Progresso de categoria"><span style={{ width: `${progress}%` }} /></div>
                   </div>
-                  {stat.defendingChampion ? <small>🏆 Defesa de título: score competitivo {formatNumber(stat.competitiveScore)} · 0,97×</small> : null}
+                  {stat.defendingChampion ? <small className="pl-defense-copy">Defesa de título: score competitivo {formatNumber(stat.competitiveScore)} · 0,97×</small> : null}
                 </div>
                 <ChevronRight className="pl-chevron" size={19} />
               </article>
@@ -671,7 +716,7 @@ export function PowerLift() {
       </section>
 
       <section className="pl-section">
-        <div className="pl-section-head"><h2>Acesso aos rankings</h2><span>Diamante libera a elite</span></div>
+        <div className="pl-section-head"><h2>Acesso aos rankings</h2><span>Compare. Evolua. Faça história.</span></div>
         <div className="pl-ranking-grid">
           {modalities.map((modality) => {
             const stat = modalityStats[modality.id];
@@ -683,10 +728,10 @@ export function PowerLift() {
                 className={`pl-rank-card ${open ? 'is-open' : 'is-locked'}`}
                 onClick={() => { if (open) { setSelected(modality.id); setView('elite'); } }}
               >
-                <span className="pl-rank-status">{open ? <CheckCircle2 size={15} /> : <LockKeyhole size={15} />}</span>
+                <span className="pl-rank-status">{open ? <CheckCircle2 size={17} /> : <LockKeyhole size={17} />}</span>
                 <Trophy size={20} />
                 <h3>Ranking Elite {modality.short}</h3>
-                <p>{open ? (stat.eliteOptIn ? 'Participando da temporada' : 'Elegível · participação opcional') : 'Alcance Diamante para liberar'}</p>
+                <p>{open ? (stat.eliteOptIn ? 'Disponível · participando' : 'Disponível · participação opcional') : 'Bloqueado · alcance Diamante'}</p>
               </button>
             );
           })}
@@ -695,7 +740,7 @@ export function PowerLift() {
           <Crown size={26} />
           <div>
             <h3>Ranking Geral Power Lift</h3>
-            <p>{generalEligible ? (generalOptIn ? 'Triplo Diamante · você está participando.' : 'Triplo Diamante conquistado · entrada opcional.') : `${diamondCount}/3 modalidades em Diamante`}</p>
+            <p>{generalEligible ? (generalOptIn ? 'Triplo Diamante · você está participando.' : 'Triplo Diamante conquistado · entrada opcional.') : `Desbloqueado ao atingir Diamante nas 3 modalidades · ${diamondCount}/3`}</p>
           </div>
           <ChevronRight className="pl-chevron" size={19} />
         </button>
@@ -703,10 +748,10 @@ export function PowerLift() {
 
       <section className="pl-section">
         <div className="pl-section-head"><h2>Premiação da temporada</h2><span>Invictus Coins</span></div>
-        <div className="pl-rules">
-          <div className="pl-rule-card"><Coins size={17} /> Categorias: 20 → 300 Coins por modalidade</div>
-          <div className="pl-rule-card"><Medal size={17} /> Elite: 1º {formatNumber(Number(effectiveStatus?.rewards.podium[1] || 1000))} · 2º {formatNumber(Number(effectiveStatus?.rewards.podium[2] || 600))} · 3º {formatNumber(Number(effectiveStatus?.rewards.podium[3] || 400))}</div>
-          <div className="pl-rule-card"><Crown size={17} /> Master Geral: {formatNumber(effectiveStatus?.rewards.master || 4000)} Coins</div>
+        <div className="pl-rules pl-rules--rewards">
+          <div className="pl-rule-card"><CoinMark /> <span><b>Categorias</b><small>20 → 300 Coins por modalidade</small></span></div>
+          <div className="pl-rule-card"><Medal size={19} /> <span><b>Elite</b><small>1º {formatNumber(Number(effectiveStatus?.rewards.podium[1] || 1000))} · 2º {formatNumber(Number(effectiveStatus?.rewards.podium[2] || 600))} · 3º {formatNumber(Number(effectiveStatus?.rewards.podium[3] || 400))}</small></span></div>
+          <div className="pl-rule-card"><Crown size={19} /> <span><b>Master Geral</b><small>{formatNumber(effectiveStatus?.rewards.master || 4000)} Coins</small></span></div>
         </div>
       </section>
       {loadError ? <p className="pl-error">{loadError}</p> : null}
@@ -718,34 +763,54 @@ export function PowerLift() {
     const target = nextTier && competitionSex ? tierThreshold(selected, competitionSex, nextTier) : null;
     const latest = selectedStats.history.slice(0, 5);
     const nextReward = nextTier && nextTier !== 'UNRANKED' ? effectiveStatus?.rewards.tier[nextTier] || 0 : 0;
+    const careerRecords = myRecords.filter((row) => row.exercise === selected && row.videoStatus === 'approved');
+    const careerBest = careerRecords.reduce((best, row) => Math.max(best, Number(row.powerVolume ?? row.weight) || 0), 0);
+    const completedSeasons = new Set(careerRecords.map((row) => row.seasonId).filter(Boolean)).size;
+
     return (
       <>
-        <Header title={selectedMeta.title} subtitle={`${sexLabel} · 1 marca oficial por dia`} />
-        <section className="pl-hero">
+        <Header title={selectedMeta.title} subtitle={`Temporada ${season.number} · ${sexLabel} · 1 marca oficial por dia`} image={selectedMeta.image} />
+        <section className="pl-hero pl-hero--modality">
           <div className="pl-eyebrow"><Medal size={14} /> Minha marca da temporada</div>
           <div className="pl-stat-grid">
             <div className="pl-stat"><small>Power Volume</small><strong>{selectedStats.bestVolume ? `${formatNumber(selectedStats.bestVolume)} kg` : '—'}</strong></div>
-            <div className="pl-stat"><small>Power Score</small><strong>{formatNumber(selectedStats.rawScore)} pts</strong></div>
-            <div className="pl-stat"><small>Categoria</small><strong>{tierLabel(selectedStats.tier)}</strong></div>
+            <div className="pl-stat"><small>Pontos da temporada</small><strong>{formatNumber(selectedStats.rawScore)} pts</strong></div>
+            <div className="pl-stat pl-stat--tier"><small>Melhor marca oficial</small><TierBadge tier={selectedStats.tier} /></div>
           </div>
-          {selectedStats.defendingChampion ? <small>Defesa de título ativa · ranking: {formatNumber(selectedStats.competitiveScore)} pts (0,97×). Seu score real continua {formatNumber(selectedStats.rawScore)}.</small> : <small>Melhor carga da temporada: {selectedStats.bestWeight ? `${formatNumber(selectedStats.bestWeight)} kg` : '—'}</small>}
+          {selectedStats.defendingChampion ? <small className="pl-defense-copy">Defesa de título ativa · ranking: {formatNumber(selectedStats.competitiveScore)} pts (0,97×). Seu score real continua {formatNumber(selectedStats.rawScore)}.</small> : <small>Melhor carga da temporada: {selectedStats.bestWeight ? `${formatNumber(selectedStats.bestWeight)} kg` : '—'}</small>}
+        </section>
+
+        <section className="pl-card pl-career-card">
+          <BarChart3 size={24} />
+          <div><small>Histórico permanente</small><b>Melhor Power Volume ({selectedMeta.short})</b><strong>{careerBest ? `${formatNumber(careerBest)} kg` : '—'}</strong></div>
+          <div className="pl-career-side"><small>Temporadas com marca</small><strong>{completedSeasons || '—'}</strong></div>
         </section>
 
         <section className="pl-section">
-          <div className="pl-section-head"><h2>Evolução da temporada</h2><span>máximo 1 avanço/dia</span></div>
+          <div className="pl-section-head"><h2>Evolução da temporada</h2><span>Três lifts. Uma grande versão sua.</span></div>
           <div className="pl-tier-track">
             {POWER_LIFT_TIER_ORDER.slice(1).map((tier) => {
               const activeIndex = POWER_LIFT_TIER_ORDER.indexOf(selectedStats.tier);
               const currentIndex = POWER_LIFT_TIER_ORDER.indexOf(tier);
               const reward = tier !== 'UNRANKED' ? effectiveStatus?.rewards.tier[tier] || 0 : 0;
-              return <div key={tier} className={`pl-tier-step ${currentIndex <= activeIndex ? 'done' : ''} ${tier === selectedStats.tier ? 'current' : ''}`}><i>{currentIndex <= activeIndex ? '✓' : '•'}</i>{tier}{reward ? <small>+{reward}</small> : null}</div>;
+              return (
+                <div key={tier} className={`pl-tier-step ${currentIndex <= activeIndex ? 'done' : ''} ${tier === selectedStats.tier ? 'current' : ''}`}>
+                  <TierBadge tier={tier} compact />
+                  <span>{tier}</span>
+                  {reward ? <small>+{reward}</small> : null}
+                </div>
+              );
             })}
           </div>
-          <div className="pl-card" style={{ padding: 16 }}>
-            <div className="pl-eyebrow"><Zap size={13} /> Próximo objetivo</div>
-            <p style={{ marginBottom: 0 }}>{nextTier && target !== null
-              ? `Valide em outro dia uma marca com pelo menos ${formatNumber(target)} kg de Power Volume para conquistar ${nextTier}${nextReward ? ` e +${formatNumber(nextReward)} Coins` : ''}.`
-              : 'Diamante conquistado. Agora cada melhora da sua melhor marca pode mexer no Ranking Elite.'}</p>
+          <div className="pl-card pl-target-card">
+            <Target size={24} />
+            <div>
+              <div className="pl-eyebrow">Próximo alvo pessoal</div>
+              <strong>{nextTier && target !== null ? `${formatNumber(target)} kg` : 'Diamante conquistado'}</strong>
+              <p>{nextTier && target !== null
+                ? `Faltam ${formatNumber(Math.max(0, target - selectedStats.bestVolume))} kg de Power Volume para ${nextTier}${nextReward ? ` · +${formatNumber(nextReward)} Coins` : ''}.`
+                : 'Agora cada melhora da sua melhor marca pode mexer no Ranking Elite.'}</p>
+            </div>
           </div>
         </section>
 
@@ -755,13 +820,13 @@ export function PowerLift() {
             <div className="pl-rule-card"><Dumbbell size={17} /> Até 3 séries válidas</div>
             <div className="pl-rule-card"><BarChart3 size={17} /> 5 a 10 reps pontuam conforme a carga</div>
             <div className="pl-rule-card"><ShieldCheck size={17} /> Série precisa ter ≥70% da maior carga</div>
-            <div className="pl-rule-card"><Clock3 size={17} /> 1 marca oficial por modalidade/dia</div>
-            <div className="pl-rule-card"><Trophy size={17} /> Só melhorar a melhor marca aumenta o score</div>
+            <div className="pl-rule-card"><Clock3 size={17} /> 1 resultado oficial/dia</div>
+            <div className="pl-rule-card"><TrendingUp size={17} /> Somente melhora da melhor marca aumenta o ranking</div>
           </div>
         </section>
 
         <section className="pl-section">
-          <div className="pl-section-head"><h2>Últimas marcas oficiais</h2><span>histórico da temporada</span></div>
+          <div className="pl-section-head"><h2>Últimas marcas oficiais</h2><span>Sempre em evolução.</span></div>
           <div className="pl-history">
             {latest.length ? latest.map((row) => (
               <div className="pl-history-row" key={row.id}>
@@ -781,69 +846,110 @@ export function PowerLift() {
     );
   };
 
-  const Register = () => (
-    <>
-      <Header title="REGISTRAR" accent="MARCA" subtitle={`${selectedMeta.title} · Tentativa oficial de hoje`} />
-      <section className="pl-hero">
-        <div className="pl-eyebrow"><Trophy size={14} /> Melhor marca da temporada</div>
-        <div className="pl-score"><strong>{selectedStats.bestVolume ? `${formatNumber(selectedStats.bestVolume)} kg` : '—'}</strong><small>só aumenta o Power Score se superar sua melhor marca</small></div>
-      </section>
+  const Register = () => {
+    const validSeriesCount = scoredSeries.filter((item) => item.eligible && item.volume > 0).length;
+    const ready = Boolean(videoFile && calculatedVolume > 0 && validSeriesCount > 0 && !selectedStats.todayUsed);
+    return (
+      <>
+        <Header title="REGISTRAR" accent="MARCA OFICIAL" subtitle={`${selectedMeta.title} · Temporada ${season.number} · Tentativa de hoje`} image={selectedMeta.image} />
+        <section className="pl-hero pl-hero--best-mark">
+          <div className="pl-score-icon"><Crown size={24} /></div>
+          <div>
+            <div className="pl-eyebrow">Sua melhor marca da temporada</div>
+            <div className="pl-score"><strong>{selectedStats.bestVolume ? `${formatNumber(selectedStats.bestVolume)} kg` : '—'}</strong><small>Só pontua se superar sua melhor marca atual</small></div>
+          </div>
+          <div className="pl-legacy-mark">EVOLUÇÃO<br />CONQUISTA<br />LEGADO</div>
+        </section>
 
-      <section className="pl-section">
-        <div className="pl-section-head"><h2>Séries válidas do Power Lift</h2><span>máximo 3</span></div>
-        {series.map((item, index) => {
-          const parsed = parsedSeries[index];
-          const scored = scoredSeries[index];
-          const repCap = competitionSex && parsed.weight > 0 ? maxCountedReps(selected, competitionSex, parsed.weight) : 5;
-          return (
-            <div className="pl-form-card" key={index}>
-              <div className="pl-form-card-head"><b>Série {index + 1}</b><small>até {repCap} reps pontuam nesta carga</small></div>
-              <div className="pl-form-grid">
-                <div className="pl-field"><label>Carga (kg)</label><input inputMode="decimal" value={item.weight} onChange={(event) => setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, weight: event.target.value } : row))} placeholder="0" /></div>
-                <div className="pl-field"><label>Repetições</label><input inputMode="numeric" value={item.reps} onChange={(event) => setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, reps: event.target.value } : row))} placeholder="0" /></div>
-                <div className="pl-volume"><small>{scored?.eligible === false && parsed.weight > 0 ? 'Não pontua' : 'Volume'}</small><strong>{formatNumber(scored?.volume || 0)} kg</strong></div>
+        <section className="pl-section">
+          <div className="pl-section-head"><h2>Séries válidas do Power Lift</h2><span>Três séries. Um grande resultado.</span></div>
+          {series.map((item, index) => {
+            const parsed = parsedSeries[index];
+            const scored = scoredSeries[index];
+            const repCap = competitionSex && parsed.weight > 0 ? maxCountedReps(selected, competitionSex, parsed.weight) : 5;
+            return (
+              <div className="pl-form-card" key={index}>
+                <div className="pl-form-card-head"><b>Série {index + 1}</b><small>até {repCap} reps pontuam nesta carga</small></div>
+                <div className="pl-form-grid">
+                  <div className="pl-field"><label>Carga (kg)</label><input inputMode="decimal" value={item.weight} onChange={(event) => setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, weight: event.target.value } : row))} placeholder="0" /></div>
+                  <div className="pl-field"><label>Repetições</label><input inputMode="numeric" value={item.reps} onChange={(event) => setSeries((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, reps: event.target.value } : row))} placeholder="0" /></div>
+                  <div className="pl-volume"><small>{scored?.eligible === false && parsed.weight > 0 ? 'Não pontua' : 'Volume'}</small><strong>{formatNumber(scored?.volume || 0)} kg</strong></div>
+                </div>
+                {scored?.eligible === false && parsed.weight > 0 ? <small style={{ color: '#ffbe55' }}>Carga abaixo de 70% da maior série ({formatNumber(minimumSetWeight)} kg).</small> : null}
+                {scored?.eligible && Number(parsed.reps) > (scored.countedReps || 0) ? <small>{parsed.reps} reps executadas · {scored.countedReps} contabilizadas pela faixa de carga.</small> : null}
               </div>
-              {scored?.eligible === false && parsed.weight > 0 ? <small style={{ color: '#ffbe55' }}>Carga abaixo de 70% da maior série ({formatNumber(minimumSetWeight)} kg).</small> : null}
-              {scored?.eligible && Number(parsed.reps) > (scored.countedReps || 0) ? <small>{parsed.reps} reps executadas · {scored.countedReps} contabilizadas pela faixa de carga.</small> : null}
-            </div>
-          );
-        })}
-      </section>
+            );
+          })}
+        </section>
 
-      <section className="pl-card" style={{ padding: 18, marginTop: 14 }}>
-        <div className="pl-eyebrow"><BarChart3 size={14} /> Power Volume calculado</div>
-        <div className="pl-score"><strong>{formatNumber(calculatedVolume)} kg</strong><small>maior carga: {formatNumber(declaredWeight)} kg · piso das séries: {formatNumber(minimumSetWeight)} kg</small></div>
-      </section>
+        <section className="pl-card pl-volume-summary">
+          <div className="pl-score-icon"><BarChart3 size={23} /></div>
+          <div><div className="pl-eyebrow">Power Volume calculado</div><strong>{formatNumber(calculatedVolume)} kg</strong><small>Maior carga {formatNumber(declaredWeight)} kg · piso das séries {formatNumber(minimumSetWeight)} kg</small></div>
+        </section>
 
-      <div className="pl-upload">
-        <input id="powerlift-season-video" type="file" accept="video/*" capture="environment" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} />
-        <label htmlFor="powerlift-season-video"><Video size={24} /> {videoFile ? videoFile.name : 'Anexar vídeo completo da marca'}<small>obrigatório para validação</small></label>
-      </div>
+        <div className="pl-upload">
+          <input id="powerlift-season-video" type="file" accept="video/*" capture="environment" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} />
+          <label htmlFor="powerlift-season-video"><Video size={24} /> {videoFile ? videoFile.name : 'Anexar vídeo completo da marca'}<small>obrigatório para validação</small></label>
+        </div>
 
-      <div className="pl-warning"><Info size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />A marca do dia pode conquistar no máximo uma categoria. O score usa sempre sua melhor marca válida da temporada.</div>
-      {submissionError ? <p className="pl-error">{submissionError}</p> : null}
-      <button className="pl-primary" type="button" onClick={() => void submitMark()}><Upload size={18} /> Enviar para validação</button>
-    </>
+        <section className="pl-validation-checklist">
+          <div className={videoFile ? 'is-ok' : ''}><CheckCircle2 /> <span><b>Vídeo anexado</b><small>{videoFile ? '1 arquivo selecionado' : 'Pendente'}</small></span></div>
+          <div className={calculatedVolume > 0 ? 'is-ok' : ''}><CheckCircle2 /> <span><b>Execução informada</b><small>{calculatedVolume > 0 ? 'Séries calculadas' : 'Preencha as séries'}</small></span></div>
+          <div className={validSeriesCount > 0 ? 'is-ok' : ''}><CheckCircle2 /> <span><b>Repetições na regra</b><small>{validSeriesCount} série(s) pontuável(is)</small></span></div>
+          <div className={ready ? 'is-ok' : ''}><CheckCircle2 /> <span><b>Pronta para envio</b><small>{ready ? 'Sem pendências' : 'Revise os itens'}</small></span></div>
+        </section>
+
+        <div className="pl-warning"><Info size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />A marca do dia pode conquistar no máximo uma categoria. O score usa sempre sua melhor marca válida da temporada.</div>
+        {submissionError ? <p className="pl-error">{submissionError}</p> : null}
+        <button className="pl-primary" type="button" onClick={() => void submitMark()}><Upload size={18} /> Enviar para validação</button>
+      </>
+    );
+  };
+
+  const RankingNav = ({ active }: { active: Exercise | 'general' }) => (
+    <div className="pl-ranking-nav">
+      {modalities.map((modality) => {
+        const available = canEnterEliteRanking(modalityStats[modality.id].tier);
+        return (
+          <button
+            key={modality.id}
+            type="button"
+            className={active === modality.id ? 'is-active' : ''}
+            disabled={!available}
+            onClick={() => { setSelected(modality.id); setView('elite'); }}
+          >
+            <Dumbbell size={17} /><span>Elite {modality.short}</span>
+          </button>
+        );
+      })}
+      <button type="button" className={active === 'general' ? 'is-active' : ''} disabled={!generalEligible} onClick={() => setView(generalOptIn ? 'general' : 'unlock')}><BarChart3 size={17} /><span>Geral</span></button>
+    </div>
   );
 
   const EliteRanking = () => {
     const reward1 = Number(effectiveStatus?.rewards.podium[1] || 1000);
     const reward2 = Number(effectiveStatus?.rewards.podium[2] || 600);
     const reward3 = Number(effectiveStatus?.rewards.podium[3] || 400);
+    const myIndex = publicRanking.findIndex((row) => row.userId === user?.uid);
     return (
       <>
-        <Header title="RANKING ELITE" accent={selectedMeta.short.toUpperCase()} subtitle={`${sexLabel} · Diamante obrigatório`} />
-        <section className="pl-hero">
-          <div className="pl-eyebrow"><Diamond size={14} /> Status Elite</div>
-          <div className="pl-score">
-            <strong>{formatNumber(selectedStats.defendingChampion ? selectedStats.competitiveScore : selectedStats.rawScore)} pts</strong>
-            <small>{selectedStats.defendingChampion ? `Power Score real ${formatNumber(selectedStats.rawScore)} · defesa 0,97×` : `${formatNumber(selectedStats.rawScore)} Power Points acumulados desde a primeira marca`}</small>
+        <Header title="RANKING" accent="ELITE" subtitle={`${selectedMeta.short.toUpperCase()} · ${sexLabel} · Diamante obrigatório`} image={selectedMeta.image} />
+        <section className="pl-elite-status">
+          <TierBadge tier="DIAMANTE" compact />
+          <div><small>Status Elite</small><b>{selectedStats.eliteOptIn || preview ? 'Você está elegível e participando do ranking' : 'Você está elegível para o ranking'}</b><p>Continue registrando suas marcas para subir na classificação.</p></div>
+        </section>
+        <section className="pl-hero pl-hero--elite-summary">
+          <div className="pl-stat-grid">
+            <div className="pl-stat"><small>Sua posição</small><strong>{myIndex >= 0 ? `#${myIndex + 1}` : '—'}</strong></div>
+            <div className="pl-stat"><small>Seu melhor volume na temporada</small><strong>{formatNumber(selectedStats.bestVolume)} kg</strong></div>
+            <div className="pl-stat"><small>Sua pontuação na temporada</small><strong>{formatNumber(selectedStats.defendingChampion ? selectedStats.competitiveScore : selectedStats.rawScore)} pts</strong></div>
           </div>
+          <small>{selectedStats.defendingChampion ? `Power Score real ${formatNumber(selectedStats.rawScore)} · defesa 0,97×` : `${formatNumber(selectedStats.rawScore)} Power Points acumulados desde a primeira marca`}</small>
         </section>
 
-        <section className="pl-card" style={{ padding: 16, marginBottom: 14 }}>
-          <div className="pl-eyebrow"><Coins size={13} /> Prêmios no fechamento</div>
-          <p style={{ marginBottom: 0 }}>🥇 {formatNumber(reward1)} · 🥈 {formatNumber(reward2)} · 🥉 {formatNumber(reward3)} Invictus Coins.</p>
+        <section className="pl-card pl-elite-prizes">
+          <div className="pl-eyebrow"><CoinMark /> Prêmios no fechamento</div>
+          <div><span><b>1º</b><strong>{formatNumber(reward1)}</strong></span><span><b>2º</b><strong>{formatNumber(reward2)}</strong></span><span><b>3º</b><strong>{formatNumber(reward3)}</strong></span><small>Invictus Coins</small></div>
         </section>
 
         {!selectedStats.eliteOptIn && !preview ? (
@@ -857,16 +963,16 @@ export function PowerLift() {
         ) : (
           <>
             <section className="pl-section">
-              <div className="pl-section-head"><h2>Ranking da temporada</h2><span>melhor marca da temporada</span></div>
+              <div className="pl-section-head"><h2>Top 10 Ranking Elite {selectedMeta.short}</h2><span>Força real reconhece resultados.</span></div>
               <div className="pl-leaderboard">
-                {publicRanking.length ? publicRanking.map((row, index) => {
+                {publicRanking.length ? publicRanking.slice(0, 10).map((row, index) => {
                   const competitive = Number(row.competitiveScore || row.seasonScore || 0);
                   const raw = Number(row.seasonScore || competitive);
                   const defending = Boolean((row as any).defendingChampion);
                   return (
                     <div key={row.id} className={`pl-leader-row ${row.userId === user?.uid ? 'is-me' : ''}`}>
-                      <div className="pl-rank-num">#{index + 1}</div>
-                      <div className="pl-athlete"><img className="pl-avatar" src={row.userPhoto || '/avatar-placeholder.png'} alt="" /><div><b>{row.userId === user?.uid ? 'Você' : row.userName || 'Atleta'}</b><small>{formatNumber(Number(row.powerVolume || 0))} kg Power Volume{defending ? ' · defesa' : ''}</small></div></div>
+                      <div className="pl-rank-num">{index + 1}</div>
+                      <div className="pl-athlete"><AthleteAvatar photo={row.userPhoto} name={row.userName} /><div><b>{row.userId === user?.uid ? 'Você' : row.userName || 'Atleta'}</b><small>{formatNumber(Number(row.powerVolume || 0))} kg · {defending ? 'defesa de título' : 'temporada atual'}</small></div></div>
                       <div className="pl-leader-points"><strong>{formatNumber(competitive)} pts</strong><small>{defending ? `real ${formatNumber(raw)}` : 'ranking'}</small></div>
                     </div>
                   );
@@ -876,7 +982,8 @@ export function PowerLift() {
             {!preview ? <button className="pl-secondary" type="button" disabled={optInBusy} onClick={() => void updateOptIn('elite', false, selected)}>Sair do Ranking Elite</button> : null}
           </>
         )}
-        <div className="pl-warning">Diamante libera a disputa, mas não inicia a pontuação. Seus Power Points vêm desde a primeira marca válida da temporada.</div>
+        <div className="pl-warning">O ranking mostra atletas Diamante da temporada. Seus Power Points vêm desde a primeira marca válida; entrar no ranking não zera o score.</div>
+        <section className="pl-section"><div className="pl-section-head"><h2>Outros rankings Elite</h2></div><RankingNav active={selected} /></section>
         {loadError ? <p className="pl-error">{loadError}</p> : null}
       </>
     );
@@ -884,19 +991,40 @@ export function PowerLift() {
 
   const Unlock = () => (
     <>
-      <Header title="TRIPLO" accent="DIAMANTE" subtitle="Supino + Agachamento + Terra" />
-      <section className="pl-card pl-unlock">
+      <Header title="TRIPLO" accent="DIAMANTE" subtitle="Força total. Sem limites." image="/powerlift-terra.jpg" />
+      <section className="pl-triplo-grid">
+        {modalities.map((modality) => (
+          <article key={modality.id} style={{ backgroundImage: `linear-gradient(180deg,rgba(0,0,0,.2),rgba(0,0,0,.86)),url(${modality.image})` }}>
+            <h3>{modality.title}</h3>
+            <TierBadge tier="DIAMANTE" />
+          </article>
+        ))}
+      </section>
+      <section className="pl-card pl-unlock pl-unlock--general">
         <div className="pl-unlock-icon"><Crown size={42} /></div>
-        <h2>Ranking Geral desbloqueado</h2>
-        <p>Você não começa do zero. Toda a pontuação das três modalidades desde o primeiro registro válido desta temporada já entra no Ranking Geral.</p>
-        <div className="pl-score" style={{ justifyContent: 'center' }}><strong>{formatNumber(generalRawScore)} pts</strong></div>
-        <div className="pl-breakdown">
+        <small>Ranking Geral Power Lift</small>
+        <h2>Desbloqueado</h2>
+        <p>Três lifts. Uma grande versão sua.</p>
+      </section>
+      <section className="pl-card pl-unlock-score-card">
+        <Zap size={22} />
+        <div><span>Sua pontuação acumulada da temporada</span><b>já entra no ranking geral.</b></div>
+      </section>
+      <section className="pl-card pl-unlock-total">
+        <BarChart3 size={26} />
+        <div><small>Pontuação geral atual</small><strong>{formatNumber(generalRawScore)} pts</strong></div>
+        <div className="pl-legacy-mark">EVOLUÇÃO<br />CONQUISTA<br />LEGADO</div>
+      </section>
+      <section className="pl-section">
+        <div className="pl-section-head"><h2>Detalhamento da pontuação</h2><span>Sua força te trouxe até aqui.</span></div>
+        <div className="pl-breakdown pl-breakdown--score">
           {modalities.map((modality) => <div key={modality.id}><small>{modality.title}</small><b>{formatNumber(modalityStats[modality.id].rawScore)} pts</b></div>)}
         </div>
-        <p><Coins size={14} style={{ verticalAlign: 'middle' }} /> Campeão Master: <b>{formatNumber(effectiveStatus?.rewards.master || 4000)} Invictus Coins</b></p>
-        <button className="pl-primary" type="button" disabled={optInBusy} onClick={() => void updateOptIn('general', true)}><Crown size={18} /> {optInBusy ? 'ATIVANDO…' : 'PARTICIPAR DO RANKING GERAL'}</button>
-        <button className="pl-secondary" type="button" onClick={() => setView('home')}>Agora não</button>
       </section>
+      <div className="pl-warning">Você não começa do zero. Toda a pontuação conquistada desde o primeiro registro válido da temporada conta para o Ranking Geral.</div>
+      <div className="pl-master-reward"><CoinMark /><span>Premiação Master da temporada</span><b>{formatNumber(effectiveStatus?.rewards.master || 4000)} Coins</b></div>
+      <button className="pl-primary" type="button" disabled={optInBusy} onClick={() => void updateOptIn('general', true)}><Crown size={18} /> {optInBusy ? 'ATIVANDO…' : 'PARTICIPAR DO RANKING GERAL'}</button>
+      <button className="pl-secondary" type="button" onClick={() => setView('home')}>Agora não</button>
       {loadError ? <p className="pl-error">{loadError}</p> : null}
     </>
   );
@@ -905,31 +1033,36 @@ export function PowerLift() {
     const myIndex = visibleGeneralRanking.findIndex((item) => item.userId === user?.uid);
     return (
       <>
-        <Header title="RANKING GERAL" accent="POWER LIFT" subtitle={`${sexLabel} · Temporada ${season.number}`} />
-        <section className="pl-hero">
-          <div className="pl-eyebrow"><Crown size={14} /> Sua posição atual</div>
-          <div className="pl-score">
-            <strong>{myIndex >= 0 ? `#${myIndex + 1}` : '—'} · {formatNumber(effectiveStatus?.general.defendingMaster ? generalCompetitive : generalRawScore)} pts</strong>
-            <small>{effectiveStatus?.general.defendingMaster ? `Power Score real ${formatNumber(generalRawScore)} · defesa Master 0,95×` : `${season.daysRemaining} dias restantes`}</small>
-          </div>
+        <Header title="RANKING GERAL" accent="POWER LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" />
+        <section className="pl-general-filters">
+          <span>{sexLabel}</span><span>Temporada {season.number}</span><span><CoinMark size={18} /> Premiação em Invictus Coins</span>
         </section>
-        <section className="pl-card" style={{ padding: 16, marginBottom: 14 }}>
-          <div className="pl-eyebrow"><Coins size={13} /> Prêmio Master</div>
-          <p style={{ marginBottom: 0 }}>👑 #1 do Ranking Geral recebe <b>{formatNumber(effectiveStatus?.rewards.master || 4000)} Invictus Coins</b>.</p>
+        <section className="pl-hero pl-hero--general-position">
+          <div><small>{season.daysRemaining} dias restantes</small><span>Mais força<br />Mais evolução<br />Um você mais forte</span></div>
+          <div><small>Sua posição atual</small><strong>{myIndex >= 0 ? `#${myIndex + 1}` : '—'} &nbsp; {formatNumber(effectiveStatus?.general.defendingMaster ? generalCompetitive : generalRawScore)} pts</strong>{myIndex > 0 ? <span>Faltam {formatNumber(Math.max(0, visibleGeneralRanking[myIndex - 1].competitiveScore - (effectiveStatus?.general.defendingMaster ? generalCompetitive : generalRawScore)))} pts para subir uma posição</span> : null}</div>
+          <div className="pl-legacy-mark">EVOLUÇÃO<br />CONQUISTA<br />LEGADO</div>
+        </section>
+        <section className="pl-card pl-master-prize-card">
+          <div><CoinMark /><span>Premiação Master</span></div>
+          <strong>{formatNumber(effectiveStatus?.rewards.master || 4000)} Invictus Coins</strong>
+          <small>#1 do Ranking Geral no fechamento da temporada.</small>
         </section>
         <section className="pl-section">
-          <div className="pl-section-head"><h2>Classificação geral</h2><span>Triplo Diamante</span></div>
-          <div className="pl-leaderboard">
-            {visibleGeneralRanking.length ? visibleGeneralRanking.map((item, index) => (
+          <div className="pl-section-head"><h2>Top 10 atletas da temporada</h2><span>Força real aparece nos resultados.</span></div>
+          <div className="pl-general-headings"><span>Pos.</span><span>Atleta</span><span>Pontuação total</span><span>Desempenho por modalidade</span></div>
+          <div className="pl-leaderboard pl-leaderboard--general">
+            {visibleGeneralRanking.length ? visibleGeneralRanking.slice(0, 10).map((item, index) => (
               <div key={item.userId} className={`pl-leader-row ${item.userId === user?.uid ? 'is-me' : ''}`}>
-                <div className="pl-rank-num">#{item.rank || index + 1}</div>
-                <div className="pl-athlete"><img className="pl-avatar" src={item.userPhoto || '/avatar-placeholder.png'} alt="" /><div><b>{item.userId === user?.uid ? 'Você' : item.userName || 'Atleta'}</b><small>S {formatNumber(item.scores.supino || 0)} · A {formatNumber(item.scores.agachamento || 0)} · T {formatNumber(item.scores.terra || 0)}{item.defendingMaster ? ' · 👑 defesa' : ''}</small></div></div>
+                <div className="pl-rank-num">{item.rank || index + 1}</div>
+                <div className="pl-athlete"><AthleteAvatar photo={item.userPhoto} name={item.userName} /><div><b>{item.userId === user?.uid ? 'Você' : item.userName || 'Atleta'}</b><small>{item.defendingMaster ? '👑 defesa de título Master' : 'temporada atual'}</small></div></div>
                 <div className="pl-leader-points"><strong>{formatNumber(item.competitiveScore)} pts</strong><small>{item.defendingMaster ? `real ${formatNumber(item.rawScore)} · 0,95×` : 'total'}</small></div>
+                <div className="pl-lift-split"><span>S {formatNumber(item.scores.supino || 0)}</span><span>A {formatNumber(item.scores.agachamento || 0)}</span><span>T {formatNumber(item.scores.terra || 0)}</span></div>
               </div>
             )) : <div className="pl-card" style={{ padding: 18, color: '#9d9da5' }}>Ainda não há atletas Triplo Diamante participando.</div>}
           </div>
         </section>
-        <div className="pl-warning"><CalendarDays size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />A cada 30 dias o competitivo recomeça. Campeões da temporada anterior defendem o título com 0,97× na modalidade e o Master com 0,95× no Geral; os fatores não se acumulam.</div>
+        <div className="pl-warning"><CalendarDays size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />A cada 30 dias o ranking reinicia, mas seu histórico permanente continua salvo. Campeões defendem o título com 0,97× na modalidade e o Master com 0,95× no Geral; os fatores não se acumulam.</div>
+        <RankingNav active="general" />
         {!preview ? <button className="pl-secondary" type="button" disabled={optInBusy} onClick={() => void updateOptIn('general', false)}>Sair do Ranking Geral</button> : null}
         {loadError ? <p className="pl-error">{loadError}</p> : null}
       </>
@@ -938,20 +1071,20 @@ export function PowerLift() {
 
   const Processing = () => (
     <>
-      <Header title="VALIDANDO" accent="MARCA" />
+      <Header title="VALIDANDO" accent="MARCA" image={selectedMeta.image} />
       <section className="pl-message-card"><div className="pl-spinner" /><h2>Enviando sua marca</h2><p>Upload {uploadProgress}% · o vídeo será preservado mesmo se a conexão oscilar após o envio.</p></section>
     </>
   );
 
   const Submitted = () => (
     <>
-      <Header title="MARCA" accent="REGISTRADA" />
+      <Header title="MARCA" accent="REGISTRADA" image={selectedMeta.image} />
       <section className="pl-message-card"><ShieldCheck size={42} /><h2>Registro recebido</h2><p>{submissionMessage || 'Sua marca foi recebida e está seguindo o fluxo de validação.'}</p><button className="pl-primary" type="button" onClick={() => { void loadData(); setView('modality'); }}>Voltar para {selectedMeta.short}</button></section>
     </>
   );
 
   return (
-    <main className="pl-season">
+    <main className={`pl-season pl-view-${view}`}>
       <div className="pl-shell">
         {loading && view === 'home' ? <section className="pl-message-card"><div className="pl-spinner" /><h2>Carregando Power Lift</h2></section> : null}
         {!loading && view === 'home' ? <Dashboard /> : null}
@@ -963,6 +1096,7 @@ export function PowerLift() {
         {view === 'processing' ? <Processing /> : null}
         {view === 'submitted' ? <Submitted /> : null}
       </div>
+      {view !== 'processing' ? <BottomNav /> : null}
     </main>
   );
 }
