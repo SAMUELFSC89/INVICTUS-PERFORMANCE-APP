@@ -9,6 +9,7 @@ import {
 } from './paid-championship-edition.js';
 import { COMPETITIVE_HR_ACKNOWLEDGEMENT_VERSION } from '../../shared/competitiveHeartRatePolicy.js';
 import { isActiveAccountState } from './account-state.js';
+import { notificationService } from '../_services/notification-service.js';
 
 export type StatusInscricaoChampionship = 'pendente' | 'paga' | 'cancelada' | 'reembolsada' | 'contestada';
 export type ChampionshipCheckoutSurface = 'ios_native' | 'web';
@@ -334,6 +335,45 @@ function finalizedSettlement(settlementSnap: any): boolean {
   return Boolean(settlementSnap?.exists && settlementSnap.data()?.status === 'FINALIZED');
 }
 
+const CHAMPIONSHIP_WELCOME_COPY: Record<string, { title: string; message: string; actionUrl: string }> = {
+  invictus_strength_v1: {
+    title: 'Inscrição confirmada! 💪',
+    message: 'Você já está no Campeonato de Musculação. Registre seu primeiro treino e comece a pontuar no ranking.',
+    actionUrl: '/musculacao',
+  },
+  invictus_cardio_v1: {
+    title: 'Inscrição confirmada! 🏃',
+    message: 'Você já está no Campeonato de Cardio. Registre sua primeira atividade e comece a pontuar no ranking.',
+    actionUrl: '/activity',
+  },
+};
+
+/**
+ * Boas-vindas ao campeonato: dispara uma vez, no exato momento em que o
+ * pagamento é confirmado pela primeira vez, sugerindo a primeira atividade
+ * elegível da modalidade. Best-effort e nunca pode quebrar a confirmação
+ * financeira do webhook (por isso o try/catch próprio, sem propagar erro).
+ */
+async function notifyChampionshipWelcome(userId: unknown, championshipId: unknown): Promise<void> {
+  const copy = CHAMPIONSHIP_WELCOME_COPY[String(championshipId || '')];
+  if (!copy || !userId) return;
+  try {
+    await notificationService.notify({
+      userId: String(userId),
+      title: copy.title,
+      message: copy.message,
+      type: 'system',
+      actionUrl: copy.actionUrl,
+    });
+  } catch (error) {
+    console.warn('[Championship] falha ao enviar notificação de boas-vindas:', error instanceof Error ? error.message : error);
+  }
+}
+
+function shouldNotifyWelcome(resultado: Record<string, any>): boolean {
+  return Boolean(resultado?.encontrada) && resultado.jaEstavaPaga === false && !resultado.requerReconciliacao && !resultado.contaInativa;
+}
+
 export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId: string) {
   const doc = await localizarPorCampo('asaasCheckoutId', asaasCheckoutId);
   if (!doc) {
@@ -341,7 +381,7 @@ export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId:
     return { encontrada: false };
   }
 
-  return db.runTransaction(async (transaction: any) => {
+  const resultado = await db.runTransaction(async (transaction: any) => {
     const registrationSnap = await transaction.get(doc.ref);
     if (!registrationSnap.exists) return { encontrada: false };
     const data: any = registrationSnap.data() || {};
@@ -398,6 +438,8 @@ export async function confirmarInscricaoChampionshipPorCheckout(asaasCheckoutId:
     }, { merge: true });
     return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
   });
+  if (shouldNotifyWelcome(resultado)) void notifyChampionshipWelcome(resultado.userId, resultado.championshipId);
+  return resultado;
 }
 
 export async function confirmarInscricaoChampionshipPorPagamento(
@@ -416,7 +458,7 @@ export async function confirmarInscricaoChampionshipPorPagamento(
   const incomingEventAt = normalizedProviderEventAt(providerEventAt);
   const observedAt = incomingEventAt || new Date().toISOString();
 
-  return db.runTransaction(async (transaction: any) => {
+  const resultado = await db.runTransaction(async (transaction: any) => {
     const registrationSnap = await transaction.get(doc.ref);
     if (!registrationSnap.exists) return { encontrada: false };
     const data: any = registrationSnap.data() || {};
@@ -508,6 +550,8 @@ export async function confirmarInscricaoChampionshipPorPagamento(
     }, { merge: true });
     return { encontrada: true, jaEstavaPaga, userId: data.userId, championshipId: data.championshipId, editionId: data.editionId };
   });
+  if (shouldNotifyWelcome(resultado)) void notifyChampionshipWelcome(resultado.userId, resultado.championshipId);
+  return resultado;
 }
 
 export async function encerrarCheckoutChampionship(asaasCheckoutId: string, reason: 'cancelled' | 'expired') {

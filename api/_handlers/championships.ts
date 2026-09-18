@@ -17,6 +17,7 @@ import {
   getPaidChampionshipEditionGate,
   paidChampionshipSettlementDocumentId,
 } from '../_lib/paid-championship-edition.js';
+import { computeFinalPrizeForEdition, registrationHasClosed } from '../_lib/paid-championship-dynamic-prize.js';
 
 const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
   'PAYMENT_REFUNDED',
@@ -34,24 +35,43 @@ function erroComoResposta(erro: any): { status: number; message: string } {
   return { status: ehRegra ? 400 : 500, message: mensagem };
 }
 
+async function withRevealedPrize(championship: any) {
+  // A premiação final (pode ser maior que o mínimo garantido em `prizePool`)
+  // só é revelada depois que as inscrições fecham — decisão explícita do
+  // usuário em 29/08/2026 ("minimo de 500 de premio, so mostre isso" até lá).
+  if (!championship.editionId || !registrationHasClosed(championship)) return championship;
+  try {
+    const final = await computeFinalPrizeForEdition(championship);
+    return {
+      ...championship,
+      revealedPrizePool: final.prizePool,
+      revealedPrizeDistribution: final.prizeDistribution,
+      revealedPaidRegistrantCount: final.paidRegistrantCount,
+    };
+  } catch (error) {
+    console.error('[Championships] falha ao calcular premiação final revelada:', error);
+    return championship;
+  }
+}
+
 export async function listChampionshipsHandler(_req: any, res: any) {
   const championships = await Promise.all(listChampionships().map(async (championship) => {
-    if (!championship.registrationOpen) return championship;
+    if (!championship.registrationOpen) return withRevealedPrize(championship);
     try {
       const editionGate = await getPaidChampionshipEditionGate(championship);
-      if (editionGate.ok) return championship;
-      return {
+      if (editionGate.ok) return withRevealedPrize(championship);
+      return withRevealedPrize({
         ...championship,
         registrationOpen: false,
         registrationReadinessReason: editionGate.reason || 'A edição ativa precisa de conciliação antes de novas inscrições.',
-      };
+      });
     } catch (error) {
       console.error('[Championships] falha ao validar lock da edição no catálogo:', error);
-      return {
+      return withRevealedPrize({
         ...championship,
         registrationOpen: false,
         registrationReadinessReason: 'Não foi possível validar a edição ativa com segurança. Novas inscrições estão temporariamente bloqueadas.',
-      };
+      });
     }
   }));
   return res.json({ championships });

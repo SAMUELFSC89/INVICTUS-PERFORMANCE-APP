@@ -59,6 +59,21 @@ export function brDayBoundsUTC(now: Date): EngagementRuleContext {
 }
 
 /**
+ * Quantos dias (calendário de Brasília) separam uma data passada de "hoje"
+ * (o dia de `ctx`). Usado pelas regras de onboarding em drip (dia 1, 3, 7
+ * após o cadastro) em vez de repetir a mesma notificação todo dia -- mesmo
+ * padrão usado por apps de hábito (Duolingo, Strava) para não cansar quem
+ * ainda está conhecendo o produto. Retorna null se a data for inválida.
+ */
+export function brDaysSince(pastValue: unknown, ctx: EngagementRuleContext): number | null {
+  const pastMs = Date.parse(String(pastValue || ''));
+  if (!Number.isFinite(pastMs)) return null;
+  const pastDayStr = localDate(new Date(pastMs).toISOString(), BR_TIMEZONE);
+  const pastDayStartUTC = new Date(`${pastDayStr}T${String(BR_UTC_OFFSET_HOURS).padStart(2, '0')}:00:00.000Z`).getTime();
+  return Math.round((ctx.dayStartUTC.getTime() - pastDayStartUTC) / 86_400_000);
+}
+
+/**
  * Usuários com pelo menos um token de push ativo, a partir do registro
  * push_device_tokens (muito menor que a coleção inteira de usuários, já que
  * só existe um doc por token realmente registrado e válido).

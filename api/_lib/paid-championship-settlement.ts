@@ -3,6 +3,7 @@ import { db } from './common.js';
 import { getChampionship } from './championship-catalog.js';
 import { isActiveAccountState } from './account-state.js';
 import { creditChampionshipPrize } from './championship-prize-credit.js';
+import { computeFinalPrizeForEdition } from './paid-championship-dynamic-prize.js';
 import {
   markPaidChampionshipEditionFinalized,
   paidChampionshipSettlementDocumentId,
@@ -286,7 +287,11 @@ export async function finalizePaidChampionship(
     return { championshipId, editionId, status: 'NOT_DUE', settlementAt: championship.settlementAt };
   }
 
-  const prizes = validatePrizeDistribution(championship.prizeDistribution || []);
+  // O pagamento de fato usa o pote FINAL calculado pelo número real de
+  // inscritos pagos (nunca abaixo do mínimo garantido publicado) — decisão do
+  // usuário em 29/08/2026. Ver api/_lib/paid-championship-dynamic-prize.ts.
+  const finalPrize = await computeFinalPrizeForEdition(championship);
+  const prizes = validatePrizeDistribution(finalPrize.prizeDistribution);
   const [registrationSnap, scoresSnap, entriesSnap] = await Promise.all([
     db.collection('championship_registrations').where('championshipId', '==', championshipId).get(),
     db.collection('championship_scores').where('editionId', '==', editionId).get(),

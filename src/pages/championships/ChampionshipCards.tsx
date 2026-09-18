@@ -1,5 +1,5 @@
 import type { CSSProperties, ComponentType } from 'react';
-import { ArrowRight, CheckCircle2, ChevronRight, Dumbbell, Footprints, ShieldCheck, Trophy, Users } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ChevronRight, Dumbbell, Footprints, Play, ShieldCheck, Trophy, Users } from 'lucide-react';
 
 const FRIENDS_BANNER = '/assets/championships/friends-banner.png';
 const COINS_STACK = '/assets/coins/invictus-coins-stack.png';
@@ -20,6 +20,11 @@ type ParticipatingCardProps = {
   image: string;
   icon: ComponentType<{ 'aria-hidden'?: boolean }>;
   onOpen: () => void;
+  /** Rótulo do selo de status (padrão: "PARTICIPANDO", usado pelos campeonatos pagos). */
+  statusLabel?: string;
+  statusIcon?: ComponentType<{ 'aria-hidden'?: boolean }>;
+  /** Palavra usada no aria-label do botão (padrão: "participando"). */
+  ariaStatusWord?: string;
 };
 
 export function FriendsChampionshipCard({ onParticipate }: { onParticipate: () => void }) {
@@ -53,14 +58,38 @@ export function FriendsRankingCard({ onOpen }: { onOpen: () => void }) {
   </button>;
 }
 
-export function PaidRankingCard({ category, title, image, icon: Icon, onOpen }: ParticipatingCardProps) {
-  return <button type="button" className="ch-friends-ranking-card ch-paid-ranking-card" onClick={onOpen} aria-label={`${title}, participando, ver ranking`}>
+export function PaidRankingCard({ category, title, image, icon: Icon, onOpen, statusLabel = 'PARTICIPANDO', statusIcon: StatusIcon = CheckCircle2, ariaStatusWord = 'participando' }: ParticipatingCardProps) {
+  return <button type="button" className="ch-friends-ranking-card ch-paid-ranking-card" onClick={onOpen} aria-label={`${title}, ${ariaStatusWord}, ver ranking`}>
     <img className="ch-friends-ranking-card__background" src={image} alt="" aria-hidden="true" />
     <span className="ch-friends-ranking-card__scrim" aria-hidden="true" />
     <span className="ch-friends-ranking-card__identity"><Icon aria-hidden={true} /><span><small>CAMPEONATO OFICIAL</small><strong>{title}</strong></span></span>
-    <span className="ch-friends-ranking-card__status"><CheckCircle2 aria-hidden="true" /> PARTICIPANDO <small>{category}</small></span>
+    <span className="ch-friends-ranking-card__status"><StatusIcon aria-hidden={true} /> {statusLabel} <small>{category}</small></span>
     <span className="ch-friends-ranking-card__ranking">VER RANKING <ChevronRight aria-hidden="true" /></span>
   </button>;
+}
+
+/**
+ * Campeonato de força GRATUITO: sem inscrição/checkout, a pessoa participa
+ * assim que envia seu primeiro levantamento em vídeo. Este card mostra como
+ * funciona e leva direto ao fluxo; uma vez que exista pelo menos um registro
+ * do atleta, o hub troca este card pelo `PaidRankingCard` compacto (mesma
+ * lógica visual de Musculação/Cardio, só que sem gate de pagamento).
+ */
+export function PowerLiftFeatureCard({ onEnroll }: { onEnroll: () => void }) {
+  return <section className="ch-powerlift-feature" aria-labelledby="powerlift-championship-title">
+    <span aria-hidden="true"><Trophy /></span>
+    <div>
+      <small>CAMPEONATO DE FORÇA · GRÁTIS</small>
+      <h2 id="powerlift-championship-title">INVICTUS POWER LIFT</h2>
+      <p>Registre seu levantamento em vídeo, passe pela validação inteligente e mostre sua força no ranking.</p>
+      <ul>
+        <li><Play aria-hidden="true" /> Vídeo obrigatório</li>
+        <li><ShieldCheck aria-hidden="true" /> Antifraude por IA</li>
+        <li><Trophy aria-hidden="true" /> Ranking por modalidade</li>
+      </ul>
+    </div>
+    <button type="button" onClick={onEnroll}>PARTICIPAR <ArrowRight aria-hidden="true" /></button>
+  </section>;
 }
 
 export function ChampionshipPreviewCard({ category, title, description, image, imagePosition, icon: Icon, onPreview }: PreviewCardProps) {
@@ -73,3 +102,4 @@ export function ChampionshipPreviewCard({ category, title, description, image, i
 
 export const strengthPreviewCard = { category: 'MUSCULAÇÃO', title: 'CAMPEONATO DE FORÇA', description: 'Conheça a proposta e como será a validação das atividades.', image: '/assets/championships/strength-banner.png', imagePosition: 'center right', icon: Dumbbell };
 export const cardioPreviewCard = { category: 'CARDIO', title: 'CAMPEONATO DE CARDIO', description: 'Veja o formato planejado e como o antifraude protegerá a competição.', image: '/assets/championships/cardio-banner.png', imagePosition: 'center right', icon: Footprints };
+export const powerLiftRankingCard = { category: 'FORÇA', title: 'INVICTUS POWER LIFT', image: '/assets/challenges/powerlift-banner-v2.jpg', icon: Trophy };

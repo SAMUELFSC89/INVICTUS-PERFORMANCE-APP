@@ -139,6 +139,9 @@ function createDb() {
       limit: (count: number) => makeQuery(collection, filters, count),
       orderBy: () => query,
       get: async () => evaluateQuery(query),
+      count: () => ({
+        get: async () => ({ data: () => ({ count: evaluateQuery(query).size }) }),
+      }),
     };
     return query;
   };

@@ -159,6 +159,9 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
   const price = championship?.registrationPrice ?? PAID_CHAMPIONSHIP_ENTRY_PRICE_BRL;
   const finalized = progress?.settlementStatus === 'FINALIZED';
   const finalResult = progress?.finalResult || null;
+  const prizeRevealed = typeof championship?.revealedPrizePool === 'number';
+  const displayedPrizePool = prizeRevealed ? championship!.revealedPrizePool! : championship?.prizePool;
+  const displayedPrizeDistribution = prizeRevealed ? (championship!.revealedPrizeDistribution || []) : (championship?.prizeDistribution || []);
 
   const moreToggle = (
     <span className="champ-info-toggle flex shrink-0 items-center gap-1 font-black tracking-[.06em] text-amber-300">
@@ -211,7 +214,7 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
 
             <details className="group overflow-hidden rounded-2xl border border-zinc-700 bg-[#101012]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0"><b className="block font-black text-white">EDIÇÃO E PREMIAÇÃO</b><small className="mt-1 block leading-relaxed text-zinc-200">{championship?.edition || 'Edição atual'} · {championship?.prizePool ? `${brl(championship.prizePool)} em premiação publicada` : 'premiação publicada antes da abertura'}.</small></span>
+                <span className="min-w-0"><b className="block font-black text-white">EDIÇÃO E PREMIAÇÃO</b><small className="mt-1 block leading-relaxed text-zinc-200">{championship?.edition || 'Edição atual'} · {displayedPrizePool ? `${brl(displayedPrizePool)}${prizeRevealed ? ' em premiação final' : ' garantidos'}` : 'premiação publicada antes da abertura'}.</small></span>
                 {moreToggle}
               </summary>
               <div className="border-t border-zinc-700 p-3">
@@ -219,8 +222,9 @@ export function ChampionshipPreview({ modality }: ChampionshipPreviewProps) {
                   <div><CalendarClock /><span><small>INSCRIÇÕES</small><b>{dateLabel(championship?.registrationOpensAt)} — {dateLabel(championship?.registrationClosesAt)}</b></span></div>
                   <div><Trophy /><span><small>COMPETIÇÃO</small><b>{dateLabel(championship?.startAt)} — {dateLabel(championship?.endAt)}</b></span></div>
                   <div><ShieldCheck /><span><small>HOMOLOGAÇÃO DO RESULTADO</small><b>{dateLabel(championship?.settlementAt)}</b></span></div>
-                  <div><Medal /><span><small>PREMIAÇÃO PUBLICADA</small><b>{championship?.prizePool ? brl(championship.prizePool) : 'A definir antes da abertura'}</b></span></div>
-                  {!!championship?.prizeDistribution?.length && <div className="paid-prize-list">{championship.prizeDistribution.map((prize) => <span key={prize.rank}>{prize.rank}º — {brl(prize.amount)}</span>)}</div>}
+                  <div><Medal /><span><small>{prizeRevealed ? 'PREMIAÇÃO FINAL' : 'PRÊMIO MÍNIMO GARANTIDO'}</small><b>{displayedPrizePool ? brl(displayedPrizePool) : 'A definir antes da abertura'}</b></span></div>
+                  {!prizeRevealed && !!displayedPrizePool && <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">Este valor é garantido independentemente do número de inscritos. O valor final é revelado quando as inscrições fecharem em {dateLabel(championship?.registrationClosesAt)}.</p>}
+                  {!!displayedPrizeDistribution.length && <div className="paid-prize-list">{displayedPrizeDistribution.map((prize) => <span key={prize.rank}>{prize.rank}º — {brl(prize.amount)}</span>)}</div>}
                 </section>
               </div>
             </details>

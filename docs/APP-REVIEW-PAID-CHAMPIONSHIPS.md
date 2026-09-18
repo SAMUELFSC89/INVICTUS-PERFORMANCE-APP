@@ -42,7 +42,7 @@ Após o fim da competição, o resultado permanece sujeito à homologação serv
 Do not paste these notes unchanged if any item is missing from the production edition. Before submission confirm:
 
 - registration, competition and homologation dates are final and visible;
-- prize amounts/positions are final and visible in-app;
+- prize amounts/positions are final and visible in-app. **Note (edições com pote dinâmico, a partir de 09/2026):** o valor exibido antes e durante a inscrição é um mínimo garantido fixo (`CHAMPIONSHIP_*_PRIZES_JSON`), explicitamente rotulado como "PRÊMIO MÍNIMO GARANTIDO" — nunca vago ou "a definir". O prêmio de fato pago pode ser maior (calculado por `api/_lib/paid-championship-dynamic-prize.ts` a partir do número de inscritos pagos), mas o app só revela esse valor final depois que as inscrições fecham, e nunca paga menos que o mínimo publicado. Isso mantém o requisito da Apple: a quantia garantida é final e visível antes da inscrição;
 - regulation version/hash and edition identity match production;
 - Asaas production checkout and authenticated payment webhook are configured;
 - settlement cron and its server secret are configured;

@@ -57,6 +57,14 @@ export interface Championship {
   netEligibleRevenue: number;
   prizePool: number;
   prizeDistribution: PrizeRank[];
+  /**
+   * Pote final de fato (pode ser maior que `prizePool`, o mínimo garantido),
+   * calculado a partir do número real de inscritos pagos. Só é publicado pelo
+   * backend depois que as inscrições fecham (revelação no fechamento).
+   */
+  revealedPrizePool?: number;
+  revealedPrizeDistribution?: PrizeRank[];
+  revealedPaidRegistrantCount?: number;
   status: ChampionshipStatus;
   regulationVersion: string;
   regulationHash: string;

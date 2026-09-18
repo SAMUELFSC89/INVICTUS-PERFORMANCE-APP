@@ -7,12 +7,15 @@ import { useUser } from '../../UserContext';
 import { hasActiveProEntitlement } from '../../lib/proEntitlement';
 import { communityChampionshipService } from '../../services/communityChampionshipService';
 import { championshipService } from '../../services/championshipService';
+import { powerLiftService } from '../../services/powerLiftService';
 import {
   cardioPreviewCard,
   ChampionshipPreviewCard,
   FriendsChampionshipCard,
   FriendsRankingCard,
   PaidRankingCard,
+  powerLiftRankingCard,
+  PowerLiftFeatureCard,
   strengthPreviewCard,
 } from './ChampionshipCards';
 import './ChampionshipsNew.css';
@@ -30,6 +33,16 @@ export function ChampionshipsHub() {
   const [friendsStatusError, setFriendsStatusError] = useState('');
   const [friendsStatusReload, setFriendsStatusReload] = useState(0);
   const [paidParticipation, setPaidParticipation] = useState<PaidParticipationState | null>(null);
+  const [powerLiftParticipating, setPowerLiftParticipating] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPowerLiftParticipating(null);
+    powerLiftService.hasParticipated()
+      .then((participating) => { if (!cancelled) setPowerLiftParticipating(participating); })
+      .catch(() => { if (!cancelled) setPowerLiftParticipating(false); });
+    return () => { cancelled = true; };
+  }, [user?.uid]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +95,12 @@ export function ChampionshipsHub() {
   return createPortal(<main className="ch-new-screen"><div className="ch-new-page">
     <header className="ch-new-header"><button onClick={() => navigate('/notifications')} aria-label="Notificações"><Bell /></button><div><InvictusLogo size={45} /><b>INVICTUS</b><small>PERFORMANCE</small></div><button className="ch-new-avatar" onClick={() => navigate('/profile')} aria-label="Abrir perfil">{user?.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound />}{paid ? <em>PRO</em> : null}</button></header>
 
-    {friendsStatusError ? <section className="ch-security"><ShieldCheck /><span>Não foi possível confirmar sua participação no Campeonato Entre Amigos. Nenhuma nova inscrição será sugerida até o status ser confirmado.</span><button type="button" onClick={() => setFriendsStatusReload(value => value + 1)}><RefreshCw /> TENTAR NOVAMENTE</button></section> : friendsEnrolled === false ? <><h2 className="ch-new-title ch-new-title--first">DESTAQUE</h2><FriendsChampionshipCard onParticipate={() => navigate('/championships/community')} /></> : null}
+    <h2 className="ch-new-title ch-new-title--first">FORÇA</h2>
+    {powerLiftParticipating === null ? <div className="ch-friends-status-loading" aria-label="Carregando Power Lift" /> : powerLiftParticipating ? <div className="ch-paid-participating-stack">
+      <PaidRankingCard {...powerLiftRankingCard} onOpen={() => navigate('/power')} />
+    </div> : <PowerLiftFeatureCard onEnroll={() => navigate('/power')} />}
+
+    {friendsStatusError ? <section className="ch-security"><ShieldCheck /><span>Não foi possível confirmar sua participação no Campeonato Entre Amigos. Nenhuma nova inscrição será sugerida até o status ser confirmado.</span><button type="button" onClick={() => setFriendsStatusReload(value => value + 1)}><RefreshCw /> TENTAR NOVAMENTE</button></section> : friendsEnrolled === false ? <><h2 className="ch-new-title">DESTAQUE</h2><FriendsChampionshipCard onParticipate={() => navigate('/championships/community')} /></> : null}
 
     {hasPaidParticipation ? <>
       <div className="ch-my-championship-head"><h2>MEUS CAMPEONATOS</h2><span>Acompanhe seu desempenho</span></div>

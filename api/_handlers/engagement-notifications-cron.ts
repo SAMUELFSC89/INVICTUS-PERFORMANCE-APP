@@ -3,8 +3,16 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { cors } from '../_lib/common.js';
 import { runEngagementRule } from '../_lib/engagement-notification-engine.js';
 import { firstWorkoutOfDayReminderRule } from '../_lib/engagement-rules/first-workout-reminder.js';
+import { firstWorkoutOnboardingRule } from '../_lib/engagement-rules/first-workout-onboarding.js';
+import { firstCardioOnboardingRule } from '../_lib/engagement-rules/first-cardio-onboarding.js';
+import { powerLiftFirstVideoOnboardingRule } from '../_lib/engagement-rules/powerlift-first-video-onboarding.js';
 
-const RULES = [firstWorkoutOfDayReminderRule];
+const RULES = [
+  firstWorkoutOfDayReminderRule,
+  firstWorkoutOnboardingRule,
+  firstCardioOnboardingRule,
+  powerLiftFirstVideoOnboardingRule,
+];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
