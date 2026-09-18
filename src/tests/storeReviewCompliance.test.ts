@@ -12,6 +12,14 @@ describe('store review compliance gates', () => {
     expect(auth).toContain("CONTINUAR COM GOOGLE");
   });
 
+  test('signup enforces the declared 18+ audience and explains identity collection', () => {
+    const auth = read('src/components/AuthExperience.tsx');
+    expect(auth).toContain('function isAdultBirthDate');
+    expect(auth).toContain('return age >= 18');
+    expect(auth).toContain('O Invictus é destinado a pessoas com 18 anos ou mais.');
+    expect(auth).toContain('reduz duplicidade/fraude nos recursos competitivos');
+  });
+
   test('account deletion can be initiated in app and has a public deletion resource', () => {
     const profile = read('src/pages/ProfileNew.tsx');
     const endpoint = read('api/account-deletion.ts');
@@ -21,7 +29,9 @@ describe('store review compliance gates', () => {
     expect(profile).toContain("fetch('/api/account-deletion'");
     expect(endpoint).toContain("source: 'in_app'");
     expect(endpoint).toContain("deletionStatus: 'requested'");
+    expect(endpoint).toContain('em até 30 dias');
     expect(publicPage).toContain('Exclusão de conta e dados');
+    expect(publicPage).toContain('até 30 dias');
     expect(publicPage).toContain('contato@invictusperformance.app.br');
   });
 
