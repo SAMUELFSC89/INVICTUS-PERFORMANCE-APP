@@ -9,6 +9,7 @@ import {
 } from './_lib/admin-championship-service.js';
 import {
   getChampionshipAdminLeaderboard,
+  getChampionshipAdminSummary,
   homologateChampionshipAsAdmin,
   listChampionshipAdminRegistrations,
 } from './_lib/admin-championship-operations.js';
@@ -36,6 +37,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === 'GET' && action === 'state') {
       return res.status(200).json({ success: true, ...(await getChampionshipAdminState()) });
+    }
+    if (req.method === 'GET' && action === 'summary') {
+      const result = await getChampionshipAdminSummary(req.query.championshipId);
+      return res.status(200).json({ success: true, ...result });
     }
     if (req.method === 'GET' && action === 'registrations') {
       const result = await listChampionshipAdminRegistrations(req.query.championshipId, req.query.limit);
