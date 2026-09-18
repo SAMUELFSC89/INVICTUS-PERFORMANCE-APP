@@ -1,53 +1,56 @@
-# App Review Notes — Paid Athletic Championships
+# App Review Notes — Invictus Performance (submission build)
 
-> Internal submission draft. Review before each App Store submission and update edition-specific dates/prizes.
+> Submission state reviewed on 2026-09-18. Update these notes if the product behavior changes before upload.
 
-## English draft
+## English draft for App Review
 
-Invictus Performance offers developer-sponsored athletic competitions based exclusively on real-world physical performance. The paid Cardio and Strength championships are externally performed athletic events: participants run, walk or perform eligible strength workouts in the physical world during the published competition period. Results are determined by validated athletic performance under the official rules; there is no lottery, random draw, roulette, RNG or chance-based outcome.
+Invictus Performance is a fitness and training application for adults (18+). The submitted build allows users to record workouts, track fitness/health metrics with explicit platform permissions, use training/AI features, participate in non-cash community challenges and view fitness rankings.
 
-The organizer and sponsor is INVICTUS PERFORMANCE E SOLUÇÕES LTDA., CNPJ 67.770.822/0001-22, Brazil. The official rules are fully available inside the app before enrollment, including eligibility (18+), entry fee, registration dates, competition dates, published result-homologation date, prize distribution, scoring, tie-break criteria, integrity review, refunds, privacy and dispute procedures. The rules expressly state that Apple Inc. and the App Store are not sponsors, organizers, partners or otherwise involved in the competition or prizes.
+### Subscriptions
 
-The R$ 29.90 charge is a one-time registration fee for the externally performed athletic competition. On iOS, after accepting the official rules and identity/presence verification, the user is taken to a secure hosted Asaas checkout supporting PIX and credit card. The checkout is opened outside the app WebView using the system browser presentation. Returning from the browser does not unlock the competition. Enrollment is activated only after our authenticated backend receives financial confirmation from Asaas by webhook.
+Invictus Pro is a digital subscription. On iOS, purchase and restoration are performed through the App Store subscription flow (RevenueCat is used as the integration layer). The price and subscription period shown to the user are obtained from the store, and the backend verifies the resulting entitlement before enabling Pro features.
 
-The app does not sell virtual currency, digital game items, randomized rewards, betting stakes or chance-based entries through this flow. Championship scoring is server-authoritative and based on eligible physical activities that pass integrity validation. Users cannot submit their own score/risk decision as authoritative.
+### Competitions in this submitted build
 
-After the competition period ends, the result is not treated as final immediately. The backend waits until the published homologation date and completes integrity and financial checks. Pending activity reviews, unresolved ties at prize positions, payment disputes or reconciliation issues keep the edition from being finalized. Once finalized, the athlete can see the homologated result in the app and eligible cash prizes are credited by the backend according to the published prize distribution.
+The community championship available in the submitted build is free and has no cash prize. Paid Cardio and Strength championship screens are informational / COMING SOON only. Registration and checkout for paid editions are disabled until a future edition is formally published with its own dates, organizer, rules, price and prize information.
 
-Each published edition has an immutable server-side identity. Registrations, scores and final settlement from a previous edition are not reused for a later edition of the same Cardio or Strength championship.
+The current challenges do not use wagers, pooled user money, random outcomes, lotteries, roulette, RNG or chance-based rewards. Invictus Coins are promotional ecosystem points and cannot be converted to cash or withdrawn by users in the submitted store experience.
 
-The paid enrollment button is shown only when a real edition has published registration dates, competition dates, homologation date, prize distribution and modality rules. Otherwise the screen remains informational and no checkout can be created.
+### Health and fitness data
 
-## Portuguese reference
+Apple Health / HealthKit access is requested only when the user chooses the relevant health/wearable functionality. The app requests read access for authorized fitness and health metrics used to display personal history, training metrics and reports. Health data is not sold or used for behavioral advertising.
 
-O Invictus Performance oferece competições esportivas promovidas pelo próprio desenvolvedor e determinadas exclusivamente por desempenho físico real. Os campeonatos pagos de Cardio e Musculação são realizados fisicamente fora do ambiente digital: o participante executa atividades reais durante o período publicado e a classificação decorre de desempenho validado conforme o regulamento. Não existe sorteio, roleta, RNG ou resultado por acaso.
+### Location, camera and microphone
 
-O organizador e patrocinador é INVICTUS PERFORMANCE E SOLUÇÕES LTDA., CNPJ 67.770.822/0001-22. O regulamento oficial completo fica disponível no aplicativo antes da inscrição e informa elegibilidade 18+, taxa, janela de inscrição, período competitivo, data de homologação, premiação, pontuação, desempate, antifraude, revisão, reembolso, privacidade e contestação. O regulamento declara expressamente que Apple Inc. e App Store não patrocinam, organizam, participam ou se vinculam à competição ou à premiação.
+Location is used for gym search/check-in and for routes of outdoor cardio sessions initiated by the user. Camera/photo access is used when the user chooses to attach training evidence or record Power Lift evidence. Microphone access is used only as part of user-initiated Power Lift video recording.
 
-A cobrança de R$ 29,90 é taxa avulsa de inscrição na competição esportiva realizada externamente. No iOS, após o aceite das regras e a confirmação de identidade/presença, o atleta é encaminhado a um Checkout seguro hospedado pelo Asaas, com PIX e cartão. O simples retorno do navegador não libera a participação: a inscrição é ativada somente quando o backend recebe a confirmação financeira autenticada do Asaas por webhook.
+### Account deletion
 
-Após o fim da competição, o resultado permanece sujeito à homologação server-side na data publicada. Atividades ainda em revisão, empate técnico em posição premiada ou pendência financeira impedem a finalização automática. Somente depois da homologação o resultado final é exibido como definitivo e a premiação elegível é creditada pelo backend conforme a distribuição publicada.
+Account deletion can be initiated directly in the app from Profile > Settings > Delete my account. A public deletion resource is also available at:
+
+https://www.invictusperformance.app.br/account-deletion.html
+
+The deletion flow clearly informs users that deleting the Invictus account does not automatically cancel an App Store subscription, which must also be managed in the App Store if active.
+
+### Login
+
+The native iOS build uses the Invictus first-party email/password account flow. Google social login is not displayed in the native iOS build. Google login remains available on Android and Web.
 
 ## Reviewer navigation
 
 1. Sign in with the App Review test account supplied in App Store Connect.
-2. Open **Campeonatos**.
-3. Open **Campeonato de Musculação** or **Campeonato de Cardio**.
-4. Review organizer, fee, edition, registration/competition/homologation dates, prize distribution, official rules and Apple disclaimer.
-5. Enrollment is available only if the reviewed build points to an edition with registration currently open.
-6. A finalized test edition, when supplied for review, shows the authenticated athlete's own homologated result rather than treating the browser checkout return as competition success.
+2. Open **Profile** to access account settings, subscription management, privacy/help and account deletion.
+3. Open **Devices** to review Apple Health / wearable integration. Health permissions are requested only when the user chooses to connect/use the integration.
+4. Open **Championships**. The community experience is free; paid Cardio/Strength editions remain informational and cannot be purchased in the submitted build.
+5. Open **Health** (Pro test account if supplied) to review user-facing health metrics and reports.
 
-## Required before submission
+## Before submitting in App Store Connect
 
-Do not paste these notes unchanged if any item is missing from the production edition. Before submission confirm:
-
-- registration, competition and homologation dates are final and visible;
-- prize amounts/positions are final and visible in-app. **Note (edições com pote dinâmico, a partir de 09/2026):** o valor exibido antes e durante a inscrição é um mínimo garantido fixo (`CHAMPIONSHIP_*_PRIZES_JSON`), explicitamente rotulado como "PRÊMIO MÍNIMO GARANTIDO" — nunca vago ou "a definir". O prêmio de fato pago pode ser maior (calculado por `api/_lib/paid-championship-dynamic-prize.ts` a partir do número de inscritos pagos), mas o app só revela esse valor final depois que as inscrições fecham, e nunca paga menos que o mínimo publicado. Isso mantém o requisito da Apple: a quantia garantida é final e visível antes da inscrição;
-- regulation version/hash and edition identity match production;
-- Asaas production checkout and authenticated payment webhook are configured;
-- settlement cron and its server secret are configured;
-- Apple disclaimer is visible;
-- reviewer test credentials can reach the relevant screen;
-- no Android-specific external checkout CTA has accidentally been exposed;
-- support contact and organizer information are current;
-- legal counsel has reviewed the final contest structure where required by applicable law.
+- Supply a working reviewer account and any Pro entitlement needed to reach paid-gated screens without asking the reviewer to purchase.
+- Confirm the App Privacy answers match the actual data categories used by the build.
+- Confirm the privacy-policy URL and account-deletion URL are public and reachable.
+- Confirm the auto-renewable subscription metadata, price, localization and review screenshot are configured.
+- Confirm HealthKit capability and the privacy usage descriptions are present in the signed archive.
+- Confirm location/camera/photo/microphone purposes match the permission dialogs in the archive.
+- Confirm age rating reflects the 18+ product policy and the actual content shown in the submitted build.
+- Do not enable a paid championship or external paid-registration CTA without a separate store/legal review and updated reviewer notes.
