@@ -18,6 +18,7 @@ import {
   paidChampionshipSettlementDocumentId,
 } from '../_lib/paid-championship-edition.js';
 import { computeFinalPrizeForEdition, registrationHasClosed } from '../_lib/paid-championship-dynamic-prize.js';
+import { publishAdminRealtimeSignalSafe } from '../_lib/admin-realtime.js';
 
 const CHAMPIONSHIP_PAYMENT_RISK_EVENTS = new Set<ChampionshipPaymentRiskEvent>([
   'PAYMENT_REFUNDED',
@@ -285,6 +286,7 @@ export async function createChampionshipPaymentHandler(req: any, res: any) {
       String(acceptanceId),
       checkoutSurface as 'ios_native' | 'web',
     );
+    publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_REGISTRATION_PENDING', source: 'championships:create-payment' });
 
     return res.json({ success: true, ...checkout });
   } catch (erro: any) {
@@ -324,14 +326,17 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
       console.log(`[Championship Webhook] ${event} checkout=${checkout.id}`);
       if (event === 'CHECKOUT_PAID') {
         const resultado = await confirmarInscricaoChampionshipPorCheckout(checkout.id);
+        publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_REGISTRATION_CONFIRMED', source: 'championship-webhook:checkout-paid' });
         return res.status(200).json({ received: true, inscricao: resultado });
       }
       if (event === 'CHECKOUT_CANCELED') {
         const resultado = await encerrarCheckoutChampionship(checkout.id, 'cancelled');
+        publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_CHANGED', source: 'championship-webhook:checkout-cancelled' });
         return res.status(200).json({ received: true, inscricao: resultado });
       }
       if (event === 'CHECKOUT_EXPIRED') {
         const resultado = await encerrarCheckoutChampionship(checkout.id, 'expired');
+        publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_CHANGED', source: 'championship-webhook:checkout-expired' });
         return res.status(200).json({ received: true, inscricao: resultado });
       }
       return res.status(200).json({ received: true, ignored: event });
@@ -349,6 +354,7 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
         payment.externalReference,
         providerEventAt,
       );
+      publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_REGISTRATION_CONFIRMED', source: 'championship-webhook:payment-confirmed' });
       return res.status(200).json({ received: true, inscricao: resultado });
     }
     if (CHAMPIONSHIP_PAYMENT_RISK_EVENTS.has(event as ChampionshipPaymentRiskEvent)) {
@@ -360,6 +366,7 @@ export async function asaasChampionshipWebhookHandler(req: any, res: any) {
         payment.value,
         providerEventAt,
       );
+      publishAdminRealtimeSignalSafe({ type: 'CHAMPIONSHIP_PAYMENT_RECONCILIATION_REQUIRED', source: 'championship-webhook:payment-risk' });
       return res.status(200).json({ received: true, inscricao: resultado });
     }
     return res.status(200).json({ received: true, ignored: event });
