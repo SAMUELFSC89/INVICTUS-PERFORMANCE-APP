@@ -7,7 +7,7 @@ const row = (id: string, userId: string, exercise: PowerLiftRankingRow['exercise
 });
 
 describe('Power Lift ranking audit', () => {
-  test('keeps only the best mark per athlete inside each exercise', () => {
+  test('keeps only the best mark per athlete inside each exercise in the legacy helper', () => {
     const result = mergePowerLiftRankingRows([
       row('a1', 'u1', 'supino', 80),
       row('a2', 'u1', 'supino', 100),
@@ -34,12 +34,19 @@ describe('Power Lift ranking audit', () => {
     expect(personalBestFromRecords(own, 'agachamento')).toBe(170);
   });
 
-  test('server ranking is authenticated, athlete-based and builds independent modality windows', () => {
-    const source = readFileSync(resolve(process.cwd(), 'api/_handlers/powerlift.ts'), 'utf8');
-    expect(source).toContain('mergePowerLiftRankingRows(records)');
-    expect(source).toContain("const requestedExercises = exercise ? [exercise] : RANKING_EXERCISES");
-    expect(source).toContain('approvedOwnRecords(userId)');
-    expect(source).toContain("handleRanking(req, res, auth.uid)");
-    expect(source).toContain('MAX_RANKING_SCAN = 500');
+  test('server ranking uses the seasonal materialized state, Diamond gate and explicit opt-in', () => {
+    const handler = readFileSync(resolve(process.cwd(), 'api/_handlers/powerlift.ts'), 'utf8');
+    const engine = readFileSync(resolve(process.cwd(), 'api/_lib/powerlift-season-engine.ts'), 'utf8');
+
+    expect(handler).toContain('getPowerLiftEliteRanking(userId, exercise, take)');
+    expect(handler).toContain("handleRanking(req, res, auth.uid)");
+    expect(handler).toContain("action === 'opt-in'");
+    expect(handler).toContain("action === 'status'");
+
+    expect(engine).toContain("const ENTRY_COLLECTION = 'powerlift_season_entries'");
+    expect(engine).toContain('reconcileApprovedUserSeasonRecords(userId, season)');
+    expect(engine).toContain("entry.tier === 'DIAMANTE' && entry.eliteOptIn === true");
+    expect(engine).toContain('.sort(compareElite)');
+    expect(engine).toContain('getPowerLiftGeneralRanking');
   });
 });
