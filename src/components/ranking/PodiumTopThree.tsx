@@ -14,9 +14,9 @@ const PODIUM_BASE_ASSETS: Record<number, string> = {
 const fallbackAvatar = '/capacete.webp';
 
 const MASTER_PODIUM_ASSETS = {
-  academy: '/assets/ranking/podium-academy-v1.webp',
-  musculacao: '/assets/ranking/podium-musculacao-v1.webp',
-  cardio: '/assets/ranking/podium-cardio-v1.webp',
+  academy: '/assets/ranking/podium-academy-v2.webp',
+  musculacao: '/assets/ranking/podium-musculacao-v2.webp',
+  cardio: '/assets/ranking/podium-cardio-v2.webp',
 } as const;
 
 type PodiumTheme = keyof typeof MASTER_PODIUM_ASSETS;

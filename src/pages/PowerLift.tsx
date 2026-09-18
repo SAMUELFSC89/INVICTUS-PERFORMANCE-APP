@@ -423,7 +423,7 @@ export function PowerLift() {
       </div>
       {loadError && <p className="power-load-error">Não foi possível carregar o ranking agora. Tente novamente em instantes.</p>}
       <div className="power-podium power-podium--master">
-        <img className="power-podium-master-image" src="/assets/ranking/podium-powerlift-v1.webp" alt="" aria-hidden="true" />
+        <img className="power-podium-master-image" src="/assets/ranking/podium-powerlift-v2.webp" alt="" aria-hidden="true" />
         {[0, 1, 2].map((index) => {
           const row = top[index];
           const rank = index + 1;

@@ -7,10 +7,10 @@ const asset = (file: string) => path.join(process.cwd(), 'public', 'assets', 'ra
 describe('master podiums dos rankings Invictus', () => {
   it('versiona os quatro assets master 4:5', () => {
     for (const file of [
-      'podium-academy-v1.webp',
-      'podium-musculacao-v1.webp',
-      'podium-cardio-v1.webp',
-      'podium-powerlift-v1.webp',
+      'podium-academy-v2.webp',
+      'podium-musculacao-v2.webp',
+      'podium-cardio-v2.webp',
+      'podium-powerlift-v2.webp',
     ]) {
       expect(fs.existsSync(asset(file))).toBe(true);
       expect(fs.statSync(asset(file)).size).toBeGreaterThan(5_000);
@@ -20,9 +20,9 @@ describe('master podiums dos rankings Invictus', () => {
   it('usa um único cenário por ranking e mantém os avatares dinâmicos', () => {
     const podium = read('src/components/ranking/PodiumTopThree.tsx');
     expect(podium).toContain("theme?: PodiumTheme");
-    expect(podium).toContain("podium-academy-v1.webp");
-    expect(podium).toContain("podium-musculacao-v1.webp");
-    expect(podium).toContain("podium-cardio-v1.webp");
+    expect(podium).toContain("podium-academy-v2.webp");
+    expect(podium).toContain("podium-musculacao-v2.webp");
+    expect(podium).toContain("podium-cardio-v2.webp");
     expect(podium).toContain('academy-podium-master-slot');
     expect(podium).toContain('entry.photoURL || fallbackAvatar');
   });
@@ -48,7 +48,7 @@ describe('master podiums dos rankings Invictus', () => {
     const power = read('src/pages/PowerLift.tsx');
     const css = read('src/pages/PowerLiftNew.css');
 
-    expect(power).toContain('/assets/ranking/podium-powerlift-v1.webp');
+    expect(power).toContain('/assets/ranking/podium-powerlift-v2.webp');
     expect(power).toContain('row.userPhoto');
     expect(power).toContain('power-podium-master-slot');
     expect(css).toContain('.power-podium-master-slot--1');
