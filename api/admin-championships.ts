@@ -4,6 +4,7 @@ import { hasActiveAdminAuthority } from './_lib/admin-authority.js';
 import {
   deleteChampionshipDraft,
   getChampionshipAdminState,
+  publishChampionshipDraft,
   saveChampionshipDraft,
 } from './_lib/admin-championship-service.js';
 
@@ -39,15 +40,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(await deleteChampionshipDraft(String(req.body?.championshipId || ''), auth.uid));
     }
     if (req.method === 'POST' && action === 'publish') {
-      return res.status(409).json({
-        success: false,
-        error: 'Publicação live protegida: a migração do catálogo precisa concluir a troca atômica dos consumidores de inscrição, scoring e settlement antes de liberar este comando.',
-      });
+      const championshipId = String(req.body?.championshipId || '').trim();
+      if (!championshipId) return res.status(400).json({ success: false, error: 'championshipId é obrigatório.' });
+      return res.status(200).json(await publishChampionshipDraft(championshipId, auth.uid));
     }
     return res.status(400).json({ success: false, error: 'Ação administrativa de campeonato não suportada.' });
   } catch (error: any) {
     console.error('[Admin championships]', error);
     const message = String(error?.message || 'Falha ao administrar campeonato.');
-    return res.status(/inválid|precisa|deve|não pode|informe|publique/i.test(message) ? 400 : 500).json({ success: false, error: message });
+    const conflict = /edição anterior|concilia|conflito|imutável|FINALIZED|homologação/i.test(message);
+    return res.status(conflict ? 409 : /inválid|precisa|deve|não pode|informe|publique|rascunho|obrigat/i.test(message) ? 400 : 500)
+      .json({ success: false, error: message });
   }
 }
