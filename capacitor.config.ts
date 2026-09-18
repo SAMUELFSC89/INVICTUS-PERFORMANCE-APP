@@ -9,12 +9,20 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     allowNavigation: [
-      'invictusperformance.app.br', 
-      'www.invictusperformance.app.br', 
-      '*.google.com', 
-      '*.googleapis.com', 
-      '*.firebaseapp.com', 
-      'accounts.google.com'
+      'invictusperformance.app.br',
+      'www.invictusperformance.app.br',
+      '*.google.com',
+      '*.googleapis.com',
+      '*.firebaseapp.com',
+      'accounts.google.com',
+      // #237: a verificacao de telefone (RecaptchaVerifier) carrega o widget
+      // do desafio do reCAPTCHA a partir destes dois dominios. Sem eles na
+      // allowlist, o WebView pode bloquear o iframe/assets do reCAPTCHA
+      // dentro do app nativo e o Firebase retorna auth/internal-error ao
+      // chamar verifyPhoneNumber -- mesmo com *.google.com liberado, os
+      // assets do desafio (challenge) sao servidos por gstatic.com.
+      '*.gstatic.com',
+      '*.recaptcha.net'
     ]
   },
   ios: {

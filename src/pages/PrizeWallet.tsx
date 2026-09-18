@@ -33,6 +33,7 @@ type WalletPayload = {
     enabled: boolean;
     minWithdrawalAmount: number;
     maxDailyWithdrawalAmount: number;
+    identityCheckEnabled: boolean;
   };
   identity?: {
     emailVerified: boolean;
@@ -64,14 +65,26 @@ function formatDate(value?: string): string {
   return Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR') : '—';
 }
 
-function firebasePhoneError(reason: any): string {
+// reason?.code só começa com "auth/" quando o erro vem do SDK do Firebase
+// (ex.: "auth/internal-error") -- nesse caso nunca mostramos reason?.message
+// (string bruta tipo "Firebase: Error (...)"), só a frase mapeada abaixo. Já
+// os códigos do próprio backend (IDENTITY_VERIFICATION_REQUIRED,
+// PHONE_REAUTH_REQUIRED, tratados antes de chegar aqui) e erros lançados por
+// nós mesmos não têm esse prefixo, então reason?.message já é uma frase
+// pronta para o usuário.
+function friendlyPhoneError(reason: any): string {
   const code = String(reason?.code || '');
-  if (code.includes('invalid-verification-code')) return 'Código incorreto. Confira o SMS e tente novamente.';
-  if (code.includes('code-expired')) return 'O código expirou. Solicite um novo SMS.';
-  if (code.includes('too-many-requests')) return 'Muitas tentativas de SMS. Aguarde um pouco e tente novamente.';
-  if (code.includes('quota-exceeded')) return 'O limite temporário de SMS do Firebase foi atingido. Tente novamente mais tarde.';
-  if (code.includes('captcha-check-failed')) return 'A proteção antiabuso do Firebase não foi concluída. Tente novamente.';
-  return reason?.message || 'Não foi possível confirmar o telefone.';
+  if (!code.startsWith('auth/')) return reason?.message || 'Não foi possível concluir a confirmação agora. Tente novamente em instantes.';
+
+  console.warn('[PrizeWallet] Falha na confirmação de telefone:', code);
+  if (code.includes('invalid-verification-code')) return 'Código incorreto. Confira a mensagem recebida e tente novamente.';
+  if (code.includes('code-expired')) return 'O código expirou. Solicite um novo.';
+  if (code.includes('too-many-requests')) return 'Muitas tentativas. Aguarde um pouco e tente novamente.';
+  if (code.includes('quota-exceeded')) return 'Limite temporário de envios atingido. Tente novamente mais tarde.';
+  if (code.includes('captcha-check-failed') || code.includes('internal-error') || code.includes('invalid-app-credential')) {
+    return 'Não foi possível confirmar seu telefone agora. Feche e abra o app novamente e tente de novo em instantes.';
+  }
+  return 'Não foi possível concluir a confirmação agora. Tente novamente em instantes.';
 }
 
 async function authenticatedFetch(path: string, init?: RequestInit) {
@@ -151,9 +164,15 @@ export function PrizeWallet() {
   const maxDaily = Number(data?.config.maxDailyWithdrawalAmount || 1000);
   const requestedAmount = Number(String(amount).replace(',', '.'));
   const identityReady = data?.identity?.ready === true;
+  // #238: a verificação de identidade continua calculada e exibida
+  // normalmente (card "CONFIRME SUA IDENTIDADE" mais abaixo), mas -- por
+  // decisão explícita do usuário em 18/09/2026 -- não entra mais na conta
+  // que libera o botão de saque. O backend espelha isso em
+  // config.identityCheckEnabled; quando ele voltar a `true`, basta remover
+  // esse comentário e voltar a incluir `identityReady` aqui.
+  const requiresIdentityCheck = data?.config.identityCheckEnabled === true;
   const withdrawalInputValid = Boolean(
     data?.config.enabled
-    && identityReady
     && Number.isFinite(requestedAmount)
     && requestedAmount >= minWithdrawal
     && requestedAmount <= Math.min(available, maxDaily)
@@ -163,6 +182,50 @@ export function PrizeWallet() {
 
   const orderedWithdrawals = useMemo(() => [...(data?.withdrawals || [])]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [data?.withdrawals]);
+
+  const submitWithdrawal = async () => {
+    try {
+      const result = await authenticatedFetch('/api/financial', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'request-withdrawal',
+          amount: requestedAmount,
+          pixKey: pixKey.trim(),
+          pixKeyType,
+          requestId: newWithdrawalRequestId(),
+        }),
+      });
+      clearPhoneChallenge();
+      setAmount('');
+      setNotice(result.userMessage || 'Solicitação de saque criada. O valor ficou reservado para processamento do PIX.');
+      await load();
+    } catch (reason: any) {
+      if (reason?.code === 'IDENTITY_VERIFICATION_REQUIRED') {
+        setError('Sua conta ainda precisa confirmar e-mail e telefone antes do saque.');
+        clearPhoneChallenge();
+        await load();
+      } else if (reason?.code === 'PHONE_REAUTH_REQUIRED') {
+        setError('A confirmação por telefone expirou. Solicite um novo código por SMS.');
+        clearPhoneChallenge();
+      } else {
+        setError(friendlyPhoneError(reason));
+      }
+    }
+  };
+
+  // Enquanto requiresIdentityCheck estiver desligado no backend, pular
+  // direto para o pedido de saque em vez de abrir o desafio de SMS.
+  const requestWithdrawalDirect = async () => {
+    if (!withdrawalInputValid || submitting) return;
+    setSubmitting(true);
+    setError('');
+    setNotice('');
+    try {
+      await submitWithdrawal();
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const startPhoneReauth = async () => {
     if (!withdrawalInputValid || submitting) return;
@@ -183,12 +246,12 @@ export function PrizeWallet() {
       confirmationRef.current = await reauthenticateWithPhoneNumber(current, current.phoneNumber, verifier);
       setPhoneChallenge(true);
       setOtpCode('');
-      setNotice('O Firebase enviou um código por SMS ao telefone verificado da sua conta.');
+      setNotice('Enviamos um código por SMS ao telefone verificado da sua conta.');
     } catch (reason: any) {
       try { recaptchaRef.current?.clear(); } catch { /* best effort */ }
       recaptchaRef.current = null;
       confirmationRef.current = null;
-      setError(firebasePhoneError(reason));
+      setError(friendlyPhoneError(reason));
     } finally {
       setSubmitting(false);
     }
@@ -207,33 +270,9 @@ export function PrizeWallet() {
     try {
       await confirmationRef.current.confirm(otpCode);
       await auth.currentUser?.getIdToken(true);
-
-      const result = await authenticatedFetch('/api/financial', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'request-withdrawal',
-          amount: requestedAmount,
-          pixKey: pixKey.trim(),
-          pixKeyType,
-          requestId: newWithdrawalRequestId(),
-        }),
-      });
-
-      clearPhoneChallenge();
-      setAmount('');
-      setNotice(result.userMessage || 'Solicitação de saque criada. O valor ficou reservado para processamento do PIX.');
-      await load();
+      await submitWithdrawal();
     } catch (reason: any) {
-      if (reason?.code === 'IDENTITY_VERIFICATION_REQUIRED') {
-        setError('Sua conta ainda precisa confirmar e-mail e telefone antes do saque.');
-        clearPhoneChallenge();
-        await load();
-      } else if (reason?.code === 'PHONE_REAUTH_REQUIRED') {
-        setError('A confirmação por telefone expirou. Solicite um novo código por SMS.');
-        clearPhoneChallenge();
-      } else {
-        setError(firebasePhoneError(reason));
-      }
+      setError(friendlyPhoneError(reason));
     } finally {
       setSubmitting(false);
     }
@@ -280,8 +319,10 @@ export function PrizeWallet() {
           </div>
 
           {!phoneChallenge ? <>
-            <p className="prize-wallet-biometric"><Smartphone /> Cada saque exige uma nova confirmação por SMS do Firebase no telefone verificado da conta. Não usamos selfie para liberar PIX.</p>
-            <button type="button" className="prize-wallet-submit" disabled={!canRequest || submitting} onClick={() => void startPhoneReauth()}>{submitting ? <><Loader2 className="is-spinning" /> ENVIANDO CÓDIGO</> : <><MessageSquareText /> RECEBER CÓDIGO POR SMS</>}</button>
+            {requiresIdentityCheck
+              ? <p className="prize-wallet-biometric"><Smartphone /> Cada saque exige uma nova confirmação por SMS no telefone verificado da conta. Não usamos selfie para liberar PIX.</p>
+              : <p className="prize-wallet-biometric"><Smartphone /> Verificação de identidade temporariamente não obrigatória para saque. Não usamos selfie para liberar PIX.</p>}
+            <button type="button" className="prize-wallet-submit" disabled={!canRequest || submitting} onClick={() => void (requiresIdentityCheck ? startPhoneReauth() : requestWithdrawalDirect())}>{submitting ? <><Loader2 className="is-spinning" /> {requiresIdentityCheck ? 'ENVIANDO CÓDIGO' : 'SOLICITANDO SAQUE'}</> : requiresIdentityCheck ? <><MessageSquareText /> RECEBER CÓDIGO POR SMS</> : <><ShieldCheck /> SOLICITAR SAQUE</>}</button>
           </> : <div className="prize-wallet-pix-grid">
             <label>CÓDIGO ENVIADO PARA {identity?.phone || 'SEU TELEFONE'}<input value={otpCode} onChange={event => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" /></label>
             <div><button type="button" className="prize-wallet-submit" disabled={otpCode.length < 4 || submitting} onClick={() => void confirmPhoneAndWithdraw()}>{submitting ? <><Loader2 className="is-spinning" /> CONFIRMANDO</> : <><ShieldCheck /> CONFIRMAR E SOLICITAR PIX</>}</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => clearPhoneChallenge()}>CANCELAR CÓDIGO</button><button type="button" className="prize-wallet-submit" disabled={submitting} onClick={() => void resendPhoneCode()}>REENVIAR SMS</button></div>

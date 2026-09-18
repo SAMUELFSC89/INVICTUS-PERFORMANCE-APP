@@ -11,6 +11,16 @@ const SANDBOX_WITHDRAWAL_TEST_CREDIT = 20;
 const SANDBOX_WITHDRAWAL_TEST_KEY = 'withdrawal-r20-2026-09';
 const PHONE_REAUTH_MAX_AGE_SECONDS = 5 * 60;
 
+// #238: por decisão explícita do usuário em 18/09/2026, a verificação de
+// identidade (e-mail + telefone) e a reautenticação por telefone a cada
+// saque PARARAM DE BLOQUEAR a solicitação de saque -- só temporariamente,
+// para permitir testar o fluxo de saque enquanto o bug do RecaptchaVerifier
+// no app nativo (#237) é validado num build novo. O status de verificação
+// continua sendo calculado e exibido normalmente no perfil/carteira
+// (identityReady() e identityPayload() não mudaram); só a trava no momento
+// do saque foi desligada. Trocar para `true` reativa as duas exigências.
+const ENFORCE_IDENTITY_FOR_WITHDRAWAL = false;
+
 type AccountIdentity = {
   emailVerified: boolean;
   phoneVerified: boolean;
@@ -217,10 +227,12 @@ async function validateWithdrawalInput(userId: string, body: any) {
 
 /**
  * Carteira financeira exclusiva para premiações oficiais em dinheiro.
- * Invictus Coins continuam isolados e sem valor monetário. Saque financeiro
- * exige e-mail + telefone Firebase e uma reautenticação Firebase por SMS nova
- * para cada solicitação. CPF/Serpro fica fora do gate por ora (ver
- * identityReady()). Selfie/biometria não participa do PIX.
+ * Invictus Coins continuam isolados e sem valor monetário. Quando
+ * ENFORCE_IDENTITY_FOR_WITHDRAWAL === true, o saque exige e-mail + telefone
+ * confirmados e uma reautenticação por telefone nova a cada solicitação
+ * (atualmente desligado -- ver comentário #238 acima). CPF/Serpro fica fora
+ * do gate por ora independentemente disso (ver identityReady()). Selfie/
+ * biometria não participa do PIX.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -249,6 +261,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           enabled: config.enabled,
           minWithdrawalAmount: money(config.minWithdrawalAmount),
           maxDailyWithdrawalAmount: money(config.maxDailyWithdrawalAmount),
+          identityCheckEnabled: ENFORCE_IDENTITY_FOR_WITHDRAWAL,
         },
         identity: identityPayload(identity),
         cashSource: 'official_prizes_only',
@@ -268,7 +281,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const identity = await loadIdentity(auth.uid);
-    if (!identityReady(identity)) {
+    if (ENFORCE_IDENTITY_FOR_WITHDRAWAL && !identityReady(identity)) {
       return res.status(403).json({
         success: false,
         code: 'IDENTITY_VERIFICATION_REQUIRED',
@@ -277,13 +290,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    await requireFreshFirebasePhoneReauth(req, auth.uid, identity.phone);
+    if (ENFORCE_IDENTITY_FOR_WITHDRAWAL) {
+      await requireFreshFirebasePhoneReauth(req, auth.uid, identity.phone);
+    }
     const withdrawal = await validateWithdrawalInput(auth.uid, req.body);
 
     const suppliedRequestId = String(req.body?.requestId || '').trim();
     const requestId = /^[a-zA-Z0-9_-]{8,96}$/.test(suppliedRequestId)
       ? suppliedRequestId
-      : `firebase_phone_${randomUUID().replace(/-/g, '')}`;
+      : `withdrawal_${randomUUID().replace(/-/g, '')}`;
 
     const commitResult = await WithdrawalEngine.requestWithdrawal({
       ...withdrawal,
@@ -295,7 +310,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       status: commitResult.status,
       commitResult,
-      userMessage: 'Telefone confirmado pelo Firebase. Solicitação de saque criada e saldo reservado para processamento do PIX.',
+      userMessage: 'Telefone confirmado. Solicitação de saque criada e saldo reservado para processamento do PIX.',
     });
   } catch (error: any) {
     console.error('[Financial Prize Wallet] Error:', error?.message || error);

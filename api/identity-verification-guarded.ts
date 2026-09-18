@@ -160,14 +160,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!phoneState.verified) {
         return res.status(409).json({
           success: false,
-          error: 'O Firebase ainda não confirmou um telefone nesta conta. Conclua o código por SMS primeiro.',
+          error: 'Ainda não encontramos um telefone confirmado nesta conta. Conclua a confirmação por código primeiro.',
         });
       }
       return res.json({
         success: true,
         verified: true,
         phone: maskPhone(phoneState.phone),
-        userMessage: 'Telefone confirmado pelo Firebase Authentication.',
+        userMessage: 'Telefone confirmado com sucesso.',
       });
     }
 

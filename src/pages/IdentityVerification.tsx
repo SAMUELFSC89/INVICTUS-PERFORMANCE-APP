@@ -30,16 +30,29 @@ function normalizeBrazilPhone(value: string): string {
   throw new Error('Informe um telefone brasileiro válido com DDD.');
 }
 
-function firebasePhoneError(reason: any): string {
+// reason?.code só existe em erros vindos do SDK do Firebase (ex.: "auth/
+// internal-error") -- nesse caso NUNCA repassamos reason?.message ao
+// usuário, porque é a string bruta do SDK (ex.: "Firebase: Error
+// (auth/internal-error).") e não diz nada útil para quem não é dev; mapeamos
+// para uma frase genérica e amigável, e o código técnico só fica no console
+// para depuração. Quando não há reason?.code, o erro foi lançado por nós
+// mesmos (ex.: authenticatedFetch, validação de telefone) e reason?.message
+// já é uma frase pronta para o usuário -- essa a gente mantém.
+function friendlyPhoneError(reason: any): string {
   const code = String(reason?.code || '');
+  if (!code.startsWith('auth/')) return reason?.message || 'Não foi possível concluir a confirmação agora. Tente novamente em instantes.';
+
+  console.warn('[IdentityVerification] Falha na confirmação de telefone:', code);
   if (code.includes('invalid-phone-number')) return 'Número de telefone inválido. Confira o DDD e tente novamente.';
   if (code.includes('credential-already-in-use')) return 'Este telefone já está vinculado a outra conta.';
-  if (code.includes('too-many-requests')) return 'Muitas tentativas de SMS. Aguarde um pouco e tente novamente.';
-  if (code.includes('quota-exceeded')) return 'O limite temporário de SMS do Firebase foi atingido. Tente novamente mais tarde.';
-  if (code.includes('captcha-check-failed')) return 'A proteção antiabuso do Firebase não foi concluída. Tente novamente.';
-  if (code.includes('invalid-verification-code')) return 'Código incorreto. Confira o SMS e tente novamente.';
-  if (code.includes('code-expired')) return 'O código expirou. Solicite um novo SMS.';
-  return reason?.message || 'Não foi possível confirmar o telefone pelo Firebase.';
+  if (code.includes('too-many-requests')) return 'Muitas tentativas. Aguarde um pouco e tente novamente.';
+  if (code.includes('quota-exceeded')) return 'Limite temporário de envios atingido. Tente novamente mais tarde.';
+  if (code.includes('captcha-check-failed') || code.includes('internal-error') || code.includes('invalid-app-credential')) {
+    return 'Não foi possível confirmar seu telefone agora. Feche e abra o app novamente e tente de novo em instantes.';
+  }
+  if (code.includes('invalid-verification-code')) return 'Código incorreto. Confira a mensagem recebida e tente novamente.';
+  if (code.includes('code-expired')) return 'O código expirou. Solicite um novo.';
+  return 'Não foi possível concluir a confirmação agora. Tente novamente em instantes.';
 }
 
 async function authenticatedFetch(path: string, init?: RequestInit) {
@@ -96,7 +109,7 @@ export function IdentityVerification() {
   const run = async (name: string, work: () => Promise<void>) => {
     if (busy) return;
     setBusy(name); setError(''); setNotice('');
-    try { await work(); } catch (reason: any) { setError(firebasePhoneError(reason)); } finally { setBusy(''); }
+    try { await work(); } catch (reason: any) { setError(friendlyPhoneError(reason)); } finally { setBusy(''); }
   };
 
   const resendEmail = () => run('email', async () => {
@@ -133,7 +146,7 @@ export function IdentityVerification() {
         method: 'POST',
         body: JSON.stringify({ action: 'sync-phone' }),
       });
-      setNotice(result.userMessage || 'Telefone já confirmado pelo Firebase.');
+      setNotice(result.userMessage || 'Telefone já confirmado.');
       await refreshUser?.();
       await load();
       return;
@@ -151,7 +164,7 @@ export function IdentityVerification() {
     setPhone(normalizedPhone);
     setPhoneStep('code');
     setCode('');
-    setNotice('O Firebase enviou um código por SMS. Digite o código para confirmar seu telefone.');
+    setNotice('Enviamos um código por SMS. Digite o código para confirmar seu telefone.');
   });
 
   const confirmPhone = () => run('phone-confirm', async () => {
@@ -176,7 +189,7 @@ export function IdentityVerification() {
     setVerificationId('');
     setPhoneStep('idle');
     setCode('');
-    setNotice(result.userMessage || 'Telefone confirmado pelo Firebase Authentication.');
+    setNotice(result.userMessage || 'Telefone confirmado com sucesso.');
     await refreshUser?.();
     await load();
   });
@@ -191,16 +204,16 @@ export function IdentityVerification() {
 
   return createPortal(<main className="identity-screen"><div className="identity-page">
     <header className="identity-header"><button onClick={() => navigate('/profile/wallet')} aria-label="Voltar"><ArrowLeft /></button><div><InvictusLogo size={40}/><span><b>INVICTUS</b><small>PERFORMANCE</small></span></div><span /></header>
-    <section className="identity-title"><small>SEGURANÇA DA CONTA</small><h1>IDENTIDADE <span>VERIFICADA</span></h1><p>Para liberar saques, confirme seu e-mail e seu telefone pelo Firebase.</p></section>
+    <section className="identity-title"><small>SEGURANÇA DA CONTA</small><h1>IDENTIDADE <span>VERIFICADA</span></h1><p>Para liberar saques, confirme seu e-mail e seu telefone.</p></section>
 
     {error ? <div className="identity-alert is-error">{error}</div> : null}
     {notice ? <div className="identity-alert is-success">{notice}</div> : null}
     {loading && !data ? <div className="identity-loading"><Loader2 className="is-spinning"/> CONSULTANDO CONTA</div> : <>
       <section className={complete ? 'identity-complete is-ok' : 'identity-complete'}><ShieldCheck/><div><b>{complete ? 'CONTA VERIFICADA' : 'VERIFICAÇÃO PENDENTE'}</b><p>{complete ? 'E-mail e telefone estão confirmados.' : 'Conclua e-mail e telefone para liberar o saque.'}</p></div></section>
 
-      <section className="identity-card"><header><MailCheck/><div><small>E-MAIL</small><h2>{identity?.email.value || auth.currentUser?.email || 'E-mail da conta'}</h2></div>{status(identity?.email.verified)}</header>{!identity?.email.verified ? <div className="identity-actions"><button disabled={Boolean(busy)} onClick={() => void resendEmail()}>{busy === 'email' ? <Loader2 className="is-spinning"/> : <MessageSquareText/>} ENVIAR E-MAIL INVICTUS</button><button className="is-secondary" disabled={Boolean(busy)} onClick={() => void syncEmail()}>JÁ CONFIRMEI</button></div> : <p>Endereço confirmado pelo Firebase Authentication.</p>}</section>
+      <section className="identity-card"><header><MailCheck/><div><small>E-MAIL</small><h2>{identity?.email.value || auth.currentUser?.email || 'E-mail da conta'}</h2></div>{status(identity?.email.verified)}</header>{!identity?.email.verified ? <div className="identity-actions"><button disabled={Boolean(busy)} onClick={() => void resendEmail()}>{busy === 'email' ? <Loader2 className="is-spinning"/> : <MessageSquareText/>} ENVIAR E-MAIL INVICTUS</button><button className="is-secondary" disabled={Boolean(busy)} onClick={() => void syncEmail()}>JÁ CONFIRMEI</button></div> : <p>Endereço confirmado.</p>}</section>
 
-      <section className="identity-card"><header><Smartphone/><div><small>TELEFONE</small><h2>{identity?.phone.value || 'Confirme seu celular'}</h2></div>{status(identity?.phone.verified)}</header>{!identity?.phone.verified ? <div className="identity-form"><label>CELULAR COM DDD<input value={phone} onChange={event => setPhone(event.target.value)} inputMode="tel" placeholder="(51) 99999-9999" /></label>{phoneStep === 'code' ? <label>CÓDIGO RECEBIDO<input value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" /></label> : null}<div className="identity-actions">{phoneStep === 'code' ? <><button disabled={Boolean(busy) || code.length < 4} onClick={() => void confirmPhone()}>{busy === 'phone-confirm' ? <Loader2 className="is-spinning"/> : <UserCheck/>} CONFIRMAR CÓDIGO</button><button className="is-secondary" disabled={Boolean(busy)} onClick={() => void startPhone()}>REENVIAR SMS</button></> : <button id="identity-send-phone-button" disabled={Boolean(busy) || phone.replace(/\D/g, '').length < 10} onClick={() => void startPhone()}>{busy === 'phone-start' ? <Loader2 className="is-spinning"/> : <MessageSquareText/>} ENVIAR SMS PELO FIREBASE</button>}</div></div> : <p>Número confirmado pelo Firebase Authentication.</p>}</section>
+      <section className="identity-card"><header><Smartphone/><div><small>TELEFONE</small><h2>{identity?.phone.value || 'Confirme seu celular'}</h2></div>{status(identity?.phone.verified)}</header>{!identity?.phone.verified ? <div className="identity-form"><label>CELULAR COM DDD<input value={phone} onChange={event => setPhone(event.target.value)} inputMode="tel" placeholder="(51) 99999-9999" /></label>{phoneStep === 'code' ? <label>CÓDIGO RECEBIDO<input value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" /></label> : null}<div className="identity-actions">{phoneStep === 'code' ? <><button disabled={Boolean(busy) || code.length < 4} onClick={() => void confirmPhone()}>{busy === 'phone-confirm' ? <Loader2 className="is-spinning"/> : <UserCheck/>} CONFIRMAR CÓDIGO</button><button className="is-secondary" disabled={Boolean(busy)} onClick={() => void startPhone()}>REENVIAR CÓDIGO</button></> : <button id="identity-send-phone-button" disabled={Boolean(busy) || phone.replace(/\D/g, '').length < 10} onClick={() => void startPhone()}>{busy === 'phone-start' ? <Loader2 className="is-spinning"/> : <MessageSquareText/>} CONFIRMAR TELEFONE</button>}</div></div> : <p>Número confirmado.</p>}</section>
 
 
       <div id="invictus-phone-recaptcha" aria-hidden="true" />

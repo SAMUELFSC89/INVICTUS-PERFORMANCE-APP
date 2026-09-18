@@ -138,7 +138,7 @@ describe('Round 6 admin backoffice audit guards', () => {
     expect(prizeWallet).not.toContain('VerifiedPresenceModal');
     expect(prizeWallet).toContain('reauthenticateWithPhoneNumber');
     expect(prizeWallet).toContain("action: 'request-withdrawal'");
-    expect(prizeWallet).toContain('Cada saque exige uma nova confirmação por SMS do Firebase');
+    expect(prizeWallet).toContain('Cada saque exige uma nova confirmação por SMS no telefone verificado');
     expect(coinRedeem).toContain('PIX_REDEMPTION_DISABLED');
 
     expect(challenges).not.toContain('futura Loja Invictus');

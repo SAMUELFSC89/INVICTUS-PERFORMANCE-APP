@@ -94,7 +94,7 @@ describe('carteira de prêmios e saque PIX', () => {
 
     expect(app).toContain("import('./pages/IdentityVerification')");
     expect(app).toContain('<Route path="/profile/identity" element={<IdentityVerification />} />');
-    expect(identityPage).toContain('ENVIAR SMS PELO FIREBASE');
+    expect(identityPage).toContain('CONFIRMAR TELEFONE');
     expect(identityPage).toContain("action: 'send-verification-email'");
     expect(identityPage).not.toContain('CONFIRMAR NA RECEITA FEDERAL');
     expect(identityPage).not.toContain('Fingerprint');

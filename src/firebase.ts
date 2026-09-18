@@ -43,6 +43,19 @@ import firebaseConfig from '../firebase-applet-config.json';
 const isClient = typeof window !== 'undefined';
 
 const getAuthDomain = () => {
+  // #237: no app nativo (iOS/Android via Capacitor) a pagina roda em
+  // capacitor://localhost (ou https://localhost no Android). Antes, esse
+  // caso so funcionava por coincidencia -- porque 'localhost' batia com o
+  // segundo `if` abaixo -- mas qualquer mudanca de esquema/hostname do
+  // WebView cairia direto no fallback fixo 'invictusperformance.app.br',
+  // um authDomain que nao pertence ao app nativo. Isso quebra a troca de
+  // mensagens entre a pagina e o iframe do Firebase Auth (usado tanto pelo
+  // RecaptchaVerifier do telefone quanto pelo login com Google) e pode se
+  // manifestar como 'auth/internal-error'. Checar a plataforma nativa
+  // primeiro remove essa dependencia fragil do hostname.
+  if (isClient && Capacitor.isNativePlatform()) {
+    return firebaseConfig.authDomain || `${firebaseConfig.projectId.trim()}.firebaseapp.com`;
+  }
   if (isClient) {
     const hostname = window.location.hostname;
     if (hostname.includes('invictusperformance.app.br')) {
