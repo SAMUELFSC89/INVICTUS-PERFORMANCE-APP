@@ -221,6 +221,9 @@ describe('private challenges — Invictus Coins + IGA', () => {
     expect(result.body.challenges[0].scoringMode).toBe('IGA');
     expect(result.body.challenges[0].members[0]).toMatchObject({ userId: 'u2', points: 9.25, igaScore: 9.25, workoutsCount: 4 });
     expect(result.body.challenges[0].members[1]).toMatchObject({ userId: 'u1', points: 6.5, igaScore: 6.5, workoutsCount: 3 });
+    const scoreEnds = (computePrivateChallengeIGAForWindow as jest.Mock).mock.calls.map(call => (call[2] as Date).toISOString());
+    expect(scoreEnds.length).toBeGreaterThan(0);
+    expect(scoreEnds.every(end => end === now)).toBe(true);
   });
 
   test('desafio sem stake também usa IGA para definir vencedor', async () => {
@@ -236,6 +239,21 @@ describe('private challenges — Invictus Coins + IGA', () => {
     expect(records.get('private_challenges/ch-free')).toMatchObject({
       status: 'completed', winnerId: 'u2', resultStatus: 'WINNER_CONFIRMED', resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
     });
+  });
+
+
+  test('não calcula IGA de desafio privado de terceiro', async () => {
+    records.set('private_challenges/ch-hidden', {
+      title: 'Privado de terceiro', creatorId: 'u2', creatorName: 'Atleta 2', status: 'active', stakeAmount: 0, potTotal: 0,
+      createdAt: '2026-09-10T00:00:00.000Z', startDate: '2026-09-10T00:00:00.000Z', endDate: '2026-09-25T00:00:00.000Z', extendedOnce: false,
+    });
+    member('ch-hidden', 'u2', 0);
+    (computePrivateChallengeIGAForWindow as jest.Mock).mockClear();
+
+    const result = await request({ action: 'list' });
+    expect(result.status).toBe(200);
+    expect(result.body.challenges).toEqual([]);
+    expect(computePrivateChallengeIGAForWindow).not.toHaveBeenCalled();
   });
 
 });

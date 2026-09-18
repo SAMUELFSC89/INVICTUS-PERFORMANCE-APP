@@ -83,11 +83,18 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
     const challengeId = challengeDoc.id;
     const isCreator = cData.creatorId === userId;
     const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+    const rawMembers = membersSnap.docs.map(mDoc => mDoc.data());
+    const isCurrentUserMember = rawMembers.some(m => m.userId === userId);
+    if (!isCreator && !isCurrentUserMember) continue;
+
     const isLegacyMoneyChallenge = typeof cData.entryFee === 'number' && cData.entryFee > 0;
     const scoreStart = new Date(cData.startDate || cData.createdAt || nowISO);
-    const scoreEnd = new Date(cData.endDate || nowISO);
-    const members = await Promise.all(membersSnap.docs.map(async mDoc => {
-      const m = mDoc.data();
+    const configuredScoreEnd = new Date(cData.endDate || nowISO);
+    const nowMs = Date.parse(nowISO);
+    const scoreEnd = ['forming', 'active'].includes(cData.status) && Number.isFinite(configuredScoreEnd.getTime())
+      ? new Date(Math.min(configuredScoreEnd.getTime(), nowMs))
+      : configuredScoreEnd;
+    const members = await Promise.all(rawMembers.map(async m => {
       let points = Math.max(0, Number(m.points) || 0);
       let workoutsCount = Math.max(0, Number(m.workoutsCount) || 0);
       if (!isLegacyMoneyChallenge && Number.isFinite(scoreStart.getTime()) && Number.isFinite(scoreEnd.getTime())) {
@@ -107,9 +114,6 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
       };
     }));
     members.sort((a, b) => b.points - a.points || String(a.userId).localeCompare(String(b.userId)));
-
-    const isCurrentUserMember = members.some(m => m.userId === userId);
-    if (!isCreator && !isCurrentUserMember) continue;
 
     challengesList.push({
       id: challengeId,
