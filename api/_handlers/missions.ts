@@ -4,6 +4,7 @@ import { MissionEngine } from '../_lib/mission-engine.js';
 import { RewardCoinEngine } from '../_lib/reward-coin-engine.js';
 import { reconcileUserActivityStats } from '../_lib/user-activity-stats.js';
 import { reconcileUserSocialStats } from '../_lib/user-social-stats.js';
+import { recalculateAllUserScores } from '../_lib/igaService.js';
 
 function safeUserId(value: unknown): string | null {
   const id = typeof value === 'string' ? value.trim() : '';
@@ -86,7 +87,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // activity + social achievement after both transactions settle.
       const activityStats = await reconcileUserActivityStats(auth.uid);
       const socialStats = await reconcileUserSocialStats(auth.uid);
-      return res.status(200).json({ success: true, stats: { ...activityStats, ...socialStats } });
+      // O mesmo refresh que reconcilia os contadores pessoais também corrige
+      // scores competitivos antigos/stale. Sem isso, contas sem nenhuma
+      // atividade competitiva válida (inclusive contas administrativas de
+      // teste) podiam continuar exibindo um `users.score` legado no perfil.
+      const competitionScores = await recalculateAllUserScores(auth.uid);
+      return res.status(200).json({
+        success: true,
+        stats: {
+          ...activityStats,
+          ...socialStats,
+          weeklyScore: competitionScores.weekly.igaRanking,
+          monthlyScore: competitionScores.monthly.average,
+          score: competitionScores.season.average,
+        },
+      });
     }
 
     if (req.method === 'POST' && action === 'sync-social-stats') {
