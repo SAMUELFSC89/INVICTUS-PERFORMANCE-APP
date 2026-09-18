@@ -22,9 +22,9 @@ describe('profile visual consistency and IGA reconciliation', () => {
     expect(missions).toContain("import { recalculateAllUserScores } from '../_lib/igaService.js';");
     expect(missions).toContain('const competitionScores = await recalculateAllUserScores(auth.uid);');
     expect(missions).toContain('score: competitionScores.season.average');
-    expect(context).toContain("'weeklyScore' | 'monthlyScore' | 'score'");
-    expect(context).toContain('weeklyScore: Math.max(0, Number(payload.stats.weeklyScore) || 0)');
-    expect(context).toContain('monthlyScore: Math.max(0, Number(payload.stats.monthlyScore) || 0)');
-    expect(context).toContain('score: Math.max(0, Number(payload.stats.score) || 0)');
+    expect(context).toContain("Partial<Pick<UserProfile, 'weeklyScore' | 'monthlyScore' | 'score'>>");
+    expect(context).toContain('Number.isFinite(Number(payload.stats.weeklyScore))');
+    expect(context).toContain('Number.isFinite(Number(payload.stats.monthlyScore))');
+    expect(context).toContain('Number.isFinite(Number(payload.stats.score))');
   });
 });
