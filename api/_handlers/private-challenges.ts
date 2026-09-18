@@ -83,18 +83,30 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
     const challengeId = challengeDoc.id;
     const isCreator = cData.creatorId === userId;
     const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
-    const members = membersSnap.docs.map(mDoc => {
+    const isLegacyMoneyChallenge = typeof cData.entryFee === 'number' && cData.entryFee > 0;
+    const scoreStart = new Date(cData.startDate || cData.createdAt || nowISO);
+    const scoreEnd = new Date(cData.endDate || nowISO);
+    const members = await Promise.all(membersSnap.docs.map(async mDoc => {
       const m = mDoc.data();
+      let points = Math.max(0, Number(m.points) || 0);
+      let workoutsCount = Math.max(0, Number(m.workoutsCount) || 0);
+      if (!isLegacyMoneyChallenge && Number.isFinite(scoreStart.getTime()) && Number.isFinite(scoreEnd.getTime())) {
+        const iga = await computePrivateChallengeIGAForWindow(m.userId, scoreStart, scoreEnd);
+        points = Number(Math.max(0, Number(iga.average) || 0).toFixed(6));
+        workoutsCount = iga.weeks.reduce((sum, week) => sum + Math.max(0, Number(week.frequency) || 0), 0);
+      }
       return {
         userId: m.userId,
         userName: m.userName || 'Atleta',
         userPhoto: m.userPhoto || '',
-        points: m.points || 0,
-        workoutsCount: m.workoutsCount || 0,
+        points,
+        igaScore: isLegacyMoneyChallenge ? null : points,
+        workoutsCount,
         joinedAt: m.joinedAt,
         stakePaid: Math.max(0, Number(m.stakeAmount) || 0),
       };
-    }).sort((a, b) => b.points - a.points);
+    }));
+    members.sort((a, b) => b.points - a.points || String(a.userId).localeCompare(String(b.userId)));
 
     const isCurrentUserMember = members.some(m => m.userId === userId);
     if (!isCreator && !isCurrentUserMember) continue;
@@ -123,7 +135,8 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
       extendedOnce: cData.extendedOnce === true,
       isMember: isCurrentUserMember,
       members,
-      isLegacyMoneyChallenge: typeof cData.entryFee === 'number' && cData.entryFee > 0,
+      isLegacyMoneyChallenge,
+      scoringMode: isLegacyMoneyChallenge ? 'LEGACY' : 'IGA',
       entryFee: cData.entryFee,
       netPrizePool: cData.netPrizePool,
     });
@@ -354,7 +367,13 @@ async function processChallengeExpiration(challengeId: string) {
     return;
   }
 
-  const sortedMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
+  const startDate = new Date(challenge.startDate || challenge.createdAt);
+  const endDate = new Date(challenge.endDate);
+  const scoredMembers = await Promise.all(members.map(async member => {
+    const iga = await computePrivateChallengeIGAForWindow(member.userId, startDate, endDate);
+    return { ...member, points: Number(Math.max(0, Number(iga.average) || 0).toFixed(6)) };
+  }));
+  const sortedMembers = scoredMembers.sort((a, b) => b.points - a.points || String(a.userId).localeCompare(String(b.userId)));
   if (sortedMembers.length === 0) {
     await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
     return;

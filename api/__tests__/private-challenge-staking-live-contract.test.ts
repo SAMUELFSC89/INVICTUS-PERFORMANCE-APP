@@ -203,4 +203,39 @@ describe('private challenges — Invictus Coins + IGA', () => {
     expect(records.get('private_challenges/ch1')).toMatchObject({ status: 'completed', resultStatus: 'SPLIT_ON_PERSISTENT_TIE' });
     expect(wallet('u1').balance + wallet('u2').balance + wallet('u3').balance).toBe(3301);
   });
+
+  test('listagem ativa ordena participantes pelo IGA da janela', async () => {
+    records.set('private_challenges/ch-live', {
+      title: 'Desafio IGA', creatorId: 'u1', creatorName: 'Atleta 1', status: 'active', stakeAmount: 0, potTotal: 0,
+      createdAt: '2026-09-10T00:00:00.000Z', startDate: '2026-09-10T00:00:00.000Z', endDate: '2026-09-25T00:00:00.000Z', extendedOnce: false,
+    });
+    member('ch-live', 'u1', 0);
+    member('ch-live', 'u2', 0);
+    (computePrivateChallengeIGAForWindow as jest.Mock).mockImplementation(async (userId: string) => ({
+      average: userId === 'u2' ? 9.25 : 6.5,
+      weeks: [{ weekStart: '2026-09-14', igaRanking: userId === 'u2' ? 9.25 : 6.5, frequency: userId === 'u2' ? 4 : 3 }],
+    }));
+
+    const result = await request({ action: 'list' });
+    expect(result.status).toBe(200);
+    expect(result.body.challenges[0].scoringMode).toBe('IGA');
+    expect(result.body.challenges[0].members[0]).toMatchObject({ userId: 'u2', points: 9.25, igaScore: 9.25, workoutsCount: 4 });
+    expect(result.body.challenges[0].members[1]).toMatchObject({ userId: 'u1', points: 6.5, igaScore: 6.5, workoutsCount: 3 });
+  });
+
+  test('desafio sem stake também usa IGA para definir vencedor', async () => {
+    records.set('private_challenges/ch-free', {
+      title: 'Desafio livre IGA', creatorId: 'u1', status: 'active', stakeAmount: 0, potTotal: 0,
+      startDate: '2026-09-01T00:00:00.000Z', endDate: '2026-09-10T00:00:00.000Z', extendedOnce: false,
+    });
+    member('ch-free', 'u1', 0);
+    member('ch-free', 'u2', 0);
+    (computePrivateChallengeIGAForWindow as jest.Mock).mockImplementation(async (userId: string) => ({ average: userId === 'u2' ? 8 : 3, weeks: [] }));
+
+    await request({ action: 'list' });
+    expect(records.get('private_challenges/ch-free')).toMatchObject({
+      status: 'completed', winnerId: 'u2', resultStatus: 'WINNER_CONFIRMED', resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
+    });
+  });
+
 });

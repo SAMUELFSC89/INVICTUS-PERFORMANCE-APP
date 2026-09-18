@@ -538,8 +538,8 @@ export function PrivateChallengesTab() {
                                       <span className="font-bold text-[9px] text-on-surface">{member.workoutsCount || 0}</span>
                                     </div>
                                     <div className="font-mono">
-                                      <span className="block font-label text-[6px] invictus-text-muted uppercase leading-none mb-[2px]">PONTUAÇÃO</span>
-                                      <span className="font-black text-[11px] text-primary">{member.points || 0} PTS</span>
+                                      <span className="block font-label text-[6px] invictus-text-muted uppercase leading-none mb-[2px]">IGA</span>
+                                      <span className="font-black text-[11px] text-primary">{Number(member.points || 0).toFixed(2)}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -568,7 +568,7 @@ export function PrivateChallengesTab() {
             <div>
               <h3 className="font-headline italic font-black text-2xl uppercase tracking-tight text-on-surface">CRIAR DESAFIO PRIVADO</h3>
               <p className="text-on-surface-variant font-label text-[9px] uppercase tracking-wider leading-relaxed">
-                Desafie seus parceiros de treino e dispute o topo do ranking com base no rendimento físico real verificado — sem nenhum custo.
+                Desafie seus parceiros de treino e dispute pelo IGA. A aposta em Invictus Coins é opcional: você pode competir sem Coins ou criar um pote para o vencedor.
               </p>
             </div>
 
