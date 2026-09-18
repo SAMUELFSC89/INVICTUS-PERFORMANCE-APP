@@ -1,4 +1,4 @@
-name: Materialize approved Private Challenge Coins UI
+name: Finalize approved Private Challenge Coins UI copy
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  apply-ui:
+  finalize-ui-copy:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -19,20 +19,28 @@ jobs:
           ref: feat/site-admin-powerlift-20260918
           fetch-depth: 0
 
-      - name: Materialize approved client diff
+      - name: Align copy with the materialized Coins contract
         shell: bash
         run: |
-          if grep -q "APOSTAR INVICTUS COINS" src/components/PrivateChallengesTab.tsx; then
-            echo "Approved UI already materialized."
-            exit 0
-          fi
-          git show origin/main:0002-feat-challenges-add-Invictus-Coins-wagering-to-priva.patch > /tmp/private-challenges.patch
-          git apply --3way --include=src/components/PrivateChallengesTab.tsx /tmp/private-challenges.patch
-          git diff --check
           grep -q "APOSTAR INVICTUS COINS" src/components/PrivateChallengesTab.tsx
-          grep -q "stakeAmount" src/components/PrivateChallengesTab.tsx
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/components/PrivateChallengesTab.tsx')
+          text = path.read_text()
+          text = text.replace(
+              "// #325/#124 (pedido do usuario): Desafios Privados deixou de ser uma disputa\n// com dinheiro real (taxa de entrada, pool, premio em R$) e virou um\n// beneficio exclusivo do plano PRO -- sem nenhum valor monetario envolvido.\n// So o TOP 1 leva reconhecimento (destaque/badge). Usuarios Free nao tem\n// acesso ao recurso (nem visualizam desafios de terceiros), so a tela de\n// upsell abaixo.",
+              "// Desafios Privados são um benefício PRO sem dinheiro real. A disputa usa\n// o IGA canônico e pode ter aposta opcional em Invictus Coins, moeda virtual\n// do ecossistema. Usuários Free não acessam desafios nem a lista privada."
+          )
+          text = text.replace(
+              "Desafios Privados são para assinantes do plano PRO: crie ou entre em disputas com seus parceiros de treino usando um código de convite, sem nenhum custo por desafio. Apenas reconhecimento para quem terminar em 1º lugar.",
+              "Desafios Privados são para assinantes PRO: crie ou entre por código, dispute pelo IGA e, se o grupo quiser, defina uma aposta opcional em Invictus Coins. O vencedor leva o pote; empates seguem as regras automáticas do desafio."
+          )
+          path.write_text(text)
+          PY
+          git diff --check
+          git diff --exit-code -- src/components/PrivateChallengesTab.tsx && exit 0 || true
           git add src/components/PrivateChallengesTab.tsx
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "feat: materialize approved private challenge Coins UI"
+          git commit -m "fix: align private challenge PRO copy with Coins rewards"
           git push origin HEAD:feat/site-admin-powerlift-20260918
