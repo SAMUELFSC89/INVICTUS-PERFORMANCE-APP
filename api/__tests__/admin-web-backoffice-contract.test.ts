@@ -52,13 +52,19 @@ describe('web admin backoffice contracts', () => {
     expect(endpoint).toContain("action === 'security-reports'");
     expect(endpoint).toContain("action === 'activity'");
     expect(endpoint).toContain("action === 'reconcile-iga'");
+    expect(endpoint).toContain("type: 'IGA_RECONCILIATION'");
+    expect(endpoint).toContain("db.collection('admin_reviews').add");
+    expect(endpoint).toContain('reviewerId: auth.uid');
+    expect(endpoint).toContain('reasonSource');
     expect(service).toContain('SECURITY_CONFIG');
     expect(service).toContain("formula: '100 × ∛(Fn × Tn × In)'");
     expect(service).toContain("queryByActivity('security_audit_log'");
     expect(service).toContain("queryByActivity('activity_competition_entries'");
     expect(service).toContain("queryByActivity('championship_scores'");
     expect(service).toContain("readDirectDocument('activity_reward_ledger'");
+    expect(service).toContain('calculateAllUserScores');
     expect(service).toContain('recalculateAllUserScores');
+    expect(service).toContain('scoreDrift');
   });
 
   test('championship web administration publishes immutable editions behind active-admin authority', () => {
@@ -91,6 +97,7 @@ describe('web admin backoffice contracts', () => {
     const scoring = source('api/_lib/championship-scoring-service.ts');
     const policy = source('api/_lib/activity-competition-policy.ts');
     const settlement = source('api/_lib/paid-championship-settlement.ts');
+    const orchestrator = source('api/_lib/paid-championship-settlement-orchestrator.ts');
     const reconciliation = source('api/championship-payment-reconcile.ts');
 
     expect(handler).toContain('listRuntimeChampionships');
@@ -100,6 +107,9 @@ describe('web admin backoffice contracts', () => {
     expect(scoring).toContain('matchRuntimeActiveChampionshipsForActivity');
     expect(policy).toContain('matchRuntimeActiveChampionshipsForActivity');
     expect(settlement).toContain('getRuntimeChampionship');
+    expect(orchestrator).toContain('listRuntimeChampionships');
+    expect(orchestrator).not.toContain('for (const configured of CHAMPIONSHIPS)');
+    expect(orchestrator).toContain('RUNTIME_EDITION_MISMATCH');
     expect(reconciliation).toContain('getRuntimeChampionship');
   });
 });
