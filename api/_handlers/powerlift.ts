@@ -3,26 +3,28 @@ import { getStorage } from 'firebase-admin/storage';
 import { cors, db, app, verifyAuth } from '../_lib/common.js';
 import { resolvePowerLiftAuditStatus } from '../_lib/powerlift-audit.js';
 import {
-  mergePowerLiftRankingRows,
-  powerLiftRankingValue,
-  type PowerLiftExercise,
-} from '../../src/core/powerLift/ranking.js';
-import {
-  calculatePowerVolume,
-  countedReps,
   powerLiftDateKey,
   resolvePowerLiftSeason,
+  scoredPowerLiftSets,
+  type PowerLiftExercise,
   type PowerLiftSetInput,
   type PowerLiftSex,
 } from '../../src/core/powerLift/season.js';
+import {
+  applyApprovedPowerLiftRecord,
+  getPowerLiftEliteRanking,
+  getPowerLiftGeneralRanking,
+  getPowerLiftSeasonStatus,
+  publicPowerLiftEntry,
+  setPowerLiftRankingOptIn,
+} from '../_lib/powerlift-season-engine.js';
 
-const EXERCISES = new Set(['supino', 'agachamento', 'terra']);
+const EXERCISES = new Set<PowerLiftExercise>(['supino', 'agachamento', 'terra']);
 const RANKING_EXERCISES: PowerLiftExercise[] = ['supino', 'agachamento', 'terra'];
 const MAX_RANKING_RESULTS = 100;
-const MAX_RANKING_SCAN = 1000;
 const MAX_MY_RECORDS = 100;
 
-type Exercise = 'supino' | 'agachamento' | 'terra';
+type Exercise = PowerLiftExercise;
 type Decision = 'approved' | 'manual_review' | 'rejected';
 
 type StoredValidation = {
@@ -63,7 +65,7 @@ function parseSeries(value: unknown, fallbackWeight: number): PowerLiftSetInput[
     const weight = parseWeight((raw as any).weight);
     const rawReps = Math.floor(Number((raw as any).reps));
     if (weight === null || !Number.isFinite(rawReps) || rawReps < 1 || rawReps > 100) return null;
-    series.push({ weight, reps: countedReps(rawReps) });
+    series.push({ weight, reps: rawReps });
   }
   return series;
 }
@@ -149,9 +151,11 @@ function publicRecord(record: Record<string, any>, includeVideoUrl: boolean) {
     seasonId: record.seasonId || '',
     seasonNumber: Number(record.seasonNumber) || 0,
     seasonScore: Number(record.seasonScore) || 0,
+    competitiveScore: Number(record.competitiveScore) || 0,
     seasonTier: record.seasonTier || 'UNRANKED',
     competitionSex: record.competitionSex || '',
     dateKey: record.dateKey || record.date || '',
+    tierAdvancedTo: record.tierAdvancedTo || null,
     videoStatus: record.videoStatus,
     date: record.date || '',
     createdAt: record.createdAt || '',
@@ -175,11 +179,6 @@ async function handleSubmit(req: any, res: any, userId: string) {
 
   const series = parseSeries(body.series, weight);
   if (!series) return res.status(400).json({ error: 'As séries do Power Lift são inválidas.' });
-  const powerVolume = calculatePowerVolume(series);
-  if (!Number.isFinite(powerVolume) || powerVolume <= 0) {
-    return res.status(400).json({ error: 'O Power Volume calculado é inválido.' });
-  }
-
   const season = resolvePowerLiftSeason(new Date());
   if (body.seasonId && safeText(body.seasonId, 64) !== season.id) {
     return res.status(409).json({ error: 'A temporada mudou. Atualize o Power Lift antes de enviar a marca.' });
@@ -223,6 +222,9 @@ async function handleSubmit(req: any, res: any, userId: string) {
       const profile = profileSnap.data() || {};
       const competitionSex = parseCompetitionSex(profile.sex);
       if (!competitionSex) throw new Error('Sexo biológico competitivo não informado.');
+      const scoredSeries = scoredPowerLiftSets(series, exercise, competitionSex);
+      const powerVolume = Math.round(scoredSeries.reduce((sum, set) => sum + set.volume, 0) * 100) / 100;
+      if (!Number.isFinite(powerVolume) || powerVolume <= 0) throw new Error('Power Volume inválido para esta marca.');
 
       let effectiveDecision: Decision = 'manual_review';
       let confidence = 0;
@@ -264,19 +266,20 @@ async function handleSubmit(req: any, res: any, userId: string) {
       const record = {
         id: recordId,
         userId,
-        userName: safeText(profile.displayName, 128) || 'Atleta',
+        userName: safeText(profile.displayName || profile.name, 128) || 'Atleta',
         userPhoto: safeText(profile.photoURL, 2048),
         gymId: safeText(profile.gymId, 128),
         gymName: safeText(profile.gymName, 128),
         exercise,
         weight,
-        series,
+        series: scoredSeries,
         powerVolume,
         seasonId: season.id,
         seasonNumber: season.number,
         seasonStartsAt: season.startsAt,
         seasonEndsAt: season.endsAt,
         seasonScore: 0,
+        competitiveScore: 0,
         seasonTier: 'UNRANKED',
         competitionSex,
         dateKey,
@@ -318,7 +321,7 @@ async function handleSubmit(req: any, res: any, userId: string) {
         exercise,
         declaredWeight: weight,
         powerVolume,
-        series,
+        series: scoredSeries,
         seasonId: season.id,
         competitionSex,
         declaredSexFromClient: parseCompetitionSex(body.competitionSex),
@@ -330,7 +333,8 @@ async function handleSubmit(req: any, res: any, userId: string) {
         videoUrl,
         storagePath: video.path,
         timestamp: now,
-        aiVersion: 'Invictus Audit Server v2',
+        aiVersion: 'Invictus Audit Server v3',
+        scoringVersion: 'powerlift-season-v1',
         validationId: validationId || null
       });
       if (validationRef) transaction.update(validationRef, { consumedAt: now, recordId, effectiveDecision });
@@ -338,7 +342,16 @@ async function handleSubmit(req: any, res: any, userId: string) {
       return { record, idempotent: false };
     });
 
-    const stored = result.record as Record<string, any>;
+    let stored = result.record as Record<string, any>;
+    if (stored.videoStatus === 'approved' && !stored.progressionAppliedAt) {
+      try {
+        await applyApprovedPowerLiftRecord(stored.id);
+        const refreshed = await recordRef.get();
+        if (refreshed.exists) stored = { id: refreshed.id, ...refreshed.data() };
+      } catch (progressionError) {
+        console.warn('[PowerLift] Marca aprovada aguardando conciliação de progressão:', progressionError);
+      }
+    }
     return res.status(result.idempotent ? 200 : 201).json({
       success: true,
       idempotent: result.idempotent,
@@ -350,55 +363,20 @@ async function handleSubmit(req: any, res: any, userId: string) {
     const message = String(error?.message || '');
     const dailyUsed = /Marca oficial diária já utilizada/i.test(message);
     const profileSex = /Sexo biológico competitivo não informado/i.test(message);
-    const userError = dailyUsed || profileSex || /sessão de auditoria|Perfil do atleta|Conflito de registro|já foi utilizada|expirou|não corresponde/i.test(message);
+    const volumeInvalid = /Power Volume inválido/i.test(message);
+    const userError = dailyUsed || profileSex || volumeInvalid || /sessão de auditoria|Perfil do atleta|Conflito de registro|já foi utilizada|expirou|não corresponde/i.test(message);
     return res.status(userError ? 409 : 500).json({
       error: dailyUsed
         ? 'Você já utilizou a marca oficial de hoje nesta modalidade.'
         : profileSex
           ? 'Complete o campo Sexo Biológico no perfil antes de competir no Power Lift.'
-          : userError
-            ? 'Não foi possível concluir este envio de vídeo. Faça uma nova validação e tente novamente.'
-            : 'Não foi possível registrar o levantamento agora.'
+          : volumeInvalid
+            ? 'Nenhuma série atingiu os critérios mínimos do Power Volume.'
+            : userError
+              ? 'Não foi possível concluir este envio de vídeo. Faça uma nova validação e tente novamente.'
+              : 'Não foi possível registrar o levantamento agora.'
     });
   }
-}
-
-async function approvedExerciseCandidates(exercise: Exercise) {
-  try {
-    const snap = await db.collection('power_records')
-      .where('videoStatus', '==', 'approved')
-      .limit(MAX_RANKING_SCAN)
-      .get();
-    const records = snap.docs
-      .map((item: any) => ({ id: item.id, ...item.data() }))
-      .filter((record: any) => record.exercise === exercise)
-      .sort((a: any, b: any) => powerLiftRankingValue(b) - powerLiftRankingValue(a));
-    return { records, degraded: false };
-  } catch (error: any) {
-    console.warn('[PowerLift] Ranking em modo degradado:', error?.message || error);
-    return { records: [], degraded: true };
-  }
-}
-
-async function approvedOwnRecords(userId: string) {
-  try {
-    const snap = await db.collection('power_records').where('userId', '==', userId).limit(MAX_MY_RECORDS).get();
-    return snap.docs
-      .map((item: any) => ({ id: item.id, ...item.data() }))
-      .filter((record: any) => record.videoStatus === 'approved' && EXERCISES.has(record.exercise));
-  } catch {
-    return [];
-  }
-}
-
-function rankingWindow(records: any[], exercise: Exercise, take: number, userId: string) {
-  const deduped = mergePowerLiftRankingRows(records)
-    .filter((record) => record.exercise === exercise)
-    .sort((a, b) => powerLiftRankingValue(b) - powerLiftRankingValue(a));
-  const top = deduped.slice(0, take);
-  const own = deduped.find((record) => record.userId === userId);
-  if (own && !top.some((record) => record.userId === userId)) top.push(own);
-  return top;
 }
 
 async function handleRanking(req: any, res: any, userId: string) {
@@ -407,35 +385,58 @@ async function handleRanking(req: any, res: any, userId: string) {
   if (exerciseParam && !exercise) return res.status(400).json({ error: 'Modalidade inválida.' });
   const requestedLimit = Math.floor(Number(req.query.limit) || 50);
   const take = Math.min(MAX_RANKING_RESULTS, Math.max(1, requestedLimit));
-  const season = resolvePowerLiftSeason(new Date());
 
   try {
-    const profileSnap = await db.collection('users').doc(userId).get();
-    const competitionSex = parseCompetitionSex(profileSnap.data()?.sex);
-    if (!competitionSex) return res.status(409).json({ error: 'Complete o campo Sexo Biológico no perfil para acessar o ranking.' });
+    if (exercise) {
+      const ranking = await getPowerLiftEliteRanking(userId, exercise, take);
+      return res.status(200).json({
+        success: true,
+        records: ranking.entries.map(publicPowerLiftEntry),
+        rankingMode: 'exercise',
+        season: ranking.season,
+        competitionSex: ranking.competitionSex,
+      });
+    }
 
-    const requestedExercises = exercise ? [exercise] : RANKING_EXERCISES;
-    const [own, ...candidateResults] = await Promise.all([
-      approvedOwnRecords(userId),
-      ...requestedExercises.map((item) => approvedExerciseCandidates(item))
+    const [supino, agachamento, terra, general] = await Promise.all([
+      getPowerLiftEliteRanking(userId, 'supino', take),
+      getPowerLiftEliteRanking(userId, 'agachamento', take),
+      getPowerLiftEliteRanking(userId, 'terra', take),
+      getPowerLiftGeneralRanking(userId, take),
     ]);
-    const records = candidateResults.flatMap((result, index) => {
-      const currentExercise = requestedExercises[index];
-      const eligible = result.records.filter((record: any) => record.seasonId === season.id && record.competitionSex === competitionSex);
-      const ownForExercise = own.filter((record: any) => record.exercise === currentExercise && record.seasonId === season.id && record.competitionSex === competitionSex);
-      return rankingWindow([...eligible, ...ownForExercise], currentExercise, take, userId);
-    });
     return res.status(200).json({
       success: true,
-      records: records.map((record) => publicRecord(record, false)),
-      rankingMode: exercise ? 'exercise' : 'per_exercise',
-      season,
-      competitionSex,
-      degraded: candidateResults.some((result) => result.degraded)
+      records: [...supino.entries, ...agachamento.entries, ...terra.entries].map(publicPowerLiftEntry),
+      generalRanking: general.entries,
+      rankingMode: 'per_exercise',
+      season: supino.season,
+      competitionSex: supino.competitionSex,
     });
   } catch (error: any) {
     console.error('[PowerLift] Falha ao carregar ranking:', error?.message || 'erro desconhecido');
-    return res.status(500).json({ error: 'Não foi possível carregar o ranking agora.' });
+    return res.status(500).json({ error: error?.message || 'Não foi possível carregar o ranking agora.' });
+  }
+}
+
+async function handleStatus(_req: any, res: any, userId: string) {
+  try {
+    const status = await getPowerLiftSeasonStatus(userId);
+    return res.status(200).json({ success: true, ...status });
+  } catch (error: any) {
+    return res.status(409).json({ error: error?.message || 'Não foi possível carregar o estado da temporada.' });
+  }
+}
+
+async function handleOptIn(req: any, res: any, userId: string) {
+  const scope = req.body?.scope === 'general' ? 'general' : req.body?.scope === 'elite' ? 'elite' : null;
+  const exercise = req.body?.exercise ? parseExercise(req.body.exercise) : undefined;
+  const optedIn = req.body?.optedIn === true;
+  if (!scope) return res.status(400).json({ error: 'Escopo de ranking inválido.' });
+  try {
+    const result = await setPowerLiftRankingOptIn({ userId, scope, exercise: exercise || undefined, optedIn });
+    return res.status(200).json({ success: true, ...result });
+  } catch (error: any) {
+    return res.status(409).json({ error: error?.message || 'Não foi possível atualizar sua participação no ranking.' });
   }
 }
 
@@ -532,9 +533,6 @@ async function handleFinalizeAudit(req: any, res: any, userId: string) {
       transaction.update(recordRef, updates);
       transaction.update(validationRef, { consumedAt: now, recordId, effectiveDecision: status });
 
-      // A vaga diária é determinística e pertence ao próprio record. Se a
-      // auditoria reprovar, liberamos a modalidade para uma nova tentativa no
-      // mesmo dia sem fazer leitura depois das escritas da transação.
       if (status === 'rejected' && record.dailySlotId) {
         transaction.delete(db.collection('powerlift_daily_slots').doc(String(record.dailySlotId)));
       }
@@ -556,12 +554,31 @@ async function handleFinalizeAudit(req: any, res: any, userId: string) {
         videoUrl: record.videoUrl || '',
         storagePath: record.storagePath || '',
         timestamp: now,
-        aiVersion: 'Invictus Audit Server v2',
+        aiVersion: 'Invictus Audit Server v3',
+        scoringVersion: 'powerlift-season-v1',
         validationId
       }, { merge: true });
       return { id: recordId, ...record, ...updates };
     });
-    return res.status(200).json({ success: true, decision: result.videoStatus, record: publicRecord(result, true) });
+
+    let stored: Record<string, any> = result;
+    let progression: Record<string, any> | null = null;
+    if (result.videoStatus === 'approved') {
+      try {
+        progression = await applyApprovedPowerLiftRecord(recordId);
+        const refreshed = await recordRef.get();
+        if (refreshed.exists) stored = { id: refreshed.id, ...refreshed.data() };
+      } catch (progressionError) {
+        console.warn('[PowerLift] Aprovação persistida; progressão ficará para reconciliação:', progressionError);
+      }
+    }
+    return res.status(200).json({
+      success: true,
+      decision: stored.videoStatus,
+      record: publicRecord(stored, true),
+      progression,
+      progressionPending: stored.videoStatus === 'approved' && !progression,
+    });
   } catch (error: any) {
     console.warn('[PowerLift] Não foi possível finalizar auditoria assíncrona:', error?.message || error);
     return res.status(409).json({ error: 'O vídeo permanece em análise e poderá ser revisado manualmente.' });
@@ -576,6 +593,8 @@ export default async function handler(req: any, res: any) {
   const action = safeText(req.query.action || req.body?.action || (req.method === 'GET' ? 'ranking' : ''), 32);
   if (req.method === 'POST' && action === 'submit') return handleSubmit(req, res, auth.uid);
   if (req.method === 'POST' && action === 'finalize-audit') return handleFinalizeAudit(req, res, auth.uid);
+  if (req.method === 'POST' && action === 'opt-in') return handleOptIn(req, res, auth.uid);
+  if (req.method === 'GET' && action === 'status') return handleStatus(req, res, auth.uid);
   if (req.method === 'GET' && action === 'ranking') return handleRanking(req, res, auth.uid);
   if (req.method === 'GET' && action === 'me') return handleMyRecords(req, res, auth.uid);
   if (req.method === 'GET' && action === 'video') return handleVideo(req, res, auth.uid);
