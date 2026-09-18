@@ -176,16 +176,11 @@ export interface RecalculatedScores {
 }
 
 /**
- * Recalcula weeklyScore, monthlyScore e score (temporada) de um usuario numa
- * unica passada, com a MESMA formula de base, e grava tudo junto (evita 3
- * writes separados / race conditions entre eles).
- *
- * `extraSession` (opcional) e usado quando o recalculo e disparado no mesmo
- * request que acabou de validar uma atividade nova: evita ter que esperar o
- * Firestore confirmar o write anterior antes de conseguir contar essa sessao
- * na semana atual.
+ * Calcula os três placares canônicos SEM persistir nada. Esta é a função de
+ * auditoria/dry-run: permite comparar o que deveria estar salvo com o que está
+ * efetivamente persistido antes de qualquer reconciliação administrativa.
  */
-export async function recalculateAllUserScores(
+export async function calculateAllUserScores(
   userId: string,
   extraSession?: IGASession
 ): Promise<RecalculatedScores> {
@@ -267,14 +262,34 @@ export async function recalculateAllUserScores(
       }
     : { average: 0, weeks: [], seasonId: 'unknown' };
 
+  return { weekly, monthly, season };
+}
+
+/**
+ * Recalcula weeklyScore, monthlyScore e score (temporada) de um usuario numa
+ * unica passada, com a MESMA formula de base, e grava tudo junto (evita 3
+ * writes separados / race conditions entre eles).
+ *
+ * `extraSession` (opcional) e mantido por compatibilidade de assinatura. A
+ * atividade recém-gravada precisa existir no Firestore com contexto/época
+ * competitivos antes de poder entrar no ranking.
+ */
+export async function recalculateAllUserScores(
+  userId: string,
+  extraSession?: IGASession
+): Promise<RecalculatedScores> {
+  const result = await calculateAllUserScores(userId, extraSession);
+  if (!db || !userId) return result;
+
+  const userRef = db.collection('users').doc(userId);
   try {
     await userRef.set({
-      weeklyScore: weekly.igaRanking,
-      monthlyScore: monthly.average,
-      score: season.average,
-      igaAudit: weekly,
-      igaAuditMonthly: { average: monthly.average, weeks: monthly.weeks },
-      igaAuditSeason: { average: season.average, weeks: season.weeks, seasonId: season.seasonId },
+      weeklyScore: result.weekly.igaRanking,
+      monthlyScore: result.monthly.average,
+      score: result.season.average,
+      igaAudit: result.weekly,
+      igaAuditMonthly: { average: result.monthly.average, weeks: result.monthly.weeks },
+      igaAuditSeason: { average: result.season.average, weeks: result.season.weeks, seasonId: result.season.seasonId },
       updatedAt: new Date().toISOString()
     }, { merge: true });
   } catch (saveErr) {
@@ -282,7 +297,7 @@ export async function recalculateAllUserScores(
     throw saveErr;
   }
 
-  return { weekly, monthly, season };
+  return result;
 }
 
 /**
