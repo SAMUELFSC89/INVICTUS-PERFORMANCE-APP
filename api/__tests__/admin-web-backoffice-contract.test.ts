@@ -14,12 +14,17 @@ describe('web admin backoffice contracts', () => {
     expect(endpoint).toContain('getAdminFinancialOverview');
   });
 
-  test('revenue series only starts from approved payment orders and paid timestamps', () => {
+  test('revenue series uses canonical paid sources and paid timestamps', () => {
     const finance = source('api/_lib/admin-financial-overview.ts');
     expect(finance).toContain("db.collection('payment_orders')");
     expect(finance).toContain(".where('status', '==', 'approved')");
     expect(finance).toContain(".where('paidAt', '>=', start.toISOString())");
+    expect(finance).toContain("db.collection('championship_registrations')");
+    expect(finance).toContain(".where('paymentStatus', '==', 'PAID')");
+    expect(finance).toContain(".where('status', '==', 'paga')");
+    expect(finance).toContain('data.pagaEm');
     expect(finance).toContain('grossRevenue');
+    expect(finance).toContain('championships:');
     expect(finance).toContain('monthly:');
     expect(finance).toContain('daily:');
     expect(finance).toContain('byCategory:');
@@ -33,8 +38,8 @@ describe('web admin backoffice contracts', () => {
     expect(handler).toContain("case 'get-powerlift-review-video'");
     expect(handler).toContain("case 'review-powerlift-record'");
     expect(helper).toContain("record.videoStatus !== 'manual_review'");
-    expect(helper).toContain("getSignedUrl");
-    expect(helper).toContain("power_audit_logs");
-    expect(helper).toContain("admin_reviews");
+    expect(helper).toContain('getSignedUrl');
+    expect(helper).toContain('power_audit_logs');
+    expect(helper).toContain('admin_reviews');
   });
 });
