@@ -1,4 +1,5 @@
 import React from 'react';
+import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, ArrowRight, Calendar, Check, Dumbbell, Fingerprint, Lock, Mail, Phone, Share2, ShieldCheck, Sparkles, User } from 'lucide-react';
 import { InvictusLogo } from './InvictusLogo';
 import './AuthExperience.css';
@@ -53,6 +54,11 @@ function Progress({ step }: { step: number }) {
 
 export function AuthExperience(props: Props) {
   const { fields } = props;
+  // Apple Guideline 4.8: enquanto Sign in with Apple não estiver habilitado e
+  // configurado no App ID/Firebase, o build nativo iOS oferece somente a
+  // autenticação própria por e-mail/senha. Google continua disponível no Web e
+  // no Android. Isso evita expor no iOS um login social sem opção equivalente.
+  const showGoogleLogin = !(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios');
   const stepValid = props.step === 1
     ? Boolean(fields.fullName.trim() && fields.email.trim() && fields.password.length >= 6)
     : props.step === 2
@@ -84,8 +90,7 @@ export function AuthExperience(props: Props) {
           <button type="button" className="auth-forgot" onClick={() => props.onForgotPassword(true)}>Esqueci minha senha</button>
           {props.error && <div className="auth-error">{props.error}<button type="button" onClick={props.onClearCache}>Limpar dados locais</button></div>}
           <button className="auth-primary" disabled={props.loading || props.socialLoading} type="submit">{props.loading ? 'AUTENTICANDO...' : <>ENTRAR <ArrowRight /></>}</button>
-          <div className="auth-divider"><span>OU</span></div>
-          <button className="auth-google" disabled={props.loading || props.socialLoading} type="button" onClick={props.onGoogle}><b>G</b>{props.socialLoading ? 'CONECTANDO...' : 'CONTINUAR COM GOOGLE'}</button>
+          {showGoogleLogin ? <><div className="auth-divider"><span>OU</span></div><button className="auth-google" disabled={props.loading || props.socialLoading} type="button" onClick={props.onGoogle}><b>G</b>{props.socialLoading ? 'CONECTANDO...' : 'CONTINUAR COM GOOGLE'}</button></> : null}
           <p className="auth-switch">Ainda não tem conta? <button type="button" onClick={() => props.onRegistering(true)}>Criar conta grátis</button></p>
         </form>}
       </div> : <div className="auth-card auth-registration">
