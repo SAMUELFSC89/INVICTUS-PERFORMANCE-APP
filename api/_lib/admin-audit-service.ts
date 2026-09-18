@@ -44,6 +44,16 @@ async function queryByActivity(collectionName: string, activityId: string, limit
   }
 }
 
+async function readDirectDocument(collectionName: string, documentId: string) {
+  try {
+    const snapshot = await db.collection(collectionName).doc(documentId).get();
+    return snapshot.exists ? serializeDocument(snapshot) : null;
+  } catch (error: any) {
+    console.warn(`[Admin audit] Falha ao ler ${collectionName}/${documentId}:`, error?.message || error);
+    return null;
+  }
+}
+
 export function getAuditEngineCatalog() {
   return {
     generatedAt: new Date().toISOString(),
@@ -65,6 +75,7 @@ export function getAuditEngineCatalog() {
         explainability: { version: '1.0.0', purpose: 'Explica os principais fatores que produziram a decisão.' },
       },
       thresholds: SECURITY_CONFIG,
+      authoritativeCollections: ['security_reports', 'security_audit_log', 'user_trust_profiles', 'admin_reviews'],
     },
     iga: {
       formulaVersion: 'IGA-2.0',
@@ -75,10 +86,45 @@ export function getAuditEngineCatalog() {
         intensity: 'Usa frequência cardíaca medida. Sem FC medida confiável, intensidade = 0.',
         calories: 'Somente auditoria/telemetria; não alteram o IGA.',
         scoringGate: 'Somente atividade competitiva homologada e elegível entra no ranking.',
+        windows: 'Semana usa o IGA semanal; mês e temporada são médias das semanas para não distorcer frequência.',
       },
       frequencyConfig: DEFAULT_FREQUENCY_CONFIG,
       timeConfig: DEFAULT_TIME_CONFIG,
       intensityConfig: DEFAULT_INTENSITY_CONFIG,
+      persistedFields: ['weeklyScore', 'monthlyScore', 'score', 'igaAudit', 'igaAuditMonthly', 'igaAuditSeason'],
+    },
+    scoring: {
+      gymRanking: {
+        engine: 'IGA-2.0',
+        source: 'workouts + trusted competition evidence',
+        gate: 'competitionReviewStatus=approved, isScoringEligible=true e época atual de adesão à academia.',
+      },
+      paidChampionships: {
+        source: 'championship_scores + activity_competition_entries',
+        activityGate: 'Somente atividades homologadas e aprovadas pelo contexto competitivo da edição.',
+        aggregation: 'Soma os scores validados da edição por atleta.',
+        tieBreak: ['maior score total', 'mais atividades válidas', 'mais minutos válidos', 'atingiu o score final primeiro'],
+        finalization: 'Empate técnico material em posição premiada bloqueia settlement para revisão; não há vencedor arbitrário.',
+      },
+      powerLift: {
+        source: 'power_records',
+        gate: 'Somente vídeo homologado com videoStatus=approved.',
+        ranking: 'Melhor carga aprovada por atleta e exercício; registros pendentes ou rejeitados não entram.',
+      },
+      activityRewards: {
+        source: 'activity_reward_ledger',
+        rule: 'Crédito idempotente por activityId; a atividade precisa passar pela elegibilidade econômica canônica.',
+      },
+    },
+    evidence: {
+      canonicalActivity: 'workouts',
+      competitionProjection: 'activity_competition_entries',
+      championshipProjection: 'championship_scores',
+      securityDecision: 'security_reports',
+      immutableSecurityLog: 'security_audit_log',
+      humanReview: 'admin_reviews',
+      igaSnapshot: 'users.igaAudit / igaAuditMonthly / igaAuditSeason',
+      rewardLedger: 'activity_reward_ledger',
     },
   };
 }
@@ -135,13 +181,22 @@ export async function getActivityAudit(activityId: string) {
   const securityReport = reportSnap.exists ? serializeDocument(reportSnap) : null;
   const userId = String(workout?.userId || securityReport?.userId || '').trim();
 
-  const [userSnap, trustSnap, securityAudit, competitionEntries, championshipScores, adminReviews] = await Promise.all([
+  const [
+    userSnap,
+    trustSnap,
+    securityAudit,
+    competitionEntries,
+    championshipScores,
+    adminReviews,
+    activityRewardLedger,
+  ] = await Promise.all([
     userId ? db.collection('users').doc(userId).get() : Promise.resolve(null as any),
     userId ? db.collection('user_trust_profiles').doc(userId).get() : Promise.resolve(null as any),
     queryByActivity('security_audit_log', normalized),
     queryByActivity('activity_competition_entries', normalized),
     queryByActivity('championship_scores', normalized),
     queryByActivity('admin_reviews', normalized),
+    readDirectDocument('activity_reward_ledger', normalized),
   ]);
 
   const user = userSnap?.exists ? serializeDocument(userSnap) : null;
@@ -161,6 +216,9 @@ export async function getActivityAudit(activityId: string) {
     competition: {
       entries: competitionEntries,
       championshipScores,
+    },
+    economy: {
+      activityRewardLedger,
     },
     adminReviews,
     iga: user ? {
