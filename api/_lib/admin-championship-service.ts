@@ -1,10 +1,23 @@
 import { db } from './common.js';
-import { listChampionships } from './championship-catalog.js';
-import { paidChampionshipSettlementDocumentId } from './paid-championship-edition.js';
+import {
+  championshipDurationDays,
+  championshipEditionId,
+  digestChampionshipPublishedConfig,
+  getRuntimeChampionship,
+  listRuntimeChampionships,
+  statusForPeriod,
+} from './championship-catalog.js';
+import {
+  getPaidChampionshipEditionGate,
+  lockPaidChampionshipEdition,
+  paidChampionshipSettlementDocumentId,
+} from './paid-championship-edition.js';
+import { PAID_CHAMPIONSHIP_OFFERS, type PaidChampionshipOfferId } from '../../shared/paidChampionshipPolicy.js';
+import type { Championship } from '../../src/types/championships.js';
 import { logEvent } from './observability.js';
 import { publishAdminRealtimeSignalSafe } from './admin-realtime.js';
 
-const SUPPORTED_IDS = new Set(['invictus_strength_v1', 'invictus_cardio_v1']);
+const SUPPORTED_IDS = new Set<PaidChampionshipOfferId>(['invictus_strength_v1', 'invictus_cardio_v1']);
 
 function safeText(value: unknown, max = 180): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -39,7 +52,7 @@ function normalizePrizes(value: unknown) {
 }
 
 export function normalizeChampionshipDraft(input: Record<string, any>) {
-  const championshipId = safeText(input.championshipId, 80);
+  const championshipId = safeText(input.championshipId, 80) as PaidChampionshipOfferId;
   if (!SUPPORTED_IDS.has(championshipId)) throw new Error('Campeonato não suportado pelo motor oficial.');
   const modality = championshipId === 'invictus_cardio_v1' ? 'cardio' : 'musculacao';
   const startAt = iso(input.startAt, 'Início do campeonato');
@@ -60,6 +73,10 @@ export function normalizeChampionshipDraft(input: Record<string, any>) {
   if (modality === 'cardio' && allowedCardioTypes.length === 0) throw new Error('Publique pelo menos uma modalidade de cardio elegível.');
 
   const prizes = normalizePrizes(input.prizes);
+  const minDurationMinutes = Math.max(1, Math.min(360, Math.floor(Number(input.antiFraudProfile?.minDurationMinutes) || (modality === 'cardio' ? 20 : 30))));
+  const maxDurationMinutes = Math.max(1, Math.min(720, Math.floor(Number(input.antiFraudProfile?.maxDurationMinutes) || 90)));
+  if (maxDurationMinutes < minDurationMinutes) throw new Error('A duração máxima não pode ser menor que a duração mínima.');
+
   return {
     championshipId,
     modality,
@@ -76,8 +93,8 @@ export function normalizeChampionshipDraft(input: Record<string, any>) {
     prizePool: Math.round(prizes.reduce((sum, prize) => sum + prize.amount, 0) * 100) / 100,
     allowedCardioTypes,
     antiFraudProfile: {
-      minDurationMinutes: Math.max(1, Math.min(360, Math.floor(Number(input.antiFraudProfile?.minDurationMinutes) || (modality === 'cardio' ? 20 : 30)))),
-      maxDurationMinutes: Math.max(1, Math.min(720, Math.floor(Number(input.antiFraudProfile?.maxDurationMinutes) || 90))),
+      minDurationMinutes,
+      maxDurationMinutes,
       requireGeofence: modality === 'musculacao' ? input.antiFraudProfile?.requireGeofence !== false : false,
       requireContinuousGPS: modality === 'cardio' ? input.antiFraudProfile?.requireContinuousGPS !== false : false,
       maxRiskScore: Math.max(0, Math.min(100, Number(input.antiFraudProfile?.maxRiskScore) || 35)),
@@ -86,7 +103,59 @@ export function normalizeChampionshipDraft(input: Record<string, any>) {
   };
 }
 
-async function stateForChampionship(runtime: any) {
+function buildPublishedChampionship(draftInput: Record<string, any>): Championship {
+  const draft = normalizeChampionshipDraft(draftInput);
+  const offer = PAID_CHAMPIONSHIP_OFFERS[draft.championshipId];
+  const antiFraudProfile = {
+    ...draft.antiFraudProfile,
+    ...(draft.modality === 'cardio' ? { allowedCardioTypes: [...draft.allowedCardioTypes] } : {}),
+  };
+  const publishedConfigDigest = digestChampionshipPublishedConfig({
+    id: draft.championshipId,
+    edition: draft.edition,
+    startAt: draft.startAt,
+    endAt: draft.endAt,
+    settlementAt: draft.settlementAt,
+    registrationOpensAt: draft.registrationOpensAt,
+    registrationClosesAt: draft.registrationClosesAt,
+    registrationPrice: draft.registrationPrice,
+    prizes: draft.prizes,
+    antiFraudProfile,
+    registrationEnabled: draft.registrationEnabled,
+  });
+  const editionId = championshipEditionId(draft.championshipId, publishedConfigDigest);
+  return {
+    id: draft.championshipId,
+    editionId,
+    type: draft.modality === 'cardio' ? 'run_elite_corrida' : 'arena_musculacao',
+    title: draft.title,
+    edition: draft.edition,
+    subtitle: draft.modality === 'cardio' ? 'Desempenho real no cardio' : 'Desempenho real na musculação',
+    description: draft.description || offer.performanceDescription,
+    categoryLabel: draft.modality === 'cardio' ? 'CARDIO' : 'MUSCULAÇÃO',
+    accentColor: draft.modality === 'cardio' ? 'teal' : 'gold',
+    durationDays: championshipDurationDays(draft.startAt, draft.endAt),
+    startAt: draft.startAt,
+    endAt: draft.endAt,
+    settlementAt: draft.settlementAt,
+    publishedConfigDigest,
+    registrationPrice: draft.registrationPrice,
+    registrationOpensAt: draft.registrationOpensAt,
+    registrationClosesAt: draft.registrationClosesAt,
+    registrationEnabled: draft.registrationEnabled,
+    participantCount: 0,
+    grossRevenue: 0,
+    netEligibleRevenue: 0,
+    prizePool: draft.prizePool,
+    prizeDistribution: draft.prizes,
+    status: statusForPeriod(draft.startAt, draft.endAt),
+    regulationVersion: offer.regulationVersion,
+    regulationHash: `${offer.regulationHash}-${publishedConfigDigest.slice(0, 16)}`,
+    antiFraudProfile,
+  };
+}
+
+async function stateForChampionship(runtime: Championship) {
   const [draftSnap, lockSnap] = await Promise.all([
     db.collection('championship_admin_drafts').doc(runtime.id).get(),
     db.collection('championship_edition_locks').doc(runtime.id).get(),
@@ -115,15 +184,15 @@ async function stateForChampionship(runtime: any) {
 }
 
 export async function getChampionshipAdminState() {
-  const championships = await Promise.all(listChampionships().map(stateForChampionship));
+  const championships = await Promise.all((await listRuntimeChampionships()).map(stateForChampionship));
   return {
     championships,
     migration: {
-      phase: 'DRAFT_CONTROL',
-      liveRuntimeSource: 'environment + immutable edition locks',
-      targetRuntimeSource: 'published championship configuration + immutable edition snapshots',
-      publishEnabled: false,
-      reason: 'Publicação permanece bloqueada até todos os consumidores de pagamento, scoring e settlement usarem a mesma configuração publicada. Isso evita split-brain financeiro/competitivo.',
+      phase: 'ATOMIC_RUNTIME_READY',
+      liveRuntimeSource: 'published immutable championship snapshot with deployment fallback',
+      targetRuntimeSource: 'published immutable championship snapshot',
+      publishEnabled: true,
+      reason: 'Inscrição, aceite, pagamento, conciliação, política competitiva, scoring, ranking e settlement resolvem a edição pelo mesmo runtime publicado. O lock imutável impede substituir uma edição antes da homologação.',
     },
     generatedAt: new Date().toISOString(),
   };
@@ -153,8 +222,77 @@ export async function saveChampionshipDraft(input: Record<string, any>, reviewer
   return { id: ref.id, ...snap.data() };
 }
 
+export async function publishChampionshipDraft(championshipId: string, reviewerId: string) {
+  const normalizedId = safeText(championshipId, 80) as PaidChampionshipOfferId;
+  if (!SUPPORTED_IDS.has(normalizedId)) throw new Error('Campeonato inválido.');
+  const draftRef = db.collection('championship_admin_drafts').doc(normalizedId);
+  const draftSnap = await draftRef.get();
+  if (!draftSnap.exists) throw new Error('Nenhum rascunho foi salvo para esta modalidade.');
+  const rawDraft = draftSnap.data() || {};
+  if (String(rawDraft.status || '') !== 'DRAFT') throw new Error('O rascunho precisa estar em estado DRAFT para ser publicado.');
+
+  const championship = buildPublishedChampionship({ ...rawDraft, championshipId: normalizedId });
+  const current = await getRuntimeChampionship(normalizedId);
+  const gate = await getPaidChampionshipEditionGate(championship);
+  if (!gate.ok) throw new Error(gate.reason || 'A edição anterior precisa ser conciliada antes da publicação.');
+
+  // O lock transacional é a autoridade: não permite trocar a edição ativa se a
+  // anterior ainda não foi FINALIZED e cria o snapshot imutável da nova edição.
+  await lockPaidChampionshipEdition(championship);
+
+  const now = new Date().toISOString();
+  const publicationRef = db.collection('championship_admin_publications').doc(championship.editionId);
+  const publicationSnap = await publicationRef.get();
+  if (!publicationSnap.exists) {
+    await publicationRef.create({
+      championshipId: championship.id,
+      editionId: championship.editionId,
+      configDigest: championship.publishedConfigDigest,
+      championshipSnapshot: JSON.parse(JSON.stringify(championship)),
+      previousEditionId: current?.editionId || null,
+      publishedAt: now,
+      publishedBy: reviewerId,
+    });
+  } else {
+    const publication = publicationSnap.data() || {};
+    if (publication.championshipId !== championship.id || publication.configDigest !== championship.publishedConfigDigest) {
+      throw new Error('Conflito de auditoria: a identidade da publicação já existe com outra configuração.');
+    }
+  }
+
+  await draftRef.set({
+    status: 'PUBLISHED',
+    publishedAt: now,
+    publishedBy: reviewerId,
+    publishedEditionId: championship.editionId,
+    publishedConfigDigest: championship.publishedConfigDigest,
+    updatedAt: now,
+  }, { merge: true });
+
+  await logEvent({
+    severity: 'HIGH_RISK',
+    category: 'admin_reviews',
+    message: `Edição ${championship.editionId} publicada pelo backoffice administrativo.`,
+    userId: reviewerId,
+    route: '/api/admin-championships?action=publish',
+    details: {
+      championshipId: championship.id,
+      editionId: championship.editionId,
+      previousEditionId: current?.editionId || null,
+      configDigest: championship.publishedConfigDigest,
+      registrationEnabled: championship.registrationEnabled === true,
+      startAt: championship.startAt,
+      endAt: championship.endAt,
+      registrationPrice: championship.registrationPrice,
+      prizePool: championship.prizePool,
+    },
+  });
+  publishAdminRealtimeSignalSafe({ type: 'ADMIN_CONFIG_CHANGED', source: 'admin-championships:publish' });
+  return { success: true, championship };
+}
+
 export async function deleteChampionshipDraft(championshipId: string, reviewerId: string) {
-  const normalized = safeText(championshipId, 80);
+  const normalized = safeText(championshipId, 80) as PaidChampionshipOfferId;
   if (!SUPPORTED_IDS.has(normalized)) throw new Error('Campeonato inválido.');
   await db.collection('championship_admin_drafts').doc(normalized).delete();
   await logEvent({
