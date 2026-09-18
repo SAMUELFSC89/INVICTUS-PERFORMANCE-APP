@@ -20,7 +20,6 @@ import {
 } from '../_lib/powerlift-season-engine.js';
 
 const EXERCISES = new Set<PowerLiftExercise>(['supino', 'agachamento', 'terra']);
-const RANKING_EXERCISES: PowerLiftExercise[] = ['supino', 'agachamento', 'terra'];
 const MAX_RANKING_RESULTS = 100;
 const MAX_MY_RECORDS = 100;
 
