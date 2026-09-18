@@ -17,11 +17,6 @@ function iso(value: unknown, field: string): string {
   return date.toISOString();
 }
 
-function optionalIso(value: unknown, field: string): string {
-  if (value === undefined || value === null || value === '') return '';
-  return iso(value, field);
-}
-
 function amount(value: unknown, field: string, min = 0, max = 1_000_000): number {
   const parsed = Math.round(Number(value) * 100) / 100;
   if (!Number.isFinite(parsed) || parsed < min || parsed > max) throw new Error(`${field} possui valor inválido.`);
