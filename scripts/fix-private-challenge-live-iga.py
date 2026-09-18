@@ -1,0 +1,135 @@
+from pathlib import Path
+
+handler = Path('api/_handlers/private-challenges.ts')
+text = handler.read_text()
+
+old_list = """    const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+    const members = membersSnap.docs.map(mDoc => {
+      const m = mDoc.data();
+      return {
+        userId: m.userId,
+        userName: m.userName || 'Atleta',
+        userPhoto: m.userPhoto || '',
+        points: m.points || 0,
+        workoutsCount: m.workoutsCount || 0,
+        joinedAt: m.joinedAt,
+        stakePaid: Math.max(0, Number(m.stakeAmount) || 0),
+      };
+    }).sort((a, b) => b.points - a.points);
+"""
+new_list = """    const membersSnap = await db.collection('private_challenge_members').where('challengeId', '==', challengeId).get();
+    const isLegacyMoneyChallenge = typeof cData.entryFee === 'number' && cData.entryFee > 0;
+    const scoreStart = new Date(cData.startDate || cData.createdAt || nowISO);
+    const scoreEnd = new Date(cData.endDate || nowISO);
+    const members = await Promise.all(membersSnap.docs.map(async mDoc => {
+      const m = mDoc.data();
+      let points = Math.max(0, Number(m.points) || 0);
+      let workoutsCount = Math.max(0, Number(m.workoutsCount) || 0);
+      if (!isLegacyMoneyChallenge && Number.isFinite(scoreStart.getTime()) && Number.isFinite(scoreEnd.getTime())) {
+        const iga = await computePrivateChallengeIGAForWindow(m.userId, scoreStart, scoreEnd);
+        points = Number(Math.max(0, Number(iga.average) || 0).toFixed(6));
+        workoutsCount = iga.weeks.reduce((sum, week) => sum + Math.max(0, Number(week.frequency) || 0), 0);
+      }
+      return {
+        userId: m.userId,
+        userName: m.userName || 'Atleta',
+        userPhoto: m.userPhoto || '',
+        points,
+        igaScore: isLegacyMoneyChallenge ? null : points,
+        workoutsCount,
+        joinedAt: m.joinedAt,
+        stakePaid: Math.max(0, Number(m.stakeAmount) || 0),
+      };
+    }));
+    members.sort((a, b) => b.points - a.points || String(a.userId).localeCompare(String(b.userId)));
+"""
+if old_list not in text:
+    raise SystemExit('live ranking block not found')
+text = text.replace(old_list, new_list, 1)
+
+old_response = "      isLegacyMoneyChallenge: typeof cData.entryFee === 'number' && cData.entryFee > 0,\n      entryFee: cData.entryFee,"
+new_response = "      isLegacyMoneyChallenge,\n      scoringMode: isLegacyMoneyChallenge ? 'LEGACY' : 'IGA',\n      entryFee: cData.entryFee,"
+if old_response not in text:
+    raise SystemExit('challenge response legacy block not found')
+text = text.replace(old_response, new_response, 1)
+
+old_free = """  const sortedMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
+  if (sortedMembers.length === 0) {
+    await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
+    return;
+  }
+  const topScore = Math.max(0, Number(sortedMembers[0].points) || 0);
+  const topMembers = sortedMembers.filter(member => Math.max(0, Number(member.points) || 0) === topScore);
+"""
+new_free = """  const startDate = new Date(challenge.startDate || challenge.createdAt);
+  const endDate = new Date(challenge.endDate);
+  const scoredMembers = await Promise.all(members.map(async member => {
+    const iga = await computePrivateChallengeIGAForWindow(member.userId, startDate, endDate);
+    return { ...member, points: Number(Math.max(0, Number(iga.average) || 0).toFixed(6)) };
+  }));
+  const sortedMembers = scoredMembers.sort((a, b) => b.points - a.points || String(a.userId).localeCompare(String(b.userId)));
+  if (sortedMembers.length === 0) {
+    await challengeRef.set({ status: 'cancelled', updatedAt: now.toISOString() }, { merge: true });
+    return;
+  }
+  const topScore = Math.max(0, Number(sortedMembers[0].points) || 0);
+  const topMembers = sortedMembers.filter(member => Math.max(0, Number(member.points) || 0) === topScore);
+"""
+if old_free not in text:
+    raise SystemExit('free settlement block not found')
+text = text.replace(old_free, new_free, 1)
+handler.write_text(text)
+
+ui = Path('src/components/PrivateChallengesTab.tsx')
+ui_text = ui.read_text()
+ui_text = ui_text.replace(
+    'Desafie seus parceiros de treino e dispute o topo do ranking com base no rendimento físico real verificado — sem nenhum custo.',
+    'Desafie seus parceiros de treino e dispute pelo IGA. A aposta em Invictus Coins é opcional: você pode competir sem Coins ou criar um pote para o vencedor.'
+)
+ui_text = ui_text.replace('>PONTUAÇÃO</span>', '>IGA</span>')
+ui_text = ui_text.replace('{member.points || 0} PTS', '{Number(member.points || 0).toFixed(2)}')
+ui.write_text(ui_text)
+
+test = Path('api/__tests__/private-challenge-staking-live-contract.test.ts')
+test_text = test.read_text()
+insert = r'''
+
+  test('listagem ativa ordena participantes pelo IGA da janela', async () => {
+    records.set('private_challenges/ch-live', {
+      title: 'Desafio IGA', creatorId: 'u1', creatorName: 'Atleta 1', status: 'active', stakeAmount: 0, potTotal: 0,
+      createdAt: '2026-09-10T00:00:00.000Z', startDate: '2026-09-10T00:00:00.000Z', endDate: '2026-09-25T00:00:00.000Z', extendedOnce: false,
+    });
+    member('ch-live', 'u1', 0);
+    member('ch-live', 'u2', 0);
+    (computePrivateChallengeIGAForWindow as jest.Mock).mockImplementation(async (userId: string) => ({
+      average: userId === 'u2' ? 9.25 : 6.5,
+      weeks: [{ weekStart: '2026-09-14', igaRanking: userId === 'u2' ? 9.25 : 6.5, frequency: userId === 'u2' ? 4 : 3 }],
+    }));
+
+    const result = await request({ action: 'list' });
+    expect(result.status).toBe(200);
+    expect(result.body.challenges[0].scoringMode).toBe('IGA');
+    expect(result.body.challenges[0].members[0]).toMatchObject({ userId: 'u2', points: 9.25, igaScore: 9.25, workoutsCount: 4 });
+    expect(result.body.challenges[0].members[1]).toMatchObject({ userId: 'u1', points: 6.5, igaScore: 6.5, workoutsCount: 3 });
+  });
+
+  test('desafio sem stake também usa IGA para definir vencedor', async () => {
+    records.set('private_challenges/ch-free', {
+      title: 'Desafio livre IGA', creatorId: 'u1', status: 'active', stakeAmount: 0, potTotal: 0,
+      startDate: '2026-09-01T00:00:00.000Z', endDate: '2026-09-10T00:00:00.000Z', extendedOnce: false,
+    });
+    member('ch-free', 'u1', 0);
+    member('ch-free', 'u2', 0);
+    (computePrivateChallengeIGAForWindow as jest.Mock).mockImplementation(async (userId: string) => ({ average: userId === 'u2' ? 8 : 3, weeks: [] }));
+
+    await request({ action: 'list' });
+    expect(records.get('private_challenges/ch-free')).toMatchObject({
+      status: 'completed', winnerId: 'u2', resultStatus: 'WINNER_CONFIRMED', resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
+    });
+  });
+'''
+if 'listagem ativa ordena participantes pelo IGA da janela' not in test_text:
+    marker = '\n});\n'
+    head, tail = test_text.rsplit(marker, 1)
+    test_text = head + insert + marker + tail
+    test.write_text(test_text)
