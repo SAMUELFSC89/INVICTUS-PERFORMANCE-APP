@@ -14,11 +14,11 @@ type Props = {
   socialLoading: boolean;
   error: string;
   step: number;
-  fields: Record<RegistrationField, string> & { referralCode?: string };
+  fields: Record<RegistrationField, string>;
   termsAccepted: boolean;
   whatsappOptIn: boolean;
   preferredPlan: 'open' | 'performance';
-  onField: (field: RegistrationField | 'referralCode', value: string) => void;
+  onField: (field: RegistrationField, value: string) => void;
   onLogin: (event: React.FormEvent) => void;
   onRegister: (event: React.FormEvent) => void;
   onForgot: (event: React.FormEvent) => void;
@@ -64,10 +64,6 @@ function isAdultBirthDate(value: string): boolean {
 
 export function AuthExperience(props: Props) {
   const { fields } = props;
-  // Apple Guideline 4.8: enquanto Sign in with Apple não estiver habilitado e
-  // configurado no App ID/Firebase, o build nativo iOS oferece somente a
-  // autenticação própria por e-mail/senha. Google continua disponível no Web e
-  // no Android. Isso evita expor no iOS um login social sem opção equivalente.
   const showGoogleLogin = !(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios');
   const cleanCpf = fields.cpf.replace(/\D/g, '');
   const adult = isAdultBirthDate(fields.birthDate);
