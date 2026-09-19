@@ -1,0 +1,5 @@
+/* Power Lift must use only the app-wide primary bottom navigation.
+   Hide the legacy Power Lift-local navigation so a second menu is never shown. */
+.pl-season .pl-bottom-nav {
+  display: none !important;
+}
