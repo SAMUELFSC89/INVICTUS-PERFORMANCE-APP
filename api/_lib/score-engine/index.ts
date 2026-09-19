@@ -279,22 +279,6 @@ await EventLogService.logEventReceived(event as any, idempotencyKey).catch(() =>
     return result.earned;
   }
 
-  static async processMeal(userId: string, mealData: any): Promise<number> {
-    const actTimestamp = mealData.timestamp ? new Date(mealData.timestamp) : new Date();
-    const result = await this.process({
-      id: mealData.id || `${Date.now()}`,
-      userId,
-      source: 'diet',
-      timestamp: actTimestamp,
-      payload: {
-        id: mealData.id,
-        type: 'diet',
-        timestamp: actTimestamp
-      }
-    });
-    return result.earned;
-  }
-
   static async processRecovery(userId: string, recoveryData: any): Promise<number> {
     const actTimestamp = recoveryData.timestamp ? new Date(recoveryData.timestamp) : new Date();
     const result = await this.process({
