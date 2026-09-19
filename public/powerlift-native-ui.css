@@ -1,0 +1,310 @@
+/* Power Lift native visual refinement.
+   Scoped to .pl-season so it cannot affect the rest of Invictus. */
+
+.pl-season.pl-season {
+  background:
+    radial-gradient(circle at 14% 2%, rgba(226, 181, 88, .10), transparent 26%),
+    radial-gradient(circle at 96% 36%, rgba(64, 98, 122, .08), transparent 30%),
+    linear-gradient(180deg, rgba(8, 8, 9, .18) 0%, rgba(8, 8, 9, .52) 48%, rgba(8, 8, 9, .34) 100%);
+  background-color: transparent;
+}
+
+.pl-season .pl-shell {
+  background: transparent;
+}
+
+/* Blend the Power Lift header into the page instead of ending as a separate black block. */
+.pl-season .pl-approved-header {
+  margin-bottom: 10px;
+}
+
+.pl-season .pl-approved-header::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 94px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgba(8, 8, 9, .34) 52%, rgba(8, 8, 9, .72) 100%);
+}
+
+/* Replace opaque stacked boxes with translucent layers that feel part of the app. */
+.pl-season .pl-hero,
+.pl-season .pl-card,
+.pl-season .pl-rank-card,
+.pl-season .pl-rule-card,
+.pl-season .pl-form-card,
+.pl-season .pl-message-card,
+.pl-season .pl-validation-checklist,
+.pl-season .pl-general-filters > span,
+.pl-season .pl-ranking-nav > button {
+  background:
+    radial-gradient(circle at 88% 8%, rgba(193, 145, 50, .10), transparent 38%),
+    linear-gradient(135deg, rgba(26, 26, 25, .76), rgba(8, 8, 9, .66));
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
+  backdrop-filter: blur(12px) saturate(1.05);
+  border-color: rgba(229, 185, 91, .28);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .025),
+    0 12px 30px rgba(0, 0, 0, .15);
+}
+
+/* Dashboard modality cards: official modality artwork fills the complete card. */
+.pl-season .pl-modality-grid {
+  gap: 12px;
+}
+
+.pl-season .pl-modality {
+  position: relative;
+  isolation: isolate;
+  min-height: 190px;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  border-color: rgba(229, 185, 91, .34);
+  background: #0a0a0a;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .20);
+}
+
+.pl-season .pl-modality::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg,
+      rgba(5, 5, 6, .96) 0%,
+      rgba(5, 5, 6, .88) 28%,
+      rgba(5, 5, 6, .64) 52%,
+      rgba(5, 5, 6, .24) 78%,
+      rgba(5, 5, 6, .06) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, .08) 18%, rgba(0, 0, 0, .66) 100%);
+}
+
+.pl-season .pl-modality-image {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  object-fit: cover;
+  object-position: center 38%;
+  filter: saturate(.95) contrast(1.08) brightness(.82);
+  transform: scale(1.015);
+}
+
+.pl-season .pl-modality-body {
+  position: relative;
+  z-index: 2;
+  min-height: 190px;
+  width: min(70%, 560px);
+  padding: 22px 24px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.pl-season .pl-modality h3 {
+  margin: 0 0 5px;
+  color: #fff;
+  font-size: clamp(18px, 3.2vw, 24px);
+  letter-spacing: .035em;
+  line-height: 1.05;
+  text-shadow: 0 3px 16px rgba(0, 0, 0, .68);
+}
+
+.pl-season .pl-modality-body > small {
+  color: rgba(244, 244, 241, .72);
+  font-size: 9px;
+}
+
+.pl-season .pl-modality-data {
+  max-width: 470px;
+  margin-top: 14px;
+}
+
+.pl-season .pl-modality-data small {
+  color: rgba(225, 225, 222, .66);
+}
+
+.pl-season .pl-modality-data b {
+  color: #f0cc70;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .5);
+}
+
+.pl-season .pl-modality-meta {
+  max-width: 470px;
+}
+
+.pl-season .pl-modality .pl-chevron {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+  width: 25px;
+  height: 25px;
+  color: rgba(255, 255, 255, .90);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .7));
+}
+
+.pl-season .pl-modality:active {
+  transform: scale(.995);
+}
+
+/* Ranking and reward cards stay readable while keeping the background alive. */
+.pl-season .pl-rank-card,
+.pl-season .pl-general-card,
+.pl-season .pl-rules--rewards .pl-rule-card,
+.pl-season .pl-career-card,
+.pl-season .pl-target-card {
+  background:
+    radial-gradient(circle at 95% 0%, rgba(209, 159, 59, .08), transparent 40%),
+    linear-gradient(135deg, rgba(25, 25, 24, .72), rgba(8, 8, 9, .62));
+}
+
+/* Tier progression: future badges stay visible but locked/grey until actually reached. */
+.pl-season .pl-tier-track::before {
+  background: linear-gradient(90deg, rgba(118, 118, 118, .24), rgba(118, 118, 118, .34));
+}
+
+.pl-season .pl-tier-step {
+  transition: color .2s ease, opacity .2s ease;
+}
+
+.pl-season .pl-tier-step:not(.done) {
+  color: #55565a;
+}
+
+.pl-season .pl-tier-step:not(.done) .pl-tier-badge {
+  position: relative;
+}
+
+.pl-season .pl-tier-step:not(.done) .pl-tier-badge-image,
+.pl-season .pl-tier-step:not(.done) .pl-tier-badge-core {
+  filter: grayscale(1) brightness(.48) contrast(.86);
+  opacity: .34;
+}
+
+/* Draw a neutral lock over badges not yet achieved. */
+.pl-season .pl-tier-step:not(.done)::before {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  left: 50%;
+  width: 10px;
+  height: 9px;
+  transform: translateX(-50%);
+  border: 1.5px solid rgba(218, 218, 218, .78);
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.pl-season .pl-tier-step:not(.done)::after {
+  content: "";
+  position: absolute;
+  z-index: 5;
+  top: 16px;
+  left: 50%;
+  width: 15px;
+  height: 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(218, 218, 218, .76);
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(235, 235, 235, .78) 0 1px, transparent 1.5px),
+    rgba(18, 18, 19, .92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .42);
+  pointer-events: none;
+}
+
+.pl-season .pl-tier-step:not(.done) small {
+  color: #545456;
+}
+
+/* Achieved/current badges return to the approved artwork with no greyscale. */
+.pl-season .pl-tier-step.done .pl-tier-badge-image,
+.pl-season .pl-tier-step.done .pl-tier-badge-core {
+  filter: none;
+  opacity: 1;
+}
+
+.pl-season .pl-tier-step.done {
+  color: #d9c48f;
+}
+
+.pl-season .pl-tier-step.current {
+  color: #7bd8ff;
+  text-shadow: 0 0 12px rgba(79, 188, 244, .18);
+}
+
+.pl-season .pl-tier-step.current .pl-tier-badge-image {
+  filter: drop-shadow(0 0 10px rgba(102, 203, 255, .24));
+}
+
+/* Bottom navigation should look like the app chrome, not a second black canvas. */
+.pl-season .pl-bottom-nav {
+  background: linear-gradient(180deg, rgba(7, 7, 8, .78), rgba(5, 5, 6, .92));
+  -webkit-backdrop-filter: blur(16px) saturate(1.05);
+  backdrop-filter: blur(16px) saturate(1.05);
+}
+
+@media (max-width: 680px) {
+  .pl-season .pl-modality {
+    min-height: 176px;
+  }
+
+  .pl-season .pl-modality-image {
+    object-position: 62% center;
+  }
+
+  .pl-season .pl-modality-body {
+    width: 78%;
+    min-height: 176px;
+    padding: 18px 42px 16px 16px;
+  }
+
+  .pl-season .pl-modality-data {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pl-season .pl-modality-data > span + span {
+    padding-left: 10px;
+    border-left: 1px solid rgba(255, 255, 255, .14);
+  }
+
+  .pl-season .pl-modality-meta {
+    gap: 8px;
+  }
+
+  .pl-season .pl-progress {
+    min-width: 70px;
+  }
+}
+
+@media (max-width: 420px) {
+  .pl-season .pl-modality-body {
+    width: 84%;
+  }
+
+  .pl-season .pl-modality h3 {
+    font-size: 17px;
+  }
+
+  .pl-season .pl-modality-data small {
+    font-size: 7.5px;
+  }
+
+  .pl-season .pl-modality-data b {
+    font-size: 12px;
+  }
+}
