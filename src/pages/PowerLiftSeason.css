@@ -61,6 +61,14 @@
   transform: scale(1.015);
 }
 
+/* Scoped to the Power Lift Dashboard and Ranking Geral headers only (hero-powerlift-geral.png is
+   a tall portrait asset, .pl-header-art's default 38% focal point crops the crown/plate detail out).
+   23% keeps the crown and "STRENGTH BUILDS" engraving in frame at both mobile and desktop header
+   heights -- measured against the real asset via an isolated Playwright screenshot. */
+.pl-header-art--hero-geral {
+  background-position: center 23%;
+}
+
 .pl-approved-header::after {
   content: "DISCIPLINA\A HOJE\A RESULTADOS\A SEMPRE";
   white-space: pre;

@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useUser } from '../UserContext';
 import { hasActiveProEntitlement } from '../lib/proEntitlement';
 
-type Feature = 'health' | 'ai';
+type Feature = 'health' | 'ai' | 'powerlift';
 
 /**
  * Centraliza todos os caminhos exclusivos do PRO.

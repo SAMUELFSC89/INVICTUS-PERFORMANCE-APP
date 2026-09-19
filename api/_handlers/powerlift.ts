@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { cors, db, app, verifyAuth } from '../_lib/common.js';
+import { isProUser } from '../_lib/entitlement.js';
 import { resolvePowerLiftAuditStatus } from '../_lib/powerlift-audit.js';
 import {
   powerLiftDateKey,
@@ -588,6 +589,28 @@ export default async function handler(req: any, res: any) {
   if (cors(req, res)) return;
   const auth = await verifyAuth(req);
   if (!auth) return res.status(401).json({ error: 'Autenticação necessária.' });
+
+  // Power Lift é 100% exclusivo do plano PRO. Isso protege TODAS as ações
+  // deste handler (status, me, submit, finalize-audit, opt-in -- Elite e
+  // Geral -- e ranking) num único ponto, antes de qualquer despacho, usando
+  // a mesma política canônica do frontend (isProUser espelha
+  // hasActiveProEntitlement, incluindo o bypass funcional de admin ativo).
+  // O frontend nunca é a única proteção: a rota /power some sem PRO, mas
+  // mesmo uma chamada direta à API cai aqui.
+  let serverUserData: Record<string, any> | null = null;
+  try {
+    const userSnap = await db.collection('users').doc(auth.uid).get();
+    serverUserData = userSnap.exists ? (userSnap.data() || {}) : null;
+    if (!isProUser(serverUserData)) {
+      return res.status(403).json({ error: 'Power Lift é exclusivo do plano PRO.', code: 'PRO_REQUIRED' });
+    }
+  } catch (entitlementErr) {
+    console.warn('[PowerLift] Não foi possível verificar o plano PRO:', entitlementErr);
+    return res.status(503).json({
+      error: 'Não foi possível confirmar seu plano agora. Tente novamente em instantes.',
+      code: 'ENTITLEMENT_UNAVAILABLE', retryable: true,
+    });
+  }
 
   const action = safeText(req.query.action || req.body?.action || (req.method === 'GET' ? 'ranking' : ''), 32);
   if (req.method === 'POST' && action === 'submit') return handleSubmit(req, res, auth.uid);

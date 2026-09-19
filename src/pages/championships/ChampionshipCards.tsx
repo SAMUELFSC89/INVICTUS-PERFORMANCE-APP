@@ -1,5 +1,5 @@
 import type { CSSProperties, ComponentType } from 'react';
-import { ArrowRight, CheckCircle2, ChevronRight, Dumbbell, Footprints, Play, ShieldCheck, Trophy, Users } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ChevronRight, Dumbbell, Footprints, Lock, Play, ShieldCheck, Trophy, Users } from 'lucide-react';
 
 const FRIENDS_BANNER = '/assets/championships/friends-banner.png';
 const COINS_STACK = '/assets/coins/invictus-coins-stack.png';
@@ -77,17 +77,23 @@ export function PaidRankingCard({ category, title, image, icon: Icon, onOpen, st
 }
 
 /**
- * Campeonato de força GRATUITO: sem inscrição/checkout, a pessoa participa
- * assim que envia seu primeiro levantamento em vídeo. Este card mostra como
- * funciona e leva direto ao fluxo; uma vez que exista pelo menos um registro
+ * Campeonato de força exclusivo do plano PRO: sem inscrição/checkout, o
+ * atleta PRO participa assim que envia seu primeiro levantamento em vídeo.
+ * Este card mostra como funciona; uma vez que exista pelo menos um registro
  * do atleta, o hub troca este card pelo `PaidRankingCard` compacto (mesma
- * lógica visual de Musculação/Cardio, só que sem gate de pagamento).
+ * lógica visual de Musculação/Cardio).
+ *
+ * `onEnroll` sempre navega para `/power` -- a política canônica de acesso
+ * (`hasActiveProEntitlement` via `ProFeatureGate`) decide, na própria rota,
+ * se o atleta entra ou cai no paywall PRO já existente no app. Este
+ * componente não duplica essa checagem: `pro` só controla o selo/CTA
+ * exibidos aqui, nunca o que a rota realmente permite.
  */
-export function PowerLiftFeatureCard({ onEnroll }: { onEnroll: () => void }) {
+export function PowerLiftFeatureCard({ onEnroll, pro }: { onEnroll: () => void; pro: boolean }) {
   return <section className="ch-powerlift-feature" aria-labelledby="powerlift-championship-title">
     <span aria-hidden="true"><Trophy /></span>
     <div>
-      <small>CAMPEONATO DE FORÇA · GRÁTIS</small>
+      <small>CAMPEONATO DE FORÇA · PRO</small>
       <h2 id="powerlift-championship-title">INVICTUS POWER LIFT</h2>
       <p>Registre seu levantamento em vídeo, passe pela validação inteligente e mostre sua força no ranking.</p>
       <ul>
@@ -96,7 +102,9 @@ export function PowerLiftFeatureCard({ onEnroll }: { onEnroll: () => void }) {
         <li><Trophy aria-hidden="true" /> Ranking por modalidade</li>
       </ul>
     </div>
-    <button type="button" onClick={onEnroll}>PARTICIPAR <ArrowRight aria-hidden="true" /></button>
+    {pro
+      ? <button type="button" onClick={onEnroll}>PARTICIPAR <ArrowRight aria-hidden="true" /></button>
+      : <button type="button" onClick={onEnroll}>VIRAR PRO <Lock aria-hidden="true" /></button>}
   </section>;
 }
 

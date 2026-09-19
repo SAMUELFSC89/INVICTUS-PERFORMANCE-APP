@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8');
 
-describe('Power Lift na aba Campeonatos (campeonato de força gratuito)', () => {
+describe('Power Lift na aba Campeonatos (campeonato de força exclusivo PRO)', () => {
   it('sai por completo da aba Desafios', () => {
     const challenges = read('src/components/ChallengesHubNew.tsx');
     expect(challenges).not.toContain('INVICTUS POWER LIFT');
@@ -17,9 +17,11 @@ describe('Power Lift na aba Campeonatos (campeonato de força gratuito)', () => 
 
     expect(hub).toContain('powerLiftService.hasParticipated()');
     expect(hub).toContain('powerLiftParticipating');
-    expect(hub).toContain('<PowerLiftFeatureCard onEnroll={() => navigate(\'/power\')} />');
+    expect(hub).toContain('<PowerLiftFeatureCard onEnroll={() => navigate(\'/power\')} pro={paid} />');
     expect(cards).toContain('export function PowerLiftFeatureCard');
     expect(cards).toContain('PARTICIPAR');
+    expect(cards).toContain('VIRAR PRO');
+    expect(cards).toContain('CAMPEONATO DE FORÇA · PRO');
     expect(cards).toContain('INVICTUS POWER LIFT');
   });
 

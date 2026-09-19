@@ -151,7 +151,7 @@ export default function App() {
                 <Route path="/achievements" element={<Achievements />} />
                 <Route path="/wallet" element={<Navigate to="/profile/wallet" replace />} />
                 <Route path="/performance" element={<Navigate to="/health" replace />} />
-                <Route path="/power" element={<PowerLift />} />
+                <Route path="/power" element={<ProFeatureGate feature="powerlift"><PowerLift /></ProFeatureGate>} />
                 <Route path="/settings" element={<Navigate to="/profile/preferences" replace />} />
                 <Route path="/wearables" element={<Navigate to="/profile/wearables" replace />} />
                 <Route path="/health" element={<ProFeatureGate feature="health"><HealthWithSleepEntry /></ProFeatureGate>} />

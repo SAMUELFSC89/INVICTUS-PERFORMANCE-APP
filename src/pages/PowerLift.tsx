@@ -315,6 +315,7 @@ const POWER_LIFT_TOP_RANK_ASSETS = {
   2: '/assets/powerlift/ranking/top-2.png',
   3: '/assets/powerlift/ranking/top-3.png',
 } as const;
+const POWER_LIFT_HERO_GERAL_ASSET = '/assets/powerlift/ranking/hero-powerlift-geral.png';
 
 function TierBadge({ tier, compact = false }: { tier: PowerLiftTier; compact?: boolean }) {
   const normalized = tier.toLowerCase();
@@ -716,9 +717,9 @@ export function PowerLift() {
     else setView('home');
   };
 
-  const Header = ({ title, accent, subtitle, image, showBack = true }: { title: string; accent?: string; subtitle?: string; image?: string; showBack?: boolean }) => (
+  const Header = ({ title, accent, subtitle, image, showBack = true, heroGeral = false }: { title: string; accent?: string; subtitle?: string; image?: string; showBack?: boolean; heroGeral?: boolean }) => (
     <header className={`pl-approved-header ${showBack ? '' : 'pl-approved-header--no-back'}`}>
-      <div className="pl-header-art" style={image ? { backgroundImage: `linear-gradient(90deg,rgba(4,4,4,.1),rgba(4,4,4,.72)),url(${image})` } : undefined} />
+      <div className={`pl-header-art ${heroGeral ? 'pl-header-art--hero-geral' : ''}`} style={image ? { backgroundImage: `linear-gradient(90deg,rgba(4,4,4,.1),rgba(4,4,4,.72)),url(${image})` } : undefined} />
       <div className="pl-topbar">
         {showBack ? <button className="pl-back" type="button" aria-label="Voltar" onClick={back}><ArrowLeft size={19} /></button> : null}
         <div className="pl-brand">INVICTUS</div>
@@ -740,7 +741,7 @@ export function PowerLift() {
 
   const Dashboard = () => (
     <>
-      <Header title="POWER" accent="LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" showBack={false} />
+      <Header title="POWER" accent="LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image={POWER_LIFT_HERO_GERAL_ASSET} heroGeral showBack={false} />
       <section className="pl-hero pl-hero--season-score">
         <div className="pl-score-icon"><BarChart3 size={25} /></div>
         <div>
@@ -1109,7 +1110,7 @@ export function PowerLift() {
     const myIndex = visibleGeneralRanking.findIndex((item) => item.userId === user?.uid);
     return (
       <>
-        <Header title="RANKING GERAL" accent="POWER LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image="/powerlift-terra.jpg" showBack={false} />
+        <Header title="RANKING GERAL" accent="POWER LIFT" subtitle={`Temporada ${season.number} · ${sexLabel}`} image={POWER_LIFT_HERO_GERAL_ASSET} heroGeral showBack={false} />
         <section className="pl-general-filters">
           <span>{sexLabel}</span><span>Temporada {season.number}</span><span><CoinMark size={18} /> Premiação em Invictus Coins</span>
         </section>

@@ -127,7 +127,7 @@ export function ChampionshipsHub() {
     <h2 className="ch-new-title ch-new-title--first">FORÇA</h2>
     {powerLiftParticipating === null ? <div className="ch-friends-status-loading" aria-label="Carregando Power Lift" /> : powerLiftParticipating ? <div className="ch-paid-participating-stack">
       <PaidRankingCard {...powerLiftRankingCard} onOpen={() => navigate('/power')} />
-    </div> : <PowerLiftFeatureCard onEnroll={() => navigate('/power')} />}
+    </div> : <PowerLiftFeatureCard onEnroll={() => navigate('/power')} pro={paid} />}
 
     {friendsStatusError ? <section className="ch-security"><ShieldCheck /><span>Não foi possível confirmar sua participação no Campeonato Entre Amigos. Nenhuma nova inscrição será sugerida até o status ser confirmado.</span><button type="button" onClick={() => setFriendsStatusReload(value => value + 1)}><RefreshCw /> TENTAR NOVAMENTE</button></section> : friendsEnrolled === false ? <><h2 className="ch-new-title">DESTAQUE</h2><FriendsChampionshipCard onParticipate={() => navigate('/championships/community')} /></> : null}
 
