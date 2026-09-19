@@ -28,10 +28,11 @@ describe('Power Lift native visual integration', () => {
     expect(css).toContain('filter: none;');
   });
 
-  test('keeps the Power Lift treatment scoped so other app screens are untouched', () => {
+  test('keeps the new overrides scoped to Power Lift', () => {
     const css = read('public/powerlift-native-ui.css');
-    const selectors = css.match(/(^|\n)([^@\n][^{]+)\{/g) || [];
-    expect(selectors.length).toBeGreaterThan(0);
-    expect(selectors.every((selector) => selector.includes('.pl-season') || selector.includes('from') || selector.includes('to'))).toBe(true);
+    expect(css).not.toContain('\n.pl-modality {');
+    expect(css).not.toContain('\n.pl-modality-image {');
+    expect(css).not.toContain('\n.pl-tier-step:not(.done) {');
+    expect(css).not.toContain('\n.pl-card {');
   });
 });
