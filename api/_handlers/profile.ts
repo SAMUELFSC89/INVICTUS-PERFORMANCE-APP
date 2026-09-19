@@ -16,11 +16,6 @@ function computeSearchKeywords(name: string): string[] {
   return Array.from(keywords).slice(0, 100);
 }
 
-function generateServerReferralCode(uid: string): string {
-  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `${uid.substring(0, 4).toUpperCase()}-${random}`;
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
 
@@ -33,8 +28,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const userSnap = await db.collection('users').doc(userId).get();
     const data = userSnap.exists ? userSnap.data() : null;
-    // Gate 1: não cacheamos perfil público. Assim exclusão/bloqueio produz
-    // efeito imediato e nunca fica exposto por alguns minutos numa instância quente.
     if (!userSnap.exists || !isActiveAccountState(data)) {
       return res.status(404).json({ error: 'Usuário não encontrado.' });
     }
@@ -109,70 +102,6 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
     const snap = await db.collection('users').where('cpf', '==', cpf).limit(2).get();
     const existsForAnotherUser = snap.docs.some((doc) => doc.id !== auth.uid);
     return res.status(200).json({ exists: existsForAnotherUser });
-  }
-
-  if (action === 'resolve-referral') {
-    const referralCode = String(body.referralCode || '').trim().toUpperCase();
-    if (!/^[A-Z0-9-]{4,64}$/.test(referralCode)) return res.status(400).json({ error: 'Código de indicação inválido.' });
-
-    const snap = await db.collection('users').where('referralCode', '==', referralCode).limit(1).get();
-    if (snap.empty) return res.status(404).json({ error: 'Código de indicação não encontrado.' });
-
-    const referrer = snap.docs[0];
-    if (referrer.id === auth.uid) return res.status(400).json({ error: 'Você não pode usar o próprio código de indicação.' });
-    const data = referrer.data() || {};
-    if (!isActiveAccountState(data)) return res.status(404).json({ error: 'Código de indicação não encontrado.' });
-    return res.status(200).json({ referrer: { uid: referrer.id, displayName: String(data.displayName || 'Atleta Invictus') } });
-  }
-
-  if (action === 'create-referral') {
-    const referralCode = String(body.referralCode || '').trim().toUpperCase();
-    if (!/^[A-Z0-9-]{4,64}$/.test(referralCode)) return res.status(400).json({ error: 'Código de indicação inválido.' });
-
-    const referrerSnap = await db.collection('users').where('referralCode', '==', referralCode).limit(1).get();
-    if (referrerSnap.empty) return res.status(404).json({ error: 'Código de indicação não encontrado.' });
-
-    const referrerDoc = referrerSnap.docs[0];
-    if (referrerDoc.id === auth.uid) return res.status(400).json({ error: 'Você não pode usar o próprio código de indicação.' });
-    if (!isActiveAccountState(referrerDoc.data())) return res.status(404).json({ error: 'Código de indicação não encontrado.' });
-
-    const previousReferral = await db.collection('referrals').where('refereeUid', '==', auth.uid).limit(1).get();
-    if (!previousReferral.empty) return res.status(409).json({ error: 'Esta conta já possui uma indicação vinculada.' });
-
-    const referralId = `${referrerDoc.id}_${auth.uid}`;
-    const referralRef = db.collection('referrals').doc(referralId);
-    const refereeRef = db.collection('users').doc(auth.uid);
-    const referrerRef = db.collection('users').doc(referrerDoc.id);
-    const referralIndexRef = db.collection('referral_by_referee').doc(auth.uid);
-
-    await db.runTransaction(async (transaction: any) => {
-      const [refereeSnap, currentReferrerSnap, existingIndex] = await Promise.all([
-        transaction.get(refereeRef), transaction.get(referrerRef), transaction.get(referralIndexRef),
-      ]);
-      if (!refereeSnap.exists || !isActiveAccountState(refereeSnap.data())) throw new Error('Perfil do usuário não encontrado.');
-      if (!currentReferrerSnap.exists || !isActiveAccountState(currentReferrerSnap.data())) throw new Error('Indicador não encontrado.');
-      if (existingIndex.exists) throw new Error('Esta conta já possui uma indicação vinculada.');
-
-      const referee = refereeSnap.data() || {};
-      const referrer = currentReferrerSnap.data() || {};
-      const currentStats = referrer.referralStats || {};
-      const totalReferrals = Number(currentStats.totalReferrals || 0) + 1;
-      transaction.create(referralRef, {
-        id: referralId, referrerUid: referrerDoc.id, refereeUid: auth.uid,
-        refereeName: String(referee.displayName || 'Atleta Invictus'), status: 'pending', createdAt: new Date().toISOString(),
-      });
-      transaction.create(referralIndexRef, {
-        referralId, referrerUid: referrerDoc.id, refereeUid: auth.uid, createdAt: new Date().toISOString(),
-      });
-      transaction.update(referrerRef, { referralStats: { ...currentStats, totalReferrals } });
-    });
-
-    const referrerData = referrerDoc.data() || {};
-    return res.status(201).json({
-      success: true,
-      referralId,
-      referrer: { uid: referrerDoc.id, displayName: String(referrerData.displayName || 'Atleta Invictus') },
-    });
   }
 
   if (action === 'onboard') {
@@ -268,9 +197,6 @@ async function handleAuthenticatedProfileAction(req: VercelRequest, res: VercelR
           country: 'Brasil',
           appCredits: 0,
           badges: [],
-          referralCode: existing.referralCode || generateServerReferralCode(auth.uid),
-          referralStats: existing.referralStats || { totalReferrals: 0, validReferrals: 0, bonusBalance: 0, referralPoints: 0 },
-          referralMilestones: existing.referralMilestones || [],
           isBlocked: false,
           isBanned: false,
           infractions: 0,
