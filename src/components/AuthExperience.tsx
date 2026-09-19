@@ -14,11 +14,11 @@ type Props = {
   socialLoading: boolean;
   error: string;
   step: number;
-  fields: Record<RegistrationField, string>;
+  fields: Record<RegistrationField, string> & { referralCode?: string };
   termsAccepted: boolean;
   whatsappOptIn: boolean;
   preferredPlan: 'open' | 'performance';
-  onField: (field: RegistrationField, value: string) => void;
+  onField: (field: RegistrationField | 'referralCode', value: string) => void;
   onLogin: (event: React.FormEvent) => void;
   onRegister: (event: React.FormEvent) => void;
   onForgot: (event: React.FormEvent) => void;
