@@ -26,6 +26,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { SignInWithApple } from '@capacitor-community/apple-sign-in';
 
 // #223 - INSTRUMENTACAO TEMPORARIA.
 // Nao ha console acessivel no iPhone sem um Mac. Registramos marcos do boot
@@ -180,6 +181,58 @@ type InvictusGoogleAuthPlugin = {
 
 const nativeGoogleAuth = registerPlugin<InvictusGoogleAuthPlugin>('InvictusGoogleAuth');
 
+// #264 - Sign in with Apple (nativo iOS). A Apple exige que apps nativos usem
+// a API on-device ASAuthorizationController, não um OAuth via WebView -- o
+// mesmo motivo pelo qual o Google já usa uma ponte nativa acima. O plugin
+// @capacitor-community/apple-sign-in cobre exatamente essa API nativa; no
+// iOS ele ignora clientId/redirectURI (usa o Bundle ID do próprio app via
+// ASAuthorizationAppleIDProvider) -- só scopes/state/nonce chegam à Apple.
+//
+// A Apple exige um nonce: enviamos o hash SHA-256 no pedido (`nonce`) e o
+// valor original (`rawNonce`) para o Firebase, que confirma que o ID token
+// devolvido pela Apple corresponde a este pedido específico.
+function generateAppleNonce(length = 32): string {
+  const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
+  const randoms = new Uint32Array(length);
+  crypto.getRandomValues(randoms);
+  let result = '';
+  randoms.forEach((value) => {
+    result += charset[value % charset.length];
+  });
+  return result;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function nativeAppleAuth(authInstance: any): Promise<void> {
+  const rawNonce = generateAppleNonce();
+  const hashedNonce = await sha256Hex(rawNonce);
+
+  const result = await SignInWithApple.authorize({
+    // Exigidos pela assinatura do plugin, mas ignorados no iOS nativo (ver
+    // comentário acima) -- mantidos coerentes com o Bundle ID/domínio do app
+    // só para o caso de o plugin vir a suportar outra plataforma no futuro.
+    clientId: 'com.desafiosemdesculpa.app',
+    redirectURI: 'https://invictusperformance.app.br',
+    scopes: 'email name',
+    nonce: hashedNonce,
+  });
+
+  const identityToken = result?.response?.identityToken;
+  if (!identityToken) {
+    throw new Error('A Apple não retornou um token de identidade válido.');
+  }
+
+  const provider = new OAuthProvider('apple.com');
+  const credential = provider.credential({ idToken: identityToken, rawNonce });
+  await signInWithCredential(authInstance, credential);
+  marcarDiag('login Apple nativo iOS -> Firebase concluido');
+}
+
 // Em app nativo, Firebase Web Auth via popup/redirect roda dentro de WKWebView
 // ou Android WebView e pode falhar antes de abrir a conta Google. iOS e Android
 // usam a mesma ponte `InvictusGoogleAuth`: cada plataforma abre o fluxo nativo,
@@ -193,6 +246,16 @@ async function signInWithRedirect(authInstance: any, provider: any): Promise<voi
     const credential = GoogleAuthProvider.credential(result.idToken, result.accessToken);
     await signInWithCredential(authInstance, credential);
     marcarDiag(`login Google nativo ${Capacitor.getPlatform()} -> Firebase concluido`);
+    return;
+  }
+
+  if (
+    Capacitor.isNativePlatform() &&
+    Capacitor.getPlatform() === 'ios' &&
+    provider instanceof OAuthProvider &&
+    provider.providerId === 'apple.com'
+  ) {
+    await nativeAppleAuth(authInstance);
     return;
   }
 

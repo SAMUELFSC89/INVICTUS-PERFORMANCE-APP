@@ -4,10 +4,11 @@ import {
   auth, 
   db, 
   signInWithPopup, 
-  signInWithRedirect, 
-  getRedirectResult, 
-  GoogleAuthProvider, 
-  createUserWithEmailAndPassword, 
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
+  OAuthProvider,
+  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   sendEmailVerification
@@ -401,6 +402,54 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Apple Guideline 4.8: mesma estrutura de handleSocialLogin (redirect
+  // primeiro, fallback para popup, mesmos códigos de erro tratados), trocando
+  // só o provider. No iOS nativo, signInWithRedirect já resolve o login
+  // inteiro via ASAuthorizationController (ver src/firebase.ts) -- o fallback
+  // de popup aqui cobre Web/Android como no fluxo do Google.
+  const handleAppleLogin = async () => {
+    if (isLoggingIn) return;
+    setError('');
+    setIsLoggingIn(true);
+
+    const provider = new OAuthProvider('apple.com');
+    provider.addScope('email');
+    provider.addScope('name');
+
+    const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
+
+    try {
+      if (isNative) {
+        try {
+          await signInWithRedirect(auth, provider);
+        } catch (redirErr: any) {
+          console.warn('[AUTH] Native Apple signInWithRedirect failed, trying popup:', redirErr);
+          await signInWithPopup(auth, provider);
+        }
+      } else {
+        const result = await signInWithPopup(auth, provider);
+        console.log(`[AUTH] [SOCIAL_LOGIN] [${result.user.uid}] [SUCCESS] Login com Apple concluído`);
+      }
+    } catch (err: any) {
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-allowed' || err.code === 'auth/disallowed_useragent') {
+        console.warn(`[AUTH] [SOCIAL_LOGIN] [ANONYMOUS] [WARNING] Fallback para redirect no navegador (Apple): ${err.message}`);
+        try {
+          await signInWithRedirect(auth, provider);
+        } catch (redirectErr: any) {
+          console.error(`[AUTH] [SOCIAL_LOGIN] [ANONYMOUS] [FAILURE] Erro no redirecionamento (Apple): ${redirectErr.message}`);
+          setError('No aplicativo móvel, utilize o login com E-mail e Senha abaixo para acesso instantâneo e sem necessidade de navegador.');
+        }
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        console.warn(`[AUTH] [SOCIAL_LOGIN] [ANONYMOUS] [WARNING] Popup Apple fechado pelo usuário`);
+      } else {
+        console.error(`[AUTH] [SOCIAL_LOGIN] [ANONYMOUS] [FAILURE] Falha no login com Apple: ${err.message}`);
+        setError(formatAuthError(err));
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   const handleClearCache = () => {
     localStorage.clear();
     sessionStorage.clear();
@@ -628,6 +677,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         onRegister={handleRegister}
         onForgot={handleForgotPassword}
         onGoogle={handleSocialLogin}
+        onApple={handleAppleLogin}
         onClearCache={handleClearCache}
         onRegistering={(value) => { setIsRegistering(value); setRegistrationStep(1); setError(''); }}
         onForgotPassword={(value) => { setShowForgotPassword(value); setError(''); }}

@@ -5,11 +5,17 @@ const root = process.cwd();
 const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 
 describe('store review compliance gates', () => {
-  test('native iOS does not expose Google login without an equivalent Apple login', () => {
+  test('iOS offers Sign in with Apple as an equivalent to Google, so Google no longer needs to be hidden there', () => {
     const auth = read('src/components/AuthExperience.tsx');
-    expect(auth).toContain("Capacitor.getPlatform() === 'ios'");
-    expect(auth).toContain('showGoogleLogin');
-    expect(auth).toContain("CONTINUAR COM GOOGLE");
+    // A guideline 4.8 exige paridade, não que o Google fique escondido -- com
+    // o Apple implementado, nenhum dos dois botões é condicionado à
+    // plataforma (ver src/tests/appleSignIn.test.ts para a cobertura do
+    // fluxo nativo em si).
+    expect(auth).not.toContain('showGoogleLogin');
+    expect(auth).toContain('CONTINUAR COM A APPLE');
+    expect(auth).toContain('CONTINUAR COM GOOGLE');
+    expect(auth).toContain('onApple');
+    expect(auth).toContain('onGoogle');
   });
 
   test('signup enforces the declared 18+ audience and explains identity collection', () => {

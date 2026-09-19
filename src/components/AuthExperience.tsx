@@ -1,6 +1,5 @@
 import React from 'react';
-import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, ArrowRight, Calendar, Check, Dumbbell, Fingerprint, Lock, Mail, Phone, Share2, ShieldCheck, Sparkles, User } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Apple, Calendar, Check, Dumbbell, Fingerprint, Lock, Mail, Phone, Share2, ShieldCheck, Sparkles, User } from 'lucide-react';
 import { InvictusLogo } from './InvictusLogo';
 import './AuthExperience.css';
 
@@ -23,6 +22,7 @@ type Props = {
   onRegister: (event: React.FormEvent) => void;
   onForgot: (event: React.FormEvent) => void;
   onGoogle: () => void;
+  onApple: () => void;
   onClearCache: () => void;
   onRegistering: (value: boolean) => void;
   onForgotPassword: (value: boolean) => void;
@@ -65,11 +65,6 @@ function isAdultBirthDate(value: string): boolean {
 
 export function AuthExperience(props: Props) {
   const { fields } = props;
-  // Apple Guideline 4.8: enquanto Sign in with Apple não estiver habilitado e
-  // configurado no App ID/Firebase, o build nativo iOS oferece somente a
-  // autenticação própria por e-mail/senha. Google continua disponível no Web e
-  // no Android. Isso evita expor no iOS um login social sem opção equivalente.
-  const showGoogleLogin = !(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios');
   const cleanCpf = fields.cpf.replace(/\D/g, '');
   const adult = isAdultBirthDate(fields.birthDate);
   const stepValid = props.step === 1
@@ -103,7 +98,13 @@ export function AuthExperience(props: Props) {
           <button type="button" className="auth-forgot" onClick={() => props.onForgotPassword(true)}>Esqueci minha senha</button>
           {props.error && <div className="auth-error">{props.error}<button type="button" onClick={props.onClearCache}>Limpar dados locais</button></div>}
           <button className="auth-primary" disabled={props.loading || props.socialLoading} type="submit">{props.loading ? 'AUTENTICANDO...' : <>ENTRAR <ArrowRight /></>}</button>
-          {showGoogleLogin ? <><div className="auth-divider"><span>OU</span></div><button className="auth-google" disabled={props.loading || props.socialLoading} type="button" onClick={props.onGoogle}><b>G</b>{props.socialLoading ? 'CONECTANDO...' : 'CONTINUAR COM GOOGLE'}</button></> : null}
+          {/* Apple Guideline 4.8: Sign in with Apple é oferecido em pé de
+              igualdade com o Google em todas as plataformas -- inclusive iOS
+              nativo, que antes escondia o Google por falta de um equivalente
+              Apple. Nenhum dos dois botões é condicionado à plataforma. */}
+          <div className="auth-divider"><span>OU</span></div>
+          <button className="auth-apple" disabled={props.loading || props.socialLoading} type="button" onClick={props.onApple}><b><Apple aria-hidden="true" /></b>{props.socialLoading ? 'CONECTANDO...' : 'CONTINUAR COM A APPLE'}</button>
+          <button className="auth-google" disabled={props.loading || props.socialLoading} type="button" onClick={props.onGoogle}><b>G</b>{props.socialLoading ? 'CONECTANDO...' : 'CONTINUAR COM GOOGLE'}</button>
           <p className="auth-switch">Ainda não tem conta? <button type="button" onClick={() => props.onRegistering(true)}>Criar conta grátis</button></p>
         </form>}
       </div> : <div className="auth-card auth-registration">
