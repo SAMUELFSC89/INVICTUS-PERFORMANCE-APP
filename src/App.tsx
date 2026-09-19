@@ -95,10 +95,8 @@ export default function App() {
             <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/login" element={<Navigate to="/" replace />} />
-              <Route path="/onboarding/diet" element={<Navigate to="/" replace />} />
               <Route element={<Layout />}>
                 <Route path="/" element={<Home />} />
-                <Route path="/invite" element={<Home />} />
                 <Route path="/rankings" element={<Navigate to="/championships" replace />} />
                 <Route path="/league" element={<Navigate to="/championships" replace />} />
                 <Route path="/league/inscricao" element={<Navigate to="/championships" replace />} />
@@ -161,7 +159,6 @@ export default function App() {
                 <Route path="/pagamento/sucesso" element={<PaymentSuccess />} />
                 <Route path="/pagamento/pendente" element={<PaymentSuccess />} />
                 <Route path="/pagamento/falha" element={<PaymentSuccess />} />
-                <Route path="/my-diet" element={<Navigate to="/" replace />} />
                 <Route path="/saude" element={<Navigate to="/health" replace />} />
                 <Route path="/medical" element={<Navigate to="/health" replace />} />
                 <Route path="/clinical" element={<Navigate to="/health" replace />} />
