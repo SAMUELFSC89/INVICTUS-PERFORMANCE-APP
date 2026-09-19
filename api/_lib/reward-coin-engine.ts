@@ -13,10 +13,13 @@ function defaultLedger(origin: IVCoinTransactionOrigin): IVCoinLedgerType {
   if (origin === 'championship') return 'GYM_CHAMPIONSHIP_PODIUM';
   if (origin === 'admin_adjustment') return 'ADMIN_ADJUSTMENT';
   if (origin === 'campaign' || origin === 'sponsor' || origin === 'referral') return 'PROMOTIONAL_REWARD';
+  if (origin === 'private_challenge_stake') return 'PRIVATE_CHALLENGE_STAKE';
+  if (origin === 'private_challenge_payout') return 'PRIVATE_CHALLENGE_PAYOUT';
+  if (origin === 'private_challenge_refund') return 'PRIVATE_CHALLENGE_REFUND';
   return 'MISSION_REWARD';
 }
 
-const EMPTY_WALLET = (userId: string): RewardCoinWallet => ({
+export const EMPTY_WALLET = (userId: string): RewardCoinWallet => ({
   userId,
   balance: 0,
   lifetimeEarned: 0,
@@ -24,7 +27,15 @@ const EMPTY_WALLET = (userId: string): RewardCoinWallet => ({
   updatedAt: new Date().toISOString(),
 });
 
-function coinTransactionId(userId: string, idempotencyKey: string): string {
+/**
+ * ID determinístico de transação de Coins a partir de (userId, idempotencyKey).
+ * Exportado para outros módulos (ex: liquidação de desafio privado com aposta)
+ * que precisam movimentar Coins dentro da SUA PRÓPRIA transação do Firestore
+ * (junto com outros documentos, atomicamente) em vez de usar credit()/debit()
+ * isoladamente — mas ainda assim com o mesmo esquema de ID idempotente usado
+ * em todo o resto do sistema de Coins.
+ */
+export function coinTransactionId(userId: string, idempotencyKey: string): string {
   const digest = createHash('sha256')
     .update(`${userId}\u0000${idempotencyKey}`)
     .digest('hex');

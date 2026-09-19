@@ -200,11 +200,34 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (user) {
       // `league` pertence ao ecossistema antigo e academia/cidade são dados
       // opcionais de ranking. Nenhum deles pode prender uma conta válida no
-      // onboarding legado. O único bloqueio global aqui é o consentimento.
-      const isIncomplete = !user.termsAccepted;
+      // onboarding legado. Os dois bloqueios globais aqui são o consentimento
+      // e a data de nascimento -- sem ela, jornadas de cardio (que exigem
+      // confirmação de maioridade) ficavam num beco sem saída: o erro pedia
+      // pra "confirmar no perfil", mas não existe nenhum campo de data de
+      // nascimento na tela de Perfil pra corrigir isso (ver #cardio-dob-fix).
+      // Esta tela já coleta e grava birthDate, então é o lugar certo pra
+      // resolver contas legadas/onboarding social que nunca preencheram.
+      const isIncomplete = !user.termsAccepted || !user.birthDate;
       setShowTerms(isIncomplete);
     }
   }, [user]);
+
+  // Quando o gate acima reabre pra alguém que só está faltando a data de
+  // nascimento (termos já aceitos, resto do perfil já preenchido antes),
+  // preenche os campos já conhecidos -- sem isso a pessoa seria forçada a
+  // redigitar CPF/altura/peso/cidade que ela já informou, só pra corrigir
+  // um único campo faltante.
+  useEffect(() => {
+    if (!user) return;
+    if (user.cpf) setCpf(user.cpf);
+    if (user.birthDate) setBirthDate(user.birthDate.slice(0, 10));
+    if (user.height) setHeight(String(user.height));
+    if (user.weight) setWeight(String(user.weight));
+    if (user.city) setCity(user.city);
+    if (user.state) setState(user.state);
+    if (user.sex) setSex(user.sex);
+    if (user.termsAccepted) setTermsAccepted(true);
+  }, [user?.uid]);
 
   // O Plano Open mantém o acesso básico; o Pro exige tier, status e validade
   // canônicos. Flags legadas isoladas nunca liberam o paywall.

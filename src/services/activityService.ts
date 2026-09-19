@@ -39,9 +39,6 @@ export interface EndSessionResult {
   recordStatus?: 'completed';
   activityMode?: 'personal' | 'competitive' | 'unresolved';
   competitionReviewStatus?: string;
-  presenceCheckRequired?: boolean;
-  presenceCheckId?: string;
-  livenessPrompt?: string;
 }
 
 // Acumulador de amostras reais de acelerometro/giroscopio (DeviceMotionEvent) durante a
@@ -549,8 +546,8 @@ export const activityService = {
 
       // ACT-04: uma escrita final que falhou no servidor não pode virar uma
       // sessão que ressuscita sozinha -- se este id já foi marcado como
-      // encerrado (endSession/cancelSession/completeSessionAfterPresence),
-      // trata como se não existisse mais estado local nenhum.
+      // encerrado (endSession/cancelSession), trata como se não existisse
+      // mais estado local nenhum.
       if (isTombstoned(session.id)) {
         console.log('[ActivityService] Sessão local marcada como encerrada; descartando estado obsoleto.');
         localStorage.removeItem(SESSION_KEY);
@@ -1287,22 +1284,6 @@ export const activityService = {
     }
     if (auth.currentUser?.uid !== user.uid) throw new Error('A conta mudou. Consulte esta atividade no histórico da conta original.');
 
-    if (respData.presenceCheckRequired) {
-      // A câmera é apenas uma etapa intermediária. Fechar, cancelar, usar o
-      // botão voltar ou deixar o modal aberto não encerra GPS, cronômetro,
-      // sensores, notificação persistente nem Live Activity.
-      await continueAfterNonTerminalFinalization(session);
-      return {
-        healthSession: respData.healthSession,
-        healthSessionStatus: respData.healthSessionStatus,
-        healthSessionReason: respData.healthSessionReason,
-        presenceCheckRequired: true,
-        presenceCheckId: respData.presenceCheckId,
-        livenessPrompt: respData.livenessPrompt,
-        userMessage: respData.userMessage
-      };
-    }
-
     const { workout, validation, message, isScoringEligible, nonScoringReason, success, status, reasonCode, userMessage, canRetry, rankingPointsEarned, recordStatus, activityMode, competitionReviewStatus } = respData;
 
       // #230: fechar a sessao no SERVIDOR antes de limpar o estado local, e
@@ -1439,39 +1420,6 @@ export const activityService = {
     this.limparEstadoLocal();
   },
 
-  /**
-   * Fecha a sessão somente depois que a API de presença devolve uma decisão
-   * final (aprovada ou pendente de análise). Não concede XP, não cria
-   * conquistas e não altera score no dispositivo.
-   */
-  async completeSessionAfterPresence() {
-    const session = this.getCurrentSession();
-    if (!session) return;
-
-    const now = new Date().toISOString();
-    try {
-      // ACT-03: mesmo problema do endSession() -- sem timeout, uma conexão
-      // travada prendia esta chamada para sempre depois que o servidor já
-      // havia decidido (aprovado ou pendente de análise) a atividade.
-      await withTimeout(
-        updateDoc(doc(db, 'active_sessions', session.id), {
-          status: 'completed',
-          endTime: now,
-          updatedAt: now
-        }),
-        8000,
-        'Tempo limite ao confirmar encerramento da sessão no servidor.'
-      );
-    } catch (error) {
-      console.error('[activityService] Falha ao fechar sessão após presença:', error);
-      // Evita restauração automática de uma atividade que já foi recebida e
-      // está sendo decidida pelo servidor.
-      markTombstoned(session.id);
-    }
-    this.limparEstadoLocal();
-    try { workoutSetJournal.clear(session.userId, session.id); } catch { /* Presence decision is already persisted. */ }
-  },
-
   // #230: limpeza puramente local. Separada do cancelSession para que o
   // endSession possa encerrar a sessao como 'completed' sem que uma escrita
   // de 'cancelled' passe por cima.
@@ -1495,9 +1443,9 @@ export const activityService = {
     lastCheckpointRemoteSyncAt = 0;
     void nativeBackgroundLocationService.stop().catch(() => {});
     // ACT-10 (auditoria 6167c8f): limparEstadoLocal() é o único ponto que os
-    // três caminhos de encerramento (endSession, cancelSession,
-    // completeSessionAfterPresence) sempre atravessam -- lugar certo para
-    // também derrubar o watcher web (webGpsTrackingService), que agora vive
+    // caminhos de encerramento (endSession, cancelSession) sempre
+    // atravessam -- lugar certo para também derrubar o watcher web
+    // (webGpsTrackingService), que agora vive
     // fora do ciclo de vida de qualquer componente React.
     webGpsTrackingService.stop();
   }

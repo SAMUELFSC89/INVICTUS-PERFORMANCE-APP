@@ -8,7 +8,10 @@ describe('profile visual consistency and IGA reconciliation', () => {
     const profile = read('src/pages/ProfileNew.tsx');
     const css = read('src/pages/ProfileNew.css');
 
-    expect(profile).toContain('<aside><InvictusLogo size={36} /><small>NÍVEL</small><b>{levelProgress.currentLevel}</b></aside>');
+    // Layout estilo Instagram (avatar + estatísticas em linha): o nível deixou de
+    // ser um hexágono isolado e virou mais uma coluna de estatística ao lado do
+    // avatar, então já não existe rótulo "INVICTUS" nenhum pra clipar.
+    expect(profile).toContain('<div className="np-id-stat"><b>{levelProgress.currentLevel}</b><small>NÍVEL</small></div>');
     expect(profile).not.toContain('<span>INVICTUS</span></aside>');
     expect(profile).not.toContain('className="np-coins"');
     expect(css).not.toContain('.np-stats .np-coins');

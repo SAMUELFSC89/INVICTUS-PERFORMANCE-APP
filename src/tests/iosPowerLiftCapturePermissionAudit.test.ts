@@ -14,9 +14,4 @@ describe('Gate 1 — captura de vídeo do Power Lift no iOS', () => {
     expect(info).toContain('<key>NSMicrophoneUsageDescription</key>');
     expect(info).toContain('vídeos de homologação do Power Lift');
   });
-
-  test('selfie de presença continua explicitamente sem áudio', () => {
-    const presence = read('src/components/VerifiedPresenceModal.tsx');
-    expect(presence).toContain('audio: false');
-  });
 });

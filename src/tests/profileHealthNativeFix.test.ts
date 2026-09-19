@@ -7,7 +7,9 @@ describe('profile photo flow', () => {
   test('new profile exposes change/remove actions and never blocks UI on the heavy refresh', () => {
     const profile = read('src/pages/ProfileNew.tsx');
     expect(profile).toContain('await compressImage(file, 800, 0.82)');
-    expect(profile).toContain('const uploadedPhotoURL = await userService.updateProfilePhoto(compressed)');
+    // O envio final saiu do handler de seleção de arquivo e foi para performUpload,
+    // chamado depois que a pessoa ajusta (arrasta/zoom) a foto dentro do círculo.
+    expect(profile).toContain('const uploadedPhotoURL = await userService.updateProfilePhoto(photoBlob)');
     expect(profile).toContain('setProfilePhotoOverride(uploadedPhotoURL)');
     expect(profile).toContain('refreshProfileInBackground()');
     expect(profile).not.toContain('await refreshUser();');

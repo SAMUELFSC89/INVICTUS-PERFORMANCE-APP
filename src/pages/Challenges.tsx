@@ -4,7 +4,6 @@ import { activityService } from '../services/activityService';
 import { activityNotificationService } from '../services/activityNotificationService';
 import { activityLiveActivityService } from '../services/activityLiveActivityService';
 import { webGpsTrackingService } from '../services/webGpsTrackingService';
-import { VerifiedPresenceModal } from '../components/VerifiedPresenceModal';
 import { auth, db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { ActivityCompetitionPolicy, ActivitySession } from '../types';
@@ -18,7 +17,6 @@ import { normalizeActivityValidationStatus, readActivityTimestamp, resolveActivi
 import { ChallengesHubNew } from '../components/ChallengesHubNew';
 import { ActivityHistoryPageNew } from '../components/ActivityHistoryPageNew';
 import { PrivateChallengesPageNew } from '../components/PrivateChallengesPageNew';
-import type { WorkoutHealthRecord } from '../core/health/workoutHealthTypes';
 import { bindObjectiveSession, objectiveRequest } from '../services/cardioObjectiveService';
 import { localDate, safetyDecision } from '../core/cardioObjective/engine';
 import { resolvePersonalActivityPolicy } from '../services/personalWorkoutPolicyService';
@@ -74,7 +72,6 @@ export function Challenges() {
 
   // Tela de detalhe pós-atividade usada pelo fluxo real de atividade.
   const [finishedActivityItem, setFinishedActivityItem] = useState<ActivityHistoryItem | null>(null);
-  const pendingPresenceSessionRef = useRef<{ session: ActivitySession; finishedAt: number; healthSession?: WorkoutHealthRecord } | null>(null);
   const [shareCardData, setShareCardData] = useState<any>(null);
 
   // Today's completed submissions — ainda alimenta o fluxo atual e as missões.
@@ -117,8 +114,6 @@ export function Challenges() {
   const endActivityAbortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startActivityError, setStartActivityError] = useState<string | null>(null);
-  const [presenceCheckRequired, setPresenceCheckRequired] = useState(false);
-  const [presenceCheckData, setPresenceCheckData] = useState<{ id: string; prompt: string } | null>(null);
   const [completion, setCompletion] = useState<ActivityCompletion | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -440,74 +435,6 @@ export function Challenges() {
     photoUrl: item.photoUrl,
   });
 
-  const buildFinishedItemFromPresence = (
-    session: ActivitySession,
-    finishedAt: number,
-    result: { status: string; pointsAwarded?: number; commitResult?: any },
-    healthSession?: WorkoutHealthRecord
-  ): ActivityHistoryItem => {
-    const startMs = Date.parse(session.startTime);
-    const durationMins = Number.isFinite(startMs)
-      ? Math.max(0, Math.round(((finishedAt - startMs - (session.pausedMs || 0)) / 60000) * 100) / 100)
-      : undefined;
-    const distanceKm = session.requiresGpsDistance
-      ? activityService.calculateSessionDistance(session)
-      : undefined;
-    const trajectory = (session.checkpoints || [])
-      .filter((checkpoint) => checkpoint.location && Number.isFinite(checkpoint.location.lat) && Number.isFinite(checkpoint.location.lng))
-      .map((checkpoint) => ({ lat: checkpoint.location.lat, lng: checkpoint.location.lng }));
-    const validTrajectory = trajectory.length >= 2 ? trajectory : undefined;
-    const pace = session.type === 'cardio' && distanceKm !== undefined && distanceKm > 0 && durationMins !== undefined && durationMins > 0
-      ? formatPaceValue(distanceKm, durationMins * 60)
-      : undefined;
-    const activityState = resolveActivityState({
-      ...(result.commitResult || {}),
-      recordStatus: 'completed',
-      activityMode: 'competitive',
-      competitionReviewStatus: result.commitResult?.competitionReviewStatus || result.status,
-    });
-    const historyStatus: ActivityHistoryItem['status'] = activityState.competitionStatus === 'approved'
-      ? 'homologada'
-      : activityState.competitionStatus === 'rejected' || activityState.competitionStatus === 'ineligible'
-        ? 'rejeitada'
-        : activityState.competitionStatus === 'pending' || activityState.competitionStatus === 'resolution_pending'
-          ? 'pendente'
-          : 'registrada';
-    const completedAt = new Date(Number.isFinite(startMs) ? finishedAt : Date.now());
-    const cardioLabel = session.cardioTypeLabel || selectedCardioOption.label || 'Cardio';
-    const rawCalories = session.healthTelemetry?.calories;
-    const rawHeartRate = session.healthTelemetry?.avgHeartRate ?? Number(session.smartwatchData?.avgHeartRate ?? session.smartwatchData?.heartRate);
-    const rawSteps = session.healthTelemetry?.steps ?? Number(session.smartwatchData?.steps ?? session.smartwatchData?.pedometerSteps);
-    const activityId = result.commitResult?.activityId || result.commitResult?.id || `local_${session.id}`;
-
-    return {
-      id: activityId,
-      source: 'workout',
-      type: session.type === 'cardio' ? 'cardio' : 'workout',
-      typeLabel: session.type === 'cardio' ? 'Cardio' : 'Treino',
-      title: session.type === 'cardio' ? cardioLabel : `Treino de ${session.muscleGroup || selectedMuscleGroup}`,
-      dateStr: completedAt.toLocaleDateString('pt-BR'),
-      timeStr: completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      rawTimestamp: completedAt.getTime(),
-      status: historyStatus,
-      statusRaw: result.status,
-      recordStatus: activityState.recordStatus,
-      activityMode: activityState.activityMode,
-      competitionStatus: activityState.competitionStatus,
-      points: typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded)
-        ? result.pointsAwarded
-        : 0,
-      durationMins,
-      distanceKm,
-      calories: typeof rawCalories === 'number' && Number.isFinite(rawCalories) ? rawCalories : undefined,
-      avgHeartRate: Number.isFinite(rawHeartRate) && rawHeartRate > 0 ? rawHeartRate : undefined,
-      steps: Number.isFinite(rawSteps) && rawSteps > 0 ? rawSteps : undefined,
-      pace,
-      trajectory: validTrajectory,
-      details: { ...result.commitResult, healthSession: result.commitResult?.healthSession ?? healthSession },
-    };
-  };
-
   const handleEndActivity = async () => {
     if (!activeSession || loading) return;
     setLoading(true);
@@ -521,24 +448,6 @@ export function Challenges() {
 
     try {
       const res = await activityService.endSession(undefined, controller.signal);
-      if (res.presenceCheckRequired) {
-        if (!res.presenceCheckId) {
-          throw new Error('A validação de presença foi solicitada sem um identificador válido. Tente finalizar novamente.');
-        }
-        const sessionAfterAttempt = activityService.getCurrentSession() || sessionBeforeEnd;
-        pendingPresenceSessionRef.current = {
-          session: {
-            ...sessionAfterAttempt,
-            checkpoints: [...(sessionAfterAttempt.checkpoints || [])]
-          },
-          finishedAt: res.healthSession ? Date.parse(res.healthSession.endedAt) : Date.now(),
-          healthSession: res.healthSession,
-        };
-        setPresenceCheckData({ id: res.presenceCheckId, prompt: res.livenessPrompt || 'Siga o gesto indicado' });
-        setPresenceCheckRequired(true);
-        setNotice(res.userMessage || 'Uma confirmação de presença é necessária antes da validação da atividade.');
-        return;
-      }
 
       activityNotificationService.stop();
       activityLiveActivityService.stop();
@@ -736,8 +645,7 @@ export function Challenges() {
 
   const showNewChallengesHub = !flowScreen
     && !finishedActivityItem
-    && !shareCardData
-    && !presenceCheckRequired;
+    && !shareCardData;
 
   if (showNewChallengesHub) {
     const cardioChallenge = CORE_CHALLENGES.find(item => item.id === 'cardio');
@@ -752,72 +660,6 @@ export function Challenges() {
 
   return (
     <>
-      {presenceCheckRequired && presenceCheckData && (
-        <VerifiedPresenceModal
-          presenceCheckId={presenceCheckData.id}
-          livenessPrompt={presenceCheckData.prompt}
-          isOpen={presenceCheckRequired}
-          onSuccess={async (result) => {
-            setPresenceCheckRequired(false);
-            setPresenceCheckData(null);
-            const presenceStatus = normalizeActivityValidationStatus(result.status);
-            const pendingPresence = pendingPresenceSessionRef.current;
-            const sessionType = pendingPresence?.session.type || activeSession?.type;
-            const terminalStatus = presenceStatus === 'validated'
-              || presenceStatus === 'pending'
-              || presenceStatus === 'rejected'
-              || presenceStatus === 'not_eligible';
-            if (!terminalStatus) {
-              setError(result.userMessage || 'A resposta da confirmação de presença não foi reconhecida. A atividade continua salva no aparelho.');
-              return;
-            }
-
-            pendingPresenceSessionRef.current = null;
-            if (sessionType === 'cardio' && result.commitResult?.activityId && objectiveJourneyId && objectiveMissionId) {
-              void objectiveRequest({ action: 'complete', journeyId: objectiveJourneyId, missionId: objectiveMissionId, activityId: result.commitResult.activityId })
-                .catch(() => setNotice('Atividade salva. Abra Meu Objetivo para verificar a sincronização da meta.'));
-            }
-            await activityService.completeSessionAfterPresence();
-            activityNotificationService.stop();
-            activityLiveActivityService.stop();
-            setActiveSession(null);
-            const points = typeof result.pointsAwarded === 'number' && Number.isFinite(result.pointsAwarded) && result.pointsAwarded > 0
-              ? result.pointsAwarded
-              : undefined;
-            const completionStatus: ActivityCompletion['status'] = presenceStatus === 'validated'
-              ? 'approved'
-              : presenceStatus === 'pending'
-                ? 'pending'
-                : 'rejected';
-            setCompletion({ status: completionStatus, message: result.userMessage, pointsAwarded: points });
-            if (points !== undefined) {
-              void hapticNotification('success');
-              triggerXPToast(points, 'Atividade concluída.');
-            }
-            if (pendingPresence) {
-              const finishedItem = buildFinishedItemFromPresence(pendingPresence.session, pendingPresence.finishedAt, result, pendingPresence.healthSession);
-              setFinishedActivityItem(finishedItem);
-              if (sessionType === 'cardio') {
-                setShareCardData(buildShareableFromItem(finishedItem));
-              }
-            }
-            setFlowScreen(sessionType === 'cardio' ? null : 'workout-complete');
-            setNotice(presenceStatus === 'validated'
-              ? null
-              : presenceStatus === 'pending'
-                ? (result.userMessage || 'Atividade concluída. Somente a pontuação competitiva está em análise.')
-                : (result.userMessage || 'Atividade concluída e salva no histórico, mas fora da pontuação competitiva.'));
-            await Promise.allSettled([refreshUser(), loadSubmissions()]);
-          }}
-          onClose={() => {
-            pendingPresenceSessionRef.current = null;
-            setPresenceCheckRequired(false);
-            setPresenceCheckData(null);
-            setNotice('A atividade continua em andamento. Finalize novamente quando estiver pronto para concluir a confirmação de presença.');
-          }}
-        />
-      )}
-
       {shareCardData && (
         <RunShareCard
           session={shareCardData}

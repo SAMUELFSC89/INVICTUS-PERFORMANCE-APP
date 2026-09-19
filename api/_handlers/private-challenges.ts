@@ -1,6 +1,22 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, cors, verifyAuth } from '../_lib/common.js';
 import { isProUser } from '../_lib/entitlement.js';
+import { isActiveAccountState } from '../_lib/account-state.js';
+import { coinTransactionId } from '../_lib/reward-coin-engine.js';
+import { computeUserScoreForWindow } from '../_lib/igaService.js';
+import { RewardCoinTransaction, RewardCoinWallet } from '../../src/types.js';
+
+/**
+ * Aposta em Invictus Coins nos desafios privados (moeda virtual do app, sem
+ * valor em dinheiro -- não confundir com o `entryFee` legado em R$, que
+ * continua permanentemente aposentado; ver private-challenge-money-retired
+ * no arquivo de testes). Teto de sanidade por participante.
+ */
+const MAX_STAKE_AMOUNT = 2000;
+
+function emptyWallet(userId: string): RewardCoinWallet {
+  return { userId, balance: 0, lifetimeEarned: 0, lifetimeSpent: 0, updatedAt: new Date().toISOString() };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -83,7 +99,8 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
         userPhoto: m.userPhoto || '',
         points: m.points || 0,
         workoutsCount: m.workoutsCount || 0,
-        joinedAt: m.joinedAt
+        joinedAt: m.joinedAt,
+        stakePaid: Math.max(0, Number(m.stakeAmount) || 0)
       };
     }).sort((a, b) => b.points - a.points); // Sort by highest score/points
 
@@ -111,6 +128,13 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
       winnerId: cData.winnerId || null,
       winnerName: cData.winnerName || null,
       winnerPhoto: cData.winnerPhoto || null,
+      resultStatus: cData.resultStatus || null,
+      resultReason: cData.resultReason || null,
+      // Aposta em Invictus Coins (moeda virtual do app). 0/ausente = desafio
+      // livre/simbólico, comportamento idêntico ao de sempre.
+      stakeAmount: Math.max(0, Number(cData.stakeAmount) || 0),
+      potTotal: Math.max(0, Number(cData.potTotal) || 0),
+      extendedOnce: cData.extendedOnce === true,
       isMember: isCurrentUserMember,
       members,
       // Campos legados (só existem em desafios criados antes da migração
@@ -134,7 +158,7 @@ async function handleListChallenges(_req: VercelRequest, res: VercelResponse, us
  * reconhecimento (badge/destaque) para quem terminar em 1º lugar.
  */
 async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, userId: string) {
-  const { title, durationDays, description } = req.body;
+  const { title, durationDays, description, stakeAmount } = req.body;
 
   if (!title || !durationDays) {
     return res.status(400).json({ error: 'Parâmetros título e duração são obrigatórios.' });
@@ -143,6 +167,13 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
   const durationNum = Number(durationDays);
   if (![7, 15, 30].includes(durationNum)) {
     return res.status(400).json({ error: 'Duração aceita apenas 7, 15 ou 30 dias.' });
+  }
+
+  // Aposta em Invictus Coins (moeda virtual do app): opcional, 0 por padrão.
+  // Continua sendo um desafio livre/simbólico se nada for informado.
+  const stakeNum = stakeAmount === undefined || stakeAmount === null || stakeAmount === '' ? 0 : Number(stakeAmount);
+  if (!Number.isFinite(stakeNum) || !Number.isInteger(stakeNum) || stakeNum < 0 || stakeNum > MAX_STAKE_AMOUNT) {
+    return res.status(400).json({ error: `A aposta deve ser um número inteiro de Invictus Coins entre 0 e ${MAX_STAKE_AMOUNT}.` });
   }
 
   // Get user profile for creator details + checagem de plano PRO
@@ -168,8 +199,51 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
 
   const challengeId = db.collection('private_challenges').doc().id;
 
+  if (stakeNum > 0 && !isActiveAccountState(userData)) {
+    return res.status(403).json({ error: 'Conta inativa não pode apostar Invictus Coins.' });
+  }
+
   await db.runTransaction(async (transaction) => {
     const challengeRef = db.collection('private_challenges').doc(challengeId);
+    const memberRef = db.collection('private_challenge_members').doc(`${userId}_${challengeId}`);
+
+    let stakeTxId: string | null = null;
+    if (stakeNum > 0) {
+      // Escrow da aposta do criador: debita agora, dentro da MESMA transação
+      // que cria o desafio -- ou os dois acontecem juntos, ou nenhum acontece.
+      const walletRef = db.collection('reward_coin_wallets').doc(userId);
+      const walletSnap = await transaction.get(walletRef);
+      const wallet = walletSnap.exists ? (walletSnap.data() as RewardCoinWallet) : emptyWallet(userId);
+      const balance = Math.max(0, Number(wallet.balance) || 0);
+      if (balance < stakeNum) {
+        throw new Error('Saldo de Invictus Coins insuficiente para esta aposta.');
+      }
+      stakeTxId = coinTransactionId(userId, `private_challenge_stake_${challengeId}`);
+      const txRef = db.collection('reward_coin_transactions').doc(stakeTxId);
+      const createdAt = now.toISOString();
+      const coinTransaction: RewardCoinTransaction = {
+        id: stakeTxId,
+        userId,
+        amount: stakeNum,
+        type: 'debit',
+        origin: 'private_challenge_stake',
+        ledgerType: 'PRIVATE_CHALLENGE_STAKE',
+        description: `Aposta ao criar o desafio privado "${title}"`,
+        idempotencyKey: `private_challenge_stake_${challengeId}`,
+        balanceBefore: balance,
+        balanceAfter: balance - stakeNum,
+        createdAt,
+      };
+      transaction.create(txRef, coinTransaction);
+      transaction.set(walletRef, {
+        userId,
+        balance: balance - stakeNum,
+        lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0),
+        lifetimeSpent: Math.max(0, Number(wallet.lifetimeSpent) || 0) + stakeNum,
+        updatedAt: createdAt,
+      }, { merge: true });
+    }
+
     transaction.set(challengeRef, {
       title,
       description: description || '',
@@ -182,11 +256,13 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
       createdAt: now.toISOString(),
       startDate: now.toISOString(),
       endDate: endDate.toISOString(),
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      stakeAmount: stakeNum,
+      potTotal: stakeNum,
+      extendedOnce: false
     });
 
     // Enroll Creator as the first member
-    const memberRef = db.collection('private_challenge_members').doc(`${userId}_${challengeId}`);
     transaction.set(memberRef, {
       userId,
       userName: userData.displayName || 'Atleta',
@@ -195,11 +271,13 @@ async function handleCreateChallenge(req: VercelRequest, res: VercelResponse, us
       points: 0,
       workoutsCount: 0,
       joinedAt: now.toISOString(),
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      stakeAmount: stakeNum,
+      stakeTxId
     });
   });
 
-  return res.status(200).json({ success: true, challengeId, inviteCode });
+  return res.status(200).json({ success: true, challengeId, inviteCode, stakeAmount: stakeNum });
 }
 
 /**
@@ -262,13 +340,57 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
     });
   }
 
+  const stakeNum = Math.max(0, Number(cData.stakeAmount) || 0);
+  if (stakeNum > 0 && !isActiveAccountState(userData)) {
+    return res.status(403).json({ error: 'Conta inativa não pode apostar Invictus Coins.' });
+  }
+
   const now = new Date();
 
   await db.runTransaction(async (transaction) => {
+    let stakeTxId: string | null = null;
+    if (stakeNum > 0) {
+      // Escrow da aposta de quem entra: debita agora, na MESMA transação que
+      // registra a entrada no desafio -- ou os dois acontecem juntos, ou
+      // nenhum acontece.
+      const walletRef = db.collection('reward_coin_wallets').doc(userId);
+      const walletSnap = await transaction.get(walletRef);
+      const wallet = walletSnap.exists ? (walletSnap.data() as RewardCoinWallet) : emptyWallet(userId);
+      const balance = Math.max(0, Number(wallet.balance) || 0);
+      if (balance < stakeNum) {
+        throw new Error('Saldo de Invictus Coins insuficiente para esta aposta.');
+      }
+      stakeTxId = coinTransactionId(userId, `private_challenge_stake_${challengeId}`);
+      const txRef = db.collection('reward_coin_transactions').doc(stakeTxId);
+      const createdAt = now.toISOString();
+      const coinTransaction: RewardCoinTransaction = {
+        id: stakeTxId,
+        userId,
+        amount: stakeNum,
+        type: 'debit',
+        origin: 'private_challenge_stake',
+        ledgerType: 'PRIVATE_CHALLENGE_STAKE',
+        description: `Aposta ao entrar no desafio privado "${cData.title}"`,
+        idempotencyKey: `private_challenge_stake_${challengeId}`,
+        balanceBefore: balance,
+        balanceAfter: balance - stakeNum,
+        createdAt,
+      };
+      transaction.create(txRef, coinTransaction);
+      transaction.set(walletRef, {
+        userId,
+        balance: balance - stakeNum,
+        lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0),
+        lifetimeSpent: Math.max(0, Number(wallet.lifetimeSpent) || 0) + stakeNum,
+        updatedAt: createdAt,
+      }, { merge: true });
+    }
+
     // Status é 'active' assim que houver pelo menos 2 participantes
     transaction.update(challengeDoc.ref, {
       status: 'active',
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      ...(stakeNum > 0 ? { potTotal: Math.max(0, Number(cData.potTotal) || 0) + stakeNum } : {})
     });
 
     transaction.set(memberRef, {
@@ -279,7 +401,9 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
       points: 0,
       workoutsCount: 0,
       joinedAt: now.toISOString(),
-      updatedAt: now.toISOString()
+      updatedAt: now.toISOString(),
+      stakeAmount: stakeNum,
+      stakeTxId
     });
 
     // Entrada no feed público, sem qualquer menção a dinheiro
@@ -294,7 +418,7 @@ async function handleJoinChallenge(req: VercelRequest, res: VercelResponse, user
     });
   });
 
-  return res.status(200).json({ success: true, challengeId });
+  return res.status(200).json({ success: true, challengeId, stakeAmount: stakeNum });
 }
 
 /**
@@ -321,6 +445,16 @@ async function processChallengeExpiration(challengeId: string) {
 
   if (isLegacyMoneyChallenge) {
     console.warn(`[Private Challenges][LEGACY] Challenge ${challengeId} requires admin refund migration; user-facing expiration will not move money.`);
+    return;
+  }
+
+  // ---- RAMO COM APOSTA EM COINS: precisa de um vencedor determinístico para
+  // saber a quem pagar o pote, então NUNCA reusa o "sem vencedor simbólico"
+  // do ramo livre abaixo (lá é aceitável não coroar ninguém; aqui não, tem
+  // Coins reais dos participantes em jogo). Ver processStakedChallengeExpiration.
+  const stakeNum = Math.max(0, Number(challenge.stakeAmount) || 0);
+  if (stakeNum > 0) {
+    await processStakedChallengeExpiration(challengeId, challengeRef, challenge, now);
     return;
   }
 
@@ -389,5 +523,233 @@ async function processChallengeExpiration(challengeId: string) {
       type: 'join',
       timestamp: now.toISOString()
     });
+  });
+}
+
+/**
+ * Encerramento de um desafio privado COM aposta em Invictus Coins.
+ *
+ * Regras (definidas com o dono do produto):
+ * - mesmo critério de pontuação IGA de todo o resto do app (ver
+ *   `computeUserScoreForWindow`), aplicado à janela [startDate, endDate]
+ *   do próprio desafio -- não ao placar simbólico incremental de
+ *   `private_challenge_members.points` (que não tem writer vivo hoje);
+ * - vencedor único com placar positivo leva o pote inteiro (todas as
+ *   apostas somadas);
+ * - empate no topo (incluindo "todo mundo zerado") estende o desafio em
+ *   1 dia, UMA ÚNICA VEZ, pra dar chance de alguém decidir. Se persistir
+ *   depois da extensão, o pote é dividido em partes iguais entre quem
+ *   empatou no topo (nunca fica Coins de participante preso no limbo);
+ * - menos de 2 participantes ao expirar: cancela e devolve a aposta de
+ *   quem entrou (normalmente só o criador).
+ *
+ * Toda movimentação de Coins usa `transaction.create()` num ID determinístico
+ * por (challengeId[, userId]) -- se por algum motivo esta função rodar em
+ * paralelo pra o mesmo desafio (ex: duas pessoas abrindo a lista de desafios
+ * ao mesmo tempo), a segunda tentativa falha ao tentar criar o mesmo
+ * documento de transação em vez de pagar/reembolsar em dobro.
+ */
+async function processStakedChallengeExpiration(
+  challengeId: string,
+  challengeRef: FirebaseFirestore.DocumentReference,
+  challenge: FirebaseFirestore.DocumentData,
+  now: Date,
+) {
+  const membersSnap = await db.collection('private_challenge_members')
+    .where('challengeId', '==', challengeId)
+    .get();
+  const members = membersSnap.docs.map(mDoc => mDoc.data());
+  const potTotal = Math.max(0, Number(challenge.potTotal) || 0);
+
+  if (members.length < 2) {
+    console.log(`[Private Challenges][Stake] Cancelling staked challenge ${challengeId} (below 2 participants) and refunding stakes.`);
+    await db.runTransaction(async (transaction) => {
+      const freshSnap = await transaction.get(challengeRef);
+      const fresh = freshSnap.data();
+      if (!fresh || ['completed', 'cancelled'].includes(fresh.status)) return; // já processado
+      for (const member of members) {
+        const refundAmount = Math.max(0, Number(member.stakeAmount) || 0);
+        if (refundAmount <= 0) continue;
+        const refundTxId = coinTransactionId(member.userId, `private_challenge_refund_${challengeId}`);
+        const walletRef = db.collection('reward_coin_wallets').doc(member.userId);
+        const walletSnap = await transaction.get(walletRef);
+        const wallet = walletSnap.exists ? (walletSnap.data() as RewardCoinWallet) : emptyWallet(member.userId);
+        const balance = Math.max(0, Number(wallet.balance) || 0);
+        const createdAt = now.toISOString();
+        const refundTx: RewardCoinTransaction = {
+          id: refundTxId,
+          userId: member.userId,
+          amount: refundAmount,
+          type: 'credit',
+          origin: 'private_challenge_refund',
+          ledgerType: 'PRIVATE_CHALLENGE_REFUND',
+          description: `Reembolso da aposta -- desafio privado "${challenge.title}" cancelado (menos de 2 participantes)`,
+          idempotencyKey: `private_challenge_refund_${challengeId}`,
+          balanceBefore: balance,
+          balanceAfter: balance + refundAmount,
+          createdAt,
+        };
+        transaction.create(db.collection('reward_coin_transactions').doc(refundTxId), refundTx);
+        transaction.set(walletRef, {
+          userId: member.userId,
+          balance: balance + refundAmount,
+          lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0),
+          lifetimeSpent: Math.max(0, Number(wallet.lifetimeSpent) || 0),
+          updatedAt: createdAt,
+        }, { merge: true });
+      }
+      transaction.set(challengeRef, {
+        status: 'cancelled',
+        resultStatus: 'CANCELLED_BELOW_MIN_PARTICIPANTS',
+        resultReason: 'BELOW_MIN_PARTICIPANTS',
+        updatedAt: now.toISOString(),
+      }, { merge: true });
+    });
+    return;
+  }
+
+  const startDate = new Date(challenge.startDate);
+  const endDate = new Date(challenge.endDate);
+  const scored = await Promise.all(members.map(async (member) => ({
+    member,
+    score: Math.max(0, (await computeUserScoreForWindow(member.userId, startDate, endDate)).average || 0),
+  })));
+  const topScore = scored.reduce((max, entry) => Math.max(max, entry.score), 0);
+  const topEntries = scored.filter(entry => entry.score === topScore);
+
+  if (topEntries.length === 1 && topScore > 0) {
+    const winner = topEntries[0].member;
+    console.log(`[Private Challenges][Stake] Paying out staked challenge ${challengeId}. Champion: ${winner.userId}, pot: ${potTotal} coins.`);
+    await db.runTransaction(async (transaction) => {
+      const freshSnap = await transaction.get(challengeRef);
+      const fresh = freshSnap.data();
+      if (!fresh || ['completed', 'cancelled'].includes(fresh.status)) return; // já processado
+
+      if (potTotal > 0) {
+        const payoutTxId = coinTransactionId(winner.userId, `private_challenge_payout_${challengeId}`);
+        const walletRef = db.collection('reward_coin_wallets').doc(winner.userId);
+        const walletSnap = await transaction.get(walletRef);
+        const wallet = walletSnap.exists ? (walletSnap.data() as RewardCoinWallet) : emptyWallet(winner.userId);
+        const balance = Math.max(0, Number(wallet.balance) || 0);
+        const createdAt = now.toISOString();
+        const payoutTx: RewardCoinTransaction = {
+          id: payoutTxId,
+          userId: winner.userId,
+          amount: potTotal,
+          type: 'credit',
+          origin: 'private_challenge_payout',
+          ledgerType: 'PRIVATE_CHALLENGE_PAYOUT',
+          description: `Prêmio por vencer o desafio privado "${challenge.title}"`,
+          idempotencyKey: `private_challenge_payout_${challengeId}`,
+          balanceBefore: balance,
+          balanceAfter: balance + potTotal,
+          createdAt,
+        };
+        transaction.create(db.collection('reward_coin_transactions').doc(payoutTxId), payoutTx);
+        transaction.set(walletRef, {
+          userId: winner.userId,
+          balance: balance + potTotal,
+          lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0) + potTotal,
+          lifetimeSpent: Math.max(0, Number(wallet.lifetimeSpent) || 0),
+          updatedAt: createdAt,
+        }, { merge: true });
+      }
+
+      transaction.set(challengeRef, {
+        status: 'completed',
+        winnerId: winner.userId,
+        winnerName: winner.userName || 'Atleta',
+        winnerPhoto: winner.userPhoto || '',
+        resultStatus: 'WINNER_CONFIRMED',
+        resultReason: 'UNIQUE_POSITIVE_TOP_SCORE',
+        updatedAt: now.toISOString(),
+      }, { merge: true });
+
+      const feedRef = db.collection('elite_feed').doc();
+      transaction.set(feedRef, {
+        userId: winner.userId,
+        userName: winner.userName || 'Atleta',
+        userPhoto: winner.userPhoto || '',
+        text: `venceu o desafio privado "${challenge.title}" e levou ${potTotal} Invictus Coins! 🏆💰`,
+        type: 'join',
+        timestamp: now.toISOString(),
+      });
+    });
+    return;
+  }
+
+  // Empate no topo (ou ninguém pontuou): dá uma chance a mais antes de
+  // dividir o pote, exatamente como combinado ("empate estende 1 dia").
+  if (!challenge.extendedOnce) {
+    console.log(`[Private Challenges][Stake] Tie at the top for challenge ${challengeId} -- extending by 1 day (first and only extension).`);
+    await db.runTransaction(async (transaction) => {
+      const freshSnap = await transaction.get(challengeRef);
+      const fresh = freshSnap.data();
+      if (!fresh || ['completed', 'cancelled'].includes(fresh.status) || fresh.extendedOnce === true) return; // já processado ou já estendido
+      const newEndDate = new Date(new Date(fresh.endDate).getTime() + 24 * 60 * 60 * 1000);
+      transaction.set(challengeRef, {
+        endDate: newEndDate.toISOString(),
+        extendedOnce: true,
+        updatedAt: now.toISOString(),
+      }, { merge: true });
+    });
+    return;
+  }
+
+  // Já foi estendido uma vez e o empate persistiu (ou continua todo mundo
+  // zerado): divide o pote em partes iguais entre quem empatou no topo, pra
+  // Coins de ninguém ficarem presos indefinidamente.
+  console.log(`[Private Challenges][Stake] Persistent tie for challenge ${challengeId} after extension -- splitting pot ${potTotal} coins among ${topEntries.length} member(s).`);
+  const base = topEntries.length > 0 ? Math.floor(potTotal / topEntries.length) : 0;
+  const remainder = topEntries.length > 0 ? potTotal - base * topEntries.length : 0;
+  const sortedTopEntries = [...topEntries].sort((a, b) => String(a.member.userId).localeCompare(String(b.member.userId)));
+
+  await db.runTransaction(async (transaction) => {
+    const freshSnap = await transaction.get(challengeRef);
+    const fresh = freshSnap.data();
+    if (!fresh || ['completed', 'cancelled'].includes(fresh.status)) return; // já processado
+
+    for (let i = 0; i < sortedTopEntries.length; i += 1) {
+      const share = base + (i < remainder ? 1 : 0);
+      if (share <= 0) continue;
+      const { member } = sortedTopEntries[i];
+      const splitTxId = coinTransactionId(member.userId, `private_challenge_refund_${challengeId}`);
+      const walletRef = db.collection('reward_coin_wallets').doc(member.userId);
+      const walletSnap = await transaction.get(walletRef);
+      const wallet = walletSnap.exists ? (walletSnap.data() as RewardCoinWallet) : emptyWallet(member.userId);
+      const balance = Math.max(0, Number(wallet.balance) || 0);
+      const createdAt = now.toISOString();
+      const splitTx: RewardCoinTransaction = {
+        id: splitTxId,
+        userId: member.userId,
+        amount: share,
+        type: 'credit',
+        origin: 'private_challenge_refund',
+        ledgerType: 'PRIVATE_CHALLENGE_REFUND',
+        description: `Pote dividido -- empate persistente no desafio privado "${challenge.title}"`,
+        idempotencyKey: `private_challenge_refund_${challengeId}`,
+        balanceBefore: balance,
+        balanceAfter: balance + share,
+        createdAt,
+      };
+      transaction.create(db.collection('reward_coin_transactions').doc(splitTxId), splitTx);
+      transaction.set(walletRef, {
+        userId: member.userId,
+        balance: balance + share,
+        lifetimeEarned: Math.max(0, Number(wallet.lifetimeEarned) || 0),
+        lifetimeSpent: Math.max(0, Number(wallet.lifetimeSpent) || 0),
+        updatedAt: createdAt,
+      }, { merge: true });
+    }
+
+    transaction.set(challengeRef, {
+      status: 'completed',
+      winnerId: null,
+      winnerName: null,
+      winnerPhoto: null,
+      resultStatus: 'SPLIT_ON_PERSISTENT_TIE',
+      resultReason: topScore <= 0 ? 'NO_SCORING_DATA' : 'TOP_SCORE_TIE',
+      updatedAt: now.toISOString(),
+    }, { merge: true });
   });
 }

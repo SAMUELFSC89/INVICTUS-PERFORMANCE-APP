@@ -110,7 +110,16 @@ export default async function handler(req: any, res: any) {
     if (action === 'create') {
       const a = answersSchema.parse(req.body.answers) as ObjectiveAnswers;
       const profile = await getBaselineProfile(auth.uid, user, now);
-      if (profile.ageYears === null || profile.ageYears < 18) throw new ObjectiveError('Esta jornada é destinada a adultos. Confirme a data de nascimento no perfil.');
+      // Continua sendo o bloqueio de segurança final (defesa em profundidade)
+      // contra menores de idade -- nunca remover. Na prática o AuthGuard já
+      // impede qualquer conta de chegar até aqui sem birthDate preenchida
+      // (ver AuthGuard.tsx), então profile.ageYears === null só deve
+      // acontecer numa janela de corrida rara (ex: aba antiga já aberta).
+      // O texto não aponta mais pra "confirmar no perfil" -- não existe
+      // campo de data de nascimento na tela de Perfil, e apontar pra lá era
+      // um beco sem saída real reportado pelo usuário.
+      if (profile.ageYears === null) throw new ObjectiveError('Precisamos confirmar sua data de nascimento antes de criar esta jornada. Feche e abra o app novamente para concluir seu cadastro.');
+      if (profile.ageYears < 18) throw new ObjectiveError('Esta jornada é destinada a adultos.');
       if (a.goalType === 'lose_weight' && profile.heightCm && (a.currentWeightKg! - a.loseKg!) / (profile.heightCm / 100) ** 2 < 18.5) throw new ObjectiveError('Esse objetivo requer avaliação profissional individual. Não vamos gerar uma meta de perda de peso automaticamente.');
       const ref = account.collection('journeys').doc();
       const created = createJourney(ref.id, auth.uid, a, profile, now);

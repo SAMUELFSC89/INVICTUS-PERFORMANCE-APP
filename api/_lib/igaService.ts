@@ -298,3 +298,59 @@ export async function recalculateUserWeeklyIGA(
   const result = await recalculateAllUserScores(userId, extraSession);
   return result.weekly;
 }
+
+/**
+ * Calcula o IGA médio de um usuário numa janela de datas ARBITRÁRIA (não
+ * necessariamente semana/mês/temporada) -- MESMA fonte única de pontuação
+ * (mesmas regras de elegibilidade, adesão ao ranking da academia, evidência
+ * competitiva confiável, reconhecimento cardíaco competitivo) usada em todo
+ * o resto do app, só que aplicada à janela do desafio em vez da janela fixa.
+ *
+ * Usado para apurar o placar de um desafio privado no momento do encerramento
+ * (settlement sob demanda: sem precisar de um writer incremental por treino,
+ * sem tocar em nenhum dos quatro pontos de escrita espalhados de
+ * `rankingPointsEarned`). Sem adesão válida ao ranking da academia, o
+ * resultado é sempre 0 -- igual ao resto do sistema competitivo: nunca
+ * inventamos pontuação para quem não está inscrito.
+ */
+export async function computeUserScoreForWindow(
+  userId: string,
+  startDate: Date,
+  endDate: Date,
+): Promise<{ average: number; weeks: Array<{ weekStart: string; igaRanking: number; frequency: number }> }> {
+  const empty = { average: 0, weeks: [] as Array<{ weekStart: string; igaRanking: number; frequency: number }> };
+  if (!db || !userId) return empty;
+
+  const userRef = db.collection('users').doc(userId);
+  const enrollmentRef = db.collection('gym_ranking_enrollments').doc(userId);
+  const [userSnap, enrollmentSnap] = await Promise.all([userRef.get(), enrollmentRef.get()]);
+  const userData = userSnap.exists ? (userSnap.data() || {}) : {};
+  const profile = await buildProfile(userId, userData);
+  const enrollmentData = enrollmentSnap.exists ? (enrollmentSnap.data() || {}) : {};
+  const enrolledAtValue = enrollmentData.enrolledAt?.toDate
+    ? enrollmentData.enrolledAt.toDate()
+    : new Date(enrollmentData.enrolledAt || '');
+  const enrollment: GymRankingEnrollmentEpoch | null = enrollmentData.enrolled === true
+    && isCurrentCompetitiveHrAcknowledgement(enrollmentData, 'gym_ranking', COMPETITION_RULES_VERSIONS.gym_ranking)
+    && typeof enrollmentData.gymId === 'string'
+    && enrollmentData.gymId
+    && Number.isFinite(enrolledAtValue.getTime())
+    ? { gymId: enrollmentData.gymId, enrolledAt: enrolledAtValue, epochId: `${userId}:${enrolledAtValue.getTime()}` }
+    : null;
+
+  if (!enrollment) return empty;
+
+  const now = new Date();
+  const windowStart = enrollment.enrolledAt > startDate ? enrollment.enrolledAt : startDate;
+  const windowEnd = endDate > now ? now : endDate;
+  if (windowEnd <= windowStart) return empty;
+
+  const allSessions = await fetchAllSessionsSince(userId, windowStart, enrollment);
+  return computeWindowAverageIGA(
+    allSessions,
+    windowStart,
+    windowEnd,
+    profile,
+    { activeFrom: enrollment.enrolledAt, now, timeZone: COMPETITION_TIME_ZONE },
+  );
+}

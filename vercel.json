@@ -30,10 +30,6 @@
       "destination": "/api/payments-verify-purchase-guarded"
     },
     {
-      "source": "/api/validate-presence",
-      "destination": "/api/validate-presence-guarded"
-    },
-    {
       "source": "/api/identity-verification",
       "destination": "/api/identity-verification-guarded"
     },

@@ -198,16 +198,3 @@ test('an account change during collection prevents posting private observations 
   expect(global.fetch).not.toHaveBeenCalled();
   expect(localStorage.getItem('current_activity_session')).not.toBeNull();
 });
-
-test('a presence-check response cannot expose the previous account’s health record after an account change', async () => {
-  completeSet();
-  (global.fetch as jest.Mock).mockImplementation(async (_url, options) => ({
-    ok: true,
-    json: async () => {
-      authState.currentUser = { uid: 'athlete-b', getIdToken: jest.fn().mockResolvedValue('token-b') };
-      return { presenceCheckRequired: true, presenceCheckId: 'presence-a', healthSession: JSON.parse(options.body).healthSession };
-    },
-  }));
-  await expect(activityService.endSession()).rejects.toThrow('A conta mudou');
-  expect(localStorage.getItem('current_activity_session')).not.toBeNull();
-});

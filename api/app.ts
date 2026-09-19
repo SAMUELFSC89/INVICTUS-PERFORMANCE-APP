@@ -29,7 +29,6 @@ import habitsHandler from './_handlers/habits.js';
 import cardioObjectiveHandler from './_handlers/cardio-objective.js';
 import validateActivityHandler from './_handlers/validate-activity.js';
 import activityPolicyHandler from './_handlers/activity-policy.js';
-import validatePresenceHandler from './_handlers/validate-presence.js';
 import whatsappHandler from './_handlers/whatsapp.js';
 import notificationsHandler from './_handlers/notifications.js';
 import auditFraudHandler from './_handlers/audit-fraud.js';
@@ -155,7 +154,6 @@ assertHandler('gymsPhotoHandler', gymsPhotoHandler);
 assertHandler('runningHandler', runningHandler);
 assertHandler('validateActivityHandler', validateActivityHandler);
 assertHandler('activityPolicyHandler', activityPolicyHandler);
-assertHandler('validatePresenceHandler', validatePresenceHandler);
 assertHandler('stravaHandler', stravaHandler);
 assertHandler('whatsappHandler', whatsappHandler);
 assertHandler('auditFraudHandler', auditFraudHandler);
@@ -238,10 +236,6 @@ router.all('/validate-activity', activityLimiter, wrap(validateActivityHandler))
 
 console.log('[ROUTE] /activity-policy', typeof activityPolicyHandler);
 router.all('/activity-policy', activityLimiter, wrap(activityPolicyHandler));
-
-console.log('[ROUTE] /validate-presence', typeof validatePresenceHandler);
-router.all('/validate-presence', wrap(validatePresenceHandler));
-
 
 console.log('[ROUTE] /strava/auth', typeof stravaHandler);
 console.log('[ROUTE] /strava/callback', typeof stravaHandler);
@@ -398,7 +392,6 @@ router.all('/app', (req: any, res: any, next: any) => {
     case 'gyms-checkin': return await gymsCheckinHandler(req as any, res as any);
     case 'validate-activity': return await validateActivityHandler(req as any, res as any);
     case 'activity-policy': return await activityPolicyHandler(req as any, res as any);
-    case 'validate-presence': return await validatePresenceHandler(req as any, res as any);
     case 'strava': return await stravaHandler(req as any, res as any, () => {});
     case 'whatsapp-send': return await whatsappHandler(req as any, res as any);
     case 'wallet-redeem': return await walletRedeemHandler(req as any, res as any);
