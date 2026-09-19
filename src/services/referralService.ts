@@ -1,65 +1,32 @@
-import { auth } from '../firebase';
-import { Referral, UserProfile } from '../types';
-
-async function authenticatedProfileRequest(action: 'resolve-referral' | 'create-referral', body: Record<string, unknown>) {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Faça login novamente para concluir a indicação.');
-
-  const token = await user.getIdToken();
-  const response = await fetch(`/api/profile?action=${action}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'Não foi possível processar a indicação.');
-  return payload;
-}
-
-/**
- * Indicações são criadas e pontuadas exclusivamente no servidor. Isso impede
- * que um cliente leia perfis alheios ou conceda pontos para si/terceiros.
+/*
+ * Sistema de indicação descontinuado.
+ *
+ * Este shim temporário existe apenas para manter compatibilidade com o fluxo
+ * de cadastro legado enquanto o restante do AuthGuard é simplificado. Ele não
+ * faz chamadas de rede, não cria indicações e não concede qualquer benefício.
  */
 export const referralService = {
-  generateReferralCode(uid: string): string {
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return `${uid.substring(0, 4).toUpperCase()}-${random}`;
+  generateReferralCode(_uid: string): string {
+    return '';
   },
 
-  async getReferrerByCode(code: string): Promise<UserProfile | null> {
-    const referralCode = code.trim().toUpperCase();
-    if (!referralCode) return null;
-    try {
-      const payload = await authenticatedProfileRequest('resolve-referral', { referralCode });
-      return payload.referrer ? ({ ...payload.referrer } as UserProfile) : null;
-    } catch (error) {
-      console.warn('[Referral] Não foi possível resolver código de indicação:', error);
-      return null;
-    }
+  async getReferrerByCode(_code: string): Promise<null> {
+    return null;
   },
 
-  async createReferral(referralCode: string) {
-    const normalizedCode = referralCode.trim().toUpperCase();
-    if (!normalizedCode) return null;
-    return authenticatedProfileRequest('create-referral', { referralCode: normalizedCode });
+  async createReferral(_referralCode: string): Promise<null> {
+    return null;
   },
 
-  // A aprovação, os critérios e qualquer crédito de score são responsabilidade
-  // de job/endpoint administrativo no servidor, nunca do aplicativo cliente.
-  async validateReferral(_referralId: string) {
-    throw new Error('A validação de indicação é processada somente pelo servidor.');
+  async validateReferral(_referralId: string): Promise<never> {
+    throw new Error('Sistema de indicação descontinuado.');
   },
 
   async checkMinWorkouts(_userId: string, _min: number): Promise<boolean> {
     return false;
   },
 
-  async getMyReferrals(): Promise<Referral[]> {
-    // Não há endpoint de leitura de indicações nesta revisão. Retornamos um
-    // estado vazio em vez de consultar referências de outros usuários.
+  async getMyReferrals(): Promise<[]> {
     return [];
-  }
+  },
 };
