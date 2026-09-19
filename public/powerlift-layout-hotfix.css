@@ -1,0 +1,317 @@
+/* Power Lift final layout hotfix.
+   Visual-only. Keeps app logo, navigation, scoring, rankings and rewards untouched. */
+
+/* 1) The Power Lift area must inherit the app canvas instead of drawing a second
+   rectangular page on top of it. */
+.pl-season.pl-season {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.pl-season .pl-shell {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.pl-season.pl-view-modality::before {
+  content: none !important;
+  background: none !important;
+}
+
+/* Keep content surfaces floating on the app background instead of forming one
+   large opaque rectangle. */
+.pl-season .pl-hero,
+.pl-season .pl-card,
+.pl-season .pl-rank-card,
+.pl-season .pl-rule-card,
+.pl-season .pl-form-card,
+.pl-season .pl-message-card,
+.pl-season .pl-elite-status,
+.pl-season .pl-validation-checklist,
+.pl-season .pl-triplo-grid > article,
+.pl-season .pl-general-filters > span,
+.pl-season .pl-ranking-nav > button,
+.pl-season .pl-general-card {
+  background:
+    radial-gradient(circle at 88% 4%, rgba(203, 153, 54, .09), transparent 38%),
+    linear-gradient(135deg, rgba(23, 23, 23, .68), rgba(7, 7, 8, .46)) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(1.04);
+  backdrop-filter: blur(12px) saturate(1.04);
+  border-color: rgba(231, 189, 104, .30) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.025), 0 10px 24px rgba(0,0,0,.13) !important;
+}
+
+/* 2) Every Power Lift hero/banner gets the same visible premium outline.
+   The top app bar/logo stays outside this framed artwork. */
+.pl-season .pl-approved-header {
+  min-height: 320px;
+  margin: -14px 0 16px;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: visible;
+  background: transparent !important;
+}
+
+.pl-season .pl-header-art {
+  inset: 72px 0 0;
+  overflow: hidden;
+  border: 1px solid rgba(235, 194, 103, .82) !important;
+  border-radius: 16px;
+  transform: none !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 240, 195, .035),
+    inset 0 -44px 58px rgba(0,0,0,.22),
+    0 12px 28px rgba(0,0,0,.18),
+    0 0 20px rgba(214, 165, 60, .055);
+}
+
+.pl-season .pl-approved-header::before {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 92px;
+  border-radius: 0 0 16px 16px;
+  background: linear-gradient(180deg, transparent 0%, rgba(5,5,6,.18) 44%, rgba(5,5,6,.58) 100%);
+}
+
+.pl-season .pl-approved-header::after {
+  top: 102px;
+  right: 16px;
+}
+
+.pl-season .pl-topbar {
+  margin-bottom: 22px;
+}
+
+.pl-season .pl-title {
+  margin-left: 16px;
+  max-width: min(74%, 640px);
+}
+
+.pl-season .pl-subtitle {
+  margin-left: 16px;
+  margin-right: 16px;
+  max-width: min(72%, 620px);
+}
+
+/* 3) Compact the cards slightly so the hierarchy matches the approved mobile
+   reference and avoids the oversized stacked-box feeling. */
+.pl-season .pl-hero {
+  padding: 17px 18px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+}
+
+.pl-season .pl-card,
+.pl-season .pl-rule-card,
+.pl-season .pl-form-card,
+.pl-season .pl-message-card,
+.pl-season .pl-validation-checklist,
+.pl-season .pl-general-card,
+.pl-season .pl-rank-card {
+  border-radius: 13px;
+}
+
+.pl-season .pl-rank-card {
+  min-height: 118px;
+  padding: 13px 11px 11px;
+}
+
+.pl-season .pl-general-card {
+  min-height: 80px;
+  padding: 14px 16px;
+}
+
+.pl-season .pl-career-card,
+.pl-season .pl-target-card {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+/* Dashboard modality cards: preserve the official image, remove unnecessary
+   scaling, and keep stats readable without making the cards too tall. */
+.pl-season.pl-view-home .pl-modality {
+  min-height: 140px;
+  border-radius: 14px;
+}
+
+.pl-season.pl-view-home .pl-modality-image {
+  transform: none !important;
+  filter: saturate(.98) contrast(1.06) brightness(.86) !important;
+}
+
+.pl-season.pl-view-home .pl-modality-body {
+  min-height: 140px;
+  padding: 15px 50px 13px 16px;
+}
+
+/* Preserve the useful focal point of each official modality image. */
+.pl-season .pl-modality-image[src*="powerlift-supino"] {
+  object-position: 46% 44% !important;
+}
+
+.pl-season .pl-modality-image[src*="powerlift-agachamento"] {
+  object-position: 50% 50% !important;
+}
+
+.pl-season .pl-modality-image[src*="powerlift-terra"] {
+  object-position: 52% 48% !important;
+}
+
+/* Do not let image/video/media elements overflow their cards on narrow devices. */
+.pl-season img,
+.pl-season video {
+  max-width: 100%;
+}
+
+.pl-season .pl-card,
+.pl-season .pl-hero,
+.pl-season .pl-form-card,
+.pl-season .pl-message-card,
+.pl-season .pl-validation-checklist {
+  min-width: 0;
+}
+
+/* 4) Mobile framing. The previous category hero was too tall for a landscape
+   source image, forcing an aggressive crop. A shallower framed banner keeps
+   substantially more of the official artwork visible. */
+@media (max-width: 680px) {
+  .pl-season {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .pl-season .pl-approved-header {
+    min-height: 304px;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 14px;
+  }
+
+  .pl-season .pl-header-art {
+    inset: 70px 0 0;
+    border-radius: 14px;
+    background-position: center 44% !important;
+    background-size: cover !important;
+  }
+
+  .pl-season .pl-approved-header::before {
+    height: 80px;
+    border-radius: 0 0 14px 14px;
+  }
+
+  .pl-season .pl-approved-header::after {
+    top: 98px;
+    right: 12px;
+    font-size: 6.5px;
+  }
+
+  .pl-season .pl-title {
+    margin-left: 14px;
+    max-width: 72%;
+    font-size: clamp(38px, 11vw, 54px);
+  }
+
+  .pl-season .pl-subtitle {
+    margin: 10px 14px 0;
+    max-width: 72%;
+    font-size: 9px;
+    line-height: 1.45;
+    letter-spacing: .13em;
+  }
+
+  .pl-season .pl-hero {
+    padding: 15px 16px;
+    margin-bottom: 13px;
+  }
+
+  .pl-season .pl-section {
+    margin-top: 20px;
+  }
+
+  .pl-season.pl-view-home .pl-modality {
+    min-height: 130px;
+  }
+
+  .pl-season.pl-view-home .pl-modality-body {
+    min-height: 130px;
+    padding: 13px 38px 12px 13px;
+  }
+
+  .pl-season.pl-view-home .pl-modality h3 {
+    max-width: 56%;
+    font-size: 16px;
+  }
+
+  .pl-season.pl-view-home .pl-modality-data,
+  .pl-season.pl-view-home .pl-modality-meta,
+  .pl-season.pl-view-home .pl-modality-body > small {
+    width: 55%;
+  }
+
+  .pl-season .pl-rank-card {
+    min-height: 108px;
+    padding: 11px 10px 10px;
+  }
+
+  .pl-season .pl-general-card {
+    min-height: 72px;
+    padding: 12px 13px;
+  }
+}
+
+@media (max-width: 420px) {
+  .pl-season {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .pl-season .pl-approved-header {
+    min-height: 290px;
+  }
+
+  .pl-season .pl-header-art {
+    inset: 68px 0 0;
+    border-radius: 13px;
+    background-position: center 46% !important;
+  }
+
+  .pl-season .pl-title {
+    margin-left: 12px;
+    max-width: 74%;
+    font-size: 38px;
+  }
+
+  .pl-season .pl-subtitle {
+    margin-left: 12px;
+    margin-right: 12px;
+    max-width: 74%;
+    font-size: 8.5px;
+  }
+
+  .pl-season.pl-view-home .pl-modality {
+    min-height: 124px;
+  }
+
+  .pl-season.pl-view-home .pl-modality-body {
+    min-height: 124px;
+    padding: 12px 34px 11px 12px;
+  }
+
+  .pl-season.pl-view-home .pl-modality h3 {
+    max-width: 58%;
+    font-size: 15px;
+  }
+
+  .pl-season.pl-view-home .pl-modality-data,
+  .pl-season.pl-view-home .pl-modality-meta,
+  .pl-season.pl-view-home .pl-modality-body > small {
+    width: 58%;
+  }
+
+  .pl-season .pl-rank-card {
+    min-height: 102px;
+  }
+}

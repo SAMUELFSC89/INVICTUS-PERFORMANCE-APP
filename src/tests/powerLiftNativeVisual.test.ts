@@ -8,7 +8,9 @@ describe('Power Lift native visual integration', () => {
     const html = read('index.html');
     expect(html).toContain('/powerlift-native-ui.css?v=20260919');
     expect(html).toContain('/powerlift-category-final.css?v=20260919b');
+    expect(html).toContain('/powerlift-layout-hotfix.css?v=20260919c');
     expect(html.indexOf('/powerlift-category-final.css')).toBeGreaterThan(html.indexOf('/powerlift-native-ui.css'));
+    expect(html.indexOf('/powerlift-layout-hotfix.css')).toBeGreaterThan(html.indexOf('/powerlift-category-final.css'));
   });
 
   test('uses the existing official modality artwork as a full-card background layer', () => {
@@ -41,18 +43,49 @@ describe('Power Lift native visual integration', () => {
     expect(css).toContain('.pl-season.pl-view-modality .pl-tier-track');
   });
 
-  test('final category layer does not replace the app logo or bottom navigation', () => {
-    const css = read('public/powerlift-category-final.css');
-    expect(css).not.toContain('.pl-season .pl-brand');
-    expect(css).not.toContain('.pl-season .pl-bottom-nav');
-    expect(css).not.toContain('.pl-season.pl-view-modality .pl-brand');
-    expect(css).not.toContain('.pl-season.pl-view-modality .pl-bottom-nav');
+  test('final hotfix removes the second page canvas from every Power Lift view', () => {
+    const css = read('public/powerlift-layout-hotfix.css');
+    expect(css).toContain('.pl-season.pl-season');
+    expect(css).toContain('background: transparent !important;');
+    expect(css).toContain('.pl-season .pl-shell');
+    expect(css).toContain('box-shadow: none !important;');
+    expect(css).toContain('.pl-season.pl-view-modality::before');
+    expect(css).toContain('content: none !important;');
+  });
+
+  test('final hotfix gives every Power Lift banner the premium outline', () => {
+    const css = read('public/powerlift-layout-hotfix.css');
+    expect(css).toContain('.pl-season .pl-header-art');
+    expect(css).toContain('border: 1px solid rgba(235, 194, 103, .82) !important;');
+    expect(css).toContain('border-radius: 16px;');
+  });
+
+  test('mobile hotfix reduces hero crop and preserves modality focal points', () => {
+    const css = read('public/powerlift-layout-hotfix.css');
+    expect(css).toContain('@media (max-width: 680px)');
+    expect(css).toContain('min-height: 304px;');
+    expect(css).toContain('background-position: center 44% !important;');
+    expect(css).toContain('.pl-modality-image[src*="powerlift-supino"]');
+    expect(css).toContain('.pl-modality-image[src*="powerlift-agachamento"]');
+    expect(css).toContain('.pl-modality-image[src*="powerlift-terra"]');
+    expect(css).toContain('transform: none !important;');
+  });
+
+  test('final visual layers do not replace the app logo or bottom navigation', () => {
+    for (const file of ['public/powerlift-category-final.css', 'public/powerlift-layout-hotfix.css']) {
+      const css = read(file);
+      expect(css).not.toContain('.pl-season .pl-brand');
+      expect(css).not.toContain('.pl-season .pl-bottom-nav');
+      expect(css).not.toContain('.pl-season.pl-view-modality .pl-brand');
+      expect(css).not.toContain('.pl-season.pl-view-modality .pl-bottom-nav');
+    }
   });
 
   test('keeps the new overrides scoped to Power Lift', () => {
     const nativeCss = read('public/powerlift-native-ui.css');
     const finalCss = read('public/powerlift-category-final.css');
-    for (const css of [nativeCss, finalCss]) {
+    const hotfixCss = read('public/powerlift-layout-hotfix.css');
+    for (const css of [nativeCss, finalCss, hotfixCss]) {
       expect(css).not.toContain('\n.pl-modality {');
       expect(css).not.toContain('\n.pl-modality-image {');
       expect(css).not.toContain('\n.pl-tier-step:not(.done) {');
