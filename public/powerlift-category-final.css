@@ -1,0 +1,329 @@
+/* Final Power Lift category/dashboard visual parity.
+   Intentionally scoped to .pl-season. Existing app logo and bottom navigation
+   remain untouched; this layer only refines the Power Lift content surfaces. */
+
+/* The category page must feel like part of the app, not a rectangular canvas
+   mounted on top of it. Let the app chrome/background breathe through and use
+   only soft local light instead of a full opaque page fill. */
+.pl-season.pl-view-modality {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 82% 8%, rgba(207, 153, 50, .12), transparent 25%),
+    radial-gradient(circle at 10% 38%, rgba(85, 105, 118, .06), transparent 32%),
+    linear-gradient(180deg, rgba(5, 5, 6, .18) 0%, rgba(6, 6, 7, .08) 42%, rgba(5, 5, 6, .18) 100%) !important;
+  background-color: transparent !important;
+}
+
+.pl-season.pl-view-modality::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% -8%, rgba(229, 182, 80, .08), transparent 44%),
+    linear-gradient(90deg, transparent 0%, rgba(224, 176, 73, .025) 50%, transparent 100%);
+}
+
+.pl-season.pl-view-modality .pl-shell {
+  background: transparent !important;
+}
+
+/* Category hero: keep the existing top bar/logo untouched, while the actual
+   modality artwork/title becomes a bordered premium banner below it. */
+.pl-season.pl-view-modality .pl-approved-header {
+  min-height: 376px;
+  margin: -14px 0 20px;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.pl-season.pl-view-modality .pl-header-art {
+  inset: 76px 0 0;
+  border: 1px solid rgba(231, 189, 104, .78);
+  border-radius: 18px;
+  overflow: hidden;
+  background-position: center 42% !important;
+  filter: saturate(.76) contrast(1.16) brightness(.70);
+  transform: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 239, 192, .035),
+    inset 0 -58px 70px rgba(0, 0, 0, .30),
+    0 16px 42px rgba(0, 0, 0, .26),
+    0 0 24px rgba(207, 153, 50, .06);
+}
+
+.pl-season.pl-view-modality .pl-approved-header::before {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 118px;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(180deg, transparent 0%, rgba(5, 5, 6, .26) 44%, rgba(5, 5, 6, .72) 100%);
+}
+
+.pl-season.pl-view-modality .pl-approved-header::after {
+  top: 112px;
+  right: 18px;
+  color: rgba(245, 245, 241, .70);
+  border-right-color: rgba(231, 189, 104, .78);
+}
+
+.pl-season.pl-view-modality .pl-topbar {
+  margin-bottom: 30px;
+}
+
+.pl-season.pl-view-modality .pl-title {
+  margin-left: 18px;
+  max-width: min(72%, 640px);
+  font-size: clamp(48px, 9.6vw, 82px);
+  text-shadow: 0 8px 28px rgba(0, 0, 0, .76);
+}
+
+.pl-season.pl-view-modality .pl-title::before {
+  content: "POWER LIFT";
+  display: block;
+  margin: 0 0 11px 2px;
+  color: rgba(248, 247, 242, .88);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .34em;
+  line-height: 1;
+}
+
+.pl-season.pl-view-modality .pl-subtitle {
+  margin: 14px 18px 0;
+  max-width: min(68%, 610px);
+  color: rgba(244, 244, 239, .84);
+  line-height: 1.65;
+  text-shadow: 0 3px 12px rgba(0, 0, 0, .74);
+}
+
+/* Season mark and career panels: thinner, warmer glass instead of opaque
+   stacked rectangles. This is the main fix for the "screen on top" look. */
+.pl-season.pl-view-modality .pl-hero--modality,
+.pl-season.pl-view-modality .pl-career-card,
+.pl-season.pl-view-modality .pl-target-card {
+  border-color: rgba(231, 189, 104, .46) !important;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(206, 151, 46, .11), transparent 38%),
+    linear-gradient(135deg, rgba(25, 24, 22, .69), rgba(7, 7, 8, .52)) !important;
+  -webkit-backdrop-filter: blur(15px) saturate(1.06);
+  backdrop-filter: blur(15px) saturate(1.06);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .028),
+    inset 0 0 34px rgba(205, 155, 53, .025),
+    0 13px 34px rgba(0, 0, 0, .15) !important;
+}
+
+.pl-season.pl-view-modality .pl-hero--modality {
+  padding: 22px 24px;
+  border-radius: 16px;
+}
+
+.pl-season.pl-view-modality .pl-hero--modality .pl-eyebrow {
+  color: #e8c977;
+  font-size: 10px;
+  letter-spacing: .19em;
+}
+
+.pl-season.pl-view-modality .pl-career-card {
+  border-radius: 15px;
+}
+
+/* Tier progression should read as one premium module, like the approved final
+   reference, while preserving the existing real badges and locked states. */
+.pl-season.pl-view-modality .pl-section:has(.pl-tier-track) {
+  margin-top: 28px;
+}
+
+.pl-season.pl-view-modality .pl-section:has(.pl-tier-track) .pl-section-head {
+  margin: 0;
+  padding: 0 4px 11px;
+}
+
+.pl-season.pl-view-modality .pl-tier-track {
+  margin: 0;
+  padding: 18px 15px 14px;
+  border: 1px solid rgba(231, 189, 104, .36);
+  border-radius: 15px 15px 0 0;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(83, 157, 203, .055), transparent 28%),
+    linear-gradient(135deg, rgba(22, 22, 21, .67), rgba(7, 7, 8, .52));
+  -webkit-backdrop-filter: blur(13px);
+  backdrop-filter: blur(13px);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.pl-season.pl-view-modality .pl-target-card {
+  margin-top: 0;
+  border-top: 0 !important;
+  border-radius: 0 0 15px 15px;
+}
+
+/* Keep the CTA visually attached to the category rather than looking like a
+   floating legacy tile. */
+.pl-season.pl-view-modality .pl-primary,
+.pl-season.pl-view-modality .pl-secondary {
+  border-radius: 14px;
+}
+
+.pl-season.pl-view-modality .pl-primary {
+  border: 1px solid rgba(239, 197, 105, .58);
+  background:
+    radial-gradient(circle at 85% 0%, rgba(235, 184, 76, .16), transparent 44%),
+    linear-gradient(100deg, rgba(104, 70, 18, .42), rgba(34, 26, 13, .74));
+  box-shadow: inset 0 1px rgba(255, 245, 206, .05), 0 10px 25px rgba(0, 0, 0, .16);
+}
+
+/* Dashboard parity with the approved reference: official modality artwork is
+   the hero of each card, with the data living on a controlled dark gradient. */
+.pl-season.pl-view-home .pl-modality {
+  min-height: 154px;
+  border-color: rgba(231, 189, 104, .52);
+  border-radius: 15px;
+  background: rgba(7, 7, 8, .58);
+  box-shadow: inset 0 1px rgba(255,255,255,.02), 0 13px 30px rgba(0,0,0,.18);
+}
+
+.pl-season.pl-view-home .pl-modality::before {
+  background:
+    linear-gradient(90deg,
+      rgba(5, 5, 6, .18) 0%,
+      rgba(5, 5, 6, .24) 38%,
+      rgba(5, 5, 6, .78) 61%,
+      rgba(5, 5, 6, .94) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.42));
+}
+
+.pl-season.pl-view-home .pl-modality-image {
+  object-position: 42% center;
+  filter: saturate(.94) contrast(1.1) brightness(.84);
+}
+
+.pl-season.pl-view-home .pl-modality-body {
+  width: 100%;
+  min-height: 154px;
+  padding: 17px 54px 15px 18px;
+  justify-content: flex-end;
+}
+
+.pl-season.pl-view-home .pl-modality h3 {
+  max-width: 46%;
+  margin-bottom: 7px;
+  font-size: clamp(18px, 3.1vw, 23px);
+}
+
+.pl-season.pl-view-home .pl-modality-data,
+.pl-season.pl-view-home .pl-modality-meta,
+.pl-season.pl-view-home .pl-modality-body > small {
+  width: 47%;
+  margin-left: auto;
+}
+
+.pl-season.pl-view-home .pl-modality-data {
+  margin-top: 0;
+}
+
+.pl-season.pl-view-home .pl-modality-meta {
+  margin-top: 10px;
+}
+
+/* Mobile tuning: keep the top bar outside the framed category hero and preserve
+   comfortable text/image separation without touching the bottom app menu. */
+@media (max-width: 680px) {
+  .pl-season.pl-view-modality .pl-approved-header {
+    min-height: 356px;
+  }
+
+  .pl-season.pl-view-modality .pl-header-art {
+    inset: 72px 0 0;
+    border-radius: 15px;
+    background-position: 58% center !important;
+  }
+
+  .pl-season.pl-view-modality .pl-approved-header::after {
+    top: 104px;
+    right: 13px;
+    font-size: 7px;
+  }
+
+  .pl-season.pl-view-modality .pl-title {
+    margin-left: 16px;
+    max-width: 72%;
+    font-size: clamp(43px, 12vw, 62px);
+  }
+
+  .pl-season.pl-view-modality .pl-subtitle {
+    margin-left: 16px;
+    max-width: 72%;
+    font-size: 10px;
+    letter-spacing: .15em;
+  }
+
+  .pl-season.pl-view-home .pl-modality {
+    min-height: 148px;
+  }
+
+  .pl-season.pl-view-home .pl-modality-body {
+    min-height: 148px;
+    padding: 15px 42px 13px 14px;
+  }
+
+  .pl-season.pl-view-home .pl-modality h3 {
+    max-width: 51%;
+    font-size: 17px;
+  }
+
+  .pl-season.pl-view-home .pl-modality-data,
+  .pl-season.pl-view-home .pl-modality-meta,
+  .pl-season.pl-view-home .pl-modality-body > small {
+    width: 52%;
+  }
+}
+
+@media (max-width: 420px) {
+  .pl-season.pl-view-modality .pl-approved-header {
+    min-height: 344px;
+  }
+
+  .pl-season.pl-view-modality .pl-header-art {
+    inset: 68px 0 0;
+  }
+
+  .pl-season.pl-view-modality .pl-title {
+    margin-left: 14px;
+    max-width: 70%;
+    font-size: 42px;
+  }
+
+  .pl-season.pl-view-modality .pl-title::before {
+    margin-bottom: 8px;
+    font-size: 7.5px;
+  }
+
+  .pl-season.pl-view-modality .pl-subtitle {
+    margin-left: 14px;
+    max-width: 70%;
+    font-size: 9px;
+  }
+
+  .pl-season.pl-view-home .pl-modality-body {
+    padding-right: 38px;
+  }
+
+  .pl-season.pl-view-home .pl-modality h3 {
+    max-width: 56%;
+  }
+
+  .pl-season.pl-view-home .pl-modality-data,
+  .pl-season.pl-view-home .pl-modality-meta,
+  .pl-season.pl-view-home .pl-modality-body > small {
+    width: 57%;
+  }
+}
