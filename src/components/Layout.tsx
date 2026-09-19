@@ -16,14 +16,14 @@ export function Layout() {
   });
 
   const location = useLocation();
-  const isHome = location.pathname === '/' || location.pathname === '/invite';
+  const isHome = location.pathname === '/';
 
   // Telas novas que possuem shell/cabeçalho/rodapé próprios (a maioria via
   // createPortal(document.body)). O menu antigo do Layout nunca pode ficar
   // montado por baixo delas: além do vazamento visual, dois navs simultâneos
   // mantinham alvos de toque invisíveis na mesma região da tela.
+  // Power Lift é exceção: o menu local foi removido e deve usar o menu global.
   const routeOwnsNavigation = isHome
-    || location.pathname.startsWith('/power')
     || location.pathname.startsWith('/health')
     || location.pathname.startsWith('/championships')
     || location.pathname.startsWith('/challenges')

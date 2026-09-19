@@ -1354,44 +1354,6 @@ export const activityService = {
     };
   },
 
-  async submitDiet(photoBase64: string): Promise<{ workout: Workout; validation: any }> {
-    const user = auth.currentUser;
-    if (!user) throw new Error('Usuário não autenticado');
-
-    let finalPhoto = photoBase64;
-    try {
-      console.log('[activityService] Compressing raw diet image representation...');
-      finalPhoto = await compressBase64Image(photoBase64);
-    } catch (err) {
-      console.warn('[activityService] Failed to compress diet image. Proceeding with original.', err);
-    }
-
-    const idToken = await user.getIdToken();
-    const response = await fetch(`${API_CONFIG.baseUrl}/api/validate-activity`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`
-      },
-      body: JSON.stringify({
-        type: 'diet',
-        photoBase64: finalPhoto,
-        durationMins: 0
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Falha ao validar dieta no servidor.');
-    }
-
-    const { workout } = await response.json();
-
-    return {
-      workout,
-      validation: workout.validation
-    };
-  },
 
   cancelSession() {
     const data = localStorage.getItem(SESSION_KEY);

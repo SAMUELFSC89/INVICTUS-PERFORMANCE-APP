@@ -45,9 +45,9 @@ export function AchievementTracker() {
   }, []);
 
   const handleShare = () => {
-    if (!newAchievement || !user) return;
+    if (!newAchievement) return;
     const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://www.invictusperformance.app.br');
-    const text = `Acabei de desbloquear a conquista "${newAchievement.name}" no INVICTUS! 🏆🔥\n\n${newAchievement.description}\n\nVenha treinar comigo: ${baseUrl.replace(/\/$/, '')}/invite?ref=${user.uid}`;
+    const text = `Acabei de desbloquear a conquista "${newAchievement.name}" no INVICTUS! 🏆🔥\n\n${newAchievement.description}\n\nConheça o INVICTUS: ${baseUrl.replace(/\/$/, '')}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
