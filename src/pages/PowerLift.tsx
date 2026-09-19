@@ -298,14 +298,47 @@ function previewStatus(sex: PowerLiftSex): SeasonStatus {
   };
 }
 
+const POWER_LIFT_TIER_ASSETS = {
+  FERRO: '/assets/powerlift/tiers/ferro.png',
+  BRONZE: '/assets/powerlift/tiers/bronze.png',
+  PRATA: '/assets/powerlift/tiers/prata.png',
+  OURO: '/assets/powerlift/tiers/ouro.png',
+  PLATINA: '/assets/powerlift/tiers/platina.png',
+  DIAMANTE: '/assets/powerlift/tiers/diamante.png',
+} as const;
+
+const POWER_LIFT_MASTER_RANKING_ASSET = '/assets/powerlift/ranking/master-ranking-geral.png';
+const POWER_LIFT_TITLE_DEFENSE_ASSET = '/assets/powerlift/ranking/defesa-de-titulo.png';
+const POWER_LIFT_TRIPLE_DIAMOND_ASSET = '/assets/powerlift/ranking/triplo-diamante.png';
+const POWER_LIFT_TOP_RANK_ASSETS = {
+  1: '/assets/powerlift/ranking/top-1.png',
+  2: '/assets/powerlift/ranking/top-2.png',
+  3: '/assets/powerlift/ranking/top-3.png',
+} as const;
+
 function TierBadge({ tier, compact = false }: { tier: PowerLiftTier; compact?: boolean }) {
   const normalized = tier.toLowerCase();
+  const assetSrc = tier === 'UNRANKED' ? undefined : POWER_LIFT_TIER_ASSETS[tier];
   return (
     <span className={`pl-tier-badge pl-tier-badge--${normalized} ${compact ? 'is-compact' : ''}`} aria-label={tierLabel(tier)}>
-      <span className="pl-tier-badge-core"><Diamond size={compact ? 10 : 14} /></span>
+      {assetSrc ? (
+        <img className="pl-tier-badge-image" src={assetSrc} alt="" />
+      ) : (
+        <span className="pl-tier-badge-core"><Diamond size={compact ? 10 : 14} /></span>
+      )}
       {!compact ? <b>{tierLabel(tier)}</b> : null}
     </span>
   );
+}
+
+function TitleDefenseBadge({ label }: { label?: string }) {
+  return <img className="pl-title-defense-badge" src={POWER_LIFT_TITLE_DEFENSE_ASSET} alt={label || 'Defesa de título'} />;
+}
+
+function RankPositionBadge({ position, fallback }: { position: number; fallback: number }) {
+  const asset = POWER_LIFT_TOP_RANK_ASSETS[position as 1 | 2 | 3];
+  if (!asset) return <div className="pl-rank-num">{fallback}</div>;
+  return <div className="pl-rank-num pl-rank-num--medal"><img src={asset} alt={`${position}º lugar`} /></div>;
 }
 
 function AthleteAvatar({ photo, name }: { photo?: string; name?: string }) {
@@ -714,7 +747,7 @@ export function PowerLift() {
           <div className="pl-eyebrow">Pontuação geral da temporada</div>
           <div className="pl-score">
             <strong>{formatNumber(generalRawScore)} pts</strong>
-            {effectiveStatus?.general.defendingMaster ? <small>Defesa de título Master: ranking usa {formatNumber(generalCompetitive)} pts · fator 0,95×</small> : <small>Histórico permanente disponível</small>}
+            {effectiveStatus?.general.defendingMaster ? <small><TitleDefenseBadge /> Defesa de título Master: ranking usa {formatNumber(generalCompetitive)} pts · fator 0,95×</small> : <small>Histórico permanente disponível</small>}
           </div>
         </div>
         <div className="pl-legacy-mark">EVOLUÇÃO<br />CONQUISTA<br />LEGADO</div>
@@ -740,7 +773,7 @@ export function PowerLift() {
                     <TierBadge tier={stat.tier} />
                     <div className="pl-progress" aria-label="Progresso de categoria"><span style={{ width: `${progress}%` }} /></div>
                   </div>
-                  {stat.defendingChampion ? <small className="pl-defense-copy">Defesa de título: score competitivo {formatNumber(stat.competitiveScore)} · 0,97×</small> : null}
+                  {stat.defendingChampion ? <small className="pl-defense-copy"><TitleDefenseBadge /> Defesa de título: score competitivo {formatNumber(stat.competitiveScore)} · 0,97×</small> : null}
                 </div>
                 <ChevronRight className="pl-chevron" size={19} />
               </article>
@@ -771,7 +804,7 @@ export function PowerLift() {
           })}
         </div>
         <button type="button" className="pl-card pl-general-card" onClick={() => generalEligible && setView(generalOptIn ? 'general' : 'unlock')}>
-          <Crown size={26} />
+          <img className="pl-general-card-icon" src={POWER_LIFT_MASTER_RANKING_ASSET} alt="Ranking Geral / Master" />
           <div>
             <h3>Ranking Geral Power Lift</h3>
             <p>{generalEligible ? (generalOptIn ? 'Triplo Diamante · você está participando.' : 'Triplo Diamante conquistado · entrada opcional.') : `Desbloqueado ao atingir Diamante nas 3 modalidades · ${diamondCount}/3`}</p>
@@ -785,7 +818,7 @@ export function PowerLift() {
         <div className="pl-rules pl-rules--rewards">
           <div className="pl-rule-card"><CoinMark /> <span><b>Categorias</b><small>20 → 300 Coins por modalidade</small></span></div>
           <div className="pl-rule-card"><Medal size={19} /> <span><b>Elite</b><small>1º {formatNumber(Number(effectiveStatus?.rewards.podium[1] || 1000))} · 2º {formatNumber(Number(effectiveStatus?.rewards.podium[2] || 600))} · 3º {formatNumber(Number(effectiveStatus?.rewards.podium[3] || 400))}</small></span></div>
-          <div className="pl-rule-card"><Crown size={19} /> <span><b>Master Geral</b><small>{formatNumber(effectiveStatus?.rewards.master || 4000)} Coins</small></span></div>
+          <div className="pl-rule-card"><img className="pl-rule-card-icon" src={POWER_LIFT_MASTER_RANKING_ASSET} alt="" /> <span><b>Master Geral</b><small>{formatNumber(effectiveStatus?.rewards.master || 4000)} Coins</small></span></div>
         </div>
       </section>
       {loadError ? <p className="pl-error">{loadError}</p> : null}
@@ -811,7 +844,7 @@ export function PowerLift() {
             <div className="pl-stat"><small>Pontos da temporada</small><strong>{formatNumber(selectedStats.rawScore)} pts</strong></div>
             <div className="pl-stat pl-stat--tier"><small>Melhor marca oficial</small><TierBadge tier={selectedStats.tier} /></div>
           </div>
-          {selectedStats.defendingChampion ? <small className="pl-defense-copy">Defesa de título ativa · ranking: {formatNumber(selectedStats.competitiveScore)} pts (0,97×). Seu score real continua {formatNumber(selectedStats.rawScore)}.</small> : <small>Melhor carga da temporada: {selectedStats.bestWeight ? `${formatNumber(selectedStats.bestWeight)} kg` : '—'}</small>}
+          {selectedStats.defendingChampion ? <small className="pl-defense-copy"><TitleDefenseBadge /> Defesa de título ativa · ranking: {formatNumber(selectedStats.competitiveScore)} pts (0,97×). Seu score real continua {formatNumber(selectedStats.rawScore)}.</small> : <small>Melhor carga da temporada: {selectedStats.bestWeight ? `${formatNumber(selectedStats.bestWeight)} kg` : '—'}</small>}
         </section>
 
         <section className="pl-card pl-career-card">
@@ -1007,8 +1040,8 @@ export function PowerLift() {
                   const defending = Boolean((row as RecordRow & { defendingChampion?: boolean }).defendingChampion);
                   return (
                     <div key={row.id} className={`pl-leader-row ${row.userId === user?.uid ? 'is-me' : ''}`}>
-                      <div className="pl-rank-num">{index + 1}</div>
-                      <div className="pl-athlete"><AthleteAvatar photo={row.userPhoto} name={row.userName} /><div><b>{row.userId === user?.uid ? 'Você' : row.userName || 'Atleta'}</b><small>{formatNumber(Number(row.powerVolume || 0))} kg · {defending ? 'defesa de título' : 'temporada atual'}</small></div></div>
+                      <RankPositionBadge position={index + 1} fallback={index + 1} />
+                      <div className="pl-athlete"><AthleteAvatar photo={row.userPhoto} name={row.userName} /><div><b>{row.userId === user?.uid ? 'Você' : row.userName || 'Atleta'}</b><small>{formatNumber(Number(row.powerVolume || 0))} kg · {defending ? <><TitleDefenseBadge /> defesa de título</> : 'temporada atual'}</small></div></div>
                       <div className="pl-leader-points"><strong>{formatNumber(competitive)} pts</strong><small>{defending ? `real ${formatNumber(raw)}` : 'ranking'}</small></div>
                     </div>
                   );
@@ -1033,7 +1066,7 @@ export function PowerLift() {
   };
 
   const Unlock = () => (
-    <>
+    <div className="pl-unlock-view">
       <Header title="TRIPLO" accent="DIAMANTE" subtitle="Força total. Sem limites." image="/powerlift-terra.jpg" showBack={false} />
       <section className="pl-triplo-grid">
         {modalities.map((modality) => (
@@ -1044,7 +1077,7 @@ export function PowerLift() {
         ))}
       </section>
       <section className="pl-card pl-unlock pl-unlock--general">
-        <div className="pl-unlock-icon"><Crown size={42} /></div>
+        <div className="pl-unlock-icon"><img className="pl-unlock-icon-image" src={POWER_LIFT_TRIPLE_DIAMOND_ASSET} alt="Triplo Diamante / Ranking Geral desbloqueado" /></div>
         <small>Ranking Geral Power Lift</small>
         <h2>Desbloqueado</h2>
         <p>Três lifts. Uma grande versão sua.</p>
@@ -1069,7 +1102,7 @@ export function PowerLift() {
       <button className="pl-primary" type="button" disabled={optInBusy} onClick={() => void updateOptIn('general', true)}><Crown size={18} /> {optInBusy ? 'ATIVANDO…' : 'PARTICIPAR DO RANKING GERAL'}</button>
       <button className="pl-secondary" type="button" onClick={() => setView('home')}>Agora não</button>
       {loadError ? <p className="pl-error">{loadError}</p> : null}
-    </>
+    </div>
   );
 
   const GeneralRanking = () => {
@@ -1096,8 +1129,8 @@ export function PowerLift() {
           <div className="pl-leaderboard pl-leaderboard--general">
             {visibleGeneralRanking.length ? visibleGeneralRanking.slice(0, 10).map((item, index) => (
               <div key={item.userId} className={`pl-leader-row ${item.userId === user?.uid ? 'is-me' : ''}`}>
-                <div className="pl-rank-num">{item.rank || index + 1}</div>
-                <div className="pl-athlete"><AthleteAvatar photo={item.userPhoto} name={item.userName} /><div><b>{item.userId === user?.uid ? 'Você' : item.userName || 'Atleta'}</b><small>{item.defendingMaster ? '👑 defesa de título Master' : 'temporada atual'}</small></div></div>
+                <RankPositionBadge position={item.rank || index + 1} fallback={item.rank || index + 1} />
+                <div className="pl-athlete"><AthleteAvatar photo={item.userPhoto} name={item.userName} /><div><b>{item.userId === user?.uid ? 'Você' : item.userName || 'Atleta'}</b><small>{item.defendingMaster ? <><TitleDefenseBadge /> defesa de título Master</> : 'temporada atual'}</small></div></div>
                 <div className="pl-leader-points"><strong>{formatNumber(item.competitiveScore)} pts</strong><small>{item.defendingMaster ? `real ${formatNumber(item.rawScore)} · 0,95×` : 'total'}</small></div>
                 <div className="pl-lift-split"><span>S {formatNumber(item.scores.supino || 0)}</span><span>A {formatNumber(item.scores.agachamento || 0)}</span><span>T {formatNumber(item.scores.terra || 0)}</span></div>
               </div>

@@ -356,7 +356,8 @@
   border-radius: inherit;
   background: linear-gradient(90deg,#b6852b,#f0cf77);
 }
-.pl-defense-copy { display:block; margin-top:7px; color:#cdb170 !important; font-size:8px !important; }
+.pl-defense-copy { display:flex; align-items:center; gap:5px; margin-top:7px; color:#cdb170 !important; font-size:8px !important; }
+.pl-title-defense-badge { width:16px; height:16px; object-fit:contain; flex:0 0 auto; vertical-align:middle; }
 .pl-chevron { color: #c6c6c6; }
 
 .pl-ranking-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; }
@@ -408,10 +409,18 @@
   border-radius: 9px;
   background: rgba(109,72,14,.12);
 }
+.pl-general-card-icon {
+  width: 43px;
+  height: 43px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
 .pl-general-card h3 { margin: 0 0 5px; font-size: 15px; text-transform: uppercase; }
 .pl-general-card p { margin: 0; color: #aaa; font-size: 10px; }
 
-/* Tier badges: CSS fallback until the approved individual assets are supplied. */
+/* Tier badges: real approved assets (public/assets/powerlift/tiers/*.png), resolved
+   centrally in TierBadge via POWER_LIFT_TIER_ASSETS. UNRANKED has no approved asset
+   yet and keeps the neutral .pl-tier-badge-core placeholder below. */
 .pl-tier-badge {
   display: inline-flex;
   align-items: center;
@@ -422,6 +431,14 @@
   letter-spacing: .07em;
   text-transform: uppercase;
 }
+
+.pl-tier-badge-image {
+  width: 37px;
+  height: 37px;
+  object-fit: contain;
+  display: block;
+}
+.pl-tier-badge.is-compact .pl-tier-badge-image { width: 49px; height: 49px; }
 
 .pl-tier-badge-core {
   width: 37px;
@@ -435,16 +452,6 @@
 }
 .pl-tier-badge.is-compact .pl-tier-badge-core { width: 49px; height: 49px; }
 .pl-tier-badge--unranked .pl-tier-badge-core { background:linear-gradient(145deg,#282828,#080808); color:#686868; }
-.pl-tier-badge--ferro .pl-tier-badge-core { background:linear-gradient(145deg,#44484b,#0d0f10); color:#aeb4b8; }
-.pl-tier-badge--bronze .pl-tier-badge-core { background:linear-gradient(145deg,#8a552f,#1d1009); color:#e0a56c; }
-.pl-tier-badge--prata .pl-tier-badge-core { background:linear-gradient(145deg,#707780,#16181a); color:#edf1f5; }
-.pl-tier-badge--ouro .pl-tier-badge-core { background:linear-gradient(145deg,#947126,#1a1307); color:#f2c96b; }
-.pl-tier-badge--platina .pl-tier-badge-core { background:linear-gradient(145deg,#8097a4,#172028); color:#dff5ff; }
-.pl-tier-badge--diamante .pl-tier-badge-core {
-  background:linear-gradient(145deg,#176397,#061521);
-  color:#78d8ff;
-  box-shadow: inset 0 0 0 1px rgba(97,203,255,.85), 0 0 15px rgba(61,181,247,.19);
-}
 .pl-tier-badge--diamante b { color:#8adfff; }
 
 .pl-rules--rewards { grid-template-columns: repeat(3,1fr) !important; }
@@ -550,6 +557,7 @@
   line-height:1.3;
 }
 .pl-rule-card svg { color:#e5bb62; }
+.pl-rule-card-icon { width:19px; height:19px; object-fit:contain; flex:0 0 auto; }
 .pl-rules .pl-rule-card:nth-child(5) { grid-column:1 / -1; min-height:56px; flex-direction:row; align-items:center; }
 
 .pl-history { display:grid; gap:0; border:1px solid rgba(231,189,104,.27); border-radius:9px; overflow:hidden; }
@@ -651,6 +659,8 @@
 .pl-leader-row:nth-child(1) .pl-rank-num { color:#efc85f; }
 .pl-leader-row:nth-child(2) .pl-rank-num { color:#dfe4e9; }
 .pl-leader-row:nth-child(3) .pl-rank-num { color:#ce885b; }
+.pl-rank-num--medal { display:flex; align-items:center; justify-content:center; }
+.pl-rank-num--medal img { width:26px; height:26px; max-width:100%; object-fit:contain; }
 .pl-athlete { display:flex; align-items:center; gap:9px; min-width:0; }
 .pl-avatar { width:36px; height:36px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,.23); background:radial-gradient(circle,#454545,#151515); }
 .pl-avatar--fallback { display:grid; place-items:center; color:#e5c36c; font-weight:900; font-size:12px; }
@@ -668,6 +678,15 @@
 .pl-ranking-nav > button:disabled { opacity:.35; cursor:not-allowed; }
 
 /* Triple Diamond */
+.pl-unlock-view {
+  position: relative;
+  background:
+    linear-gradient(180deg,rgba(6,5,3,.55),rgba(6,5,3,.82) 60%,rgba(6,5,3,.95)),
+    url(/assets/powerlift/ranking/background-triplo-diamante.png);
+  background-size: cover;
+  background-position: top center;
+  background-repeat: no-repeat;
+}
 .pl-triplo-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:8px; }
 .pl-triplo-grid > article { min-height:180px; padding:14px 10px; display:flex; flex-direction:column; justify-content:space-between; align-items:center; background-position:center; background-size:cover; text-align:center; border-color:rgba(255,255,255,.18); }
 .pl-triplo-grid h3 { margin:0; font-size:10px; text-transform:uppercase; }
@@ -676,6 +695,7 @@
 .pl-unlock--general { margin-top:14px; border-color:rgba(231,189,104,.62); background:radial-gradient(circle at 50% 35%,rgba(187,137,40,.17),transparent 43%),linear-gradient(120deg,#17140e,#0b0b0b); }
 .pl-unlock-icon { width:86px; height:70px; display:grid; place-items:center; margin:0 auto 4px; color:#efca70; }
 .pl-unlock-icon svg { width:58px; height:58px; }
+.pl-unlock-icon-image { width:70px; height:70px; object-fit:contain; }
 .pl-unlock--general > small { color:#d6d0c1; font-size:9px; text-transform:uppercase; letter-spacing:.21em; }
 .pl-unlock h2 { margin:4px 0 5px; font-family:"Arial Narrow",Impact,sans-serif; font-style:italic; font-size:clamp(34px,7vw,52px); line-height:.9; text-transform:uppercase; color:#edc96d; }
 .pl-unlock p { margin:0 auto 14px; color:#aaa; font-size:9px; }
@@ -775,6 +795,7 @@
   .pl-modality-data small { font-size:6.5px; }
   .pl-modality-data b { font-size:10px; }
   .pl-tier-badge-core { width:30px; height:30px; }
+  .pl-tier-badge-image { width:30px; height:30px; }
   .pl-tier-badge b { font-size:7px; }
   .pl-progress { min-width:55px; height:7px; }
 
@@ -799,6 +820,7 @@
   .pl-tier-track { grid-template-columns:repeat(6,61px); gap:5px; }
   .pl-tier-step { min-width:61px; font-size:7px; }
   .pl-tier-badge.is-compact .pl-tier-badge-core { width:43px; height:43px; }
+  .pl-tier-badge.is-compact .pl-tier-badge-image { width:43px; height:43px; }
 
   .pl-rules { grid-template-columns:repeat(2,1fr); }
   .pl-rules .pl-rule-card:nth-child(5) { grid-column:1 / -1; }
