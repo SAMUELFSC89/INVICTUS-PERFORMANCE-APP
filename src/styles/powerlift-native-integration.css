@@ -1,0 +1,341 @@
+/*
+ * Power Lift visual integration layer.
+ *
+ * Keeps all seasonal/business logic untouched and only refines the visual
+ * presentation so /power belongs to the same internal app surface instead of
+ * reading as an opaque screen placed on top of it.
+ */
+
+body[data-invictus-surface='internal'] .pl-season {
+  background-color: transparent !important;
+  background:
+    radial-gradient(circle at 88% 7%, rgba(198, 143, 43, .10), transparent 25%),
+    radial-gradient(circle at 10% 38%, rgba(255, 255, 255, .025), transparent 26%),
+    linear-gradient(180deg, rgba(5, 5, 5, .10) 0%, rgba(5, 5, 5, .28) 44%, rgba(5, 5, 5, .46) 100%) !important;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-shell {
+  background: transparent;
+}
+
+/* Let the approved hero dissolve into the shared app backdrop instead of
+   ending as a hard rectangular banner. */
+body[data-invictus-surface='internal'] .pl-season .pl-approved-header {
+  margin-bottom: 8px;
+  isolation: isolate;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-header-art {
+  filter: contrast(1.1) brightness(.76) saturate(.92);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 70%, rgba(0,0,0,.86) 81%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 70%, rgba(0,0,0,.86) 81%, transparent 100%);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-approved-header::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 54% 0 -1px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(7, 6, 5, .18) 42%, rgba(7, 6, 5, .46));
+}
+
+/* Shared panels become translucent surfaces. The native backdrop remains
+   visible between and through cards while copy still keeps strong contrast. */
+body[data-invictus-surface='internal'] .pl-season :is(
+  .pl-hero,
+  .pl-card,
+  .pl-rank-card,
+  .pl-rule-card,
+  .pl-form-card,
+  .pl-message-card,
+  .pl-elite-status,
+  .pl-validation-checklist,
+  .pl-general-filters > span,
+  .pl-ranking-nav > button
+) {
+  background:
+    radial-gradient(circle at 92% 14%, rgba(188, 133, 31, .09), transparent 35%),
+    linear-gradient(135deg, rgba(24, 22, 18, .78), rgba(8, 8, 8, .64)) !important;
+  border-color: rgba(222, 175, 78, .27);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .025),
+    0 10px 28px rgba(0, 0, 0, .16);
+  -webkit-backdrop-filter: blur(14px) saturate(1.04);
+  backdrop-filter: blur(14px) saturate(1.04);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-hero {
+  border-color: rgba(230, 185, 90, .42);
+}
+
+/* Dashboard modality cards: official modality art now owns the entire card.
+   The same <img> already used by the screen becomes the card background; no
+   new asset mapping or business logic is introduced here. */
+body[data-invictus-surface='internal'] .pl-season .pl-modality {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  min-height: 178px;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(230, 185, 90, .32);
+  background: rgba(8, 8, 8, .44) !important;
+  cursor: pointer;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality-image {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border: 0;
+  border-radius: inherit;
+  object-fit: cover;
+  object-position: center 42%;
+  filter: contrast(1.08) brightness(.82) saturate(1.08);
+  transform: scale(1.015);
+  transition: transform .24s ease, filter .24s ease;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(4, 4, 4, .91) 0%, rgba(4, 4, 4, .72) 42%, rgba(4, 4, 4, .29) 74%, rgba(4, 4, 4, .42) 100%),
+    linear-gradient(0deg, rgba(0, 0, 0, .84) 0%, rgba(0, 0, 0, .22) 54%, rgba(0, 0, 0, .18) 100%);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality:active .pl-modality-image {
+  transform: scale(1.035);
+  filter: contrast(1.1) brightness(.86) saturate(1.11);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality-body {
+  position: relative;
+  z-index: 2;
+  width: min(72%, 560px);
+  min-width: 0;
+  padding: 20px 54px 18px 20px;
+  text-shadow: 0 2px 9px rgba(0, 0, 0, .85);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality h3 {
+  margin: 0 0 5px;
+  color: #fffdf7;
+  font-size: clamp(17px, 2.4vw, 22px);
+  line-height: 1.05;
+  letter-spacing: .025em;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality-body > small {
+  color: rgba(245, 242, 234, .74);
+  font-size: 9px;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality-data {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 390px);
+  margin-top: 14px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, .11);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality-data small {
+  color: rgba(236, 233, 225, .65);
+  font-size: 8px;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality-data b {
+  margin-top: 3px;
+  color: #f1cc72;
+  font-size: 14px;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality-meta {
+  width: min(100%, 430px);
+  margin-top: 12px;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality .pl-progress {
+  background: rgba(4, 4, 4, .48);
+  border-color: rgba(255, 255, 255, .42);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, .55);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-modality .pl-chevron {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  right: 18px;
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 999px;
+  color: #f5f1e7;
+  background: rgba(4, 4, 4, .38);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-defense-copy {
+  width: fit-content;
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, .34);
+}
+
+/* Rankings and reward blocks stay visually related to the app backdrop instead
+   of stacking three opaque black rectangles. */
+body[data-invictus-surface='internal'] .pl-season .pl-rank-card.is-locked {
+  opacity: .68;
+  filter: none;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-general-card {
+  background:
+    linear-gradient(105deg, rgba(42, 31, 12, .58), rgba(10, 10, 10, .56)) !important;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-rules--rewards .pl-rule-card {
+  background:
+    linear-gradient(120deg, rgba(26, 23, 17, .65), rgba(8, 8, 8, .53)) !important;
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-history-row,
+body[data-invictus-surface='internal'] .pl-season .pl-breakdown--score > div,
+body[data-invictus-surface='internal'] .pl-season .pl-leader-row {
+  background: linear-gradient(90deg, rgba(20, 20, 19, .72), rgba(7, 7, 7, .59));
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+body[data-invictus-surface='internal'] .pl-season .pl-bottom-nav {
+  background: linear-gradient(180deg, rgba(12, 11, 9, .78), rgba(4, 4, 4, .93));
+  border-top-color: rgba(231, 189, 104, .18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  backdrop-filter: blur(22px) saturate(1.12);
+}
+
+@media (max-width: 720px) {
+  body[data-invictus-surface='internal'] .pl-season {
+    padding-left: 8px;
+    padding-right: 8px;
+    background:
+      radial-gradient(circle at 92% 4%, rgba(198, 143, 43, .09), transparent 23%),
+      linear-gradient(180deg, rgba(5, 5, 5, .06) 0%, rgba(5, 5, 5, .22) 46%, rgba(5, 5, 5, .40) 100%) !important;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-approved-header {
+    margin-left: -8px;
+    margin-right: -8px;
+    margin-bottom: 4px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality {
+    display: block;
+    min-height: 184px;
+    padding: 0;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-image {
+    width: 100%;
+    height: 100%;
+    object-position: center 40%;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality::after {
+    background:
+      linear-gradient(90deg, rgba(4, 4, 4, .91) 0%, rgba(4, 4, 4, .70) 48%, rgba(4, 4, 4, .30) 78%, rgba(4, 4, 4, .39) 100%),
+      linear-gradient(0deg, rgba(0, 0, 0, .88), rgba(0, 0, 0, .16) 64%);
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-body {
+    width: 82%;
+    padding: 18px 42px 16px 16px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality h3 {
+    font-size: 17px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-body > small {
+    font-size: 8px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-data {
+    width: 100%;
+    margin-top: 12px;
+    padding-top: 9px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-data small {
+    font-size: 7px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-data b {
+    font-size: 12px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-meta {
+    width: 100%;
+    margin-top: 9px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality .pl-chevron {
+    right: 12px;
+    width: 31px;
+    height: 31px;
+    padding: 6px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season :is(
+    .pl-hero,
+    .pl-card,
+    .pl-rank-card,
+    .pl-rule-card,
+    .pl-form-card,
+    .pl-message-card,
+    .pl-elite-status,
+    .pl-validation-checklist,
+    .pl-general-filters > span,
+    .pl-ranking-nav > button
+  ) {
+    -webkit-backdrop-filter: blur(11px) saturate(1.03);
+    backdrop-filter: blur(11px) saturate(1.03);
+  }
+}
+
+@media (max-width: 390px) {
+  body[data-invictus-surface='internal'] .pl-season .pl-modality {
+    display: block;
+    min-height: 190px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-image {
+    width: 100%;
+    height: 100%;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-body {
+    width: 88%;
+    padding-left: 14px;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-data {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  body[data-invictus-surface='internal'] .pl-season .pl-modality-data > span + span {
+    padding-left: 10px;
+    border-left: 1px solid rgba(255, 255, 255, .12);
+  }
+}
