@@ -9,8 +9,10 @@ describe('Power Lift native visual integration', () => {
     expect(html).toContain('/powerlift-native-ui.css?v=20260919');
     expect(html).toContain('/powerlift-category-final.css?v=20260919b');
     expect(html).toContain('/powerlift-layout-hotfix.css?v=20260919c');
+    expect(html).toContain('/powerlift-dashboard-final.css?v=20260919d');
     expect(html.indexOf('/powerlift-category-final.css')).toBeGreaterThan(html.indexOf('/powerlift-native-ui.css'));
     expect(html.indexOf('/powerlift-layout-hotfix.css')).toBeGreaterThan(html.indexOf('/powerlift-category-final.css'));
+    expect(html.indexOf('/powerlift-dashboard-final.css')).toBeGreaterThan(html.indexOf('/powerlift-layout-hotfix.css'));
   });
 
   test('uses the existing official modality artwork as a full-card background layer', () => {
@@ -71,8 +73,30 @@ describe('Power Lift native visual integration', () => {
     expect(css).toContain('transform: none !important;');
   });
 
+  test('dashboard final layer keeps POWER LIFT visible and restores the approved modality title language', () => {
+    const css = read('public/powerlift-dashboard-final.css');
+    expect(css).toContain('.pl-season.pl-view-home .pl-title');
+    expect(css).toContain('white-space: nowrap;');
+    expect(css).toContain('font-family: "Arial Narrow", Impact, Haettenschweiler, sans-serif;');
+    expect(css).toContain('.pl-season.pl-view-home .pl-header-art--hero-geral');
+    expect(css).toContain('background-position: center 23% !important;');
+    expect(css).toContain('.pl-season.pl-view-home .pl-modality h3');
+    expect(css).toContain('font-style: italic;');
+    expect(css).toContain('min-height: 172px;');
+  });
+
+  test('dashboard final layer redistributes modality content without touching modality detail screens', () => {
+    const css = read('public/powerlift-dashboard-final.css');
+    expect(css).toContain('.pl-season.pl-view-home .pl-modality-body');
+    expect(css).toContain('grid-template-columns: minmax(0, 48%) minmax(0, 52%);');
+    expect(css).toContain('.pl-season.pl-view-home .pl-modality-image[src*="powerlift-supino"]');
+    expect(css).toContain('.pl-season.pl-view-home .pl-modality-image[src*="powerlift-agachamento"]');
+    expect(css).toContain('.pl-season.pl-view-home .pl-modality-image[src*="powerlift-terra"]');
+    expect(css).not.toContain('.pl-season.pl-view-modality .pl-modality h3');
+  });
+
   test('final visual layers do not replace the app logo or bottom navigation', () => {
-    for (const file of ['public/powerlift-category-final.css', 'public/powerlift-layout-hotfix.css']) {
+    for (const file of ['public/powerlift-category-final.css', 'public/powerlift-layout-hotfix.css', 'public/powerlift-dashboard-final.css']) {
       const css = read(file);
       expect(css).not.toContain('.pl-season .pl-brand');
       expect(css).not.toContain('.pl-season .pl-bottom-nav');
@@ -85,7 +109,8 @@ describe('Power Lift native visual integration', () => {
     const nativeCss = read('public/powerlift-native-ui.css');
     const finalCss = read('public/powerlift-category-final.css');
     const hotfixCss = read('public/powerlift-layout-hotfix.css');
-    for (const css of [nativeCss, finalCss, hotfixCss]) {
+    const dashboardCss = read('public/powerlift-dashboard-final.css');
+    for (const css of [nativeCss, finalCss, hotfixCss, dashboardCss]) {
       expect(css).not.toContain('\n.pl-modality {');
       expect(css).not.toContain('\n.pl-modality-image {');
       expect(css).not.toContain('\n.pl-tier-step:not(.done) {');
