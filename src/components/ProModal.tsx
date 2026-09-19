@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Crown, Zap, Shield, Rocket, X, Users, Copy, Check } from 'lucide-react';
-import { cn } from '../lib/utils';
-import { useUser } from '../UserContext';
+import { Crown, Zap, Shield, Rocket, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface ProModalProps {
@@ -13,20 +11,7 @@ interface ProModalProps {
 }
 
 export function ProModal({ isOpen, onClose, reason }: ProModalProps) {
-  const { user } = useUser();
   const navigate = useNavigate();
-  const [copied, setCopied] = useState(false);
-
-  const referralCode = user?.referralCode || (user?.uid ? user.uid.substring(0, 6).toUpperCase() : 'INVICTUS');
-  const baseUrl = import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://www.invictusperformance.app.br');
-  const inviteLink = `${baseUrl.replace(/\/$/, '')}/invite?ref=${referralCode}`;
-
-  const handleCopyInvite = () => {
-    const inviteText = `Vem treinar comigo no INVICTUS! 🏆🔥 Use meu código de indicação: ${referralCode}\n\nCadastre-se agora: ${inviteLink}`;
-    navigator.clipboard.writeText(inviteText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   const content = (
     <AnimatePresence>
@@ -55,19 +40,6 @@ export function ProModal({ isOpen, onClose, reason }: ProModalProps) {
                 <BenefitItem icon={<Shield size={18} />} title="Saúde avançada" desc="Métricas, zonas cardíacas e integrações." />
                 <BenefitItem icon={<Rocket size={18} />} title="Relatórios completos" desc="Acompanhe sua evolução em mais detalhes." />
                 <BenefitItem icon={<Crown size={18} />} title="Sem vantagem competitiva" desc="A assinatura não altera sua pontuação ou ranking." />
-              </div>
-
-              <div className="relative space-y-4 overflow-hidden rounded-3xl border border-[#F5A623]/20 bg-[#F5A623]/5 p-5 text-left">
-                <div className="relative z-10">
-                  <div className="mb-1 flex items-center gap-2"><Users size={16} className="text-[#F5A623]" /><h4 className="font-headline text-sm font-black uppercase italic tracking-tight text-[#F5A623]">CÓDIGO DE CONVITE</h4></div>
-                  <p className="text-[10px] font-bold uppercase leading-snug tracking-wider text-white/50">Convide outros atletas para treinar com você no Invictus.</p>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/5 p-1">
-                  <span className="truncate px-4 font-mono text-sm font-black uppercase tracking-[0.2em] text-white">{referralCode}</span>
-                  <button onClick={handleCopyInvite} className={cn('flex h-10 items-center gap-1.5 rounded-xl px-4 text-[9px] font-black uppercase tracking-wider transition-all', copied ? 'bg-emerald-500 text-black' : 'bg-[#F5A623] text-black')}>
-                    {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} strokeWidth={3} />}{copied ? 'COPIADO' : 'COPIAR'}
-                  </button>
-                </div>
               </div>
 
               <div className="space-y-3 pt-2">
