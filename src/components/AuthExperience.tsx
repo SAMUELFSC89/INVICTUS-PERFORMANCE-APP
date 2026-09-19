@@ -1,10 +1,10 @@
 import React from 'react';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, ArrowRight, Calendar, Check, Dumbbell, Fingerprint, Lock, Mail, Phone, Share2, ShieldCheck, Sparkles, User } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Calendar, Check, Dumbbell, Fingerprint, Lock, Mail, Phone, ShieldCheck, Sparkles, User } from 'lucide-react';
 import { InvictusLogo } from './InvictusLogo';
 import './AuthExperience.css';
 
-export type RegistrationField = 'fullName' | 'cpf' | 'birthDate' | 'email' | 'password' | 'whatsapp' | 'referralCode';
+export type RegistrationField = 'fullName' | 'cpf' | 'birthDate' | 'email' | 'password' | 'whatsapp';
 
 type Props = {
   registering: boolean;
@@ -39,7 +39,6 @@ const fieldMeta: Record<RegistrationField, { label: string; placeholder: string;
   email: { label: 'E-mail', placeholder: 'seu@email.com', type: 'email', icon: <Mail /> },
   password: { label: 'Senha', placeholder: 'Mínimo de 6 caracteres', type: 'password', icon: <Lock /> },
   whatsapp: { label: 'WhatsApp (opcional)', placeholder: '(00) 00000-0000', type: 'tel', icon: <Phone /> },
-  referralCode: { label: 'Código de indicação (opcional)', placeholder: 'CÓDIGO-AMIGO', icon: <Share2 /> },
 };
 
 function Field({ name, value, onChange }: { name: RegistrationField; value: string; onChange: Props['onField'] }) {
@@ -113,7 +112,7 @@ export function AuthExperience(props: Props) {
         <form onSubmit={props.onRegister}>
           {props.step === 1 && <><Field name="fullName" value={fields.fullName} onChange={props.onField} /><Field name="email" value={fields.email} onChange={props.onField} /><Field name="password" value={fields.password} onChange={props.onField} /></>}
           {props.step === 2 && <><Field name="cpf" value={fields.cpf} onChange={props.onField} /><Field name="birthDate" value={fields.birthDate} onChange={props.onField} />{fields.birthDate && !adult ? <div className="auth-error">O Invictus é destinado a pessoas com 18 anos ou mais.</div> : null}<div className="auth-trust"><ShieldCheck /><span><b>Identidade e segurança</b><small>O CPF mantém uma identidade única por conta e reduz duplicidade/fraude nos recursos competitivos. A data de nascimento confirma a elegibilidade 18+.</small></span></div></>}
-          {props.step === 3 && <><Field name="whatsapp" value={fields.whatsapp} onChange={props.onField} /><Field name="referralCode" value={fields.referralCode} onChange={props.onField} /><label className="auth-check"><input type="checkbox" checked={props.whatsappOptIn} onChange={(event) => props.onWhatsappOptIn(event.target.checked)} /><i><Check /></i><span><b>Lembretes pelo WhatsApp</b><small>Opcional. Você pode desativar quando quiser.</small></span></label></>}
+          {props.step === 3 && <><Field name="whatsapp" value={fields.whatsapp} onChange={props.onField} /><label className="auth-check"><input type="checkbox" checked={props.whatsappOptIn} onChange={(event) => props.onWhatsappOptIn(event.target.checked)} /><i><Check /></i><span><b>Lembretes pelo WhatsApp</b><small>Opcional. Você pode desativar quando quiser.</small></span></label></>}
           {props.step === 4 && <><div className="auth-plans"><button type="button" className={props.preferredPlan === 'open' ? 'is-selected' : ''} onClick={() => props.onPlan('open')}><Dumbbell /><span><b>INVICTUS OPEN</b><small>Treinos, desafios e evolução essencial</small></span><em>GRÁTIS</em></button><button type="button" className={props.preferredPlan === 'performance' ? 'is-selected' : ''} onClick={() => props.onPlan('performance')}><Sparkles /><span><b>PERFORMANCE PRO</b><small>Recursos avançados e inteligência personalizada</small></span><em>PRO</em></button></div><label className="auth-check"><input type="checkbox" checked={props.termsAccepted} onChange={(event) => props.onTerms(event.target.checked)} /><i><Check /></i><span><b>Termos e privacidade</b><small>Li e aceito os Termos de Uso e a Política de Privacidade. Permissões sensíveis serão solicitadas no momento do uso.</small></span></label></>}
           {props.error && <div className="auth-error">{props.error}</div>}
           {props.step < 4 ? <button className="auth-primary" type="button" disabled={!stepValid} onClick={advance}>CONTINUAR <ArrowRight /></button> : <button className="auth-primary" type="submit" disabled={!stepValid || props.loading}>{props.loading ? 'CRIANDO CONTA...' : <>CRIAR MINHA CONTA <ArrowRight /></>}</button>}
